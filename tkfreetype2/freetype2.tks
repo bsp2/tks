@@ -1,0 +1,586 @@
+// ----
+// ---- file   : freetype2.tks
+// ---- info   : script side of the tks freetype2 plugin. includes OpenGL text renderer.
+// ---- author : Bastian Spiegel
+// ---- license: GNU Lesser General Public License. See <http://www.gnu.org/copyleft/lesser.html> for details.
+// ---- date   : 25-Apr-2005 27-Apr-2005 30-Apr-2005 06-May-2005, 12-Jun-2005, 25-Jun-2005
+// ----          
+
+module freetype2;
+
+use tkfreetype2;
+use tkopengl;
+
+// ---- 
+// ---- FT2Glyph
+// ---- 
+class FT2Glyph {
+   // ----
+   // ---- Reference to a texture page that holds the bitmap area of this glyph.
+   // ---- The Texture depth (z) is 8bit (alpha+luminance (intensity)).
+   // ----
+   Texture texture<=null; 
+
+   // ----
+   // ---- (Normalized 0..1) texture coordinates of the glyph bitmap.
+   // ---- Please notice that a border is added around each glyph to account
+   // ---- for OpenGL filtering.
+   // ---- During glyph loading, (rtu,rbv) are used for (bitmap_width, bitmap_height)
+   // ----
+   float   ltu, rtu, rbu, lbu; 
+   float   ltv, rtv, rbv, lbv;
+
+   // ---- The pixel width of the glyph bitmap. 0 means that this glyph is unused.
+   float   width;
+
+   // ---- The pixel height of the glyph bitmap
+   float   height;
+
+   // ---- Distance from the current horizontal cursor position to the leftmost scan column of the glyph bitmap
+   float   offsetx;
+
+   // ---- Distance from the baseline to the topmost scanline of the glyph bitmap
+   float   offsety;
+
+   // ---- How many pixels (in screen coordinates) to advance after printing this glyph
+   float   advancex;
+
+   module method normalizeTexCoords(float _rtexsize) {
+      if(rtu>0.0) // ---- is this glyph used??
+      {
+         ltu = ltu / _rtexsize;
+         rtu = rtu / _rtexsize;
+         rbu = rbu / _rtexsize;
+         lbu = lbu / _rtexsize;
+         ltv = ltv / _rtexsize;
+         rtv = rtv / _rtexsize;
+         rbv = rbv / _rtexsize;
+         lbv = lbv / _rtexsize;
+      }
+   }
+
+   // ---- Initialize the texture info for this glyph
+   module method init(float _x, float _y, Texture _t) {
+      ltu=_x;
+      rtu=_x+width+1;
+      rbu=_x+width+1;
+      lbu=_x;
+      ltv=_y;
+      rtv=_y;
+      rbv=_y+height+1;
+      lbv=_y+height+1;
+      texture<=deref _t;
+   }
+}
+
+// ---- 
+// ---- FT2Face
+// ---- 
+class FT2Face {
+
+   // ---- General font info
+   private String   name;         // "verdana.ttf"
+   private String   family_name;  // "FreeMono", ..
+   private int      height;       // standard glyph height
+
+   // ---- Glyph objects (0..255)
+   private FT2Glyph glyphs[];     // ASCII encoding, 256 glyphs (actually 255). Not every glyph is actually used.
+   private float glyphs_advancex[256]; // How many pixels to advance after printing glyph [0..255]. 
+                                  // Kerning is not supported, yet. It should still be rather easy to add.
+
+   // ---- Possible seizures for the field "style_flags"
+   define int FONT_STYLE_NORMAL      = 0;
+   define int FONT_STYLE_ITALIC      = 1<<0;
+   define int FONT_STYLE_BOLD        = 1<<1;
+   define int FONT_STYLE_BOLD_ITALIC = FONT_STYLE_BOLD|FONT_STYLE_ITALIC;
+   define int FONT_STYLE_MASK        = FONT_STYLE_BOLD_ITALIC;
+
+   private        String style_name;   // "Regular", "Medium", "Oblique", ..
+   private        int    style_flags;  // bit0=italic, bit1=bold
+   private static String style_flags_strings[]=["normal", "italic", "bold", "bold italic"]; // style_flags->String
+
+   private float    ascender;     // "maximal ascender"
+   private float    descender;    // "minimal ascender"
+   private float    underline_position;  // Y position (in pixels) of the underline position
+   private float    underline_thickness; // Thickness of the underline line
+
+   // ---- OpenGL texture rendering fields
+   define int DEFAULT_TEXTURE_SIZE = 128;
+
+   private int      num_textures; // >0 if a font has been successfully loaded.
+   private int      tex_cursor_x; // Used during font loading 
+   private int      tex_cursor_y; // Used during font loading 
+   private int      tex_cursor_line_max_y; // Used during font loading 
+   private Texture  tex_current<=null; // Used during font loading 
+   private int      rtexsize; // The size (width/height) of a single texture "page"
+   private List     textures; // The glyph bitmaps are spread across n textures (depending on font pixel size)
+   private boolean  texture_filter=true; // Can be changed at runtime by calling setEnableTextureFilter()
+
+
+   FT2Face() {
+   }
+
+   ~FT2Face() {
+   }
+
+   // ----
+   // ---- Holds a C++ object which is used to do the actual glyph loading, querying and bitmap rendering (using freetype2)
+   // ---- The object also holds an internal representation of the glyph infos.
+   // ----
+   private NativeFT2Face ft2; 
+
+   // ----
+   // ---- Query the height font attributes selected by the native freetype2 loader.
+   // ---- Returns the font size in pixels.
+   // ----
+   public method getHeight()             { return height; }
+
+   // ---- Return the font ascender in pixels. (Distance from baseline to topmost scanline of all glyphs)
+   public method getAscender()           { return ascender; } 
+
+   // ---- Return the font descender in pixels. (Distance from baseline to bottommost scanline of all glyphs)
+   public method getDescender()          { return descender; }
+
+   // ---- Y position (in pixels) of the underline position
+   public method getUnderlinePosition()  { return underline_position; }
+
+   // ---- Thickness of the underline line
+   public method getUnderlineThickness() { return underline_thickness; }
+
+   // ---- Font family name ("FreeMono", ..)
+   public method getFamilyName()         { return family_name; }
+
+   // ---- Return the font style name ("Oblique", "Regular", "Medium", ..)
+   public method getStyleName()          { return style_name; }
+
+   // ---- Return the font style flags (bit0=italics, bit1=bold)
+   public method getStyleFlags()         { return style_flags; }
+
+   // ---- Return string representation of the current font style flags ("", "italic", "bold", "bold italic")
+   public method getStyleFlagsString()   { return style_flags_strings[style_flags&3]; }
+
+   // ---- Return string representation of the given font style flags
+   public function GetStyleFlagsStringFor(int _styleFlags) { return style_flags_strings[_styleFlags&3]; }
+
+   // ---- Query the number of textures used by the glyph loader.
+   public method getNumTextures()        { return num_textures; }
+
+   // ---- Query the number of bytes occupied by the font texture pages
+   public method getTextureByteSize()    { return textures.size*rtexsize*rtexsize; }
+
+   // ---- Enable texture filtering
+   public method setEnableTextureFilter(boolean _b) {
+      texture_filter=_b;
+      ListNode l;
+      foreach l in textures {
+         Texture t<=l.objectValue;
+         if(_b)
+            t.flags|=TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+         else
+            t.flags&=~(TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR);
+      }
+   }
+
+   // ---- Return the texture #_index (or null)
+   public method getTexture(int _index) {
+      ListNode l<=textures[_index];
+      if(l)
+         return l.objectValue;
+      else
+         return null;
+   }
+
+   // ----
+   // ---- Calculate and return the width (in pixels) for the given String _s.
+   // ---- Return 0 if no font face has been loaded, yet.
+   // ----
+   public method stringWidth(String _s) { 
+      float r=0.0;
+      if(_s instanceof String)
+      compile {
+         int i=0;
+         loop(_s.length)
+         {
+            r+=glyphs_advancex[_s[i++]];
+         }
+      }
+      return r;
+   }
+
+   // ----
+   // ---- Return the index of the char at pixel coordinate _x
+   // ---- Return -1 if the coordinate is outside of the text rectangle.
+   // ----
+   public method stringIndexAtPixelX(String _s, float _x) returns int { 
+      float w=0.0;
+      if(_s instanceof String)
+      {
+         int i=0;
+         loop(_s.length)
+         {
+            w+=glyphs_advancex[_s[i++]];
+            if(w>_x)
+               return i-1;
+         }
+      }
+      return _s.length-1;
+   }
+   
+   // ----
+   // ---- Load a font from the given local file (by first copying it to a buffer which is then passed to loadFace())
+   // ----    _name: local filename (e.g. "fonts/test.ttf")
+   // ----       _w: 0 (=defaults to _h) or the width of the font
+   // ----       _h: 0 (=defaults to _w) or the height of the font. if both _w and _h are 0, 10 is assumed.
+   // ---- _texsize: width and height of a single texture-"page". If _texsize is 0, 256 is assumed.
+   // ----
+   public method openLocalFile(String _name, float _w, float _h, int _texsize) {
+      ft2.monochrome = false;
+      if(ft2.openFileFace(_name, _w, _h))
+      {
+         name=_name;
+         return loadFace(_texsize);
+      }
+      else
+      {
+         trace "[---] FT2Face::loadFromLocalFile(): failed to open face.\n";
+         return false;
+      }
+   }
+
+   // ----
+   // ---- Load a font from the given "logic" pak file name (maps to a file in a .tkx pak file or the local fs (dev mode))
+   // ---- The behaviour is otherwise equal to loadFromLocalFile().
+   // ----
+   public method openPakFile(String _name, float _w, float _h, int _texsize) {
+      ft2.monochrome = false;
+      PakFile f; 
+      if(f.open(_name))
+      {
+         local Buffer b; f.readBuffer(b, 0,f.size, true);
+         f.close();
+         if(ft2.openMemoryFace(b, _w, _h))
+         {
+            name=_name;
+            return loadFace(_texsize);
+         }
+         else
+         {
+            trace "[---] FT2Face::openPakFile(): failed to open face.\n";
+         }
+      }
+      return false;
+   }
+
+   // ---- Allocate a new texture "page" and add it to the "textures" List.
+   private method newTexture()/*:Texture*/ {
+      local Texture t; 
+      t.alloc(rtexsize, rtexsize, 1); // 8bit 
+      t.clear(0);
+      tex_cursor_x=1; // add extra border for filtering
+      tex_cursor_y=1;
+      tex_cursor_line_max_y=-1;
+      num_textures++;
+      t.flags=TEX_MODULATE|TEX_ALPHA;
+      if(texture_filter)
+         t.flags|=TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+      textures.addLast(#(deref t)); // wrap in Value object and pass to native c++ method
+      tex_current<=t;
+      return t;
+   }
+
+   // ----
+   // ---- Load and render a TrueType, Type 1, CID-keyed or OpenType/CFF font to a bitmap
+   // ---- and copy the bitmap glyphs to areas within 2^n size textures.
+   // ----
+   private method loadFace(int _texsize)/*:boolean*/ {
+      num_textures=0;
+      textures.removeAll();
+      if(_texsize<=0)
+         rtexsize=DEFAULT_TEXTURE_SIZE;
+      else
+         rtexsize=2n(_texsize); // next 2^n size
+
+      glyphs.alloc(256);
+      height    = ft2.height;
+      if(height>=rtexsize)
+      {
+         trace "[---] FT2Face::loadFace: average glyph height("+height+") exceeds texture height ("+rtexsize+"). bailing out..";
+         return false;
+      }
+      ascender  = ft2.ascender;
+      descender = ft2.descender;
+      underline_position = ft2.underlinePosition;
+      underline_thickness = ft2.underlineThickness;
+      if(underline_thickness==0.0)
+      {
+         underline_position=ft2.descender;
+         underline_thickness=0.5;
+      }
+      ft2.storeFamilyName(family_name);
+      ft2.storeStyleName(style_name);
+      style_flags=ft2.styleFlags;
+
+      int i=32; // the first face is unused (ASCIIZ)
+      FT2Glyph g; glyphs.numElements=i;
+      loop(255-i)
+      {
+         g<=glyphs.nextFree;
+         // ---- determine size of char, returns glyph bearing and bitmap extents in "g"
+         ft2.loadChar(g, i);
+         //print "glyph["+i+"] width="+g.width+" height="+g.height;
+         if(g.width)
+         {
+            // ---- convert glyph to bitmap (and copy it to the given texture)
+            Texture t<=tex_current;
+            boolean b_render=true;
+            if(!t)
+            {
+               // ---- begin first Texture
+               t<=newTexture();
+            }
+            // ---- check whether glyph fits into current texture
+            if((tex_cursor_x+g.width)>=(rtexsize-1))
+            {
+               if(g.width>=(rtexsize-1))
+               {
+                  trace "[---] FT2Face::loadFace: glyph("+i+") width("+g.width+") exceeds texture width ("+rtexsize+".";
+                  b_render=false;
+               }
+               else
+               {
+                  tex_cursor_y+=tex_cursor_line_max_y+1;
+                  tex_cursor_x=1; // plus border for texfilter
+                  tex_cursor_line_max_y=-1;
+               }
+            }
+            if((tex_cursor_y+g.height)>=(rtexsize-1))
+            {
+               if(g.height>=(rtexsize-1))
+               {
+                  trace "[---] FT2Face::loadFace: glyph("+i+") height("+g.height+") exceeds texture height ("+rtexsize+".";
+                  b_render=false;
+               }
+               t<=newTexture();
+            }
+            if(b_render)
+            {
+               if(g.height>tex_cursor_line_max_y)
+                  tex_cursor_line_max_y=g.height;
+               g.init(tex_cursor_x, tex_cursor_y, t);
+               ////Texture window; window.setScreenArea(t, ivector(tex_cursor_x, tex_cursor_y), ivector(g.width, g.height));
+               Texture window; window.setScreenArea(t, tex_cursor_x, tex_cursor_y, g.width, g.height);
+               //print "screen area set tex_cursor_x="+tex_cursor_x+" tex_cursor_y="+tex_cursor_y+" width="+g.width+" height="+g.height;
+               ft2.renderGlyph(window);
+               //print "render glyph finished"; 
+               tex_cursor_x+=g.width+2;
+            }
+         }
+         i++;
+      }
+      // ---- normalize texture coordinates
+      foreach g in glyphs
+      {
+         g.normalizeTexCoords(rtexsize);
+      }
+
+      // ---- Store the advancex fields of glyphs 0..255 
+      ft2.storeGlyphsAdvanceX(glyphs_advancex);
+
+      trace "[...] FT2Face::loadFace(): OK. The bitmap glyphs use "+num_textures+" texture(s).";
+
+      // ---- Delete native ft2 object and associated glyph info, bitmap resources..
+      ft2<=new NativeFT2Face(); 
+
+      return true;
+   }
+
+   // ----
+   // ---- Set up a text-friendly OpenGL state 
+   // ----
+   public method initOpenGLState() {
+	    glDisable(GL_LIGHTING);
+	    glEnable(GL_TEXTURE_2D);
+  	    glEnable(GL_BLEND);
+	    glDisable(GL_CULL_FACE);
+	    glDisable(GL_DEPTH_TEST);
+	    glDisable(GL_ALPHA_TEST);
+	    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+   }
+
+   // ----
+   // ---- Upload the textures associated with this font face
+   // ----
+   public method uploadTextures() {
+      ListNode l;
+      Texture t;
+      foreach l in textures 
+      {
+         t<=l.objectValue;
+         t.unload();
+         t.upload();
+      }
+   }
+
+   // ----
+   // ---- Render the given String to the current OpenGL viewport.
+   // ---- The GL state should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test, set color etc..)
+   // ----
+   public method writeGL(String _text, float _x, float _y) compile {
+      ////print "writeGL("+_text+", _x="+_x+" _y="+_y+") glyphs.numElements="+glyphs.numElements;
+      if((_text!=null)&&(glyphs.numElements>0)) 
+      {
+         Texture ctex<=null;
+         float cx=_x, cy=_y+ascender, lsx=_x;
+         int texti=0;
+         glBegin(GL_QUADS);
+         loop(_text.length)
+         {
+            char c=_text[texti++];
+            if(c)
+            {
+               if(c=='\n')
+               {
+                  cx=lsx;
+                  cy+=height; // ---- should be line_gap??
+               }
+               else
+                  if(c<' ')
+                     c='.';
+               FT2Glyph g<=glyphs[c];
+               if(g.width) // ---- in use??
+               {
+                  if(g.texture!=ctex)
+                  {
+                     glEnd();
+                     ctex<=g.texture;
+                     ctex.bind();
+                     glBegin(GL_QUADS);
+                  }
+                  // ---- offsety is distance from baseline to first scanline of glyph (up is positive)
+                  float tx=cx+g.offsetx, ty=cy-g.offsety;
+                  glTexCoord2f ( g.ltu,      g.ltv       );
+                  glVertex2f   ( tx,         ty          ); 
+                  glTexCoord2f ( g.rtu,      g.rtv       );
+                  glVertex2f   ( tx+g.width+1, ty          );
+                  glTexCoord2f ( g.rbu,      g.rbv       );
+                  glVertex2f   ( tx+g.width+1, ty+g.height+1 );
+                  glTexCoord2f ( g.lbu,      g.lbv       );
+                  glVertex2f   ( tx,         ty+g.height+1 );
+               }
+               cx+=g.advancex;
+            }
+         }
+         glEnd();
+      }
+   }
+
+   // ----
+   // ---- Render the given String to the current OpenGL viewport.
+   // ---- The GL state should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test, set color etc..)
+   // ----
+   public method writeClippedGL(String _text, float _x, float _y, float _clipX, float _clipY) compile {
+      ///print "writeClippedGL("+_text+", _x="+_x+" _y="+_y+") glyphs.numElements="+glyphs.numElements;
+      if((_text!=null)&&(glyphs.numElements>0)) 
+      {
+         Texture ctex<=null;
+         float cx=_x, cy=_y+ascender, lsx=_x;
+         int texti=0;
+         glBegin(GL_QUADS);
+         loop(_text.length)
+         {
+            char c=_text[texti++];
+            if(c)
+            {
+               if(c=='\n')
+               {
+                  cx=lsx;
+                  cy+=height; // ---- should be line_gap??
+               }
+               else
+                  if(c<' ')
+                     c='.';
+               FT2Glyph g<=glyphs[c];
+               if(g.width) // ---- in use??
+               {
+                  if(g.texture!=ctex)
+                  {
+                     glEnd();
+                     ctex<=g.texture;
+                     ctex.bind();
+                     glBegin(GL_QUADS);
+                  }
+                  // ---- offsety is distance from baseline to first scanline of glyph (up is positive)
+                  float tx=cx+g.offsetx, ty=cy-g.offsety;
+                  if( ((tx+g.width)<_clipX) && ((ty+g.height)<_clipY) )
+                  {
+                     glTexCoord2f ( g.ltu,      g.ltv       );
+                     glVertex2f   ( tx,         ty          ); 
+                     glTexCoord2f ( g.rtu,      g.rtv       );
+                     glVertex2f   ( tx+g.width+1, ty          );
+                     glTexCoord2f ( g.rbu,      g.rbv       );
+                     glVertex2f   ( tx+g.width+1, ty+g.height+1 );
+                     glTexCoord2f ( g.lbu,      g.lbv       );
+                     glVertex2f   ( tx,         ty+g.height+1 );
+                  }
+               }
+               cx+=g.advancex;
+            }
+         }
+         glEnd();
+      }
+   }
+
+
+   // ----
+   // ---- Render the underlines for the given String to the current OpenGL viewport.
+   // ---- The GL state should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test, set color etc..)
+   // ----
+   public method writeUnderlinesGL(String _text, float _x, float _y) compile {
+      if(_text)
+      {
+         float cx=_x, cy=_y+ascender, lsx=_x, uly=underline_position, ult=underline_thickness;
+         if(ult<1.0)ult=1.0;
+         int texti=0;
+         glBegin(GL_QUADS);
+         loop(_text.length)
+         {
+            char c=_text[texti++];
+            if(c)
+            {
+               if(c=='\n')
+               {
+                  if(cx!=lsx)
+                  {
+                     glVertex2f(lsx, cy-uly);
+                     glVertex2f(cx,  cy-uly);
+                     glVertex2f(cx,  cy-uly-ult);
+                     glVertex2f(lsx, cy-uly-ult);
+                  }
+                  cx=lsx;
+                  cy+=height; // ---- should be line_gap??
+               }
+               else
+                  if(c<' ')
+                     c='.';
+               FT2Glyph g<=glyphs[c];
+               cx+=g.advancex;
+            }
+         }
+         if(cx!=lsx)
+         {
+            glVertex2f(lsx, cy-uly);
+            glVertex2f(cx,  cy-uly);
+            glVertex2f(cx,  cy-uly-ult);
+            glVertex2f(lsx, cy-uly-ult);
+         }
+         glEnd();
+      }
+   }
+
+}
+
+
+

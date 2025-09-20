@@ -1,0 +1,305 @@
+
+// 13Jan2008, 22Jan2023
+
+use tksdl;
+use tkopengl;
+use tkfreetype2;
+
+// float frot=0;
+int numframesrendered=0;
+
+// adaptive ysize für font pages..
+
+#define FONT_TEX_PAGE_SIZE 128
+
+#define SINE_VARSPEEDX 0.004
+#define SINE_STATICSPEEDX 0.0005
+
+PointerArray font_names<=[
+   "fonts/verdana.ttf"
+// //    "fonts/timmonsbi.ttf",
+//     "fonts/FreeSerif.ttf",
+// //    "fonts/ariosob.ttf",
+// //    "fonts/comic.ttf",
+// //    "fonts/ariosor.ttf",
+// //    "fonts/verdana.ttf",
+//     "fonts/FreeSans.ttf",
+// //    "fonts/helmetbi.ttf",
+// //    "fonts/helmetcb.ttf",
+// //    "fonts/helmetci.ttf",
+// //    "fonts/helmetcr.ttf",
+// //    "fonts/chevaraor.ttf",
+// //    "fonts/starmath.ttf",
+// //    "fonts/bordersprite.ttf",
+//     "fonts/FreeSerifItalic.ttf",
+// //    "fonts/congab.ttf",
+// //    "fonts/congar.ttf",
+// //    "fonts/helmetb.ttf",
+// //    "fonts/helmeti.ttf",
+// //    "fonts/helmetr.ttf",
+//    "fonts/FreeMono.ttf",
+// //    "fonts/timmonsb.ttf",
+// //    "fonts/timmonsi.ttf",
+//     "fonts/FreeSerifBold.ttf",
+// //    "fonts/timmonsr.ttf",
+// //    "fonts/cour.ttf",
+// //    "fonts/helmetcbi.ttf",
+//     "fonts/FreeSerifBoldItalic.ttf",
+//     "fonts/FreeMonoBold.ttf",
+// //    "fonts/chevarar.ttf",
+//    "fonts/FreeMonoOblique.ttf",
+// //    "fonts/georgia.ttf",
+//     "fonts/FreeMonoBoldOblique.ttf",
+// //    "fonts/starbats.ttf",
+//     "fonts/Syntax_t.ttf",
+//     "fonts/FreeSansBold.ttf",
+//     "fonts/FreeSansOblique.ttf",
+//     "fonts/FreeSansBoldOblique.ttf",
+//    "fonts/Frankieghost.ttf"
+
+   ]; //"verdana", "Syntax_t", "cour", "Frankieghost", "bordersprite", "comic", "georgia"
+int font_sizes[]<=[6, 8,10,12,14,16,17,18,20,22,24,26,28,32,36,48,64,72];
+int current_font_index=0;
+
+//String s_hello="hello, world. one two three four";
+String s_hello="FRANZ JAGT IM KOMPLETT VERWAHRLOSTEN TAXI QUER DURCH BAYERN; schon wirbeln joviale polypen faden exakt quer zum bug _.;:-~+=*\\/\'\"0123456789@!?#$%()[]{}<>^";
+// String s_hello="thequickbrownfoxjumpsoverthelazydog";
+//String s_hello="thequickbrownfoxjumpsoverthelazydog-=-THEQUICKBROWNFOXJUMPSOVERTHELAZYDOG-=-0123456789!`\"\'#*";
+//String s_hello=":O)__";
+
+class MovingLine {
+   float speedx;
+   float anglex;
+   float offy;
+
+   float string_width;
+
+   MovingLine() {
+      speedx=0.0;
+      anglex=0.0;
+      offy=0.0;
+   }
+
+   public method draw(float _dt, FT2Face _face) compile {
+      float offx;
+      float sw=_face.stringWidth(s_hello);
+      float sv=sin(anglex);
+      offx=(sv*0.5+0.5)*(Viewport.width-sw);
+      if(_face.getUnderlineThickness()<1.0)
+         glColor4f(0.1,0.1,0.8,_face.getUnderlineThickness());
+      else
+         glColor4f(0.1,0.1,0.8,1);
+      glDisable(GL_TEXTURE_2D);
+      _face.writeUnderlinesGL(s_hello, offx, offy);
+      glColor4f(0.05,0.05,0.05,1);
+      glEnable(GL_TEXTURE_2D);
+      _face.writeGL(s_hello, offx, offy);
+      anglex+=speedx*_dt*sqrt(_face.getHeight());
+      while(anglex>=2PI)anglex-=2PI;
+   }
+}
+
+
+FT2Face *ft2face;
+FT2Face ft2_faces[];
+
+MovingLine moving_lines[]; moving_lines.alloc(font_sizes.numElements);
+
+
+function InitLines() {
+   int cy = 0;
+   int i = 0;
+   moving_lines.numElements=0;
+   float f=1.0, fstep=1.0/font_sizes.numElements;
+   loop(font_sizes.numElements)
+   {
+      FT2Face cf <= ft2_faces[i++];
+      MovingLine ml <= moving_lines.nextFree;
+      ml.speedx = f*SINE_VARSPEEDX+SINE_STATICSPEEDX;
+      ml.offy = cy;
+      cy += cf.getHeight();
+      f -= fstep;
+   }
+}
+
+function LoadFont(int _index) {
+   b_filter=true;
+
+   String cname <= font_names[_index];
+   int csize;
+   ft2_faces.free();
+   ft2_faces.alloc(font_sizes.numElements);
+   int i=0;
+   print "load font \""+cname+"\"";
+   int total_texbytesize=0;
+   dtrace false;
+   loop(font_sizes.numElements)
+   {
+      csize = font_sizes[i];
+      FT2Face cface <= ft2_faces[i++];
+      trace "   load font size "+csize;
+      if(!cface.openPakFile(cname, csize, 0, FONT_TEX_PAGE_SIZE)) // openLocalFile()
+      {
+         stderr "face[\""+cname+"\"]."+csize+" loading failed.";
+         die "cu";
+      }
+      else
+      {
+
+         total_texbytesize+=cface.getTextureByteSize();
+
+         String sz=(cface.getTextureByteSize()>>10)+" KB ("+(total_texbytesize>>10)+" KB total)";
+         trace   "   font.textureByteSize="+sz;
+         String shortname=cname; shortname.abbrev(14);
+
+         Viewport.caption="Font:"+cface.getFamilyName()+ " " + cface.getStyleName()+" ("+cface.getStyleFlagsString()+") ("+shortname+") "+sz;
+      }
+   }
+   dtrace true;
+}
+
+function SetCurrentFont(int _i) {
+   if(font_names.numElements)
+   {
+      if(_i<0)
+         while(_i<0)
+            _i+=font_names.numElements;
+      else
+         if(_i>=font_names.numElements)
+            while(_i>=font_names.numElements)
+               _i-=font_names.numElements;
+      current_font_index=_i;
+      LoadFont(current_font_index);
+      InitLines();
+      Viewport.needRedraw();
+   }
+}
+
+boolean b_filter=true;
+function SetTextureFilter(boolean _b) {
+   int i=0;
+   loop(font_sizes.numElements)
+      {
+         FT2Face fc<=ft2_faces[i++];
+         fc.setEnableTextureFilter(_b);
+         fc.uploadTextures();
+      }
+}
+
+// ft2face.loadFromLocalFile("verdana.ttf", 16, 0, FONT_TEX_PAGE_SIZE);
+// //ft2face.loadFromLocalFile("syntax_t.ttf", 0, 0, 256);
+// //ft2face.loadFromLocalFile("cur.ttf", 0, 0, 256);
+// //ft2face.loadFromLocalFile("bordersprite.ttf", 0, 0, 256);
+// //ft2face.loadFromLocalFile("comic.ttf", 0, 0, 256);
+// //ft2face.loadFromLocalFile("georgia.ttf", 24, 24, 256);
+
+// Texture t<=ft2face.getTexture(0);
+// t.saveImage("t.png");
+
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case 'f':
+         b_filter=!b_filter;
+         print "texture filtering set to "+b_filter;
+         SetTextureFilter(b_filter);
+         Viewport.needRedraw();
+         break;
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+      case VKEY_DOWN:
+         SetCurrentFont(current_font_index-1);
+         break;
+      case VKEY_UP:
+         SetCurrentFont(current_font_index+1);
+         break;
+   }
+}
+
+function onDraw() compile {
+   float dt=FPS.precision;
+   glClearColor(0.85,0.85,0.85,1);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+   glDisable(GL_ALPHA_TEST);
+   glDisable(GL_CULL_FACE);
+
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+   glEnable(GL_ALPHA_TEST);
+   glAlphaFunc(GL_GREATER, 0.0);
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+   zglInit2D(Viewport.width, Viewport.height);
+
+//    if(false)
+// 	{
+//       Texture t<=ft2face.getTexture(0);
+//       if(t)
+// 		{
+//          t.bind();
+//          glBegin(GL_QUADS);
+//          glTexCoord2f(0,0);
+//          glVertex2f(200,200);
+//          glTexCoord2f(1,0);
+//          glVertex2f(200+FONT_TEX_PAGE_SIZE,200);
+//          glTexCoord2f(1,1);
+//          glVertex2f(200+FONT_TEX_PAGE_SIZE,200+FONT_TEX_PAGE_SIZE);
+//          glTexCoord2f(0,1);
+//          glVertex2f(200,200+FONT_TEX_PAGE_SIZE);
+//          glEnd();
+// 		}
+// 	}
+
+
+//     ft2face.writeGL("hello, world.", 100, 100);
+   int i=0;
+   loop(font_sizes.numElements)
+      {
+         FT2Face cf<=ft2_faces[i];
+         MovingLine ml<=moving_lines[i++];
+         ml.draw(dt, cf);
+      }
+//     frot+=dt;
+//     wrap frot 0 360;
+}
+
+function onReopen() {
+   SetTextureFilter(b_filter);
+   print "onReopen: Viewport.width="+Viewport.width+" Viewport.height="+Viewport.height;
+}
+
+function onExpose() {
+   Viewport.needRedraw();
+}
+
+function onApplicationActive(int _b) {
+   if(_b)
+      Viewport.needRedraw();
+}
+
+function onMouseFocusActive(int _b) {
+   print "onMouseFocusActive("+_b+")";
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   Viewport.needRedraw();
+}
+
+function main() {
+
+   Viewport.openWindow(800, 516); //800, 600
+   SDL.redrawFlag=REDRAW_DIRTY;
+
+   LoadFont(current_font_index);
+   InitLines();
+
+   use callbacks;
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=20;
+   onReopen();
+   Viewport.needRedraw();
+   SDL.eventLoop();
+}
