@@ -1,0 +1,1086 @@
+// ----
+// ---- file   : WavIO.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2009-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : written based on the WAV documentation at
+// ----            <http://www-mmsp.ece.mcgill.ca/Documents/AudioFormats/WAVE/WAVE.html>
+// ----            <http://web.archive.org/web/20080113195252/http://www.borg.com/~jglatt/tech/wave.htm>
+// ----            <http://home.roadrunner.com/~jgglatt/tech/wave.htm>
+// ----            <http://www.piclist.com/techref/io/serial/midi/wave.html>
+// ----
+// ---- created: 22Sep2009
+// ---- changed: 26Dec2009, 16Jul2010, 17Jul2010, 19Jul2010, 20Dec2012, 09Aug2016, 07Dec2018
+// ----          21Jul2019, 16Aug2020, 26Sep2022, 24Mar2023, 25Mar2023, 16Sep2023
+// ----
+// ----
+// ----
+
+module MWavIO;
+
+use tksampler;
+
+/*
+     typedef struct {
+       DWORD ckID;          // (broadcastextension)ckID=bext.
+       DWORD ckSize;        // size of extension chunk (note: 0x5c 04 00 00 => 0x0000045C = 1116)
+       BYTE ckData[ckSize]; // data of the chunk
+     }
+     typedef struct broadcast_audio_extension {
+       CHAR Description[256];        // ASCII : «Description of the sound sequence»
+       CHAR Originator[32];          // ASCII : «Name of the originator»
+       CHAR OriginatorReference[32]; // ASCII : «Reference of the originator»
+       CHAR OriginationDate[10];     // ASCII : «yyyy:mm:dd»
+       CHAR OriginationTime[8];      // ASCII : «hh:mm:ss»
+       DWORD TimeReferenceLow;       // First sample count since midnight, low word
+       DWORD TimeReferenceHigh;      // First sample count since midnight, high word
+       WORD Version; // Version of the BWF; unsigned binary number
+       BYTE UMID_0 // Binary byte 0 of SMPTE UMID
+       ....
+       BYTE UMID_63 // Binary byte 63 of SMPTE UMID
+       WORD LoudnessValue; // WORD : «Integrated Loudness Value of the file in LUFS (multiplied by 100) »
+       WORD LoudnessRange; // WORD : «Loudness Range of the file in LU (multiplied by 100) »
+       WORD MaxTruePeakLevel; // WORD : «Maximum True Peak Level of the file expressed as dBTP (multiplied by 100) »
+       WORD MaxMomentaryLoudness; // WORD : «Highest value of the Momentary Loudness Level of the file in LUFS (multiplied by 100) »
+       WORD MaxShortTermLoudness; // WORD : «Highest value of the Short-Term Loudness Level of the file in LUFS (multiplied by 100) »
+       BYTE Reserved[180]; // 180 bytes, reserved for future use, set to NULL
+       CHAR CodingHistory[]; // ASCII : « History coding »
+     } BROADCAST_EXT
+*/
+class WavIO_BWF {
+   String description;       // up to 256 chars
+   String originator;        // e.g. "TASCAM PCM Recoder DR-05X", up to 32 bytes
+   String originator_ref;    // up to 32 bytes
+   String origination_date;  // e.g. "2023-03-24", up to 10 bytes (not including ASCIIZ)
+   String origination_time;  // e.g. "12:17:09", up to 8 bytes (not including ASCIIZ)
+   // (todo) add remaining (version dependent) fields
+
+   public method reset() {
+      description.empty();
+      originator.empty();
+      originator_ref.empty();
+      origination_date.empty();
+      origination_time.empty();
+   }
+
+   protected static ReadString(Stream ifs, String s, int maxChars) {
+      s.alloc(maxChars+1);
+      int i = 0;
+      loop(maxChars)
+         s[i++] = ifs.u8;
+      s[i] = 0;
+      s.fixLength();
+      s.trim();
+   }
+
+   public method readDescription(Stream ifs) {
+      ReadString(ifs, description, 256);
+   }
+
+   public method readOriginator(Stream ifs) {
+      ReadString(ifs, originator, 32);
+   }
+
+   public method readOriginatorRef(Stream ifs) {
+      ReadString(ifs, originator_ref, 32);
+   }
+
+   public method readOriginationDate(Stream ifs) {
+      ReadString(ifs, origination_date, 10);
+   }
+
+   public method readOriginationTime(Stream ifs) {
+      ReadString(ifs, origination_time, 8);
+   }
+
+}
+
+
+/* 'cue ' chunk
+chunk ID               4        0x00  The ASCII character string "cue " (note the space)
+size                   4        0x04  The size of the cue chunk (number of bytes) less 8 (less the "chunk ID" and the "size")
+number of cue points   4        0x08  The number of cue points in the list of cue points that follows
+data                   various  0x0C  A list of cue points. Each cue point uses 24 bytes of data
+
+24 bytes per cue point:
+ID             4  0x00  A unique number for the point used by other chunks to identify the cue point. 
+                         For example, a playlist chunk creates a playlist by referring to cue points, 
+                         which themselves define points somewhere in the file
+position       4  0x04  If there is no playlist chunk, this value is zero. 
+                         If there is a playlist chunk, this value is the sample at which the cue point should occur
+data chunk ID  4  0x08  Either "data" or "slnt" depending on whether the cue occurs in a data chunk or in a silent chunk
+chunk start    4  0x0C  The position of the start of the data chunk that contains the cue point. 
+                         If there is a wave list chunk, this value is the byte position of the chunk that contains the cue. 
+                         If there is no wave list chunk, there is only one data chunk in the file and this value is zero
+block start    4  0x10  The byte position of the cue in the "data" or "slnt" chunk. 
+                         If this is an uncompressed PCM file, this is counted from the beginning of the chunk's data. 
+                         If this is a compressed file, the byte position can be counted from the last byte from which 
+                         one can start decompressing to find the cue
+sample start   4  0x14  The position of the cue in number of bytes from the start of the block (EDIT: number of _frames_ not bytes, at least that's what a Zoom H4N Pro writes)
+*/
+
+class WavIO_FMT {
+   // 18 bytes (0x12)
+   short  format_tag;            // 1 for integer PCM, 3 for float. also see FMT_xxx defines below.
+   short  num_ch;
+   int    sample_rate;
+   int    avg_bytes_per_sec;  // mainly for compressed formats?
+   short  block_align;
+   short  sample_bits;           // 8, 16, 32, ..
+   short  ext_size;           // 18 bytes for Akai, see hexdumps below
+
+   // (note) the strange first-word-aligned-right coding style is reserved for "C" structs written in stone .)
+}
+
+class WavIO_SMPL_LOOP { // (note) not to be confused with the 'loop' smpl sampler_data extension (Akai?)
+   // 24 bytes (0x18)
+   int identifier;      //  a unique number that may correspond with the dwIdentifier field of some cuepoint stored in the cue chunk
+   int type;            // 0=normal, 1=alternating, 2=backward, 3..31 reserved, 32-? manufacturer defined
+   int start;           // sample offset (_not_ byteoffset!)
+   int end;             // sample offset (_not_ byteoffset!)
+   int fraction;        // fine-tuning for loop fractional areas between samples. Values range from 0x00000000 to 0xFFFFFFFF. A value of 0x80000000 represents 1/2 of a sample length.
+   int  playcount;      // 0=infinite loop
+}
+
+class WavIO_SMPL {
+   // 36 + (num_sample_loops*24) + sampler_data bytes
+   int manufacturer;                 // high-byte denotes number of used low-bytes.
+                                     //  0x01000047 is Akai, for example. see <http://www.midi.org/techspecs/manid.php>
+   int product;
+   int sample_period;
+   int midi_unity_note;
+   int midi_pitch_fraction;
+   int smpte_format;
+   int smpte_offset;
+   int num_sample_loops;
+   int sampler_data;            // #extended bytes (after this chunk)
+
+   WavIO_SMPL_LOOP loops[]; // WavIO_SMPL_LOOP data
+
+   // extended sampler_data: manufacturer=0x47 (Akai), sampler_data=0x12, offset=0x5E, actual #bytes until next chunk: (0x88-0x5e)=0x2A
+   //
+   //  A: (MXR woodblock.wav, 4310 samples, 16bit, mono, 0 loops)
+   //   000058                    6c 6f  ......lo
+   //   000060  6f 70 00 00 00 00 fe ff  op....þÿ
+   //   000068  ff ff c7 10 00 00 00 00  ÿÿÇ.....
+   //   000070  00 00 00 00 00 00 02 00  ........
+   //   000078  3c 00 00 00 01 00 00 01  <.......
+   //   000080  ff ff ff ff d6 10 00 00  ÿÿÿÿÖ...
+   //
+   //  B: (MW Spike Bass.wav, 25121 samples, 16bit, mono, 0 loops)
+   //   000058  00 00 12 00 00 00 6c 6f  ......lo
+   //   000060  6f 70 00 00 00 00 ff ff  op....ÿÿ
+   //   000068  ff ff 12 62 00 00 00 00  ÿÿ.b....
+   //   000070  00 00 00 00 00 00 02 00  ........
+   //   000078  2d 00 00 00 00 00 00 01  -.......
+   //   000080  00 00 00 00 21 62 00 00  ....!b..
+   //
+   //  C: (Morning G1 Loop.wav, 392306 samples, 16bit, mono, 1 loop)
+   //   000058  00 00 12 00 00 00 6c 6f  ......lo
+   //   000060  6f 70 00 00 00 00 ef 18  op....ï.
+   //   000068  04 00 61 fc 05 00 00 00  ..aü....
+   //   000070  00 00 00 00 00 00 02 00  ........
+   //   000078  2b 00 00 00 02 00 00 01  +.......
+   //   000080  00 00 00 00 71 fc 05 00  ....qü..
+   //
+   // Extended Akai 'loop' sampler_data:
+   //
+   //   offset  size info
+   //      0    4    'loop'
+   //      4    4    <unknown>
+   //                 (00 00 00 00)
+   //      8    4    <unknown>
+   //                 (fe ff ff ff)
+   //                 (seems to be a 2s complement integer)
+   //     12    2    <unknown>
+   //                 (c7 10)
+   //     14    4    <unknown>
+   //                 (00 00 00 00)
+   //     18    6    <unknown>
+   //                 (00 00 00 00 00 00)
+   //     24    2    <unknown>
+   //                 (02 00)
+   //     26    2    MIDI base note?
+   //                 (3c 00)
+   //     28    2    <unknown>
+   //                 (00 00)
+   //     30    2    <unknown>
+   //                 (01 00)
+   //     32    2    <unknown>
+   //                 (00 01)
+   //     34    4    <unknown>
+   //                 (ff ff ff ff)
+   //                 (seems to be a 2s complement integer)
+   //     38    2    <unknown>
+   //                 (D6 10)
+   //     40    2    <unknown>
+   //                 (00 00)
+   //     42 (length)
+
+}
+
+
+class WavIO {
+
+   static boolean b_debug = true;
+
+   define int MAGIC_RIFF  = 0x46464952; // 'RIFF'
+   define int MAGIC_WAVE  = 0x45564157; // 'WAVE'
+   define int MAGIC_BEXT  = 0x74786562; // 'bext'  // broadcast wave format extension (BWF)
+   define int MAGIC_FMT   = 0x20746d66; // 'fmt '
+   define int MAGIC_FACT  = 0x74636166; // 'fact'
+   define int MAGIC_SMPL  = 0x6c706d73; // 'smpl'
+   define int MAGIC_LOOP  = 0x706f6f6c; // 'loop'
+   define int MAGIC_DATA  = 0x61746164; // 'data'
+   define int MAGIC_CUE   = 0x20657563; // 'cue '
+   // (note) unsupported chunks: 'wavl', 'inst', 'note', 'list', 'plst', 'labl', 'ltxt'
+
+   define int FMT_PCM                   = 0x0001;
+   define int FMT_MS_ADPCM              = 0x0002;
+   define int FMT_IEEE_FLOAT            = 0x0003;
+   define int FMT_IBM_CVSD              = 0x0005;
+   define int FMT_ALAW                  = 0x0006;
+   define int FMT_MULAW                 = 0x0007;
+   define int FMT_OKI_ADPCM             = 0x0010;
+   define int FMT_DVI_IMA_ADPCM         = 0x0011;
+   define int FMT_MEDIASPACE_ADPCM      = 0x0012;
+   define int FMT_SIERRA_ADPCM          = 0x0013;
+   define int FMT_G723_ADPCM            = 0x0014;
+   define int FMT_DIGISTD               = 0x0015;
+   define int FMT_DIGIFIX               = 0x0016;
+   define int FMT_DIALOGIC_OKI_ADPCM    = 0x0017;
+   define int FMT_YAMAHA_ADPCM          = 0x0020;
+   define int FMT_SONARC                = 0x0021;
+   define int FMT_DSPGROUP_TRUESPEECH   = 0x0022;
+   define int FMT_ECHOSC1               = 0x0023;
+   define int FMT_AUDIOFILE_AF36        = 0x0024;
+   define int FMT_APTX                  = 0x0025;
+   define int FMT_AUDIOFILE_AF10        = 0x0026;
+   define int FMT_DOLBY_AC2             = 0x0030;
+   define int FMT_GSM610                = 0x0031;
+   define int FMT_ANTEX_ADPCME          = 0x0033;
+   define int FMT_CONTROL_RES_VQLPC     = 0x0034;
+   define int FMT_CONTROL_RES_VQLPC     = 0x0035;
+   define int FMT_DIGIADPCM             = 0x0036;
+   define int FMT_CONTROL_RES_CR10      = 0x0037;
+   define int FMT_NMS_VBXADPCM          = 0x0038;
+   define int FMT_CS_IMAADPCM           = 0x0039;
+   define int FMT_G721_ADPCM            = 0x0040;
+   define int FMT_MPEG                  = 0x0050;
+   define int FMT_XBOX_ADPCM            = 0x0069;
+   define int FMT_CREATIVE_ADPCM        = 0x0200;
+   define int FMT_CREATIVE_FASTSPEECH8  = 0x0202;
+   define int FMT_CREATIVE_FASTSPEECH10 = 0x0203;
+   define int FMT_FM_TOWNS_SND          = 0x0300;
+   define int FMT_OLIGSM                = 0x1000;
+   define int FMT_OLIADPCM              = 0x1001;
+   define int FMT_OLICELP               = 0x1002;
+   define int FMT_OLISBC                = 0x1003;
+   define int FMT_OLIOPR                = 0x1004;
+
+   define exception Fail : UncriticalError;
+
+   public static WavIO_FMT  *fmt;  // reset to null before loading a file
+   public static WavIO_SMPL *smpl; // reset to null before loading a file, may contain extended sampler (loop) information after loading.
+
+   protected static WriteString(Stream ofs, String s, int numChars) {
+      int i = 0;
+      if(null != s)
+      {
+         loop(numChars)
+            ofs.i8 = s.getc(i++);  // char or 0
+      }
+      else
+      {
+         loop(numChars)
+            ofs.i8 = 0;
+      }
+   }
+
+   protected static GetChunkNameFromInt(int _i) : String {
+      // _i is little-endian 32bit integer
+      char d = (_i >> 24) & 255;
+      char c = (_i >> 16) & 255;
+      char b = (_i >>  8) & 255;
+      char a = (_i      ) & 255;
+      String t;
+      t.realloc(5);
+      t[0] = a;
+      t[1] = b;
+      t[2] = c;
+      t[3] = d;
+      t[4] = 0;
+      t.fixLength(); // xxx hackish..
+      return t;
+   }
+
+   protected static GetFmtNameFromInt(int _i) : String {
+      return TKS.scriptClassConstantToString(#(_i), WavIO, "FMT_");
+   }
+
+   protected static GetFourCCHexStringFromInt(int _i) : String {
+      // _i is little-endian 32bit integer
+      char d = (_i >> 24) & 255;
+      char c = (_i >> 16) & 255;
+      char b = (_i >>  8) & 255;
+      char a = (_i      ) & 255;
+      Integer io;
+      String t;
+      t.empty();
+
+      io = a;
+      t.append(io.printf("%02x "));
+
+      io = b;
+      t.append(io.printf("%02x "));
+
+      io = c;
+      t.append(io.printf("%02x "));
+
+      io = d;
+      t.append(io.printf("%02x"));
+
+      return t;
+   }
+
+   protected static ReadDATA(Stream     ifs,
+                             int        chunkSz,
+                             FloatArray d
+                             ) {
+
+      if!([FMT_PCM, FMT_IEEE_FLOAT].contains(fmt.format_tag))
+      {
+         throw Fail("LoadStream: unsupported format (have="+GetFmtNameFromInt(fmt.format_tag)+"("+fmt.format_tag+")"+
+                    " expected "+GetFmtNameFromInt(FMT_PCM)+" or "+GetFmtNameFromInt(FMT_IEEE_FLOAT)+")"
+                    );
+      }
+
+      if!([8, 16, 24, 32].contains(fmt.sample_bits))
+      {
+         throw Fail("LoadStream: unsupported #bits (have="+fmt.sample_bits+" expect=8, 16, 24, or 32)");
+      }
+
+      if!([1, 2].contains(fmt.num_ch))
+      {
+         throw Fail("LoadStream: unsupported #channels (have="+fmt.num_ch+" expect=[1, 2])");
+      }
+
+      int smpLen = chunkSz / fmt.block_align;
+      d.alloc(smpLen * fmt.num_ch);
+      float s;
+      float smp;
+      int smpi;
+      d.numElements = 0;
+
+      // Load sampledata and expand to -1..1 32bit floating point
+
+      float t = 0.0f;
+
+      if(32 == fmt.sample_bits)
+      {
+         if(FMT_IEEE_FLOAT != fmt.format_tag)
+         {
+            throw Fail("LoadStream: cannot handle 32 bit integer sample format");
+         }
+         // Load 32-bit IEEE float samples
+         d.loadFromStreamFloat32(ifs, smpLen*fmt.num_ch);
+      }
+      else if(24 == fmt.sample_bits)
+      {
+         // Load 24-bit sample (signed integers)
+         d.loadFromStreamSigned24(ifs, smpLen*fmt.num_ch);
+      }
+      else if(16 == fmt.sample_bits)
+      {
+         // Load 16-bit sample (signed integers)
+         d.loadFromStreamSigned16(ifs, smpLen*fmt.num_ch);
+      }
+      else
+      {
+         // Load 8-bit sample (unsigned integers)
+         d.loadFromStreamUnsigned8(ifs, smpLen*fmt.num_ch);
+      }
+
+      return true;
+   }
+
+   protected static ReadSMPL(Stream ifs, int chunkSz, WavIO_SMPL smpl, StSample _sampleHint, Integer _retSampleRate) {
+      int startOff = ifs.offset;
+
+      smpl.manufacturer        = ifs.i32;
+      smpl.product             = ifs.i32;
+      smpl.sample_period       = ifs.i32;
+      smpl.midi_unity_note     = ifs.i32;
+      smpl.midi_pitch_fraction = ifs.i32;
+      smpl.smpte_format        = ifs.i32;
+      smpl.smpte_offset        = ifs.i32;
+      smpl.num_sample_loops    = ifs.i32;
+      smpl.sampler_data        = ifs.i32;
+
+      // trace "xxx ReadSMPL: sampleHint="+#(_sampleHint);
+
+      if(null != _sampleHint)
+      {
+         StWaveform wf <= _sampleHint.waveform;
+         // trace "xxx ReadSMPL: wfHint="+#(wf);
+         if(null != wf)
+         {
+            wf.sampleRate    = smpl.sample_period;
+            _retSampleRate = wf.sampleRate;
+
+            int midiNote = smpl.midi_unity_note;
+            if(midiNote < 0)
+               midiNote = 60;
+            else if(midiNote > 100)
+               midiNote = 60;
+            wf.baseFrequency = ( ((440.0f/32.0f)*exp( ((midiNote-9.0)/12.0)*log(2.0) )) );
+            if(b_debug) trace "[dbg] WavIO::ReadSMPL: wf.baseFrequency="+wf.baseFrequency;
+            // (todo) convert pitch fraction..
+         }
+      }
+
+      if(b_debug)
+      {
+         trace "[dbg]    smpl.manufacturer                = " + GetFourCCHexStringFromInt(smpl.manufacturer) ;
+         trace "[dbg]    smpl.     product                = " + GetFourCCHexStringFromInt(smpl.product)      ;
+         trace "[dbg]    smpl.      sample_period         = " + smpl. sample_period                          ;
+         trace "[dbg]    smpl.        midi_unity_note     = " + smpl.   midi_unity_note                      ;
+         trace "[dbg]    smpl.        midi_pitch_fraction = " + smpl.   midi_pitch_fraction                  ;
+         trace "[dbg]    smpl.       smpte_format         = " + smpl.  smpte_format                          ;
+         trace "[dbg]    smpl.       smpte_offset         = " + smpl.  smpte_offset                          ;
+         trace "[dbg]    smpl.         num_sample_loops   = " + smpl.    num_sample_loops                    ;
+         trace "[dbg]    smpl.     sampler_data           = " + smpl.sampler_data                            ;
+      }
+
+      // Read loops, if any
+      if(smpl.num_sample_loops > 0)
+      {
+         IntArray *sampleLoops;
+
+         // Initialize sample loops
+         if(null != _sampleHint)
+         {
+            _sampleHint.freeSampleLoops();
+            sampleLoops <= _sampleHint.getOrCreateSampleLoops();
+         }
+
+         int bytesLeft = chunkSz - (ifs.offset - startOff);
+         int expectLeft = (24 * smpl.num_sample_loops);// + smpl.sampler_data;
+         if(bytesLeft == expectLeft)
+         {
+            Array<WavIO_SMPL_LOOP> a;
+            a <= smpl.loops;
+            a.alloc(smpl.num_sample_loops);
+            if(b_debug) trace "[dbg] WavIO::ReadSMPL: found "+smpl.num_sample_loops+" loops.";
+            int loopIdx = 0;
+            loop(smpl.num_sample_loops)
+            {
+               WavIO_SMPL_LOOP lp <= a.nextFree;
+
+               lp.identifier = GetFourCCHexStringFromInt(ifs.i32);
+               lp.type       = ifs.i32;
+               lp.start      = ifs.i32;
+               lp.end        = ifs.i32;
+               lp.fraction   = ifs.i32;
+               lp.playcount  = ifs.i32;
+
+               // Add new sample loop
+               if(null != _sampleHint)
+               {
+                  // offset
+                  sampleLoops.add(lp.start);
+
+                  // len
+                  if(lp.end > lp.start)
+                  {
+                     sampleLoops.add(lp.end - lp.start);
+                  }
+                  else
+                  {
+                     sampleLoops.add(lp.start - lp.end);
+                  }
+
+                  // #repeats
+                  sampleLoops.add(lp.playcount & 65535);
+               }
+
+               if(b_debug)
+               {
+                  trace "[dbg] WavIO::ReadSMPL: loop info:";
+                  trace "         loop["+loopIdx+"].identifier = " + GetFourCCHexStringFromInt(lp.identifier);
+                  trace "         loop["+loopIdx+"].      type = " + lp.     type;
+                  trace "         loop["+loopIdx+"].     start = " + lp.    start;
+                  trace "         loop["+loopIdx+"].       end = " + lp.      end;
+                  trace "         loop["+loopIdx+"].  fraction = " + lp. fraction;
+                  trace "         loop["+loopIdx+"]. playcount = " + lp.playcount;
+               }
+
+               loopIdx++;
+            }
+
+         }
+         else
+         {
+            // throw Fail("WavIO::ReadSMPL: expected "+expectLeft+" bytes for sample loops and sampler_data, bytesLeft="+bytesLeft);
+            trace "[~~~] WavIO::ReadSMPL: expected "+expectLeft+" bytes for sample loops and sampler_data, bytesLeft="+bytesLeft;
+            ifs.seek(bytesLeft, SEEK_CUR);
+         }
+      }
+
+      // Skip extended sampler attributes
+      // if(smpl.sampler_data > 0)
+      // {
+      //    if(b_debug) trace "[dbg] WavIO::ReadSMPL: skipping "+smpl.sampler_data+" opaque sampler_data bytes at offset="+ifs.offset+".";
+      //    ifs.seek(smpl.sampler_data, SEEK_CUR);
+      // }
+   }
+
+   protected static WriteSMPL(Stream ofs, int _sampleRate, float _midiNote, int _loopStart, int _loopEnd) {
+      // caller must check that loopStart!=loopEnd
+      ofs.i8 = 's';
+      ofs.i8 = 'm';
+      ofs.i8 = 'p';
+      ofs.i8 = 'l';
+      ofs.i32 = (9*4)/*header*/ + (6*4)/*loop*/;  // chunkSize
+
+      ofs.i32 = 0x01000047;  // manufacturer=Akai
+      ofs.i32 = 0;           // product=any
+
+      ofs.i32 = 1000000000.0 / _sampleRate;  // dwSamplePeriod in nanosec. e.g. 44100 => 22675
+      ofs.i32 = _midiNote;   // dwMIDIUnityNote
+      ofs.i32 = int(frac(_midiNote) * 0x100000000);  // dwMIDIPitchFraction
+      ofs.i32 = 0;           // dwSMPTEFormat
+      ofs.i32 = 0;           // dwSMPTEOffset
+
+      // Sample loops
+      ofs.i32 = 1;           // cSampleLoops
+      ofs.i32 = 6*4;         // cbSamplerData  (size of sample loop data)  (== 24 / 0x18)
+
+      // SampleLoop
+      ofs.i32 = 0;           // dwIdentifier
+      ofs.i32 = 0;           // dwType = loop forward
+      ofs.i32 = _loopStart;  // dwStart
+      ofs.i32 = _loopEnd;    // dwEnd
+      ofs.i32 = 0;           // dwFraction
+      ofs.i32 = 0;           // dwPlayCount
+   }
+
+   protected static ReadBEXT(Stream ifs, int chunkSz, WavIO_BWF bwf) {
+      bwf.readDescription     (ifs);
+      bwf.readOriginator      (ifs);
+      bwf.readOriginatorRef   (ifs);
+      bwf.readOriginationDate (ifs);
+      bwf.readOriginationTime (ifs);
+      // remaining bytes will be skipped
+
+      if(b_debug)
+      {
+         trace "[dbg] WavIO::ReadBEXT: ";
+         trace "        description = \""+bwf.description+"\"";
+         trace "         originator = \""+bwf.originator+"\"";
+         trace "               date = \""+bwf.origination_date+"\"";
+         trace "               time = \""+bwf.origination_time+"\"";
+      }
+   }
+
+   protected static ReadFMT(Stream ifs, int chunkSz) {
+      fmt.format_tag        = ifs.i16;
+      if(-2/*FFFE*/ == fmt.format_tag)  // written by SoX when converting an old .aif file (=> it's 24bit signed integer)
+         fmt.format_tag = FMT_PCM;
+      fmt.num_ch            = ifs.i16;
+      fmt.sample_rate       = ifs.i32;
+      fmt.avg_bytes_per_sec = ifs.i32;
+      fmt.block_align       = ifs.i16;
+      fmt.sample_bits       = ifs.i16;
+
+      if(b_debug)
+      {
+         trace "[dbg] WavIO::ReadFMT: "
+            "\n\t     format_tag           = "+fmt. format_tag           +
+            "\n\t        num_ch            = "+fmt.    num_ch            +
+            "\n\t     sample_rate          = "+fmt. sample_rate          +
+            "\n\t        avg_bytes_per_sec = "+fmt.    avg_bytes_per_sec +
+            "\n\t      block_align         = "+fmt.  block_align         +
+            "\n\t     sample_bits          = "+fmt. sample_bits          ;
+      }
+
+      if(chunkSz >= 18)
+      {
+         fmt.ext_size = ifs.i16;
+         if(fmt.ext_size > 0)
+         {
+            if(b_debug) trace "[dbg] WavIO::ReadFMT: found extension, size="+fmt.ext_size+" bytes";
+            // (note) the ext_size seems to be wrong / too small in some wavs
+         }
+      }
+
+   }
+
+   protected static ReadCUE(Stream ifs, int chunkSz, StWaveform wf/*, int bytesPerFrame*/) {
+      IntArray cuePoints <= wf.getOrCreateCuePoints();
+      cuePoints.empty();
+      int numCuePoints = ifs.i32;
+      if(b_debug)
+         trace "[dbg] WavIO: #cue_points="+numCuePoints/*+" bytesPerFrame="+bytesPerFrame*/+" chunkSz="+chunkSz+" reqSz="+(4+(numCuePoints*24));
+      if(chunkSz >= (4+(numCuePoints*24)))
+      {
+         int cuePointNr = 1;
+         loop(numCuePoints)
+         {
+            int id          = ifs.i32;
+            int position    = ifs.i32;
+            int dataChunkId = ifs.i32;
+            int chunkStart  = ifs.i32;
+            int blockStart  = ifs.i32;
+            int smpStart    = ifs.i32;
+            int frame = smpStart;// / bytesPerFrame;
+            if(b_debug)
+               trace "[dbg] WavIO: read cue point "+cuePointNr+"/"+numCuePoints+" id="+id+" frame="+frame;
+            cuePoints.add(frame);
+            cuePointNr++;
+         }
+      }
+   }
+
+   public static GetFmtSampleBits() : int {
+      return (null != fmt) ? fmt.sample_bits : 0;
+   }
+
+   public static LoadStream(Stream     ifs,
+                            FloatArray d,
+                            Integer    _retSampleRate,
+                            Integer    _retNumCh,
+                            Object     _retFileInfo,
+                            StSample   _sampleHint,
+                            Object     _bwfHint  // WavIO_BWF or StWaveform or null
+                            ) : boolean {
+      return = false;
+
+      fmt  <= null;
+      smpl <= null;
+
+      ifs.byteOrder = YAC_LITTLE_ENDIAN;
+
+      String retFileInfo; retFileInfo.empty();
+      retFileInfo.append("WAV");
+
+      local StWaveform *wf;
+
+      if(_bwfHint instanceof StWaveform)
+      {
+         wf <= _bwfHint;
+         wf.bwfDescription = null;
+         wf.bwfOriginator  = null;
+         wf.bwfDate        = null;
+         wf.bwfTime        = null;
+
+         IntArray cuePoints <= wf.cuePoints;
+         if(null != cuePoints)
+            cuePoints.free();
+      }
+
+      int magicRIFF = ifs.i32;
+      if(magicRIFF == MAGIC_RIFF)
+      {
+         int totalSizeMinus8 = ifs.i32;
+
+         int magicWAVE = ifs.i32;
+         if(magicWAVE == MAGIC_WAVE)
+         {
+            int factNumSamples = -1;
+
+            while(!ifs.eof())
+            {
+               int chunkId = ifs.i32;
+               int chunkSz = ifs.i32;
+
+               if(0 == chunkSz)
+               {
+                  throw Fail("LoadStream: size of chunk "+GetFourCCHexStringFromInt(chunkId)+" is 0");
+               }
+
+               int chunkOff = ifs.offset;
+               int chunkEnd = chunkOff + (chunkSz + (chunkSz & 1));  // align to word boundary
+
+               ////trace "[dbg] WavIO: found chunkId="+GetFourCCHexStringFromInt(chunkId)+"('"+GetChunkNameFromInt(chunkId)+"'), size="+chunkSz+" at offset="+(ifs.offset-8)+"/"+ifs.size;
+
+               switch(chunkId)
+               {
+                  case 0:
+                     throw Fail("LoadStream: no more chunks");
+
+                  default: // Unknown chunk
+                     trace "[~~~] WavIO: skipping unknown chunkId="+GetFourCCHexStringFromInt(chunkId)+" ('"+GetChunkNameFromInt(chunkId)+"'), size="+chunkSz+" at offset="+(ifs.offset-8);
+                     break;
+
+                  case MAGIC_BEXT:
+                     // Broadcast wave extension
+                     if(b_debug) trace "[dbg] WavIO: found 'bext' chunk at offset="+(chunkOff-8)+" size="+chunkSz;
+                     if(null != _bwfHint)
+                     {
+                        if(_bwfHint instanceof StWaveform)
+                        {
+                           WavIO_BWF bwf; bwf.reset();
+                           ReadBEXT(ifs, chunkSz, bwf);
+                           wf <= _bwfHint;
+                           wf.bwfDescription = bwf.description;
+                           wf.bwfOriginator  = bwf.originator;
+                           wf.bwfDate        = bwf.origination_date;
+                           wf.bwfTime        = bwf.origination_time;
+                        }
+                        else if(_bwfHint instanceof WavIO_BWF)
+                        {
+                           ReadBEXT(ifs, chunkSz, _bwfHint);
+                        }
+                     }
+                     break;
+
+                  case MAGIC_FMT:
+                     // Read format chunk
+                     if(b_debug) trace "[dbg] WavIO: found 'fmt ' chunk at offset="+(chunkOff-8)+" size="+chunkSz;
+                     if(null != fmt)
+                     {
+                        trace "[~~~] WavIO: found more than one format chunk! overwriting previously read data..";
+                     }
+                     fmt <= new WavIO_FMT;
+                     try
+                     {
+                        ReadFMT(ifs, chunkSz);
+
+                        _retNumCh      = fmt.num_ch;
+                        _retSampleRate = fmt.sample_rate;
+
+                        retFileInfo.append(", "+fmt.sample_bits+" bit");
+                        retFileInfo.append(", "+((2==fmt.num_ch)?"stereo":"mono"));
+                        retFileInfo.append(", "+fmt.sample_rate+" Hz");
+                     }
+                     catch(UncriticalError e) throw e;
+                     break;
+
+                  case MAGIC_FACT:
+                     // Read fact chunk (mainly for compressed data)
+                     if(b_debug) trace "[dbg] WavIO: found 'fact' chunk at offset="+(chunkOff-8)+", size="+chunkSz;
+                     if(-1 != factNumSamples)
+                     {
+                        trace "[~~~] WavIO: found more than one FACT chunk! overwriting previously read data..";
+                     }
+                     factNumSamples = ifs.i32;
+                     if(b_debug) trace "[dbg] WavIO::ReadFACT: numSamples="+factNumSamples;
+                     break;
+
+                  case MAGIC_SMPL:
+                     // Read sampler chunk
+                     if(b_debug) trace "[dbg] WavIO: found 'smpl' chunk at offset="+(chunkOff-8)+", size="+chunkSz;
+                     if(null != smpl)
+                     {
+                        trace "[~~~] WavIO: found more than one sampler chunk! overwriting previously read data..";
+                     }
+                     smpl <= new WavIO_SMPL;
+                     try
+                     {
+                        ReadSMPL(ifs, chunkSz, smpl, _sampleHint, _retSampleRate);
+
+                        retFileInfo.append(", "+(smpl.num_sample_loops)+" loops");
+                     }
+                     catch(UncriticalError e) throw e;
+                     break;
+
+                  case MAGIC_DATA:
+                     // Read data chunk
+                     if(null == fmt)
+                     {
+                        throw Fail("LoadStream: found DATA chunk before FMT chunk");
+                     }
+                     if(b_debug) trace "[dbg] WavIO: found 'data' chunk at offset="+(chunkOff-8)+", size="+chunkSz;
+                     if(d instanceof FloatArray)
+                     {
+                        try
+                        {
+                           return = ReadDATA(ifs, chunkSz, d);
+                           
+                           retFileInfo.append(", "+(d.numElements/fmt.num_ch)+" samples");
+                        }
+                        catch(UncriticalError e) throw e;
+                     }
+                     else
+                     {
+                        // Header-scan only
+                        if(d instanceof Integer)
+                        {
+                           Integer ioNumFrames <= d;
+                           ioNumFrames = chunkSz / (fmt.num_ch * (fmt.sample_bits>>3));
+                        }
+                        return = true;
+                     }
+                     break;
+
+                  case MAGIC_CUE:
+                     if(b_debug) trace "[dbg] WavIO: found 'cue ' chunk at offset="+(chunkOff-8)+" size="+chunkSz;//+" fmt.num_ch="+fmt.num_ch+" fmt.sample_bits="+fmt.sample_bits;
+                     if(null != _bwfHint)
+                     {
+                        if(_bwfHint instanceof StWaveform)
+                        {
+                           ReadCUE(ifs, chunkSz, _bwfHint);//, (fmt.num_ch * (fmt.sample_bits>>3))/*bytesPerFrame*/);
+                        }
+                     }
+                     break;
+               }
+
+               // Skip any unread bytes of last chunk
+               if(chunkEnd > ifs.offset)
+               {
+                  trace "[~~~] WavIO: skipping "+(chunkEnd-ifs.offset)+" unread bytes of chunk '"+GetChunkNameFromInt(chunkId)+"' at offset="+ifs.offset;
+                  ifs.seek(chunkEnd - ifs.offset, SEEK_CUR);
+               }
+               else if(ifs.offset > chunkEnd)
+               {
+                  throw Fail("LoadStream: FMT: read position ("+ifs.offset+") exceeds chunk end ("+chunkEnd+")");
+               }
+
+               // Next chunk
+            }
+         }
+         else throw Fail("LoadStream: wrong WAVE magic (have='"+GetChunkNameFromInt(magicWAVE)+"', expect='"+GetChunkNameFromInt(MAGIC_WAVE)+"')");
+      }
+      else throw Fail("LoadStream: wrong RIFF magic (have='"+GetChunkNameFromInt(magicRIFF)+"', expect='"+ GetChunkNameFromInt(MAGIC_RIFF)+"')");
+
+      // Verify that sample/loop offsets/lengths do not cross waveform boundaries
+      if(null != _sampleHint)
+      {
+         _sampleHint.verifySampleAreas();
+      }
+
+      if(null != _retFileInfo)
+      {
+         _retFileInfo = retFileInfo;
+      }
+   }
+
+   public static LoadLocal(String     _filename,
+                           FloatArray d,
+                           Integer    _retSampleRate,
+                           Integer    _retNumCh,
+                           Object     _retFileInfo,
+                           StSample   _sampleHint,
+                           Object     _bwfHint  // WavIO_BWF or StWaveform or null
+                           ) : boolean {
+      return = false;
+      
+      if(b_debug) trace "[dbg] WavIO::LoadLocal: fileName=\""+_filename+"\".";
+      local File f;
+      if(f.openLocal(_filename, IOS_IN))
+      {
+         try return = LoadStream(f, d, _retSampleRate, _retNumCh, _retFileInfo, _sampleHint, _bwfHint);
+         catch(UncriticalError e) throw e;
+         finally f.close();
+      }
+      else throw Fail("LoadLocal: failed to open file \""+_filename+"\".");
+   }
+
+   protected static WriteHeader(Stream _ofs,
+                                int _numSamples, int _numCh, int _sampleRate,
+                                float _midiNote, int _loopStart, int _loopEnd,  // optional 'smpl' chunk
+                                Object _bwfHint  // WavIO_BWF or StWaveform or null (optional 'bext' chunk)
+                                ) {
+      _ofs.byteOrder = YAC_LITTLE_ENDIAN;
+      _ofs.i32 = MAGIC_RIFF;
+      _ofs.i32 = 44 + (_numSamples * 2) - 8;  // *2 for 16bit
+      _ofs.i32 = MAGIC_WAVE;
+
+      if(_bwfHint instanceof StWaveform)
+      {
+         StWaveform wf <= _bwfHint;
+         _ofs.i32 = MAGIC_BEXT;
+         _ofs.i32 = 1116;
+         int bwfStartOff = _ofs.offset;
+         WriteString(_ofs, wf.bwfDescription, 256);
+         WriteString(_ofs, wf.bwfOriginator,   32);
+         WriteString(_ofs, null,               32);  // OriginatorReference
+         WriteString(_ofs, wf.bwfDate,         10);
+         WriteString(_ofs, wf.bwfTime,          8);
+         _ofs.i32 = 0;  // TimeReferenceLow (low word)
+         _ofs.i32 = 0;  // TimeReferenceHigh (high word)
+         _ofs.i16 = 1;  // Version
+         int bwfEndOff = _ofs.offset;
+         loop(1116 - (bwfEndOff - bwfStartOff))
+            _ofs.i8 = 0;
+      }
+
+      _ofs.i32 = MAGIC_FMT;
+      _ofs.i32 = 16;
+      _ofs.i16 = FMT_PCM;
+      _ofs.i16 = _numCh;
+      _ofs.i32 = _sampleRate;
+      _ofs.i32 = (_numCh * _sampleRate); // bytes per second
+      _ofs.i16 = (_numCh * 2); // block align
+      _ofs.i16 = 16;           // sample_bits
+
+      if(_loopStart != _loopEnd)
+         WriteSMPL(_ofs, _sampleRate, _midiNote, _loopStart, _loopEnd);
+
+      _ofs.i32 = MAGIC_DATA;
+      _ofs.i32 = _numSamples * 2; // *2 for 16bit
+   }
+
+   public static SaveStream(Stream ofs,
+                            FloatArray sam, int _sampleRate, int _numCh,
+                            float _midiNote, int _loopStart, int _loopEnd,
+                            Object _bwfHint  // WavIO_BWF or StWaveform or null
+                            ) : boolean {
+      explain "Save float waveform to 16bit .wav file";
+
+      return = false;
+
+      int smpLen = sam.numElements;
+
+      // trace "xxx WavIO::SaveStream: smpLen="+smpLen;
+      WriteHeader(ofs, smpLen, _numCh, _sampleRate,
+                  _midiNote, _loopStart, _loopEnd,
+                  _bwfHint
+                  );
+
+      int sOff = 0;
+      float s= 32767.0;
+      compile loop(smpLen)
+      {
+         float v= sam[sOff++];
+         if(v>1) v=1; else if(v<-1) v=-1;
+         ofs.i16 = v * s;
+      }
+      return true;
+   }
+
+   public static SaveLocal(String _filename,
+                           FloatArray d, int _sampleRate, int _numCh,
+                           float _midiNote, int _loopStart, int _loopEnd,  // for optional 'smpl' chunk
+                           Object _bwfHint  // WavIO_BWF or StWaveform or null
+                           ) : boolean {
+      return = false;
+
+      File f;
+      if(f.openLocal(_filename, IOS_OUT))
+      {
+         try return = SaveStream(f, d, _sampleRate, _numCh,
+                                 _midiNote, _loopStart, _loopEnd,
+                                 _bwfHint
+                                 );
+         catch(UncriticalError e) throw e;
+         finally f.close();
+      }
+      else throw Fail("SaveLocal: failed to open file \""+_filename+"\".");
+   }
+
+   public static SaveStreamFxn(Stream ofs,
+                               Function _readFxn, Object _userData,
+                               int _totalNumFrames, int _sampleRate, int _numCh,
+                               float _midiNote, int _loopStart, int _loopEnd,
+                               Object _bwfHint
+                               ) : boolean {
+      explain "Save float waveform to 16bit .wav file (read segmented sample data from callback)";
+
+      return = false;
+
+      int smpLen = _totalNumFrames * _numCh;
+
+      // trace "xxx WavIO::SaveStream: smpLen="+smpLen;
+      WriteHeader(ofs, smpLen, _numCh, _sampleRate,
+                  _midiNote, _loopStart, _loopEnd,
+                  _bwfHint
+                  );
+
+      int numSamplesLeft = smpLen;
+      int segIdx = 0;
+      float s= 32767.0;
+
+      while(numSamplesLeft > 0)
+      {
+         FloatArray seg <= _readFxn.eval([_userData, segIdx]);
+         if(null == seg)
+         {
+            trace "[---] WavIO::SaveStreamFxn: seg["+segIdx+"] is null !!";
+            return false;
+         }
+         int segLen = seg.numElements;
+         int sOff = 0;
+         compile loop(segLen)
+         {
+            float v= seg[sOff++];
+            if(v>1) v=1; else if(v<-1) v=-1;
+            ofs.i16 = v * s;
+         }
+
+         // Next segment
+         segIdx++;
+         numSamplesLeft -= segLen;
+      }
+
+      return true;
+   }
+
+   public static SaveLocalFxn(String _filename,
+                              Function _readFxn, Object _userData,
+                              int _totalNumFrames, int _sampleRate, int _numCh,
+                              float _midiNote, int _loopStart, int _loopEnd,
+                              Object _bwfHint
+                              ) : boolean {
+
+      // (note) callback:   ReadFxn(Object _userData, int _segIdx) : FloatArray
+
+      return = false;
+
+      File f;
+      if(f.openLocal(_filename, IOS_OUT))
+      {
+         try return = SaveStreamFxn(f, _readFxn, _userData, _totalNumFrames, _sampleRate, _numCh,
+                                    _midiNote, _loopStart, _loopEnd,
+                                    _bwfHint
+                                    );
+         catch(UncriticalError e) throw e;
+         finally f.close();
+      }
+      else throw Fail("SaveMultiLocal: failed to open file \""+_filename+"\".");
+
+   }
+
+}
+
+// (note) also see testwavio_simple.tkp
+function Test() {
+   FloatArray sam;
+   boolean b;
+   Integer sampleRate, numCh;
+
+   // Load
+   try {
+      b = WavIO.LoadLocal("samples/housyriff_C_126.wav", sam, sampleRate, numCh, null, null, null);
+      if(b)
+      {
+         trace "[...] loaded sample len="+(sam.numElements / numCh)+" #ch="+numCh+" rate="+sampleRate;
+      }
+      trace "b="+b;
+   }
+   catch(WavIO::Fail e) {
+      trace "[---] caught "+e.fullName+": \""+e.message+"\".";
+   }
+
+   // Save
+   try {
+      b = WavIO.SaveLocal("samples/t.wav", sam, sampleRate, numCh,
+                          (5*12)/*Audio.KEY_MIDDLE_C == C-5*/, 0/*loopStart*/, 0/*loopEnd*/,
+                          null/*bwfHint*/
+                          );
+      if(b)
+      {
+         trace "[...] saved sample";
+      }
+      trace "b="+b;
+   }
+   catch(WavIO::Fail e) {
+      trace "[---] caught "+e.fullName+": \""+e.message+"\".";
+   }
+}
+
+
+//Test();
