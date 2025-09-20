@@ -1,0 +1,795 @@
+// ----
+// ---- file   : ScrollPane.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 31Jul2005, 11Aug2005, 01Feb2009, 25May2010, 09Jan2012, 20Sep2014, 28Sep2014
+// ----          17Mar2015, 24Mar2015, 14Apr2015, 09Jul2016, 06May2017, 25Nov2017, 16Feb2018
+// ----          29Nov2018, 30Nov2018, 19Feb2021, 27Jun2021, 28Jun2021, 26Jun2022, 10Feb2023
+// ----          14Mar2023, 11Nov2023, 12Mar2024, 22Mar2024, 28Mar2024, 29Mar2024, 23Jan2025
+// ----          04Apr2025
+// ----
+// ----
+// ----
+
+module MScrollPane;
+
+namespace ui;
+
+
+class ScrollPane extends Control {
+
+   define float HSCROLL_REL_STEP_COARSE = 0.1 * 1.33;
+   define float VSCROLL_REL_STEP_COARSE = 0.1;
+
+   protected ViewPane *viewpane;
+   protected Scroller *hscroll;
+   protected Scroller *vscroll;
+   protected int scroll_enable;  // force-enable scrollers
+   protected int current_scroll_enable;  // currently enabled scrollers
+   protected int autoscroll_enable = Layout.HORIZONTAL | Layout.VERTICAL;
+   protected int hscroll_placement = Layout.BOTTOM;
+   protected int vscroll_placement = Layout.RIGHT;
+
+   protected boolean b_disable_wheel;
+
+   protected boolean b_scroll_grab;  // true=grab mouse when scrolling via RMB [false]
+
+   protected float drag_start_view_offset_top;
+   protected float drag_start_view_offset_left;
+
+   protected float min_pref_size_y;
+
+
+   public function New(Layer _innerLayer) : ScrollPane {
+      local ScrollPane sp;
+      sp.initScrollPane(deref _innerLayer);
+      return deref sp;
+   }
+
+   public method initScrollPane(Layer _innerLayer) {
+      initLayer();
+      viewpane <= ViewPane.New();
+      hscroll <= Scroller.New(0, 1000, 0, 24);
+      vscroll <= Scroller.NewVertical(0, 1000, 0, 16);
+      setLayerStyle(LookAndFeel.STYLE_FLAT);
+      setPadding4f(0, 0, 0, 0);
+      setInnerLayer(deref _innerLayer);
+   }
+
+   public virtual calcPreferredSizeY() {
+      // [14Mar2023] Timeline
+      // trace "xxx ScrollPane::calcPreferredSizeY: min_pref_size_y="+min_pref_size_y+" current_scroll_enable="+current_scroll_enable;
+      if(min_pref_size_y > 0)
+      {
+         local float vpPsy = viewpane.getPreferredSizeY();
+         // trace "xxx ScrollPane::calcPreferredSizeY: min_pref_size_y="+min_pref_size_y+" vpPsy="+vpPsy;
+         preferred_size_y = mathMaxf(min_pref_size_y, vpPsy);
+         // if(current_scroll_enable & Layout.HORIZONTAL)
+         // {
+         //    preferred_size_y += hscroll.getSizeY();
+         //    // trace "xxx ............................................... psy="+preferred_size_y;
+         // }
+      }
+      else
+      {
+         Control::calcPreferredSizeY();
+      }
+   }
+
+   public method setAlpha(int _alpha) {
+      viewpane.setAlpha(_alpha);
+   }
+
+   public virtual isTranslucent() : boolean {
+      return true;
+   }
+
+   public virtual setBackgroundTint(int _tint32) {
+      Layer::setBackgroundTint(_tint32);
+      hscroll.setBackgroundTint(_tint32);
+      vscroll.setBackgroundTint(_tint32);
+   }
+
+   public virtual setForegroundTint(int _tint32) {
+      Layer::setForegroundTint(_tint32);
+      hscroll.setForegroundTint(_tint32);
+      vscroll.setForegroundTint(_tint32);
+   }
+
+   public virtual setLayerStyle(int _style) {
+      Control::setLayerStyle(_style);
+   }
+
+   public method setEnableScrollGrab(boolean _bEnable) {
+      b_scroll_grab = _bEnable;
+   }
+
+   public method getEnableScrollGrab() : boolean {
+      return b_scroll_grab;
+   }
+
+   public method updateLayout() {
+      explain "Must be called when inner layer has changed.";
+
+      // // trace "xxx ScrollPane::updateLayout: lnf="+lnf.getName()+" scroll_enable="+scroll_enable;
+
+      // // removeChildHierarchy();
+      removeChildren();  // don't remove Scroller children (inc/dec buttons + slider)
+
+      hscroll.initLayout();
+      hscroll.setLayerStyle(layer_style);
+      hscroll.setPadding4f(0, 0, 0, Slider.MIN_WIDTH);
+      // // hscroll.setEnableAdaptiveKnobSize(true);  // (note) already handled via setRelativeKnobSize() calls
+      hscroll.setAlignment(Layout.EXPANDX);
+      hscroll.setEnableFlatHighContrast(false);
+      hscroll.setLookAndFeelRef(lnf, false/*bForce*/);
+
+      vscroll.initLayout();
+      vscroll.setLayerStyle(layer_style);
+      // // vscroll.setEnableAdaptiveKnobSize(true);  // (note) already handled via setRelativeKnobSize() calls
+      vscroll.setAlignment(Layout.EXPANDY);
+      vscroll.setEnableFlatHighContrast(false);
+      vscroll.setLookAndFeelRef(lnf, false/*bForce*/);
+
+      setLayout(SuperBorderLayout);
+      viewpane.setAlignment(Layout.EXPAND);
+      addLayer(viewpane, Layout.CENTER);
+
+      if((scroll_enable | current_scroll_enable) & Layout.HORIZONTAL)
+      {
+         current_scroll_enable |= Layout.HORIZONTAL;
+         addLayer(hscroll, hscroll_placement);
+      }
+
+      if((scroll_enable | current_scroll_enable) & Layout.VERTICAL)
+      {
+         current_scroll_enable |= Layout.VERTICAL;
+         addLayer(vscroll, vscroll_placement);
+      }
+
+      // // current_scroll_enable = scroll_enable;
+   }
+
+   // // public virtual setLookAndFeel(String _name) {
+   // //    trace "xxx ScrollPane::setLookAndFeel: lnf="+_name;
+   // //    Layer::setLookAndFeel(_name);
+
+   // //    viewpane.setLookAndFeel(_name);
+
+   // //    if(null != hscroll)
+   // //       hscroll.setLookAndFeel(_name);
+
+   // //    if(null != vscroll)
+   // //       vscroll.setLookAndFeel(_name);
+   // // }
+
+   public virtual recursiveSetLookAndFeel(String _name) {
+      Layer::recursiveSetLookAndFeel(_name);
+      viewpane.recursiveSetLookAndFeel(_name);
+      hscroll.recursiveSetLookAndFeel(_name);
+      vscroll.recursiveSetLookAndFeel(_name);
+   }
+
+   public virtual onLookAndFeelChanged() {
+      // trace "xxx ScrollPane::onLookAndFeelChanged: lnf="+lnf.getName()+" UI.lnf="+(UI.lnf.getName());
+      Layer::onLookAndFeelChanged();
+   }
+
+   public virtual recursiveOnLookAndFeelChanged() {
+      // trace "xxx ------------- ScrollPane::recursiveOnLookAndFeelChanged: id="+getLayerId();
+      Layer::recursiveOnLookAndFeelChanged();
+
+      viewpane.recursiveOnLookAndFeelChanged();
+      hscroll.recursiveOnLookAndFeelChanged();
+      vscroll.recursiveOnLookAndFeelChanged();
+      // trace "xxx END ScrollPane::recursiveOnLookAndFeelChanged: id="+getLayerId();
+   }
+
+   public method calcScrollers() {
+      float tw = viewpane.getViewSizeX(), vw = viewpane.getSizeX();
+      float th = viewpane.getViewSizeY(), vh = viewpane.getSizeY();
+
+      // trace "xxx ScrollPane::calcScrollers tw="+tw+" th="+th+" vw="+vw+" vh="+vh;
+
+      if(vw < tw)
+      {
+         hscroll.setMaxValue(tw - vw);
+         hscroll.setRelativeKnobSize(vw / tw);
+      }
+      else
+      {
+         hscroll.setMaxValue(1);
+         hscroll.setValue(0);
+         hscroll.setRelativeKnobSize(1);
+      }
+
+      if(vh < th)
+      {
+         vscroll.setMaxValue(th - vh);
+         vscroll.setRelativeKnobSize(vh / th);
+      }
+      else
+      {
+         vscroll.setMaxValue(1);
+         vscroll.setValue(0);
+         vscroll.setRelativeKnobSize(1);
+      }
+
+      hscroll.setStepCoarse(tw * HSCROLL_REL_STEP_COARSE);
+      vscroll.setStepCoarse(th * VSCROLL_REL_STEP_COARSE);
+
+      hscroll.validateValue();
+      vscroll.validateValue();
+   }
+
+   public method getScrollYSizeX() : float {
+      if(current_scroll_enable & Layout.VERTICAL)
+         return vscroll.getSizeX();
+      return 0.0f;
+   }
+
+   public method getScrollXSizeY() : float {
+      if(current_scroll_enable & Layout.HORIZONTAL)
+         return hscroll.getSizeY();
+      return 0.0f;
+   }
+
+   public virtual recursiveBeginResize() {
+      // trace "xxx ScrollPane::recursiveBeginResize";
+      viewpane.recursiveBeginResize();
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+
+      Layer::layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+
+      calcScrollers();
+
+      boolean bRelayout = false;
+
+      if(autoscroll_enable)
+      {
+         Layer il <= viewpane.getInnerLayer();
+
+         if(il instanceof Layer)
+         {
+            // trace "xxx scrollpane::layoutHierarchy: il.sizey="+il.getSizeY()+" vp.sy="+viewpane.getSizeY();
+            // // UI.Backtrace();
+
+            // Auto-enable vertical scroller
+            if(autoscroll_enable & Layout.VERTICAL)
+            {
+               if(il.getSizeY() > viewpane.getSizeY())
+               {
+                  if(! (current_scroll_enable & Layout.VERTICAL) )
+                  {
+                     vscroll.setValue(0.0f);
+                     addLayer(vscroll, vscroll_placement);
+                     current_scroll_enable |= Layout.VERTICAL;
+                     bRelayout = true;
+                  }
+               }
+               else
+               {
+                  if(  (current_scroll_enable & Layout.VERTICAL) )
+                  {
+                     removeChildLayer(vscroll);
+                     current_scroll_enable &= ~Layout.VERTICAL;
+                     bRelayout = true;
+                  }
+                  setViewOffsetY(0);
+               }
+            }
+
+            // Auto-enable horizontal scroller
+            if(autoscroll_enable & Layout.HORIZONTAL)
+            {
+               // trace "xxx scrollpane::layoutHierarchy: il.sizex="+il.getSizeX()+" vp.sx="+viewpane.getSizeX();
+
+               if(il.getSizeX() > viewpane.getSizeX())
+               {
+                  if(! (current_scroll_enable & Layout.HORIZONTAL) )
+                  {
+                     hscroll.setValue(0.0f);
+                     addLayer(hscroll, hscroll_placement);
+                     current_scroll_enable |= Layout.HORIZONTAL;
+                     bRelayout = true;
+                  }
+               }
+               else
+               {
+                  if(  (current_scroll_enable & Layout.HORIZONTAL) )
+                  {
+                     removeChildLayer(hscroll);
+                     current_scroll_enable &= ~Layout.HORIZONTAL;
+                     bRelayout = true;
+                  }
+                  setViewOffsetX(0);
+               }
+            }
+         }
+      }
+
+      switch(current_scroll_enable)
+      {
+         case Layout.HORIZONTAL:
+            hscroll.setPadRight(0);
+            break;
+         case Layout.VERTICAL:
+            break;
+         case Layout.HORIZONTAL | Layout.VERTICAL:
+            hscroll.setPadRight(Slider.MIN_WIDTH);
+            break;
+      }
+
+      if(bRelayout)
+      {
+         Layer::layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+         calcScrollers();
+      }
+
+      // // trace "xxx scrollpane::layout: hscroll.size="+hscroll.getSizeString()+" vscroll.size="+vscroll.getSizeString();
+      // // trace "xxx scrollpane::layout: hscroll.prefsize="+hscroll.slider.getPreferredSizeString()+" vscroll.prefsize="+vscroll.slider.getPreferredSizeString();
+      // trace "xxx scrollpane::layout: size="+getSizeString()+" viewpane.size="+viewpane.getSizeString();
+      // trace "xxx scrollpane::layout: vscroll.size="+vscroll.getSizeString();
+      // trace "xxx scrollpane::layout: vscroll.minSize="+vscroll.getMinimumSizeString();
+      // trace "xxx scrollpane::layout: vscroll.btinc.size="+(vscroll.btinc.getSizeString());
+      // trace "xxx scrollpane::layout: vscroll.btdec.size="+(vscroll.btdec.getSizeString());
+      // trace "xxx scrollpane::layout: vscroll.slider.size="+(vscroll.slider.getSizeString());
+      // trace "xxx scrollpane::layout: vscroll.pos="+vscroll.getPositionString();
+
+   }
+
+   public method setInnerLayer(Layer _l) {
+      explain "Set the layer to be displayed in the ViewPane";
+
+      viewpane.setInnerLayer(deref _l);
+   }
+
+   public method getInnerLayer() : Layer {
+      explain "Returns the layer currently being displayed in the ViewPane";
+
+      return viewpane.getInnerLayer();
+   }
+
+   public method setViewOffset(float _top, _left) {
+      explain "Set the top left position of the inner Layer";
+
+      viewpane.setViewOffset(_top, _left);
+
+      if(current_scroll_enable & Layout.VERTICAL)
+      {
+         vscroll.setValue(_top);
+      }
+      if(current_scroll_enable & Layout.HORIZONTAL)
+      {
+         hscroll.setValue(_left);
+      }
+   }
+
+   public method setViewOffsetY(float _top) {
+      explain "Set the vertical offset of the inner layer";
+
+      viewpane.setViewOffsetY(_top);
+
+      if(current_scroll_enable & Layout.VERTICAL)
+      {
+         vscroll.setValue(_top);
+      }
+   }
+
+   public method getViewOffsetY() : float {
+      explain "Query the vertical view offset (distance to the top of the inner layer)";
+
+      return viewpane.getViewOffsetY();
+   }
+
+   public method setViewOffsetX(float _left) {
+      explain "Set the horizontal offset of the inner layer";
+
+      viewpane.setViewOffsetX(_left);
+
+      if(current_scroll_enable & Layout.HORIZONTAL)
+      {
+         hscroll.setValue(_left);
+      }
+   }
+
+   public method getViewOffsetX() : float {
+      explain "Query the horizontal view offset (distance to the left border of the inner layer)";
+      return viewpane.getViewOffsetX();
+   }
+
+   public method handleViewOffsetChangedFromUI() {
+      // trace "xxx ScrollPane: handleViewOffsetChangedFromUI";
+   }
+
+   public method getViewSizeY() : float {
+      explain "Query the y-size available for the inner layer";
+      return viewpane.getViewSizeY();
+   }
+
+   public method getViewSizeX() : float {
+      explain "Query the h-size available for the inner layer";
+      return viewpane.getViewSizeX();
+   }
+
+   public method setViewSize2f(float _width, _height) {
+      explain "Set the size available for the inner layer";
+      viewpane.setViewSize2f(_width, _height);
+   }
+
+   public method setViewSizeX(float _w) {
+      explain "Set the horizontal size available for the inner layer";
+      viewpane.setViewSizeX(_w);
+   }
+
+   public method setViewSizeY(float _h) {
+      viewpane.setViewSizeY(_h);
+   }
+
+   public method getViewPane() : ViewPane {
+      explain "Returns a reference to the inner ViewPane object";
+      return viewpane;
+   }
+
+   public method setEnableWheel(boolean _bEnable) {
+      b_disable_wheel = !_bEnable;
+   }
+
+   public method getVerticalScroller() : Scroller {
+      explain "Query the up/down scroller control";
+      return vscroll;
+   }
+
+   public method getHorizontalScroller() : Scroller {
+      explain "Query the left/right scroller control";
+      return hscroll;
+   }
+
+   public method setAutoScrollerMode(int _mode) {
+      explain "Enable/disable horizontal auto-scrollers (Layout.HORIZONTAL|VERTICAL)";
+      autoscroll_enable = _mode;
+   }
+
+   public method getAutoScrollerMode() : int {
+      explain "Query whether horizontal/vertical auto-scrollers are enabled.";
+      return autoscroll_enable;
+   }
+
+   public method setEnableScrollers(int _directions) {
+      explain "Enable/disable scrollers for the given directions.
+Enabling scrollers will override the auto-scroller mode.
+";
+      scroll_enable = _directions;
+   }
+
+   public method getEnableScrollers() : int {
+      explain "Query the enabled scrollers";
+      return scroll_enable;
+   }
+
+   public method getEnableScrollersCurrent() : int {
+      explain "Query the currently enabled scrollers";
+      return current_scroll_enable;
+   }
+
+   public method setVerticalScrollerPlacement(int _dir) {
+      explain "Set the placement of the up/down scroller (UIConstants.LEFT|RIGHT)";
+      vscroll_placement = _dir;
+   }
+
+   public method getVerticalScrollerPlacement() : int {
+      explain "Query the placement of the up/down scroller (UIConstants.LEFT|RIGHT)";
+      return vscroll_placement;
+   }
+
+   public method setHorizontalScrollerPlacement(int _dir) {
+      explain "Set the placement of the left/right scroller (UIConstants.TOP|BOTTOM)";
+      hscroll_placement = _dir;
+   }
+
+   public method getHorizontalScrollerPlacement() : int {
+      explain "Query the placement of the left/right scroller (UIConstants.TOP|BOTTOM)";
+      return hscroll_placement;
+   }
+
+   public method setEnableAdaptiveViewSize(boolean _bEnabled) {
+      viewpane.setEnableAdaptiveViewSize(_bEnabled);
+   }
+
+   public method makeWidgetVisible(Layer _l) {
+
+      viewpane.makeWidgetVisible(_l);
+
+      setViewOffsetX(viewpane.getViewOffsetX());
+      setViewOffsetY(viewpane.getViewOffsetY());
+   }
+
+   public method makeRectVisible(Point2f _pos, Size2f _size) {
+      viewpane.makeRectVisible(_pos, _size);
+
+      if(current_scroll_enable & Layout.VERTICAL)
+      {
+         vscroll.setValue(viewpane.getViewOffsetY());
+      }
+
+      if(current_scroll_enable & Layout.HORIZONTAL)
+      {
+         hscroll.setValue(viewpane.getViewOffsetX());
+      }
+   }
+
+   public virtual onResize() {
+      viewpane.onResize();
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      // trace "xxx getViewOffsetY="+getViewOffsetY()+" mrel="+_ev.mouse_rel_x+";"+_ev.mouse_rel_y;
+      // trace "xxx ScrollPane::onMouse: size="+getSizeString();
+
+      boolean bLCtrl = (UI.GetKeyMod() == VMOD_LCTRL);
+
+      if(!b_disable_wheel)
+      {
+         if(_ev.current_state&MOUSE_WHEELDOWN)
+         {
+            // trace "xxx ScrollPane mousewheel";
+            if(!bLCtrl && (current_scroll_enable & Layout.VERTICAL))
+            {
+               if(vscroll.incCoarse())
+               {
+                  UI.StartMouseFocusWheelTimeOut();
+                  return true;
+               }
+            }
+            if(current_scroll_enable & Layout.HORIZONTAL)
+            {
+               UI.StartMouseFocusWheelTimeOut();
+               return hscroll.incCoarse();
+            }
+         }
+         else if(_ev.current_state&MOUSE_WHEELUP)
+         {
+            if(!bLCtrl && (current_scroll_enable & Layout.VERTICAL))
+            {
+               if(vscroll.decCoarse())
+               {
+                  UI.StartMouseFocusWheelTimeOut();
+                  return true;
+               }
+            }
+            if(current_scroll_enable & Layout.HORIZONTAL)
+            {
+               UI.StartMouseFocusWheelTimeOut();
+               return hscroll.decCoarse();
+            }
+         }
+      }
+
+      return false;
+   }
+
+   public virtual invalidateAbsolutePositions() {
+      abs_position_x = ABS_INVALID;
+      abs_position_y = ABS_INVALID;
+
+      viewpane.invalidateAbsolutePositions();
+
+      local Layer c <= first_child;
+
+      while(null != c) // scrollers
+      {
+         c.invalidateAbsolutePositions();
+         c <= c.next;
+      }
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return b_scroll_grab && UI.b_mouse_grab;
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+
+      // trace "xxx ScrollPane::onMouseBeginDrag";
+
+      if(_ev.isRightButtonDown())
+      {
+         UI.ShowCursor(UIConstants.CURSOR_GRABBED);
+
+         if(b_scroll_grab)
+         {
+            drag_start_view_offset_top  = getViewOffsetY();
+            drag_start_view_offset_left = getViewOffsetX();
+            UI.GrabMouse(/*_dragStart*/);
+         }
+
+         return true;
+      }
+      else
+      {
+         return false;
+      }
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _ev) : boolean {
+
+      if(b_scroll_grab)
+      {
+         if(UI.mouse_grab_rely > drag_start_view_offset_top)
+            UI.mouse_grab_rely = drag_start_view_offset_top;
+         else
+         {
+            float viewTop = (drag_start_view_offset_top - UI.mouse_grab_rely);
+            if(viewTop > viewpane.getViewSizeY())
+               viewTop = viewpane.getViewSizeY();
+            float maxViewTop = (viewpane.getViewSizeY() - viewpane.getSizeY());
+            if( viewTop > maxViewTop)
+               viewTop = maxViewTop;
+            UI.mouse_grab_rely = drag_start_view_offset_top - viewTop;
+         }
+
+         if(UI.mouse_grab_relx > drag_start_view_offset_left)
+            UI.mouse_grab_relx = drag_start_view_offset_left;
+         else
+         {
+            float viewLeft = (drag_start_view_offset_left - UI.mouse_grab_relx);
+            if(viewLeft > viewpane.getViewSizeX())
+               viewLeft = viewpane.getViewSizeX();
+            float maxViewLeft = (viewpane.getViewSizeX() - viewpane.getSizeX());
+            if( viewLeft > maxViewLeft)
+               viewLeft = maxViewLeft;
+            UI.mouse_grab_relx = drag_start_view_offset_left - viewLeft;
+         }
+
+         setViewOffset(/*top*/drag_start_view_offset_top - UI.mouse_grab_rely,
+                       /*left*/drag_start_view_offset_left - UI.mouse_grab_relx
+                       );
+         handleViewOffsetChangedFromUI();
+      }
+      else
+      {
+         float dtx = _ev.mouse_abs_x - _lastEv.mouse_abs_x;
+         float dty = _ev.mouse_abs_y - _lastEv.mouse_abs_y;
+
+         // trace "xxx ScrollPane::onMouseDrag: dt=("+dtx+";"+dty+")";
+
+         setViewOffset(getViewOffsetY() - dty,
+                       getViewOffsetX() - dtx
+                    );
+         handleViewOffsetChangedFromUI();
+      }
+
+      return true;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      // (note) default onMouseCancelDrag() forward to onMouseEndDrag()
+
+      UI.RevertCursor();
+
+      if(b_scroll_grab)
+         UI.UngrabMouse();
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      ////trace "xxx ScrollPane::consumeAction: acName="+_ac.getActionName();
+      if(_ac instanceof FloatAction)
+      {
+         FloatAction fa <= _ac;
+
+         switch(@(_ac.getActionProvider()))
+         {
+            case @(hscroll):
+               switch(_ac.getActionName())
+               {
+                  case Slider.ACTION_VALUECHANGED:
+                  case Slider.ACTION_VALUECHANGING:
+                     viewpane.setViewOffsetX(fa.getFloatValue());
+                     return true;
+               }
+               break;
+
+            case @(vscroll):
+               switch(_ac.getActionName())
+               {
+                  case Slider.ACTION_VALUECHANGED:
+                  case Slider.ACTION_VALUECHANGING:
+                     viewpane.setViewOffsetY(fa.getFloatValue());
+                     return true;
+               }
+               break;
+         }
+      }
+      return false;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initScrollPane(null/*innerLayer*/);
+
+      setPadding4f(0,0,0,0);
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         String atname, atval, atvaluc;
+         StringArray atsplit;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+
+            switch(atname.toLower())
+            {
+               case "viewsize":
+                  // "<width>;<height>"
+                  atsplit <= atval.splitChar(';');
+                  if(atsplit.numElements >= 1)
+                  {
+                     setViewSize2f(atsplit[0],
+                                   (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                   );
+                  }
+                  else
+                  {
+                     trace "[---] ScrollPane::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                     return false;
+                  }
+                  break;
+
+               case "viewsizex":
+                  setViewSizeX(atval);
+                  break;
+
+               case "viewsizey":
+                  setViewSizeY(atval);
+                  break;
+
+               case "adaptiveviewsize":
+                  setEnableAdaptiveViewSize(atval);
+                  break;
+
+               case "collapse":  // [14Mar2023] Timeline
+                  viewpane.setEnableCollapse(int(atval));
+                  break;
+
+               case "minprefsizey": // [14Mar2023] Timeline
+                  min_pref_size_y = atval;
+                  break;
+
+               case "minprefsizeyscaled": // [14Mar2023] Timeline
+                  min_pref_size_y = int(float(atval) * UI.font_scaling);
+                  break;
+
+               case "disablewheel":
+                  setEnableWheel(!int(atval));
+                  break;
+
+               case "scrollgrab":
+                  setEnableScrollGrab(int(atval));
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual addXFMChild(Layer _c) {
+      if(null != viewpane.getInnerLayer())
+      {
+         trace "[---] ScrollPane::addXFMChild: already have an inner_layer !! (deleting previous)";
+      }
+      setInnerLayer(deref _c);
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      updateLayout();
+   }
+
+}

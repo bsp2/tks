@@ -1,0 +1,419 @@
+// ----
+// ---- file   : TextEditDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : multi-line text editor dialog
+// ----
+// ---- created: 06Feb2010
+// ---- changed: 30Jun2010, 02Jul2010, 20Mar2011, 27Nov2018, 11Jul2020, 19Jul2020, 14Aug2020
+// ----          27Dec2020, 04May2023, 04Oct2023, 30Oct2023, 17Jan2024, 03Feb2024, 23Feb2024
+// ----          07Feb2025, 16Feb2025
+// ----
+// ----
+// ----
+
+module MTextEditDialog;
+
+namespace ui;
+
+
+class TextEditDialog extends Dialog, ActionConsumer, ActionProvider {
+
+   define int MIN_WIDTH  = 400;
+   define int MIN_HEIGHT = 200;
+
+   define String ACTION_TEXTEDITDIALOGCLOSED;
+   define String ACTION_TEXTEDITDIALOGCANCELED;
+   define String ACTION_SAVE;           // lctrl-s
+   define String ACTION_SHORTCUT;       // lctrl-<any_unhandled>
+   define String ACTION_RIGHT_CLICK;
+
+   protected char accel_ok;
+   protected char accel_cancel;
+   protected ActionConsumer *recipient;
+   public    TextEdit *textedit;
+   protected Panel    *p_textedit;
+   protected Scroller *scroller_y;
+   protected Button   *bt_ok;
+
+   protected boolean b_always_save;
+   protected boolean b_modal;
+
+
+   public static New(String _caption,
+                     String _message,
+                     String _btOkCaption,
+                     String _btCancelCaption,
+                     String _defaultText,
+                     ActionConsumer _recipient) : TextEditDialog {
+      local TextEditDialog d;
+      d.initTextEditDialog(deref _caption, deref _message, _btOkCaption, _btCancelCaption, _defaultText, _recipient, true/*bOkCancel*/);
+      return deref d;
+   }
+
+   public static NewOkCancel(String  _caption,
+                             String  _message,
+                             boolean _bOkCancel,
+                             String  _btOkCaption,
+                             String  _btCancelCaption,
+                             String  _defaultText,
+                             ActionConsumer _recipient) : TextEditDialog {
+      local TextEditDialog d;
+      d.initTextEditDialog(deref _caption, deref _message, _bOkCancel, _btOkCaption, _btCancelCaption, _defaultText, _recipient);
+      return deref d;
+   }
+
+   protected initTextEditDialog(String  _caption,
+                                String  _message,
+                                boolean _bOkCancel,
+                                String  _btOkCaption,
+                                String  _btCancelCaption,
+                                String  _defaultText,
+                                ActionConsumer _recipient) {
+      initDialog();
+
+      recipient <= deref _recipient;
+
+      int w, h;
+      local Panel l;
+      l.initPanel();
+      // // l.setLayout(SuperBorderLayout);
+      local Label lbMessage;
+      lbMessage.initLabel();
+      lbMessage.setCaption(_message);
+      Icon icon <= UI.GetIcon("textinput");
+      if(icon != null)
+      {
+         lbMessage.setIcon(icon);
+         lbMessage.setIconPlacement(Layout.LEFT);
+         lbMessage.setIconPadRight(10);
+      }
+      l.addLayer(deref lbMessage, Layout.CENTER);
+
+      // Add TextEdit
+      local TextEdit te;
+      p_textedit <= new Panel;
+      p_textedit.initPanel();
+      te.initTextEdit();
+      te.setText(_defaultText);
+      te.setAlignment(Layout.CENTER);
+      te.setMinNumCols(80);
+      te.setMinNumRows(12);
+      te.setMaxNumCols(200);
+      te.setMaxNumRows(200);
+      te.setLayoutWeight2f(1,1);
+      te.setEnableProvideCursorMovement(true);
+      p_textedit.addLayer(deref te, Layout.CENTER);
+      textedit <= te;
+
+      scroller_y <= Scroller.NewVertical(0/*min*/, 1000/*max*/, 0/*value*/, 1/*step*/);
+      scroller_y.setLayerStyle(LookAndFeel.STYLE_FLAT);
+      scroller_y.setEnableFlatHighContrast(false);
+      scroller_y.setEnableAdaptiveKnobSize(true);
+      scroller_y.setAlignment(Layout.EXPANDY);
+      p_textedit.addLayer(scroller_y, Layout.RIGHT);
+
+      l.addLayer(deref p_textedit, Layout.BOTTOM);
+
+      if(_bOkCancel)
+      {
+         // OK and cancel buttons
+         local Panel pnOkCancel;
+         pnOkCancel.initPanel();
+         pnOkCancel.setLayout(SuperBorderLayout);
+         pnOkCancel.setAlignment(Layout.CENTER);
+         // Add OK button
+         local Button btOk;
+         btOk.initButton();
+         btOk.setCaption(_btOkCaption);
+         btOk.setAlignment(Layout.CENTER);
+         btOk.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT,
+                           UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+         btOk.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT,
+                                UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+         btOk.setProvidedActionAlias(Button.ACTION_CLICK, "ok");
+         pnOkCancel.addLayer(deref btOk, Layout.LEFT);
+         bt_ok <= btOk;
+
+         // Add Cancel button
+         local Button btCancel;
+         btCancel.initButton();
+         btCancel.setCaption(_btCancelCaption);
+         btCancel.setAlignment(Layout.CENTER);
+         btCancel.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT,
+                               UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+         btCancel.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT,
+                                    UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+         btCancel.setProvidedActionAlias(Button.ACTION_CLICK, "cancel");
+         pnOkCancel.addLayer(deref btCancel, Layout.RIGHT);
+         // Add ok/cancel panel
+         l.addLayer(deref pnOkCancel, Layout.BOTTOM);
+
+         // Determine accelerator keys
+         accel_ok = UI.GetAcceleratorChar(_btOkCaption);
+         accel_cancel = UI.GetAcceleratorChar(_btCancelCaption);
+      }
+
+
+      // Initialize window
+      initWindow(deref l,
+                 _caption,
+                 0, 0, // update position in show()
+                 0, 0
+                 );
+
+      resizeToMinimum();
+   }
+
+   public method getProvidedActionNames() : StringArray {
+      return [ACTION_TEXTEDITDIALOGCLOSED, ACTION_TEXTEDITDIALOGCANCELED, ACTION_SAVE, ACTION_SHORTCUT, ACTION_RIGHT_CLICK];
+   }
+
+   public method isResizable() : boolean {
+      return true;
+   }
+
+   public method setDefaultText(String _text) {
+      // remove ?
+      textedit.setText(_text);
+   }
+
+   public method setText(String _text) {
+      textedit.setText(_text);
+   }
+
+   public method getText() : String {
+      return textedit.getText();
+   }
+
+   public method getTextLines() : StringArray {
+      // returns a copy
+      return textedit.getTextLines();
+   }
+
+   public method getCursorX() : int {
+      return textedit.getCursorX();
+   }
+
+   public method getCursorY() : int {
+      return textedit.getCursorY();
+   }
+
+   public method undoAdd() {
+      textedit.undoAdd();
+   }
+
+   public method gotoXY(int _x, int _y) {
+      textedit.gotoXY(_x, _y);
+      textedit.validateCursorPosition();
+   }
+
+   public method centerY() {
+      textedit.centerY();
+   }
+
+   public method setEnableModal(boolean _bModal) {
+      b_modal = _bModal;
+   }
+
+   public method setEnableAlwaysSave(boolean _bEnable) {
+      b_always_save = _bEnable;
+   }
+
+   public method setEnableQuietHandleEsc(boolean _bEnable) {
+      textedit.setEnableQuietHandleEsc(_bEnable);
+   }
+
+   public method setTextEditPlugin(TextEditPlugin _plugin) {
+      textedit.setTextEditPlugin(deref _plugin);
+   }
+
+   public method setEnableEditNumber(boolean _bEnable) {
+      textedit.setEnableEditNumber(_bEnable);
+   }
+
+   public virtual isPopup() {
+      return b_modal;
+   }
+
+   protected method postShow() {
+      Dialog::postShow();
+      textedit.onTabFocus();
+   }
+
+   public method focusOKButton() {
+      UI.SetKeyboardFocus(bt_ok);
+   }
+
+   public virtual hide() {
+      if(b_always_save)
+         handleSave();
+
+      Dialog::hide();
+   }
+
+   public method hideNoSave() {
+      Dialog::hide();
+   }
+
+   protected handleSelection(boolean _bOK) {
+      // // // textedit.stopEditing(false, false); // Do not provide new action to avoid recursion!
+      textedit.stopEditing(true/*bQuiet*/);
+      hide();  // also provides ACTION_SAVE
+
+      // trace "xxx TextEditDialog::handleSelection: textedit="+#(textedit)+" DebugPrintTimers() after hide():";
+      // UI.DebugPrintTimers();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         StringAction ac <= StringAction.New(getProvidedActionAlias(_bOK ? ACTION_TEXTEDITDIALOGCLOSED : ACTION_TEXTEDITDIALOGCANCELED), this, textedit.getText());
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   protected method handleSave() {
+      if(recipient instanceof ActionConsumer)
+      {
+         StringAction ac <= StringAction.New(getProvidedActionAlias(ACTION_SAVE), this, textedit.getText());
+         recipient.consumeAction(ac);
+      }
+   }
+
+   public method setHighlightLineIdx(int _lineIdx, int _c32) {
+      textedit.setHighlightLineIdx(_lineIdx, _c32);
+   }
+
+   public method setSyntaxHighlighter(TextViewSyntaxHighlighter _hl) {
+      textedit.setSyntaxHighlighter(deref _hl);
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         hide();
+         StringAction ac <= StringAction.New(getProvidedActionAlias(ACTION_RIGHT_CLICK), this, textedit.getText());
+         recipient.consumeAction(ac);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleSelection(false/*bOk*/);
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleSelection(true/*bOk*/);
+            return true;
+
+         default:
+            if(_key.pressed)
+            {
+               ////trace "xxx _key.unicode="+_key.unicode;
+               if(accel_ok)
+               {
+                  if(_key.unicode == accel_ok)
+                  {
+                     ////trace "xxx TextEditDialog: handleSelection _key.pressed="+_key.pressed+" accel_ok="+accel_ok;
+                     handleSelection(true/*bOk*/);
+                     return true;
+                  }
+               }
+               if(accel_cancel)
+               {
+                  if(_key.unicode == accel_cancel)
+                  {
+                     trace "xxx TextEditDialog: handleSelection _key.pressed="+_key.pressed+" accel_cancel="+accel_cancel;
+                     handleSelection(false);
+                     return true;
+                  }
+               }
+            }
+            break;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+      //trace "xxx TextEditDialog: got action name="+name;
+      ActionProvider ap <= _ac.getActionProvider();
+      IntAction iac <= _ac;
+
+      switch(acName)
+      {
+         case "ok":
+            handleSelection(true/*bOk*/);
+            break;
+
+         case "cancel":
+            handleSelection(false/*bOk*/);
+            break;
+
+         // // case TextEdit.ACTION_TEXTENTERED:
+         // //    handleSelection(true);
+         // //    break;
+      }
+
+      switch(@(ap))
+      {
+         case @(scroller_y):
+            textedit.gotoYRel(scroller_y.getValue() / 1000.0f);
+            return true;
+
+         case @(textedit):
+            if(TextEdit.ACTION_SHORTCUT == acName)
+            {
+               if('s' == iac.getIntValue())
+               {
+                  handleSave();
+                  return true;
+               }
+
+               if(recipient instanceof ActionConsumer)
+               {
+                  // trace "xxx textedit acName="+acName+" recipient="+#(recipient);
+                  recipient.consumeAction(_ac);
+               }
+            }
+            else
+            {
+               // ACTION_CURSOR_MOVED
+               // ACTION_TEXT_CHANGED
+               scroller_y.setValue(textedit.getCursorYRel() * 1000);
+               float numVis = textedit.getPercentageVisible();
+               if(numVis >= 1.0f)
+               {
+                  if(p_textedit.hasDirectChildLayer(scroller_y))
+                  {
+                     p_textedit.removeChildLayer(scroller_y);
+                     relayout();
+                  }
+               }
+               else
+               {
+                  if(!p_textedit.hasDirectChildLayer(scroller_y))
+                  {
+                     p_textedit.addLayer(scroller_y, Layout.RIGHT);
+                     relayout();
+                  }
+                  scroller_y.setRelativeKnobSize(numVis);
+                  scroller_y.redraw();
+               }
+            }
+            return true;
+      }
+
+
+      return true;
+   }
+
+}

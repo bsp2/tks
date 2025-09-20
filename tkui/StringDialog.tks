@@ -1,0 +1,181 @@
+// ----
+// ---- file   : StringDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2013-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 26May2013
+// ---- changed: 18Aug2014, 30Nov2018, 03Dec2018, 18Jun2020, 18Nov2022, 23Feb2024
+// ----
+// ----
+// ----
+
+module MStringDialog;
+
+namespace ui;
+
+
+class StringDialogTextField : TextField {
+   protected virtual focusPreviousTabCycleMember(boolean _bLocal) {
+      StringDialog dlg <= getRoot();
+      dlg.handleSelection(StringDialog.ACTION_PREVIOUS);
+   }
+
+   protected virtual focusNextTabCycleMember(boolean _bLocal) {
+      StringDialog dlg <= getRoot();
+      dlg.handleSelection(StringDialog.ACTION_NEXT);
+   }
+}
+
+class StringDialog : FloatingLayer, ActionConsumer, ActionProvider {
+   // a floating textfield with no window decoration
+
+   define String ACTION_RETURN;
+   define String ACTION_EDIT;
+   define String ACTION_PREVIOUS;
+   define String ACTION_NEXT;
+   define String ACTION_CANCEL;
+   define String ACTION_FINDNEXT;  // lctrl-f
+
+   protected ActionConsumer *recipient;
+   protected StringDialogTextField *tf;
+
+   public boolean b_provide_edit;
+   public boolean b_keep_open_after_return;
+
+
+   public method init(String _fontName) : boolean {
+
+      initFloatingLayer();
+
+      tf <= new StringDialogTextField();
+      tf.initTextField();
+      tf.setEnableSkipEsc(true);
+
+      if(null != _fontName)
+      {
+         tf.setFontByName(_fontName);
+      }
+
+      setLayout(SuperBorderLayout);
+      setPadding4f(0,0,0,0);
+      tf.alignment = Layout.EXPANDX;
+      tf.b_always_send_textchanged = true;
+      addLayer(tf, Layout.CENTER);
+
+      // // recursiveSetLookAndFeel(LookAndFeel.LIGHT);
+      return true;
+   }
+
+   public method configure(String _text, int _maxCols, int _visCols, ActionConsumer _recipient) {
+
+      recipient <= _recipient;
+
+      tf.setMaxTextLength(_maxCols);
+      tf.setVisibleTextLength(_visCols);
+      tf.setText(_text);
+      tf.b_stop_on_return = !b_keep_open_after_return;
+
+      resizeToMinimum();
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_RETURN, ACTION_EDIT, ACTION_PREVIOUS, ACTION_NEXT, ACTION_CANCEL, ACTION_FINDNEXT];
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public method setEnableProvideEdit(boolean _bEnable) {
+      b_provide_edit = _bEnable;
+   }
+
+   public virtual hideByMouseClick() {
+      handleSelection(ACTION_CANCEL);
+   }
+
+   protected virtual postShow() {
+      FloatingLayer::postShow();
+      tf.onTabFocus();
+   }
+
+   module handleSelection(String _actionName) {
+      // // trace "xxx handleSelection _actionName="+_actionName+" recipient="+#(recipient);
+      if(ACTION_EDIT != _actionName)
+      {
+         if((ACTION_RETURN != _actionName) || !b_keep_open_after_return)
+         {
+            tf.stopEditing(false, false, true); // Do not provide new action to avoid recursion!
+            hide();
+         }
+      }
+      if(recipient instanceof ActionConsumer)
+      {
+         StringAction ac <= StringAction.New(getProvidedActionAlias(_actionName), this, tf.getText());
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   public method getText() : String {
+      return tf.getText();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx onKey pressed="+_k.pressed;
+      switch(_k.pressed)
+      {
+         case VKEY_RETURN:
+            handleSelection(ACTION_RETURN);
+            return true;
+
+         case VKEY_ESCAPE:
+            handleSelection(ACTION_CANCEL);
+            return true;
+
+         case 'f':
+            if(_k.modCtrlOnly())
+            {
+               handleSelection(ACTION_FINDNEXT);
+               return true;
+            }
+            break;
+
+         // // case VKEY_TAB:
+         // //    handleSelection(ACTION_TAB); // never recv'd
+         // //    return true;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String name = _ac.getActionName();
+
+      switch(name)
+      {
+         // // case TextField.ACTION_TEXTCHANGED: // tab (never recv'd)
+         // //    handleSelection(ACTION_TAB);
+         // //    break;
+
+         case TextField.ACTION_TEXTENTERED: // return
+            handleSelection(ACTION_RETURN);
+            break;
+
+         case TextField.ACTION_TEXTEDITED: // char typed
+            if(b_provide_edit)
+               handleSelection(ACTION_EDIT);
+            break;
+      }
+
+      return true;
+   }
+
+}

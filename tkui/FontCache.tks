@@ -1,0 +1,269 @@
+// ----
+// ---- file   : FontCache.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 25Apr2005
+// ---- changed: 27Apr2005, 30Apr2005, 06May2005, 12Jun2005, 25Jun2005, 31Jul2005, 23Sep2009
+// ----          14Apr2013, 08Mar2014, 11Aug2014, 13Aug2014, 28Dec2015, 27Nov2018, 14Jun2019
+// ----          21Oct2023, 22Oct2023, 05Nov2023, 16Nov2023, 24Mar2024, 27Jun2024, 20Sep2025
+// ----
+// ----
+// ----
+
+module MFontCache;
+
+namespace ui;
+
+
+class FontCache {
+
+   // ---- a hashtable(font names) of pointerarrays(font style flags 0..3) with hashtables(font sizes)
+   private HashTable font_names;
+
+   // ---- maps alias names to actual font names (e.g. fixed->FreeMono)
+   private HashTable font_aliases;
+
+   private List font_resources;
+
+
+   public method addFontResource(FontResource _fr) : boolean {
+      if(_fr instanceof FontResource)
+      {
+         String htFontName, fontName <= _fr.font_name;
+         local HashTable htSizes;
+         local PointerArray paStyles;
+         htFontName = fontName; htFontName.toLower();
+
+         int frStyleFlags = (_fr.style_flags & Font.STYLE_MASK);
+
+         if(!font_names.exists(fontName))
+         {
+            paStyles.alloc(Font.STYLE_MASK+1); // STYLE_xxx 0..3
+            paStyles.numElements=paStyles.maxElements;
+            paStyles[frStyleFlags] = deref htSizes;
+            // ---- overwrites/deletes/unlinks previous font resource for the given base size
+            String szName = String(float(_fr.font_size));
+
+            if(htSizes.exists(szName))
+            {
+               trace "[---] FontCache::addFontResource(): resouce "+htFontName+" "+Font.GetStyleFlagsStringFor(frStyleFlags)+" "+szName+" already exists.";
+               return false;
+            }
+
+            htSizes[szName]= _fr;
+            font_resources.addLast(#(deref _fr));
+            font_names[htFontName] = deref paStyles;
+            return true;
+         }
+         else
+         {
+            paStyles <= font_names[htFontName];
+
+            if(null != paStyles.get(frStyleFlags))
+            {
+               htSizes <= paStyles[frStyleFlags];
+            }
+            else
+            {
+               paStyles[frStyleFlags] = deref htSizes;
+            }
+
+            // ---- overwrites/deletes/unlinks previous font resource for the given base size
+            // trace "xxx FontCache::addFontResource: fontName=\""+fontName+"\" fr.font_size="+_fr.font_size;
+            htSizes[String(float(_fr.font_size))] = _fr;
+            font_resources.addLast(#(deref _fr));
+            // trace "xxx font_resources="+#(font_resources);
+            htFontName = fontName; htFontName.toLower();
+            // //font_names[htFontName]=deref paStyles;
+            return true;
+         }
+      }
+      else
+      {
+         trace "[---] FontCache::addFontResource(): "+#(_fr)+" is not an instanceof FontResource.";
+      }
+      trace "[---] FontCache::addFontResource(): failed.";
+      return false;
+   }
+
+   // ---- Add an alias for the given font resource. E.g. addFontFamilyAlias("courier", "fixed");
+   public method addFontAlias(String _fontName, String _aliasFontName) {
+      String afn = _aliasFontName; afn.toLower();
+      String fn = _fontName; fn.toLower();
+      font_aliases[afn]=String(fn);
+   }
+
+   // ----
+   // ---- Returns a Font object that is associated with a FontResource.
+   // ---- String arguments:
+   // ----     _fontName          : "verdana", "courier" ...
+   // ----     _extendedStyleFlags: a combination of "underline" "bold", "italics"
+   // ----     _desiredSize       : an integer/float value. The best matching base font size is selected from the font cache resources.
+   // ----                          The selected font is then scaled during rendering to match the desired font size.
+   // ----
+   public method getFontByName(String _fontName_extendedStyleFlags_desiredSize) : Font {
+
+      // ---- Try alias
+      // trace "xxx font_aliases="+#(font_aliases);
+      if(font_aliases.exists(_fontName_extendedStyleFlags_desiredSize))
+      {
+         // trace "xxx map fontalias \""+_fontName_extendedStyleFlags_desiredSize+"\"";
+         _fontName_extendedStyleFlags_desiredSize = font_aliases[_fontName_extendedStyleFlags_desiredSize];
+         // trace "xxx map fontalias to \""+_fontName_extendedStyleFlags_desiredSize+"\"";
+      }
+
+      StringArray sWords <= _fontName_extendedStyleFlags_desiredSize.splitSpace(true);
+      int numWords = sWords.numElements;
+      if(numWords < 2)
+      {
+         trace "[---] FontCache::getFontByName(): unknown font string \""+_fontName_extendedStyleFlags_desiredSize+"\".";
+         return null;
+      }
+      String *cw;
+      String origFontName = "", fontName = "";
+      int styleFlags  = Font.STYLE_NORMAL;
+      int renderFlags = Font.RENDER_STYLE_NORMAL;
+      float fontSize = 0.0f;
+      foreach cw in sWords
+      {
+         cw.toLower();
+         switch(cw)
+         {
+            default:
+               Float fo;
+               if(cw.yacScanF32(fo))
+               {
+                  if(fontSize <= 0.1f)
+                  {
+                     fontSize = cw;
+                  }
+                  else
+                  {
+                     trace "[---] FontCache::getFontByName(): unknown token \""+cw+"\".";
+                     return null;
+                  }
+               }
+               else
+               {
+                  if(fontName.isBlank())
+                  {
+                     fontName = cw;
+                  }
+                  else
+                  {
+                     trace "[---] FontCache::getFontByName(): unknown token \""+cw+"\".";
+                     return null;
+                  }
+               }
+               break;
+
+            case "regular":
+            case "normal":
+               break;
+            case "italic":
+            case "italics":
+            case "oblique":
+               styleFlags |= Font.STYLE_ITALIC;
+               break;
+            case "bold":
+               styleFlags |= Font.STYLE_BOLD;
+               break;
+            case "underline":
+               renderFlags |= Font.RENDER_STYLE_UNDERLINE;
+               break;
+         }
+      }
+
+      if(fontName.isBlank())
+      {
+         trace "[---] FontCache::getFontByName(): font name not set.";
+         return null;
+      }
+      origFontName = fontName;
+
+      if(fontSize <= 0.1f)
+      {
+         trace "[---] FontCache::getFontByName(): fontSize not set.";
+         return null;
+      }
+
+      // ---- find font
+      ////trace "debug: "+#(font_names[fontName]);
+      PointerArray paStyles <= font_names[fontName];
+      if(! (paStyles instanceof PointerArray) )
+      {
+         // // // ---- Try alias
+         // // fontName=font_aliases[fontName];
+         paStyles <= font_names[fontName];
+         ///trace "2font_names["+fontName+"]="+#(font_names[fontName])+" paStyles="+#(paStyles);
+         if(! (paStyles instanceof PointerArray) )
+         {
+            trace "[---] FontCache::getFontByName(): font \""+origFontName+"\" not found.";
+            return null;
+         }
+      }
+      // ---- find style
+      HashTable htSizes <= paStyles[styleFlags];
+      if(null == htSizes)
+      {
+         trace "[---] FontCache::getFontByName(): cannot find matching style "+Font.GetStyleFlagsStringFor(styleFlags)+" for font \""+origFontName+"\".";
+         return null;
+      }
+      // ---- find best matching font size
+      String *ckey; // the HashTable keys are Strings
+      // // String *ckey_maxSize;
+      // // float f_maxSize = 0.0f;
+      FontResource fr <= null;
+      float bestMatchSz = 999999;
+      foreach ckey in htSizes
+      {
+         float fsize = ckey;
+         if(abs(fsize - fontSize) < abs(bestMatchSz - fontSize))
+         {
+            bestMatchSz = fsize;
+            fr <= htSizes[ckey];
+         }
+         // trace "xxx FontCache::getFontByName: find fontSize="+fontSize+" cur fsize="+fsize;
+         // // if(fsize > f_maxSize) // remember largest font size
+         // // {
+         // //    f_maxSize = fsize;
+         // //    ckey_maxSize <= ckey;
+         // // }
+         // // if(int(fsize * 10) == int(fontSize * 10)) // exact match?
+         // // {
+         // //    fr <= htSizes[ckey];
+         // //    return Font.New(fr, fsize, fontSize, styleFlags);
+         // // }
+      }
+      if(null == fr)
+      {
+         trace "[---] FontCache::getFontByName(): could not find suitable resource for font \""+origFontName+"\" size "+fontSize+".";
+         return null;
+      }
+      // // fr <= htSizes[bestMatchKey];
+
+      return Font.New(fr, bestMatchSz, fontSize, styleFlags);
+   }
+
+   public method onOpen() {
+      ListNode *lnfr;
+      foreach lnfr in font_resources
+      {
+         FontResource fr <= lnfr.objectValue;
+         if(fr instanceof FontResource)
+         {
+            ////trace "xxx FontCache onOpen: fr="+#(fr)+" fr.font_name="+fr.font_name+" size="+fr.font_size+" style_flags="+fr.style_flags;
+            fr.onOpen();
+         }
+         else
+         {
+            trace "[---] FontCache::onOpen: ill object fr="+#(fr);
+         }
+      }
+   }
+}

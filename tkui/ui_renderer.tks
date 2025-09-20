@@ -1,0 +1,3619 @@
+// ----
+// ---- file   : ui_renderer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : Frequently used rendering routines
+// ----
+// ---- created: 07Jun2005
+// ---- changed: 18Jun2005, 05Aug2006, 13Aug2006, 19May2007, 08Feb2010, 22Apr2010, 14Jul2010
+// ----          31May2013, 19Jan2017, 30Jan2017, 04Apr2017, 13Apr2017, 10Feb2018, 24Feb2018
+// ----          02Mar2018, 21Jul2018, 26Nov2018, 27Nov2018, 01Nov2019, 02Nov2019, 12Apr2020
+// ----          30Sep2022, 04Mar2023, 08Oct2023, 13Mar2024, 15Mar2024, 22Mar2024, 24Mar2024
+// ----          01Apr2024, 03Apr2024, 04Apr2024, 08Apr2024, 09Apr2024, 15Aug2025, 02Sep2025
+// ----          10Sep2025, 11Sep2025, 12Sep2025, 13Sep2025, 14Sep2025, 16Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MUIRenderer;
+
+namespace ui;
+
+
+// ----
+// ---- Widget rendering utility functions
+// ----
+class UIRenderer {
+
+   // (todo) set to 1 once all legacy GL calls have been replaced by Minnie/ShaderVG API
+   static int b_glcore = getenv("TKSDL_GLCORE");
+   static int sdvg_scratchbuffer_size = 1024*1024;
+   static boolean b_draw_gl           = 0;  // 1=use legacy GL calls   0=use sdvg
+   static boolean b_sdvg_return_to_gl = 0;  // call sdvg_ReturnToFrame() after each draw call (very slow)
+   static boolean b_gl_attrib_stack   = 0;  // 1=use glPush*Attrib   0=use sdvg only
+
+   static boolean b_debug;
+
+   // Reference to current layer lnf_colors.
+   // Updated before layer (or layer overlay) is drawn.
+   //  (todo) move render functions that need to access lnf_colors to Layer class ?
+   //          (and just keep the basic primitives in this class)
+   static IntArray *lnf_colors;
+
+   define int MATRIX_STACK_SIZE = 32;
+   static private Matrix4f *[] proj_stack;
+   static private int proj_stacki;
+   static private Matrix4f proj_mat;
+   static private FloatArray proj_w_stack;
+   static private float proj_w;
+
+   static private Matrix4f *[] model_stack;
+   static private int model_stacki;
+   static private Matrix4f model_mat;
+
+
+   static Init() {
+      trace "[dbg] UIRenderer::Init: b_glcore="+b_glcore;
+      sdvg_SetScratchBufferSize(sdvg_scratchbuffer_size);
+      sdvg_SetGLSLVersion(b_glcore/*bV3*/, false/*bGLES*/, null/*sVersionStringOrNull*/);
+      zglEnableGLCore(b_glcore);
+      sdvg_Init(b_glcore);
+
+      loop(MATRIX_STACK_SIZE + 1)
+      {
+         proj_stack.add(#(new Matrix4f));
+         model_stack.add(#(new Matrix4f));
+      }
+      proj_stacki = MATRIX_STACK_SIZE;
+      model_stacki = MATRIX_STACK_SIZE;
+   }
+
+   static OnOpen() {
+      zglEnableGLCore(UIRenderer.b_glcore);
+      sdvg_OnOpen();
+   }
+
+   static Exit() {
+      sdvg_Exit();
+   }
+
+   public static SetColorARGB(int _c32) {
+      if(!b_glcore)
+         zglColorARGB(_c32);
+      sdvg_SetFillColorARGB(_c32);
+      sdvg_SetStrokeColorARGB(_c32);
+   }
+
+   public static SetColor3f(float _r, float _g, float _b) {
+      if(!b_glcore)
+         glColor3f(_r, _g, _b);
+      sdvg_SetFillColor4f(_r, _g, _b, 1.0f);
+      sdvg_SetStrokeColor4f(_r, _g, _b, 1.0f);
+   }
+
+   public static SetColor4f(float _r, float _g, float _b, float _a) {
+      if(!b_glcore)
+         glColor4f(_r, _g, _b, _a);
+      sdvg_SetFillColor4f(_r, _g, _b, _a);
+      sdvg_SetStrokeColor4f(_r, _g, _b, _a);
+   }
+
+   public static SetLineWidth(float _w) {
+      if(!b_glcore)
+         glLineWidth(_w);
+      sdvg_SetStrokeWidth(_w * 0.5f);
+   }
+
+   public static SetPointSize(float _s) {
+      glPointSize(_s);
+      sdvg_SetPointRadius(_s * 0.5f);
+   }
+
+   static UpdateTransform() {
+      // (todo) postpone until next draw call
+      Matrix4f mvp <= sdvg_GetTransformRef();
+      proj_mat.mul(model_mat) => mvp;
+
+      // Vector4f v; v.init(200,30,0,1);
+      // v.transform(mvp);
+      // trace "xxx UpdateTransform: test v="+v.string;
+
+      // (todo) remove once all legacy GL calls have been replaced by sdvg_*()
+      if(!b_glcore)
+      {
+         glMatrixMode(GL_PROJECTION);
+         zglLoadMatrixTransposef(mvp);
+         // trace "xxx UpdateTransform: mvp="+mvp.string;
+         glMatrixMode(GL_MODELVIEW);
+         glLoadIdentity();
+      }
+   }
+
+   static UpdatePixelScaling() {
+      // calc viewport/projection dependent stroke width scaling factor
+      float pixelScl = (proj_w / sdvg_GetViewportWidth());
+      // // if(pixelScl > 1.0f)
+      // // {
+      // //    // // // pixelScl = 1.0f;
+      // // }
+      // trace "xxx UpdatePixelScaling: proj_w="+proj_w+" vpw="+sdvg_GetViewportWidth()+" => pixelScl="+pixelScl;
+      sdvg_SetPixelScaling(pixelScl);
+   }
+
+   static SetViewport(int _x, int _y, int _w, int _h) {
+      // trace "xxx SetViewport: x="+_x+" y="+_y+" w="+_w+" h="+_h;
+      sdvg_SetViewport(_x, _y, _w, _h);
+      UpdatePixelScaling();
+   }
+
+   static PushViewport(int _x, int _y, int _w, int _h) {
+      // trace "xxx PushViewport: x="+_x+" y="+_y+" w="+_w+" h="+_h;
+      sdvg_PushViewport(_x, _y, _w, _h);
+      UpdatePixelScaling();
+   }
+
+   static PopViewport() {
+      sdvg_PopViewport();
+      UpdatePixelScaling();
+   }
+
+   static PushProjMatrix() {
+      if(proj_stacki > 0)
+      {
+         proj_stacki--;
+         // // trace "xxx PushProjMatrix: proj_stacki="+proj_stacki;
+         Matrix4f matProj <= proj_stack[proj_stacki];
+         matProj = proj_mat;
+         proj_w_stack[proj_stacki] = proj_w;
+         // // trace "xxx PushProjMatrix: proj_mat="+proj_mat+" proj_w="+proj_w;
+      }
+      else
+      {
+         trace "[---] UIRenderer.PushProjMatrix: stack overflow";
+      }
+   }
+
+   static PopProjMatrix() {
+      if(proj_stacki < MATRIX_STACK_SIZE)
+      {
+         // // trace "xxx PopProjMatrix: proj_stacki="+proj_stacki;
+         Matrix4f matProj <= proj_stack.get(proj_stacki);
+         proj_mat = matProj;
+         proj_w = proj_w_stack.get(proj_stacki);
+         // // trace "xxx PopProjMatrix: proj_mat="+proj_mat+" proj_w="+proj_w;
+         UpdateTransform();
+         UpdatePixelScaling();
+
+         proj_stacki++;
+      }
+      else
+      {
+         trace "[---] UIRenderer.PopProjMatrix: stack underflow";
+      }
+   }
+
+   static PushModelMatrix() {
+      if(model_stacki > 0)
+      {
+         Matrix4f matModel <= model_stack[--model_stacki];
+         matModel = model_mat;
+      }
+      else
+      {
+         trace "[---] UIRenderer.PushModelMatrix: stack overflow";
+      }
+   }
+
+   static PopModelMatrix() {
+      if(model_stacki < MATRIX_STACK_SIZE)
+      {
+         Matrix4f matModel <= model_stack.get(model_stacki++);
+         model_mat = matModel;
+         UpdateTransform();
+      }
+      else
+      {
+         trace "[---] UIRenderer.PopModelMatrix: stack underflow";
+      }
+   }
+
+   static ProjInit2D(float _w, float _h) {
+      proj_mat.initOrtho(0.0f, _w,
+                         _h,   0.0f,
+                         -1.0f, 1.0f
+                         );
+      proj_w = _w;
+      UpdateTransform();
+      UpdatePixelScaling();
+   }
+
+   static ProjInitOrtho(float _sx, float _sy) {
+      proj_mat.initOrtho(-_sx, _sx,
+                         -_sy, _sy,
+                         -1.0f, 1.0f
+                         );
+      proj_w = _sx * 2.0f;
+      UpdateTransform();
+      UpdatePixelScaling();
+   }
+
+   static ProjInitIdentity() {
+      proj_mat.initIdentity();
+      UpdateTransform();
+   }
+
+   static ProjTranslate2f(float _tx, float _ty) {
+      proj_mat.translatef(_tx, _ty, 0.0f);
+      UpdateTransform();
+   }
+
+   static ModelInitIdentity() {
+      model_mat.initIdentity();
+      UpdateTransform();
+   }
+
+   static ModelTranslate2f(float _tx, float _ty) {
+      model_mat.translatef(_tx, _ty, 0.0f);
+      UpdateTransform();
+   }
+
+   static ModelScale2f(float _sx, float _sy) {
+      model_mat.scalef(_sx, _sy, 1.0f);
+      UpdateTransform();
+   }
+
+   static ModelRotatef(float _rad) {
+      model_mat.rotatef(0.0f, 0.0f, _rad);
+      UpdateTransform();
+   }
+
+   static BeginFrame() {
+
+      sdvg_BeginFrame();
+
+      proj_stacki = MATRIX_STACK_SIZE;
+      model_stacki = MATRIX_STACK_SIZE;
+      proj_mat.initIdentity();
+      model_mat.initIdentity();
+      UpdateTransform();
+   }
+
+   static EndFrame() {
+      sdvg_EndFrame();
+   }
+
+   static BeginFilledTrianglesEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_transform", "u_color_fill", "a_vertex"
+         return sdvg_BeginFilledTriangles(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginFilledTriangles(int _numVertices) : boolean {
+      return BeginFilledTrianglesEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginFilledTriangleFanEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_FAN);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_transform", "u_color_fill", "a_vertex"
+         return sdvg_BeginFilledTriangleFan(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginFilledTriangleFan(int _numVertices) : boolean {
+      return BeginFilledTriangleFanEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginFilledTriangleStripEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         glBegin(GL_TRIANGLE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_transform", "u_color_fill", "a_vertex"
+         return sdvg_BeginFilledTriangleStrip(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginFilledTriangleStrip(int _numVertices) : boolean {
+      return BeginFilledTriangleStripEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginFilledGouraudTrianglesEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_transform", "u_global_alpha", "a_vertex", "a_color"
+         return sdvg_BeginFilledGouraudTriangles(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginFilledGouraudTriangles(int _numVertices) : boolean {
+      return BeginFilledGouraudTrianglesEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginFilledGouraudTriangleFanEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_FAN);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         // sdvg_BindShader(shader_fill_gouraud);
+         // if(sdvg_BeginTriangleFan(_numVertices, 4+(2*4)/*stride*/))
+         // {
+         //    sdvg_AttribOffsetARGB("a_color");
+         //    sdvg_VertexOffset2f();
+         //    return true;
+         // }
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_transform", "u_global_alpha", "a_vertex", "a_color"
+         return sdvg_BeginFilledGouraudTriangleFan(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginFilledGouraudTriangleFan(int _numVertices) : boolean {
+      return BeginFilledGouraudTriangleFanEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginFilledGouraudTriangleStripEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_transform", "u_global_alpha", "a_vertex", "a_color"
+         return sdvg_BeginFilledGouraudTriangleStrip(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginFilledGouraudTrianglesStrip(int _numVertices) : boolean {
+      return BeginFilledGouraudTriangleStripEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedTrianglesEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv"
+         return sdvg_BeginTexturedTriangles(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangles(int _numVertices) : boolean {
+      return BeginTexturedTrianglesEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedTriangleFanEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_FAN);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv"
+         return sdvg_BeginTexturedTriangleFan(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangleFan(int _numVertices) : boolean {
+      return BeginTexturedTriangleFanEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedTriangleStripEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv"
+         return sdvg_BeginTexturedTriangleStrip(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangleStrip(int _numVertices) : boolean {
+      return BeginTexturedTriangleStripEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedGouraudTrianglesEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv", "a_color"
+         return sdvg_BeginTexturedGouraudTriangles(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangles(int _numVertices) : boolean {
+      return BeginTexturedGouraudTrianglesEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedGouraudTriangleFanEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_FAN);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv", "a_color"
+         return sdvg_BeginTexturedGouraudTriangleFan(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleFan(int _numVertices) : boolean {
+      return BeginTexturedGouraudTriangleFanEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedGouraudTriangleStripEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv", "a_color"
+         return sdvg_BeginTexturedGouraudTriangleStrip(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleStrip(int _numVertices) : boolean {
+      return BeginTexturedGouraudTriangleStripEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedTrianglesAlphaEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv"
+         return sdvg_BeginTexturedTrianglesAlpha(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedTrianglesAlpha(int _numVertices) : boolean {
+      return BeginTexturedTrianglesAlphaEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedTriangleFanAlphaEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_FAN);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv"
+         return sdvg_BeginTexturedTriangleFanAlpha(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangleFanAlpha(int _numVertices) : boolean {
+      return BeginTexturedTriangleFanAlphaEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedTriangleStripAlphaEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv"
+         return sdvg_BeginTexturedTriangleStripAlpha(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedTriangleStripAlpha(int _numVertices) : boolean {
+      return BeginTexturedTriangleStripAlphaEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedGouraudTrianglesAlphaEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv", "a_color"
+         return sdvg_BeginTexturedGouraudTrianglesAlpha(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedGouraudTrianglesAlpha(int _numVertices) : boolean {
+      return BeginTexturedGouraudTrianglesAlphaEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedGouraudTriangleFanAlphaEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_FAN);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv", "a_color"
+         return sdvg_BeginTexturedGouraudTriangleFanAlpha(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleFanAlpha(int _numVertices) : boolean {
+      return BeginTexturedGouraudTriangleFanAlphaEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginTexturedGouraudTriangleStripAlphaEx(int _numVertices, boolean _bBuiltinShader) : boolean {
+      if(b_draw_gl)
+      {
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_TRIANGLE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         if(_bBuiltinShader)
+            sdvg_BindShader(0);
+         // else: custom shader must have "u_sampler", "u_color_fill", "a_vertex", "a_uv", "a_color"
+         return sdvg_BeginTexturedGouraudTriangleStripAlpha(_numVertices);
+      }
+      return false;
+   }
+
+   static BeginTexturedGouraudTriangleStripAlpha(int _numVertices) : boolean {
+      return BeginTexturedGouraudTriangleStripAlphaEx(_numVertices, true/*bBuiltinShader*/);
+   }
+
+   static BeginLineStrip(int _numPoints) : boolean {
+      if(b_draw_gl)
+      {
+         glBegin(GL_LINE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginLineStrip(_numPoints);
+      }
+   }
+
+   static BeginLineStripAA(int _numPoints) : boolean {
+      if(b_draw_gl)
+      {
+         glEnable(GL_LINE_SMOOTH);  // b_draw_gl
+         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);  // b_draw_gl
+         glBegin(GL_LINE_STRIP);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         // Matrix4f mvp <= sdvg_GetTransformRef();
+         // trace "xxx beginLineStripAA: numPoints="+_numPoints+" mvp="+mvp;
+         return sdvg_BeginLineStripAA(_numPoints);
+      }
+   }
+
+   static BeginLines(int _numPoints) : boolean {
+      if(b_draw_gl)
+      {
+         glBegin(GL_LINES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginLines(_numPoints);
+      }
+   }
+
+   static BeginLinesAA(int _numPoints) : boolean {
+      if(b_draw_gl)
+      {
+         glEnable(GL_LINE_SMOOTH);  // b_draw_gl
+         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);  // b_draw_gl
+         glBegin(GL_LINES);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginLinesAA(_numPoints);
+      }
+   }
+
+   static BeginPointsSquare(int _numPoints) : boolean {
+      if(0 == _numPoints)
+      {
+         trace "[!!!] UIRenderer.BeginPointsSquare: numPoints == 0 !!";
+         return false;
+      }
+      if(b_draw_gl)
+      {
+         glBegin(GL_POINTS);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginPointsSquare(_numPoints);
+      }
+   }
+
+   static BeginPointsSquareAA(int _numPoints) : boolean {
+      if(0 == _numPoints)
+      {
+         trace "[!!!] UIRenderer.BeginPointsSquareAA: numPoints == 0 !!";
+         return false;
+      }
+      if(b_draw_gl)
+      {
+         glBegin(GL_POINTS);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginPointsSquareAA(_numPoints);
+      }
+   }
+
+   static BeginPointsRound(int _numPoints) : boolean {
+      if(0 == _numPoints)
+      {
+         trace "[!!!] UIRenderer.BeginPointsRound: numPoints == 0 !!";
+         return false;
+      }
+      if(b_draw_gl)
+      {
+         glBegin(GL_POINTS);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginPointsRound(_numPoints);
+      }
+   }
+
+   static BeginPointsRoundAA(int _numPoints) : boolean {
+      if(0 == _numPoints)
+      {
+         trace "[!!!] UIRenderer.BeginPointsRoundAA: numPoints == 0 !!";
+         return false;
+      }
+      if(b_draw_gl)
+      {
+         if(!b_glcore)
+         {
+            glEnable(GL_POINT_SMOOTH);
+            glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+         }
+         glBegin(GL_POINTS);  // b_draw_gl
+         return true;
+      }
+      else
+      {
+         return sdvg_BeginPointsRoundAA(_numPoints);
+      }
+   }
+
+   static Vertex2f(float _x, float _y) {
+      if(b_draw_gl)
+         glVertex2f(_x, _y);
+      else
+         sdvg_Vertex2f(_x, _y);
+   }
+
+   static ColorARGB(int _c32) {
+      if(b_draw_gl)
+         zglColorARGB(_c32);
+      else
+         sdvg_ColorARGB(_c32);
+   }
+
+   static TexCoord2f(float _x, float _y) {
+      if(b_draw_gl)
+         glTexCoord2f(_x, _y);
+      else
+         sdvg_TexCoord2f(_x, _y);
+   }
+
+   static End() {
+      if(b_draw_gl)
+      {
+         glEnd();  // b_draw_gl
+         if(!b_glcore)
+         {
+            glDisable(GL_POINT_SMOOTH);  // !b_glcore
+            glDisable(GL_LINE_SMOOTH);  // !b_glcore
+         }
+      }
+      else
+      {
+         sdvg_End();
+         if(b_sdvg_return_to_gl)
+         {
+            sdvg_UnbindShader();
+            if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+         }
+      }
+   }
+
+   static GetColor(int _lnfIdx) : int {
+      return lnf_colors.get(_lnfIdx);
+   }
+
+   static GetColorAlpha(int _lnfIdx, byte _alpha) : int {
+      int c32 = lnf_colors.get(_lnfIdx);
+      return (c32&0x00ffffff) | ((_alpha&255)<<24);
+   }
+
+   static GetTintedColor(int _lnfIdx, int _tint32) : int {
+      int c32 = lnf_colors.get(_lnfIdx);
+      if(_tint32) // Colorize ?
+         c32 = sdvg_MixARGBf(c32, 0xff000000 | (_tint32&0x00FFFFFF), ((_tint32>>24)&255)/255.0);
+      return c32;
+   }
+
+   static GetTintedColorAlpha(int _lnfIdx, int _tint32, int _alpha) : int {
+      int c32 = GetTintedColor(_lnfIdx, _tint32);
+      return (c32&0x00FFFFFF) | ((_alpha&255)<<24);
+   }
+
+   public static DrawQuadFill(float _ltx, float _lty,
+                              float _rtx, float _rty,
+                              float _rbx, float _rby,
+                              float _lbx, float _lby,
+                              int _c32
+                              ) {
+      SetColorARGB(_c32);
+      if(BeginFilledTriangleFan(4))
+      {
+         Vertex2f(_ltx, _lty);
+         Vertex2f(_rtx, _rty);
+         Vertex2f(_rbx, _rby);
+         Vertex2f(_lbx, _lby);
+         End();
+      }
+   }
+
+   public static DrawQuadStroke(float _ltx, float _lty,
+                                float _rtx, float _rty,
+                                float _rbx, float _rby,
+                                float _lbx, float _lby,
+                                int _c32
+                                ) {
+      SetColorARGB(_c32);
+      if(BeginLineStrip(5))
+      {
+         Vertex2f(_ltx, _lty);
+         Vertex2f(_rtx, _rty);
+         Vertex2f(_rbx, _rby);
+         Vertex2f(_lbx, _lby);
+         Vertex2f(_ltx, _lty);
+         End();
+      }
+   }
+
+   public static DrawLine(float _x, float _y,
+                          float _x2, float  _y2,
+                          int _c32
+                          ) {
+      explain "Draw a line from (x;y) to (x2;y2) using the given color.";
+
+      if(b_draw_gl)
+      {
+         SetColorARGB(_c32);
+         glEnable(GL_LINE_SMOOTH);  // b_draw_gl
+         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);  // b_draw_gl
+         glBegin(GL_LINES);  // b_draw_gl
+         glVertex2f(_x, _y);
+         glVertex2f(_x2, _y2);
+         glEnd();  // b_draw_gl
+         glDisable(GL_LINE_SMOOTH);  // b_draw_gl
+      }
+      else
+      {
+         sdvg_SetStrokeColorARGB(_c32);
+         if(sdvg_BeginLineStrip(2/*numPoints*/))
+         {
+            sdvg_Vertex2f(_x,  _y);
+            sdvg_Vertex2f(_x2, _y2);
+            sdvg_End();
+         }
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+   }
+
+   public static DrawLineAA(float _x, float _y,
+                            float _x2, float  _y2,
+                            int _c32
+                            ) {
+      explain "Draw a line from (x;y) to (x2;y2) using the given color.";
+
+      if(b_draw_gl)
+      {
+         SetColorARGB(_c32);
+         glEnable(GL_LINE_SMOOTH);  // b_draw_gl
+         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);  // b_draw_gl
+         glBegin(GL_LINES);  // b_draw_gl
+         glVertex2f(_x, _y);
+         glVertex2f(_x2, _y2);
+         glEnd();  // b_draw_gl
+         glDisable(GL_LINE_SMOOTH);  // b_draw_gl
+      }
+      else
+      {
+         sdvg_SetStrokeColorARGB(_c32);
+         if(sdvg_BeginLineStripAA(2/*numPoints*/))
+         {
+            sdvg_Vertex2f(_x,  _y);
+            sdvg_Vertex2f(_x2, _y2);
+            sdvg_End();
+         }
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+   }
+
+   public static DrawDot(float _x, _y, int _c32) {
+      explain "Draw a single dot at (x;y)using the given color.";
+      SetColorARGB(_c32);
+      if(BeginPointsSquare(1))
+      {
+         Vertex2f(_x, _y);
+         End();
+      }
+   }
+
+   public static DrawRoundDot(float _x, float _y, float _sz, int _c32) {
+      SetPointSize(_sz);
+      SetColorARGB(_c32);
+      if(BeginPointsRoundAA(1))
+      {
+         Vertex2f(_x, _y);
+         End();
+      }
+      SetPointSize(1);
+   }
+
+   public static BeginRoundDots(int _maxPoints, float _sz, int _c32) {
+      // called by NSQ_Tempo
+      SetPointSize(_sz);
+      SetColorARGB(_c32);
+      if(b_draw_gl)
+      {
+         glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+         glEnable(GL_POINT_SMOOTH);
+         glBegin(GL_POINTS);  // b_draw_gl
+      }
+      else
+      {
+         BeginPointsRoundAA(_maxPoints);
+      }
+   }
+
+   public static DrawNextRoundDot(float _x, float _y) {
+      Vertex2f(_x, _y);
+   }
+
+   public static EndRoundDots() {
+      End();
+      SetPointSize(1);
+   }
+
+   // ----
+   // ---- Render (the outline of) a rectangle
+   // ---- Arguments:
+   // ----      (_x, _y): left top position of the rectangle.
+   // ----      (_w, _h): size of the rectangle (width/height)
+   // ----            _b: border-thickness (usually 1)
+   // ----        _color: Border color
+   // ----
+   public static DrawRectangle(float _x, float _y,
+                               float _w, float _h,
+                               float _b,
+                               int _c32
+                               ) {
+      if(b_draw_gl)
+      {
+         SetColorARGB(_c32);
+         glBegin(GL_QUADS);  // b_draw_gl
+         glVertex2f(_x,    _y);  // top
+         glVertex2f(_x+_w, _y);
+         glVertex2f(_x+_w, _y+_b);
+         glVertex2f(_x,    _y+_b);
+
+         glVertex2f(_x+_w-_b, _y); // right
+         glVertex2f(_x+_w,    _y);
+         glVertex2f(_x+_w,    _y+_h-_b);
+         glVertex2f(_x+_w-_b, _y+_h-_b);
+
+         glVertex2f(_x,    _y+_h-_b); // bottom
+         glVertex2f(_x+_w, _y+_h-_b);
+         glVertex2f(_x+_w, _y+_h);
+         glVertex2f(_x,    _y+_h);
+
+         glVertex2f(_x,    _y); // left
+         glVertex2f(_x+_b, _y);
+         glVertex2f(_x+_b, _y+_h);
+         glVertex2f(_x,    _y+_h);
+
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         // sdvg_SetStrokeColorARGB(_c32);
+         // sdvg_SetStrokeWidth(_b);
+         // if(sdvg_BeginLineStripAA(5/*numPoints*/))
+         // {
+         //    sdvg_Vertex2f(_x,      _y);
+         //    sdvg_Vertex2f(_x + _w, _y);
+         //    sdvg_Vertex2f(_x + _w, _y + _h);
+         //    sdvg_Vertex2f(_x,      _y + _h);
+         //    sdvg_Vertex2f(_x,      _y);
+         //    sdvg_End();
+         // }
+         // sdvg_ReturnToGL();
+
+         sdvg_SetFillColorARGB(_c32);
+         sdvg_DrawRectangle(_x, _y, _w, _h, _b);
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+   }
+
+   public static DrawRectangleWithDir(float _x, float _y,
+                                      float _w, float _h,
+                                      float _b,
+                                      int _c32,
+                                      int _dir/*see Layout class*/
+                                      ) {
+      // trace "xxx DrawRectangleWithDir: b="+_b;
+      SetColorARGB(_c32);
+      if(BeginFilledTriangles(4*2*3))
+      {
+         if(_dir & Layout.TOP)
+         {
+            // 1
+            Vertex2f(_x,    _y);  // top
+            Vertex2f(_x+_w, _y);
+            Vertex2f(_x+_w, _y+_b);
+
+            // 2
+            Vertex2f(_x,    _y);  // top
+            Vertex2f(_x+_w, _y+_b);
+            Vertex2f(_x,    _y+_b);
+         }
+
+         if(_dir & Layout.RIGHT)
+         {
+            // 1
+            Vertex2f(_x+_w-_b, _y); // right
+            Vertex2f(_x+_w,    _y);
+            Vertex2f(_x+_w,    _y+_h-_b);
+
+            // 2
+            Vertex2f(_x+_w-_b, _y); // right
+            Vertex2f(_x+_w,    _y+_h-_b);
+            Vertex2f(_x+_w-_b, _y+_h-_b);
+         }
+
+         if(_dir & Layout.BOTTOM)
+         {
+            // 1
+            Vertex2f(_x,    _y+_h-_b); // bottom
+            Vertex2f(_x+_w, _y+_h-_b);
+            Vertex2f(_x+_w, _y+_h);
+
+            // 2
+            Vertex2f(_x,    _y+_h-_b); // bottom
+            Vertex2f(_x+_w, _y+_h);
+            Vertex2f(_x,    _y+_h);
+         }
+
+         if(_dir & Layout.LEFT)
+         {
+            // 1
+            Vertex2f(_x,    _y); // left
+            Vertex2f(_x+_b, _y);
+            Vertex2f(_x+_b, _y+_h);
+
+            // 2
+            Vertex2f(_x,    _y); // left
+            Vertex2f(_x+_b, _y+_h);
+            Vertex2f(_x,    _y+_h);
+         }
+
+         End();
+      }
+   }
+
+   public static DrawStippledRectangle(float _x, float _y,
+                                       float _w, float _h,
+                                       float _b,
+                                       int _c32
+                                       ) {
+      SetLineWidth(_b * UI.supersample_factor);
+      if(b_draw_gl)
+      {
+         glLineStipple(2.0f, 0xaaaa);  // b_draw_gl
+         glEnable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+      SetColorARGB(_c32);
+
+      if(BeginLineStrip(5))
+      {
+         Vertex2f(_x,      _y);
+         Vertex2f(_x + _w, _y);
+         Vertex2f(_x + _w, _y + _h);
+         Vertex2f(_x,      _y + _h);
+         Vertex2f(_x,      _y);
+         End();
+      }
+
+      if(b_draw_gl)
+         glDisable(GL_LINE_STIPPLE);  // b_draw_gl
+
+      SetLineWidth(1);
+   }
+
+   public static DrawStippledRectangle2(float _x, float _y,
+                                        float _w, float _h,
+                                        float _b,
+                                        int _c32
+                                        ) {
+      SetLineWidth(_b * UI.supersample_factor);
+      if(b_draw_gl)
+      {
+         glLineStipple(4.0f, 0x8888);  // b_draw_gl
+         glEnable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+      SetColorARGB(_c32);
+
+      if(BeginLineStrip(5))
+      {
+         Vertex2f(_x,      _y);
+         Vertex2f(_x + _w, _y);
+         Vertex2f(_x + _w, _y + _h);
+         Vertex2f(_x,      _y + _h);
+         Vertex2f(_x,      _y);
+         End();
+      }
+
+      if(b_draw_gl)
+         glDisable(GL_LINE_STIPPLE);  // b_draw_gl
+
+      SetLineWidth(1);
+   }
+
+   protected static DrawArc(float _x, float _y,
+                            float _w, float _h,
+                            float _b,
+                            int _c32,
+                            boolean _bBuiltinShader
+                            ) {
+      SetColorARGB(_c32);
+      int NUMSEG = 12;
+      float w = PI/(2*NUMSEG);
+      float a = 0;
+      float cx = _x;
+      float cy = _y;
+      float tx;
+      float ty;
+      int idx = 0;
+      if(_b < 2.0f)
+      {
+         trace "xxx UIRenderer.DrawArc: LineStrip b="+_b;
+         SetLineWidth(_b*UI.supersample_factor);
+         if(BeginLineStrip(NUMSEG))
+         {
+            loop(NUMSEG)
+            {
+               tx = sin(a) * _w;
+               ty = cos(a) * _h;
+               cx = _x + tx;
+               cy = _y + ty;
+               Vertex2f(cx, cy);
+               a += w;
+            }
+            End();
+         }
+         SetLineWidth(1);
+      }
+      else
+      {
+         // trace "xxx UIRenderer.DrawArc: TriangleStrip b="+_b;
+         float px;
+         float py;
+         if(BeginFilledTriangleStripEx(2*NUMSEG, _bBuiltinShader))
+         {
+            loop(NUMSEG+1)
+            {
+               tx = sin(a) * _w;
+               ty = cos(a) * _h;
+               cx = _x + tx;
+               cy = _y + ty;
+               if(idx++ > 0)
+               {
+                  float nx = cx - px;
+                  float ny = cy - py;
+                  float l = (_b * 0.5f) / sqrt(nx*nx + ny*ny);
+                  nx *= l;
+                  ny *= l;
+                  float lx = cx + ny;
+                  float ly = cy - nx;
+                  float rx = cx - ny;
+                  float ry = cy + nx;
+                  Vertex2f(lx, ly);
+                  Vertex2f(rx, ry);
+               }
+               px = cx;
+               py = cy;
+               a += w;
+            }
+            End();
+         }
+      }
+   }
+
+   static boolean b_roundrect_debug = 0;
+   static float arc_strip_first_lx;
+   static float arc_strip_first_ly;
+   static float arc_strip_first_rx;
+   static float arc_strip_first_ry;
+   protected static EmitArcStrip(float _x, float _y,
+                                 float _w, float _h,
+                                 float _b,
+                                 boolean _bFlipLR, // (todo) remove unused param
+                                 boolean _bFlipAng
+                                 ) {
+      // (note) caller must start GL_TRIANGLE_STRIP
+      // (note) only called in b_draw_gl mode
+      if(b_roundrect_debug) trace "xxx EmitArcStrip";
+      int NUMSEG = 5;
+      float w = PI/(2*NUMSEG);
+      float a = _bFlipAng ? (w*(NUMSEG)) : 0;
+      float cx = _x;
+      float cy = _y;
+      float px;
+      float py;
+      float tx;
+      float ty;
+      int idx = 0;
+      loop(NUMSEG)
+      {
+         tx = sin(a) * _w;
+         ty = cos(a) * _h;
+         cx = _x + tx;
+         cy = _y + ty;
+         if(idx++ > 0)
+         {
+            float nx = cx - px;
+            float ny = cy - py;
+            // trace "xxx n=("+nx+";"+ny+")";
+            float l = (_b * 0.5f) / sqrt(nx*nx + ny*ny);
+            nx *= l;
+            ny *= l;
+            float lx = cx + ny;
+            float ly = cy - nx;
+            float rx = cx - ny;
+            float ry = cy + nx;
+            if(_bFlipLR)
+            {
+               if(b_roundrect_debug) trace "xxx "+rx+";"+ry;
+               Vertex2f(rx, ry);
+               if(b_roundrect_debug) trace "xxx "+lx+";"+ly;
+               Vertex2f(lx, ly);
+            }
+            else
+            {
+               if(2 == idx)
+               {
+                  arc_strip_first_lx = lx;
+                  arc_strip_first_ly = ly;
+                  arc_strip_first_rx = rx;
+                  arc_strip_first_ry = ry;
+               }
+
+               if(b_roundrect_debug) trace "xxx "+lx+";"+ly;
+               Vertex2f(lx, ly);
+               if(b_roundrect_debug) trace "xxx "+rx+";"+ry;
+               Vertex2f(rx, ry);
+            }
+         }
+         px = cx;
+         py = cy;
+         a += _bFlipAng ? -w : w;
+      }
+   }
+
+   protected static EmitFilledRectangleStripH(float _x, float _y, float _w, float _h) {
+      // (note) only called in b_draw_gl mode
+      if(b_roundrect_debug) trace "xxx EmitFilledRectangleStripH";
+
+      if(b_roundrect_debug) trace "xxx "+_x+";"+_y;
+      Vertex2f(_x, _y);
+
+      if(b_roundrect_debug) trace "xxx "+_x+";"+(_y+_h);
+      Vertex2f(_x, _y+_h);
+
+      if(b_roundrect_debug) trace "xxx "+(_x+_w)+";"+_y;
+      Vertex2f(_x+_w, _y);
+
+      if(b_roundrect_debug) trace "xxx "+(_x+_w)+";"+(_y+_h);
+      Vertex2f(_x+_w, _y+_h);
+   }
+
+   protected static EmitFilledRectangleStripV(float _x, float _y, float _w, float _h) {
+      // (note) only called in b_draw_gl mode
+      if(b_roundrect_debug) trace "xxx EmitFilledRectangleStripV";
+
+      if(b_roundrect_debug) trace "xxx "+_x+";"+_y;
+      Vertex2f(_x, _y);
+
+      if(b_roundrect_debug) trace "xxx "+(_x+_w)+";"+_y;
+      Vertex2f(_x+_w, _y);
+
+      if(b_roundrect_debug) trace "xxx "+_x+";"+(_y+_h);
+      Vertex2f(_x, _y+_h);
+
+      if(b_roundrect_debug) trace "xxx "+(_x+_w)+";"+(_y+_h);
+      Vertex2f(_x+_w, _y+_h);
+   }
+
+   public static DrawRoundedRectangleTriEx(float _x, float _y,
+                                           float _w, float _h,
+                                           float _arcW, float _arcH,
+                                           float _b,
+                                           int _c32,
+                                           boolean _bBuiltinShader
+                                           ) {
+      // (note) e.g. when using pattern or gradient shader (see Panel)
+      if(_b < 2.0f)
+      {
+         // lt
+         DrawArc(_x + _arcW, _y + _arcH,
+                 -_arcW, -_arcH,
+                 _b,
+                 _c32,
+                 _bBuiltinShader
+                 );
+
+         // rt
+         DrawArc(_x + _w - _arcW, _y + _arcH,
+                 _arcW, -_arcH,
+                 _b,
+                 _c32,
+                 _bBuiltinShader
+                 );
+
+         // rb
+         DrawArc(_x + _w - _arcW, _y + _h - _arcH,
+                 _arcW, _arcH,
+                 _b,
+                 _c32,
+                 _bBuiltinShader
+                 );
+
+         // lb
+         DrawArc(_x + _arcW, _y + _h - _arcH,
+                 -_arcW, _arcH,
+                 _b,
+                 _c32,
+                 _bBuiltinShader
+                 );
+
+         SetLineWidth(_b*UI.supersample_factor);
+         // t
+         DrawLine(_x + _arcW, _y,
+                  _x + _w - _arcW, _y,
+                  _c32
+                  );
+
+         // r
+         DrawLine(_x + _w, _y + _arcH,
+                  _x + _w, _y + _h - _arcH,
+                  _c32
+                  );
+
+         // b
+         DrawLine(_x + _arcW,      _y + _h,
+                  _x + _w - _arcW, _y + _h,
+                  _c32
+                  );
+
+         // l
+         DrawLine(_x, _y + _arcH,
+                  _x, _y + _h - _arcH,
+                  _c32
+                  );
+         SetLineWidth(1);
+      }
+      else
+      {
+         // tesselate lines
+         float bh = _b*0.5f;
+
+         SetColorARGB(_c32);
+         if(BeginFilledTriangleStripEx(50, _bBuiltinShader))
+         {
+            // lt
+            EmitArcStrip(_x + _arcW, _y + _arcH,  // 8 verts
+                         -_arcW, -_arcH,
+                         _b,
+                         false/*bFlipLR*/,
+                         false/*bFlipAng*/
+                         );
+            float roundrect_strip_first_lx = arc_strip_first_lx;
+            float roundrect_strip_first_ly = arc_strip_first_ly;
+            float roundrect_strip_first_rx = arc_strip_first_rx;
+            float roundrect_strip_first_ry = arc_strip_first_ry;
+            // trace "xxx roundrect_strip_first_l=("+roundrect_strip_first_lx+";"+roundrect_strip_first_ly+")";
+            // trace "xxx roundrect_strip_first_r=("+roundrect_strip_first_rx+";"+roundrect_strip_first_ry+")";
+
+            // l
+            EmitFilledRectangleStripV(_x + bh, _y + _arcH,  // 4 verts
+                                      -_b, _h - _arcH*2
+                                      );
+
+            // lb
+            EmitArcStrip(_x + _arcW, _y + _h - _arcH,  // 8 verts
+                         -_arcW, _arcH,
+                         _b,
+                         false/*bFlipLR*/,
+                         true/*bFlipAng*/
+                         );
+
+            if(1)
+            {
+               // b
+               EmitFilledRectangleStripH(_x + _arcW,   _y + _h - bh,  // 4 verts
+                                         _w - _arcW*2, _b
+                                         );
+
+               // rb
+               EmitArcStrip(_x + _w - _arcW, _y + _h - _arcH,  // 8 verts
+                            _arcW, _arcH,
+                            _b,
+                            false/*bFlipLR*/,
+                            false/*bFlipAng*/
+                            );
+
+               // r
+               EmitFilledRectangleStripV(_x + _w - bh,   _y + _h - _arcH,  // 4 verts
+                                         _b, -(_h - _arcH*2)
+                                         );
+
+               // rt
+               EmitArcStrip(_x + _w - _arcW, _y + _arcH,  // 8 verts
+                            _arcW, -_arcH,
+                            _b,
+                            false/*bFlipLR*/,
+                            true/*bFlipAng*/
+                            );
+
+               // t
+               EmitFilledRectangleStripH(_x + _w - _arcW,   _y - bh + _b,  // 4 verts
+                                         -(_w - _arcW*2), -_b
+                                         );
+
+               Vertex2f(roundrect_strip_first_lx, roundrect_strip_first_ly);
+               Vertex2f(roundrect_strip_first_rx, roundrect_strip_first_ry);
+            }
+
+            End();  // b_draw_gl
+         }
+
+         if(b_roundrect_debug)
+         {
+            SetColorARGB(#ffff0000);
+            if(BeginPointsSquare(1))
+            {
+               Vertex2f(13,-6.5);
+               End();  // b_draw_gl
+            }
+
+            SetColorARGB(#ff000099);
+            if(BeginPointsSquare(1))
+            {
+               Vertex2f(roundrect_strip_first_lx, roundrect_strip_first_ly);
+               End();  // b_draw_gl
+            }
+
+            SetColorARGB(#ff009966);
+            if(BeginPointsSquare(1))
+            {
+               Vertex2f(roundrect_strip_first_rx, roundrect_strip_first_ry);
+               End();  // b_draw_gl
+            }
+         }
+      }
+   }
+
+   public static DrawRoundedRectangle(float _x, float _y,
+                                      float _w, float _h,
+                                      float _arcW, float _arcH,
+                                      float _b,
+                                      int _c32
+                                      ) {
+      // (note) must call DrawRoundedRectangleTriEx() when using custom shaders (gradient, patternfill, ..)
+      if(b_roundrect_debug)
+         trace "xxx DrawRoundedRectangle: p=("+_x+";"+_y+") s=("+_w+";"+_h+") arc=("+_arcW+";"+_arcH+") b="+_b+" c32="+UI.GetColorString(_c32);
+      // return;//xxxxxxxxx
+
+      if(!b_draw_gl)
+      {
+         SetLineWidth(_b*0.5f);
+         SetColorARGB(_c32);
+         sdvg_EnableBlending();
+         float wh = _w * 0.5;
+         float hh = _h * 0.5;
+         sdvg_DrawRoundRectStrokeAA(_x + wh, _y + hh,
+                                    wh, hh,
+                                    _arcW, _arcH
+                                    );
+         sdvg_DisableBlending();
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+      else
+      {
+         DrawRoundedRectangleTriEx(_x, _y,
+                                   _w, _h,
+                                   _arcW, _arcH,
+                                   _b,
+                                   _c32,
+                                   true/*bBuiltinShader*/
+                                   );
+      } // b_draw_gl
+   }
+
+   // ----
+   // ---- Render a filled rhomb
+   // ---- Arguments:
+   // ----      (_x,  _y ): left top position of inner rectangle.
+   // ----      (_w,  _h ): size of inner rectangle (width/height)
+   // ----      (_tx, _ty): outer translation / slant
+   // ----        _c32: fill color
+   // ----
+   public static DrawFilledRhombEx(float _x,  float _y,
+                                   float _w,  float _h,
+                                   float _tx, float _ty,
+                                   int _c32,
+                                   boolean _bBuiltinShader
+                                   ) {
+      SetColorARGB(_c32);
+      if(BeginFilledTriangleFanEx(4, _bBuiltinShader))
+      {
+         Vertex2f(_x+_tx,    _y-_ty   );  // lt
+         Vertex2f(_x+_tx+_w, _y-_ty   );  // rt
+         Vertex2f(_x-_tx+_w, _y+_ty+_h);  // rb
+         Vertex2f(_x-_tx,    _y+_ty+_h);  // lb
+         End();
+      }
+   }
+
+   // protected static EmitFilledQuadStrip(float _x1, float _y1, float _x2, float _y2) {
+   //    glVertex2f(_x1, _y1);
+   //    glVertex2f(_x1, _y2);
+   //    glVertex2f(_x2, _y1);
+   //    glVertex2f(_x2, _y2);
+   // }
+
+   // ----
+   // ---- Render a rhomb outline
+   // ---- Arguments:
+   // ----      (_x,  _y ): left top position of inner rectangle.
+   // ----      (_w,  _h ): size of inner rectangle (width/height)
+   // ----      (_tx, _ty): outer translation / slant
+   // ----       _b       : border width
+   // ----       _c32     : fill color
+   // ----
+   public static DrawRhomb(float _x,  float _y,
+                           float _w,  float _h,
+                           float _tx, float _ty,
+                           float _b,
+                           int _c32
+                           ) {
+      // _b *= 0.5;
+
+      float p1x = _x - _tx;
+      float p1y = _y + _ty + _h;
+
+      float p2x = _x + _tx;
+      float p2y = _y - _ty;
+
+      float nx = (p2x - p1x);
+      float ny = (p2y - p1y);
+
+      float lv = sqrt(nx*nx + ny*ny);
+      nx /= lv;
+      ny /= lv;
+      float nbx =  nx * _b;
+      float nby = -ny * _b;
+      // trace "xxx t=("+_tx+";"+_ty+") b="+_b+" nb=("+nbx+";"+nby+")";
+
+      _w -= nbx;
+      _h -= nby;
+
+      SetColorARGB(_c32);
+      if(BeginFilledTriangles(48))
+      {
+         // l
+         Vertex2f(_x - _tx - _b , _y+_ty+_h);
+         Vertex2f(_x - _tx,       _y+_ty+_h);
+         Vertex2f(_x + _tx - _b , _y-_ty   );
+
+         Vertex2f(_x - _tx,       _y+_ty+_h);
+         Vertex2f(_x + _tx - _b , _y-_ty   );
+         Vertex2f(_x + _tx,       _y-_ty   );
+
+         // lt
+         Vertex2f(_x + _tx - _b , _y-_ty   );
+         Vertex2f(_x + _tx - _b + nbx , _y-_ty - nby   );
+         Vertex2f(_x + _tx      + nbx , _y-_ty - nby   );
+
+         Vertex2f(_x + _tx - _b , _y-_ty   );
+         Vertex2f(_x + _tx      + nbx , _y-_ty - nby   );
+         Vertex2f(_x + _tx,       _y-_ty   );
+
+         // t
+         Vertex2f(_x + _tx      + nbx, _y-_ty - nby);
+         Vertex2f(_x + _tx + _w + nbx, _y-_ty - nby);
+         Vertex2f(_x + _tx,            _y-_ty      );
+
+         Vertex2f(_x + _tx,            _y-_ty      );
+         Vertex2f(_x + _tx + _w + nbx, _y-_ty - nby);
+         Vertex2f(_x + _tx + _w ,      _y-_ty      );
+
+         // rt
+         Vertex2f(_x + _tx + _w ,           _y-_ty      );
+         Vertex2f(_x + _tx + _w + nbx,      _y-_ty - nby);
+         Vertex2f(_x + _tx + _w + _b + nbx, _y-_ty - nby);
+
+         Vertex2f(_x + _tx + _w ,           _y-_ty      );
+         Vertex2f(_x + _tx + _w + _b + nbx, _y-_ty - nby);
+         Vertex2f(_x + _tx + _w + _b,       _y-_ty      );
+
+         // r
+         Vertex2f(_x + _tx + _w,      _y-_ty   );
+         Vertex2f(_x + _tx + _w + _b, _y-_ty   );
+         Vertex2f(_x - _tx + _w,      _y+_h+_ty);
+
+         Vertex2f(_x + _tx + _w + _b, _y-_ty   );
+         Vertex2f(_x - _tx + _w,      _y+_h+_ty);
+         Vertex2f(_x - _tx + _w + _b, _y+_h+_ty);
+
+         // rb
+         Vertex2f(_x - _tx + _w,            _y+_h+_ty      );
+         Vertex2f(_x - _tx + _w + _b,       _y+_h+_ty      );
+         Vertex2f(_x - _tx + _w + _b - nbx, _y+_h+_ty + nby);
+
+         Vertex2f(_x - _tx + _w,            _y+_h+_ty      );
+         Vertex2f(_x - _tx + _w + _b - nbx, _y+_h+_ty + nby);
+         Vertex2f(_x - _tx + _w - nbx,      _y+_h+_ty + nby);
+
+         // b
+         Vertex2f(_x - _tx + _w,       _y+_h+_ty      );
+         Vertex2f(_x - _tx,            _y+_h+_ty      );
+         Vertex2f(_x - _tx + _w - nbx, _y+_h+_ty + nby);
+
+         Vertex2f(_x - _tx,            _y+_h+_ty      );
+         Vertex2f(_x - _tx + _w - nbx, _y+_h+_ty + nby);
+         Vertex2f(_x - _tx - nbx,      _y+_h+_ty + nby);
+
+         // lb
+         Vertex2f(_x - _tx - _b, _y+_ty+_h      );
+         Vertex2f(_x - _tx,      _y+_ty+_h      );
+         Vertex2f(_x - _tx -nbx, _y+_ty+_h + nby);
+
+         Vertex2f(_x - _tx - _b,       _y+_ty+_h      );
+         Vertex2f(_x - _tx - nbx,      _y+_ty+_h + nby);
+         Vertex2f(_x - _tx - _b - nbx, _y+_ty+_h + nby);
+
+         End();
+      }
+   }
+
+   protected static EmitFilledRectangleTri(float _x, float _y,
+                                           float _w, float _h
+                                           ) {
+      // 1
+      Vertex2f(_x,    _y);
+      Vertex2f(_x+_w, _y);
+      Vertex2f(_x+_w, _y+_h);
+
+      // 2
+      Vertex2f(_x,    _y);
+      Vertex2f(_x+_w, _y+_h);
+      Vertex2f(_x,    _y+_h);
+   }
+
+   // ----
+   // ---- Render a filled rectangle
+   // ---- Arguments:
+   // ----      (_x, _y): left top position of the rectangle.
+   // ----      (_w, _h): size of the rectangle (width/height)
+   // ----        _c32: fill color
+   // ----
+   public static DrawFilledRectangleEx(float _x, float _y,
+                                       float _w, float _h,
+                                       int _c32,
+                                       boolean _bBuiltinShader
+                                       ) {
+      if(b_debug)
+      {
+         Integer io = _c32;
+         trace "xxx DrawFilledRectangleEx: p=("+_x+";"+_y+") s=("+_w+";"+_h+") c32="+io.printf("#%08x");
+      }
+
+      if(b_draw_gl)
+      {
+         SetColorARGB(_c32);
+         if(_bBuiltinShader)
+            sdvg_UnbindShader();
+         glBegin(GL_QUADS);  // b_draw_gl
+         glVertex2f(_x,    _y);
+         glVertex2f(_x+_w, _y);
+         glVertex2f(_x+_w, _y+_h);
+         glVertex2f(_x,    _y+_h);
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         sdvg_SetFillColorARGB(_c32);
+         // trace "xxx DrawFilledRectangleEx: begin trianglefan: bBuiltinShader="+_bBuiltinShader;
+         // // sdvg_DrawFilledRectangle(_x, _y, _w, _h);
+         if(BeginFilledTriangleFanEx(4, _bBuiltinShader))
+         {
+            // trace "xxx DrawFilledRectangleEx: BeginFilledTriangleFanEx OK";
+            Vertex2f(_x,    _y);
+            Vertex2f(_x+_w, _y);
+            Vertex2f(_x+_w, _y+_h);
+            Vertex2f(_x,    _y+_h);
+            End();
+         }
+         // trace "xxx DrawFilledRectangleEx: end trianglefan";
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+   }
+
+   public static DrawFilledRectangle(float _x, float _y,
+                                     float _w, float _h,
+                                     int _c32
+                                     ) {
+      DrawFilledRectangleEx(_x, _y, _w, _h, _c32, true/*bBuiltinShader*/);
+   }
+
+   protected static EmitFilledArcTri(float _x, float _y,
+                                     float _w, float _h
+                                     ) {
+      int NUMSEG = 12;  // 12 tris / 36 verts
+      float w = PI/(2*NUMSEG);
+      float a = 0;
+      float ctrX = _x;
+      float ctrY = _y;
+      int idx = 0;
+      float lx;
+      float ly;
+      loop(NUMSEG+1)
+      {
+         float tx = sin(a) * _w;
+         float ty = cos(a) * _h;
+         float cx = _x + tx;
+         float cy = _y + ty;
+         if(idx++ > 0)
+         {
+            Vertex2f(ctrX, ctrY);
+            Vertex2f(lx, ly);
+            Vertex2f(cx, cy);
+         }
+         lx = cx;
+         ly = cy;
+         a += w;
+      }
+   }
+
+   public static DrawFilledArcEx(float _x, float _y,
+                                 float _w, float _h,
+                                 int _c32,
+                                 boolean _bBuiltinShader
+                                 ) {
+      int NUMSEG = 12;
+      SetColorARGB(_c32);
+      float w = PI/(2*NUMSEG);
+      float a = 0;
+      float cx = _x;
+      float cy = _y;
+      int idx = 0;
+      if(BeginFilledTriangleFanEx(1+NUMSEG+1, _bBuiltinShader))
+      {
+         Vertex2f(_x, _y);
+         loop(NUMSEG+1)
+         {
+            float tx = sin(a) * _w;
+            float ty = cos(a) * _h;
+            cx = _x + tx;
+            cy = _y + ty;
+            Vertex2f(cx, cy);
+            a += w;
+         }
+         End();
+      }
+   }
+
+   public static DrawFilledRoundedRectangleTriEx(float _x, float _y,
+                                                 float _w, float _h,
+                                                 float _arcW, float _arcH,
+                                                 int _c32,
+                                                 boolean _bBuiltinShader
+                                                 ) {
+      // (note) e.g. when using pattern or gradient shader (see Panel)
+
+      SetColorARGB(_c32);
+
+      if(BeginFilledTrianglesEx(192, _bBuiltinShader))
+      {
+         // lt
+         EmitFilledArcTri(_x + _arcW, _y + _arcH,  // 36 verts
+                          -_arcW, -_arcH
+                          );
+
+         // rt
+         EmitFilledArcTri(_x + _w - _arcW, _y + _arcH,  // 36 verts
+                          _arcW, -_arcH
+                          );
+
+         // rb
+         EmitFilledArcTri(_x + _w - _arcW, _y + _h - _arcH,  // 36 verts
+                          _arcW, _arcH
+                          );
+
+         // lb
+         EmitFilledArcTri(_x + _arcW, _y + _h - _arcH,  // 36 verts
+                          -_arcW, _arcH
+                          );
+
+         // c
+         EmitFilledRectangleTri(_x + _arcW, _y,  // 36 verts
+                                _w - _arcW*2, _h
+                                );
+
+         // l
+         EmitFilledRectangleTri(_x, _y + _arcH,  // 6 verts
+                                _arcW, _h - _arcH*2
+                                );
+
+         // r
+         EmitFilledRectangleTri(_x + _w - _arcW, _y + _arcH,  // 6 verts
+                                _arcW, _h - _arcH*2
+                                );
+
+         End();
+      }
+   }
+
+   public static DrawFilledRoundedRectangle(float _x, float _y,
+                                            float _w, float _h,
+                                            float _arcW, float _arcH,
+                                            int _c32
+                                            ) {
+      if(!b_draw_gl)
+      {
+         SetColorARGB(_c32);
+         sdvg_EnableBlending();
+         float wh = _w * 0.5;
+         float hh = _h * 0.5;
+         sdvg_DrawRoundRectFillAA(_x + wh, _y + hh,
+                                  wh - 0.75, hh - 0.75,
+                                  _arcW, _arcH
+                                  );
+         sdvg_DisableBlending();
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+      else
+      {
+         DrawFilledRoundedRectangleTriEx(_x, _y,
+                                         _w, _h,
+                                         _arcW, _arcH,
+                                         _c32,
+                                         true/*bBuiltinShader*/
+                                         );
+      }
+   }
+
+   // ----
+   // ---- Render a filled rectangle and apply a color gradient.
+   // ---- Arguments:
+   // ----      (_x, _y): left top position of the rectangle.
+   // ----      (_w, _h): size of the rectangle (width/height)
+   // ----       _c32*: packed 32bit colors for the left-top, right-top, right-bottom and left-bottom corner points.
+   // ----
+   public static DrawGradientFilledRectangle(float _x, float _y,
+                                             float _w, float _h,
+                                             int _c32LT,
+                                             int _c32RT,
+                                             int _c32RB,
+                                             int _c32LB
+                                             ) {
+      if(BeginFilledGouraudTriangleFan(4))
+      {
+         ColorARGB(_c32LT);
+         Vertex2f(_x,    _y);
+
+         ColorARGB(_c32RT);
+         Vertex2f(_x+_w, _y);
+
+         ColorARGB(_c32RB);
+         Vertex2f(_x+_w, _y+_h);
+
+         ColorARGB(_c32LB);
+         Vertex2f(_x,    _y+_h);
+
+         End();
+      }
+   }
+
+   public static DrawVerticalGradientFilledRectangleNonLinear1(float _x, float _y,
+                                                               float _w, float _h,
+                                                               int _c32T,
+                                                               int _c32B,
+                                                               float _t
+                                                               ) {
+      int c32Mix = sdvg_MixARGBf(_c32T, _c32B, 0.5);
+      float hMid = _h * _t;
+
+      if(b_draw_gl)
+      {
+         SetColorARGB(_c32T);
+         glBegin(GL_QUADS);  // b_draw_gl
+         glVertex2f(_x,    _y);
+         glVertex2f(_x+_w, _y);
+         SetColorARGB(c32Mix);
+         glVertex2f(_x+_w, _y+hMid);
+         glVertex2f(_x,    _y+hMid);
+         glEnd();  // b_draw_gl
+
+         glBegin(GL_QUADS);  // b_draw_gl
+         glVertex2f(_x, _y+hMid);
+         glVertex2f(_x+_w, _y+hMid);
+         SetColorARGB(_c32B);
+         glVertex2f(_x+_w, _y+_h);
+         glVertex2f(_x, _y+_h);
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(4*3))
+         {
+            // 1
+            ColorARGB(_c32T);
+            Vertex2f(_x,    _y);
+
+            ColorARGB(_c32T);
+            Vertex2f(_x+_w, _y);
+
+            ColorARGB(c32Mix);
+            Vertex2f(_x+_w, _y+hMid);
+
+            // 2
+            ColorARGB(_c32T);
+            Vertex2f(_x,    _y);
+
+            ColorARGB(c32Mix);
+            Vertex2f(_x+_w, _y+hMid);
+
+            ColorARGB(c32Mix);
+            Vertex2f(_x,    _y+hMid);
+
+            // 3
+            ColorARGB(c32Mix);
+            Vertex2f(_x, _y+hMid);
+
+            ColorARGB(c32Mix);
+            Vertex2f(_x+_w, _y+hMid);
+
+            ColorARGB(_c32B);
+            Vertex2f(_x+_w, _y+_h);
+
+            // 4
+            ColorARGB(c32Mix);
+            Vertex2f(_x, _y+hMid);
+
+            ColorARGB(_c32B);
+            Vertex2f(_x+_w, _y+_h);
+
+            ColorARGB(_c32B);
+            Vertex2f(_x, _y+_h);
+
+            End();
+         }
+      }
+   }
+
+   public static EmitFilledGouraudRectangleTris(float _x, float _y,
+                                                float _w, float _h,
+                                                int _c32
+                                                ) {
+      // tri 1
+      ColorARGB(_c32);
+      Vertex2f(_x,    _y);
+
+      ColorARGB(_c32);
+      Vertex2f(_x+_w, _y);
+
+      ColorARGB(_c32);
+      Vertex2f(_x+_w, _y+_h);
+
+      // tri 2
+      ColorARGB(_c32);
+      Vertex2f(_x,    _y);
+
+      ColorARGB(_c32);
+      Vertex2f(_x+_w, _y+_h);
+
+      ColorARGB(_c32);
+      Vertex2f(_x,    _y+_h);
+   }
+
+   // ----
+   // ---- Draw a border rectangle which e.g. is suitable for rendering pressed buttons.
+   // ----
+   public static DrawSunkenBorder(float _x, float _y,
+                                  float _w, float _h,
+                                  float _b,
+                                  int _c32Normal,
+                                  int _c32Dark,
+                                  int _c32Medium,
+                                  int _c32Light
+                                  ) {
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x+_b, _y+_b, _b,      _h-_b*2, _c32Medium);  // inner left
+         DrawFilledRectangle(_x+_b, _y+_b, _w-_b*2, _b,      _c32Medium); // inner top
+
+         DrawFilledRectangle(_x+_w-_b*2, _y+_b,       _b,     _h-_b*2, _c32Normal);  // inner right
+         DrawFilledRectangle(_x+_b,      _y+_h-_b*2, _w-_b*2, _b,      _c32Normal); // inner bottom
+
+         DrawFilledRectangle(_x, _y, _b, _h, _c32Dark);  // outer left
+         DrawFilledRectangle(_x, _y, _w, _b, _c32Dark); // outer top
+
+         DrawFilledRectangle(_x+_w-_b, _y, _b, _h, _c32Light);  // outer right
+         DrawFilledRectangle(_x, _y+_h-_b, _w, _b, _c32Light); // outer bottom
+
+         DrawFilledRectangle(_x+_w-_b, _y, _b, _b, _c32Normal);  // edge right top upper
+         DrawFilledRectangle(_x, _y+_h-_b, _b, _b, _c32Normal);  // edge left bottom
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(10*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x+_b, _y+_b, _b,      _h-_b*2, _c32Medium);  // inner left
+            EmitFilledGouraudRectangleTris(_x+_b, _y+_b, _w-_b*2, _b,      _c32Medium); // inner top
+
+            EmitFilledGouraudRectangleTris(_x+_w-_b*2, _y+_b,       _b,     _h-_b*2, _c32Normal);  // inner right
+            EmitFilledGouraudRectangleTris(_x+_b,      _y+_h-_b*2, _w-_b*2, _b,      _c32Normal); // inner bottom
+
+            EmitFilledGouraudRectangleTris(_x, _y, _b, _h, _c32Dark);  // outer left
+            EmitFilledGouraudRectangleTris(_x, _y, _w, _b, _c32Dark); // outer top
+
+            EmitFilledGouraudRectangleTris(_x+_w-_b, _y, _b, _h, _c32Light);  // outer right
+            EmitFilledGouraudRectangleTris(_x, _y+_h-_b, _w, _b, _c32Light); // outer bottom
+
+            EmitFilledGouraudRectangleTris(_x+_w-_b, _y, _b, _b, _c32Normal);  // edge right top upper
+            EmitFilledGouraudRectangleTris(_x, _y+_h-_b, _b, _b, _c32Normal);  // edge left bottom
+
+            End();
+         }
+      }
+   }
+
+   // ----
+   // ---- Draw a border rectangle which e.g. is suitable for rendering unpressed buttons.
+   // ----
+   public static DrawRaisedBorder(float _x, float _y,
+                                  float _w, float _h,
+                                  float _b,
+                                  int _c32Normal,
+                                  int _c32Dark,
+                                  int _c32Medium,
+                                  int _c32Light
+                                  ) {
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x+_w-_b*2, _y+_b,      _b,      _h-_b*2, _c32Medium);  // inner right
+         DrawFilledRectangle(_x+_b,      _y+_h-_b*2, _w-_b*2, _b,      _c32Medium); // inner bottom
+
+         DrawFilledRectangle(_x, _y, _b, _h, _c32Light);  // outer left
+         DrawFilledRectangle(_x, _y, _w, _b, _c32Light); // outer top
+
+         DrawFilledRectangle(_x+_w-_b, _y, _b, _h, _c32Dark);  // outer right
+         DrawFilledRectangle(_x, _y+_h-_b, _w, _b, _c32Dark); // outer bottom
+
+         DrawFilledRectangle(_x+_w-_b*2, _y,         _b, _b, _c32Normal);  // edge right top upper
+         DrawFilledRectangle(_x,         _y+_h-2*_b, _b, _b, _c32Normal);  // edge left bottom
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(8*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x+_w-_b*2, _y+_b,      _b,      _h-_b*2, _c32Medium);  // inner right
+            EmitFilledGouraudRectangleTris(_x+_b,      _y+_h-_b*2, _w-_b*2, _b,      _c32Medium); // inner bottom
+
+            EmitFilledGouraudRectangleTris(_x, _y, _b, _h, _c32Light);  // outer left
+            EmitFilledGouraudRectangleTris(_x, _y, _w, _b, _c32Light); // outer top
+
+            EmitFilledGouraudRectangleTris(_x+_w-_b, _y, _b, _h, _c32Dark);  // outer right
+            EmitFilledGouraudRectangleTris(_x, _y+_h-_b, _w, _b, _c32Dark); // outer bottom
+
+            EmitFilledGouraudRectangleTris(_x+_w-_b*2, _y,         _b, _b, _c32Normal);  // edge right top upper
+            EmitFilledGouraudRectangleTris(_x,         _y+_h-2*_b, _b, _b, _c32Normal);  // edge left bottom
+
+            End();
+         }
+      }
+   }
+
+   public static DrawRaisedBorderRight(float _x, float _y,
+                                       float _w, float _h,
+                                       float _b,
+                                       int _c32Normal,
+                                       int _c32Dark,
+                                       int _c32Medium,
+                                       int _c32Light
+                                       ) {
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x+_w-_b*2, _y+_b, _b, _h-_b*2, _c32Medium);  // inner right
+         DrawFilledRectangle(_x+_w-_b,   _y,    _b, _h,      _c32Dark);    // outer right
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(2*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x+_w-_b*2, _y+_b, _b, _h-_b*2, _c32Medium);  // inner right
+            EmitFilledGouraudRectangleTris(_x+_w-_b,   _y,    _b, _h,      _c32Dark);    // outer right
+
+            End();
+         }
+      }
+   }
+
+   // ----
+   // ---- Draw a border rectangle (2 pixels thick) which is suitable for e.g. rendering a panel outline
+   // ----
+   public static DrawGroovedBorder(float _x, float _y,
+                                   float _w, float _h,
+                                   float _b,
+                                   int _c32Normal,
+                                   int _c32Dark,
+                                   int _c32Light
+                                   ) {
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x,       _y+_h-_b, _w,      _b,      _c32Light); // outer bottom
+         DrawFilledRectangle(_x+_w-_b, _y,       _b,      _h,      _c32Light); // outer right
+         DrawFilledRectangle(_x+_b,    _y+_b,    _w-_b*2, _b,      _c32Light); // outer top
+         DrawFilledRectangle(_x+_b,    _y+_b,    _b,      _h-_b*2, _c32Light); // outer left
+
+         DrawFilledRectangle(_x,         _y+_h-_b*2, _w-_b, _b,    _c32Dark); // inner bottom
+         DrawFilledRectangle(_x+_w-_b*2, _y,         _b,    _h-_b, _c32Dark); // inner right
+         DrawFilledRectangle(_x,         _y,         _w-_b, _b,    _c32Dark); // inner top
+         DrawFilledRectangle(_x,         _y,         _b,    _h-_b, _c32Dark); // inner left
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(8*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x,       _y+_h-_b, _w,      _b,      _c32Light); // outer bottom
+            EmitFilledGouraudRectangleTris(_x+_w-_b, _y,       _b,      _h,      _c32Light); // outer right
+            EmitFilledGouraudRectangleTris(_x+_b,    _y+_b,    _w-_b*2, _b,      _c32Light); // outer top
+            EmitFilledGouraudRectangleTris(_x+_b,    _y+_b,    _b,      _h-_b*2, _c32Light); // outer left
+
+            EmitFilledGouraudRectangleTris(_x,         _y+_h-_b*2, _w-_b, _b,    _c32Dark); // inner bottom
+            EmitFilledGouraudRectangleTris(_x+_w-_b*2, _y,         _b,    _h-_b, _c32Dark); // inner right
+            EmitFilledGouraudRectangleTris(_x,         _y,         _w-_b, _b,    _c32Dark); // inner top
+            EmitFilledGouraudRectangleTris(_x,         _y,         _b,    _h-_b, _c32Dark); // inner left
+
+            End();
+         }
+      }
+   }
+
+
+   // ----
+   // ---- Draw a border rectangle (2 pixels thick) which is suitable for e.g. rendering a textfield outline
+   // ----
+   public static DrawEdgedBorder(float _x, float _y,
+                                 float _w, float _h,
+                                 float _b,
+                                 int _c32Normal,
+                                 int _c32Dark,
+                                 int _c32Light
+                                 ) {
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x,       _y+_h-_b, _w,      _b,      _c32Dark); // outer bottom
+         DrawFilledRectangle(_x+_w-_b, _y,       _b,      _h,      _c32Dark); // outer right
+         DrawFilledRectangle(_x+_b,    _y+_b,    _w-_b*2, _b,      _c32Dark); // outer top
+         DrawFilledRectangle(_x+_b,    _y+_b,    _b,      _h-_b*2, _c32Dark); // outer left
+
+         DrawFilledRectangle(_x,         _y+_h-_b*2, _w-_b, _b,    _c32Light); // inner bottom
+         DrawFilledRectangle(_x+_w-_b*2, _y,         _b,    _h-_b, _c32Light); // inner right
+         DrawFilledRectangle(_x,         _y,         _w-_b, _b,    _c32Light); // inner top
+         DrawFilledRectangle(_x,         _y,         _b,    _h-_b, _c32Light); // inner left
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(8*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x,       _y+_h-_b, _w,      _b,      _c32Dark); // outer bottom
+            EmitFilledGouraudRectangleTris(_x+_w-_b, _y,       _b,      _h,      _c32Dark); // outer right
+            EmitFilledGouraudRectangleTris(_x+_b,    _y+_b,    _w-_b*2, _b,      _c32Dark); // outer top
+            EmitFilledGouraudRectangleTris(_x+_b,    _y+_b,    _b,      _h-_b*2, _c32Dark); // outer left
+
+            EmitFilledGouraudRectangleTris(_x,         _y+_h-_b*2, _w-_b, _b,    _c32Light); // inner bottom
+            EmitFilledGouraudRectangleTris(_x+_w-_b*2, _y,         _b,    _h-_b, _c32Light); // inner right
+            EmitFilledGouraudRectangleTris(_x,         _y,         _w-_b, _b,    _c32Light); // inner top
+            EmitFilledGouraudRectangleTris(_x,         _y,         _b,    _h-_b, _c32Light); // inner left
+
+            End();
+         }
+      }
+   }
+
+
+   // ----
+   // ---- Default renderers
+   // ----
+
+   public static DrawDefaultBackground(float _x, float _y,
+                                       float _w, float _h
+                                       ) {
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG));
+   }
+
+   public static DrawDefaultBackgroundTint(float _x, float _y,
+                                           float _w, float _h,
+                                           int _tint32
+                                           ) {
+      int c32 = GetTintedColor(LookAndFeel.COLOR_WINDOW_BG, _tint32);
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, c32);
+   }
+
+   public static DrawDefaultBackgroundAlpha(float _x, float _y,
+                                            float _w, float _h,
+                                            byte _alpha
+                                            ) {
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, GetColorAlpha(LookAndFeel.COLOR_WINDOW_BG, _alpha));
+   }
+
+   public static DrawDefaultBackgroundAlphaTint(float _x, float _y,
+                                                float _w, float _h,
+                                                byte _alpha,
+                                                int  _tint32
+                                                ) {
+      int c32 = GetTintedColor(LookAndFeel.COLOR_WINDOW_BG, _tint32);
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, (c32 &0xFFFFFF) | (_alpha<<24));
+   }
+
+   public static DrawDefaultControlBackground(float _x, float _y,
+                                              float _w, float _h
+                                              ) {
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG));
+   }
+
+   public static DrawDefaultControlBackgroundTint(float _x, _y, _w, _h, int _tint32) {
+      int c32 = GetTintedColor(LookAndFeel.COLOR_CONTROL_BG, _tint32);
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, c32);
+   }
+
+   public static DrawDefaultControlBackgroundAlphaTint(float _x, float _y,
+                                                       float _w, float _h,
+                                                       byte _alpha,
+                                                       int  _tint32
+                                                       ) {
+      // trace "xxx DrawDefaultControlBackgroundAlphaTint("+_x+";"+_y+";"+_w+";"+_h+")";
+      int c32 = GetTintedColor(LookAndFeel.COLOR_CONTROL_BG, _tint32);
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, (c32 &0xFFFFFF) | (_alpha<<24));
+   }
+
+   public static DrawDefaultMenuBackground(float _x, float _y,
+                                           float _w, float _h
+                                           ) {
+      UIRenderer.DrawFilledRectangle(_x, _y, _w, _h, lnf_colors.get(LookAndFeel.COLOR_POPUPMENU_BG));
+   }
+
+   public static DrawDefaultInactiveBackground(float _x, float _y,
+                                               float _w, float _h
+                                               ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_INACTIVE_LT_BG),
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_INACTIVE_RT_BG),
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_INACTIVE_RB_BG),
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_INACTIVE_LB_BG)
+                                             );
+   }
+
+   public static DrawDefaultInactiveBackgroundTint(float _x, float _y,
+                                                   float _w, float _h,
+                                                   int _tint32
+                                                   ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_INACTIVE_LT_BG, _tint32),
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_INACTIVE_RT_BG, _tint32),
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_INACTIVE_RB_BG, _tint32),
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_INACTIVE_LB_BG, _tint32)
+                                             );
+   }
+
+   public static DrawDefaultInactiveBackgroundAlpha(float _x, float _y,
+                                                    float _w, float _h,
+                                                    byte _alpha
+                                                    ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_LT_BG, _alpha),
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_RT_BG, _alpha),
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_RB_BG, _alpha),
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_LB_BG, _alpha)
+                                             );
+   }
+
+   public static DrawDefaultInactiveBackgroundAlphaTint(float _x, float _y,
+                                                        float _w, float _h,
+                                                        byte _alpha,
+                                                        int  _tint32
+                                                        ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_LT_BG, _tint32, _alpha),
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_RT_BG, _tint32, _alpha),
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_RB_BG, _tint32, _alpha),
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_INACTIVE_LB_BG, _tint32, _alpha)
+                                             );
+   }
+
+   public static DrawDefaultActiveBackground(float _x, float _y,
+                                             float _w, float _h
+                                             ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_ACTIVE_LT_BG),
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_ACTIVE_RT_BG),
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_ACTIVE_RB_BG),
+                                             lnf_colors.get(LookAndFeel.COLOR_CONTROL_ACTIVE_LB_BG)
+                                             );
+   }
+
+   public static DrawDefaultActiveBackgroundTint(float _x, float _y,
+                                                 float _w, float _h,
+                                                 int _tint32
+                                                 ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_ACTIVE_LT_BG, _tint32),
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_ACTIVE_RT_BG, _tint32),
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_ACTIVE_RB_BG, _tint32),
+                                             GetTintedColor(LookAndFeel.COLOR_CONTROL_ACTIVE_LB_BG, _tint32)
+                                             );
+   }
+
+   public static DrawDefaultActiveBackgroundAlpha(float _x, float _y,
+                                                  float _w, float _h,
+                                                  byte _alpha
+                                                  ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_LT_BG, _alpha),
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_RT_BG, _alpha),
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_RB_BG, _alpha),
+                                             GetColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_LB_BG, _alpha)
+                                             );
+   }
+
+   public static DrawDefaultActiveBackgroundAlphaTint(float _x, float _y,
+                                                      float _w, float _h,
+                                                      byte _alpha, int _tint32
+                                                      ) {
+      UIRenderer.DrawGradientFilledRectangle(_x, _y, _w, _h,
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_LT_BG, _tint32, _alpha),
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_RT_BG, _tint32, _alpha),
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_RB_BG, _tint32, _alpha),
+                                             GetTintedColorAlpha(LookAndFeel.COLOR_CONTROL_ACTIVE_LB_BG, _tint32, _alpha)
+                                             );
+   }
+
+   public static DrawDefaultFlatBorder(float _x, float _y,
+                                       float _w, float _h
+                                       ) {
+      UIRenderer.DrawRectangle(_x, _y, _w, _h,
+                               UIConstants.DEFAULT_BORDER_SIZE,
+                               lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL)
+                               );
+   }
+
+   public static DrawDefaultFlatBorderTint(float _x, float _y,
+                                           float _w, float _h,
+                                           int _tint32
+                                           ) {
+      UIRenderer.DrawRectangle(_x, _y, _w, _h,
+                               UIConstants.DEFAULT_BORDER_SIZE,
+                               sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL), _tint32)
+                               );
+   }
+
+   public static DrawDefaultSunkenBorder(float _x, float _y,
+                                         float _w, float _h
+                                         ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawSunkenBorder(_x, _y, _w, _h,
+                                  UIConstants.DEFAULT_BORDER_SIZE,
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_MEDIUM),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                  );
+   }
+
+   public static DrawDefaultSunkenBorderTint(float _x, float _y,
+                                             float _w, float _h,
+                                             int _tint32
+                                             ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawSunkenBorder(_x, _y, _w, _h, UIConstants.DEFAULT_BORDER_SIZE,
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_NORMAL, _tint32),
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_DARK,   _tint32),
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, _tint32),
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_LIGHT,  _tint32)
+                                  );
+   }
+
+   public static DrawDefaultSunkenBorderAlpha(float _x, float _y,
+                                              float _w, float _h,
+                                              byte _alpha
+                                              ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawSunkenBorder(_x, _y, _w, _h, UIConstants.DEFAULT_BORDER_SIZE,
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_NORMAL, _alpha),
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_DARK,   _alpha),
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_MEDIUM, _alpha),
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_LIGHT,  _alpha)
+                                  );
+   }
+
+   public static DrawDefaultSunkenBorderAlphaTint(float _x, float _y,
+                                                  float _w, float _h,
+                                                  byte _alpha,
+                                                  int  _tint32
+                                                  ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawSunkenBorder(_x, _y, _w, _h,
+                                  UIConstants.DEFAULT_BORDER_SIZE,
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_NORMAL, _tint32, _alpha),
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_DARK,   _tint32, _alpha),
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_MEDIUM, _tint32, _alpha),
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_LIGHT,  _tint32, _alpha)
+                                  );
+   }
+
+   public static DrawSoftShadowSunkenBorder(float _x, float _y,
+                                            float _w, float _h
+                                            ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawSunkenBorder(_x, _y, _w, _h,
+                                  UIConstants.DEFAULT_BORDER_SIZE,
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_MEDIUM), // swap medium/dark
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                  );
+   }
+
+   public static DrawSoftShadowSunkenBorderTint(float _x, float _y,
+                                                float _w, float _h,
+                                                int _c32Tint
+                                                ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawSunkenBorder(_x, _y, _w, _h,
+                                  UIConstants.DEFAULT_BORDER_SIZE,
+                                  sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL), _c32Tint),
+                                  sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_MEDIUM), _c32Tint), // swap medium/dark
+                                  sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),   _c32Tint),
+                                  sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT),  _c32Tint)
+                                  );
+   }
+
+   public static DrawSoftShadowRaisedBorder(float _x, float _y,
+                                            float _w, float _h
+                                            ) {
+      if(UI.b_skip_bevel_border)
+         return;
+
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x+1, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                             );  // inner left
+
+         DrawFilledRectangle(_x+1, _y+1, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                             ); // inner top
+
+         DrawFilledRectangle(_x, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL)
+                             );  // outer left
+
+         DrawFilledRectangle(_x, _y, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL)
+                             ); // outer top
+
+         DrawFilledRectangle(_x+_w-UIConstants.DEFAULT_BORDER_SIZE*2, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_DIMLIGHT)
+                             );  // inner right
+
+         DrawFilledRectangle(_x+1, _y+_h-UIConstants.DEFAULT_BORDER_SIZE*2, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_DIMLIGHT)
+                             ); // inner bottom
+
+         DrawFilledRectangle(_x+_w-UIConstants.DEFAULT_BORDER_SIZE, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK)
+                             );  // outer right
+
+         DrawFilledRectangle(_x, _y+_h-UIConstants.DEFAULT_BORDER_SIZE, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                             lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK)
+                             ); // outer bottom
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(8*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x+1, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                           );  // inner left
+
+            EmitFilledGouraudRectangleTris(_x+1, _y+1, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                           ); // inner top
+
+            EmitFilledGouraudRectangleTris(_x, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL)
+                                           );  // outer left
+
+            EmitFilledGouraudRectangleTris(_x, _y, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL)
+                                           ); // outer top
+
+            EmitFilledGouraudRectangleTris(_x+_w-UIConstants.DEFAULT_BORDER_SIZE*2, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_DIMLIGHT)
+                                           );  // inner right
+
+            EmitFilledGouraudRectangleTris(_x+1, _y+_h-UIConstants.DEFAULT_BORDER_SIZE*2, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_DIMLIGHT)
+                                           ); // inner bottom
+
+            EmitFilledGouraudRectangleTris(_x+_w-UIConstants.DEFAULT_BORDER_SIZE, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK)
+                                           );  // outer right
+
+            EmitFilledGouraudRectangleTris(_x, _y+_h-UIConstants.DEFAULT_BORDER_SIZE, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                                           lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK)
+                                           ); // outer bottom
+
+            End();
+         }
+      }
+
+   }
+
+   public static DrawSoftShadowRaisedBorderTint(float _x, float _y,
+                                                float _w, float _h,
+                                                int _tint32
+                                                ) {
+      if(UI.b_skip_bevel_border)
+         return;
+
+      if(b_draw_gl)
+      {
+         DrawFilledRectangle(_x+1, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_LIGHT, _tint32)
+                             );  // inner left
+
+         DrawFilledRectangle(_x+1, _y+1, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_LIGHT, _tint32)
+                             ); // inner top
+
+         DrawFilledRectangle(_x, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_NORMAL, _tint32)
+                             );  // outer left
+
+         DrawFilledRectangle(_x, _y, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_NORMAL, _tint32)
+                             ); // outer top
+
+         DrawFilledRectangle(_x+_w-UIConstants.DEFAULT_BORDER_SIZE*2, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, _tint32)
+                             );  // inner right
+
+         DrawFilledRectangle(_x+1, _y+_h-UIConstants.DEFAULT_BORDER_SIZE*2, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, _tint32)
+                             ); // inner bottom
+
+         DrawFilledRectangle(_x+_w-UIConstants.DEFAULT_BORDER_SIZE, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_DARK, _tint32)
+                             );  // outer right
+
+         DrawFilledRectangle(_x, _y+_h-UIConstants.DEFAULT_BORDER_SIZE, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                             GetTintedColor(LookAndFeel.COLOR_BORDER_DARK, _tint32)
+                             ); // outer bottom
+      }
+      else
+      {
+         if(BeginFilledGouraudTriangles(8*2*3))
+         {
+            EmitFilledGouraudRectangleTris(_x+1, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_LIGHT, _tint32)
+                                           );  // inner left
+
+            EmitFilledGouraudRectangleTris(_x+1, _y+1, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_LIGHT, _tint32)
+                                           ); // inner top
+
+            EmitFilledGouraudRectangleTris(_x, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_NORMAL, _tint32)
+                                           );  // outer left
+
+            EmitFilledGouraudRectangleTris(_x, _y, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_NORMAL, _tint32)
+                                           ); // outer top
+
+            EmitFilledGouraudRectangleTris(_x+_w-UIConstants.DEFAULT_BORDER_SIZE*2, _y+1, UIConstants.DEFAULT_BORDER_SIZE, _h-2,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, _tint32)
+                                           );  // inner right
+
+            EmitFilledGouraudRectangleTris(_x+1, _y+_h-UIConstants.DEFAULT_BORDER_SIZE*2, _w-2, UIConstants.DEFAULT_BORDER_SIZE,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, _tint32)
+                                           ); // inner bottom
+
+            EmitFilledGouraudRectangleTris(_x+_w-UIConstants.DEFAULT_BORDER_SIZE, _y, UIConstants.DEFAULT_BORDER_SIZE, _h,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_DARK, _tint32)
+                                           );  // outer right
+
+            EmitFilledGouraudRectangleTris(_x, _y+_h-UIConstants.DEFAULT_BORDER_SIZE, _w, UIConstants.DEFAULT_BORDER_SIZE,
+                                           GetTintedColor(LookAndFeel.COLOR_BORDER_DARK, _tint32)
+                                           ); // outer bottom
+
+            End();
+         }
+      }
+
+   }
+
+   public static DrawDefaultRaisedBorder(float _x, float _y,
+                                         float _w, float _h
+                                         ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawRaisedBorder(_x, _y, _w, _h,
+                                  UIConstants.DEFAULT_BORDER_SIZE,
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_MEDIUM),
+                                  lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                  );
+   }
+
+   public static DrawDefaultRaisedBorderRight(float _x, float _y,
+                                              float _w, float _h
+                                              ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawRaisedBorderRight(_x, _y, _w, _h,
+                                       UIConstants.DEFAULT_BORDER_SIZE,
+                                       lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL),
+                                       lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),
+                                       lnf_colors.get(LookAndFeel.COLOR_BORDER_MEDIUM),
+                                       lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                       );
+   }
+
+   public static DrawDefaultRaisedBorderTint(float _x, float _y,
+                                             float _w, float _h,
+                                             int _tint32
+                                             ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawRaisedBorder(_x, _y, _w, _h, UIConstants.DEFAULT_BORDER_SIZE,
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_NORMAL, _tint32),
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_DARK,   _tint32),
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, _tint32),
+                                  GetTintedColor(LookAndFeel.COLOR_BORDER_LIGHT,  _tint32)
+                                  );
+   }
+
+   public static DrawDefaultRaisedBorderAlpha(float _x, float _y,
+                                              float _w, float _h,
+                                              byte _alpha
+                                              ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawRaisedBorder(_x, _y, _w, _h, UIConstants.DEFAULT_BORDER_SIZE,
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_NORMAL, _alpha),
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_DARK,   _alpha),
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_MEDIUM, _alpha),
+                                  GetColorAlpha(LookAndFeel.COLOR_BORDER_LIGHT,  _alpha)
+                                  );
+   }
+
+   public static DrawDefaultRaisedBorderAlphaTint(float _x, float _y,
+                                                  float _w, float _h,
+                                                  byte _alpha,
+                                                  int  _tint32
+                                                  ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawRaisedBorder(_x, _y, _w, _h, UIConstants.DEFAULT_BORDER_SIZE,
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_NORMAL, _tint32, _alpha),
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_DARK,   _tint32, _alpha),
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_MEDIUM, _tint32, _alpha),
+                                  GetTintedColorAlpha(LookAndFeel.COLOR_BORDER_LIGHT,  _tint32, _alpha)
+                                  );
+   }
+
+   public static DrawDefaultGroovedBorder(float _x, float _y,
+                                          float _w, float _h
+                                          ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawGroovedBorder(_x, _y, _w, _h,
+                                   UIConstants.DEFAULT_BORDER_SIZE,
+                                   lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL),
+                                   lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),
+                                   lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                   );
+   }
+
+   public static DrawDefaultEdgedBorder(float _x, float _y,
+                                        float _w, float _h
+                                        ) {
+      if(UI.b_skip_bevel_border)
+         return;
+      UIRenderer.DrawEdgedBorder(_x, _y, _w, _h,
+                                 UIConstants.DEFAULT_BORDER_SIZE,
+                                 lnf_colors.get(LookAndFeel.COLOR_BORDER_NORMAL),
+                                 lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK),
+                                 lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT)
+                                 );
+   }
+
+   public static DrawButtonBackground(float bx, float by,
+                                      float bw, float bh,
+                                      byte    _alpha,
+                                      int     _c32Tint,
+                                      boolean _bDrawBorder,
+                                      boolean _bMouseOver,
+                                      boolean _bPressed,
+                                      boolean _bKeepAlpha
+                                      ) {
+      // (note) _c32Tint also has alpha
+      if(_bKeepAlpha)
+         UIRenderer.EnableBlendingKeepAlpha();
+      else
+         UIRenderer.EnableBlending();
+      if(_bMouseOver)
+      {
+         if(_bPressed)
+         {
+            UIRenderer.DrawDefaultActiveBackgroundAlphaTint(bx, by,  bw, bh, _alpha, _c32Tint);
+            if(_bDrawBorder)
+               UIRenderer.DrawDefaultSunkenBorderAlphaTint(bx, by, bw, bh, _alpha, _c32Tint);
+         }
+         else
+         {
+            UIRenderer.DrawDefaultInactiveBackgroundAlphaTint(bx, by,  bw, bh, _alpha, _c32Tint);
+            if(_bDrawBorder)
+               UIRenderer.DrawDefaultRaisedBorderAlphaTint(bx, by, bw, bh, _alpha, _c32Tint);
+         }
+      }
+      else
+      {
+         UIRenderer.DrawDefaultControlBackgroundAlphaTint(bx, by,  bw, bh, _alpha, _c32Tint);
+         if(_bPressed)
+         {
+            if(_bDrawBorder)
+               UIRenderer.DrawDefaultSunkenBorderAlphaTint(bx, by, bw, bh, _alpha, _c32Tint);
+         }
+         else
+         {
+            if(_bDrawBorder)
+               UIRenderer.DrawDefaultRaisedBorderAlphaTint(bx, by, bw, bh, _alpha, _c32Tint);
+         }
+      }
+      UIRenderer.DisableBlending();
+   }
+
+   public static DrawPanelBackground(float bx, float by,
+                                     float bw, float bh,
+                                     byte _alpha,
+                                     int  _c32Tint
+                                     ) {
+      // (note) _c32Tint also has alpha
+      UIRenderer.EnableBlending();
+      UIRenderer.DrawDefaultBackgroundAlphaTint(bx, by,  bw, bh, _alpha, _c32Tint);
+      UIRenderer.DisableBlending();
+   }
+
+
+   // ---- Draw a String centered in the (_w, _h) rectangle
+   public static DrawTextCentered(String _text, Font _font,
+                                  int _fgColor32,
+                                  int _ulColor32,
+                                  float _w, float _h
+                                  ) {
+
+      if( (_font instanceof Font) && (_text instanceof String) )
+      {
+         EnableTexture2D();
+         EnableBlending();
+         float sw = _font.stringWidth(_text);
+         float sh = _font.stringHeight(_text);
+         ///print "sw="+sw+" sh="+sh+" _w="+_w+" _h="+_h;
+         _font.renderString(_text, (_w-sw)*0.5, (_h-sh)*0.5, _fgColor32, _ulColor32);
+         DisableTexture2D();
+         DisableBlending();
+      }
+   }
+
+   public static DrawText(String _text,
+                          Font   _font,
+                          int    _fgColor32,
+                          int    _ulColor32,
+                          float  _x,
+                          float  _y,
+                          float  _availW,  // multi-line text
+                          int    _align    // horizontal alignment in multi-line text
+                          ) {
+
+      if(0 != UI.c32_forced_textcolor)
+         _fgColor32 = UI.c32_forced_textcolor;
+
+      if( (_font instanceof Font) && (_text instanceof String) )
+      {
+         EnableTexture2D();
+         glEnable(GL_BLEND);
+         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                             GL_ONE,       GL_ONE_MINUS_SRC_ALPHA
+                             );
+         _align &= Layout.CENTERX;
+         if( (_align & Layout.RIGHT)/*right or center?*/ && -1 != _text.indexOfChar('\n', 0) )
+         {
+            // multi-line text with RIGHT or CENTERX alignment
+            StringArray aLines <= _text.splitChar('\n');
+            String *sLine;
+            float fontH = _font.getHeight();
+            foreach sLine in aLines
+            {
+               float lineW = _font.stringWidth(sLine);
+               if(Layout.RIGHT == _align)
+                  _font.renderString(sLine, _x + (_availW - lineW), _y, _fgColor32, _ulColor32);
+               else/*centerx*/
+                  _font.renderString(sLine, _x + (_availW - lineW)*0.5, _y, _fgColor32, _ulColor32);
+               _y += fontH;
+            }
+         }
+         else
+         {
+            // single line (already aligned)
+            _font.renderString(_text, _x, _y, _fgColor32, _ulColor32);
+         }
+         DisableTexture2D();
+         glDisable(GL_BLEND);
+      }
+   }
+
+   public static DrawTextClipped(String _text, Font _font,
+                                 int _fgColor32,
+                                 int _ulColor32,
+                                 float _x, float _y,
+                                 float _clipLeft,
+                                 float _clipTop,
+                                 float _clipRight,
+                                 float _clipBottom
+                                 ) {
+
+      if(0 != UI.c32_forced_textcolor)
+         _fgColor32 = UI.c32_forced_textcolor;
+
+      // trace "xxx DrawTextClipped: clip l="+_clipLeft+" t="+_clipTop+" r="+_clipRight+" b="+_clipBottom;
+
+      if( (_font instanceof Font) && (_text instanceof String) )
+      {
+         EnableTexture2D();
+         glEnable(GL_BLEND);
+         glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                             GL_ONE,       GL_ONE_MINUS_SRC_ALPHA
+                             );
+         _font.renderClippedString(_text,
+                                   _x, _y,
+                                   _clipLeft,
+                                   _clipTop,
+                                   _clipRight,
+                                   _clipBottom,
+                                   _fgColor32,
+                                   _ulColor32
+                                   );
+         DisableTexture2D();
+         glDisable(GL_BLEND);
+      }
+   }
+
+   public static DrawTextGhosted(String _text, Font _font, int _fgColor32RB, int _fgColor32LT, float _x, float _y) {
+      if(UI.IsDarkOrMono())
+      {
+         DrawText(_text, _font, _fgColor32LT, _fgColor32LT, _x,  _y  , 0/*availW*/, 0/*align*/);
+         DrawText(_text, _font, _fgColor32RB, _fgColor32RB, _x+1,_y+1, 0/*availW*/, 0/*align*/);
+      }
+      else
+      {
+         DrawText(_text, _font, _fgColor32RB, _fgColor32RB, _x,   _y  , 0/*availW*/, 0/*align*/);
+         DrawText(_text, _font, _fgColor32LT, _fgColor32LT, _x-1, _y-1, 0/*availW*/, 0/*align*/);
+      }
+   }
+
+   public static EnableTexture2D() {
+      if(!b_glcore)
+         glEnable(GL_TEXTURE_2D);
+   }
+
+   public static DisableTexture2D() {
+      if(!b_glcore)
+         glDisable(GL_TEXTURE_2D);
+   }
+
+   public static EnableBlending() {
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   }
+
+   public static EnableBlendingKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                          GL_ZERO,      GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingReplaceAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA,
+                          GL_ONE, GL_ZERO
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingAdditive() {
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingAdditiveKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA,  GL_ONE,
+                          GL_ZERO, GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingAdditiveReplaceAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA,  GL_ONE,
+                          GL_ONE, GL_ZERO
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingSrcColorKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_COLOR,  GL_ONE_MINUS_SRC_ALPHA,
+                          GL_ZERO, GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingDstColorKeepAlpha() {
+      glBlendFuncSeparate(GL_SRC_ALPHA,  GL_DST_COLOR,
+                          GL_ZERO, GL_ONE
+                          );
+      glEnable(GL_BLEND);
+   }
+
+   public static EnableBlendingSrc() {
+      glBlendFunc(GL_ONE, GL_ZERO);
+      glEnable(GL_BLEND);
+   }
+
+   public static DisableBlending() {
+      // // glDisable(GL_BLEND);
+      sdvg_DisableBlending();
+   }
+
+   public static SelectBlendMode(int _mode) {
+      switch(_mode)
+      {
+         case UIConstants.BLEND_OFF:
+         default:
+            break;
+
+         case UIConstants.BLEND_SRCOVER:
+            EnableBlendingKeepAlpha();
+            break;
+
+         case UIConstants.BLEND_ADDITIVE:
+            EnableBlendingAdditiveKeepAlpha();
+            break;
+
+         case UIConstants.BLEND_SRCCOLOR:
+            EnableBlendingSrcColorKeepAlpha();
+            break;
+
+         case UIConstants.BLEND_DSTCOLOR:
+            EnableBlendingDstColorKeepAlpha();
+            break;
+      }
+   }
+
+   public static DrawXORRectangle(float _x, float _y, float _w, float _h, float _b) {
+
+      if(!b_draw_gl)
+      {
+         DrawRectangle(_x, _y, _w, _h, _b, #ffdddddd);
+         return;
+      }
+
+      // (todo) if(!b_gles)
+      glEnable(GL_COLOR_LOGIC_OP);
+      glLogicOp(GL_XOR);
+
+      SetColorARGB(#ffffffff);
+
+      glBegin(GL_QUADS);  // b_draw_gl DrawXORRectangle
+      // Top
+      glVertex2f(_x   , _y   );
+      glVertex2f(_x+_w, _y   );
+      glVertex2f(_x+_w, _y+_b);
+      glVertex2f(_x   , _y+_b);
+
+      // Right
+      glVertex2f(_x+_w-_b, _y+_b  );
+      glVertex2f(_x+_w   , _y+_b  );
+      glVertex2f(_x+_w   , _y+_h-_b);
+      glVertex2f(_x+_w-_b, _y+_h-_b);
+
+      // Left
+      glVertex2f(_x    , _y+_b  );
+      glVertex2f(_x+_b , _y+_b  );
+      glVertex2f(_x+_b , _y+_h-_b);
+      glVertex2f(_x    , _y+_h-_b);
+
+      // Bottom
+      glVertex2f(_x   , _y+_h-_b);
+      glVertex2f(_x+_w, _y+_h-_b);
+      glVertex2f(_x+_w, _y+_h   );
+      glVertex2f(_x   , _y+_h   );
+      glEnd();  // b_draw_gl XORRectangle
+
+      // (todo) if(!b_gles)
+      glDisable(GL_COLOR_LOGIC_OP);
+      glLogicOp(GL_COPY); // Workaround for Intel GMA 900 linux driver (does not seem to really disable logic ops?!)
+   }
+
+   public static DrawActiveTabBorder(float _x, float _y, float _w, float _h) {
+      SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT));
+
+      if(b_draw_gl)
+      {
+         glBegin(GL_LINES);  // b_draw_gl
+         glVertex2f(_x, _y+_h-1);
+         glVertex2f(_x, _y+2   );
+
+         glVertex2f(_x,   _y+2);
+         glVertex2f(_x+2, _y  );
+
+         glVertex2f(_x+2,        _y);
+         glVertex2f(_x+_w-3+2+1, _y);
+         glEnd();  // b_draw_gl
+
+         SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DIM));
+         glBegin(GL_POINTS);  // b_draw_gl
+         glVertex2f(_x+_w-2+2-1, _y+1);
+         glVertex2f(_x+_w+1-1,   _y+2);
+         glEnd();  // b_draw_gl
+
+         SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK));
+         glBegin(GL_LINES);  // b_draw_gl
+         glVertex2f(_x+_w-1+2, _y+2   );
+         glVertex2f(_x+_w-1+2, _y+_h-1);
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         if(BeginLines(6))
+         {
+            Vertex2f(_x, _y+_h-1);
+            Vertex2f(_x, _y+2   );
+
+            Vertex2f(_x,   _y+2);
+            Vertex2f(_x+2, _y  );
+
+            Vertex2f(_x+2,        _y);
+            Vertex2f(_x+_w-3+2+1, _y);
+            End();
+         }
+
+         SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DIM));
+         if(BeginPointsSquare(2))
+         {
+            Vertex2f(_x+_w-2+2-1, _y+1);
+            Vertex2f(_x+_w+1-1,   _y+2);
+            End();
+         }
+
+         SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK));
+         if(BeginLineStrip(2))
+         {
+            Vertex2f(_x+_w-1+2, _y+2   );
+            Vertex2f(_x+_w-1+2, _y+_h-1);
+            End();
+         }
+      }
+   }
+
+   public static DrawInactiveTabBorder(int _x, float _y,
+                                       float _w, float _h,
+                                       boolean _bLastActive,
+                                       boolean _bNextActive
+                                       ) {
+
+      if(!_bLastActive)
+      {
+         SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG));
+         if(b_draw_gl)
+         {
+            glBegin(GL_POINTS);  // b_draw_gl
+            glVertex2f(_x+2, _y);
+            glVertex2f(_x+3, _y);
+            glVertex2f(_x+2, _y+1);
+            glEnd();  // b_draw_gl
+         }
+         else
+         {
+            if(BeginPointsSquare(3))
+            {
+               Vertex2f(_x+2, _y);
+               Vertex2f(_x+3, _y);
+               Vertex2f(_x+2, _y+1);
+               End();
+            }
+         }
+      }
+
+      SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT));
+      if(b_draw_gl)
+      {
+         glBegin(GL_LINES);  // b_draw_gl
+         if(!_bLastActive)
+         {
+            glVertex2f(_x+2, _y+_h-1);
+            glVertex2f(_x+2, _y+2   );
+
+            glVertex2f(_x+2,   _y+2);
+            glVertex2f(_x+2+2, _y  );
+
+            glVertex2f(_x+2+2, _y);
+            if(_bNextActive)
+               glVertex2f(_x+_w-3, _y);
+            else
+               glVertex2f(_x+_w-1, _y);
+         }
+         else
+         {
+            glVertex2f(_x+2, _y);
+            glVertex2f(_x+_w-1, _y);
+         }
+
+         if(_bNextActive)
+         {
+            glVertex2f(_x+2+2, _y);
+            glVertex2f(_x+_w, _y);
+         }
+         else
+         {
+            glVertex2f(_x+2+_w-3, _y);
+            glVertex2f(_x+2+_w-1, _y+2);
+            glEnd();  // b_draw_gl
+
+            SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DIM));
+            glBegin(GL_LINES);  // b_draw_gl
+            glVertex2f(_x+2+_w-2, _y);
+            glVertex2f(_x+2+_w-1, _y+2);
+            glVertex2f(_x+2+_w-1, _y+2);
+            glVertex2f(_x+2+_w-1, _y+_h-1);
+            glEnd();  // b_draw_gl
+
+            SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK));
+            glBegin(GL_LINES);  // b_draw_gl
+            glVertex2f(_x+2+_w-1, _y+2);
+            glVertex2f(_x+2+_w-1, _y+_h-1);
+         }
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         int maxVerts = 19;
+         BeginLines(maxVerts);
+         if(!_bLastActive)
+         {
+            Vertex2f(_x+2, _y+_h-1);
+            Vertex2f(_x+2, _y+2   );
+
+            Vertex2f(_x+2,   _y+2);
+            Vertex2f(_x+2+2, _y  );
+
+            Vertex2f(_x+2+2, _y);
+            if(_bNextActive)
+               Vertex2f(_x+_w-3, _y);
+            else
+               Vertex2f(_x+_w-1, _y);
+         }
+         else
+         {
+            Vertex2f(_x+2, _y);
+            Vertex2f(_x+_w-1, _y);
+         }
+
+         if(_bNextActive)
+         {
+            Vertex2f(_x+2+2, _y);
+            Vertex2f(_x+_w, _y);
+         }
+         else
+         {
+            Vertex2f(_x+2+_w-3, _y);
+            Vertex2f(_x+2+_w-1, _y+2);
+            End();
+
+            SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DIM));
+            BeginLines(maxVerts);
+            Vertex2f(_x+2+_w-2, _y);
+            Vertex2f(_x+2+_w-1, _y+2);
+            Vertex2f(_x+2+_w-1, _y+2);
+            Vertex2f(_x+2+_w-1, _y+_h-1);
+            End();
+
+            SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK));
+            BeginLines(maxVerts);
+            Vertex2f(_x+2+_w-1, _y+2);
+            Vertex2f(_x+2+_w-1, _y+_h-1);
+         }
+         End();
+      }
+   }
+
+   public static DrawTabFocusTextBorder(float x, float y, float x2, float y2) {
+      if(b_draw_gl && !b_glcore && !UI.IsMacOS())
+      {
+         glLineStipple(1, 0b1010101010101010);  // b_draw_gl
+         glEnable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+      SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_TABFOCUS_TEXT_BORDER));
+      // trace "xxx tabfocus_text_border="+UI.GetColorString(lnf_colors.get(LookAndFeel.COLOR_TABFOCUS_TEXT_BORDER));
+      if(BeginLineStrip(5))
+      {
+         Vertex2f(x, y);
+         Vertex2f(x2, y);
+         Vertex2f(x2, y2);
+         Vertex2f(x, y2);
+         Vertex2f(x, y);
+         End();
+      }
+      if(b_draw_gl && !UI.IsMacOS())
+      {
+         glDisable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+   }
+
+   public static DrawTabFocusTextBorderFaded(float x, float y, float x2, float y2) {
+      // called by Dial
+      if(b_draw_gl && !b_glcore && !UI.IsMacOS())
+      {
+         glLineStipple(1, 0b1010101010101010);  // b_draw_gl
+         glEnable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+      SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_TABFOCUS_TEXT_BORDER_FADED));
+      EnableBlending();
+      if(BeginLineStrip(5))
+      {
+         Vertex2f(x, y);
+         Vertex2f(x2, y);
+         Vertex2f(x2, y2);
+         Vertex2f(x, y2);
+         Vertex2f(x, y);
+         End();
+      }
+      if(b_draw_gl && !UI.IsMacOS())
+      {
+         glDisable(GL_LINE_STIPPLE);  // b_draw_gl
+         DisableBlending();
+      }
+   }
+
+   public static DrawTableViewCellSeparatorLine(float x, float y, float x2, float y2) {
+      if(b_draw_gl && !b_glcore && !UI.IsMacOS())
+      {
+         glLineStipple(1, 0b1010101010101010);  // b_draw_gl
+         glEnable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+      int c32 = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_SEPARATOR);
+      if(b_draw_gl)
+      {
+         SetColorARGB(c32);
+         glBegin(GL_LINES);  // b_draw_gl
+         glVertex2f(x, y);
+         glVertex2f(x2, y2);
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         UIRenderer.EnableBlending();
+         DrawLineAA(x, y, x2, y2, c32);
+         UIRenderer.DisableBlending();
+      }
+      if(b_draw_gl && !UI.IsMacOS())
+      {
+         glDisable(GL_LINE_STIPPLE);  // b_draw_gl
+      }
+   }
+
+   public static DrawEllipse(float cx, float cy, float rx, float ry, int numSeg, int c32) {
+      if(b_draw_gl)
+      {
+         float w = (2PI / numSeg);
+         float a = 0;
+         SetColorARGB(c32);
+         glBegin(GL_LINE_STRIP);  // b_draw_gl
+         loop(numSeg + 1)
+         {
+            float x = cos(a) * rx + cx;
+            float y = sin(a) * ry + cy;
+            glVertex2f(x, y);
+            a += w;
+         }
+         glEnd();  // b_draw_gl
+      }
+      else
+      {
+         sdvg_SetFillColorARGB(c32);
+         // trace "xxx DrawFilledEllipseAA: c=("+cx+";"+cy+") r=("+rx+";"+ry+")";
+         sdvg_SetStrokeWidth(0.5f);
+         sdvg_DrawEllipseStrokeAA(cx, cy, rx-0.5f, ry-0.5f);
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+   }
+
+   public static DrawFilledEllipseTriEx(float cx, float cy,
+                                        float rx, float ry,
+                                        int numSeg,
+                                        int c32,
+                                        boolean _bBuiltinShader
+                                        ) {
+      float a = 0;
+      float w = (2PI / numSeg);
+      SetColorARGB(c32);
+      if(BeginFilledTriangleFanEx(numSeg, _bBuiltinShader))
+      {
+         loop(numSeg)
+         {
+            float x = cos(a) * rx + cx;
+            float y = sin(a) * ry + cy;
+            Vertex2f(x, y);
+            a += w;
+         }
+         End();  // b_draw_gl
+      }
+   }
+
+   public static DrawFilledEllipse(float cx, float cy,
+                                   float rx, float ry,
+                                   int numSeg,
+                                   int c32
+                                   ) {
+      if(0 || b_draw_gl)
+      {
+         DrawFilledEllipseTriEx(cx, cy,
+                                rx, ry,
+                                numSeg,
+                                c32,
+                                true/*bBuiltinShader*/
+                                );
+      }
+      else
+      {
+         sdvg_SetFillColorARGB(c32);
+         // trace "xxx DrawFilledEllipseAA: c=("+cx+";"+cy+") r=("+rx+";"+ry+")";
+         sdvg_DrawEllipseFillAA(cx, cy, rx, ry);
+         if(b_sdvg_return_to_gl) sdvg_ReturnToGL();
+      }
+   }
+
+   public static DrawFilledEllipsePartial(float cx, float cy, float rx, float ry, float rxi, float ryi, int numSeg, int c32, float aStart, float aEnd) {
+      float a = aStart;
+      float w = ((aEnd - aStart) / numSeg);
+      SetColorARGB(c32);
+      if(BeginFilledTriangles(numSeg * 6))
+      {
+         loop(numSeg)
+         {
+            float xi = cos(a) * rxi + cx;
+            float yi = sin(a) * ryi + cy;
+            Vertex2f(xi, yi);
+
+            float x1 = cos(a) * rx + cx;
+            float y1 = sin(a) * ry + cy;
+            Vertex2f(x1, y1);
+
+            float x2 = cos(a + w) * rx + cx;
+            float y2 = sin(a + w) * ry + cy;
+            Vertex2f(x2, y2);
+
+
+            Vertex2f(x2, y2);
+
+            float xin = cos(a+w) * rxi + cx;
+            float yin = sin(a+w) * ryi + cy;
+            Vertex2f(xin, yin);
+
+            Vertex2f(xi, yi);
+
+            a += w;
+         }
+         End();
+      }
+   }
+
+   public static DrawFilledDiamondEx(float cx, float cy,
+                                     float rx, float ry,
+                                     int c32,
+                                     boolean _bBuiltinShader
+                                     ) {
+      SetColorARGB(c32);
+      if(BeginFilledTriangleFanEx(4, _bBuiltinShader))
+      {
+         Vertex2f(cx,    cy-ry);
+         Vertex2f(cx+rx, cy   );
+         Vertex2f(cx,    cy+ry);
+         Vertex2f(cx-rx, cy   );
+         End();
+      }
+   }
+
+   public static DrawFilledHexagon(float px, float py, float sx, float sy, float scale, int c32) {
+      // https://en.wikipedia.org/wiki/Hexagon
+
+      SetColorARGB(c32);
+
+      if(BeginFilledTriangleFan(6))
+      {
+         float cx = px + sx * 0.5;
+         float cy = py + sy * 0.5;
+
+         float t = mathMaxf(sx, sy) * scale;  // max side length
+         float r = t * (sqrt(3.0f) / 2.0f);
+
+         Vertex2f(cx,     cy - t);
+         Vertex2f(cx + r, cy - t*0.5);
+         Vertex2f(cx + r, cy + t*0.5);
+         Vertex2f(cx,     cy + t);
+         Vertex2f(cx - r, cy + t*0.5);
+         Vertex2f(cx - r, cy - t*0.5);
+         End();
+      }
+   }
+
+   public static DrawFilledHexagonAEx(float px, float py,
+                                      float sx, float sy,
+                                      float ax, float ay,
+                                      int c32,
+                                      boolean _bBuiltinShader
+                                      ) {
+      // https://en.wikipedia.org/wiki/Hexagon
+      //  (note) for rendering hexagon-like shapes where the angle is not necessarily 120
+      SetColorARGB(c32);
+
+      if(BeginFilledTriangleFanEx(6, _bBuiltinShader))
+      {
+         float rx = sx * 0.5;
+         float ry = sy * 0.5;
+
+         float cx = px + rx;
+         float cy = py + ry;
+
+         float drax = rx - ax;
+         float dray = ry - ay;
+
+         Vertex2f(cx,        cy - ry);
+         Vertex2f(cx + drax, cy - dray*0.5);
+         Vertex2f(cx + drax, cy + dray*0.5);
+         Vertex2f(cx,        cy + ry);
+         Vertex2f(cx - drax, cy + dray*0.5);
+         Vertex2f(cx - drax, cy - dray*0.5);
+
+         End();
+      }
+   }
+
+   public static DrawFilledTriangleAroundRectEx(float px, float py,
+                                                float sx, float sy,
+                                                float ax, float ay,
+                                                int c32,
+                                                _bBuiltinShader
+                                                ) {
+      SetColorARGB(c32);
+      if(BeginFilledTrianglesEx(3, _bBuiltinShader))
+      {
+         Vertex2f(px+ax,        py + sy);
+         Vertex2f(px+(sx*0.5),  py + ay);
+         Vertex2f(px+sx-ax,     py + sy);
+         End();
+      }
+   }
+
+   public static DrawTexture(Texture tex,
+                             float x, float y,
+                             float w, float h,
+                             float tx, float ty,
+                             float tw, float th
+                             ) {
+      // (note) called by NSQ_Arranger
+
+      tex.bind();
+      tex.enable();
+
+      if(BeginTexturedTriangleFan(2*3))
+      {
+         TexCoord2f(tx / tex.sx,
+                    ty / tex.sy
+                    );
+         Vertex2f(x, y);
+
+         TexCoord2f((tx + tw) / tex.sx,
+                    (ty     ) / tex.sy
+                    );
+         Vertex2f(x + w, y);
+
+         TexCoord2f((tx + tw) / tex.sx,
+                    (ty + th) / tex.sy
+                    );
+         Vertex2f(x + w, y + h);
+
+         TexCoord2f((tx) / tex.sx,
+                    (ty + th) / tex.sy
+                    );
+         Vertex2f(x, y + h);
+
+         End();
+      }
+
+      tex.disable();
+   }
+
+}

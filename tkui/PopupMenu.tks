@@ -1,0 +1,920 @@
+// ----
+// ---- file   : PopupMenu.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 29Apr2007
+// ---- changed: 06May2007, 08May2007, 14May2007, 15May2007, 18May2007, 13Jan2008, 02Feb2009
+// ----          31May2009, 29Jan2010, 20Feb2010, 05Feb2011, 07Mar2011, 09Jan2012, 15Jan2012
+// ----          14May2012, 16Sep2014, 26Jan2015, 09Feb2017, 02Mar2018, 27Nov2018, 11Dec2018
+// ----          30Oct2019, 10Jul2020, 25Jul2020, 16Apr2021, 21May2021, 02Jan2022, 21Sep2023
+// ----          03Oct2023, 05Oct2023, 20Oct2023, 16Jan2025, 23Mar2025
+// ----
+// ----
+// ----
+
+module MPopupMenu;
+
+namespace ui;
+
+
+class PopupMenu extends FloatingLayer, ActionProvider, ActionConsumer {
+   explain "A modal, floating popupmenu dialog. Emits unnamed action if canceled (action name = \"\") resp. the item action name if one was selected.";
+
+   define String ACTION_CANCEL = "quit_popupmenu_bar";
+
+   define int MIN_SIZE_X = 30;
+   define int MIN_SIZE_Y = 20;
+
+   protected Composite *inner_layer;
+   protected Composite *cur_column_layer;      // temporary while building menu
+   protected int        cur_num_column_items;  // temporary while building menu
+   protected ActionConsumer *recipient;
+   protected PopupMenu *parent_menu;
+   protected PointerArray submenus;
+   protected PointerArray focus_items;
+   protected boolean b_menu_canceled; // becomes true if the menu has no parent and the user closed it without selecting an item
+   protected boolean b_activate_previous; // true if menu was closed by pressing LEFT
+   protected boolean b_activate_next; // true if menu was closed by pressing RIGHT
+   protected boolean b_allow_activate_next = false; // if true pressing RIGHT on a menuitem that is not a folder closes the menu
+   protected boolean b_menu_escaped; // becomes true if the menu was closed by pressing the escape key
+   protected PopupMenuBarButton *next_menubarbutton_to_activate;
+
+   protected String  caption;   // Used in PopupMenuBar
+   protected String *icon_name; // Used in PopupMenuBar
+
+   PopupMenuFolderButton *last_autohide_button; // Used if the submenu is re-focused after an auto-hide timer has been started. Not for public use.
+   PopupMenuFolderButton *parent_button; // Reference to parent menu button that triggers this menu (used for timers)
+
+   protected Layer *preshow_keyboard_focus;
+   namespace boolean b_skip_restore_keyboard_focus;  // 'only do this for popupmenus that are not attached to a popupmenubar'
+
+   namespace String *dynamic_action_name;
+
+   public boolean b_ext_focus_hack;  // true=allow outside menu item kbdfocus selection (e.g. via MIDI)
+
+   protected boolean b_last_separator;  // true=last added item was separator
+
+   protected int num_items_per_column;  // 0=inf
+
+
+   public static New(ActionConsumer _recipient) {
+      local PopupMenu m <= new PopupMenu();
+      m.initPopupMenu(deref _recipient);
+      return deref m;
+   }
+
+   protected initPopupMenu(ActionConsumer _recipient) {
+
+      initFloatingLayer();
+
+      recipient <= deref _recipient;
+
+      b_ext_focus_hack = true;  /// enable <focus> actions
+      b_opaque = true;
+
+      num_items_per_column = 0;
+
+      inner_layer <= new Composite;
+      inner_layer.initComposite();
+      inner_layer.setLayout(SuperBorderLayout);
+      inner_layer.setPadding4f(UIConstants.DEFAULT_BORDER_SIZE*2, UIConstants.DEFAULT_BORDER_SIZE*2,
+                               UIConstants.DEFAULT_BORDER_SIZE*2, UIConstants.DEFAULT_BORDER_SIZE*2);
+      ////inner_layer.setLayoutWeight2f(1.0, 1.0);
+
+      setLayout(SuperBorderLayout);
+      addLayer(inner_layer, Layout.CENTER);
+
+      newColumnLayer();
+
+      submenus.free();
+
+      setMinimumSize2f(MIN_SIZE_X*UI.font_scaling, MIN_SIZE_Y*UI.font_scaling);
+
+      b_last_separator = true;
+   }
+
+   public isMenuEmpty() : boolean {
+      return (focus_items.numElements == 0);
+   }
+
+   public virtual isModal():boolean {
+      // Overwrites Layer::isModal
+      return true;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public virtual isPopup():boolean {
+      // Overwrites Layer::isPopup
+      return true;
+   }
+
+   public getCaption() : String {
+      return caption;
+   }
+
+   public getIconName() : String {
+      return icon_name;
+   }
+
+   public setAllowActivateNext(boolean _bAllowActivateNext) {
+      b_allow_activate_next = _bAllowActivateNext;
+   }
+
+   public shouldActivateNext() : boolean {
+      return b_activate_next;
+   }
+
+   public shouldActivatePrevious() : boolean {
+      return b_activate_previous;
+   }
+
+   public wasEscaped() : boolean {
+      return = b_menu_escaped;
+      b_menu_escaped = false;
+   }
+
+   public getNextMenuBarButtonToActivate() : PopupMenuBarButton {
+      return next_menubarbutton_to_activate;
+   }
+
+   public setRecipient(ActionConsumer _recipient) {
+      recipient <= deref _recipient;
+   }
+
+   protected virtual preShow() {
+      explain "overwrites FloatingLayer::preShow";
+
+      // // trace "xxx PopupMenu::preShow";
+
+      FloatingLayer::preShow();
+
+      float w = mathMaxf(MIN_SIZE_X*UI.font_scaling, inner_layer.getPreferredSizeX());
+      float h = mathMaxf(MIN_SIZE_Y*UI.font_scaling, inner_layer.getPreferredSizeY());
+
+      // // trace "xxx PopupMenu: inner_layer size = ("+w+";"+h+")";
+
+      setGeometry(0, 0, w+UIConstants.DEFAULT_BORDER_SIZE*4, h+UIConstants.DEFAULT_BORDER_SIZE*4);
+
+      invalidateAbsolutePositions();
+      layoutHierarchy(true, false);
+
+      b_menu_canceled     = false;
+      b_menu_escaped      = false;
+      b_activate_previous = false;
+      b_activate_next     = false;
+      next_menubarbutton_to_activate <= null;
+
+      preshow_keyboard_focus <= UI.GetKeyboardFocus();
+      // // trace "xxx PopupMenu::preShow: preshow_keyboard_focus="+#(preshow_keyboard_focus);
+
+      recursiveOnLookAndFeelChanged();
+
+      UI.SetKeyboardFocus(this);
+   }
+
+   protected method postShow() {
+      FloatingLayer::postShow();
+
+      resizeAtLeastToMinimum();  // UI.font_scaling > 1
+   }
+
+   protected handleSelection(String _actionName, boolean _bHide) : boolean {
+      // // trace "xxx PopupMenu::handleSelection: acName=\""+_actionName+"\" bHide="+_bHide+" recipient="+#(recipient);
+
+      if( !(_actionName <= "<focus>") && _bHide )
+         hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(_actionName, this);
+
+         // // trace "xxx PopupMenu::handleSelection: try recipient="+#(recipient);
+         if(!recipient.consumeAction(ac))
+         {
+            if(recipient instanceof Layer)
+            {
+               // Try recipient or one of its parents
+               Layer l <= recipient;
+               return l.provideAction(ac);
+            }
+         }
+         else
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public static IsFocusAction(Action _ac) : boolean {
+      return (_ac.getActionName() <= "<focus>");
+   }
+
+   public getParentMenu() : PopupMenu {
+      return parent_menu;
+   }
+
+   public getRootMenu() : PopupMenu {
+      PopupMenu p <= this;
+      while(null != p.parent_menu)
+         p <= p.parent_menu;
+      return p;
+   }
+
+   public method removeMenuItems() {
+      inner_layer.removeChildHierarchy();
+      focus_items.free();
+      submenus.free();
+   }
+
+   public closeOpenSubMenus(PopupMenuFolderButton _new) {
+      PopupMenuFolderButton *l;
+      foreach l in focus_items
+      {
+         if(@(l) != @(_new))
+         {
+            if(l instanceof PopupMenuFolderButton)
+            {
+               l.closeSubMenu();
+            }
+         }
+      }
+   }
+
+   public focusPreviousMenuItem() {
+      // // trace "xxx focusPreviousMenuItem: keyboard_layer="+#(UI.keyboard_layer);
+      int idx = focus_items.indexOfPointer(UI.keyboard_layer, 0);
+      if(-1 == idx)
+      {
+         // Focus last item
+         if(focus_items.numElements > 0)
+         {
+            UI.SetKeyboardFocusEx(focus_items[focus_items.numElements-1], false/*bAllowMouseFocus*/);
+         }
+      }
+      else
+      {
+         // Focus previous item
+         if( (idx-1) >= 0 )
+         {
+            UI.SetKeyboardFocusEx(focus_items[idx-1], false/*bAllowMouseFocus*/);
+         }
+         else
+         {
+            // Wrap-around
+            UI.SetKeyboardFocusEx(focus_items[focus_items.numElements-1], false/*bAllowMouseFocus*/);
+         }
+      }
+
+      // Hack for external display updates (e.g. Push)
+      if(b_ext_focus_hack)
+      {
+         PopupMenuButton pmb <= UI.GetKeyboardFocus();
+         if(pmb instanceof PopupMenuButton)
+         {
+            handleSelection("<focus> \""+pmb.getCaption()+"\"", false/*bHide*/);
+         }
+      }
+   }
+
+   public focusNextMenuItem() {
+      // // trace "xxx focusNextMenuItem: keyboard_layer="+#(UI.keyboard_layer);
+      // // trace "xxx focusNextMenuItem: focus_items="+#(focus_items);
+      int idx = focus_items.indexOfPointer(UI.keyboard_layer, 0);
+      if(-1 == idx)
+      {
+         // Focus first item
+         if(focus_items.numElements > 0)
+         {
+            UI.SetKeyboardFocusEx(focus_items[0], false/*bAllowMouseFocus*/);
+         }
+      }
+      else
+      {
+         // Focus next item
+         if( (idx+1) < focus_items.numElements )
+         {
+            UI.SetKeyboardFocusEx(focus_items[idx+1], false/*bAllowMouseFocus*/);
+         }
+         else
+         {
+            // Wrap-around
+            UI.SetKeyboardFocusEx(focus_items[0], false/*bAllowMouseFocus*/);
+         }
+      }
+
+      // Hack for external display updates (e.g. Push)
+      if(b_ext_focus_hack)
+      {
+         PopupMenuButton pmb <= UI.GetKeyboardFocus();
+         if(pmb instanceof PopupMenuButton)
+         {
+            handleSelection("<focus> \""+pmb.getCaption()+"\"", false/*bHide*/);
+         }
+      }
+   }
+
+   protected focusNextMenuItemByFirstChar(char _c) : boolean {
+      explain "Focus next menu item whose caption starts with the given character";
+
+      String sChar <= tcchar(_c);
+      sChar.toLower();
+
+      Button *b;
+      PopupMenuFolderButton *bCurrent;
+      int idxStart;
+      int idx = focus_items.indexOfPointer(UI.keyboard_layer, 0);
+      if(-1 == idx)
+      {
+         idx = 0;
+      }
+      else
+      {
+         bCurrent <= focus_items[idx];
+         idx++;
+      }
+      idxStart = idx;
+
+      String s;
+
+      loop(focus_items.numElements/*-1*/)
+      {
+         if(idx >= focus_items.numElements)
+         {
+            idx = 0;
+         }
+         b <= focus_items[idx];
+         if(b instanceof Button) // Skip separators
+         {
+            s = b.getCaption();
+            s.toLower();
+            // // trace "xxx PopupMenu: focusByFirstChar: s=\""+s+"\" char="+sChar;
+            if(s.startsWith(sChar))
+            {
+               if(bCurrent instanceof PopupMenuFolderButton)
+               {
+                  bCurrent.closeSubMenu();
+               }
+               // // trace "xxx PopupMenu: set focus to b s=\""+s+"\"";
+               UI.SetKeyboardFocusEx(b, false/*bAllowMouseFocus*/);
+               return true;
+            }
+         }
+         idx++;
+      }
+
+
+      // No item was found, try best match search
+      int idxBestMatch = -1;
+      int idxCharBestMatch = 99999999;
+      int idxChar;
+      _c = sChar[0]; // Get lowercase char
+      idx = idxStart;
+      loop(focus_items.numElements/*-1*/)
+      {
+         if(idx >= focus_items.numElements)
+         {
+            idx = 0;
+         }
+         b <= focus_items[idx];
+         if(b instanceof Button) // Skip separators
+         {
+            s = b.getCaption();
+            s.toLower();
+            idxChar = s.indexOfChar(_c, 1);
+            if(-1 != idxChar)
+            {
+               if(idxChar < idxCharBestMatch)
+               {
+                  idxCharBestMatch = idxChar;
+                  idxBestMatch = idx;
+               }
+            }
+         }
+         idx++;
+      }
+
+      if(-1 != idxBestMatch)
+      {
+         if(bCurrent instanceof PopupMenuFolderButton)
+         {
+            bCurrent.closeSubMenu();
+         }
+         UI.SetKeyboardFocusEx(focus_items[idxBestMatch], false/*bAllowMouseFocus*/);
+         return true;
+      }
+
+      return false;
+   }
+
+
+   protected returnToParentMenu(boolean _bFromKeyboard) {
+      b_menu_canceled = (null == parent_button);
+      hide();
+
+      if(!b_menu_canceled)
+      {
+         UI.SetKeyboardFocusEx(parent_button, !_bFromKeyboard/*bAllowMouseFocus*/);
+      }
+   }
+
+   public addAcceleratorKeys(AcceleratorList _al) {
+      explain "Recursively add accelerator keys of menu items";
+
+      local PopupMenuButton *pmb;
+      foreach pmb in focus_items
+      {
+         if(pmb instanceof PopupMenuFolderButton)
+         {
+            local PopupMenuFolderButton pfb <= pmb;
+            _= pfb.getPopupMenu().addAcceleratorKeys(_al);
+         }
+         else if(pmb instanceof PopupMenuButton)
+         {
+            String accel <= pmb.getAcceleratorName();
+            if(!accel.isBlank())
+            {
+               _al.addAcceleratorKey(AcceleratorKey.New(accel, pmb));
+            }
+         }
+      }
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx PopupMenu onKey k.name="+_k.name+" k.code="+_k.code+" k.mod="+_k.mod;
+      PopupMenu *pmRoot;
+
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_UP:
+               focusPreviousMenuItem();
+               return true;
+
+            case VKEY_DOWN:
+               focusNextMenuItem();
+               return true;
+
+            case VKEY_ESCAPE:
+            case VKEY_RCTRL:
+               b_menu_escaped = true;
+               if(null == parent_menu)
+               {
+                  // 16Jan2012: cancel popupmenu
+                  // // trace "xxx 16Jan2012: cancel popupmenu";
+                  handleSelection(ACTION_CANCEL, true/*bHide*/);
+               }
+               else
+               {
+                  returnToParentMenu(true/*bFromKeyboard*/);
+               }
+               return true;
+
+            case VKEY_LEFT:
+               if(null == parent_menu)
+               {
+                  pmRoot <= getRootMenu();
+                  pmRoot.b_activate_previous = true;
+                  pmRoot.returnToParentMenu(true/*bFromKeyboard*/); // Close menu
+               }
+               else
+               {
+                  returnToParentMenu(true/*bFromKeyboard*/);
+               }
+               return true;
+
+            case VKEY_RIGHT:
+               if(b_allow_activate_next)
+               {
+                  pmRoot <= getRootMenu();
+                  pmRoot.b_activate_next = true;
+                  pmRoot.returnToParentMenu(true/*bFromKeyboard*/); // Close menu
+               }
+               return true;
+         }
+
+         if(_k.pressed)
+         {
+            if(_k.unicode)
+            {
+               focusNextMenuItemByFirstChar(_k.unicode);
+               return true; // Filter all keys
+            }
+         }
+      }
+
+      if(_k.pressed)
+      {
+         if(recipient instanceof PopupMenuBar)
+         {
+            PopupMenuBar pmb <= recipient;
+            pmb.handleAccelKey(_k);
+            return true; // Filter all keys
+         }
+      }
+
+      // // trace "xxx PopupMenu: key NOT handled.";
+      return true; // Filter all keys
+   }
+
+   public virtual onChildMouseEnter(MouseEvent _ev) {
+      // Cancel auto-hide timeout in case a child of this menu has entered after the timer has already been started
+      // // trace "xxx PopupMenu: onChildMouseEnter this="+#(this);
+      if(null != parent_menu)
+      {
+         UI.CancelScheduleFor(parent_menu.last_autohide_button);
+      }
+   }
+
+   public virtual handleNonChildMouseOver(MouseEvent _ev, Layer _l):boolean {
+      // // trace "xxx PopupMenu: handleNonChildMouseOver l="+#(_l);
+      PopupMenu *pm;
+
+      if(b_allow_activate_next)
+      {
+         if(_l instanceof PopupMenuBarButton)
+         {
+            PopupMenuBarButton mmb <= _l;
+            if(mmb.popup_menu != this)
+            {
+               if(mmb.popup_menu_bar.containsMenu(this))
+               {
+                  pm <= getRootMenu();
+                  pm.b_menu_canceled = true;
+                  pm.next_menubarbutton_to_activate <= _l;
+                  pm.hide();
+                  return true;
+               }
+            }
+         }
+      }
+
+      Layer lroot <= _l.getRoot();
+      if(submenus.containsPointer(lroot))
+      {
+         // Allow focus change to submenu window
+         // // trace "xxx PopupMenu: change focus to submenu";
+         UI.SetMouseFocus(_l);
+         UI.ActivateFloatingLayer(lroot);
+         return true;
+      }
+      else
+      {
+         // Search parent menus
+         pm <= this;
+         while(null != pm)
+         {
+            if(@(lroot) == @(pm.parent_menu))
+            {
+               // // trace "xxx PopupMenu: new mouse layer is child of parent menu.";
+
+               // Start auto-hide timeout
+               if(null != pm.parent_button)
+               {
+                  _= pm.parent_button.startAutoHideTimeOut();
+               }
+
+               UI.SetMouseFocus(_l);
+
+               // Active parent menu floating layer
+               UI.ActivateFloatingLayer(pm.parent_menu);
+
+               // Start auto-hide timeout
+
+               return true;
+            }
+            else
+            {
+               pm <= pm.parent_menu;
+            }
+         }
+      }
+
+      if(_ev.leftButtonUp() || _ev.rightButtonUp())
+      {
+         // Hide all menu layers
+         pm <= getRootMenu();
+         pm.b_menu_canceled = true;
+         pm.hide();
+      }
+      else
+      {
+         // Make current layer lose the mouse focus
+         UI.SetMouseFocus(getRoot());
+      }
+      return true;
+   }
+
+   public virtual onDraw() {
+      // // trace "xxx PopupMenu::draw: parent_menu="+#(parent_menu);
+      // // trace "xxx popupmenu: draw layer_alpha="+layer_alpha;
+      UIRenderer.DrawDefaultMenuBackground(0, 0, size_x, size_y);
+
+      if(lnf.b_popupmenu_bevel_border)
+         UIRenderer.DrawSoftShadowRaisedBorder(0, 0, size_x, size_y);
+      else
+         UIRenderer.DrawRectangle(0, 0, size_x, size_y, 1, lnf_colors.get(LookAndFeel.COLOR_BORDER_DARK));
+   }
+
+   public virtual hide() {
+
+      // Hide any submenus that might be open
+      if(isFloatingLayerVisible())
+      {
+         // // trace "xxx PopupMenu::hide: b_skip_restore_keyboard_focus="+b_skip_restore_keyboard_focus+" preshow_keyboard_focus="+#(preshow_keyboard_focus);
+
+         local PopupMenu *sub;
+         foreach sub in submenus
+         {
+            if(sub.isFloatingLayerVisible())
+               sub.hide();
+         }
+         FloatingLayer::hide();
+         // // trace "xxx PopupMenu::hide called parent_menu="+#(parent_menu);
+         if(null != parent_menu)
+         {
+            // // trace "xxx PopupMenu::hide: activate parent menu";
+            UI.ActivateFloatingLayer(parent_menu);
+            UI.SetMouseFocus(this);
+            UI.SetKeyboardFocus(this);
+         }
+         else
+         {
+            // Restore keyboard focus
+            //  (note) only do this for popupmenus that are not attached to a popupmenubar
+            UI.LoseMouseFocusIfWithin(this); // 11Dec2018
+            if(!b_skip_restore_keyboard_focus)
+            {
+               // trace "[dbg] PopupMenu: restoring kbdfocus to "+#(preshow_keyboard_focus);
+               UI.SetKeyboardFocus(preshow_keyboard_focus);
+            }
+
+            if(b_menu_canceled)
+            {
+               // Emit action with empty action name. This can be useful to set back the focus to the layer that triggered this menu.
+               if(recipient instanceof ActionConsumer)
+               {
+                  Action ac <= Action.New("", this);
+                  recipient.consumeAction(ac);
+                  // Do not add code below this line, the menu may have already been deleted!
+               }
+            }
+         }
+      }
+   }
+
+   // // public method splitIntoTwoColumns() {
+   // //    local PointerArray layers;
+   // // }
+
+   public method setNumItemsPerColumn(int _num) {
+      num_items_per_column = _num;
+   }
+
+   public method getNumItemsPerColumn() : int {
+      return num_items_per_column;
+   }
+
+   protected newColumnLayer() {
+      local Composite co;
+      co.initComposite();
+      co.setLayout(SuperBorderLayout);
+
+      local Composite ci;
+      ci.initComposite();
+      ci.setLayout(SuperBorderLayout);
+
+      co.addLayer(deref ci, Layout.TOP);
+      inner_layer.addLayer(deref co, Layout.RIGHT);
+
+      cur_column_layer <= ci;
+      cur_num_column_items = 0;
+   }
+
+   protected addItemLayer(Layer _l) {
+      if(num_items_per_column > 0)
+      {
+         if(cur_num_column_items == num_items_per_column)
+            newColumnLayer();
+      }
+      if(null == cur_column_layer)
+         newColumnLayer();
+      cur_column_layer.addLayer(deref _l, Layout.BOTTOM);
+      cur_num_column_items++;
+   }
+
+   protected initIconButton(PopupMenuButton _button, String _caption, String _iconName, String _actionAlias) {
+      _button.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      _button.setCaption(_caption);
+      _button.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      _button.setAlignment(Layout.EXPANDX);
+      _button.setProvidedActionAlias(Button.ACTION_CLICK, _actionAlias);
+      Icon ico <= UI.GetIcon(_iconName);
+      if(null != ico)
+      {
+         _button.setIcon(ico);
+         _button.setIconPlacement(Layout.LEFT|Layout.CENTERY);
+         _button.setIconPadRight(UIConstants.POPUPMENU_ICON_PAD_R);
+         if(UI.IsHiDPI())
+            _button.setIconPadTop(2);
+      }
+      else
+      {
+         _button.setInnerPadLeft(UIConstants.BUTTON_INSET_LEFT + UIConstants.POPUPMENU_ICON_WIDTH*UI.icon_scaling + UIConstants.POPUPMENU_ICON_PAD_R);
+      }
+      _button.lockInnerPadding();
+      addItemLayer(deref _button);
+      focus_items.add(_button);
+   }
+
+   public addIconButton(String _caption, String _iconName, String _actionAlias) : PopupMenuButton {
+      local PopupMenuButton b;
+      b.initPopupMenuButton();
+      initIconButton(deref b, _caption, _iconName, _actionAlias);
+      b_last_separator = false;
+      return b;
+   }
+
+   public addDefaultButton(String _caption, String _actionAlias) : PopupMenuButton {
+      return addIconButton(_caption, null/*iconName*/, _actionAlias);
+   }
+
+   public addCheckButton(String _caption, boolean _bChecked, String _actionAlias) : PopupMenuButton {
+      String *iconName;
+      if(UI.IsDarkOrMono())
+      {
+         if(UI.IsHiDPI())
+            iconName <= _bChecked ? "chb2x_1_dark" : "chb2x_0_dark";
+         else
+            iconName <= _bChecked ? "chb_1_dark" : "chb_0_dark";
+      }
+      else
+      {
+         if(UI.IsHiDPI())
+            iconName <= _bChecked ? "chb2x_1" : "chb2x_0";
+         else
+            iconName <= _bChecked ? "chb_1" : "chb_0";
+      }
+      local PopupMenuCheckButton b;
+      b.initPopupMenuButton();
+      initIconButton(deref b, _caption, iconName, _actionAlias);
+      if(UI.IsHiDPI())
+         b.setIconScale(1.0);
+      b_last_separator = false;
+      return b;
+   }
+
+   public addRadioButton(String _caption, boolean _bChecked, String _actionAlias) : PopupMenuButton {
+      String iconName <= _bChecked ? "rab_1" : "rab_0";
+      return addIconButton(_caption, iconName, _actionAlias);
+   }
+
+   public addIconMenu(String _caption, String _iconName, PopupMenu _menu) : PopupMenuFolderButton {
+      if(_menu instanceof PopupMenu)
+      {
+         _menu.parent_menu <= this;
+
+         local PopupMenuFolderButton b;
+         b.initPopupMenuFolderButton();
+         b.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         b.setCaption(_caption);
+         b.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+         b.setAlignment(Layout.EXPANDX);
+         b.setPopupMenu(deref _menu);
+         // // b.setProvidedActionAlias(Button.ACTION_CLICK, _actionAlias);
+         Icon ico <= UI.GetIcon(_iconName);
+         if(null != ico)
+         {
+            b.setIcon(ico);
+            b.setIconPlacement(Layout.LEFT);
+            b.setIconPadRight(UIConstants.POPUPMENU_ICON_PAD_R);
+         }
+         else
+         {
+            b.setInnerPadLeft(UIConstants.BUTTON_INSET_LEFT + UIConstants.POPUPMENU_ICON_WIDTH*UI.icon_scaling + UIConstants.POPUPMENU_ICON_PAD_R);
+         }
+         b.setInnerPadRight(PopupMenuFolderButton.ARROW_PAD_L);
+         b.lockInnerPadding();
+         addItemLayer(deref b);
+         _menu.parent_button <= b;
+         submenus.add(#(deref _menu));
+         focus_items.add(b);
+         b_last_separator = false;
+         return b;
+      }
+      return null;
+   }
+
+   public addMenu(String _caption, PopupMenu _menu) : PopupMenuFolderButton {
+      return addIconMenu(_caption, null/*iconName*/, deref _menu);
+   }
+
+   public addSeparator() {
+      if(!b_last_separator)
+      {
+         local PopupMenuSeparator s;
+         s.initPopupMenuSeparator();
+         s.setAlignment(Layout.EXPANDX);
+         addItemLayer(deref s);
+         b_last_separator = true;
+      }
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      // // trace "xxx PopupMenu: consumeAction name="+_action.getActionName();
+      if(_action instanceof DynamicPopupMenuAction)
+      {
+         PopupMenu pm <= getRootMenu();
+         if(null != pm.recipient) // recipient is PopupMenuBar
+         {
+            return pm.recipient.provideAction(deref _action);
+         }
+      }
+      else
+      {
+         return handleSelection(_action.getActionName(), true/*bHide*/);
+      }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(true)//::beginXFMTag(_form, _attributes))
+      {
+         initPopupMenu(null); // Set recipient later
+
+         b_allow_activate_next = true;
+         b_ext_focus_hack = false;
+
+         String *atname, *atval, atvaluc;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "caption":
+                  caption = atval;
+                  break;
+
+               case "iconname":
+                  icon_name <= String.New(atval);
+                  break;
+
+               case "onshow":
+                  _form.addHandledAction(atname, Action, atval);
+                  break;
+
+               case "dynamicactionname":
+                  dynamic_action_name <= String(atval);
+                  break;
+
+               case "itemspercolumn":
+                  setNumItemsPerColumn(int(atval));
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual addXFMChild(Layer _o) {
+      boolean bAddFocus = true;
+      if(_o instanceof PopupMenuCheckButton)
+      {
+      }
+      else if(_o instanceof PopupMenuSeparator)
+      {
+         bAddFocus = false;
+      }
+      else if(_o instanceof PopupMenu)
+      {
+         PopupMenu pm <= _o;
+         pm.setRecipient(this);
+         addIconMenu(pm.getCaption(), pm.getIconName(), deref _o);
+         return;
+      }
+      else if(_o instanceof PopupMenuButton)
+      {
+      }
+      else
+      {
+         trace "[---] PopupMenu::addXFMChild: unsupported object type (o="+#(_o)+")";
+         return;
+      }
+
+      addItemLayer(deref _o);
+      if(bAddFocus)
+      {
+         focus_items.add(_o);
+      }
+   }
+
+}

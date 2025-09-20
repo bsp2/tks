@@ -1,0 +1,971 @@
+// ----
+// ---- file   : ComboField.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 22Sep2019
+// ---- changed: 26Oct2019, 30Oct2019, 18May2020, 08Jul2020, 31Jul2020, 29Nov2020, 01Jul2022
+// ----          04Jul2022, 17Jul2022, 09Oct2022, 23Oct2022, 11Nov2022, 10Sep2023, 22Oct2023
+// ----          27Oct2023, 31Oct2023, 30Nov2023, 04Oct2024, 31Jan2025, 22Mar2025, 22May2025
+// ----
+// ----
+// ----
+
+module MComboField;
+
+namespace ui;
+
+
+class ComboField extends Panel, ActionProvider, ActionConsumer {
+
+   define int MIN_SIZE_Y = 21;
+
+   define String ACTION_OPTIONSELECTED;
+   define String ACTION_OPTIONRESELECTED;  // RETURN when already added
+   define String ACTION_OPTIONADDED;
+   define String ACTION_OPTIONREMOVED;
+   define String ACTION_OPTIONRENAMED;
+   define String ACTION_OPTIONEDITED;  // char typed. only when "provideEdited=1"
+   define String ACTION_CURSORUP;      // when b_provide_cursorup=1
+   define String ACTION_HIDE;  // close popup w/o selection. sent when b_provide_hide=1
+
+   protected StringArray options;
+   public    StringArray *options_long;
+
+   protected String *option_size_reserve; // or null
+
+   protected TextField *tf_text;
+   protected Button    *bt_popup;
+
+   protected boolean b_recalc_max_option_width;
+   protected boolean b_recalc_max_option_width_long;
+   protected int max_option_width;
+   protected int max_option_width_long;
+
+   protected ComboBoxPopup *popup;
+
+   protected String *last_selected_option;
+   protected int     last_selected_option_idx;
+   protected String *last_removed_option;
+
+   protected int max_history_size;
+
+   protected boolean b_no_add_delete;  // true=allow rename but not add/delete. false=allow add/delete but not rename
+   protected boolean b_reverse_wheel_dir;
+   protected boolean b_provide_edited;
+   protected boolean b_keep_editing;
+   protected boolean b_provide_hide;
+   protected boolean b_cursor_keys_popup;  // true=up/down shows popup. false=select prev/next option
+   protected boolean b_provide_cursorup;   // send ACTION_CURSORUP to parent widget(s)
+
+
+   public static New() : ComboField {
+      local ComboField cf;
+      cf.initComboField();
+      return deref cf;
+   }
+
+   public method initComboField() {
+      initPanel();
+
+      setLayout(SuperBorderLayout);
+
+      boolean bDark = UI.IsDarkOrMono();
+
+      bt_popup <= Button.New();
+      bt_popup.setIcon(UI.GetIcon("arr_d"));
+      bt_popup.setEnableToggle(true);
+      bt_popup.setIconPlacement(Layout.CENTER);
+      bt_popup.setAlignment(Layout.EXPANDY);
+      bt_popup.setInnerPadding4f(0,0,0,0);
+      bt_popup.setIconPadding4f(0,0,0,1);
+      bt_popup.setIconPlacement(Layout.CENTER);
+      bt_popup.b_disable_tab_cycle = true;
+      bt_popup.setPadding4fUnscaled(2, bDark?2:1, 2, 2);
+      setEnableLargeArrow(false);
+      addLayer(bt_popup, Layout.RIGHT);
+
+      tf_text <= TextField.New("");
+      tf_text.setAlignment(Layout.EXPANDX | (bDark?Layout.EXPANDY:0));
+      tf_text.setEnableCursorUpDown(true);
+      tf_text.setEnableSwapMouseClickAndHold(true);
+      tf_text.setEnableLazyStartEditingOnTypedChar(true);
+      tf_text.setEnableBorders(false);
+      tf_text.setEnableDrawTabFocus(true);
+      tf_text.setEnableProvideReturn(true);
+      tf_text.setPadding4f(0,0,0,0);
+      // // tf_text.setEnableTabAutoCompletion(true);
+      tf_text.b_disable_tab_cycle = true;
+      if(bDark)
+      {
+         // align to ComboBox
+         tf_text.setPadLeft(2);
+         tf_text.setInnerPadLeft(2);
+      }
+      addLayer(tf_text, Layout.CENTER);
+
+      b_recalc_max_option_width = true;
+      b_recalc_max_option_width_long = true;
+      b_editable = true;
+      b_keep_editing = true;
+      max_history_size = 100;
+
+      b_provide_edited = false;
+      b_provide_hide   = false;
+
+      b_cursor_keys_popup = true;
+   }
+
+   public method initComboFieldPost() {
+      // // bt_popup.setRequiredSizeX(ComboBox.GetDefaultArrowWidth()+3);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OPTIONSELECTED,
+              ACTION_OPTIONRESELECTED,
+              ACTION_OPTIONADDED,
+              ACTION_OPTIONREMOVED,
+              ACTION_OPTIONRENAMED,
+              ACTION_OPTIONEDITED,
+              ACTION_CURSORUP,
+              ACTION_HIDE
+              ];
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   protected virtual calcSizeX() : float {
+      // (note) never reached, use "cols" instead
+
+      if(b_recalc_max_option_width)
+      {
+         b_recalc_max_option_width = false;
+
+         max_option_width = calcOptionWidth(options);
+         // // trace "xxx ComboField::calcSizeX: max_option_width="+max_option_width;
+      }
+
+      // // trace "xxx ComboField: max_option_width="+max_option_width;
+
+      return max_option_width + 4 + bt_popup.getMinimumSizeX();
+   }
+
+   public method setOptionSizeReserve(String _text) {
+      if( (null != _text) && !_text.isBlank() )
+      {
+         option_size_reserve <= Object(_text);
+      }
+      else
+      {
+         option_size_reserve <= null;
+      }
+   }
+
+   public virtual getBaselineY() : float {
+      return tf_text.getBaselineY();
+   }
+
+   public method setOptions(StringArray _options) {
+      explain "Set option names.";
+
+      options = _options;
+      String *s;
+      foreach s in options
+      {
+         s.trim();
+      }
+
+      tf_text.setText(options.get(last_selected_option_idx));
+
+      b_recalc_max_option_width = true;
+      b_recalc_max_option_width_long = true;
+      invalidateSizeCache();
+   }
+
+   public method setOptionsSorted(StringArray _options) {
+      explain "Set option names (sort).";
+      local IntArray ia;
+      options = _options;
+      options.sortByValue(ia, false/*bCaseSensitive*/);
+      options.rearrange(ia);
+      b_recalc_max_option_width = true;
+      b_recalc_max_option_width_long = true;
+      invalidateSizeCache();
+   }
+
+   public method setOptionsSortedWithSpaceOnTop(StringArray _opt) {
+      local String cfOpt = getSelectedOptionName();
+      setOptionsSorted(_opt);
+      // Add "" (all) option, or sort to top
+      local StringArray aOptCF = options;
+      int idxEmpty = aOptCF.indexOfObject("", 0);
+      if(-1 == idxEmpty)
+      {
+         aOptCF.insert(0, "");
+         setOptions(aOptCF);
+      }
+      else if(0 != idxEmpty)
+      {
+         aOptCF.delete(idxEmpty);
+         aOptCF.insert(0, "");
+         setOptions(aOptCF);
+      }
+      setSelectedOptionByName(cfOpt);
+   }
+
+   public method setOptionsAndReselectByName(StringArray _opt) {
+      local String cOpt = getSelectedOptionName();
+      setOptions(deref _opt);
+      setSelectedOptionByName(cOpt);
+   }
+
+   public method getOptions() : StringArray {
+      return options;
+   }
+
+   public method setOptionsLong(StringArray _options) {
+      explain "Set combobox option names.";
+
+      if(null != _options)
+      {
+         options_long <= new StringArray;
+         options_long = _options;
+      }
+      else
+      {
+         options_long <= null;
+      }
+
+      b_recalc_max_option_width_long = true;
+   }
+
+   public method getOptionsLong() : StringArray {
+      return options_long;
+   }
+
+   public method setAutoRemoveText(String _s) {
+      tf_text.setAutoRemoveText(deref _s);
+   }
+
+   protected method calcOptionWidth(StringArray _options) : int {
+      float ret = -1;
+
+      Font font <= tf_text.getFont();
+
+      if(null == font)
+      {
+         tf_text.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         font <= tf_text.getFont();
+      }
+
+      int i;
+
+      for(i=0; i<_options.numElements; i++)
+      {
+         int w = font.stringWidth(_options[i]) + 1;
+         if(w > ret)
+         {
+            ret = w;
+         }
+      }
+
+      if(null != option_size_reserve)
+      {
+         w = font.stringWidth(option_size_reserve) + 1;
+         if(w > ret)
+            ret = w;
+      }
+
+      return ret;
+   }
+
+   public method setHistorySize(int _num) {
+      if(_num > 0)
+      {
+         max_history_size = _num;
+         while(options.numElements > max_history_size)
+            options.delete(options.numElements - 1);
+      }
+   }
+
+   public method setArrowWidth(int _sx) {
+      if(_sx > 0)
+      {
+         if(_sx < ComboBox.GetMinArrowWidth())
+            _sx = ComboBox.GetMinArrowWidth();
+         _sx -= 1;
+      }
+
+      bt_popup.setRequiredSizeX(_sx);
+   }
+
+   public method setArrowIcon(Icon _icon) {
+      bt_popup.setIcon(deref _icon);
+   }
+
+   public method setEnableLargeArrow(boolean _bEnable) {
+      if(_bEnable)
+      {
+         if(UI.font_scaling <= 1.2)
+            setArrowIcon(UI.GetIcon("arr2x_d"));
+         else
+            setArrowIcon(UI.GetIcon("arr_d"));
+         if(UI.font_scaling == 2.0)
+            setArrowWidth(Slider.GetMinWidth());
+         else
+            setArrowWidth(24 * UI.font_scaling);
+      }
+      else
+      {
+         setArrowIcon(UI.GetIcon("arr_d"));
+         setArrowWidth(ComboBox.DEFAULT_ARROW_WIDTH * UI.font_scaling);
+      }
+   }
+
+   public method setSelectedOption(int _idx) : boolean {
+      int oldOpt = last_selected_option_idx;
+      if(_idx < options.numElements)
+      {
+         last_selected_option_idx = _idx;
+         last_selected_option <= Object(options.get(_idx));
+         tf_text.setText(last_selected_option);
+      }
+      else
+      {
+         last_selected_option_idx = -1;
+      }
+      return (oldOpt != last_selected_option_idx);
+   }
+
+   public method setSelectedOptionAction(int _option) {
+      if(isEditable())
+      {
+         if(setSelectedOption(_option))
+         {
+            provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this));
+         }
+         else
+         {
+            provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONRESELECTED), this));
+         }
+         hideToolTip();
+      }
+   }
+
+   public method getSelectedOption() : int {
+      return last_selected_option_idx;
+   }
+
+   public method setSelectedOptionByName(String _name) {
+      setSelectedOption(options.indexOfObject(_name, 0));
+   }
+
+   public virtual setEditable(boolean _bEditable) {
+      b_editable = _bEditable;
+      tf_text.setEditable(b_editable);
+      bt_popup.setEditable(b_editable);
+      redraw();
+   }
+
+   public method randomize(char _separatorChar) {
+      int numUsed = 0;
+      int i = 0;
+      local String s;
+      loop(options.numElements)
+      {
+         s = options.get(i++);
+         s.substring(s.indexOfChar(_separatorChar, 0)+1, 99);
+         s.trim();
+         if(!s.isBlank())
+            numUsed++;
+      }
+
+      int r = rand(numUsed);
+      i = 0;
+      loop(options.numElements)
+      {
+         s = options.get(i);
+         s.substring(s.indexOfChar(_separatorChar, 0)+1, 99);
+         s.trim();
+         if( !s.isBlank() && (i == r) )
+            setSelectedOption(i);
+         i++;
+      }
+   }
+
+   public method getSelectedOptionName() : String {
+      return tf_text.getText().trim();
+   }
+
+   public virtual getDisplayedText() : String {
+      return getSelectedOptionName();
+   }
+
+   public method getLastRemovedOptionName() : String {
+      return last_removed_option;
+   }
+
+   public method setSelectedOptionName(String _text) {
+      if(null != _text)
+      {
+         local String text <= _text.trim();
+         tf_text.setText(text);
+         last_selected_option_idx = options.indexOfObject(text, 0);
+         if(-1 == last_selected_option_idx)
+         {
+            if(!b_no_add_delete)
+            {
+               options.insert(0, text);
+
+               if(options.numElements > max_history_size)
+                  options.delete(options.numElements - 1);
+            }
+         }
+      }
+      else
+      {
+         last_selected_option <= null;
+         last_selected_option_idx = -1;
+      }
+   }
+
+   public method setOptionNameByIndex(int _idx, String _name) {
+      if(_idx < options.numElements)
+         options[_idx] = _name;
+      if(_idx == last_selected_option_idx)
+         tf_text.setText(_name);
+      b_recalc_max_option_width_long = true;
+   }
+
+   public method selectPreviousOption() {
+      int optIdx = options.indexOfObject(tf_text.getText().trim(), 0);
+      optIdx--;
+      if(optIdx >= 0)
+      {
+         tf_text.setText(options.get(optIdx));
+         last_selected_option <= Object(options.get(optIdx));
+         last_selected_option_idx = optIdx;
+         last_removed_option <= null;
+      }
+   }
+
+   public method selectPreviousOptionAction() {
+      int optIdx = options.indexOfObject(tf_text.getText().trim(), 0);
+      optIdx--;
+      if(optIdx >= 0)
+      {
+         tf_text.setText(options.get(optIdx));
+         last_selected_option <= Object(options.get(optIdx));
+         last_selected_option_idx = optIdx;
+         last_removed_option <= null;
+         provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this));
+      }
+   }
+
+   public method selectNextOption() {
+      int optIdx = options.indexOfObject(tf_text.getText().trim(), 0);
+      optIdx++;
+      if(0 <= optIdx < options.numElements)
+      {
+         tf_text.setText(options.get(optIdx));
+         last_selected_option <= Object(options.get(optIdx));
+         last_selected_option_idx = optIdx;
+         last_removed_option <= null;
+      }
+   }
+
+   public method selectNextOptionAction() {
+      local String t <= tf_text.getText().trim();
+      int optIdx = options.indexOfObject(t, 0);
+      // trace "xxx ComboField::selectNextOptionAction: text=\""+t+"\" t.length="+t.length+" optIdx="+optIdx+" options="+#(options)+" options[0]=\""+options.get(0)+"\"";
+      optIdx++;
+      if(0 <= optIdx < options.numElements)
+      {
+         tf_text.setText(options.get(optIdx));
+         last_selected_option <= Object(options.get(optIdx));
+         last_selected_option_idx = optIdx;
+         last_removed_option <= null;
+         provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this));
+      }
+   }
+
+   public method setVisibleTextLength(int _numCols) {
+      tf_text.setVisibleTextLength(_numCols);
+   }
+
+   public method setMaxTextLength(int _maxCols) {
+      tf_text.setMaxTextLength(_maxCols);
+   }
+
+   public method setEnableAddDelete(boolean _bEnable) {
+      b_no_add_delete = !_bEnable;
+   }
+
+   public method setToolTipCaption(String _caption) {
+      tf_text.setToolTipCaption(_caption);
+   }
+
+   public method setEnableCursorKeyPopup(boolean _bEnable) {
+      b_cursor_keys_popup = _bEnable;
+   }
+
+   protected method handleTabAutoCompletion() {
+      String t <= tf_text.getText().trim();
+      String *opt;
+      foreach opt in options
+      {
+         if(opt <= "t")
+         {
+            tf_text.setText(opt);
+         }
+      }
+   }
+
+   protected method togglePopup() {
+      if(bt_popup.getToggleState())
+      {
+         if(null != popup)
+         {
+            popup.hide();
+            popup <= null;
+            if(b_provide_hide)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_HIDE), this));
+         }
+
+         int optIdx = getSelectedOption();
+
+         String sel <=(tf_text.getText().trim());
+
+         if(options.get(optIdx) != sel)
+         {
+            // No exact match, find by prefix
+            optIdx = 0;
+            String *opt;
+            foreach opt in options
+            {
+               if(opt <= sel)
+                  break;
+               optIdx++;
+            }
+
+            if(optIdx >= options.numElements)
+               optIdx = 0;
+         }
+
+         int prefSx = tf_text.getSizeX();
+
+         StringArray optLong <= (null != options_long) ? options_long : options;
+         if(null != optLong)
+         {
+            if(b_recalc_max_option_width_long)
+            {
+               b_recalc_max_option_width_long = false;
+
+               max_option_width_long = calcOptionWidth(optLong);
+            }
+
+            prefSx = mathMaxi(prefSx,
+                              max_option_width_long +
+                              /*ipad_l + ipad_r +*/
+                              mathMaxi(ComboBox.MIN_ARROW_WIDTH, bt_popup.getMinimumSizeX()/*arrow_width*/)
+                              + 2 + 2
+                              );
+
+         }
+
+         popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                 tf_text.font,
+                                                 options,
+                                                 options_long/*optionsLongOrNull*/,
+                                                 optIdx,
+                                                 prefSx/*prefSx*/,
+                                                 null/*toolTipCaptions*/,
+                                                 null/*optionBGColors*/,
+                                                 null/*option_fgtints*/
+                                                 );
+
+         popup.showBelowLayer(tf_text);
+         popup.centerRow();
+         popup.focusFirstTabCycleMember();
+         popup.setEnableHideOnFirstEntryUp(true);
+         popup.setEnableMouseOverPreview(true);
+      }
+      else
+      {
+         if(null != popup)
+         {
+            popup.hide();
+            popup <= null;
+            if(b_provide_hide)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_HIDE), this));
+         }
+      }
+   }
+
+   public method showPopup() {
+      bt_popup.setToggleState(true);
+      togglePopup();
+   }
+
+   public method hidePopup() {
+      bt_popup.setToggleState(false);
+      togglePopup();
+   }
+
+   public virtual onDrawPost() {
+      // // UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), #ffff0000);
+      boolean bBevelBorder = !UI.b_skip_bevel_border && lnf.b_combobox_bevel_border;
+      if(bBevelBorder)
+         UIRenderer.DrawSoftShadowSunkenBorder(0, 0, getSizeX(), getSizeY());
+   }
+
+   public virtual onKeyboardFocus() {
+      UI.SetKeyboardFocus(tf_text);
+   }
+
+   public virtual onTabFocus() {
+      tf_text.onTabFocus();
+   }
+
+   public method selectAll() {
+      tf_text.selectAll();
+   }
+
+   public virtual hideToolTip() {
+      Layer::hideToolTip();
+      tf_text.hideToolTip();
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(b_editable)
+      {
+         if(_ev.wheelUp())
+         {
+            hideToolTip();
+            if(b_reverse_wheel_dir)
+               selectNextOptionAction();
+            else
+               selectPreviousOptionAction();
+            return true;
+         }
+         else if(_ev.wheelDown())
+         {
+            hideToolTip();
+            if(b_reverse_wheel_dir)
+               selectPreviousOptionAction();
+            else
+               selectNextOptionAction();
+            return true;
+         }
+      }
+      return Panel::onMouse(_ev);
+   }
+
+   // public virtual onMouseHold(MouseEvent _startEv) : boolean {
+   //    showPopup();
+   //    return true;
+   // }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      // trace "xxx ComboField::onMouseClick";
+      // if(_ev.isRightButton())
+      {
+         showPopup();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      IntAction *iac;
+
+      // trace "xxx ComboField::consumeAction: ap="+#(ap)+" acName="+acName;
+
+      switch(@(ap))
+      {
+         case @(tf_text):
+            if(TextField.ACTION_TEXTENTERED == acName)  // return
+            {
+               if(b_keep_editing)
+                  UI.SetKeyboardFocus(tf_text); // restart editing
+
+               // Add new option or show popup when option already exists
+               String text <= tf_text.getText().trim();
+               if(text.isBlank())
+               {
+                  if(null != last_selected_option)
+                  {
+                     if(options.containsObject(last_selected_option))
+                     {
+                        if(!b_no_add_delete)
+                        {
+                           options.delete(options.indexOfObject(last_selected_option, 0));
+                           last_removed_option <= last_selected_option;
+                           provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONREMOVED), this));
+                        }
+                        else
+                        {
+                           tf_text.setText(options.get(last_selected_option_idx)); // restore option text
+                        }
+                     }
+                     else
+                     {
+                        tf_text.selectNone();  // [23Oct2022]
+                        provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONRESELECTED), this));
+                     }
+                  }
+               }
+               else
+               {
+                  if(options.containsObject(text))
+                  {
+                     tf_text.selectNone();  // [23Oct2022]
+                     provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONRESELECTED), this));
+                  }
+                  else
+                  {
+                     if(!b_no_add_delete)
+                     {
+                        options.insert(0, text);
+
+                        if(options.numElements > max_history_size)
+                           options.delete(options.numElements - 1);
+
+                        last_selected_option <= Object(text);
+                        last_removed_option <= null;
+
+                        // (note) it would be safter to emit ADD before SELECT since handler may destroy "this"
+                        //         but then an "add" status bar message would immediately be overwritten
+                        //         by a "select" message
+                        provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this));
+                        provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONADDED), this));
+                     }
+                     else
+                     {
+                        // Rename
+                        if(0 <= last_selected_option_idx < options.numElements)
+                        {
+                           options[last_selected_option_idx] = text;
+                           last_selected_option <= Object(text);
+                           provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONRENAMED), this));
+                        }
+                     }
+                  }
+               }
+            }
+            // // else if( (TextField.ACTION_CURSORDOWN == acName) || (TextField.ACTION_RETURN == acName) )
+            else if(TextField.ACTION_RETURN == acName)
+            {
+               showPopup();
+            }
+            else if(TextField.ACTION_CURSORUP == acName)
+            {
+               tf_text.stopEditing(false/*bProvideAction*/, false/*bReturnKey*/, true/*bQuiet*/);
+
+               if(b_provide_cursorup)
+               {
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_CURSORUP), this));
+               }
+               else
+               {
+                  if(b_cursor_keys_popup)
+                  {
+                     showPopup();
+                  }
+                  else
+                  {
+                     selectPreviousOptionAction();
+                  }
+               }
+            }
+            else if(TextField.ACTION_CURSORDOWN == acName)
+            {
+               // trace "xxx cf cursordown: tf_text.isEditing()="+tf_text.isEditing();
+               tf_text.stopEditing(false/*bProvideAction*/, false/*bReturnKey*/, true/*bQuiet*/);
+               if(b_cursor_keys_popup)// || tf_text.isEditing())
+               {
+                  showPopup();
+               }
+               else
+               {
+                  selectNextOptionAction();
+               }
+            }
+            else if(TextField.ACTION_TABAUTOCOMPLETE == acName)
+            {
+               handleTabAutoCompletion();
+            }
+            else if(TextField.ACTION_TEXTEDITED == acName)
+            {
+               if(b_provide_edited)
+               {
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONEDITED), this));
+               }
+            }
+            return true;
+
+         case @(bt_popup):
+            if(Button.ACTION_CLICK == acName)
+            {
+               togglePopup();
+            }
+            return true;
+      }
+
+      switch(acName)
+      {
+         case ComboBoxPopup.ACTION_OPTIONSELECTED:
+            iac <= _action;
+            int oldOptIdx = last_selected_option_idx;
+            int optIdx = iac.getIntValue();
+            tf_text.setText(options.get(optIdx));
+            last_selected_option <= Object(options.get(optIdx));
+            last_selected_option_idx = optIdx;
+            last_removed_option <= null;
+            if(b_keep_editing)
+               UI.SetKeyboardFocus(tf_text);
+            tf_text.redraw();
+            bt_popup.setToggleState(false);
+            if(oldOptIdx != optIdx)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this));
+            else
+               provideAction(Action.New(getProvidedActionAlias(ACTION_OPTIONRESELECTED), this));
+            return true;
+
+         case ComboBoxPopup.ACTION_OPTIONPREVIEW:
+            // iac <= _action;
+            return true;
+
+         case ComboBoxPopup.ACTION_CANCEL_OPTION_SELECTION:
+            bt_popup.setToggleState(false);
+            UI.SetKeyboardFocus(tf_text);
+            if(b_provide_hide)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_HIDE), this));
+            return true;
+      }
+
+      return true;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initComboField();
+
+      if(Panel::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "font":
+                  tf_text.setFontByName(atval);
+                  break;
+
+               case "tooltipcaption":
+                  tf_text.setToolTipCaption(atval);
+                  break;
+
+               case "maxcols":
+                  tf_text.setMaxTextLength(int(atval) + 1);
+                  break;
+
+               case "cols":
+                  tf_text.setVisibleTextLength(int(atval) + 1);
+                  break;
+
+               case "options": // ";" separated list of options
+                  setOptions(atval.splitChar(';'));
+                  break;
+
+               case "optionsizereserve":
+                  setOptionSizeReserve(atval);
+                  break;
+
+               case "arrowsx":
+               case "arrowwidth":
+                  // **DEPRECATED**
+                  setArrowWidth(atval);
+                  break;
+
+               case "arrowicon":
+                  setArrowIcon(UI.GetIcon(atval));
+                  break;
+
+               case "largearrow":
+                  if("hidpi" == atval)
+                     setEnableLargeArrow(UI.IsHiDPI());
+                  else
+                     setEnableLargeArrow(int(atval));
+                  break;
+
+               case "historysize":
+                  setHistorySize(int(atval));
+                  break;
+
+               case "tabautocomplete":
+                  tf_text.setEnableTabAutoCompletion(int(atval));
+                  break;
+
+               case "add":
+               case "delete":
+               case "addordelete":
+               case "addanddelete":
+                  b_no_add_delete = int(atval) ? false : true;
+                  break;
+
+               case "rename":
+                  b_no_add_delete = int(atval) ? true : false;
+                  break;
+
+               case "reversewheeldir":
+                  b_reverse_wheel_dir = int(atval);
+                  break;
+
+               case "provideedited":
+                  b_provide_edited = int(atval);
+                  break;
+
+               case "providehide":
+                  b_provide_hide = int(atval);
+                  break;
+
+               case "keepediting":
+                  b_keep_editing = int(atval);
+                  break;
+
+               case "swapmouseclickandhold":
+                  tf_text.setEnableSwapMouseClickAndHold(true);
+                  break;
+
+               case "cursorkeyspopup":
+                  b_cursor_keys_popup = int(atval);
+                  break;
+
+               case "providecursorup":
+                  b_provide_cursorup = int(atval);
+                  break;
+
+               case "autoremovetext":
+                  setAutoRemoveText(atval);
+                  break;
+            }
+         }
+
+         initComboFieldPost();
+      }
+      return true;
+   }
+
+}

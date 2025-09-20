@@ -1,0 +1,238 @@
+// ----
+// ----    file: Font.tks
+// ----  author: Copyright (c) 2005-2025 by Bastian Spiegel <bs@tkscript.de>
+// ----
+// ---- license: Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ----    info:
+// ----
+// ---- changed: 19Apr2005, 20Apr2005, 28May2005, 07Jun2005, 09Jun2005, 10Jun2005, 18Jun2005
+// ----          23Jun2005, 24Jun2005, 25Jun2005, 17Jul2005, 10Aug2005, 13Aug2005, 14Aug2005
+// ----          10Jan2006, 12Aug2006, 28Apr2007, 29Apr2007, 30Apr2007, 05May2007, 30Oct2007,
+// ----          11Nov2007, 02Feb2009, 31May2009, 14Apr2013, 14Sep2014, 28Dec2015, 21Feb2017
+// ----          27Nov2018, 11Jun2020, 27Dec2020, 04Oct2023, 21Oct2023, 22Oct2023, 25Nov2023
+// ----          24Mar2024, 10Sep2025
+// ----
+// ----
+// ----
+
+module MFont;
+
+namespace ui;
+
+
+class Font {
+   explain "A scalable Font that can be used to render labels, window captions etc.
+
+
+Each font is backed by a §FontResource that stores the actual glyph/font data, e.g. §FT2FontResource for TrueType fonts.
+
+";
+
+   // ---- Reference to the actual FontResource which may be shared by multiple Fonts
+   protected FontResource *fontResourceRef;
+
+   protected float base_size;
+   protected float current_size;
+   protected float scale_size;  // (todo) REMOVE THIS
+
+   // FT2-compatible style flags
+   define int STYLE_NORMAL      = 0;
+   define int STYLE_ITALIC      = 1 << 0;
+   define int STYLE_BOLD        = 1 << 1;
+   define int STYLE_BOLD_ITALIC = STYLE_BOLD | STYLE_ITALIC;
+   define int STYLE_MASK        = STYLE_BOLD_ITALIC;
+
+   namespace static StringArray style_flag_strings = ["normal", "italic", "bold", "bold italic"];
+
+   define int RENDER_STYLE_NORMAL    = 0;
+   define int RENDER_STYLE_UNDERLINE = 1<<0;
+
+   protected int render_style = RENDER_STYLE_NORMAL;
+
+   public function New(FontResource _fr, float _baseSize, float _desiredSize, int _renderStyleFlags) : Font {
+      local Font f; f.fontResourceRef <= deref _fr;
+      f.base_size    = _baseSize;
+      f.current_size = _desiredSize;
+      f.render_style = _renderStyleFlags;
+      f.scale_size   = _desiredSize / _baseSize;
+      if(!_fr.loadFont())
+      {
+         print "[---] Font::New(): failed to load font face.";
+         return null;
+      }
+      // trace "xxx Font::New: baseSize="+_baseSize+" desiredSize="+_desiredSize+" fr.getAscender="+_fr.getAscender();
+      return deref f;
+   }
+
+   // ----
+   // ---- Set the current font size (rendering)
+   // ---- If the font _size does not exactly match
+   // ---- the available base_size it will be scaled
+   // ---- using OpenGL.
+   // ----
+   public method setSize(float _size) {
+      current_size = _size;
+      scale_size = current_size / base_size;
+   }
+
+   // ----
+   // ---- Query the current font size used for rendering
+   // ----
+   public method getSize() : float {
+      return current_size;
+   }
+
+   // ---- Return string representation of the given font style flags
+   public static GetStyleFlagsStringFor(int _styleFlags) : String {
+      return style_flag_strings.get(_styleFlags & STYLE_MASK);
+   }
+
+   // ----
+   // ---- Query the width (in pixels) of String _s
+   // ---- This call is forwarded/delegated to fontResourceRef.stringWidth().
+   // ----
+   public method stringWidth(String _s) : float {
+      explain "Return width (pixels) of single text line";
+
+      if(null != fontResourceRef)
+         return fontResourceRef.stringWidth(_s) * scale_size;
+      else
+         return 0f;
+   }
+
+   // ----
+   // ---- Return index of the char at pixel coordinate _x
+   // ----
+   public method stringIndexAtPixelX(String _text, float _x) : int {
+      if(null != fontResourceRef)
+         return fontResourceRef.stringIndexAtPixelX(_text, _x*(1f/scale_size));
+   }
+
+   public method stringHeight(String _s) : float {
+      if(null != fontResourceRef)
+         return fontResourceRef.stringHeight(_s) * scale_size;
+      else
+         return 0f;
+   }
+
+   public method stringHeightMinY(String _s, Float _retMinY) : float {
+      // ---- calc actual string bounding box and return offset to first visible glyph pixel
+      _retMinY = 0;
+      if(null != fontResourceRef)
+         return fontResourceRef.stringHeightMinY(_s, _retMinY) * scale_size;
+      else
+         return 0f;
+   }
+
+   // ----
+   // ---- Render the given String to the current viewport.
+   // ---- The render states should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test,..).
+   // ---- This call is forwarded/delegated to fontResourceRef.renderString().
+   // ----
+   public method renderString(String _text, float _x, float _y, int _fgColor32, int _ulColor32) {
+      if(null != fontResourceRef)
+      {
+         // trace "xxx renderString: scale_size="+scale_size;
+         fontResourceRef.renderString(_text, _x, _y, _fgColor32, _ulColor32);
+      }
+   }
+
+   public method renderClippedString(String _text, float _x, float _y,
+                                     float _clipLeft, _clipTop, _clipRight, _clipBottom,
+                                     int _fgColor32,
+                                     int _ulColor32
+                                     ) {
+      explain "Render the given String to the current viewport, clipped to (_x, _y, _clipX, _clipY).
+
+The render states should have been initialized prior to this call  (enable texturing, disable z-test, ..).
+This call is forwarded/delegated to fontResourceRef.renderString().
+";
+
+      if(null != fontResourceRef)
+      {
+         // [21Feb2017] Right align text starting with tab char
+         int tabIdx = _text.indexOf("\t", 0);
+         if(-1 != tabIdx)
+         {
+            String strLeft;  _text.substring(0, tabIdx) => strLeft;
+            String strRight; _text.substring(tabIdx + 1, 9999) => strRight;
+            float wRight = stringWidth(strRight) / scale_size;
+
+            fontResourceRef.renderClippedString(strLeft,
+                                                _x,
+                                                _y,
+                                                (_clipLeft   /*- _x*/)/* / scale_size*/,
+                                                (_clipTop    /*- _y*/)/* / scale_size*/,
+                                                (_clipRight  /*- _x*/)/* / scale_size*/,
+                                                (_clipBottom /*- _y*/)/* / scale_size*/,
+                                                _fgColor32,
+                                                _ulColor32
+                                                );
+
+            fontResourceRef.renderClippedString(strRight,
+                                                _clipRight - wRight - 1/* - _x*/,
+                                                _y,
+                                                (_clipLeft   /*- _x*/)/* / scale_size*/,
+                                                (_clipTop    /*- _y*/)/* / scale_size*/,
+                                                (_clipRight  /*- _x*/)/* / scale_size*/,
+                                                (_clipBottom /*- _y*/)/* / scale_size*/,
+                                                _fgColor32,
+                                                _ulColor32
+                                                );
+         }
+         else
+         {
+            fontResourceRef.renderClippedString(_text,
+                                                _x, _y,
+                                                (_clipLeft   /*- _x*/)/* / scale_size*/,
+                                                (_clipTop    /*- _y*/)/* / scale_size*/,
+                                                (_clipRight  /*- _x*/)/* / scale_size*/,
+                                                (_clipBottom /*- _y*/)/* / scale_size*/,
+                                                _fgColor32,
+                                                _ulColor32
+                                                );
+         }
+      }
+   }
+
+   // ----
+   // ---- Render the underlines for the given String to the current viewport.
+   // ---- The render states should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test, set color etc..)
+   // ---- This call is forwarded/delegated to fontResourceRef.renderUnderlines().
+   // ----
+   public method renderUnderlines(String _text, float _x, float _y) {
+      if(null != fontResourceRef)
+      {
+         glScalef(scale_size, scale_size, 1);
+         fontResourceRef.renderUnderlines(_text, _x, _y);
+      }
+   }
+
+   public method getFontResource() : FontResource {
+      return fontResourceRef;
+   }
+
+   public method getAscender() : float {
+      if(null != fontResourceRef)
+         return fontResourceRef.getAscender();
+      return 0.0f;
+   }
+
+   public method getDescender() : float {
+      // (note) usually a negative value
+      if(null != fontResourceRef)
+         return fontResourceRef.getDescender();
+      return 0.0f;
+   }
+
+   public method getHeight() : float {
+      if(null != fontResourceRef)
+         return fontResourceRef.getAscender() - fontResourceRef.getDescender();
+      return 0.0f;
+   }
+
+}

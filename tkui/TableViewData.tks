@@ -1,0 +1,877 @@
+// ----
+// ---- file   : TableViewData.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26May2007
+// ---- changed: 24Oct2007, 29Oct2007, 04Nov2007, 05Nov2007, 08Jan2008, 14Apr2008, 01Feb2009
+// ----          02Feb2009, 03Feb2009, 19Jan2010, 22Apr2010, 23Apr2010, 24Apr2010, 27Sep2010
+// ----          06Mar2011, 20Mar2011, 29Mar2011, 08Feb2012, 20Dec2012, 07Jan2013, 25Mar2013
+// ----          04May2013, 06Feb2015, 11Feb2015, 06Nov2015, 21Mar2016, 09Feb2017, 13Feb2018
+// ----          16Feb2018, 25Feb2018, 04Jun2018, 29Nov2018, 04Jan2019, 18Jan2019, 19Jul2019
+// ----          20Jul2019, 21Jul2019, 22Jul2019, 10Sep2019, 22Sep2019, 15May2020, 20Jun2020
+// ----          21Jul2020, 12Nov2020, 27Jan2021, 24Nov2022, 19Nov2023, 02Aug2024, 07Feb2025
+// ----          10Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MTableViewData;
+
+namespace ui;
+
+
+class TableViewData extends Layer {
+
+   namespace TableView *table_view;
+
+   namespace boolean b_allow_mouseover_selection;
+   namespace boolean b_draw_border;
+
+   namespace boolean b_provide_tab;
+   namespace boolean b_provide_kbdfocus;
+
+   protected Object *current_drag_object;
+
+   // // protected int bg_color_32;
+   // // protected int fg_color_32;
+   // // protected boolean b_custom_bg;
+   // // protected boolean b_custom_fg;
+
+   // Used to filter out mouse button up events in drag_multiple mode
+   //  (tableview gains focus after combobox selection and only receives mouse up event)
+   protected int mouse_button_state;
+
+
+   public method initTableViewData() {
+      initLayer();
+      current_drag_object <= null;
+      onLookAndFeelChanged();
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public virtual findTabCycleHeader() : Layer {
+      return table_view;
+   }
+
+   public virtual onTabFocus() {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         if(-1 == model.getCursorIndex())
+         {
+            // Set cursor index to first visible row
+            model.setCursorIndex(model.getSortedRowNr(model.getFirstVisibleRowNr()));
+         }
+         redraw();
+
+         if(b_provide_kbdfocus && null != table_view)
+            table_view.provideActionKbdFocus();
+      }
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      if(!_bQuiet)
+         redraw();
+   }
+
+   public virtual onKeyboardFocus() {
+      redraw();
+   }
+
+   protected method setKeyboardFocus() {
+      // called on mouse click
+      UI.SetKeyboardFocus(this);
+
+      if(b_provide_kbdfocus && null != table_view)
+         table_view.provideActionKbdFocus();
+   }
+
+   public virtual hasKeyboardFocus() : boolean {
+      // fix for NodeMonitor patch view table row click (missing ROWCLICKED event)
+      return
+         (@(UI.keyboard_layer) == @(this)) ||
+         (@(UI.keyboard_layer) == @(table_view))
+         ;
+   }
+
+   protected method allowCursorKeysForTabCycling() : boolean {
+      // Overwrites Layer::allowCursorKeysForTabCycling
+      return false;
+   }
+
+   public method getTableModel() : TableModel {
+      return (null != table_view) ? table_view.model : null;
+   }
+
+   public method getTableView() : TableView {
+      return table_view;
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      if(UI.b_debug_lnf_changed_reset_custom_color_flags) // when toggling lnf via sysbrk
+      {
+         b_custom_fg = false;
+         b_custom_bg = false;
+      }
+
+      if(!b_custom_fg)
+      {
+         // // fg_color_32 = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_TEXT_FG);
+         c32_fg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_TEXT_FG);
+      }
+
+      if(!b_custom_bg)
+      {
+         // // bg_color_32 = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_BG);
+         c32_bg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_BG);
+      }
+
+      if(null != table_view)
+      {
+         TableModel model <= getTableModel();
+         if(null != model)
+            model.tableModelLookAndFeelChanged();
+      }
+   }
+
+   // // public method setBackgroundColor(int _bg32) {
+   // //    bg_color_32 = _bg32;
+   // //    b_custom_bg = (0 != _bg32);
+   // //    onLookAndFeelChanged();
+   // // }
+
+   // // public method setForegroundColor(int _fg32) {
+   // //    fg_color_32 = _fg32;
+   // //    b_custom_fg = (0 != _fg32);
+   // //    onLookAndFeelChanged();
+   // // }
+
+   protected method selectRowUnderMouse(MouseEvent _ev,
+                                        boolean    _bClicked,
+                                        boolean    _bAllowMultiple,
+                                        boolean    _bMoveCursorOnly
+                                        ) : boolean {
+
+      // trace "xxx selectRowUnderMouse: bClicked="+_bClicked+" bAllowMultiple="+_bAllowMultiple+" bMoveCursorOnly="+_bMoveCursorOnly+" hasKeyboardFocus="+hasKeyboardFocus();
+
+      TableModel model <= getTableModel();
+      int visrowi = model.getVisibleRowNrAtY(_ev.getMouseRelY());
+
+      boolean bClicked = hasKeyboardFocus() && _bClicked; // allow click ?
+
+      if(!bClicked)
+      {
+         // trace "xxx TableViewData: did not have keyboard focus before mouseclick";
+         setKeyboardFocus();
+      }
+
+      if(-1 != visrowi)
+      {
+         int nci = model.getSortedRowNr(visrowi);
+
+         if(_bMoveCursorOnly)
+         {
+            table_view.moveCursorToRowNoAction(nci);
+         }
+         else
+         {
+            if(_bAllowMultiple)
+            {
+               if( table_view.b_multiple &&
+                   (!table_view.b_multiple_toggle || _bClicked) &&
+                   !(_ev.isRightButtonDown() && !table_view.b_multiple_rmb_select)
+                   )
+               {
+                  if( (nci != model.getCursorIndex()) || (0 != (UI.GetKeyMod() & VMOD_LSHIFT)) ) // don't discard multi-selection when clicking on already selected row (e.g. when multi-editing checkbox column)
+                  {
+                     table_view.handleMultipleSelection(nci/*newCsrRow*/,
+                                                        (VMOD_LCTRL == UI.GetKeyMod()),
+                                                        (0 != (UI.GetKeyMod() & VMOD_LSHIFT))
+                                                        );
+                  }
+               }
+            }
+
+            if(nci != model.getCursorIndex())
+            {
+               // Select row (LMB or RMB click on previously deselected row)
+               table_view.moveCursorToRowNoAction(nci);
+
+               if(!b_allow_mouseover_selection)
+               {
+                  table_view.handleRowSelection(false/*bClicked*/, _ev.isRightButton() /*bFoldHint*/, false/*bPreview*/);
+                  // (note) "this" may now be deleted
+               }
+            }
+            else
+            {
+               // Row already selected
+
+               // Try to let application handle the mouseevent
+               //  (note) do not do this if TableView is used for selections since
+               //         selecting a row may cause "this" to become invalid after
+               //         handleRowSelection() was called
+               if(!tryEditCellUnderMouse(_ev))
+               {
+                  if( (!table_view.b_drag_multiple && _ev.leftButtonDown()) || (table_view.b_drag_multiple && _ev.leftButtonUp()) ) // Clicking already selected row ?
+                  {
+                     // LMB click
+                     if(bClicked)
+                     {
+                        table_view.handleRowSelection(true/*bClicked*/, false /*bFoldHint*/, false/*bPreview*/);
+                        // (note) "this" may now be deleted
+                     }
+                  }
+                  else if( (!table_view.b_drag_multiple && _ev.rightButtonDown()) || (table_view.b_drag_multiple && _ev.rightButtonUp()) ) // Clicking already selected row ?
+                  {
+                     // RMB click
+                     if(bClicked)
+                     {
+                        table_view.handleRowSelection(true/*bClicked*/, true /*bFoldHint*/, false/*bPreview*/);
+                        // (note) "this" may now be deleted
+                     }
+                  }
+               } // !tryEditCellUnderMouse
+            }
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   protected method editColumnUnderMouse(MouseEvent _ev) : boolean {
+      selectRowUnderMouse(_ev, false/*bClicked*/, false/*bAllowMultiple*/, false/*bMoveCursorOnly*/);
+
+      TableModel model <= getTableModel();
+      return model.editColumnAtX(_ev.mouse_rel_x);
+   }
+
+   protected method tryEditCellUnderMouse(MouseEvent _ev) : boolean {
+      return = false;
+
+      TableModel model <= getTableModel();
+      int row = model.getCursorIndex();
+      if(-1 != row)
+      {
+         int col = model.getColumnAtX(_ev.mouse_rel_x);
+         if(model.handleCellOnMouse(col, row, _ev))
+         {
+            return = true;
+            redraw(); // (todo) a bit clumpsy but the CellRenderer is not a regular widget. optimize and only redraw changed row ?
+         }
+      }
+      return;
+   }
+
+   protected virtual wantToolTipNearMouse() : boolean {
+      return true;
+   }
+
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      // for RMB-click context menu
+      return true;
+   }
+
+   public virtual getToolTipCaption() {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         MouseEvent ev;
+         ev.init(Mouse.x / UI.zoom_x, Mouse.y / UI.zoom_y, 0, 0);
+         ev.calcRelForLayer(this);
+
+         int col = model.getColumnAtX(ev.mouse_rel_x);
+         int row = model.getVisibleRowNrAtY(ev.mouse_rel_y);
+         if(-1 != row)
+            return model.getCellToolTipCaption(col, row);
+         return null;
+      }
+
+      return Layer::getToolTipCaption();
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         if(!table_view.b_multiple_toggle)
+         {
+            // trace "xxx TableViewData::onMouseBeginDrag: b_multiple="+table_view.b_multiple;
+            // trace "xxx TableViewData::onMouseBeginDrag: b_drag_multiple="+table_view.b_drag_multiple;
+            // trace "xxx TableViewData::onMouseBeginDrag: numSelectedRows="+model.getNumSelectedRows();
+
+            int visrowi = model.getVisibleRowNrAtY(_dragStart.getMouseRelY());
+
+            if(-1 != visrowi)
+            {
+               if(table_view.b_multiple && (!table_view.b_drag_multiple || (!model.selected_rows.contains(visrowi) && !(visrowi == model.getCursorIndex()))))
+               {
+                  // Start new (multiple) selection
+                  model.selectRow(visrowi);
+                  table_view.moveCursorToRowNoAction(visrowi);
+                  redraw();
+                  return true;
+               }
+               else
+               {
+                  // trace "xxx TableViewData::onMouseBeginDrag: try drag row="+visrowi;
+                  current_drag_object <= model.getDragObject(visrowi);
+                  // trace "xxx TableViewData::onMouseBeginDrag: current_drag_object="+#(current_drag_object);
+
+                  if(null != current_drag_object)
+                  {
+                     // Start drag'n'drop
+                     UI.ShowCursor(UIConstants.CURSOR_DENIED);
+                     return true;
+                  }
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         // trace "xxx TableViewData::onMouseDrag: b_multiple="+table_view.b_multiple+" current_drag_object="+#(current_drag_object);
+
+         if(table_view.b_multiple && (null == current_drag_object)  && !(_currentEv.isRightButtonDown() && !table_view.b_multiple_rmb_select))
+         {
+            int ly = _lastEv.getMouseRelY();
+            int cy = _currentEv.getMouseRelY();
+
+            if((ly >= 0) && (cy >= 0))
+            {
+               int dir = cy - ly;
+               dir = (dir < 0) ? -1 : 1;
+
+               boolean bSelect = false;
+
+               do
+               {
+                  int visrowi = model.getVisibleRowNrAtY(ly);
+
+                  if(-1 != visrowi)
+                  {
+                     if(VMOD_LCTRL == UI.GetKeyMod())
+                        bSelect |= model.deselectRow(visrowi);
+                     else
+                        bSelect |= model.selectRow(visrowi);
+                  }
+
+                  if(ly != cy)
+                     ly += dir;
+               }
+               while(ly != cy);
+
+               if(bSelect)
+               {
+                  redraw();
+                  table_view.provideActionMultipleSelection();
+               }
+            }
+
+            return true;
+         }
+         else if(null != current_drag_object)
+         {
+            Layer dropTarget <= UI.FindLayerAtXY(_currentEv.mouse_abs_x, _currentEv.mouse_abs_y);
+
+            if(null != dropTarget)
+            {
+               Layer c <= dropTarget;
+               boolean bCanDrop = false;
+               do
+               {
+                  Point2f p;
+                  c.calcAbsolutePosition(p);
+                  MouseEvent ev = _currentEv;
+                  ev.mouse_rel_x = ev.mouse_abs_x - p.x;
+                  ev.mouse_rel_y = ev.mouse_abs_y - p.y;
+
+                  if(c.canDropObject(current_drag_object, ev))
+                  {
+                     bCanDrop = true;
+                     break;
+                  }
+                  else
+                  {
+                     c <= c.parent;
+                  }
+               }
+               while(null != c);
+
+               if(!bCanDrop)
+               {
+                  UI.RevertCursor();
+                  UI.ShowCursor(UIConstants.CURSOR_DENIED);
+               }
+               else
+               {
+                  UI.RevertCursor();
+                  UI.ShowCursor(UIConstants.CURSOR_MOVE);
+               }
+            }
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         // trace "xxx TableViewData::onMouseEndDrag: b_multiple="+table_view.b_multiple;
+
+         if(table_view.b_multiple && (null == current_drag_object))
+         {
+            int visrowi = model.getVisibleRowNrAtY(_ev.getMouseRelY());
+            if(-1 != visrowi)
+               model.selectRow(visrowi);
+         }
+         else if(null != current_drag_object)
+         {
+            Layer dropTarget <= UI.FindLayerAtXY(_ev.mouse_abs_x, _ev.mouse_abs_y);
+
+            // trace "xxx TableViewData::onMouseEndDrag: dropTarget="+#(dropTarget);
+
+            if(null != dropTarget)
+            {
+               Layer c <= dropTarget;
+               do
+               {
+                  Point2f p;
+                  c.calcAbsolutePosition(p);
+                  MouseEvent ev = _ev;
+                  ev.mouse_rel_x = ev.mouse_abs_x - p.x;
+                  ev.mouse_rel_y = ev.mouse_abs_y - p.y;
+
+                  if(c.onDropObject(current_drag_object, ev))
+                  {
+                     break;
+                  }
+                  else
+                  {
+                     c <= c.parent;
+                  }
+               }
+               while(null != c);
+            }
+
+            current_drag_object <= null;
+            UI.RevertCursor();
+         }
+      }
+   }
+
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      current_drag_object <= null;
+      UI.RevertCursor();
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(!table_view.b_multiple_rmb_select && _ev.isRightButton())
+      {
+         selectRowUnderMouse(_ev, false/*bClicked*/, false/*bAllowMultiple*/, false/*bMoveCursorOnly*/);
+         table_view.showContextMenu(false/*bNearRow*/);
+         return true;
+      }
+      else if(_ev.isMiddleButton())
+      {
+         table_view.b_force_wheel_scroll_row = !table_view.b_force_wheel_scroll_row;
+         trace "[dbg] ui::TableViewData: MMB-click: force_wheel_scroll is "+table_view.b_force_wheel_scroll_row;
+         return true;
+      }
+
+      return false;
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(_ev.isRightButtonDown())
+         table_view.showContextMenu(false/*bNearRow*/);
+      else if(table_view.b_send_hold)
+         table_view.handleRowHold(true);
+      else
+         editColumnUnderMouse(_ev);
+      return true;
+   }
+
+   public virtual onMouseHoldEnd(MouseEvent _ev) : boolean {
+      if(table_view.b_send_hold)
+      {
+         table_view.handleRowHold(false);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual canDropObject(Object _dragObject, MouseEvent _ev) : boolean {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         int visrowi = model.getVisibleRowNrAtY(_ev.getMouseRelY());
+         // (todo) unmap to unsorted model row idx
+         return model.canDropObject(_dragObject, visrowi);
+      }
+      return false;
+   }
+
+   public virtual onDropObject(Object _dragObject, MouseEvent _ev) : boolean {
+      TableModel model <= getTableModel();
+      if(null != model)
+      {
+         int visrowi = model.getVisibleRowNrAtY(_ev.getMouseRelY());
+         // (todo) unmap to unsorted model row idx
+         return model.onDropObject(_dragObject, visrowi);
+      }
+      return false;
+   }
+
+   public virtual onMouseUnfocus() {
+      mouse_button_state = 0;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      int mouseLastState = mouse_button_state;
+      mouse_button_state = _ev.current_state;
+
+      boolean ret = false;
+
+      if(b_editable)
+      {
+         TableModel model <= getTableModel();
+         if(null != model)
+         {
+            // trace "xxx TableViewData::onMouse: selected_rows="+#(model.selected_rows);
+
+            restartToolTipTimer();
+
+            boolean bStartSelection =
+               !table_view.b_drag_multiple &&
+               !table_view.b_multiple_toggle &&
+               (
+                  b_allow_mouseover_selection ^
+                  ( (_ev.current_state == MOUSE_LBUTTON) && (_ev.changed_state == MOUSE_LBUTTON))
+                )
+               ;
+            if( bStartSelection ^ (b_allow_mouseover_selection && (_ev.current_state&~MOUSE_LBUTTON)?1:0) )
+            {
+               // Start selection
+               if(! (_ev.changed_state & (MOUSE_WHEELUP | MOUSE_WHEELDOWN)))
+               {
+                  // trace "xxx bStartSelection="+bStartSelection+" ev.current_state="+_ev.current_state;
+                  selectRowUnderMouse(_ev, true/*bClicked*/, true/*bAllowMultiple*/, false/*bMoveCursorOnly*/);
+                  ret = true;
+               }
+            }
+            else
+            {
+               if( (!table_view.b_drag_multiple && _ev.leftButtonDown()) ||
+                   (table_view.b_drag_multiple && _ev.leftButtonUp() && (mouseLastState & MOUSE_LBUTTON))
+                   )
+               {
+                  redraw();
+                  setKeyboardFocus();
+                  selectRowUnderMouse(_ev, true/*bClicked*/, !table_view.b_multiple_toggle/*bAllowMultiple*/, false/*bMoveCursorOnly*/);
+                  ret = true;
+               }
+               else if(_ev.rightButtonDown())
+               {
+                  // (note) cell editor has priority over context menu (e.g. NodeCtlMorphEditor table)
+                  if(!b_allow_mouseover_selection)
+                  {
+                     // Try to let application handle the mouseevent
+                     //  (note) do not do this if TableView is used for selections since
+                     //         selecting a row may cause "this" to become invalid after
+                     //         handleRowSelection() was called
+                     if(tryEditCellUnderMouse(_ev))
+                     {
+                        // OK, handled by in-place cell renderer/editor
+                        ret = true;
+                     }
+                  }
+
+                  if(!ret)
+                  {
+                     if(table_view.b_mouseover_preview)
+                     {
+                        redraw();
+                        setKeyboardFocus();
+                        table_view.handleRowSelection(false/*bClicked*/, false /*bFoldHint*/, true/*bPreview*/);
+                        ret = true;
+                     }
+                     else if(!table_view.b_multiple_rmb_select)
+                     {
+                        if((!table_view.b_force_context_menu || (VMOD_LCTRL == UI.GetKeyMod())) && editColumnUnderMouse(_ev))
+                        {
+                           ret = true;
+                        }
+                        else
+                        {
+                           selectRowUnderMouse(_ev, false/*bClicked*/, false/*bAllowMultiple*/, false/*bMoveCursorOnly*/);
+                           table_view.showContextMenu(false/*bNearRow*/);
+                           ret = true;
+                        }
+                     }
+                  }
+               }
+            }
+
+            if(!ret)
+            {
+               if(!b_allow_mouseover_selection)
+               {
+                  // Try to let application handle the mouseevent
+                  //  (note) do not do this if TableView is used for selections since
+                  //         selecting a row may cause "this" to become invalid after
+                  //         handleRowSelection() was called
+                  if(tryEditCellUnderMouse(_ev))
+                  {
+                     // OK, handled by in-place cell renderer/editor
+                     ret = true;
+                  }
+               }
+            }
+
+            if(!ret)
+            {
+               if( (!table_view.b_drag_multiple && _ev.rightButtonDown()) ||
+                   (table_view.b_drag_multiple && _ev.rightButtonUp() && (mouseLastState & MOUSE_RBUTTON))
+                   )
+               {
+                  if(table_view.b_multiple_rmb_select)
+                  {
+                     int oldCursorIdx = model.getCursorIndex();
+                     selectRowUnderMouse(_ev, false/*bClicked*/, false/*bAllowMultiple*/, true/*bMoveCursorOnly*/);
+                     int newCursorIdx = model.getCursorIndex();
+                     table_view.handleMultipleSelection(newCursorIdx/*newCsrRow*/,
+                                                        true/*bCtrl*/,
+                                                        (0 != (UI.GetKeyMod() & VMOD_LSHIFT))
+                                                        );
+                     if(-1 != oldCursorIdx)
+                     {
+                        if(model.isRowSelected(newCursorIdx))
+                        {
+                           if(1 == model.selected_rows.numElements)
+                              model.selectRow(oldCursorIdx);  // also select previous LMB row
+                        }
+                        else
+                        {
+                           // Deselected, return cursor to previous row
+                           table_view.moveCursorToRowNoAction(oldCursorIdx);
+                        }
+                     }
+                     ret = true;
+                  }
+                  else
+                  {
+                     // Show TableCellEditor popup
+                     if((!table_view.b_force_context_menu || (VMOD_LCTRL == UI.GetKeyMod())) && editColumnUnderMouse(_ev))
+                     {
+                        ret = true;
+                     }
+                     else
+                     {
+                        // // table_view.showContextMenu(false);  // [04Jan2019] moved to onMouseClick()
+                        ret = true;
+                     }
+                  }
+               }
+            }
+         }
+      } // if editable
+
+      return ret;
+   }
+
+   public virtual calcPreferredSizeY() {
+      if(table_view.b_no_preferred_size_y)
+         return Layer::calcPreferredSizeY();
+
+      float mh = 0;
+      TableModel model <= getTableModel();
+      if(null != model)
+         mh = model.getTotalHeight();
+      preferred_size_y = mh;
+      if(mh < 1)
+         preferred_size_y += DEFAULT_MINIMUM_SIZE_Y;
+   }
+
+   public virtual calcMinimumSizeX() {
+      TableModel model <= getTableModel();
+      float mw = 0;
+      if(null != model)
+         mw = model.calcMinimumWidth();
+      minimum_size_x = mw;
+   }
+
+   public virtual onDraw() {
+      // trace "xxx TableViewData::onDraw: getSizeY()="+getSizeY()+" pref_size_y="+preferred_size_y;
+      // // int bg32 = bg_color_32;
+      int bg32 = c32_bg;
+      // Integer xxxio = bg32; trace "xxx TableViewData: bg32="+xxxio.printf("0x%08x")+" b_custom_bg="+b_custom_bg+" this="+#(this);
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), bg32);
+      // // if(!b_editable)
+      // // {
+      // //    bg32 = sdvg_TintARGB(bg32, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_NONEDITABLE_BG_TINT));
+      // // }
+      // // UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), bg32);
+
+      TableModel tm <= table_view.model;
+      if(null != tm)
+      {
+         // trace "xxx tm.cursorIndex="+tm.getCursorIndex();
+
+         if(tm.getNumRows() > 0)
+         {
+            local Point2f abspos;
+            calcAbsolutePositionFBO(abspos); // (todo) optimize/cache
+            // // UI.PushScissors(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+            sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+            sdvg_EnableScissor();
+
+            // Render cells
+            int cw;
+            int rh;
+            int rowi;
+            int visrowi;
+            int coli;
+            int py = tm.getViewPixelOffsetY();
+
+            visrowi = tm.getFirstVisibleRowNr();//getViewOffsetY();
+            int fvroff = tm.getRowPixelOffsetY(visrowi);
+            py += fvroff;
+            int numRows = tm.getNumRows();
+            int numCols = tm.getNumColumns();
+            while(visrowi < numRows)
+            {
+               // Note: if visrowi is <0 at this point, the app. forgot to call TableModel.tableModelChanged()
+               if(visrowi < 0)
+               {
+                  trace "[~~~] TableViewData::onDraw: visrowi="+visrowi;
+               }
+               else
+               {
+                  int px = 0;
+                  rowi = tm.getSortedRowNr(visrowi);
+
+                  if(py > getSizeY())
+                  {
+                     break;
+                  }
+
+                  rh = tm.getRowHeight(rowi);
+
+                  for(coli=0; coli<numCols; coli++)
+                  {
+                     Layer rd <= tm.getCellRenderer(coli, rowi, visrowi);
+
+                     if(0 != c32_fg)
+                     {
+                        rd.setForegroundColor(c32_fg);
+                        rd.setEnableBackgroundKeepAlpha(true);  // [02Aug2024] fix tables-in-dialogs transparency issue
+                     }
+                     tm.updateCellRendererColors(rd, coli, rowi, visrowi);
+
+                     cw = tm.getColumnWidth(coli);
+                     rd.setSize2f(cw, rh);
+
+                     // // glTranslatef( int(px) + rd.position_x,  int(py), 0);
+                     UIRenderer.ModelTranslate2f( int(px) + rd.position_x,  int(py) );
+
+                     if(rd instanceof Panel)
+                     {
+                        // trace "xxx TableViewData: begin draw panel ................................";
+                        rd.onDraw();
+                        rd.drawHierarchySimple();
+                        rd.onDrawPost();
+                        // trace "xxx TableViewData: end   draw panel ________________________________";
+                     }
+                     else
+                     {
+                        rd.onDraw();
+                     }
+
+                     // // glTranslatef(-int(px) - rd.position_x, -int(py), 0);
+                     UIRenderer.ModelTranslate2f(-int(px) - rd.position_x, -int(py));
+
+                     px += cw + TableView.CELL_SEPARATOR_SIZE;
+                  }
+
+                  // trace "xxx TableViewData: py="+py+" rh="+rh+" visrowi="+visrowi+" numRows="+numRows;
+
+                  py += rh + TableView.CELL_SEPARATOR_SIZE;
+               }
+               visrowi++;
+            }
+
+            // Render vertical column separators
+            int i;
+            int cx = 0;
+            for(i = 0; i < numCols; i++)
+            {
+               cw = tm.getColumnWidth(i);
+               if(i > 0)
+               {
+                  UIRenderer.DrawTableViewCellSeparatorLine(cx-TableView.CELL_SEPARATOR_SIZE, 0,
+                                                            cx-TableView.CELL_SEPARATOR_SIZE, getSizeY()
+                                                            );
+               }
+               cx += cw + 1;
+            }
+
+            sdvg_PopScissor();
+            sdvg_DisableScissor();
+
+         } // numRows > 0
+
+      } // null != tm
+
+      if(b_draw_border && lnf.b_tableviewdata_border)
+      {
+         UIRenderer.DrawRectangle(0, 0, getSizeX(), getSizeY(), 1, lnf_colors.get(LookAndFeel.COLOR_BORDER_MEDIUM));
+      }
+
+      if(!b_editable)
+      {
+         bg32 = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_NONEDITABLE_BG_TINT);
+         UIRenderer.EnableBlending();
+         UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), bg32);
+         UIRenderer.DisableBlending();
+      }
+
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_TAB:
+            if(b_provide_tab)
+            {
+               table_view.provideActionTab();
+               return true;
+            }
+            break;
+      }
+
+      return Layer::onKey(_k);
+   }
+
+}

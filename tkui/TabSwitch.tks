@@ -1,0 +1,685 @@
+// ----
+// ---- file   : TabSwitch.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : Drop-in replacement for TabbedView, based on LayerSwitch
+// ----
+// ---- created: 19Jul2015
+// ---- changed: 21Oct2015, 09Jul2016, 01Sep2017, 28Nov2018, 22Sep2019, 17Feb2020, 02Mar2020
+// ----          27Dec2020, 11Oct2022, 23Jun2023, 01Nov2023, 04Oct2024, 05Oct2024, 16Jan2025
+// ----          23Jan2025, 10Sep2025, 11Sep2025
+// ----
+// ----
+// ----
+
+module MTabSwitch;
+
+namespace ui;
+
+
+class TabSwitchLabelPanel : Panel {
+   protected virtual drawChildHierarchy(local boolean _bForceRedraw, local boolean _bCheckIntersect,
+                                        local int _viewShiftX, local int _viewShiftY,
+                                        local int _viewSizeX, local int _viewSizeY
+                                        ) {
+      // intentionally left blank
+   }
+}
+
+
+class TabSwitch : Control {
+
+   explain "A tabbed view control that replaces the old §TabbedView";
+
+
+   define String ACTION_ACTIVETABCHANGED = "onActiveTabChanged";
+
+   protected View *[] tabs; // View instances, in sync w/ LayerSwitch
+
+   protected String font_name_active_tab;
+   protected String font_name_inactive_tab;
+
+   protected LayerSwitch *layer_switch;
+
+   protected Panel *pn_labels;
+   protected Panel *pn_labels_inner;
+
+   protected boolean b_tab_focus;
+
+   protected boolean b_cache_layout;
+   protected boolean b_allow_mousewheel;
+
+   protected boolean b_fillbg;
+
+
+   public method initTabSwitch() {
+      font_name_active_tab   = UIConstants.DEFAULT_FONT_NAME_TABBEDVIEW_ACTIVE;
+      font_name_inactive_tab = UIConstants.DEFAULT_FONT_NAME_TABBEDVIEW_INACTIVE;
+      b_editable = true;
+
+      layer_switch <= new LayerSwitch;
+      layer_switch.initLayerSwitch();
+
+      pn_labels <= new Panel;
+      pn_labels.initPanel();
+      pn_labels.setLayout(SuperBorderLayout);
+      pn_labels.setPadding4f(0, 0, 0, 0);
+      pn_labels.setAlignment(Layout.EXPANDX);
+
+      pn_labels_inner <= new TabSwitchLabelPanel;
+      pn_labels_inner.initPanel();
+      pn_labels_inner.setLayout(SuperBorderLayout);
+      pn_labels_inner.setPadding4f(0, 0, 0, 0);
+      pn_labels_inner.setAlignment(Layout.LEFT);
+
+      setLayout(SuperBorderLayout);
+
+      addLayer(layer_switch, Layout.CENTER);
+      layer_switch.setAlignment(Layout.EXPAND);
+
+      pn_labels.addLayer(pn_labels_inner, Layout.LEFT);
+      addLayer(pn_labels, Layout.TOP);
+
+      b_allow_mousewheel = true;
+   }
+
+   public method getPnLabels() : Panel {
+      return pn_labels;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ACTIVETABCHANGED];
+   }
+
+   public method addView(View _view) {
+      if(null != _view.layer)
+      {
+         tabs.add(#(deref _view));
+
+         layer_switch.addSwitchLayer(_view.layer);
+      }
+   }
+
+   protected method setTabLabelInnerPadding(Label _lb) {
+      _lb.setInnerPadding4f(3+UIConstants.TABBUTTON_INSET_TOP, 4+UIConstants.TABBUTTON_INSET_LEFT,
+                            0+UIConstants.TABBUTTON_INSET_BOTTOM, 0+UIConstants.TABBUTTON_INSET_RIGHT);
+   }
+
+   public method getActiveTabIndex() : int {
+      return layer_switch.getCurrentChildNr();
+   }
+
+   public method setActiveTabIndex(int _index) {
+      // int ms = milliSeconds();
+
+      layer_switch.switchToLayerNr(_index);
+
+      // trace "xxx TabSwitch::setActiveTabIndex took "+(milliSeconds() - ms);
+
+      updateLabels();
+
+      redraw();
+   }
+
+   public method relayoutActiveTab() {
+      layer_switch.relayoutActiveLayer();
+   }
+
+   public method getViewLayerByIndex(int _index) : Layer {
+      View v <= tabs.get(_index);
+      if(null != v)
+      {
+         return v.layer;
+      }
+      return null;
+   }
+
+   public method getActiveView() : View {
+      return tabs.get(layer_switch.getCurrentChildNr());
+   }
+
+   public method getActiveViewCaption() : String {
+      View v <= getActiveView();
+      if(null != v)
+      {
+         return v.label.getCaption();
+      }
+      return "?";
+   }
+
+   public method setActiveTabIndexEvent(int _index) {
+      setActiveTabIndex(_index);
+
+      // handleActiveTabChanged
+      provideAction(IntAction.New(getProvidedActionAlias(ACTION_ACTIVETABCHANGED),
+                                  this,
+                                  layer_switch.getCurrentChildNr()
+                                  )
+                    );
+   }
+
+   public virtual isTabCycleRoot() : boolean {
+      return true;
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public virtual isTabCycleProxy() : boolean {
+      return true;
+   }
+
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      View v <= getActiveView();
+      if(null != v)
+      {
+         if(null != v.layer)
+         {
+            v.layer.recursiveAddTabCycleOverrides(_retLayers);
+         }
+      }
+   }
+
+   public virtual onTabFocus() {
+      b_tab_focus = true;
+      redraw();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      b_tab_focus = false;
+
+      if(!_bQuiet)
+      {
+         redraw();
+      }
+   }
+
+   public method previousTab() {
+      if(tabs.numElements > 1)
+      {
+         if(layer_switch.getCurrentChildNr() > 0)
+         {
+            setActiveTabIndexEvent(layer_switch.getCurrentChildNr() - 1);
+         }
+         else
+         {
+            setActiveTabIndexEvent(tabs.numElements - 1);
+         }
+      }
+   }
+
+   public method nextTab() {
+      // trace "xxx nextTab: #tabs="+tabs.numElements+" ati="+active_tab_index;
+      if(tabs.numElements > 1)
+      {
+         if(layer_switch.getCurrentChildNr() != (tabs.numElements - 1))
+         {
+            setActiveTabIndexEvent(layer_switch.getCurrentChildNr() + 1);
+         }
+         else
+         {
+            setActiveTabIndexEvent(0);
+         }
+      }
+   }
+
+   public virtual onLookAndFeelChanged() {
+      // trace "xxx TabSwitch::onLookAndFeelChanged. tabs.numElements="+tabs.numElements;
+      Control::onLookAndFeelChanged();
+
+      // (note) handled by layer_switch
+      // // if(tabs.numElements)
+      // // {
+      // //    local View *tab;
+      // //    foreach tab in tabs
+      // //    {
+      // //       if(null != tab.layer)
+      // //       {
+      // //          trace "xxx tab label=\""+tab.label.getCaption()+"\" call recursiveOnLookAndFeelChanged()";
+      // //          tab.layer.recursiveOnLookAndFeelChanged();
+      // //       }
+      // //    }
+      // // }
+   }
+
+   public virtual recursiveSetEditable(boolean _bEditable) {
+
+      setEditable(_bEditable);
+
+      if(tabs.numElements)
+      {
+         local View *tab;
+         foreach tab in tabs
+         {
+            if(null != tab.layer)
+            {
+               tab.layer.recursiveSetEditable(_bEditable);
+            }
+         }
+      }
+   }
+
+   protected method updateLabels() {
+
+      int activeTabIndex = layer_switch.getCurrentChildNr();
+
+      View *tab;
+      int tabIdx = 0;
+      foreach tab in tabs
+      {
+         if(null != tab.layer)
+         {
+            setTabLabelInnerPadding(tab.label);
+
+            if(tabIdx == activeTabIndex)
+            {
+               tab.label.setFontByName(font_name_active_tab);
+            }
+            else
+            {
+               tab.label.setFontByName(font_name_inactive_tab);
+            }
+         }
+
+         tabIdx++;
+      }
+
+      pn_labels.relayout();
+      pn_labels.redraw();
+   }
+
+   protected method addLabels() {
+      pn_labels_inner.removeChildren();
+
+      View *tab;
+      foreach tab in tabs
+      {
+         if(null != tab.layer)
+         {
+            setTabLabelInnerPadding(tab.label);
+            tab.label.setAlignment(Layout.EXPAND);
+            tab.label.setFontByName(font_name_active_tab);
+            tab.label.setTextPlacement(Layout.CENTER);
+            pn_labels_inner.addLayer(tab.label, Layout.RIGHT);
+         }
+      }
+
+      pn_labels.relayout();
+   }
+
+   protected method updateMaxLabelWidths() {
+      View *tab;
+      foreach tab in tabs
+      {
+         if(null != tab.layer)
+         {
+            tab.label.setFontByName(font_name_active_tab);
+            tab.label.setRequiredSizeX(0);
+            tab.label.setRequiredSizeX(tab.label.calcSizeX());
+         }
+      }
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      // trace "\n\n\nxxx TabSwitch::layoutHierarchy _bInvalidateSizeCaches="+_bInvalidateSizeCaches;
+      //if(_bInvalidateSizeCaches)
+      //{
+         updateMaxLabelWidths();
+         updateLabels();
+         // }
+
+      Control::layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+   }
+
+   public method getHeaderSizeY() : float {
+      return pn_labels.getSizeY();
+   }
+
+   public method getHeaderSizeX() : float {
+      return pn_labels_inner.getSizeX();
+   }
+
+   public virtual onDraw() {
+      View *tab;
+      int c32;
+      int tabNr = 0;
+      float activeTabL = 0;
+      float activeTabR = 0;
+
+      float maxTabSx = pn_labels_inner.getSizeX();
+      float maxTabSy = pn_labels.getSizeY();
+
+      if(b_fillbg)
+      {
+         UIRenderer.DrawDefaultBackground(0, 0, size_x, size_y);
+      }
+      else
+      {
+         // Only tab header + tab inner area
+         //  (note) e.g. for placing a label in the unused tab header area
+         UIRenderer.DrawDefaultBackground(0, 0, maxTabSx, maxTabSy);
+         UIRenderer.DrawDefaultBackground(0, maxTabSy, size_x, size_y-maxTabSy);
+      }
+      // trace "xxx TabSwitch::onDraw: size="+getSizeString()+" minSize="+getMinimumSizeString();
+
+
+      int activeTabIndex = layer_switch.getCurrentChildNr();
+
+      foreach tab in tabs
+      {
+         Label lb <= tab.label;
+
+         // if(null != tab.layer)
+         // {
+         //    trace "xxx    tab.layer="+#(tab.layer)+" size="+(tab.layer.getSizeString())+" minSize="+(tab.layer.getMinimumSizeString());
+         // }
+
+         // // glTranslatef(int(lb.position_x), 0,0);
+         UIRenderer.ModelTranslate2f(int(lb.position_x), 0);
+
+         // trace "xxx lb.position_x="+lb.position_x;
+         // trace "xxx lb.getSizeX()="+lb.getSizeX();
+
+         if(tabNr == activeTabIndex)
+         {
+            c32 = lnf_colors.get(LookAndFeel.COLOR_TABBEDVIEW_BG_ACTIVE);
+            if(0 != c32)
+            {
+               UIRenderer.DrawFilledRectangle(2, 5,
+                                              lb.getSizeX()-2,
+                                              lb.getSizeY()-5,
+                                              c32
+                                              );
+            }
+
+            lb.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_TABBEDVIEW_CAPTION_FG_ACTIVE));
+            lb.drawTransparentCached(-1, -2);
+            activeTabL = lb.position_x;
+            activeTabR = lb.position_x+lb.size_x;
+
+            if(lnf.b_tabswitch_bevel_border)
+            {
+               UIRenderer.DrawActiveTabBorder(0, 0, lb.getSizeX(), maxTabSy);
+            }
+
+            if(b_tab_focus && lnf.b_tabswitch_focus_border)
+            {
+               UIRenderer.DrawTabFocusTextBorder(3,
+                                                 3,
+                                                 lb.getSizeX()-2,
+                                                 maxTabSy-3
+                                                 );
+            }
+         }
+         else
+         {
+            c32 = lnf_colors.get(LookAndFeel.COLOR_TABBEDVIEW_BG_INACTIVE);
+            if(0 != c32)
+            {
+               UIRenderer.DrawFilledRectangle(2, 5,
+                                              lb.getSizeX()-2,
+                                              lb.getSizeY()-5,
+                                              c32
+                                              );
+            }
+
+            lb.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_TABBEDVIEW_CAPTION_FG_INACTIVE));
+            lb.drawTransparentCached(0, 0);
+
+            if(lnf.b_tabswitch_bevel_border)
+            {
+               UIRenderer.DrawInactiveTabBorder(0,
+                                                3,
+                                                lb.getSizeX(),
+                                                maxTabSy - 3,
+                                                (tabNr-1)==activeTabIndex, (tabNr+1)==activeTabIndex
+                                                );
+            }
+         }
+
+         // // glTranslatef(-int(lb.position_x), 0,0);
+         UIRenderer.ModelTranslate2f(-int(lb.position_x), 0);
+
+         tabNr++;
+      }
+
+      if(lnf.b_tabswitch_bevel_border)
+      {
+         c32 = lnf_colors.get(LookAndFeel.COLOR_BORDER_LIGHT);
+         UIRenderer.DrawLine(0, maxTabSy - 1,
+                             activeTabL, maxTabSy -1,
+                             c32
+                             );
+         UIRenderer.DrawLine(activeTabR, maxTabSy -1,
+                             size_x, maxTabSy -1,
+                             c32
+                             );
+      }
+   }
+
+   public virtual onKey(Key _key) : boolean {
+
+      Layer *n;
+
+      if(0 == _key.mod)
+      {
+         switch(_key.pressed)
+         {
+            case VKEY_LEFT:
+               if(hasKeyboardFocus())
+               {
+                  previousTab();
+                  return true;
+               }
+               break;
+
+            case VKEY_RIGHT:
+               if(hasKeyboardFocus())
+               {
+                  nextTab();
+                  return true;
+               }
+               break;
+
+            case VKEY_TAB:
+            case VKEY_DOWN:
+               if(b_force_tab_cycle_overrides)
+                  break;
+               // Special case because the TabSwitch is cycleroot and active member at the same time
+               // We cannot implement the tab-buttons as cyclemembers
+               // (setting the tabfocus back to the active tab-button would be difficult)
+
+               /// xxx TODO first tabswitch child may not be tabcycleroot!?!?
+               ////trace "xxx =============================================";
+               ////trace "xxx TabSwitch: VKEY_TAB tab_cycle_list="+#(tab_cycle_list);
+               if(tab_cycle_list != null)
+               {
+                  // Set focus to first (non-root) cyclemember
+                  n <= FindFirstNonRootTabCycleMember(tab_cycle_list[0], 1);
+                  if(n instanceof Layer)
+                  {
+                     handleNewTabCycleFocus(n);
+                     return true;
+                  }
+               }
+               break;
+         }
+      }
+
+      local View v <= getActiveView();
+      if(null != v)
+      {
+         local Layer l <= v.layer;
+         while(null != l)
+         {
+            n <= l.getDefaultKeyboardFocusLayer();
+            if(null != n)
+            {
+               if(n.onKey(_key))
+                  return true;
+            }
+            l <= l.getLayoutFirstChild();
+         }
+      }
+
+      return Layer::onKey(_key);
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // trace "xxx TabSwitch::onMouse: mouseRelY="+_ev.getMouseRelY()+" hasKeyboardFocus()="+hasKeyboardFocus();
+
+      if(hasKeyboardFocus())
+      {
+         if(b_allow_mousewheel)
+         {
+            if(_ev.wheelUp())
+            {
+               previousTab();
+               return true;
+            }
+            else if(_ev.wheelDown())
+            {
+               nextTab();
+               return true;
+            }
+         }
+      }
+
+      // Find label under mouse
+      if(_ev.leftButtonDown())
+      {
+         if(_ev.getMouseRelY() < pn_labels.getSizeY())
+         {
+            float evx = _ev.getMouseRelX();
+            float cx = 0;
+            View *tab;
+            int tabNr = 0;
+            foreach tab in tabs
+            {
+               Label lb <= tab.label;
+               if(evx >= lb.position_x)
+               {
+                  if(evx <= (lb.position_x+lb.size_x))
+                  {
+                     // // // trace "xxx b_dont_set_kbdfocus_on_mouse="+b_dont_set_kbdfocus_on_mouse;
+                     // // if(!b_dont_set_kbdfocus_on_mouse)
+                     if(!b_dont_set_kbdfocus_on_mouse)
+                        UI.SetKeyboardFocus(this);  // (note) set focus before action so handler can set actual tab default focus
+                     setActiveTabIndexEvent(tabNr);
+                     b_tab_focus = true;
+                     return true;
+                  }
+               }
+               tabNr++;
+            }
+         }
+         else
+         {
+            // [11Nov2023]
+            if(!b_dont_set_kbdfocus_on_mouse)
+               UI.SetKeyboardFocus(this);
+         }
+      }
+
+      return false;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         initTabSwitch();
+
+         String atname, atnamelc, atvallc;
+         StringArray atsplit;
+
+         foreach atname in _attributes
+         {
+            String atval<=_attributes[atname];
+            atnamelc = atname;
+            atnamelc.toLower();
+
+            switch(atnamelc)
+            {
+               case ACTION_ACTIVETABCHANGED:
+                  _form.addHandledAction(atname, IntAction, atval);
+                  break;
+
+               case "font":
+                  font_name_inactive_tab = atval;
+                  break;
+
+               case "fontactivetab":
+                  font_name_active_tab = atval;
+                  break;
+
+               case "keepparent":
+                  layer_switch.setEnableKeepParent(int(atval));
+                  break;
+
+               case "cachelayout":
+                  b_cache_layout = int(atval) && UI.b_allow_layout_cache;
+                  break;
+
+               case "mousewheel":
+                  b_allow_mousewheel = atval;
+                  break;
+
+               case "calcsizeonlycurrent":
+                  layer_switch.b_calcsizeonlycurrent = int(atval);
+                  break;
+
+               case "debug":
+                  layer_switch.b_debug = int(atval);
+                  break;
+
+               case "fillbg":
+                  b_fillbg = int(atval);
+                  break;
+            }
+         }
+
+         return true;
+      }
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+      String *atname, atnamelc;
+      StringArray *atsplit;
+      int newActiveTabIndex = 0;
+
+      foreach atname in _attributes
+      {
+         String atval <= _attributes[atname], atvaluc;
+         atnamelc = atname; atnamelc.toLower();
+
+         switch(atnamelc)
+         {
+            default:
+               break;
+
+            case "active":
+               newActiveTabIndex = atval;
+               break;
+         }
+      }
+
+      addLabels();
+
+      setActiveTabIndex(newActiveTabIndex);
+
+      layer_switch.onLookAndFeelChanged();
+
+   }
+
+   public virtual addXFMObject(XFMObject _o) {
+      if(_o instanceof View)
+      {
+         addView(deref _o);
+      }
+   }
+
+}

@@ -1,0 +1,694 @@
+// ----
+// ---- file   : CheckBox.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 23Jun2005
+// ---- changed: 14Aug2005, 05Aug2006, 03May2007, 04May2007, 05May2007, 18May2007, 05Nov2007
+// ----          14Apr2008, 01Feb2009, 31May2009, 02May2010, 18Feb2011, 19Mar2011, 20Mar2011
+// ----          07Jan2012, 25Mar2013, 04May2013, 12Aug2014, 15Aug2014, 16Aug2014, 22Aug2014
+// ----          07Sep2014, 14Sep2014, 16Sep2014, 26Jan2015, 27Jan2015, 07Feb2015, 14Mar2015
+// ----          16Mar2015, 13Apr2016, 29Jan2017, 13Feb2017, 16Feb2017, 07Sep2017, 16Mar2018
+// ----          28Nov2018, 11Dec2018, 22Sep2019, 01Nov2019, 14Apr2020, 22Jun2020, 05Oct2022
+// ----          06Oct2023, 09Oct2023, 22Oct2023, 27Oct2023, 28Oct2023, 01Nov2023, 02Nov2023
+// ----          30Nov2023, 22Mar2024, 05Oct2024, 23Jan2025, 09Feb2025, 10Sep2025
+// ----
+// ----
+// ----
+
+module MCheckBox;
+
+namespace ui;
+
+
+class CheckBox extends Label, ActionProvider {
+
+   define int TEXT_POS_X = 1;
+
+   define String ACTION_TOGGLE;
+   define String ACTION_HOLD_CLICK;
+   define String ACTION_KEY;
+
+   protected boolean b_pressed;
+   protected boolean b_mixed;    // true= allow true,false,maybe false=allow true,false
+   protected boolean b_selected;
+
+   namespace boolean b_transparent; // true=draw transparent background (e.g. for TableViews)   (todo) use Layer.b_fill_bg instead
+
+   protected boolean b_fill_bg_once; // true after losing keyboard focus
+   protected boolean b_fill_bg_never; // true if transparent attribute was used
+
+   protected String  icon_name_prefix;
+   protected String *icon_name_suffix;  // != null: ignore lnf.checkbox_icon_suffix and use this instead
+   protected String *force_icon_name_selected;
+   public    boolean b_ignore_icon_name_suffix;  // hack for 'rec' icons in Seq node
+
+   protected boolean b_lock_mouse_focus_mode;
+
+   protected int c32tint_checked;
+   protected int c32tint_unchecked;
+
+   protected boolean b_provide_cursor_key_action; // 1=provide action when cursor keys are pressed. 0=let layer handle cursor keys (focus selection)
+
+   protected boolean b_hold;  // true=send ACTION_HOLD_CLICK
+   protected boolean b_hold_active;
+
+
+   public function New(boolean _bSelected, String _caption) {
+      local CheckBox cb;
+      cb.initCheckBox(_bSelected, deref _caption);
+      return deref cb;
+   }
+
+   public method initCheckBox(boolean _bSelected, String _caption) {
+      initLabel();
+      initCheckBoxOnly(_bSelected, deref _caption);
+   }
+
+   public method initCheckBoxOnly(boolean _bSelected, String _caption) {
+      b_selected = _bSelected;
+      b_editable = true;
+
+      setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      setIconNamePrefix("chb");
+      setPadding4f(0f, 2f, 0f, 2f);
+      setDefaultInnerPadding();
+      setCaption(deref _caption);
+
+      b_skip_kbdfocus = false;
+   }
+
+   public virtual setDefaultInnerPadding() {
+      // if(!b_xfm_ipad)
+      //    setInnerPadding4f(2-2, 2, 2-2, 2);  // old "win9x" icons
+
+      // trace "xxx saedikfojsdlkfjsdoikfjiksldljkfsdjlkfjskldfjlk b_xfm_ipad="+b_xfm_ipad;
+
+      if(!b_xfm_ipad)
+         setInnerPadding4f(4, 2, 2-2, 2);  // using "dark" icons
+
+      // // ipad_icon_t = 2*UI.icon_scaling;
+      ipad_icon_r = 2*UI.icon_scaling;
+      // // ipad_icon_b = 3;
+
+      ipad_icon_t = 1.5 * UI.font_scaling;
+   }
+
+   public virtual onLookAndFeelChanged() {
+      // trace "xxx CheckBox::onLookAndFeelChanged: caption=\""+caption+"\" this="+#(this)+" icon_blend_c32="+icon_blend_c32;
+      Layer::onLookAndFeelChanged();
+
+      setEnableCaptionDim(false);
+
+      if(!b_custom_fg)
+         c32_fg = lnf_colors.get(LookAndFeel.COLOR_CHECKBOX_CAPTION_FG);
+
+      if(!b_custom_bg)
+         c32_bg = lnf_colors.get(LookAndFeel.COLOR_CHECKBOX_BG);
+
+      if(0 == icon_blend_c32)
+         icon_blend_c32 = lnf_colors.get(LookAndFeel.COLOR_CHECKBOX_ICON_BLEND_C32);
+   }
+
+   public method setIconNamePrefix(String _s) {
+      icon_name_prefix = _s;
+   }
+
+   public method setIconNameSuffix(String _s) {
+      if(null != _s && !_s.isBlank())
+         icon_name_suffix <= Object(_s);
+      else
+         icon_name_suffix <= null;
+   }
+
+   public method setForceIconNameSelected(String _name) {
+      force_icon_name_selected <= Object(_name);
+   }
+
+   protected virtual calcSizeX() : float {
+      setIcon(UI.GetIcon(getCurrentIconName()));
+      return Label::calcSizeX();
+   }
+
+   public method setEnableMixedState(boolean _bMixed) {
+      b_mixed = _bMixed;
+      setSelected(b_selected);
+   }
+
+   public method setEnableHold(boolean _bHold) {
+      b_hold = _bHold;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_TOGGLE, ACTION_HOLD_CLICK, ACTION_KEY];
+   }
+
+   public method setCaption(String _caption) {
+      if(null != _caption)
+      {
+         Label::setCaption(_caption);
+
+         if(_caption.isBlank())
+            setInnerPadLeft(0);
+         else
+            setInnerPadLeft(2);
+      }
+   }
+
+   public method setSelectedAndEditable(boolean _b) {
+      // deprecated
+      setEditable(true);
+      setSelected(_b);
+   }
+
+   public method setSelectedAndEnable(boolean _b) {
+      setEditable(true);
+      setSelected(_b);
+   }
+
+   public method setSelectedAndDisable(boolean _b) {
+      setEditable(false);
+      setSelected(_b);
+   }
+
+   public method setSelected(boolean _b) {
+      explain "Set the current state of the checkbox (enabled=true, disabled=false)";
+
+      if(null == icon)
+      {
+         // Workaround for CheckBoxes that are created via class initializers, i.e.
+         //  before the UI resources have been loaded.
+         //  This currently only happens with temporary table cell renderer CBs.
+         setIcon(UI.GetIcon(getCurrentIconName()));
+      }
+
+      boolean bOld = b_selected;
+      b_selected = _b;
+
+      if(!b_mixed)
+      {
+         if(b_selected == maybe)
+            b_selected = false;
+      }
+
+      if(bOld != b_selected)
+         redraw();
+   }
+
+   public method setSelectedAction(boolean _b) {
+
+      if(isEditable())
+      {
+         setSelected(_b);
+
+         IntAction ia <= IntAction.New(getProvidedActionAlias(ACTION_TOGGLE), this, b_selected);
+         provideAction(ia);
+      }
+   }
+
+   public method toggleSelection() {
+      if(!b_mixed)
+         setSelected(isSelected() ? false : true);
+      else
+         setSelected((maybe == b_selected) ? false : (true == b_selected) ? maybe : true);
+   }
+
+   public method toggleSelectionAction() {
+      if(isEditable())
+         handleToggleSelection();
+   }
+
+   public method toggleSelectionActionTrueOrFalse() {
+      // e.g. slow motion checkbox in gledit
+      if(isEditable())
+      {
+         setSelected(false == b_selected);
+         provideActionToggle();
+      }
+   }
+
+   public method toggleSelectionActionTrueOrMaybe() {
+      // e.g. slow motion checkbox in gledit
+      if(isEditable())
+      {
+         setSelected( (maybe == b_selected) ? true : maybe );
+         provideActionToggle();
+      }
+   }
+
+   public method randomize() {
+      if(b_mixed)
+         setSelected(rand(2+1)-1);
+      else
+         setSelected(rand(1+1));
+   }
+
+   public method handleHold() {
+      if(isEditable())
+      {
+         Action a <= Action.New(getProvidedActionAlias(ACTION_HOLD_CLICK), this);
+         provideAction(a);
+      }
+      b_hold_active = false;
+   }
+
+   public method isSelected() : boolean {
+      explain "Query the current state of the checkbox (enabled=true, disabled=false)";
+      return b_selected;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         force_icon_name_selected <= null;
+         b_pressed = false;
+         toggleSelectionAction();
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      Label::onMouseEnter(_ev);
+
+      redraw();
+
+      if(_ev.current_state & MOUSE_LBUTTON) // LMB held down??
+         b_pressed = true;
+
+      return true;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return (b_pressed && b_lock_mouse_focus_mode);
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      Label::onMouseLeave(_ev);
+
+      if(b_lock_mouse_focus_mode)
+      {
+         b_pressed = false;
+         b_hold_active = false;
+      }
+
+      redraw();
+
+      return true;
+   }
+
+   protected method provideActionToggle() {
+      IntAction ia <= IntAction.New(getProvidedActionAlias(ACTION_TOGGLE), this, b_selected);
+      provideAction(ia);
+   }
+
+   protected method handleToggleSelection() {
+      if(b_mixed)
+      {
+         switch(b_selected)
+         {
+            default:
+            case false:
+               b_selected = true;
+               break;
+
+            case true:
+               b_selected = maybe;
+               break;
+
+            case maybe:
+               b_selected = false;
+               break;
+         }
+      }
+      else
+      {
+         b_selected = !b_selected;
+      }
+
+      provideActionToggle();
+      redraw();
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      b_hold_active = true;
+      return false;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      ////trace "xxx CheckBox::onMouse: ns="+_ev.changed_state+" cs="+_ev.current_state+" b_pressed="+b_pressed;
+
+      if(b_editable)
+      {
+         if(_ev.changed_state & MOUSE_LBUTTON)
+         {
+            redraw();
+
+            if(!(_ev.current_state & MOUSE_LBUTTON))
+            {
+               if(b_pressed)
+               {
+                  b_pressed = false;
+
+                  if(b_hold && b_hold_active)
+                     handleHold();
+                  else
+                     handleToggleSelection();
+                  // Don't add code below this line because the CheckBox instance may have already been deleted!
+               }
+            }
+            else
+            {
+               hideToolTip();
+               b_pressed = true;
+               b_hold_active = false;
+
+               if(!b_skip_kbdfocus && !b_dont_set_kbdfocus_on_mouse)
+                  UI.SetKeyboardFocus(this);
+            }
+         }
+      }
+
+      return (MOUSE_LBUTTON == (_ev.changed_state & MOUSE_LBUTTON));
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public virtual onTabFocus() {
+      b_fill_bg_once = true;
+      redraw();
+   }
+
+   public virtual onKeyboardFocus() {
+      b_fill_bg_once = true;
+      redraw();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      b_pressed = false;
+      b_fill_bg_once = true;
+      if(!_bQuiet)
+         redraw();
+   }
+
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      return IsTabCycleKey(_k);
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      if(b_no_space_key && VKEY_SPACE == _k.code)
+         return false;
+
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_SPACE:
+            case VKEY_RETURN:
+               if(b_editable)
+               {
+                  if(!b_pressed)
+                  {
+                     b_pressed = true;
+                     redraw();
+                  }
+               }
+               return true;
+         }
+
+         switch(_k.released)
+         {
+            case VKEY_SPACE:
+            case VKEY_RETURN:
+               if(b_editable)
+               {
+                  b_pressed = false;
+                  handleToggleSelection();
+               }
+               return true;
+         }
+
+         if(b_provide_cursor_key_action)
+         {
+            switch(_k.pressed)
+            {
+               case VKEY_UP:
+               case VKEY_DOWN:
+               case VKEY_LEFT:
+               case VKEY_RIGHT:
+                  provideAction(KeyAction.New(getProvidedActionAlias(ACTION_KEY), this, _k));
+                  return true;
+            }
+         }
+      }
+
+      return Layer::onKey(_k);
+   }
+
+   protected method getCurrentIconName() : String {
+      ////trace "xxx CheckBox::getCurrentIconName: b_mixed="+b_mixed+" b_selected="+b_selected;
+      if(!b_pressed && b_selected && (null != force_icon_name_selected))
+         return force_icon_name_selected;
+
+      String sIconSuffix <= b_ignore_icon_name_suffix ? "" : ((null != icon_name_suffix) ? icon_name_suffix : lnf.checkbox_icon_suffix);
+
+      if(b_mixed)
+      {
+         switch(b_selected)
+         {
+            case false:
+               if(b_pressed || !b_editable)
+                  return icon_name_prefix + "_0_1" + sIconSuffix;
+               else
+                  return icon_name_prefix + "_0" + sIconSuffix;
+               break;
+
+            default:
+            case true:
+               if(b_pressed || !b_editable)
+                  return icon_name_prefix + "_1_0" + sIconSuffix;
+               else
+                  return icon_name_prefix + "_1" + sIconSuffix;
+               break;
+
+            case maybe:
+               if(b_pressed || !b_editable)
+                  return icon_name_prefix + "_2_0" + sIconSuffix;
+               else
+                  return icon_name_prefix + "_2" + sIconSuffix;
+               break;
+         }
+      }
+      else if(b_selected)
+      {
+         if(b_pressed || !b_editable)
+            return icon_name_prefix + "_1_0" + sIconSuffix;
+         else
+            return icon_name_prefix + "_1" + sIconSuffix;
+      }
+      else
+      {
+         if(b_pressed || !b_editable)
+            return icon_name_prefix + "_0_1" + sIconSuffix;
+         else
+            return icon_name_prefix + "_0" + sIconSuffix;
+      }
+
+      return "???";
+   }
+
+   protected virtual getCurrentLabelIcon() : Icon {
+      icon <= UI.GetIcon(getCurrentIconName());
+      return icon;
+   }
+
+   public virtual onDraw() {
+      // // trace "xxx CheckBox::onDraw: this="+#(this)+" parent="+#(parent)+" size_x="+getSizeX();
+      // // trace "xxx CheckBox::onDraw: checkbox alignment="+alignment+" sy="+getSizeY();
+      // trace "xxx CheckBox::onDraw: caption=\""+caption+"\" hasKeyboardFocus()="+hasKeyboardFocus()+" b_fill_bg_once="+b_fill_bg_once;
+
+      float iconW;
+      Icon icon <= null;
+
+      float sx = getSizeX();
+      float sy = getSizeY();
+
+      icon <= UI.GetIcon(getCurrentIconName());
+      if(null != icon)
+         iconW = icon.getIconHeight() * icon_scalex;
+      else
+         iconW = 0;
+
+      fg32_tint = b_selected ? c32tint_checked : c32tint_unchecked;
+
+      if(!b_fill_bg_once && (b_fill_bg_never | (b_transparent && !(b_fill_bg_once || b_fill_bg))))
+      {
+         Label::drawTransparentCached(TEXT_POS_X*UI.font_scaling, 0);
+      }
+      else
+      {
+         if(b_fill_bg || b_fill_bg_once)
+         {
+            if(b_bg_keepalpha)
+               UIRenderer.EnableBlendingKeepAlpha();
+            UIRenderer.DrawFilledRectangle(0, 0, sx, sy, sdvg_TintARGB(c32_bg, bg32_tint));
+            if(b_bg_keepalpha)
+               UIRenderer.DisableBlending();
+            b_fill_bg_once = false;
+         }
+
+         Label::drawTransparentCached(TEXT_POS_X*UI.font_scaling, 0);
+      }
+
+      if(hasKeyboardFocus())
+      {
+         if(!caption.isBlank())
+            UIRenderer.DrawTabFocusTextBorder(iconW + TEXT_POS_X*UI.font_scaling+2, 2, sx-1, sy-1);
+         else
+            UIRenderer.DrawTabFocusTextBorder(1, 1, sx-1, sy-1);
+      }
+
+      // // if(!UI.b_use_cached_layout)
+      // // {
+      // //    // Render Win32 style checkbox (default)
+      // //    if(null != icon)
+      // //    {
+      // //       int origIconShaderType = icon.getShaderType();
+      // //       if(icon.isMono() && lnf.b_icon_invert_mono)
+      // //          icon.setShaderType(Icon.SHADER_INVERTCOLOR);
+
+      // //       if(0 == icon_blend_c32)
+      // //       {
+      // //          icon.drawIconScaled(1, ipad_t + (sy-(icon.getIconHeight() * icon_scaley)-ipad_icon_t-ipad_icon_b)*0.5 + ipad_icon_t,
+      // //                              icon_scalex, icon_scaley
+      // //                              );
+      // //       }
+      // //       else
+      // //       {
+      // //          icon.drawIconScaledC32(1, ipad_t + (sy-(icon.getIconHeight() * icon_scaley)-ipad_icon_t-ipad_icon_b)*0.5 + ipad_icon_t,
+      // //                                 icon_scalex, icon_scaley,
+      // //                                 icon_blend_c32
+      // //                                 );
+      // //       }
+
+      // //       icon.setShaderType(origIconShaderType);
+      // //    }
+      // //    else
+      // //    {
+      // //       trace "[~~~] CheckBox: failed to resolve icon \""+getCurrentIconName()+"\".";
+      // //    }
+      // // }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initCheckBox(false/*bSelected*/, null/*caption*/);
+
+      b_lock_mouse_focus_mode = true;
+
+      alignment = Layout.CENTERY;
+
+      if(Label::beginXFMTag(_form, _attributes))
+      {
+         setCaption(caption); // also sets innerPadLeft
+
+         String *atname, *atval;
+         StringArray *atsplit;
+
+         boolean bSelected = false;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            String atnamelc;
+            atname.toLower() => atnamelc;
+
+            switch(atnamelc)
+            {
+               case "actionalias":
+                  atsplit <= atval.splitChar('=');
+                  setProvidedActionAlias(atsplit.get(0), atsplit.get(1));
+                  break;
+
+               case "mixed":
+                  setEnableMixedState(atval);
+                  break;
+
+               case "selected":
+                  switch(atval)
+                  {
+                     case "false":
+                        bSelected = false;
+                        break;
+
+                     case "true":
+                        bSelected = true;
+                        break;
+
+                     case "maybe":
+                        bSelected = maybe;
+                        break;
+
+                     default:
+                        bSelected = int(atval);
+                        break;
+                  }
+                  break;
+
+               case "ontoggle":
+                  // **DEPRECATED**
+                  _form.addHandledAction(atname, IntAction, atval);
+                  break;
+
+               case "iconprefix":
+                  setIconNamePrefix(atval);
+                  break;
+
+               case "iconsuffix":
+                  setIconNameSuffix(atval);
+                  break;
+
+               case "tintchecked":
+                  c32tint_checked = int(atval);
+                  break;
+
+               case "tintunchecked":
+                  c32tint_unchecked = int(atval);
+                  break;
+
+               case "providecursorkeyaction":
+                  b_provide_cursor_key_action = int(atval);
+                  break;
+
+               case "transparent":
+                  b_transparent = int(atval);
+                  b_fill_bg_never = b_transparent;
+                  break;
+
+               case "hold":
+                  setEnableHold(int(atval));
+                  break;
+            }
+
+            setSelected(bSelected);
+         }
+
+         // Use hi-res checkbox icon in HiDPI mode
+         if(UI.IsHiDPI() && "chb" == icon_name_prefix && 2.0 == icon_scalex)
+         {
+            icon_name_prefix = "chb2x";
+            icon_scalex = 1.0;
+            icon_scaley = 1.0;
+         }
+      }
+      return true;
+   }
+
+}

@@ -1,0 +1,315 @@
+// ----
+// ---- file   : StatusBar.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2024 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 17Jul2010, 13Mar2011, 20Aug2014, 16Sep2014, 06Sep2015, 11Jan2019, 19May2019
+// ----          15Nov2022, 01Nov2023, 02Aug2024, 13Dec2024
+// ----
+// ----
+// ----
+
+module MStatusBar;
+
+namespace ui;
+
+
+class StatusBarMessage {
+   String text;
+   int    timeout;
+   int    fgcolor32;
+   int    bgcolor32;
+}
+
+class StatusBarListener {
+   abstract method onStatusBarMessageChanged(String _msg) {
+   }
+}
+
+class StatusBar extends TextField {
+   explain "A status bar that displays oneliner messages";
+
+   define int MAX_MESSAGES = 50;
+
+   define int HEAD_MSG_TIMEOUT = 300;
+
+   //protected Array<StatusBarMessage> messages;
+   protected ClassArray messages;
+   protected int         current_write_idx;
+   protected int         current_display_idx;
+
+   protected TimerAction msgTimerAction;
+   protected boolean     b_msg_timer_scheduled;
+
+   protected TimerAction defMsgTimerAction;
+   protected boolean     b_def_msg_timer_scheduled;
+   protected String      def_msg;
+   protected String      def_tooltip_caption;  // when def_msg is displayed
+
+   protected StatusBarListener *listener;
+
+   protected String last_head_msg;
+
+
+   public method initStatusBar() {
+      initTextField();
+      initStatusBarOnly();
+   }
+
+   public method initStatusBarOnly() {
+
+      messages.template = StatusBarMessage;
+      messages.alloc(MAX_MESSAGES);
+      messages.useAll();
+
+      current_write_idx   = 0;
+      current_display_idx = 0;
+
+      def_msg = "All right.";
+
+      last_head_msg = def_msg;
+
+      setEnableClearBeforeEdit(true);
+      setEnableTabAutoCompletion(true);
+      setEnableCursorUpDown(true);
+      setEnableProvideRightClick(true);
+
+      if(isLookAndFeelLight())
+      {
+         if(UI.IsHiDPI())
+            setInnerPadBottom(4);
+          else
+         {
+            setInnerPadTop(2);
+            setInnerPadBottom(4);
+         }
+      }
+      else
+      {
+         setInnerPadBottom(5);
+      }
+   }
+
+   public method setStatusBarListener(StatusBarListener _listener) {
+      // not using provideAction() because of recursion
+      listener <= _listener;
+   }
+
+   protected method cancelMsgTimer() {
+      UI.CancelSchedule(msgTimerAction);
+   }
+
+   protected method scheduleMsgTimer(int _timeout) {
+      // trace "xxx StatusBar::scheduleMsgTimer: timeout="+_timeout+" b_msg_timer_scheduled="+b_msg_timer_scheduled;
+      if(!b_msg_timer_scheduled)
+      {
+         msgTimerAction.setActionConsumer(this);
+         msgTimerAction.setActionProvider(this);
+         UI.CancelSchedule(msgTimerAction);
+         msgTimerAction.setActionName("onMsgTimer");
+         msgTimerAction.setTicks(_timeout);
+         UI.Schedule(msgTimerAction);
+         b_msg_timer_scheduled = true;
+      }
+   }
+
+   protected method cancelDefMsgTimer() {
+      UI.CancelSchedule(defMsgTimerAction);
+      b_def_msg_timer_scheduled = false;
+   }
+
+   protected method scheduleDefMsgTimer(int _timeout) {
+      if(!b_def_msg_timer_scheduled)
+      {
+         defMsgTimerAction.setActionConsumer(this);
+         defMsgTimerAction.setActionProvider(this);
+         UI.CancelSchedule(defMsgTimerAction);
+         defMsgTimerAction.setActionName("onDefMsgTimer");
+         defMsgTimerAction.setTicks(_timeout);
+         UI.Schedule(defMsgTimerAction);
+         b_def_msg_timer_scheduled = true;
+      }
+   }
+
+   protected virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+
+      if("onMsgTimer" == acName)
+      {
+         b_msg_timer_scheduled = false;
+
+         // trace "xxx StatusBar::onMsgTimer: current_display_idx="+current_display_idx+" current_write_idx="+current_write_idx;
+
+         // int idx = (current_display_idx + 1) % messages.numElements;
+         int idx = (current_display_idx) % messages.numElements;
+
+         if(idx != current_write_idx)
+         {
+            showNextMessage();
+         }
+         else
+         {
+            // No more messages, schedule def msg timer
+            cancelDefMsgTimer();
+            scheduleDefMsgTimer(10000); // 10sec
+         }
+
+         return true;
+      }
+      else if("onDefMsgTimer" == acName)
+      {
+         b_def_msg_timer_scheduled = false;
+
+         if(!isEditing())
+         {
+            // int fg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_FG);
+            int fg = UI.lnf.getColor(LookAndFeel.COLOR_STATUSBAR_DEFAULT_FG);
+            // int bg = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG);
+            int bg = UI.lnf.getColor(LookAndFeel.COLOR_STATUSBAR_DEFAULT_BG);
+
+            setText(def_msg);
+            setToolTipCaption(def_tooltip_caption);
+            setForegroundColor(fg);
+            setBackgroundTint(bg);
+
+            if(listener instanceof StatusBarListener)
+            {
+               listener.onStatusBarMessageChanged(def_msg);
+            }
+         }
+      }
+
+      return TextField::consumeAction(deref _ac);
+   }
+
+   protected method showNextMessage() {
+      // trace "xxx StatusBar::showNextMessage";
+
+      if(!isEditing())
+      {
+         StatusBarMessage msg <= messages[current_display_idx];
+
+         setText(msg.text);
+         setToolTipCaption(msg.text);
+         setForegroundColor(msg.fgcolor32);
+         setBackgroundColor(msg.bgcolor32);
+
+         // trace "xxx current_display_idx="+current_display_idx;
+         // trace "xxx StatusBar::msg="+#(msg);
+         // trace "xxx StatusBar::msg.fgcolor32="+msg.fgcolor32;
+         // trace "xxx StatusBar::msg.bgcolor32="+msg.bgcolor32;
+         // trace "xxx StatusBar::msg.text="+msg.text;
+
+         if(-1 != msg.timeout)
+         {
+            scheduleMsgTimer(msg.timeout);
+         }
+         // else enter msg lock mode
+
+         if(listener instanceof StatusBarListener)
+         {
+            listener.onStatusBarMessageChanged(msg.text);
+         }
+
+         current_display_idx = (current_display_idx + 1) % messages.numElements;
+      }
+   }
+   
+   public method endMessageLock() {
+      explain "End the message lock that was started by passing a timeout of -1 to §pushMessage";
+
+      scheduleMsgTimer(1);
+   }
+
+   public method pushMessage(String _msg, int _timeoutMillisec, int _fg, int _bg, boolean _bHead) {
+      explain "Queue new message.
+
+If timeoutMillisec is -1, the status bar will be locked. The message lock is ended when §endMessageLock is called.
+
+If bHead is true, the message is stored as a head message which can later be reshown using §repushLastHeadMessage.
+";
+
+      cancelDefMsgTimer();
+
+      StatusBarMessage msg <= messages[current_write_idx];
+
+      // trace "xxx pushMessage: msg="+#(msg);
+      // trace "xxx pushMessage: current_write_idx="+current_write_idx;
+
+      msg.text      = _msg;
+      msg.timeout   = _timeoutMillisec;
+      msg.fgcolor32 = _fg;
+      msg.bgcolor32 = _bg;
+
+      // trace "xxx pushMessage: msg.fgcolor32="+msg.fgcolor32;
+      // trace "xxx pushMessage: msg.bgcolor32="+msg.bgcolor32;
+      // trace "xxx pushMessage: msg.text="+msg.text;
+
+      if(_bHead)
+      {
+         last_head_msg = _msg;
+      }
+
+      current_write_idx = (current_write_idx + 1) % messages.numElements;
+
+      if(!b_msg_timer_scheduled)
+      {
+         showNextMessage();
+      }
+   }
+
+   public method repushLastHeadMessage() {
+      explain "Re-show last head message";
+
+      pushMessage(last_head_msg, HEAD_MSG_TIMEOUT, 0xFF000000, 0xFFEEEEEE, false/*bHead*/);
+   }
+
+   public method setDefaultMessage(String _text) {
+      explain "Set default message that is displayed when there are no new messages";
+      def_msg = _text;
+   }
+
+   public method setDefaultToolTipCaption(String _text) {
+      explain "Set default tooltip that is displayed when there are no new messages";
+      def_tooltip_caption = _text;
+   }
+
+   public virtual startEditing() {
+      // trace "xxx StatusBar::startEditing";
+      // // setTextEditedFlag(true);  // side-effect: resetTextColors()
+      setEditable(true);
+      setBackgroundTint(0);
+      TextField::startEditing();
+   }
+
+   public method beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(TextField::beginXFMTag(_form, _attributes))
+      {
+         initStatusBarOnly();
+
+         String *atname;
+         local String atnamelc;
+         foreach atname in _attributes
+         {
+            String *atval <= _attributes[atname], atvaluc;
+            atname.toLower() => atnamelc;
+
+            switch(atnamelc)
+            {
+               default:
+                  break;
+
+               case "deftooltipcaption":
+                  def_tooltip_caption = atval;
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+}

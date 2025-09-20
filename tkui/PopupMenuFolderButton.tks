@@ -1,0 +1,326 @@
+// ----
+// ---- file   : PopupMenuFolderButton.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 30Apr2007, 14May2007, 18May2007, 01Feb2009, 07Jun2009, 22Apr2010, 20Mar2011
+// ----          17Jan2012, 14May2012, 09Feb2017, 16Feb2018, 27Nov2018, 28Nov2018, 29Nov2018
+// ----          10Jan2019, 27Dec2020, 02Jan2022, 21Oct2023, 05Oct2024
+// ----
+// ----
+// ----
+
+module MPopupMenuFolderButton;
+
+namespace ui;
+
+
+class PopupMenuFolderButton extends PopupMenuButton {
+   explain "Used for popup submenus";
+
+   protected TimerAction popupShowTimerAction;
+   protected TimerAction popupHideTimerAction;
+   protected PopupMenu *submenu;
+
+   define int ARROW_PAD_L = 20;
+   define int ARROW_PAD_R = UIConstants.BUTTON_INSET_RIGHT;
+
+
+   public method initPopupMenuFolderButton() {
+      initPopupMenuButton();
+      popupShowTimerAction.setActionName("onPopupShowTimer");
+      popupShowTimerAction.setActionConsumer(this);
+      popupHideTimerAction.setActionName("onPopupHideTimer");
+      popupHideTimerAction.setActionConsumer(this);
+   }
+
+   public setPopupMenu(PopupMenu _menu) {
+      explain "Set reference to submenu. Not for public use.";
+      submenu <= deref _menu;
+      ////trace "xxx PopupMenuTimerButton::setPopupMenu: menu="+#(_menu);
+   }
+
+   public getPopupMenu() : PopupMenu {
+      return submenu;
+   }
+
+   public virtual onKeyboardFocus() {
+      PopupMenuButton::onKeyboardFocus();
+      ////startAutoShowTimeOut();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      PopupMenuButton::onKeyboardFocusLost(_bQuiet);
+
+      // [09Feb2017] causes submenu to disappear when quickly moving the mouse to them; seems safe to remove this block:
+      // // if(submenu.isFloatingLayerVisible())
+      // // {
+      // //    safeCloseSubMenu();
+      // // }
+   }
+
+   public method safeCloseSubMenu() {
+      // make sure that the parent menu of the currently selected menu item is never closed
+      // when it is selected/has the keyboard focus
+      // Note: a menu button gains the keyboard focus along with the mousefocus
+      if(UI.keyboard_layer instanceof Layer)
+      {
+         // Check if new keyboard layer is child of submenu
+         if(!submenu.hasChildLayer(UI.keyboard_layer))
+         {
+            closeSubMenu();
+         }
+      }
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_RETURN:
+         case VKEY_RIGHT:
+            UI.CancelScheduleFor(this);
+            if(openSubMenu(true/*bAllowFocus*/))
+            {
+               submenu.focusNextMenuItem();
+            }
+            return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      ////trace "xxx PopupTimerMenuButton::onMouseEnter";
+      if(!submenu.isFloatingLayerVisible())
+      {
+         startAutoShowTimeOut();
+         ////trace "xxx PopupMenuButton: start timer";
+      }
+      else
+      {
+         UI.CancelSchedule(popupHideTimerAction);
+      }
+      return PopupMenuButton::onMouseEnter(_ev);
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      ////trace "xxx PopupMenuTimerButton: onMouseLeave";
+
+      if(submenu.isFloatingLayerVisible())
+      {
+         // Start hide timer if the mouse pointer is not within the submenu area
+         Layer l <= UI.FindFloatingLayerAtXY(_ev.getMouseAbsX(), _ev.getMouseAbsY());
+         boolean bHideTimer = true;
+         if(l != null)
+         {
+            bHideTimer = ( @(l.getRoot()) !=  @(submenu) );
+         }
+         if(bHideTimer)
+         {
+            l <= UI.keyboard_layer;
+            if(l != null)
+            {
+               bHideTimer = ( @(l.getRoot()) !=  @(submenu) );
+            }
+         }
+         if(bHideTimer)
+         {
+            startAutoHideTimeOut();
+         }
+      }
+      else
+      {
+         UI.CancelSchedule(popupShowTimerAction);
+      }
+      return PopupMenuButton::onMouseLeave(_ev);
+   }
+
+   protected startAutoShowTimeOut() {
+      // trace "xxx PopupMenuFolderButton::startAutoShowTimeOut";
+      popupShowTimerAction.setTicks(UIConstants.POPUPMENU_SHOW_TIMEOUT);
+      UI.CancelScheduleFor(this); // Cancel hide timer in case it's running
+      UI.Schedule(popupShowTimerAction);
+   }
+
+   protected startAutoHideTimeOut() {
+      // trace "xxx PopupMenuTimerButton: startAutoHideTimeOut";
+      UI.CancelScheduleFor(this); // Cancel show timer in case it's running (??)
+      PopupMenu pm <= getRoot();
+      pm.last_autohide_button <= this;
+      popupHideTimerAction.setTicks(UIConstants.POPUPMENU_HIDE_TIMEOUT);
+      UI.Schedule(popupHideTimerAction);
+   }
+
+   protected handleButtonClick(MouseEvent _ev) {
+      UI.CancelScheduleFor(this);
+      // Do not provide click action
+      openSubMenu(false/*bAllowFocus*/);
+   }
+
+   public virtual onDraw() {
+      Icon *icon;
+      int origIconShaderType;
+      int c32bg;
+      float iconScale = UI.icon_scaling;
+
+      if(hasKeyboardFocus() )
+      {
+         c32_fg = lnf_colors.get(LookAndFeel.COLOR_POPUPMENUBUTTON_MOUSEOVER_TEXT_FG);
+
+         if(b_pressed)
+         {
+            c32bg = lnf_colors.get(LookAndFeel.COLOR_POPUPMENUBUTTON_ACTIVE_BG);
+            UIRenderer.DrawFilledRectangle(0, 0,  getSizeX(), getSizeY(), c32bg);
+         }
+         else
+         {
+            c32bg = lnf_colors.get(LookAndFeel.COLOR_POPUPMENUBUTTON_MOUSEOVER_BG);
+            UIRenderer.DrawFilledRectangle(0, 0,  getSizeX(), getSizeY(), c32bg);
+         }
+
+         Label::drawTransparentCached(0, 0);
+
+         // Draw inverted ">" Icon
+         icon <= UI.GetIcon("arr_r_inv");
+         origIconShaderType = icon.getShaderType();
+         if(icon.isMono() && lnf.b_icon_invert_mono)
+            icon.setShaderType(Icon.SHADER_INVERTCOLOR);
+         icon.drawIconScaled(size_x - icon.getIconWidth() - ARROW_PAD_R*UI.icon_scaling,
+                             (size_y-icon.getIconHeight())*0.5,
+                             iconScale,
+                             iconScale
+                             );
+         icon.setShaderType(origIconShaderType);
+      }
+      else
+      {
+         c32_fg = lnf_colors.get(LookAndFeel.COLOR_POPUPMENUBUTTON_TEXT_FG);
+         if(submenu.isFloatingLayerVisible())
+         {
+            UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), lnf_colors.get(LookAndFeel.COLOR_POPUPMENUBUTTON_LEADSELECTION_BG));
+         }
+         else
+         {
+            c32bg = lnf_colors.get(LookAndFeel.COLOR_POPUPMENUFOLDERBUTTON_INACTIVE_BG);
+            UIRenderer.DrawFilledRectangle(0, 0,  getSizeX(), getSizeY(), c32bg);
+         }
+
+         Label::drawTransparentCached(0, 0);
+
+         // Draw ">" Icon
+         icon <= UI.GetIcon("arr_r");
+         origIconShaderType = icon.getShaderType();
+         if(icon.isMono() && lnf.b_icon_invert_mono)
+            icon.setShaderType(Icon.SHADER_INVERTCOLOR);
+         icon.drawIconScaled(size_x - icon.getIconWidth() - ARROW_PAD_R*UI.icon_scaling,
+                             (size_y-icon.getIconHeight())*0.5,
+                             iconScale,
+                             iconScale
+                             );
+         icon.setShaderType(origIconShaderType);
+      }
+   }
+
+   protected openSubMenu(boolean _bAllowFocus) : boolean {
+
+      if(!_bAllowFocus)
+      {
+         UI.SetEnableLockMouseFocus(true);
+         UI.SetEnableLockKeyboardFocus(true);
+      }
+
+      UI.CancelScheduleFor(this);
+      UI.CancelScheduleFor(submenu);
+
+      if(!submenu.isFloatingLayerVisible())
+      {
+         if(null != submenu.dynamic_action_name)
+         {
+            // Dynamically modify/populate submenu
+            provideAction(DynamicPopupMenuAction.New(submenu.dynamic_action_name, this, submenu));
+         }
+
+         // Close other open submenus
+         if!(submenu.isMenuEmpty())
+         {
+            PopupMenu parentMenu <= submenu.getParentMenu();
+            parentMenu.closeOpenSubMenus(this);
+            if(parentMenu.getNumItemsPerColumn() > 1)
+               submenu.showRightBesideLayer(parentMenu, UIConstants.DEFAULT_BORDER_SIZE*2, 0);
+            else
+               submenu.showRightBesideLayer(this, UIConstants.DEFAULT_BORDER_SIZE*2, 0);
+
+            if(!_bAllowFocus)
+            {
+               UI.ActivateFloatingLayer(parentMenu);
+            }
+
+            // ////UI.ActivateFloatingLayer(getRoot()); // Set focus back to this menu
+            // ////UI.SetMouseFocus(this);
+
+            if(!_bAllowFocus)
+            {
+               UI.SetEnableLockMouseFocus(false);
+               UI.SetEnableLockKeyboardFocus(false);
+            }
+
+            return true;
+         }
+      }
+
+      if(!_bAllowFocus)
+      {
+         UI.SetEnableLockMouseFocus(false);
+         UI.SetEnableLockKeyboardFocus(false);
+      }
+
+      return false;
+   }
+
+   public closeSubMenu() {
+      UI.CancelScheduleFor(this);
+      UI.CancelScheduleFor(submenu);
+      // Called by auto-hide timer
+      if(submenu.isFloatingLayerVisible())
+      {
+         Layer ml <= UI.mouse_layer; // Restore mouse focus after removing the layer
+
+         // xxx 17Jan2012: rare crash where ml was not valid anymore (a tooltip of one of the submenu elements`??!)
+         //                 --> unset mouse focus if it does not belong to any of this menu's elements
+         Layer r <= getRoot();
+         // trace "xxx r="+#(r)+" ml="+#(ml)+" r.hasChild="+r.hasChildLayer(ml);
+         if(!r.hasChildLayer(ml))
+         {
+            ml <= null;
+         }
+         UI.SetMouseFocus(null);
+
+         submenu.hide();
+
+         UI.SetMouseFocus(ml);
+
+         UI.CancelScheduleFor(this); // Cancel hide timer in case it's running
+         redraw();
+      }
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      switch(_ac.getActionName())
+      {
+         case "onPopupShowTimer":
+            ////trace "xxx PopupMenuFolderButton: consume onPopupShowTimer action";
+            openSubMenu(false/*bAllowFocus*/);
+            return true;
+
+         case "onPopupHideTimer":
+            // trace "xxx PopupMenuFolderButton: consume onPopupHideTimer action";
+            safeCloseSubMenu();
+            return true;
+      }
+      return PopupMenuButton::consumeAction(_ac);
+   }
+
+}

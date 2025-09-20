@@ -1,0 +1,1761 @@
+// ----
+// ---- file   : Label.tks
+// ---- author : (c) 2005-2025 by Bastian Spiegel <bs@tkscript.de>
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 18Jun2005, 24Jun2005, 31Jul2005, 10Aug2005, 30Apr2007, 11Nov2007, 01Feb2009
+// ----          31May2009, 09Jan2010, 31Jan2010, 06Feb2010, 08Feb2010, 22Apr2010, 25May2010
+// ----          12Feb2011, 12Aug2014, 13Aug2014, 19Aug2014, 05Sep2014, 07Sep2014, 14Sep2014
+// ----          20Sep2014, 27Sep2014, 27Jan2015, 03Feb2015, 21Feb2015, 15Mar2015, 15May2015
+// ----          02Mar2016, 27Jan2017, 18Feb2017, 21Feb2017, 16Feb2018, 27Mar2018, 20May2018
+// ----          18Jun2018, 18Jul2018, 18Sep2018, 27Nov2018, 28Nov2018, 25Jul2019, 08May2020
+// ----          01Aug2020, 14Aug2020, 27Dec2020, 27Jan2021, 12Apr2021, 18Apr2021, 22Feb2022
+// ----          26Jun2022, 04Mar2023, 08Oct2023, 20Oct2023, 21Oct2023, 22Oct2023, 24Oct2023
+// ----          27Oct2023, 28Oct2023, 31Oct2023, 01Nov2023, 02Nov2023, 04Nov2023, 15Mar2024
+// ----          16Mar2024, 18Mar2024, 22Mar2024, 24Mar2024, 28Mar2024, 29Mar2024, 05Oct2024
+// ----          18Feb2025, 10Sep2025, 11Sep2025, 12Sep2025
+// ----
+// ----
+// ----
+
+module MLabel;
+
+namespace ui;
+
+
+class Label extends Layer {
+
+   define int MIN_SIZE_X = 4;
+   define int MIN_SIZE_Y = 8;
+
+   public    Font   *font;
+   protected String  caption;
+   protected String *caption_size_reserve;
+   protected int     caption_offset_y;
+   protected Icon   *icon;
+   protected Icon   *icon_mono;  // preferred icon in dark/mono mode (or null)
+   protected float   icon_scalex;
+   protected float   icon_scaley;
+   protected int     icon_placement;// = Layout.LEFT;
+   protected int     text_placement;// = Layout.CENTER;
+   protected int     text_offset_y;
+   protected boolean b_ghosted; // true = draw shadowed text (e.g. for inactive buttons)
+
+   private static int label_count; // counts # of Label objects
+
+   protected int c32_tint2; // secondary background tint (used for mouseover highlight)
+   protected int c32_tint3; // (user-defined)
+   protected int c32_tint_outer_panel;  // when label/button is embedded in outer border panel (e.g. round shapes)
+
+   public float ipad_t;// = 0; // Inner (text) padding
+   public float ipad_l;// = 2;
+   public float ipad_b;// = 1;
+   public float ipad_r;// = 2;
+
+   protected float ipad_icon_t;// = 1; // Icon padding
+   protected float ipad_icon_l;// = 1;
+   protected float ipad_icon_b;// = 1;
+   protected float ipad_icon_r;// = 1;
+
+   // true=custom inner padding was set via XFM attrib, skip setDefaultInnerPadding()
+   //  (todo) this should be per direction
+   public    boolean b_xfm_ipad;
+   public    boolean b_xfm_ipad_icon;
+
+   protected boolean b_recalc_caption_width;
+   protected boolean b_recalc_caption_height;
+   protected int caption_max_line_width;
+   protected int caption_height;
+
+   protected boolean b_recalc_caption_width_reserved;
+   protected boolean b_recalc_caption_height_reserved;
+   protected int caption_max_line_width_reserved;
+   protected int caption_height_reserved;
+
+   protected boolean b_abbrev; // allow caption to be shortened. if false, label will always be wide enough to display entire caption
+
+   protected int fg32_tint_dim;
+
+   protected int icon_blend_mode;  // Icon.BLEND_xxx
+   protected int icon_blend_c32;  // grayscale to color
+
+   protected boolean b_actual_caption_height;  // true=calc actual height of caption, false=use font height
+   protected int     actual_caption_height_offy;  // render offset
+
+   protected boolean b_no_caption;  // true=icon only
+   protected boolean b_no_space_key;  // used by derived classes, e.g. CheckBox or Button
+   protected boolean b_right_align_at_tab;  // true=right align text substring starting with tab char
+   protected boolean b_clip_caption;
+
+   protected int cached_icon_x;  // left-most pixel offset relative to layer position
+   protected int cached_icon_y;  // top-most pixel offset relative to layer position
+
+   public    int cached_text_x;  // left-most pixel offset relative to layer position
+   public    int cached_text_y;  // top-most pixel offset relative to layer position
+   public    int cached_text_w;  // clipping / b_abbrev ("..." string width)
+   public    int cached_text_h;  // clipping
+   protected String *cached_abbrev_string;  // null, first 3 caption chars, or "..."
+   protected int cached_text_dot_w;  // "..."
+
+   protected boolean b_caption_dim;
+   protected boolean b_label_debug;
+
+   public Panel *outer_border_panel;  // used by GraphWidget. when != null, shrink fill area to not overlap with round borders (Panel.SHAPE_ROUND)
+   protected float bgfill_shrink_x;  // x-offset and width-reduction(x2)
+   protected float bgfill_shrink_y;
+
+   public boolean b_rotate;      // true=rotate 90°
+   public boolean b_rotate_ccw;  // (when b_rotate=true) true=rotate 90° CCW, false=rotate 90° CW
+
+
+   public static New() : Label {
+      local Label lb;
+      lb.initLabel();
+      return deref lb;
+   }
+
+   public method initLabel() {
+      initLayer();
+      initLabelOnly();
+
+      b_no_space_key = !UI.b_space_bar_clicks;
+
+      icon_placement = Layout.LEFT | Layout.CENTERY;
+      text_placement = Layout.CENTER;
+
+      b_fill_bg = true;
+   }
+
+   public method initLabelOnly() {
+
+      setCaption(" ");
+      setEnableCaptionDim(true);
+
+      setDefaultInnerPadding();
+
+      icon_scalex = 1.0 * UI.icon_scaling;
+      icon_scaley = 1.0 * UI.icon_scaling;
+
+      b_recalc_caption_height = true;
+      b_recalc_caption_height_reserved = true;
+
+      onLookAndFeelChanged();
+   }
+
+   public virtual removeParentLayerRefs() {
+      // when relayouting GraphForm
+      outer_border_panel <= null;
+   }
+
+   public virtual setDefaultInnerPadding() {
+      if(!b_xfm_ipad)
+         setInnerPadding4f(0+1, 2-2, 0+1, 2-1);
+
+      if(!b_xfm_ipad_icon)
+      {
+         ipad_icon_t = 2;
+         ipad_icon_l = 1;
+         ipad_icon_b = 1;
+         ipad_icon_r = 2;
+      }
+   }
+
+   public method lockInnerPadding() {
+      b_xfm_ipad      = true;
+      b_xfm_ipad_icon = true;
+   }
+
+   public virtual setDebug(boolean _bDebug) {
+      b_label_debug = _bDebug;
+   }
+
+   public virtual getDebug() : boolean {
+      return b_label_debug;
+   }
+
+   public virtual onLookAndFeelChanged() {
+      // // trace "xxx Label::onLookAndFeelChanged: caption=\""+caption+"\" this="+#(this);
+      Layer::onLookAndFeelChanged();
+
+      if(UI.b_debug_lnf_changed_reset_custom_color_flags) // when toggling lnf via sysbrk
+      {
+         b_custom_fg = false;
+         b_custom_bg = false;
+      }
+
+      if(!b_custom_fg)
+         c32_fg = lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG);
+
+      if(!b_custom_bg)
+         c32_bg = lnf_colors.get(LookAndFeel.COLOR_LABEL_BG);
+
+      updateCaptionTintDim();
+
+      setDefaultInnerPadding();
+
+      if(0 == icon_blend_c32)
+         icon_blend_c32 = lnf_colors.get(LookAndFeel.COLOR_DEFAULT_ICON_BLEND_C32);
+   }
+
+   public method resetBackgroundColor() {
+      c32_bg = lnf_colors.get(LookAndFeel.COLOR_LABEL_BG);
+      b_custom_bg = false;
+   }
+
+   public method setTint2(int _tint32) {
+      c32_tint2 = _tint32;
+   }
+
+   public method setTint2AndRedraw(int _tint32) {
+      if(c32_tint2 != _tint32)
+      {
+         c32_tint2 = _tint32;
+         redraw();
+      }
+   }
+
+   public method getTint2() : int {
+      return c32_tint2;
+   }
+
+   public method setTint3(int _tint32) {
+      c32_tint3 = _tint32;
+   }
+
+   public method setTint3AndRedraw(int _tint32) {
+      if(c32_tint3 != _tint32)
+      {
+         c32_tint3 = _tint32;
+         redraw();
+      }
+   }
+
+   public method getTint3() : int {
+      return c32_tint3;
+   }
+
+   public method setCaptionTint(int _tint32) {
+      explain "Set caption tint";
+      setForegroundTint(_tint32);
+   }
+
+   protected method updateCaptionTintDim() {
+      if(b_caption_dim)
+         fg32_tint_dim = lnf_colors.get(LookAndFeel.COLOR_CAPTION_TINT_DIM);
+      else
+         fg32_tint_dim = 0;
+   }
+
+   public method setEnableCaptionDim(boolean _bDim) {
+      b_caption_dim = _bDim;
+      updateCaptionTintDim();
+   }
+
+   public method setInnerPadding4f(float _top, _left, _bottom, _right) {
+      explain "Set the distance between borders and the actual icon/text area";
+
+      ipad_t = _top;
+      ipad_l = _left;
+      ipad_b = _bottom;
+      ipad_r = _right;
+
+      invalidateSizeCache();
+   }
+
+   public method getInnerPaddingString() : String {
+      return "("+ipad_t+";"+ipad_l+";"+ipad_b+";"+ipad_r+")";
+   }
+
+   public method setInnerPadding4fScaled(float _top, _left, _bottom, _right) {
+      explain "Set the distance between borders and the actual icon/text area";
+
+      ipad_t = UI.pad_scaling * _top;
+      ipad_l = UI.pad_scaling * _left;
+      ipad_b = UI.pad_scaling * _bottom;
+      ipad_r = UI.pad_scaling * _right;
+
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadLeft(float _left) {
+      ipad_l = _left;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadLeftScaled(float _left) {
+      ipad_l = UI.pad_scaling * _left;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadRight(float _right) {
+      ipad_r = _right;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadRightScaled(float _right) {
+      ipad_r = UI.pad_scaling * _right;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadTop(float _top) {
+      ipad_t = _top;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadTopScaled(float _top) {
+      ipad_t = UI.pad_scaling * _top;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadBottom(float _bottom) {
+      ipad_b = _bottom;
+      invalidateSizeCache();
+   }
+
+   public method setInnerPadBottomScaled(float _bottom) {
+      ipad_b = UI.pad_scaling * _bottom;
+      invalidateSizeCache();
+   }
+
+   public method setIconPadding4f(float _top, _left, _bottom, _right) {
+      explain "Set icon padding";
+
+      ipad_icon_t = UI.icon_scaling * _top;
+      ipad_icon_l = UI.icon_scaling * _left;
+      ipad_icon_b = UI.icon_scaling * _bottom;
+      ipad_icon_r = UI.icon_scaling * _right;
+
+      b_xfm_ipad_icon = true;
+      invalidateSizeCache();
+   }
+
+   public method setIconPadLeft(float _left) {
+      ipad_icon_l = UI.icon_scaling * _left;
+      b_xfm_ipad_icon = true;
+      invalidateSizeCache();
+   }
+
+   public method setIconPadRight(float _right) {
+      ipad_icon_r = UI.icon_scaling * _right;
+      b_xfm_ipad_icon = true;
+      invalidateSizeCache();
+   }
+
+   public method setIconPadTop(float _top) {
+      ipad_icon_t = UI.icon_scaling * _top;
+      b_xfm_ipad_icon = true;
+      invalidateSizeCache();
+   }
+
+   public method setIconPadBottom(float _bottom) {
+      ipad_icon_b = UI.icon_scaling * _bottom;
+      b_xfm_ipad_icon = true;
+      invalidateSizeCache();
+   }
+
+   public method setEnableIconBlendAdd(boolean _bEnable) {
+      icon_blend_mode = Icon.BLEND_ADD_KEEP_ALPHA;
+   }
+
+   public method getEnableIconBlendAdd() : boolean {
+      return (Icon.BLEND_ADD_KEEP_ALPHA == icon_blend_mode);
+   }
+
+   public method setIconBlendMode(int _mode) {
+      icon_blend_mode = _mode;
+   }
+
+   public method getIconBlendMode() : int {
+      return icon_blend_mode;
+   }
+
+   public method setIconBlendC32(int _c32) {
+      icon_blend_c32 = _c32;
+   }
+
+   public method getIconBlendC32() : int {
+      return icon_blend_c32;
+   }
+
+   public method setCaption(String _caption) {
+      explain "Set the caption of the Label";
+
+      // // trace "xxx setCaption this.caption="+@(caption)+" _caption="+@(_caption);
+      caption = _caption;
+
+      b_right_align_at_tab = (-1 != caption.indexOfChar('\t', 0));
+
+      invalidateSizeCache();
+   }
+
+   public method getCaption() : String {
+      explain "Get the caption of the Label";
+      return caption;
+   }
+
+   public virtual getDisplayedText() : String {
+      return b_no_caption ? "<nocaption>":caption;
+   }
+
+   public method setRotationByString(String _s) {
+      b_rotate = false;
+      b_rotate_ccw = false;
+      switch(_s)
+      {
+         case "cw":
+         case "90":
+         case "true":
+         case "1":
+            b_rotate = true;
+            break;
+
+         case "ccw":
+         case "-90":
+         case "-1":
+            b_rotate = true;
+            b_rotate_ccw = true;
+            break;
+      }
+   }
+
+   protected method getLabelRightAlignPadRight() : int {
+      // implemented by ComboBox
+      return 0;
+   }
+
+   public method setCaptionSizeReserve(String _capSz) {
+
+      if(null != _capSz)
+      {
+         if(!_capSz.isBlank())
+         {
+            caption_size_reserve <= Object(_capSz);
+         }
+         else
+         {
+            caption_size_reserve <= null;
+         }
+      }
+      else
+      {
+         caption_size_reserve <= null;
+      }
+
+      invalidateSizeCache();
+   }
+
+   public method getCaptionSizeReserve() : String {
+      return caption_size_reserve;
+   }
+
+   public method setEnableActualCaptionHeight(boolean _bEnabled) {
+      b_actual_caption_height = _bEnabled;
+   }
+
+   public method setEnableCaption(boolean _bEnabled) {
+      b_no_caption = !_bEnabled;
+   }
+
+   public method setEnableAbbreviation(boolean _bEnabled) {
+      b_abbrev = _bEnabled;
+   }
+
+   public method setCaptionOffsetY(float _offY) {
+      caption_offset_y = _offY;
+   }
+
+   public method getCaptionOffsetY() : float {
+      return caption_offset_y;
+   }
+
+   public method setIcon(Icon _icon) {
+      explain "Set the Icon for this Label";
+
+      icon <= (_icon instanceof Icon) ? _icon : null;
+
+      if(icon_scalex < 0.1)
+      {
+         /* workaround for old code that constructs e.g. buttons w/o calling the appropriate init/beginXFMTag method */
+         icon_scalex = 1.0;
+      }
+
+      if(icon_scaley < 0.1)
+      {
+         /* workaround for old code that constructs e.g. buttons w/o calling the appropriate init/beginXFMTag method */
+         icon_scaley = 1.0;
+      }
+
+      invalidateSizeCache();
+   }
+
+   public method getIcon() : Icon {
+      return icon;
+   }
+
+   public method setIconByName(String _iconName) {
+      setIcon(UI.GetIcon(_iconName));
+   }
+
+   public method setIconMono(Icon _icon) {
+      explain "Set the Icon for this Label (dark/mono mode)";
+
+      icon_mono <= (_icon instanceof Icon) ? _icon : null;
+
+      if(icon_scalex < 0.1)
+      {
+         /* workaround for old code that constructs e.g. buttons w/o calling the appropriate init/beginXFMTag method */
+         icon_scalex = 1.0;
+      }
+
+      if(icon_scaley < 0.1)
+      {
+         /* workaround for old code that constructs e.g. buttons w/o calling the appropriate init/beginXFMTag method */
+         icon_scaley = 1.0;
+      }
+
+      invalidateSizeCache();
+   }
+
+   public method getIconMono() : Icon {
+      return icon_mono;
+   }
+
+   public method setIconScale(float _scl) {
+      if(_scl <= 0.1)
+         _scl = 0.1;
+      icon_scalex = _scl;
+      icon_scaley = _scl;
+      invalidateSizeCache();
+   }
+
+   public method setIconScaleX(float _sclx) {
+      if(_sclx <= 0.1)
+         _sclx = 0.1;
+      icon_scalex = _sclx;
+      invalidateSizeCache();
+   }
+
+   public method setIconScaleY(float _scly) {
+      if(_scly <= 0.1)
+         _scly = 0.1;
+      icon_scaley = _scly;
+      invalidateSizeCache();
+   }
+
+   public method setIconScale2f(float _sclX, float _sclY) {
+      setIconScaleX(_sclX);
+      setIconScaleY(_sclY);
+   }
+
+   public method setIconPlacement(int _ip) {
+      explain "Set the Icon placement (Layout.TOP|BOTTOM|LEFT|RIGHT|CENTER|CENTER_H|CENTER_V)";
+
+      icon_placement = _ip;
+
+      if(0 == (icon_placement & Layout.CENTERY))  // LEFT/RIGHT => LEFT|CENTERY / RIGHT|CENTERY
+         icon_placement |= Layout.CENTERY;
+
+      if(0 == (icon_placement & Layout.CENTERX))  // TOP/BOTTOM => TOP|CENTERX / BOTTOM|CENTERX
+         icon_placement |= Layout.CENTERX;
+
+      invalidateSizeCache();
+   }
+
+   public method getIconPlacement() : int {
+      explain "Query the current icon placement";
+
+      return icon_placement;
+   }
+
+   public method setTextPlacement(int _ip) {
+      explain "Set text placement, i.e. Layout.LEFT, Layout.RIGHT etc.";
+
+      text_placement = _ip;
+
+      if(0 == (text_placement & Layout.CENTERY))  // LEFT/RIGHT => LEFT|CENTERY / RIGHT|CENTERY
+         text_placement |= Layout.CENTERY;
+
+      if(0 == (text_placement & Layout.CENTERX))  // TOP/BOTTOM => TOP|CENTERX / BOTTOM|CENTERX
+         text_placement |= Layout.CENTERX;
+
+      invalidateSizeCache();
+   }
+
+   public method getTextPlacement() : int {
+      return text_placement;
+   }
+
+   public method setTextOffsetY(int _y) {
+      text_offset_y = _y;
+   }
+
+   public method getTextOffsetY() : int {
+      return text_offset_y;
+   }
+
+   public method setFontByName(String _fontName) {
+      setFont(UI.GetFontByName(_fontName));
+      invalidateSizeCache();
+   }
+
+   public method setFont(Font _font) {
+      if(_font instanceof Font)
+      {
+         font <= deref _font;
+         invalidateSizeCache();
+      }
+   }
+
+   public virtual invalidateSizeCache() {
+      b_recalc_caption_width = true;
+      b_recalc_caption_height = true;
+
+      b_recalc_caption_width_reserved = true;
+      b_recalc_caption_height_reserved = true;
+
+      Layer::invalidateSizeCache();
+   }
+
+   public method getFont() : Font {
+      return font;
+   }
+
+   protected method lazyInitFont() {
+      if(null == font)
+         setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+   }
+
+   protected virtual calcMinimumSizeX() {
+      if(b_abbrev)
+      {
+         minimum_size_x = 2;
+      }
+      else
+      {
+         minimum_size_x = calcSizeX();
+      }
+      // // trace "xxx Label::calcMinimumSizeX: sx="+minimum_size_x+" caption="+caption+" this="+#(this);
+   }
+
+   protected method calcSizeXLabel() : float {
+
+      float mx = (ipad_l + ipad_r);
+      float sx = getCaptionWidthReserved(); // + inner border space
+      // // trace "xxx calcSizeXLabel: caption=\""+caption+"\" sx="+sx;
+
+      if(sx > 0)
+         mx += 1; // (todo) +1 hack currently needed to prevent abbrevation in corner cases..
+
+      sx += mx;
+
+      Icon curIcon <= ((null != icon_mono) && UI.PreferMonoIcons()) ? icon_mono : icon;
+
+      if(null != curIcon)
+      {
+         float isx = (curIcon.getIconWidth() * icon_scalex) + ipad_icon_l + ipad_icon_r;
+
+         if(!Layout.IsOppositeY(icon_placement, text_placement))
+            sx += isx;
+         else if((isx + mx) > sx)
+            sx = isx + mx;
+      }
+
+      if(sx < MIN_SIZE_X * UI.font_scaling)
+         sx = MIN_SIZE_X * UI.font_scaling;
+
+      // // trace "xxx Label: calcSizeXLabel: this="+#(this)+" caption=\""+caption+"\" sx="+sx+" ipad_l="+ipad_l+" ipad_r="+ipad_r+" toolTip=\""+tooltip_caption+"\"";
+      return sx;
+   }
+
+   protected method calcSizeYLabel() : float {
+      float my = (ipad_t + ipad_b);
+      float sy = my;
+
+      boolean bDebug = b_label_debug;
+      // boolean bDebug |= (this instanceof CheckBox);
+      // boolean bDebug |= ("Vel:" == caption);
+
+      sy += getCaptionHeightReserved();
+
+      Icon curIcon <= ((null != icon_mono) && UI.PreferMonoIcons()) ? icon_mono : icon;
+
+      if(null != curIcon)
+      {
+         float isy = (curIcon.getIconHeight() * icon_scaley) + ipad_icon_t + ipad_icon_b;
+
+         if(Layout.IsOppositeY(icon_placement, text_placement))
+            sy += isy;
+         else if((isy + my) > sy)
+            sy = isy + my;
+
+         // // trace "xxx Label::calcSizeYLabel: icon name="+icon.getIconName()+" isy="+isy+" py="+py+" icon_scaley="+icon_scaley;
+      }
+
+      if(sy < (MIN_SIZE_Y * UI.font_scaling))
+         sy = (MIN_SIZE_Y * UI.font_scaling);
+
+      if(bDebug)
+         trace "xxx Label::calcSizeYLabel: caption=\""+caption+"\" sy="+sy+" ipad_t="+ipad_t+" ipad_b="+ipad_b+" hrsvd="+getCaptionHeightReserved();
+
+      return sy;
+   }
+
+   protected virtual calcSizeX() : float {
+      if(b_rotate)
+         return calcSizeYLabel();
+      return calcSizeXLabel();
+   }
+
+   protected virtual calcSizeY() : float {
+      if(b_rotate)
+         return calcSizeXLabel();
+      return calcSizeYLabel();
+   }
+
+   protected method calcCaptionWidthOf(String _caption) {
+      if(null != _caption)
+      {
+         // // trace "xxx Label: calc caption width.";
+         int maxWidth = 0;
+         local StringArray lines <= _caption.splitChar('\n');
+         // // trace "xxx label lines="+#(lines);
+         String *line;
+         foreach line in lines
+         {
+            int w = font.stringWidth(line);
+            if(w > maxWidth)
+               maxWidth = w;
+         }
+         return maxWidth;
+      }
+      return 0;
+   }
+
+   public method getCaptionWidth() : int {
+
+      if(!b_no_caption)
+      {
+         lazyInitFont();
+
+         // Return maximum line width. This should later be changed to a word-wrapper!
+         if(b_recalc_caption_width)
+         {
+            int maxWidth = calcCaptionWidthOf(caption);
+
+            caption_max_line_width = maxWidth;
+            b_recalc_caption_width = false;
+         }
+
+         return caption_max_line_width;
+      }
+      else
+      {
+         caption_max_line_width = 0;
+         b_recalc_caption_width = false;
+         return 0;
+      }
+   }
+
+   public method getCaptionWidthPad() : int {
+      return getCaptionWidth() + ipad_l + ipad_r;
+   }
+
+   public method getCaptionWidthReserved() : int {
+
+      if(!b_no_caption)
+      {
+         if(null != caption_size_reserve)
+         {
+            lazyInitFont();
+
+            // Return maximum line width. This should later be changed to a word-wrapper!
+            if(b_recalc_caption_width_reserved)
+            {
+               int maxWidth = calcCaptionWidthOf(caption_size_reserve);
+
+               caption_max_line_width_reserved = maxWidth;
+               b_recalc_caption_width_reserved = false;
+            }
+
+            return caption_max_line_width_reserved;
+         }
+         else
+         {
+            return getCaptionWidth();
+         }
+      }
+      else
+      {
+         caption_max_line_width_reserved = 0;
+         return 0;
+      }
+   }
+
+   public method getCaptionWidthPadReserved() : int {
+      return getCaptionWidthReserved() + ipad_l + ipad_r;
+   }
+
+   public method getCaptionHeight() : int {
+
+      if(!b_no_caption)
+      {
+         lazyInitFont();
+
+         if(b_recalc_caption_height)
+         {
+            if(-1 != caption.indexOfChar('\n', 0))
+            {
+               caption_height = font.stringHeight(caption+ "M_yg");
+            }
+            else if(b_actual_caption_height)
+            {
+               local Float minY;
+               caption_height = font.stringHeightMinY(caption, minY);
+               actual_caption_height_offy = minY;
+            }
+            else
+            {
+               caption_height = font.getHeight();
+            }
+
+            b_recalc_caption_height = false;
+         }
+
+         return caption_height;
+      }
+      else
+      {
+         caption_height = 0;
+         b_recalc_caption_height = false;
+         return 0;
+      }
+   }
+
+   public method getCaptionHeightPad() {
+      return getCaptionHeight() + ipad_t + ipad_b;
+   }
+
+   public method getCaptionHeightReserved() : int {
+
+      if(!b_no_caption)
+      {
+         if(null != caption_size_reserve)
+         {
+            lazyInitFont();
+
+            // // trace "xxx actual getCaptionHeightReserved: caption_size_reserve=\""+caption_size_reserve+"\" b_recalc_caption_height_reserved="+b_recalc_caption_height_reserved+" cur="+caption_height_reserved+" fh="+font.getHeight();
+
+            if(b_recalc_caption_height_reserved)
+            {
+               if(-1 != caption_size_reserve.indexOfChar('\n', 0))
+               {
+                  // multi-line
+                  caption_height_reserved = font.stringHeight(caption_size_reserve + "M_yg");
+               }
+               else if(b_actual_caption_height)
+               {
+                  local Float minY;
+                  caption_height_reserved = font.stringHeightMinY(caption_size_reserve, minY);
+                  actual_caption_height_offy = minY;
+                  // // trace "xxx actual    => caption_height_reserved="+caption_height_reserved;
+               }
+               else
+               {
+                  caption_height_reserved = font.getHeight();
+               }
+
+               b_recalc_caption_height_reserved = false;
+            }
+
+            return caption_height_reserved;
+         }
+         else
+         {
+            return getCaptionHeight();
+         }
+      }
+      else
+      {
+         caption_height_reserved = 0;
+         b_recalc_caption_height_reserved = false;
+         return 0;
+      }
+   }
+
+   public method getCaptionHeightPadReserved() {
+      return getCaptionHeightReserved() + ipad_t + ipad_b;
+   }
+
+   public method setEnableClipCaption(boolean _bEnable) {
+      b_clip_caption = _bEnable;
+   }
+
+   protected method getCurrentLabelIcon() : Icon {
+      Icon curIcon <= ((null != icon_mono) && UI.PreferMonoIcons()) ? icon_mono : icon;
+      return curIcon;
+   }
+
+   public virtual layoutContent() {
+
+      // // trace "xxx Label::layoutContent: caption=\""+caption+"\"";
+
+      boolean bDebug = getDebug();
+      // // bDebug |= ("New Track.." == caption);
+      // // bDebug |= (caption <= "Send initial");
+      // // bDebug |= ("1:master" == caption);
+      // // bDebug |= ("bt_find_catnext" == layer_id);
+      // // bDebug |= ("bt_transport_cycle" == layer_id);
+      // // bDebug |= ("New pipe" == caption);
+      // // bDebug |= (alignment & Layout.BASELINEY);
+      // // bDebug |= ("Vel:" == caption) || ("Gate" == caption);
+      // // bDebug |= ("Next " == caption);
+      // // bDebug |= ("Poly.AT+" == caption);
+      // // bDebug |= ("M" == caption);
+      // // bDebug |= ("ZAP1" == caption);
+
+      cached_icon_x = 0;
+      cached_icon_y = 0;
+
+      cached_text_x         = 0;
+      cached_text_y         = 0;
+      cached_text_w         = 0;
+      cached_text_h         = 0;
+      cached_text_dot_w     = 0;
+      cached_abbrev_string <= null;
+
+      Icon curIcon <= getCurrentLabelIcon();
+      float iconh;
+      float iconw;
+
+      if(null != curIcon)
+      {
+         iconw = (curIcon.getIconWidth()  * icon_scalex) + ipad_icon_l + ipad_icon_r;
+         iconh = (curIcon.getIconHeight() * icon_scaley) + ipad_icon_t + ipad_icon_b;
+      }
+      else
+      {
+         iconw = 0;
+         iconh = 0;
+      }
+
+      float sx = b_rotate ? getSizeY() : getSizeX();
+      float sy = b_rotate ? getSizeX() : getSizeY();
+
+      if(!b_no_caption)
+         lazyInitFont();
+
+      float ascender;
+      float descender;
+      float sh;
+
+      if(!b_no_caption && (null != font))
+      {
+         ascender    = font.getAscender();
+         descender   = font.getDescender();  // (note) usually a negative value (below baseline)
+         float sw    = getCaptionWidth();
+         float fontH = ascender - descender;
+         sh          = getCaptionHeightReserved();
+
+         if(!b_actual_caption_height)
+         {
+            if(sh > fontH)
+               ascender = sh * 0.5;  // multi-line text
+            else
+               sh = fontH;
+         }
+         // // else
+         // //    trace "xxx actual sy="+sy+" sh="+sh+" caption_size_reserve="+caption_size_reserve;
+
+         cached_text_w = sw;
+         cached_text_h = sh;
+      }
+      else
+      {
+         ascender = 0;
+         descender = 0;
+         sh = 0;
+      }
+
+      float px = ipad_l;
+      float py = ipad_t;
+      float availContentW = sx - ipad_l - ipad_r;
+      float availContentH = sy - ipad_t - ipad_b;
+
+      if(bDebug)
+      {
+         trace "xxx icon_placement x="+(icon_placement & Layout.CENTERX);
+         trace "xxx icon_placement y="+(icon_placement & Layout.CENTERY);
+         trace "xxx text_placement x="+(text_placement & Layout.CENTERX);
+         trace "xxx text_placement y="+(text_placement & Layout.CENTERY);
+      }
+
+      if(bDebug)
+         trace "xxx Label: text=\""+caption+"\" availContentSz=("+availContentW+";"+availContentH+") textSz=("+cached_text_w+";"+cached_text_h+")";
+
+      if(iconw > 0)
+      {
+         switch(icon_placement & Layout.CENTERX)
+         {
+            default:
+            case Layout.LEFT:
+               cached_icon_x = px + ipad_icon_l;
+               break;
+
+            case Layout.RIGHT:
+               cached_icon_x = px + availContentW - iconw + ipad_icon_l;
+               break;
+
+            case Layout.CENTERX:  // (LEFT | RIGHT)
+               cached_icon_x = px + (availContentW - iconw) * 0.5 + ipad_icon_l;
+               break;
+         }
+
+         if( !Layout.IsOppositeY(icon_placement, text_placement) )
+         {
+            availContentW -= iconw;
+            if(Layout.LEFT == (icon_placement & Layout.CENTERX))
+               px += iconw;
+         }
+
+         switch(icon_placement & Layout.CENTERY)
+         {
+            default:
+            case Layout.TOP:
+               cached_icon_y = py + ipad_icon_t;
+               if(0 != (text_placement & Layout.CENTERY))
+               {
+                  availContentH -= iconh;
+                  py += iconh;
+               }
+               break;
+
+            case Layout.BOTTOM:
+               cached_icon_y = py + availContentH - iconh + ipad_icon_t;
+               if(0 != (text_placement & Layout.CENTERY))
+                  availContentH -= iconh;
+               break;
+
+            case Layout.CENTERY:  // (TOP | BOTTOM)
+               if(bDebug)
+                  trace "xxx label icon CENTERY: py="+py+" availContentH="+availContentH+" iconh="+iconh+" ipad_t="+ipad_t+" ipad_b="+ipad_b+" ipad_icon_t="+ipad_icon_t+" ipad_icon_b="+ipad_icon_b;
+               cached_icon_y = py + (availContentH - iconh) * 0.5 + ipad_icon_t;
+               break;
+         }
+
+         if( Layout.IsOppositeY(icon_placement, text_placement) )
+         {
+            availContentH -= iconh;
+            py += iconh;
+         }
+      } // if iconw > 0
+
+      if(!b_no_caption)
+      {
+         // // if(b_abbrev)
+         // //    trace "xxx label: cached_text_w="+cached_text_w+" avail="+availContentW+" caption=\""+caption+"\" b_abbrev="+b_abbrev;
+         if(cached_text_w > availContentW)
+         {
+            if(b_abbrev)
+            {
+               // // trace "xxx label: sw("+sw+") > ("+size_x+"-"+ipad_l+"-"+ipad_r+")";
+               if(caption.numChars > 3)
+               {
+                  cached_text_dot_w = font.stringWidth("...");
+                  cached_text_w     = availContentW - cached_text_dot_w;
+                  if(cached_text_w < 0)
+                     cached_text_w = 0;
+                  cached_abbrev_string <= "...";
+                  // // trace "xxx abbrev cached_text_w="+cached_text_w+" dot_w="+cached_text_dot_w;
+               }
+               else
+               {
+                  cached_abbrev_string <= caption.substring(0, 3);
+                  cached_text_w = font.stringWidth(cached_abbrev_string);
+               }
+            }
+            else
+            {
+               cached_abbrev_string <= caption;
+               cached_text_w = availContentW;
+            }
+         }
+         else
+            cached_abbrev_string <= caption;
+
+         if(cached_text_w > availContentW)
+            cached_text_w = availContentW;
+
+         if(cached_text_h > availContentH)
+            cached_text_h = availContentH;
+
+         switch(text_placement & Layout.CENTERX)
+         {
+            default:
+            case Layout.LEFT:
+               cached_text_x = px;
+               break;
+
+            case Layout.RIGHT:
+               cached_text_x = px + availContentW - cached_text_w;
+               break;
+
+            case Layout.CENTERX:  // (LEFT | RIGHT)
+               if(bDebug)
+                  trace "xxx Label text CENTERX availContentW="+availContentW+" cached_text_w="+cached_text_w;
+               cached_text_x = px + (availContentW - cached_text_w) * 0.5;
+               break;
+         }
+
+         if(bDebug)
+            trace "xxx label initial text p=("+px+";"+py+")";
+
+         switch(text_placement & Layout.CENTERY)
+         {
+            default:
+            case Layout.TOP:
+               cached_text_y = py;
+               break;
+
+            case Layout.BOTTOM:
+               cached_text_y = py + availContentH - cached_text_h;
+               break;
+
+            case Layout.CENTERY:  // (TOP | BOTTOM)
+               if(bDebug)
+                  trace "xxx Label text CENTERY availContentH="+availContentH+" cached_text_h="+cached_text_h+" sh="+sh;
+               cached_text_y = py + (availContentH - cached_text_h) * 0.5;
+               break;
+         }
+
+         // cached_text_y now points to top scanline position of text string
+         //   => offset by font ascender to get to font baseline
+         cached_text_y = int(cached_text_y) + text_offset_y;
+         cached_baseline_y = cached_text_y + ascender;
+
+      } // if !b_no_caption
+      else if(iconh > 0)
+      {
+         // (todo) usecase ?
+         // cached_baseline_y = cached_icon_y + iconh - 1;
+      }
+
+      if(null != outer_border_panel)
+      {
+         // (note) the actual shrink size area is only used for drawing the keyboard focus
+         // // bgfill_shrink_x = outer_border_panel.calcPanelArcW();
+         // // bgfill_shrink_y = outer_border_panel.calcPanelArcH();
+         bgfill_shrink_x = outer_border_panel.calcPanelLabelShrinkX();
+         bgfill_shrink_y = outer_border_panel.calcPanelLabelShrinkY();
+         // // trace "xxx Label::layoutContent: lb="+getDebugString()+" outer_border_panel shrink=("+bgfill_shrink_x+";"+bgfill_shrink_y+")";
+      }
+
+      if(bDebug)
+         trace "xxx Label caption=\""+caption+"\" icon_xy=("+cached_icon_x+";"+cached_icon_y+") iconSz=("+iconw+";"+iconh+") asc="+ascender+" desc="+descender+" text_xy=("+cached_text_x+";"+cached_text_y+") text_sz=("+cached_text_w+";"+cached_text_h+") sh="+sh+" availContentH="+availContentH+" text_offset_y="+text_offset_y+" baseline_y="+cached_baseline_y+" p="+getPositionString()+" sz="+getSizeString()+" minSz="+getMinimumSizeString()+" eff_baseline_y="+(getPositionY() + cached_baseline_y)+" dot_w="+cached_text_dot_w+" ipad=("+ipad_t+";"+ipad_l+";"+ipad_b+";"+ipad_r+")";
+   }
+
+   public method drawTransparentCached(float _textOffX, float _textOffY) {
+
+      boolean bDebug = b_label_debug;
+      // bDebug |= ("Vel:" == caption) || ("Gate" == caption) || ("Loop" == caption);
+      // bDebug |= ("Info:" == caption);
+      // bDebug = 1;
+
+      // [21Oct2023] new baseline-based, cached layout (e.g. for mixed font sizes)
+      float baselineY = getBaselineY();  // update cached_icon_x/y, cached_text_x/y, cached_text_dot_sw, cached_baseline_y
+
+      float sx = b_rotate ? size_y : size_x;
+      float sy = b_rotate ? size_x : size_y;
+
+      float offX = _textOffX;
+      float offY = int(_textOffY + caption_offset_y + baseline_content_shift_y);
+      float textOffY = offY;
+
+      // // if(bDebug)
+      // //    trace "xxx Label::drawTransparentCached: caption=\""+caption+"\" baselineY="+baselineY+" sy="+getSizeY()+" _textOffY="+_textOffY+" cached_text_y="+cached_text_y+" caption_offset_y="+caption_offset_y+" baseline_content_shift_y="+baseline_content_shift_y+" (offY="+offY+")";
+
+      if(b_actual_caption_height)
+      {
+         // skip empty space above glyphs
+         textOffY -= actual_caption_height_offy;
+      }
+
+      if(bDebug)
+      {
+         UIRenderer.DrawFilledRectangle(0 + bgfill_shrink_x,
+                                        0 + bgfill_shrink_y,
+                                        getSizeX() - bgfill_shrink_x*2,
+                                        getSizeY() - bgfill_shrink_y*2,
+                                        #ff0000FF
+                                        );
+
+         trace "xxx Label::drawTransparentCached: fill="+b_fill_bg+" caption=\""+caption+"\" asc="+font.getAscender()+" cached_baseline_y="+cached_baseline_y+" blcs="+baseline_content_shift_y+" (cached_baseline_y-ascender)="+(cached_baseline_y-font.getAscender())+" textOffY="+textOffY+" py="+getPositionY()+" => effTextY="+(getPositionY()+cached_text_y + textOffY);
+      }
+
+      if(0)
+         UIRenderer.DrawRectangle(0, 0,
+                                  getSizeX(), getSizeY(),
+                                  1,
+                                  #ff0000FF
+                                  );
+
+
+      if(b_rotate)
+      {
+         // // trace "xxx Label: caption=\""+caption+"\" rotate off=("+offX+";"+offY+") cached_text_xy=("+cached_text_x+";"+cached_text_y+")";
+         // // glPushMatrix();
+         UIRenderer.PushModelMatrix();
+
+         if(b_rotate_ccw)
+         {
+            // // glRotatef(-90.0f, 0.0f, 0.0f, 1.0f);
+            // // glTranslatef(-sx, 0, 0);
+            UIRenderer.ModelRotatef(-PI*0.5);
+            UIRenderer.ModelTranslate2f(-sx, 0.0f);
+         }
+         else
+         {
+            // // glRotatef(90.0f, 0.0f, 0.0f, 1.0f);
+            // // glTranslatef(0, -sy, 0);
+            UIRenderer.ModelRotatef(PI*0.5f);
+            UIRenderer.ModelTranslate2f(0.0f, -sy);
+         }
+      }
+
+      Icon curIcon <= getCurrentLabelIcon();
+
+      if(null != curIcon)
+      {
+         boolean bIconBlendAdd = curIcon.getEnableBlendAdd();
+
+         int origIconBlendMode = curIcon.getBlendMode();
+         curIcon.setBlendMode(icon_blend_mode);
+
+         int origIconShaderType = curIcon.getShaderType();
+         if(curIcon.isMono() && lnf.b_icon_invert_mono)
+            curIcon.setShaderType(Icon.SHADER_INVERTCOLOR);
+
+         if(0 != icon_blend_c32)
+         {
+            curIcon.drawIconScaledC32(cached_icon_x + offX,
+                                      cached_icon_y + offY,
+                                      icon_scalex, icon_scaley,
+                                      icon_blend_c32
+                                      );
+         }
+         else
+         {
+            curIcon.drawIconScaled(cached_icon_x + offX,
+                                   cached_icon_y + offY,
+                                   icon_scalex, icon_scaley
+                                   );
+         }
+
+         // Restore original blend-add setting
+         curIcon.setShaderType(origIconShaderType);
+         curIcon.setBlendMode(origIconBlendMode);
+      }
+
+      // // if(bDebug) UIRenderer.DrawLine(0,baselineY, getSizeX(), baselineY, #ffff0000);
+      // // trace "xxx getSizeY()*0.5="+(getSizeY()*0.5)+" baselineY="+baselineY;
+      // // UIRenderer.DrawLine(0,getSizeY()*0.5, getSizeX(), getSizeY()*0.5, #ffff0000);
+
+      if(!b_no_caption && (null != font) && !caption.isBlank())
+      {
+         int fg32 = c32_fg;
+
+         if(0 != fg32_tint)
+            fg32 = sdvg_TintARGB(fg32, fg32_tint);
+
+         if(0 != fg32_tint_dim)
+         {
+            // // trace "xxx drawTransparentCached: fg32_tint_dim="+fg32_tint_dim;
+            fg32 = sdvg_TintARGB(fg32, fg32_tint_dim);
+         }
+
+         int ul32 = lnf_colors.get(LookAndFeel.COLOR_ACCEL_UL_FG);
+
+         if(255 != layer_alpha)
+         {
+            fg32 = (fg32 & #ffffff) | (layer_alpha << 24);
+            ul32 = (ul32 & #ffffff) | (layer_alpha << 24);
+         }
+
+         UIRenderer.SetLineWidth(1.0f);
+
+         // // if(cached_text_dot_w > 0)
+         // //    trace "xxx label: caption=\""+caption+"\" px="+px+" py="+py+" ipad_l="+ipad_l+" dotsw="+cached_text_dot_w;
+         if(b_abbrev || b_clip_caption)
+         {
+            if(b_abbrev)
+            {
+               if(cached_text_dot_w > 0)
+               {
+                  // trace "cached_text_dot_w="+cached_text_dot_w;
+                  UIRenderer.DrawTextClipped(caption, font,
+                                             fg32,
+                                             ul32,
+                                             cached_text_x + offX,
+                                             cached_text_y + textOffY,
+                                             cached_text_x,    // clip left
+                                             cached_text_y,    ///clip top
+                                             cached_text_x + offX + cached_text_w,  // clip right
+                                             sy - ipad_b   // clip bottom
+                                             );
+
+                  UIRenderer.DrawTextClipped(cached_abbrev_string/*"..."*/,
+                                             font,
+                                             fg32,
+                                             ul32,
+                                             cached_text_x + offX + cached_text_w,
+                                             cached_text_y + textOffY,
+                                             cached_text_x + offX + cached_text_w,  // clip left
+                                             cached_text_y, // clip top
+                                             sx - ipad_r,   // clip right
+                                             sy - ipad_b    // clip bottom
+                                             );
+
+               }
+               else
+               {
+                  if(b_ghosted)
+                  {
+                     UIRenderer.DrawTextGhosted(cached_abbrev_string, font,
+                                                lnf_colors.get(LookAndFeel.COLOR_LABEL_TEXT_GHOSTED_RB),
+                                                lnf_colors.get(LookAndFeel.COLOR_LABEL_TEXT_GHOSTED_LT),
+                                                cached_text_x + offX,
+                                                cached_text_y + textOffY
+                                                );
+                  }
+                  else
+                  {
+                     UIRenderer.DrawText(cached_abbrev_string, font,
+                                         fg32,
+                                         ul32,
+                                         cached_text_x + offX,
+                                         cached_text_y + textOffY,
+                                         cached_text_w/*availW*/,
+                                         text_placement
+                                         );
+                  }
+               }
+            }
+            else
+            {
+               // b_clip_caption
+               UIRenderer.DrawTextClipped(caption, font,
+                                          fg32,
+                                          ul32,
+                                          cached_text_x + offX,
+                                          cached_text_y + textOffY,
+                                          cached_text_x,  // clip left
+                                          cached_text_y,  // clip top
+                                          sx - ipad_r,    // clip right
+                                          sy - ipad_b     // clip bottom
+                                          );
+            }
+         }
+         else if(b_ghosted)
+         {
+            UIRenderer.DrawTextGhosted(caption, font,
+                                       lnf_colors.get(LookAndFeel.COLOR_LABEL_TEXT_GHOSTED_RB),
+                                       lnf_colors.get(LookAndFeel.COLOR_LABEL_TEXT_GHOSTED_LT),
+                                       cached_text_x + offX,
+                                       cached_text_y + textOffY
+                                       );
+         }
+         else if(b_right_align_at_tab) // (todo) handle in layoutContent()
+         {
+            // (note) Font::renderClippedString() right-aligns substring after TAB to clipping window
+            // (note) used by ComboBoxPopup
+            UIRenderer.DrawTextClipped(caption, font,
+                                       fg32,
+                                       ul32,
+                                       cached_text_x + offX, cached_text_y + textOffY,
+                                       cached_text_x, cached_text_y,
+                                       sx - ipad_r - getLabelRightAlignPadRight(),  // clip right
+                                       sy - ipad_b  // clip bottom
+                                       );
+         }
+         else
+         {
+            // Regular caption
+            UIRenderer.DrawText(caption, font,
+                                fg32,
+                                ul32,
+                                cached_text_x + offX, cached_text_y + textOffY,
+                                cached_text_w,
+                                text_placement
+                                );
+         }
+      } // if caption
+
+      if(b_rotate)
+         UIRenderer.PopModelMatrix();
+   }
+
+   public virtual redraw() {
+      // trace "xxx Label::redraw: displayedText=\""+getDisplayedText()+"\" outer_border_panel="+#(outer_border_panel);
+      if(null != outer_border_panel)
+      {
+         // (note) for Buttons, calcButtonTint2ForOuterPanel() is called beforehand (updates c32_tint_outer_panel)
+         // // trace "xxx Label::redraw: ############################## c32_tint_outer_panel="+UI.GetColorString(c32_tint_outer_panel);
+         outer_border_panel.panel_tint2 = c32_tint_outer_panel;
+         outer_border_panel.redraw();
+      }
+      Layer::redraw();
+   }
+
+   public virtual onDraw() {
+      // // trace "xxx Label::onDraw: caption=\""+caption+"\" size_x="+size_x+" px="+position_x;
+
+      // // if(caption <= "01A")
+      // //    trace "xxx Label::onDraw: caption=\""+caption+"\" b_fill_bg="+b_fill_bg+" b_bg_keepalpha="+b_bg_keepalpha;
+
+      if(b_fill_bg)
+      {
+         if(b_bg_keepalpha)
+            UIRenderer.EnableBlendingKeepAlpha();
+         UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(),
+                                        sdvg_TintARGB(sdvg_TintARGB(sdvg_TintARGB(c32_bg, bg32_tint), c32_tint2), c32_tint3)
+                                        );
+         if(b_bg_keepalpha)
+            UIRenderer.DisableBlending();
+      }
+
+      drawTransparentCached(0, 0);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initLayer();
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         initLabelOnly();
+
+         if(!_attributes.exists("font"))
+            setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+         setIconPlacement(Layout.LEFT | Layout.CENTERY);
+
+         String *atname, *atval, atvaluc;
+         StringArray *atsplit;
+         String *atsplitv;
+         String atnamelc;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "caption":
+                  setCaption(atval);
+                  break;
+
+               case "captionsizereserve":
+                  setCaptionSizeReserve(atval);
+                  break;
+
+               case "actualcaptionheight":
+                  setEnableActualCaptionHeight(int(atval));
+                  break;
+
+               case "nocaption":
+                  setEnableCaption(0 == int(atval));
+                  break;
+
+               case "captiondim":
+                  setEnableCaptionDim(int(atval));
+                  break;
+
+               case "captiontint":
+                  setCaptionTint(int(atval));
+                  break;
+
+               case "font":
+                  setFontByName(atval);
+                  break;
+
+               case "icon":
+                  setIcon(UI.GetIcon(atval));
+                  break;
+
+               case "iconmono":
+                  setIconMono(UI.GetIcon(atval));
+                  break;
+
+               case "iconscale":
+                  setIconScale(float(atval) * UI.icon_scaling);
+                  break;
+
+               case "iconscalex":
+                  setIconScaleX(float(atval) * UI.icon_scaling);
+                  break;
+
+               case "iconscaley":
+                  setIconScaleY(float(atval) * UI.icon_scaling);
+                  break;
+
+               case "iconplacement":
+                  atval.toUpper() => atvaluc;
+                  atsplit <= atvaluc.splitChar(';');
+                  int iconPlacementFlags = 0;
+                  foreach atsplitv in atsplit
+                  {
+                     switch(atsplitv)
+                     {
+                        default:
+                           trace "[---] Label::beginXFMTag(): unknown icon placement \""+atval+"\".";
+                           return false;
+                        case "TOP":
+                           iconPlacementFlags |= Layout.TOP;
+                           break;
+                        case "BOTTOM":
+                           iconPlacementFlags |= Layout.BOTTOM;
+                           break;
+                        case "LEFT":
+                           iconPlacementFlags |= Layout.LEFT;
+                           break;
+                        case "RIGHT":
+                           iconPlacementFlags |= Layout.RIGHT;
+                           break;
+                        case "CENTERX":
+                           iconPlacementFlags |= Layout.CENTERX;
+                           break;
+                        case "CENTERY":
+                           iconPlacementFlags |= Layout.CENTERY;
+                           break;
+                        case "CENTER":
+                           iconPlacementFlags |= Layout.CENTER;
+                           break;
+                     }
+                  }
+                  setIconPlacement(iconPlacementFlags);
+                  break;
+
+               case "iconpadleft":
+                  setIconPadLeft(atval);
+                  break;
+
+               case "iconpadright":
+                  setIconPadRight(atval);
+                  break;
+
+               case "iconpadtop":
+                  setIconPadTop(atval);
+                  break;
+
+               case "iconpadbottom":
+                  setIconPadBottom(atval);
+                  break;
+
+               case "iconpad":
+               case "iconpadding":
+                  atsplit <= atval.splitChar(';');
+                  if(atsplit.numElements >= 1)
+                  {
+                     setIconPadding4f(atsplit[0],
+                                      (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last,
+                                      (atsplit.numElements >= 3) ? atsplit[2] : atsplit.last,
+                                      (atsplit.numElements >= 4) ? atsplit[3] : atsplit.last
+                                      );
+                  }
+                  else
+                  {
+                     trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==4, got "+atsplit.numElements+").";
+                     return false;
+                  }
+                  break;
+
+               case "iconblendadd":
+                  setIconBlendMode(Icon.BLEND_ADD_KEEP_ALPHA);
+                  break;
+
+               case "iconblendmode":
+                  switch(atval.toUpper())
+                  {
+                     default:
+                     case "SRC_OVER_KEEP_ALPHA":
+                        setIconBlendMode(Icon.BLEND_SRC_OVER_KEEP_ALPHA);
+                        break;
+
+                     case "SRC_OVER_REPLACE_ALPHA":
+                        setIconBlendMode(Icon.BLEND_SRC_OVER_REPLACE_ALPHA);
+                        break;
+
+                     case "ADD_KEEP_ALPHA":
+                        setIconBlendMode(Icon.BLEND_ADD_KEEP_ALPHA);
+                        break;
+
+                     case "ADD_REPLACE_ALPHA":
+                        setIconBlendMode(Icon.BLEND_ADD_REPLACE_ALPHA);
+                        break;
+
+                     case "SRC":
+                        setIconBlendMode(Icon.BLEND_SRC);
+                        break;
+                  }
+                  break;
+
+               case "iconblendc32":
+                  setIconBlendC32(int(atval));
+                  break;
+
+               case "textplacement":
+                  atval.toUpper() => atvaluc;
+                  atsplit <= atvaluc.splitChar(';');
+                  int textPlacementFlags = 0;
+                  foreach atsplitv in atsplit
+                  {
+                     switch(atsplitv)
+                     {
+                        default:
+                           trace "[---] Label::beginXFMTag(): unknown text placement \""+atsplitv+"\".";
+                           return false;
+                        case "TOP":
+                           textPlacementFlags |= Layout.TOP;
+                           break;
+                        case "BOTTOM":
+                           textPlacementFlags |= Layout.BOTTOM;
+                           break;
+                        case "LEFT":
+                           textPlacementFlags |= Layout.LEFT;
+                           break;
+                        case "RIGHT":
+                           textPlacementFlags |= Layout.RIGHT;
+                           break;
+                        case "CENTERX":
+                           textPlacementFlags |= Layout.CENTERX;
+                           break;
+                        case "CENTERY":
+                           textPlacementFlags |= Layout.CENTERY;
+                           break;
+                        case "CENTER":
+                           textPlacementFlags |= Layout.CENTER;
+                           break;
+                     }
+                  }
+                  setTextPlacement(textPlacementFlags);
+                  break;
+
+               case "textoffsety":
+                  if(!AllowXFMAttribDPI(atval))
+                     break;
+                  setTextOffsetY(int(atval));
+                  break;
+
+               case "innerpadding":
+                  // "<top>;<left>;<bottom>;<right>"
+                  atsplit <= atval.splitChar(';');
+                  if(atsplit.numElements >= 1)
+                  {
+                     setInnerPadding4f(atsplit[0],
+                                      (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last,
+                                      (atsplit.numElements >= 3) ? atsplit[2] : atsplit.last,
+                                      (atsplit.numElements >= 4) ? atsplit[3] : atsplit.last
+                                      );
+                     b_xfm_ipad = true;
+                  }
+                  else
+                  {
+                     trace "[---] Label::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==4, got "+atsplit.numElements+").";
+                     return false;
+                  }
+                  break;
+
+               case "ipad":
+               case "innerpaddingscaled":
+                  // "<top>;<left>;<bottom>;<right>"
+                  atsplit <= atval.splitChar(';');
+                  if(atsplit.numElements >= 1)
+                  {
+                     setInnerPadding4fScaled(atsplit[0],
+                                             (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last,
+                                             (atsplit.numElements >= 3) ? atsplit[2] : atsplit.last,
+                                             (atsplit.numElements >= 4) ? atsplit[3] : atsplit.last
+                                             );
+                     b_xfm_ipad = true;
+                  }
+                  else
+                  {
+                     trace "[---] Label::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==4, got "+atsplit.numElements+").";
+                     return false;
+                  }
+                  break;
+
+               case "innerpadtop":
+                  setInnerPadTop(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "ipad_t":
+               case "innerpadtopscaled":
+                  setInnerPadTopScaled(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "ipad_r":
+               case "innerpadright":
+                  setInnerPadRight(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "innerpadrightscaled":
+                  setInnerPadRightScaled(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "innerpadbottom":
+                  setInnerPadBottom(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "ipad_b":
+               case "innerpadbottomscaled":
+                  setInnerPadBottomScaled(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "innerpadleft":
+                  setInnerPadLeft(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "ipad_l":
+               case "innerpadleftscaled":
+                  setInnerPadLeftScaled(atval);
+                  b_xfm_ipad = true;
+                  break;
+
+               case "captionoffsety":
+                  if(!AllowXFMAttribDPI(atval))
+                     break;
+                  setCaptionOffsetY(int(atval));
+                  break;
+
+               case "abbrev":
+                  setEnableAbbreviation(int(atval));
+                  break;
+
+               case "spacekey":
+                  b_no_space_key = (0 == int(atval));
+                  break;
+
+               case "clipcaption":
+                  b_clip_caption = int(atval);
+                  break;
+
+               case "rotate":
+                  setRotationByString(atval.toLower());
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+}

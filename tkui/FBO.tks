@@ -1,0 +1,416 @@
+// ----
+// ---- file   : FBO.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 23Apr2010
+// ---- changed: 24Apr2010, 26Nov2018, 27Nov2018, 21Jun2020, 28Jun2020, 25Sep2023, 26Sep2023
+// ----          29Mar2024, 16Jan2025, 10Sep2025, 11Sep2025, 12Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MFBO;
+
+namespace ui;
+
+
+class FBO {
+
+   define boolean USE_SHARPEN_FILTER = true;
+
+   define int SIZE_ALIGNMENT = 32;
+
+   public int color_tex;
+   protected int fb;
+   protected int depth_rb;
+
+   protected int msaa_fb;
+   protected int msaa_rb;
+   protected int msaa_depth_rb;
+
+   protected int size_x, size_y;
+   protected int avail_x, avail_y;
+
+   static int bytes_allocated = 0;
+
+   protected int supersample_factor;
+
+   // (note) FloatingLayer FBO color grading does not affect overlays (=> use post_fbo shader instead)
+   protected Shader *shader_color_grading;
+   protected Texture *tex_color_grading;  // ref or instance. null=don't use color grading
+
+   protected boolean b_filter;
+   protected Shader *shader_sharpen_filter;
+   protected Shader *shader_sharpen_filter_and_color_grading;
+
+
+   public method setEnableFilter(boolean _bEnable) {
+      b_filter = _bEnable;
+
+      if(Configuration.debugLevel > 1)
+         UI.Debug("FBO::setEnableFilter: b_filter="+b_filter+" UI.zoom_x="+UI.zoom_x+" int(UI.zoom_x)="+int(UI.zoom_x));
+
+      if(b_filter && USE_SHARPEN_FILTER && null == shader_sharpen_filter)
+      {
+         shader_sharpen_filter <= UI.GetShader(Shader_SharpenFilter);
+         shader_sharpen_filter_and_color_grading <= UI.GetShader(Shader_SharpenFilterAndColorGrading);
+      }
+   }
+
+   public method autoEnableFilter() {
+      setEnableFilter(int(UI.zoom_x) != UI.zoom_x ||
+                      int(UI.zoom_y) != UI.zoom_y ||
+                      (supersample_factor > 1)
+                      );
+   }
+
+   public method create(int _w, int _h, int _supersampleFactor) : boolean {
+      supersample_factor = mathClampi(_supersampleFactor, 1, 4);
+
+      Viewport.pushGLContext();
+
+      avail_x = ((_w+SIZE_ALIGNMENT-1) / SIZE_ALIGNMENT) * SIZE_ALIGNMENT;
+      avail_y = ((_h+SIZE_ALIGNMENT-1) / SIZE_ALIGNMENT) * SIZE_ALIGNMENT;
+
+      size_x = _w;
+      size_y = _h;
+
+      bytes_allocated += (1 + mathMini(1, UI.multisample_samples)) * 4 * avail_x * avail_y * (supersample_factor*supersample_factor);
+
+      // Create RGBA8 2D texture
+      //  (todo) support 30bit color (GL_RGB10_A2)
+      color_tex = zglGenTexture();
+      glBindTexture(GL_TEXTURE_2D, color_tex);
+
+      if(supersample_factor > 1)
+         b_filter = true;
+
+      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
+                   avail_x*supersample_factor, avail_y*supersample_factor,
+                   0, GL_BGRA, GL_UNSIGNED_BYTE, null
+                   );
+
+      // Create framebuffer and attach texture (renderbuffer) to it
+      fb = zglGenFramebuffer();
+      glBindFramebuffer(GL_FRAMEBUFFER, fb);
+      glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, color_tex, 0);
+
+      if(UI.b_fbo_depth_buffers)
+      {
+         // Create depth renderbuffer
+         depth_rb = zglGenRenderbuffer();
+         // trace "[dbg] ui::FBO::create: depth_rb="+depth_rb;
+         glBindRenderbuffer(GL_RENDERBUFFER, depth_rb);
+         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, avail_x*supersample_factor, avail_y*supersample_factor);
+         //Attach depth buffer to FBO
+         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depth_rb);
+      }
+
+      // trace "xxx UI::FBO::create: fb="+fb+" size=("+_w+";"+_h+")";
+
+      // Does the GPU support current FBO configuration?
+      boolean r;
+      int status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+      if(GL_FRAMEBUFFER_COMPLETE == status)
+      {
+         if(Configuration.debugLevel > 1)
+            trace "[dbg] GL_FRAMEBUFFER_COMPLETE (OK). FBO vidmem="+(bytes_allocated/1024.0)+" KBytes.";
+
+         if(UI.multisample_samples > 1)
+         {
+            msaa_fb = zglGenFramebuffer();
+            glBindFramebuffer(GL_FRAMEBUFFER, msaa_fb);
+
+            msaa_rb = zglGenRenderbuffer();
+            glBindRenderbuffer(GL_RENDERBUFFER, msaa_rb);
+            glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_RGBA8, avail_x*supersample_factor, avail_y*supersample_factor);
+            glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, msaa_rb);
+            glBindRenderbuffer(GL_RENDERBUFFER, 0);
+
+            if(UI.b_fbo_depth_buffers)
+            {
+               msaa_depth_rb = zglGenRenderbuffer();
+               glBindRenderbuffer(GL_RENDERBUFFER, msaa_depth_rb);
+               glRenderbufferStorageMultisample(GL_RENDERBUFFER, 4, GL_DEPTH_COMPONENT24, avail_x*supersample_factor, avail_y*supersample_factor);
+               glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,  GL_RENDERBUFFER, msaa_depth_rb);
+               glBindRenderbuffer(GL_RENDERBUFFER, 0);
+            }
+
+            status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+            r = (GL_FRAMEBUFFER_COMPLETE == status);
+            if(!r)
+            {
+               trace "[---] FBO::create: msaa_fb is NOT framebuffer-complete. status="+status+" glError="+glGetError();
+               // Delete msaa renderbuffers and framebuffers
+               glBindFramebuffer(GL_FRAMEBUFFER, 0);
+               zglDeleteRenderbuffer(msaa_rb);
+               msaa_rb = 0;
+               if(0 != msaa_depth_rb)
+               {
+                  zglDeleteRenderbuffer(msaa_depth_rb);
+                  msaa_depth_rb = 0;
+               }
+               zglDeleteFramebuffer(msaa_fb);
+               msaa_fb = 0;
+            }
+         }
+
+         // Re-bind backbuffer
+         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+         // Set default color grading
+         tex_color_grading <= UI.tex_default_fbo_color_grading;
+      }
+      else
+      {
+         trace "[---] glCheckFramebufferStatus returned error code "+status;
+         r = false;
+      }
+
+      Viewport.popGLContext();
+
+      return r;
+   }
+
+   public method resize(int _w, int _h) {
+      if( _w != size_x || _h != size_y )
+      {
+         if( _w > avail_x || _h > avail_y )
+         {
+            destroy();
+            return create(_w, _h, supersample_factor);
+         }
+         else
+         {
+            size_x = _w;
+            size_y = _h;
+         }
+      }
+   }
+
+   public method setColorGradingTexture(Texture _tex) {
+      if(null != _tex)
+      {
+         tex_color_grading <= deref _tex;
+         shader_color_grading <= UI.GetShader(Shader_ColorGrading);
+      }
+      else
+      {
+         tex_color_grading <= null;
+         shader_color_grading <= null;
+      }
+   }
+
+   public method destroy() {
+
+      Viewport.pushGLContext();
+
+      // Delete resources
+      zglDeleteTexture(color_tex);
+      color_tex = 0;
+
+      // Bind 0, which means render to back buffer, as a result, fb is unbound
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+      // Delete z-buffer
+      if(0 != depth_rb)
+      {
+         zglDeleteRenderbuffer(depth_rb);
+         depth_rb = 0;
+      }
+
+      // Delete framebuffer
+      zglDeleteFramebuffer(fb);
+      fb = 0;
+
+      // Delete MSAA color-buffer
+      if(0 != msaa_rb)
+      {
+         zglDeleteRenderbuffer(msaa_rb);
+         msaa_rb = 0;
+      }
+
+      // Delete MSAA z-buffer
+      if(0 != msaa_depth_rb)
+      {
+         zglDeleteRenderbuffer(msaa_depth_rb);
+         msaa_depth_rb = 0;
+      }
+
+      // Delete MSAA framebuffer
+      if(0 != msaa_fb)
+      {
+         zglDeleteFramebuffer(msaa_fb);
+         msaa_fb = 0;
+      }
+
+      // Unset / destroy color grading texture (if any)
+      if(null != tex_color_grading)
+         tex_color_grading <= null;
+
+      destroyContextLost();
+
+      Viewport.popGLContext();
+   }
+
+   public method destroyContextLost() {
+      // called when FBO is destroyed or when FloatingLayer FBO is resized (onOpen())
+      bytes_allocated -= (1 + mathMini(1, UI.multisample_samples)) * 4 * avail_x * avail_y * (supersample_factor*supersample_factor);
+
+      if(Configuration.debugLevel > 1)
+         trace "[dbg] FBO::destroy: FBO vidmem="+(bytes_allocated/1024.0)+" KBytes.";
+
+      if(null != tex_color_grading)
+         tex_color_grading.unload();  // deletes texture object (bind() will create a new one)
+   }
+
+   public method beginPaint() {
+      // trace "[dbg] FBO::beginPaint: size=("+size_x+"; "+size_y+") fb="+fb;
+
+      // trace "xxx FBO::beginPaint: fb="+fb+" isFramebuffer="+glIsFramebuffer(fb);
+
+      UI.current_fbo <= this;
+
+      if(0 != msaa_fb)
+         glBindFramebuffer(GL_FRAMEBUFFER, msaa_fb);
+      else
+         glBindFramebuffer(GL_FRAMEBUFFER, fb);
+
+      sdvg_SetFramebufferSize(size_x*supersample_factor, size_y*supersample_factor);
+      UIRenderer.SetViewport(0, 0, size_x*supersample_factor, size_y*supersample_factor);
+      sdvg_SetScissor(0, 0, size_x*supersample_factor, size_y*supersample_factor);
+      sdvg_DisableScissor();
+      UIRenderer.ProjInit2D(size_x, size_y);
+
+      UI.buffer_width  = size_x;
+      UI.buffer_height = size_y;
+   }
+
+   public method endPaint() {
+
+      //trace "[dbg] FBO::endPaint";
+      // Bind 0, which means render to back buffer
+      glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+      UI.buffer_width  = UI.viewport_width;
+      UI.buffer_height = UI.viewport_height;
+
+      sdvg_SetFramebufferSize(UI.buffer_width*UI.zoom_x, UI.buffer_height * UI.zoom_y);
+      UIRenderer.SetViewport(0, 0, UI.buffer_width*UI.zoom_x, UI.buffer_height * UI.zoom_y);
+      sdvg_SetScissor(0, 0, UI.buffer_width*UI.zoom_x, UI.buffer_height * UI.zoom_y);
+   }
+
+   public method composite(int _px, int _py, int _qx, int _qy, int _w, int _h) {
+      // trace "[dbg] FBO::composite: p=("+_px+"; "+_py+") q=("+_qx+"; "+_qy+") s=("+_w+"; "+_h+") tex="+color_tex+" supersample_factor="+supersample_factor+" b_filter="+b_filter;
+      if(0 != msaa_fb)
+      {
+         // Resolve MSAA framebuffer to non-MSAA framebuffer (texture)
+         glBindFramebuffer(GL_READ_FRAMEBUFFER, msaa_fb);
+         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fb);
+         glBlitFramebuffer(0, 0, avail_x * supersample_factor, avail_y * supersample_factor,
+                           0, 0, avail_x * supersample_factor, avail_y * supersample_factor,
+                           GL_COLOR_BUFFER_BIT, GL_NEAREST
+                           );
+         // Re-bind backbuffer
+         glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+      }
+
+      UIRenderer.SetColorARGB(#ffffffff);
+      glActiveTexture(GL_TEXTURE0);
+      glBindTexture(GL_TEXTURE_2D, color_tex);
+
+      if(b_filter)
+      {
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      }
+      else
+      {
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      }
+
+      boolean bFilter =
+         // (0 != UI.GetKeyMod()) &&
+         (b_filter && USE_SHARPEN_FILTER)
+         ;
+
+      Shader shader <= null;
+
+      if(null != tex_color_grading)
+      {
+         if(bFilter)
+         {
+             // trace "xxx FBO::composite: sharpen filter and color grading";
+            shader <= shader_sharpen_filter_and_color_grading;
+         }
+         else
+         {
+            shader <= shader_color_grading;
+         }
+
+         // trace "xxx FBO::composite: color grading tex s=("+tex_color_grading.sx+";"+tex_color_grading.sy+")";
+
+         glActiveTexture(GL_TEXTURE1);
+         tex_color_grading.bind();
+         // // tex_color_grading.saveImage("t.png");
+         glActiveTexture(GL_TEXTURE0);
+      }
+      else if(bFilter)
+      {
+         // trace "xxx FBO::composite: sharpen filter";
+         shader <= shader_sharpen_filter;
+      }
+
+      // trace "xxx shader="+#(shader);
+
+      if(null != shader)
+      {
+         shader.bind();
+
+         // sharpen
+         shader.setUniformByName2f("u_tex_size", avail_x, avail_y);
+         shader.setUniformByName2f("u_ob_tex_size", 1.0f / avail_x, 1.0f / avail_y);
+      }
+
+      if(null != tex_color_grading)
+         shader.setUniformByName1f("u_amount", UI.post_fbo_color_grading_amount);
+
+      // Note: flip texture on y-axis since it was created with (0;0) as the top/left corner
+      float ul = (_qx                   / float(avail_x));
+      float vt = ((size_y - _qy)        / float(avail_y));
+      float ur = ((_qx + _w)            / float(avail_x));
+      float vb = ((size_y - (_qy + _h)) / float(avail_y));
+      // trace "xxx FBO::composite: ul="+ul+" vt="+vt+" ur="+ur+" vb="+vb;
+
+      if(UIRenderer.BeginTexturedTriangleFanEx(4, (null == shader)/*bBuiltinShader*/))
+      {
+         UIRenderer.TexCoord2f (ul, vt);
+         UIRenderer.Vertex2f   (_px, _py);
+
+         UIRenderer.TexCoord2f (ur, vt);
+         UIRenderer.Vertex2f   (_px+_w, _py);
+
+         UIRenderer.TexCoord2f (ur, vb);
+         UIRenderer.Vertex2f   (_px+_w, _py+_h);
+
+         UIRenderer.TexCoord2f (ul, vb);
+         UIRenderer.Vertex2f   (_px, _py+_h);
+
+         UIRenderer.End();
+      }
+
+      if(null != shader)
+         shader.unbind();
+   }
+
+   public method getGLFramebufferId() : int {
+      return fb;
+   }
+}

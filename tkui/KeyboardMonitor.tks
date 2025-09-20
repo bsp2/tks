@@ -1,0 +1,234 @@
+// ----
+// ---- file   : KeyboardMonitor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 22May2017
+// ---- changed: 06Dec2018, 06Oct2023, 10Sep2025
+// ----
+// ----
+// ----
+
+module MKeyboardMonitor;
+
+namespace ui;
+
+
+// <class.png>
+class KeyboardMonitorEntry {
+   String modifier;  // e.g. "lctrl - lshift"
+   String key;
+   int ms;
+   boolean b_force_add_next;
+   boolean b_triad;
+
+   public static GetCodeName(Key _k) {
+      if(VKEY_SPACE == _k.code)
+         return "space";
+      else if('<' == _k.code)
+         return "\\";
+      else
+         return _k.codeName;
+   }
+
+   public method addKey(Key _k) {
+      Key k = _k;
+
+      if(UI.b_triad_key_mode)
+      {
+         k.mod = k.mod & ~VMOD_LCTRL;
+         b_triad = true;
+      }
+      else
+      {
+         b_triad = false;
+      }
+      modifier = k.modName;
+
+      b_force_add_next |= (VMOD_LCTRL == _k.mod) && ('x' == _k.code);
+
+      key.append(GetCodeName(k));
+      key.append(" ");
+
+      // trace "xxx modifier=\""+modifier+"\" key=\""+key+"\"";
+   }
+}
+
+
+// <class.png>
+class KeyboardMonitor extends Layer {
+   define int MAX_ENTRIES = 5;
+   define int ENTRY_TIMEOUT = 600;
+
+   static IntArray fadeout_times = [3100, 2600, 1900, 1600, 1300];
+
+   static int current_mod;
+
+   int last_ms;
+
+   KeyboardMonitorEntry *entry;
+   PointerArray entries;
+   Font *font;
+   
+   public method initKeyboardMonitor() {
+      initLayer();
+   }
+
+   public method updateGeometry() {
+      float sx = (260 - 8)*UI.font_scaling;
+      float sy = 80*UI.font_scaling;
+      setSize2f(sx, sy);
+      setPosition2f(UI.viewport_width - size_x - (8 + 24)*UI.font_scaling,
+                    UI.viewport_height - size_y - 64*UI.font_scaling
+                    );
+   }
+
+   public method addKey(Key _k) {
+
+      if(_k.pressed)
+      {
+         if(![VKEY_LCTRL, VKEY_LSHIFT, VKEY_LALT].contains(_k.code))
+         {
+            boolean bAddEntry = (null == entry);
+            boolean bForceAddNext = false;
+
+            if(null != entry)
+            {
+               bAddEntry |= entry.b_force_add_next;
+               bAddEntry |= (milliSeconds() - entry.ms) > ENTRY_TIMEOUT;
+               // trace "xxx (entry.key.length)="+(entry.key.length);
+               bAddEntry |= (((entry.key.length) + (KeyboardMonitorEntry.GetCodeName(_k).length)) >= 20);
+            }
+
+            bForceAddNext = [VKEY_RCTRL, VKEY_RSHIFT, VKEY_TAB, VKEY_ESCAPE, VKEY_RETURN, VKEY_SPACE].contains(_k.code);
+            bAddEntry |= bForceAddNext;
+
+            bAddEntry |= (_k.mod != current_mod);
+         
+            if(bAddEntry)
+            {
+               entry <= new KeyboardMonitorEntry;
+               entries.add(#(deref entry));
+
+               if(entries.numElements > MAX_ENTRIES)
+               {
+                  entries.delete(0);
+               }
+
+               entry.ms = milliSeconds();
+               entry.b_force_add_next = bForceAddNext;
+            }
+
+            entry.addKey(_k);
+
+            current_mod = _k.mod;
+
+            UI.CompositeAll();
+
+            last_ms = milliSeconds();
+         }
+      }
+   }
+
+   static float dt;
+   static C32A(int c32) {
+      float c = (dt > 0.3) ? 1.0 : (dt / 0.3);
+      return (c32&0xFFFFFF) | ((((c32>>24)&255) * c) << 24);
+   }
+   static C32B(int c32) {
+      float c = (dt > 0.8) ? 1.0 : (dt / 0.8);
+      return (c32&0xFFFFFF) | ((((c32>>24)&255) * c) << 24);
+   }
+
+   public virtual onDrawOverlays() {
+
+      if(entries.numElements > 0)
+      {
+         // // zglInit2D(UI.viewport_width, UI.viewport_height);
+         // // glLoadIdentity();
+         // // glTranslatef(position_x, position_y, 0);
+         UIRenderer.ProjInit2D(UI.viewport_width, UI.viewport_height);
+         UIRenderer.ModelInitIdentity();
+         UIRenderer.ModelTranslate2f(position_x, position_y);
+
+         if(null == font)
+         {
+            // font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+            font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_FIXED);
+         }
+
+         float cy = size_y - 16*UI.font_scaling;
+         int idx = entries.numElements - 1;
+         int drawCount = 0;
+         boolean bAnyDrawn = false;
+
+         while(idx >= 0)
+         {
+            KeyboardMonitorEntry e <= entries.get(idx);
+
+            dt = float(milliSeconds() - e.ms) / fadeout_times.get(drawCount);
+            dt = mathClampf(1.0 - dt, 0.0, 1.0);
+
+            if(0 == drawCount)
+               dt *= 4;
+            else if(1 == drawCount)
+               dt *= 2;
+
+            UIRenderer.EnableBlending();
+            UIRenderer.DrawFilledRectangle(0, cy, size_x, 16*UI.font_scaling, C32B(lnf_colors.get(LookAndFeel.COLOR_KEYBOARDMON_BG)));
+            // // dt*=4;
+            // // UIRenderer.DrawFilledRectangle(0, size_y-16, size_x, 16, C32B(#b0000000));
+            // // dt/=4;
+            // // UIRenderer.DrawRectangle(0, 0, size_x, size_y, 1, C32B(#70cccccc));
+            UIRenderer.DisableBlending();
+
+            String modStr;
+            if(e.b_triad)
+               modStr <= "lctrl-x "+e.modifier;
+            else
+               modStr <= e.modifier;
+
+            UIRenderer.DrawText(modStr, font,
+                                C32A(lnf_colors.get(LookAndFeel.COLOR_KEYBOARDMON_MODIFIER_TEXT)),  // fg
+                                C32A(lnf_colors.get(LookAndFeel.COLOR_ACCEL_UL_FG)),
+                                108*UI.font_scaling - font.stringWidth(modStr), cy,
+                                0/*availW*/, 0/*align*/
+                                );
+
+            UIRenderer.DrawText(e.key, font,
+                                C32A(lnf_colors.get(LookAndFeel.COLOR_KEYBOARDMON_KEY_TEXT)),
+                                C32A(lnf_colors.get(LookAndFeel.COLOR_ACCEL_UL_FG)),
+                                108*UI.font_scaling, cy,
+                                0/*availW*/, 0/*align*/
+                                );
+
+            bAnyDrawn |= (dt > 0.005);
+
+            idx--;
+            cy -= 16*UI.font_scaling;
+
+            if(0 == drawCount)
+               dt /= 4;
+            else if(1 == drawCount)
+               dt /= 2;
+
+            drawCount++;
+
+            // // dt *= 0.6;
+         }
+
+         UI.CompositeAll();
+
+         if(!bAnyDrawn)
+         {
+            entries.free();
+            entry <= null;
+         }
+      }
+
+   }
+}

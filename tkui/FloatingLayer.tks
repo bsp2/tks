@@ -1,0 +1,618 @@
+// ----
+// ---- file   : FloatingLayer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 29Apr2007
+// ---- changed: 06May2007, 15May2007, 06Nov2007, 28Jun2009, 23Apr2010, 09Jun2010, 09Jan2012
+// ----          13May2012, 07May2013, 26May2013, 31May2013, 08Mar2014, 15Aug2014, 20Aug2014
+// ----          22Aug2014, 12Sep2014, 27Sep2014, 06Nov2015, 12Feb2017, 05Jun2017, 15Feb2018
+// ----          21Jul2018, 13Nov2018, 17Nov2018, 10Jan2019, 24Oct2019, 27Dec2020, 17Jul2021
+// ----          27Oct2023, 10Nov2023, 19Nov2023, 23Feb2024, 19Mar2024, 23Mar2025, 21Jun2025
+// ----          11Sep2025
+// ----
+// ----
+// ----
+
+module MFloatingLayer;
+
+namespace ui;
+
+
+class FloatingLayer extends TransparentPanel {
+   explain "Base class for all window-like layers that floating on top of the root child layers.
+ In contrary to Window instances, floating layers cannot be resized and they do not have any default decoration.";
+
+   define int RELATIVE_OFFSET_X = 10;
+   define int RELATIVE_OFFSET_Y = 10;
+
+   define int TOOLTIP_OFFSET_Y = 24;
+
+   define int TOOLTIP_TOUCH_OFFSET_X = 24; // touch_mode
+   define int TOOLTIP_TOUCH_OFFSET_Y = -12; // touch_mode
+
+   public FBO *fbo;
+
+   protected boolean b_floating_layer_visible;
+   protected boolean b_layer_postinit_done;
+   protected boolean b_fl_no_fbo_destroy; // true=don't destroy FBO when layer is hidden
+   protected boolean b_opaque;  // true=force disable transparency (used for ModGrid popupmenu)
+   protected boolean b_was_shown;
+
+
+   public method initFloatingLayer() {
+      initLayer();
+   }
+
+   public method isResizable() : boolean {
+      explain "Query whether layer is resizable";
+      return false;
+   }
+
+   public method isMovable() : boolean {
+      explain "Query whether screen position of floating layer may change.";
+      return false;
+   }
+
+   public method isActive() : boolean {
+      return @(this) == @(UI.active_floatinglayer);
+   }
+
+   public method flWantInitialFocus() : boolean {
+      return true;
+   }
+
+   public method setEnableOpaque(boolean _bEnable) {
+      b_opaque = _bEnable;
+   }
+
+   public method moveToClippedPosition2f(float x, float y) {
+      // Clip to right/bottom screen edge
+      if( (x+size_x) > UI.viewport_width)
+         x = UI.viewport_width - size_x;
+
+      if(x < 0)
+         x = 0;
+
+      if( (y+size_y) > UI.viewport_height)
+         y = UI.viewport_height - size_y - 4;
+
+      if(y < 0)
+         y = 0;
+
+      moveToPosition2f(x, y);
+   }
+
+   public method validateClippedPosition() {
+      moveToClippedPosition2f(getPositionX(), getPositionY());
+   }
+
+   public virtual restorePositionIfValid(Point2f _pos) : boolean {
+      trace "[dbg] FloatingLayer::restorePositionIfValid: this="+#(this)+" pos="+_pos;
+      if(Layer::restorePositionIfValid(_pos))
+      {
+         moveToClippedPosition2f(position_x, position_y);
+         invalidateAbsolutePositions();
+      }
+      return false;
+   }
+
+   public virtual restoreGeometryIfValid(Geometry4f _geo) : boolean {
+      trace "[dbg] FloatingLayer::restoreGeometryIfValid: this="+#(this)+" geo="+_geo;
+      if(Layer::restoreGeometryIfValid(_geo))
+      {
+         moveToClippedPosition2f(position_x, position_y);
+
+         handleResize();
+         invalidateAbsolutePositions();
+      }
+      return false;
+   }
+
+   public method handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer):boolean {
+      explain "Called if the user moves the mouse over another layer that is not a child of this layer.
+This is used e.g. for to close popup sub menus. Must return true if the mouseevent should not be processed any further.";
+      return false;
+   }
+
+   public method showNearLayerOffset(Layer _layer, int _offx, int _offy) {
+      explain "Show layer relative to given layer";
+
+      if(_layer instanceof Layer)
+      {
+         local Point2f p;
+         _layer.calcAbsolutePosition(p);
+         showAtXY(p.x + _offx, p.y + _offy);
+      }
+   }
+
+   public method showCenteredWithinTopOfLayer(Layer _layer) {
+      if(_layer instanceof Layer)
+      {
+         float wLayer = _layer.getSizeX();
+         float wThis = getSizeX();
+         local Point2f p;
+         _layer.calcAbsolutePosition(p);
+         showAtXY(p.x + (wLayer - wThis) * 0.5, p.y);
+      }
+   }
+
+   public method showCenteredWithinTopOfLayerNearMouseX(Layer _layer, float _offX) {
+      if(_layer instanceof Layer)
+      {
+         float x = UI.GetMouseX() + _offX;
+         float wThis = getSizeX();
+         Point2f p;
+         _layer.calcAbsolutePosition(p);
+         showAtXY(x - wThis*0.5, p.y);
+      }
+   }
+
+   public method showCenteredWithinLayer(Layer _layer) {
+      if(_layer instanceof Layer)
+      {
+         float wLayer = _layer.getSizeX();
+         float hLayer = _layer.getSizeY();
+         float wThis = getSizeX();
+         float hThis = getSizeY();
+         local Point2f p;
+         _layer.calcAbsolutePosition(p);
+         showAtXY(p.x + (wLayer - wThis) * 0.5,
+                  p.y + (hLayer - hThis) * 0.5
+                  );
+      }
+   }
+
+   public method showNearLayer(Layer _layer) {
+      explain "Show layer relative to given layer";
+
+      showNearLayerOffset(_layer, RELATIVE_OFFSET_X, RELATIVE_OFFSET_Y);
+   }
+
+   public method showNearComboBox(Layer _layer) {
+      explain "Show layer below given layer. If it does not fit, show above the given layer.";
+
+      if(_layer instanceof Layer)
+      {
+         preShow();
+
+         Point2f p;
+         _layer.calcAbsolutePosition(p);
+
+         // // trace "xxx FloatingLayer::showNearComboBox: _layer="+#(_layer)+" absPos="+p.getString();
+
+         int y = p.y + _layer.getSizeY();
+         if( (y+getSizeY()) > UI.viewport_height)
+            y = p.y - getSizeY();
+
+         showAtXY2(p.x,  y);
+      }
+   }
+
+   public method showBelowLayer(Layer _layer) {
+      explain "Show layer below the given layer";
+
+      if(_layer instanceof Layer)
+      {
+         Point2f p;
+         _layer.calcAbsolutePosition(p);
+         showAtXY(p.x, p.y + _layer.getSizeY());
+      }
+   }
+
+   public method showAboveLayer(Layer _layer) {
+      explain "Show layer above the given layer";
+
+      if(_layer instanceof Layer)
+      {
+         Point2f p;
+         _layer.calcAbsolutePosition(p);
+         showAtXY(p.x, p.y - getSizeY());
+      }
+   }
+
+   public method showNearMouse(float _dx, float _dy) {
+
+      preShow();
+
+      float x = UI.GetMouseX() + _dx;
+      float y = UI.GetMouseY() + _dy;
+
+      // // trace "xxx FloatingLayer::showNearMouse: x="+x+" y="+y+" Mouse.x="+Mouse.x+" Mouse.y="+Mouse.y;
+
+      moveToClippedPosition2f(x, y);
+      makeFloatingLayerVisible();
+   }
+
+   public method showToolTipNearLayer(Layer _layer, boolean _bWantNearMouse) {
+      explain "Show tooltip-style floating layer relative to given layer";
+
+      // // trace "xxx FloatingLayer::showToolTipNearLayer layer="+#(_layer);
+
+      if(_layer instanceof Layer)
+      {
+         float x, y;
+         Point2f p;
+         _layer.calcAbsolutePosition(p);
+
+         preShow();
+
+         y = p.y + TOOLTIP_OFFSET_Y;
+
+         if(!UI.b_touch_mode && _bWantNearMouse)
+         {
+            x = UI.GetMouseX();
+         }
+         else
+         {
+            x = p.x + TOOLTIP_TOUCH_OFFSET_X;
+            int ttSy = _layer.getSizeY();
+            int ny = y + int(ttSy * 0.75) + TOOLTIP_TOUCH_OFFSET_Y;
+
+            if( (ny + ttSy) > UI.viewport_height)
+            {
+               // Will be clipped, move out of the way
+               y = y - int(getSizeY()) + 0.5*TOOLTIP_TOUCH_OFFSET_Y - TOOLTIP_OFFSET_Y;
+            }
+            else
+            {
+               y = ny;
+            }
+         }
+
+         // Clip to right/bottom screen edge
+         moveToClippedPosition2f(x, y);
+
+         y = position_y;
+
+         // Occludes _layer ?
+         if( (y <= p.y) && ((y + getSizeY()) >= (p.y+_layer.getSizeY()) ) )
+         {
+            // Occludes layer, move out of the way
+            if( (p.y + _layer.getSizeY() + getSizeY()) <= UI.viewport_height)
+            {
+               // Show below layer
+               y = p.y + _layer.getSizeY();
+               moveToClippedPosition2f(x, y);
+            }
+            else
+            {
+               // Show above layer
+               y = p.y - getSizeY();
+               moveToClippedPosition2f(x, y);
+            }
+         }
+
+         makeFloatingLayerVisible();
+      }
+   }
+
+   public method showToolTipNearWindowCorner(Layer _layer) {
+      int mx = Mouse.x;
+      int my = Mouse.y;
+
+      float px;
+      float py;
+
+      float borderX = 8;
+      float borderY = 8;
+
+      Point2f p;
+      Rectangle2f layerRect;
+      _layer.calcAbsolutePosition(p);
+      layerRect.init(p.x, p.y, p.x + _layer.getSizeX(), p.y + _layer.getSizeY());
+
+      // Prefer bottom-left corner
+      Rectangle2f toolTipRect;
+      toolTipRect.init(borderX,
+                       UI.viewport_height - getSizeY() - borderY,
+                       borderX + getSizeX(),
+                       UI.viewport_height - getSizeY() - borderY + getSizeY()
+                       );
+
+      if(layerRect.rectangleIntersectionTest(toolTipRect))
+      {
+         // Move to bottom right corner
+         px = UI.viewport_width - getSizeX() - borderX;
+      }
+      else
+      {
+         px = borderX;
+      }
+
+      py = UI.viewport_height - getSizeY() - borderY;
+
+      showAtXY(px, py);
+   }
+
+   public method showRightBesideLayer(Layer _layer, float _offx, _offy) {
+      explain "Show layer right beside the given layer";
+
+      preShow();  // layout
+
+      if(_layer instanceof Layer)
+      {
+         Point2f p;
+         _layer.calcAbsolutePosition(p);
+
+         // // trace "xxx showRightBesideLayer: p.x="+p.x+" offX="+_offx+" sizeX="+getSizeX()+" vpw="+Viewport.width;
+
+         if( ((p.x + _layer.getSizeX() + _offx) + getSizeX()) > UI.viewport_width )
+         {
+            // Show on the left side
+            showAtXY2(p.x - getSizeX() - _offx, p.y + _offy);
+         }
+         else
+         {
+            // Show on the right side
+            showAtXY2(p.x + _layer.getSizeX() + _offx, p.y + _offy);
+         }
+      }
+   }
+
+   protected method showAtXY2(float x, y) {
+      // // trace "xxx showAtXY2: p=("+x+";"+y+")";
+
+      moveToClippedPosition2f(x, y);
+      makeFloatingLayerVisible();
+   }
+
+   public method showAtXY(float x, y) {
+      explain "Show layer at given coordinates";
+
+      preShow();
+
+      showAtXY2(x, y);
+   }
+
+   public method showCentered() {
+      explain "Show layer at the center of the screen";
+
+      preShow();
+
+      // // trace "xxx FloatingLayer::showCentered: size_x="+size_x+" size_y="+size_y;
+      float x = (UI.viewport_width - size_x) * 0.5;
+      float y = (UI.viewport_height - size_y) * 0.5;
+      moveToClippedPosition2f(x, y);
+      makeFloatingLayerVisible();
+   }
+
+   public method showCenteredFirst() {
+      if(b_was_shown)
+         show();
+      else
+         showCentered();
+   }
+
+   protected method preShow() {
+      explain "Perform actions immediately before showing the layer (e.g. layout children)";
+
+      // // trace "xxx FloatingLayer::preshow: this="+#(this)+" first_child="+#(first_child);
+      b_was_shown = true;
+   }
+
+   protected method postShow() {
+      explain "Perform actions immediately after making the layer visible (e.g. set default focus)";
+
+      recursiveOnLookAndFeelChanged();
+
+      if(UI.b_fbo)
+      {
+         if(null == fbo)
+         {
+            // // trace "xxx FloatingLayer: fbo.create("+size_x+", "+size_y+")";
+            fbo <= new FBO;
+            fbo.autoEnableFilter();
+            fbo.create(size_x, size_y, UI.supersample_factor);
+         }
+         else
+         {
+            fbo.resize(size_x, size_y);
+         }
+      }
+
+      redraw();
+   }
+
+   protected method makeFloatingLayerVisible() {
+      explain "Make layer visible. Assumes that preShow() has already been called.";
+
+      UI.AddFloatingLayer(this);
+      UI.ActivateFloatingLayer(this);
+
+      if(flWantInitialFocus())
+      {
+         // // trace "xxx makeFloatingLayerVisible: set focus to "+#(this);
+         UI.SetMouseFocus(this);
+         UI.SetKeyboardFocus(this);
+      }
+
+      b_floating_layer_visible = true;
+
+      // // trace "xxx FloatingLayer::makeFloatingLayerVisible: this="+#(this)+" fbo="+#(fbo);
+
+      postShow();
+   }
+
+   public method show() {
+      explain "Show layer at current position. Calls preShow() to run any additional initializations.";
+
+      preShow();
+      makeFloatingLayerVisible();
+   }
+
+   public method hide() {
+      explain "Make layer invisible. Overwrites Layer::hide().";
+
+      // // trace "xxx FloatingLayer::hide: this="+#(this)+" first_child="+#(first_child);
+
+      UI.LoseKeyboardFocusIfWithin(this, true);
+      UI.LoseMouseFocusIfWithin(this);
+      UI.RemoveFloatingLayer(this);
+      b_floating_layer_visible = false;
+
+      if(UI.b_fbo)
+      {
+         // // if(!b_fl_no_fbo_destroy)   // (note) Arturia VST plugin UI related workaround: always destroy/create FBO
+         // // {
+            if(null != fbo)
+            {
+               // // trace "xxx FloatingLayer: fbo.destroy()";
+               fbo.destroy();
+               fbo <= null;
+            }
+         // // }
+      }
+   }
+
+   public method hideByMouseClick() {
+      explain "Called when the layer is a popup-style dialog and the click occured outside of this layer.\n\nDialogs derived from this class can implement this method to provide a CANCEL action before calling hide()";
+      hide();
+   }
+
+   public virtual onOpen() {
+      trace "[dbg] FloatingLayer::onOpen";
+      if(null != fbo)
+      {
+         fbo.destroyContextLost();
+         fbo.autoEnableFilter();
+         fbo.create(size_x, size_y, UI.supersample_factor);
+      }
+   }
+
+   public method beginPaint() {
+      // trace "[dbg] FloatingLayer::beginPaint";
+      if(UI.b_fbo)
+      {
+         if(null == fbo)
+         {
+            fbo <= new FBO;
+            fbo.autoEnableFilter();
+            fbo.create(size_x, size_y, UI.supersample_factor);
+         }
+         fbo.beginPaint();
+      }
+   }
+
+   public method endPaint() {
+      // trace "[dbg] FloatingLayer::endPaint";
+      if(UI.b_fbo)
+      {
+         fbo.endPaint();
+      }
+   }
+
+   public method isFloatingLayerVisible() : boolean {
+      return b_floating_layer_visible;
+   }
+
+   public virtual resizeToMinimum() {
+      explain "Resize layer to match minimum size of child layers";
+
+      // (todo) this version does not work with sizeGroup members that expand/use layout weights
+      // (todo) adapt resizeToMinimum code from Window user-resize
+
+      handleResize();
+
+      float minSizeX = getMinimumSizePadX() + 4;
+      float minSizeY = getMinimumSizePadY();
+      setSize2f(minSizeX, minSizeY);
+
+      handleResize();
+   }
+
+   public method resizeAtLeastToMinimumForce(boolean _bForceX, boolean _bForceY) : boolean {
+      explain "Resize layer if it is smaller than the minimum size. Force minSize x and/or y.";
+
+      handleResize();
+
+      float minSizeX = getMinimumSizePadX() + 4;
+      float minSizeY = getMinimumSizePadY();
+
+      // // trace "xxx fl minSizeY="+minSizeY;
+
+      if( (_bForceX || (size_x < minSizeX)) || (_bForceY || (size_y < minSizeY)) )
+      {
+         setSize2f( (_bForceX || (size_x < minSizeX)) ? minSizeX : size_x,
+                    (_bForceY || (size_y < minSizeY)) ? minSizeY : size_y
+                    );
+         handleResize();
+         return true;
+      }
+
+      return false;
+   }
+
+   public method resizeAtLeastToMinimum() : boolean {
+      explain "Resize layer if it is smaller than the minimum size";
+
+      return resizeAtLeastToMinimumForce(false, false);
+   }
+
+   public method resizeAtLeastTo(int _sx, _sy) {
+      explain "Resize layer if it is smaller than the given size";
+
+      handleResize();
+
+      if(size_x < _sx || size_y < _sy)
+      {
+         setSize2f(_sx, _sy);
+         handleResize();
+      }
+   }
+
+   public method handleResize() {
+      // trace "\n\nxxx ----------------------------------- handleResize ------------------";
+
+      // // recursiveInvalidateSizeGroupMemberSizes(); // xxx 04Jan2012
+      // // invalidateSizeCaches();
+
+      layoutHierarchy(true, false);
+
+      recursiveOnResize();
+      redraw();
+
+      if(null != fbo)
+         fbo.resize(size_x, size_y);
+   }
+
+   public method drawShadeModal() {
+      if(wantShadeModal())
+      {
+         UIRenderer.EnableBlending();
+         UIRenderer.DrawFilledRectangle(0, 0, UI.viewport_width, UI.viewport_height,
+                                        UI.IsDarkOrMono() ? #60000000 : #18000000
+                                        );
+         UIRenderer.DisableBlending();
+      }
+   }
+
+   public method composite() {
+
+      if(UI.b_shade_modal)
+      {
+         drawShadeModal();
+
+         if(UI.b_transparent_layers)
+            UIRenderer.EnableBlending();
+            ///glEnable(GL_BLEND);
+      }
+
+      if(b_opaque)
+         UIRenderer.DisableBlending();
+         ////glDisable(GL_BLEND);
+
+      fbo.composite(position_x, position_y,
+                    0, 0,
+                    size_x, size_y
+                    );
+
+      if(b_opaque && UI.b_transparent_layers)
+         UIRenderer.EnableBlending();
+         ///glEnable(GL_BLEND);
+   }
+}

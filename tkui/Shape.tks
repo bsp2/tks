@@ -1,0 +1,232 @@
+// ----
+// ---- file   : Shape.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 06Sep2022
+// ---- changed: xxSep2022, 29Mar2024, 30Mar2024, 31Mar2024, 01Apr2024, 03Apr2024, 04Apr2024
+// ----          30May2024, 21Feb2025, 10Sep2025, 11Sep2025, 14Sep2025
+// ----
+// ----
+// ----
+
+module MShape;
+
+namespace ui;
+
+
+abstract class Shape {
+
+   boolean b_debug;
+
+   protected int   c32_fg;
+   protected int   fg32_tint;
+   protected float alpha_mod;  // 0..1 [def=1]
+   protected int   highlight_tint;
+
+   protected FloatArray v_tri;  // triangle mesh vertices
+   protected int        vbo;
+   protected int        vbo_max;  // max components (2 per vertex)
+   protected boolean    b_update_vbo;
+
+   protected int        blend_mode;  // [def=UIRenderer.BLEND_SRCOVER]
+
+
+   public method initShape() {
+      c32_fg     = #ffd0d0d0;
+      blend_mode = UI.BLEND_SRCOVER;
+      alpha_mod  = 1.0f;
+
+      b_debug = (Configuration.debugLevel >= 3);
+   }
+
+   public method freeShape() {
+      if(0 != vbo)
+      {
+         sdvg_DestroyVBO(vbo);
+         vbo = 0;
+      }
+   }
+
+   public static Rotate2d(Vector2f v, float a) : Vector2f {
+      Vector2f r;
+      r.x = cos(a) * v.x - sin(a) * v.y;
+      r.y = sin(a) * v.x + cos(a) * v.y;
+      return r;
+   }
+
+   // // (note) superceded by Vector2f::intersect()
+   // public static Intersect(Vector2f v1s, Vector2f v1e,
+   //                         Vector2f v2s, Vector2f v2e,
+   //                         Vector2f vRet,
+   //                         boolean bExtrapolate
+   //                         ) : float {
+   //    // returns intersection point in 'vRet'
+   //    // returns normalized position on edge v2s<>v2e
+
+   //    // if(b_debug)
+   //    // {
+   //    //    float mx;
+   //    //    mx = (v1e.y - v1s.y) / (v1e.x - v1s.x);
+   //    //    trace "xxx intersect: v1s="+v1s+" v1e="+v1e+" mx="+mx;
+   //    //    mx = (v2e.y - v2s.y) / (v2e.x - v2s.x);
+   //    //    trace "xxx intersect: v2s="+v2s+" v2e="+v2e+" mx="+mx;
+
+   //    // }
+
+   //    // <https://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect>
+   //    // E = B-A = ( Bx-Ax, By-Ay )
+   //    // F = D-C = ( Dx-Cx, Dy-Cy )
+   //    // P = ( -Ey, Ex )
+   //    // h = ( (A-C) * P ) / ( F * P )        // * = dot product
+   //    Vector2f vE; v1e.sub(v1s) => vE;
+   //    Vector2f vF; v2e.sub(v2s) => vF;
+   //    Vector2f vP; vP.init(-vE.y, vE.x);
+   //    Vector2f vG; vG.init(v1s.x - v2s.x, v1s.y - v2s.y);
+   //    float h = vF.dot(vP);
+   //    if(0.0 != h)
+   //       h = vG.dot(vP) / h;
+   //    // if(b_debug)
+   //    //    trace "xxx intersect: h="+h+" bExtrapolate="+bExtrapolate;
+   //    if(bExtrapolate || (0.0 <= h <= 1.0))
+   //    {
+   //       vF.mulf(h) => vRet;
+   //       vRet.add(v2s);
+   //    }
+   //    else
+   //    {
+   //       vRet = v2s;
+   //    }
+   //    return h;
+   // }
+
+   public method setForegroundColor(int _c32fg) {
+      c32_fg = (_c32fg & 0x00FFFFFF) | (c32_fg & 0xFF000000);
+   }
+
+   public method getForegroundColor() : int {
+      return c32_fg;
+   }
+
+   public method setForegroundTint(int _tint32) {
+      fg32_tint = _tint32;
+   }
+
+   public method getForegroundTint() : int {
+      return fg32_tint;
+   }
+
+   public method setAlpha(byte _a) {
+      c32_fg = (c32_fg & 0xFFFFFF) | (_a << 24);
+   }
+
+   public method getAlpha() : int {
+      return (c32_fg >> 24) & 255;
+   }
+
+   public method setAlphaMod(float _a) {
+      alpha_mod = _a;
+   }
+
+   public method setHighlightTint(int _c32) {
+      highlight_tint = _c32;
+   }
+
+   public method getHighlightTint() : int {
+      return highlight_tint;
+   }
+
+   public method setBlendMode(int _mode) {
+      blend_mode = _mode;
+   }
+
+   public method getBlendMode() : int {
+      return blend_mode;
+   }
+
+   protected method allocTriVertices(int _num) {
+      v_tri.realloc(_num * 2);
+      v_tri.empty();
+   }
+
+   public method getTriVertices() : FloatArray {
+      return v_tri;
+   }
+
+   protected method queueVBOUpdate() {
+      b_update_vbo = true;
+   }
+
+   protected method lazyUpdateVBO() {
+      if(b_update_vbo)
+      {
+         b_update_vbo = false;
+         if(v_tri.maxElements > vbo_max)
+         {
+            if(b_debug)
+               trace "[trc] Shape::lazyUpdateVBO: alloc VBO max="+v_tri.maxElements;
+
+            if(0 != vbo)
+               sdvg_DestroyVBO(vbo);
+            vbo = sdvg_CreateVBO(v_tri.maxElements*4/*sizeof(float)*/);
+            sdvg_BindVBO(vbo);
+            vbo_max = v_tri.maxElements;
+         }
+
+         if(b_debug)
+            trace "[>>>] Shape::lazyUpdateVBO: upload "+v_tri.numElements+" floats";
+
+         sdvg_UpdateVBO(vbo, 0/*off*/, 0/*sz=auto*/, v_tri);
+      }
+   }
+
+   public method tesselate() {
+   }
+
+   public method draw() {
+
+      if(b_debug)
+         trace "[>>>] Shape::draw: c32_fg="+c32_fg+" blend="+blend_mode+" #tris="+(v_tri.numElements/(2*3));
+
+      int c32 = c32_fg;
+      if(alpha_mod < 1.0)
+      {
+         byte a = ((c32_fg >> 24) & 255) * alpha_mod;
+         c32 = (c32_fg & #00FFFFFF) | (a << 24);
+      }
+      // trace "xxx Shape::draw: c32_fg="+UI.GetColorString(c32_fg)+" alpha_mod="+alpha_mod+" c32="+UI.GetColorString(c32);
+
+      if(0 != fg32_tint)
+         c32 = sdvg_TintARGB(c32, fg32_tint);
+
+      if(0 != highlight_tint)
+         c32 = sdvg_TintARGB(c32, highlight_tint);
+
+      UIRenderer.SetColorARGB(c32);
+
+      if(blend_mode)
+         UIRenderer.SelectBlendMode(blend_mode);
+
+      lazyUpdateVBO();
+
+      sdvg_BindVBO(vbo);
+      if(UIRenderer.BeginFilledTrianglesEx(v_tri.numElements / 2, true/*bBuiltinShader*/))
+      {
+         UIRenderer.End();
+      }
+      sdvg_BindVBO(0);
+
+      if(!UIRenderer.b_glcore && UIRenderer.b_draw_gl)
+         glEnableClientState(GL_VERTEX_ARRAY);
+
+      if(blend_mode)
+         UIRenderer.DisableBlending();
+
+      if(!UIRenderer.b_glcore && UIRenderer.b_draw_gl)
+         glDisableClientState(GL_VERTEX_ARRAY);
+   }
+}

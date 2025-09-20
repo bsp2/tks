@@ -1,0 +1,526 @@
+// ----
+// ---- file   : FloatField.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2008-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 03Sep2008, 02Feb2009, 14Jun2009, 19Sep2009, 02Jan2010, 03Jan2010, 05Jan2010
+// ----          22Feb2010, 09Sep2010, 24Feb2011, 20Mar2011, 26Mar2011, 01Feb2012, 02Feb2012
+// ----          21Aug2014, 13Feb2017, 11Feb2018, 16Feb2018, 02Oct2019, 27Dec2020, 08Feb2021
+// ----          03Jun2021, 10Jul2021, 01Apr2022, 10Oct2022, 06Nov2022, 09Oct2023, 30Oct2023
+// ----          31Oct2023
+// ----
+// ----
+// ----
+
+module MFloatField;
+
+namespace ui;
+
+
+class FloatField extends Control {
+
+   define String ACTION_VALUECHANGED = "onValueChanged";
+   define String ACTION_VALUEENTERED = "onValueEntered"; // changed + return in textfield
+   define String ACTION_VALUEEDITED  = "onValueEdited"; // char typed / changed
+
+   define String ACTION_INCVALUECOARSE = "onIncFloatFieldCoarse";
+   define String ACTION_INCVALUEFINE   = "onIncFloatFieldFine";
+   define String ACTION_DECVALUECOARSE = "onDecFloatFieldCoarse";
+   define String ACTION_DECVALUEFINE   = "onDecFloatFieldFine";
+
+   define int VIS_COLS = 6;
+
+   protected RepeatButton re_dec;
+   protected RepeatButton re_inc;
+   namespace TextField tf_float;
+
+   protected boolean b_range_min_editable;
+   protected boolean b_range_max_editable;
+   protected float min_val;
+   protected float max_val;
+   protected float step_fine;
+   protected float step_coarse;
+   protected float current_val;
+   protected float original_val;
+   protected int   decimalplace_scale; // 1 = 0 decimal places, 10=1 decimal place, 100=2 decimal places..
+
+   protected int display_type; // see FloatParam.DISPLAY_xxx
+   protected boolean b_fraction;
+
+
+   function New(int _precision, float _min, _max, _stepCoarse, _stepFine, _val) : FloatField {
+      local FloatField ff;
+      ff.initFloatField(_precision, _min, _max, _stepCoarse, _stepFine, _val);
+      return deref ff;
+   }
+
+   public method initFloatField(int _precision, float _min, _max, _stepCoarse, _stepFine, _val) {
+
+      initLayer();
+
+      min_val     = _min;
+      max_val     = _max;
+      step_coarse = abs(_stepCoarse);
+      step_fine   = abs(_stepFine);
+      current_val = _val;
+      validateValues();
+
+      display_type = FloatParam.DISPLAY_FLOAT;
+      b_fraction = false;
+
+      setDecimalPlaces(_precision);
+      setLayout(SuperBorderLayout);
+      setPadding4f(2,2,3,2);
+
+      re_dec.initRepeatButton();
+      re_dec.setProvidedActionAlias(RepeatButton.ACTION_CLICK,    ACTION_DECVALUECOARSE);
+      re_dec.setProvidedActionAlias(RepeatButton.ACTION_CLICKALT, ACTION_DECVALUEFINE);
+      re_dec.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      re_dec.setCaption("<");
+      re_dec.setPadding4f(0,0,0,0);
+      re_dec.setInnerPadding4fScaled(0,2,0,2);
+      re_dec.setAlignment(Layout.CENTERY|Layout.BASELINEY);
+      if(UI.IsHiDPI())
+         re_dec.setLayerStyle(LookAndFeel.STYLE_FLAT);
+
+      re_inc.initRepeatButton();
+      re_inc.setProvidedActionAlias(RepeatButton.ACTION_CLICK,    ACTION_INCVALUECOARSE);
+      re_inc.setProvidedActionAlias(RepeatButton.ACTION_CLICKALT, ACTION_INCVALUEFINE);
+      re_inc.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      re_inc.setCaption(">");
+      re_inc.setPadding4f(0,0,0,0);
+      re_inc.setInnerPadding4fScaled(0,2,0,2);
+      re_inc.setAlignment(Layout.CENTERY|Layout.BASELINEY);
+      if(UI.IsHiDPI())
+         re_inc.setLayerStyle(LookAndFeel.STYLE_FLAT);
+
+      tf_float.initTextField();
+      tf_float.setCharFilter(UI.char_filter_float);
+      tf_float.setVisibleTextLength(VIS_COLS);
+      tf_float.setMaxTextLength(10);
+      tf_float.setEnableProvideStart(true);
+      tf_float.setEnableProvideStop(true);
+      tf_float.setAlignment(Layout.CENTER|Layout.BASELINEY);
+      tf_float.setPadding4f(0,0,0,0);
+      updateText();
+
+      addLayer(tf_float, Layout.LEFT);
+      addLayer(re_dec,   Layout.LEFT);
+      addLayer(re_inc,   Layout.RIGHT);
+   }
+
+   public method stopEditing(boolean _bProvideAction, _bReturn, _bQuiet) {
+      tf_float.stopEditing(_bProvideAction, _bReturn, _bQuiet);
+   }
+
+   public method setEnableRangeEditable(boolean _bRangeEditable) {
+      b_range_min_editable = _bRangeEditable;
+      b_range_max_editable = _bRangeEditable;
+   }
+
+   public method setEnableRangeMinEditable(boolean _bRangeEditable) {
+      b_range_min_editable = _bRangeEditable;
+   }
+
+   public method setEnableRangeMaxEditable(boolean _bRangeEditable) {
+      b_range_max_editable = _bRangeEditable;
+   }
+
+   public method setValue(float _f) : boolean {
+      explain "Set new value to _f. Return true if new value differs from current value.";
+
+      float oldVal = current_val;
+
+      // Calc new value (apply precision)
+      Long lo;
+      if(_f >= 0)
+         lo = (0.5 + _f * decimalplace_scale);
+      else
+         lo = (-0.5 + _f * decimalplace_scale);
+      _f = (lo / float(decimalplace_scale));
+
+      // Clip
+      if(_f < min_val)
+      {
+         if(b_range_min_editable)
+            min_val = _f;
+         else
+            _f = min_val;
+      }
+      else if(_f > max_val)
+      {
+         if(b_range_max_editable)
+            max_val = _f;
+         else
+            _f = max_val;
+      }
+
+      current_val = _f;
+
+      boolean bChanged = (current_val != oldVal);
+      if(bChanged)
+      {
+         updateText();
+         redraw();
+      }
+
+      bChanged = (current_val != original_val);
+
+      original_val = current_val;
+
+      return bChanged;
+   }
+
+   protected method getParsedExprOrText() : String {
+      var f = FloatParam.ParseExpression(tf_float.getText().trim());
+      if(typeid(f) == YAC_TYPE_FLOAT)
+         return f;
+      else
+         return tf_float.getText().replaceChar(',', '.');
+   }
+
+   public method updateText() {
+      String t;
+      FloatParam.ValueToString(current_val,
+                               max_val,
+                               display_type,
+                               b_fraction,
+                               0/*float_display_bias*/,
+                               t,
+                               null/*parentOrNull*/,
+                               min_val/*usrTblMin*/,
+                               false/*b0AsBlank*/,
+                               null/*unitOrNull*/
+                               );
+      tf_float.setText(t);
+   }
+
+   public method setValueUnchecked(float _f) {
+      current_val = _f;
+   }
+
+   public method getValue() : float {
+      return current_val;
+   }
+
+   public method setStepCoarse(float _s) {
+      if(_s <= 0)
+         _s = 1;
+      step_coarse = _s;
+   }
+
+   public method getStepCoarse() : float {
+      return step_coarse;
+   }
+
+   public method setStepFine(float _s) {
+      if(_s <= 0)
+         _s = 1;
+      step_fine = _s;
+   }
+
+   public method getStepFine() : float {
+      return step_fine;
+   }
+
+   public method setMinValue(float _min) {
+      min_val = _min;
+   }
+
+   public method getMinValue() : float {
+      return min_val;
+   }
+
+   public method setMaxValue(float _max) {
+      max_val = _max;
+   }
+
+   public method getMaxValue() : float {
+      return max_val;
+   }
+
+   public method setDecimalPlaces(int _num) {
+      if(_num <= 0)
+         decimalplace_scale = 1;
+      else
+         decimalplace_scale = int(0.5 + mathPowerf(10, _num));
+      // Note: current_val should be updated now to reflect precision change
+   }
+
+   public method setVisibleTextLength(int _length) {
+      tf_float.setVisibleTextLength(_length);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_VALUECHANGED, ACTION_VALUEEDITED, ACTION_VALUEENTERED];
+   }
+
+   protected method validateValues() : boolean {
+
+      if(min_val > max_val)
+      {
+         float t = min_val;
+         min_val = max_val;
+         max_val = t;
+      }
+      if(current_val < min_val)
+      {
+         if(b_range_min_editable)
+            min_val = current_val;
+         else
+            current_val = min_val;
+         updateText();
+         return true;
+      }
+      else if(current_val > max_val)
+      {
+         if(b_range_max_editable)
+            max_val = current_val;
+         else
+            current_val = max_val;
+         updateText();
+         return true;
+      }
+      return false;
+   }
+
+   protected method handleValueEdited() {
+      // Used to notify listener that the value has been edited
+      ////trace "xxx FloatField::handleValueEdited: original_val="+original_val;
+      // updating current_val here will break bChanged test => store "original_val" when editing starts
+      setValueUnchecked( int(FloatParam.StringToValue(getParsedExprOrText(),
+                                                      display_type,
+                                                      b_fraction,
+                                                      0/*floatDisplayBias*/,
+                                                      null/*parentOrNull*/,
+                                                      current_val/*idxHint*/,
+                                                      min_val/*usrTblMin*/,
+                                                      null/*unitOrNull*/
+                                                      )
+                             )
+                         );
+      provideAction(Action.New(getProvidedActionAlias(ACTION_VALUEEDITED), this));
+   }
+
+   protected method handleValueChanged() {
+      updateText();
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, current_val));
+   }
+
+   protected method handleValueEntered() {
+      updateText();
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUEENTERED), this, current_val));
+   }
+
+   public method incValueCoarse() {
+      if(setValue(current_val + step_coarse))
+         handleValueChanged();
+   }
+
+   public method incValueFine() {
+      if(setValue(current_val + step_fine))
+         handleValueChanged();
+   }
+
+   public method decValueCoarse() {
+      if(setValue(current_val - step_coarse))
+      {
+         handleValueChanged();
+      }
+   }
+
+   public method decValueFine() {
+      if(setValue(current_val - step_fine))
+         handleValueChanged();
+   }
+
+   public method getTextField() : TextField {
+      return tf_float;
+   }
+
+   public method setDisplayType(int _type) {
+      display_type = _type;
+      if(FloatParam.DISPLAY_HEX == display_type)
+         tf_float.setCharFilter(UI.char_filter_hex);
+      else if(FloatParam.DISPLAY_UFIX16 == display_type)
+         tf_float.setCharFilter(UI.char_filter_ufix16);
+      else
+         tf_float.setCharFilter(UI.char_filter_float_expr);
+   }
+
+   public method getDisplayType() : int {
+      return display_type;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String name = _ac.getActionName();
+      switch(name)
+      {
+         case ACTION_INCVALUECOARSE:
+            incValueCoarse();
+            return true;
+
+         case ACTION_INCVALUEFINE:
+            incValueFine();
+            return true;
+
+         case ACTION_DECVALUECOARSE:
+            decValueCoarse();
+            return true;
+
+         case ACTION_DECVALUEFINE:
+            decValueFine();
+            return true;
+
+         case TextField.ACTION_STARTEDITING:
+            original_val = current_val;
+            return true;
+
+         case TextField.ACTION_TEXTEDITED:
+            handleValueEdited();
+            return true;
+
+         case TextField.ACTION_TEXTCHANGED:
+            if(1 == decimalplace_scale)
+            {
+               // Use integer string scanner to support 0x, 0b, $, # syntax
+               if( setValue( int(FloatParam.StringToValue(getParsedExprOrText(),
+                                                          display_type,
+                                                          b_fraction,
+                                                          0/*floatDisplayBias*/,
+                                                          null/*parentOrNull*/,
+                                                          current_val/*idxHint*/,
+                                                          min_val/*usrTblMin*/,
+                                                          null/*unitOrNull*/
+                                                          )
+                                 )
+                             )
+                   )
+               {
+                  handleValueChanged();
+               }
+            }
+            else if(setValue(FloatParam.StringToValue(getParsedExprOrText(),
+                                                      display_type,
+                                                      b_fraction,
+                                                      0/*floatDisplayBias*/,
+                                                      null/*parentOrNull*/,
+                                                      current_val/*idxHint*/,
+                                                      min_val/*usrTblMin*/,
+                                                      null/*unitOrNull*/
+                                                      )
+                             )
+                    )
+            {
+               handleValueChanged();
+            }
+            return true;
+
+         case TextField.ACTION_TEXTENTERED:
+            if(1 == decimalplace_scale)
+            {
+               // Use integer string scanner to support 0x, 0b, $, # syntax
+               setValue(int(FloatParam.StringToValue(getParsedExprOrText(),
+                                                     display_type,
+                                                     b_fraction,
+                                                     0/*floatDisplayBias*/,
+                                                     null/*parentOrNull*/,
+                                                     current_val/*idxHint*/,
+                                                     min_val/*usrTblMin*/,
+                                                     null/*unitOrNull*/
+                                                     )
+                            )
+                        );
+               handleValueEntered();
+            }
+            else
+            {
+               setValue(FloatParam.StringToValue(getParsedExprOrText(),
+                                                 display_type,
+                                                 b_fraction,
+                                                 0/*floatDisplayBias*/,
+                                                 null/*parentOrNull*/,
+                                                 current_val/*idxHint*/,
+                                                 min_val/*usrTblMin*/,
+                                                 null/*unitOrNull*/
+                                                 )
+                        );
+               handleValueEntered();
+            }
+            return true;
+
+      }
+      return false;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         String atname, atval;
+         StringArray atsplit;
+
+         initFloatField(2, 0, 1, 0.1, 0.01, 0.5);
+
+         float newVal = current_val;
+         foreach atname in _attributes
+         {
+            atval<=_attributes[atname];
+            switch(atname)
+            {
+               case "min":
+                  min_val = atval;
+                  break;
+
+               case "max":
+                  max_val = atval;
+                  break;
+
+               case "step":
+                  step_coarse = abs(float(atval));
+                  step_fine = step_coarse;
+                  break;
+
+               case "stepCoarse":
+                  step_coarse = abs(float(atval));
+                  break;
+
+               case "stepFine":
+                  step_fine = abs(float(atval));
+                  break;
+
+               case "val":
+               case "value":
+                  newVal = atval;
+                  break;
+
+               case "decimalPlaces":
+               case "precision":
+                  setDecimalPlaces(atval);
+                  break;
+
+               case "display":
+                  setDisplayType(FloatParam.ParseDisplayAttribute(atval));
+                  break;
+
+               case "actionAlias":
+                  atsplit <= atval.splitChar('=');
+                  setProvidedActionAlias(atsplit.get(0), atsplit.get(1));
+                  break;
+
+               case "onValueChanged":
+                  _form.addHandledAction(atname, FloatAction, atval);
+                  break;
+            }
+         }
+         validateValues();
+         setValue(newVal);
+         updateText(); // force text update
+      }
+      return true;
+   }
+
+}

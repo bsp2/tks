@@ -1,0 +1,1434 @@
+// ----
+// ---- file   : TableView.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26May2007
+// ---- changed: 24Oct2007, 29Oct2007, 04Nov2007, 05Nov2007, 08Jan2008, 14Apr2008, 01Feb2009
+// ----          02Feb2009, 03Feb2009, 31May2009, 02Jan2010, 09Jan2010, 19Jan2010, 22Jan2010
+// ----          18Jul2010, 09Jan2012, 15Jan2012, 07Feb2012, 08Feb2012, 10Feb2012, 25Feb2012
+// ----          20Dec2012, 04Sep2014, 06Sep2014, 09Sep2014, 11Sep2014, 13Sep2014, 16Sep2014
+// ----          06Feb2015, 11Feb2015, 27Feb2015, 12May2015, 06Nov2015, 21Mar2016, 09Feb2017
+// ----          13Mar2017, 24Mar2017, 13Feb2018, 16Feb2018, 25Feb2018, 01Mar2018, 04Jun2018
+// ----          13Nov2018, 29Nov2018, 18Jan2019, 19Jul2019, 20Jul2019, 28Jul2019, 14Sep2019
+// ----          10May2020, 15May2020, 20Jun2020, 11Jul2020, 21Jul2020, 14Aug2020, 01Feb2021
+// ----          10Feb2021, 03Apr2021, 16Jun2021, 20Dec2021, 18Mar2023, 03Oct2023, 02Nov2023
+// ----          11Nov2023, 19Nov2023, 26Nov2023, 02Aug2024, 04Aug2024, 05Oct2024, 03Jan2025
+// ----          05Feb2025
+// ----
+// ----
+// ----
+
+module MTableView;
+
+namespace ui;
+
+
+delegate Slider:getTableViewStepCoarse() {
+   TableView tv <= getParent().getParent();
+   if(tv instanceof TableView)
+   {
+      TableModel tm <= tv.getTableModel();
+      if(null != tm)
+         return tm.getLastVisibleRowHeight();
+   }
+   return 1;
+}
+
+
+class TableView extends Control {
+
+   define int CELL_SEPARATOR_SIZE = 1;
+   define int HEADER_SIZE_Y = 16;
+
+   define String ACTION_ROWSELECTED  = "onRowSelected";
+   define String ACTION_ROWCLICKED   = "onRowClicked";
+   define String ACTION_ROWPREVIEW   = "onRowPreview";    // only when isMouseOverSelectionAllowed()
+   define String ACTION_ROWHOLDBEGIN = "onRowHoldBegin";  // only when b_send_hold
+   define String ACTION_ROWHOLDEND   = "onRowHoldEnd";
+   define String ACTION_SHOWCONTEXTMENU  = "onShowContextMenu";
+   define String ACTION_SELECTNONE  = "onSelectNone";
+   define String ACTION_SELECTALL  = "onSelectAll";
+   define String ACTION_CANCEL_FIRST_UP;
+   define String ACTION_MULTIPLESELECTION;
+   define String ACTION_TAB;
+   define String ACTION_KBDFOCUS;
+
+
+   namespace TableViewHeader *header;
+   namespace TableViewData   *data;
+   protected Scroller        *scroller_y;
+   protected Scroller        *scroller_x;
+   protected Panel           *panel;
+   namespace TableModel      *model;
+
+   public int contextmenu_suggested_abs_x;
+   public int contextmenu_suggested_abs_y;
+   public boolean b_contextmenu_kbd;     // true=contextmenu was shown via keyboard shortcut  false=via mouse
+   public boolean b_force_context_menu;  // true=edit table cell only when LCTRL+RMB are pressed (show menu otherwise)
+
+   namespace boolean b_force_wheel_scroll_row;  // can be toggled with MMB-click
+
+   protected int scroller_x_sy;
+   protected int scroller_y_sx;
+
+   // if true, handle row select when key is released
+   protected boolean b_select_on_key_release;
+
+   // if true, cursor left/right selects row
+   protected boolean b_use_cursor_fold_keys;
+
+   // true=show header
+   protected boolean b_header;
+   namespace boolean b_multiple;  // true=allow multiple selection. cannot be mixed with drag'n'drop.
+   namespace boolean b_multiple_no_a_key;  // true=don't handle 'a' key (select all)
+   namespace boolean b_multiple_rmb_select;  // true=multiple-selection with RMB drag or RMB clicks (like ctrl-LMB-click)  false=RMB reserved for cell editor
+   namespace boolean b_multiple_toggle;  // true=toggle (add to / remove from) multiple selection with LMB clicks
+   namespace boolean b_drag_multiple;  // true=start d'n'd when multiple objects are dragged. false=start new multi-selection
+   protected boolean b_cursormove_keep_selection;
+   namespace boolean b_mouseover_preview;
+   namespace boolean b_no_preferred_size_y;
+   protected boolean b_disable_context_menu_ctrl_key;
+   protected boolean b_context_menu_a_key;  // 'a' opens context menu (default=disabled)
+   protected boolean b_disable_space_key;
+   protected boolean b_disable_return_key;
+   protected boolean b_disable_home_end_keys;
+   namespace boolean b_send_hold;  // ACTION_ROWHOLDBEGIN/END
+
+   namespace ActionConsumer *cancel_on_first_entry_up_listener;
+
+   public int page_size;
+
+
+   protected method initTableViewPre() {
+      initLayer();
+
+      data <= new TableViewData();
+      data.initTableViewData();
+      data.table_view <= this;
+
+      b_disable_space_key = !UI.b_space_bar_clicks;
+   }
+
+   public method initTableView(boolean _bHeader) {
+      explain "Initialize TableView instance.";
+
+      if(null == lnf_colors)
+      {
+         // Not called from XFM
+         initTableViewPre();
+      }
+
+      setLayout(SuperBorderLayout);
+
+      page_size = 10;
+
+      if(_bHeader)
+      {
+         header <= new TableViewHeader();
+         header.initTableViewHeader();
+         header.table_view <= this;
+         header.setLayoutWeightX(1.0f);
+         header.setRequiredSizeY(HEADER_SIZE_Y);
+      }
+      else
+      {
+         header <= null;
+      }
+
+      local Panel p;
+      panel <= p;
+      p.initPanel();
+      p.setLayout(SuperBorderLayout);
+      if(_bHeader)
+         p.addLayer(header, Layout.TOP);
+
+      data.setLayoutWeightY(1.0f);
+      data.setAlignment(Layout.TOP);
+      p.setAlignment(Layout.EXPAND);
+      p.addLayer(data, Layout.CENTER);
+
+      scroller_x <= Scroller.New(0, 10, 0, 1);
+      scroller_x.setEnableAdaptiveKnobSize(true);
+      scroller_x.setAlignment(Layout.EXPANDX);
+      scroller_x.setEnableFlatHighContrast(false);
+      p.addLayer(scroller_x, Layout.BOTTOM);
+      addLayer(deref p, Layout.CENTER);
+
+      scroller_y <= Scroller.NewVertical(0, 10, 0, 1);
+      scroller_y.setEnableAdaptiveKnobSize(true);
+      scroller_y.setAlignment(Layout.EXPANDY);
+      scroller_y.setEnableFlatHighContrast(false);
+      delegate scroller_y.getSlider() : Slider.DELEGATE_GETSTEPCOARSE = getTableViewStepCoarse;
+      addLayer(scroller_y, Layout.RIGHT);
+
+      recursiveBuildTabCycleLists();
+
+      setEditable(true);
+   }
+
+   public virtual setEnableFlatHighContrast(boolean _bEnable) {
+      Layer::setEnableFlatHighContrast(_bEnable);
+      scroller_x.setEnableFlatHighContrast(_bEnable);
+      scroller_y.setEnableFlatHighContrast(_bEnable);
+   }
+
+   public method setEnableSelectOnKeyRelease(boolean _bEnable) {
+      b_select_on_key_release = _bEnable;
+   }
+
+   public method getTableViewData() : TableViewData {
+      return data;
+   }
+
+   public virtual setEditable(boolean _bEditable) {
+      Layer::setEditable(_bEditable);
+      if(null != data)
+         data.setEditable(_bEditable);
+      redraw();
+   }
+
+   public virtual setLayerStyle(int _style) {
+      Control::setLayerStyle(_style);
+      data.setLayerStyle(layer_style);
+      if(null != header)
+         header.setLayerStyle(layer_style);
+      if(null != scroller_x)
+         scroller_x.setLayerStyle(layer_style);
+      if(null != scroller_y)
+         scroller_y.setLayerStyle(layer_style);
+   }
+
+   public method setEnableBlendReplaceAlpha(boolean _bEnable) {
+      if(null != scroller_x)
+         scroller_x.setEnableBlendReplaceAlpha(_bEnable);
+      if(null != scroller_y)
+         scroller_y.setEnableBlendReplaceAlpha(_bEnable);
+   }
+
+   public method setBackgroundColor(int _bg32) {
+      data.setBackgroundColor(_bg32);
+   }
+
+   public method setForegroundColor(int _fg32) {
+      data.setForegroundColor(_fg32);
+   }
+
+   public method setPageSize(int _sz) {
+      page_size = _sz;
+   }
+
+   public method setScrollerYSx(float _sx) {
+      scroller_y.setRequiredSizeX(_sx);
+   }
+
+   public method setEnableMouseOverPreview(boolean _bPreview) {
+      b_mouseover_preview = _bPreview;
+   }
+
+   public virtual method calcPreferredSizeY() {
+      if(!b_no_preferred_size_y)
+      {
+         preferred_size_y = 0;
+
+         if(null != header)
+            preferred_size_y += header.getPreferredSizePadY();
+
+         float mh = 0;
+         if(null != model)
+            mh = model.getTotalHeight();
+
+         preferred_size_y += mh;
+         if(mh < 1)
+            preferred_size_y += DEFAULT_MINIMUM_SIZE_Y;
+
+         ////trace "xxxx TableView::calcPreferredSizeY: 2 preferred_size_y="+preferred_size_y;
+      }
+      else
+      {
+         return 4096;
+      }
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ROWSELECTED, ACTION_ROWCLICKED, ACTION_ROWPREVIEW, ACTION_ROWHOLDBEGIN, ACTION_ROWHOLDEND, ACTION_SHOWCONTEXTMENU, ACTION_SELECTNONE, ACTION_SELECTALL, ACTION_MULTIPLESELECTION, ACTION_TAB, ACTION_KBDFOCUS];
+   }
+
+   protected method updateSliderPositions() {
+      // Update slider max. position and knob size
+      if(null != model)
+      {
+         float th = model.getTotalHeight();
+         float dsy = data.getSizeY();
+         float mp = th - dsy;
+         if(mp >= 0)
+         {
+            scroller_y.setMaxValue(mp);
+            scroller_y.setRelativeKnobSize( dsy / th );
+            model.alignViewPixelOffsetY(scroller_y.getMoveDirection());
+         }
+      }
+   }
+
+   public method tableModelChanged() {
+      invalidateSizeCache();
+      if(null != model)
+      {
+         model.tableModelChanged();
+
+         // trace "xxx TableView::tableModelChanged: check if model supports cell tooltips";
+
+         if(null != model.getCellToolTipCaption(0, 0))
+         {
+            // install tooltip timer
+            //  (note) actual content will be queried when tooltip is about to be shown
+            // trace "xxx TableView::tableModelChanged: model supports cell tooltips";
+            data.setToolTipCaption(" ");
+         }
+      }
+      data.invalidateSizeCache();
+      layoutHierarchy(true, false);
+
+      if(null != model)
+      {
+         // trace "xxx model.getTotalHeight()="+model.getTotalHeight()+" getSizeY()="+getSizeY();
+         if(model.getTotalHeight() < getSizeY())
+            scrollToPositionY(0);
+      }
+
+      UI.RedrawAll();
+   }
+
+   public method setTableModel(TableModel _model) {
+      model <= deref _model;
+      if(null != model)
+         model.table_view <= this;
+      updateSliderPositions();
+   }
+
+   public method getTableModel() : TableModel {
+      return model;
+   }
+
+   protected method updateEnableScrollers() : boolean {
+      // Check whether the scrollbars are currently needed
+      boolean bHaveScrollerX = hasChildLayer(scroller_x);
+      boolean bHaveScrollerY = hasChildLayer(scroller_y);
+
+      boolean bChanged = false;
+
+      // trace "xxx TableView:: bHaveScroller X="+bHaveScrollerX+" Y="+bHaveScrollerY;
+
+      int tsx = model.getTotalWidth();
+      if(tsx > (1+data.getSizeX() + (bHaveScrollerY?scroller_y.getSizeX() : 0) ) )
+      {
+         // trace "xxx TableView: needScrollerX";
+         if(!bHaveScrollerX)
+         {
+            panel.addLayer(scroller_x, Layout.BOTTOM);
+            bChanged = true;
+         }
+         scroller_x.setRelativeKnobSize(float(data.getSizeX()) / tsx);
+      }
+      else if(bHaveScrollerX)
+      {
+         panel.removeChildLayer(scroller_x);
+         bChanged = true;
+      }
+
+      int tsy = model.getTotalHeight();
+      // trace "xxx TableView: tsy="+tsy+" data.getSizeY()="+data.getSizeY();
+      if(tsy > (1+data.getSizeY() + (bHaveScrollerX?scroller_x.getSizeY() : 0) ) )
+      {
+         // trace "xxx TableView: needScrollerY";
+         if(!bHaveScrollerY)
+         {
+            addLayer(scroller_y, Layout.RIGHT);
+            bChanged = true;
+         }
+      }
+      else if(bHaveScrollerY)
+      {
+         removeChildLayer(scroller_y);
+         bChanged = true;
+      }
+
+      if(bChanged)
+      {
+         invalidateSizeCache();
+         Layer::layoutHierarchy(true, false);
+      }
+      return bChanged;
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+
+      if(_bInvalidateSizeCaches)
+      {
+         panel.invalidateSizeCache();
+         invalidateSizeCache();
+      }
+
+      Layer::layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+
+      if(null != model)
+      {
+         model.layoutColumns(data.getSizeX());
+
+         // Note: The size of the scrollers is added to the available data space
+         boolean bChanged = updateEnableScrollers();
+
+         // Re-Layout
+         if(bChanged)
+            model.layoutColumns(data.getSizeX());
+
+         updateSliderPositions();
+
+         model.calcViewOffsetY(-1);
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+      }
+
+   }
+
+   protected method scrollToPositionYNoScroller(int _py) {
+      // trace "xxx TableView::scrollToPositionY: py="+_py+" model="+#(model);
+      // py in pixels! 0..(totalRowHeight - dataSizeY)
+      if(null != model)
+      {
+         int oldVPOY = model.getViewPixelOffsetY();
+
+         model.setViewPixelOffsetY(_py);
+
+         if(oldVPOY != model.getViewPixelOffsetY())
+            redraw();
+      }
+   }
+
+   public method scrollToPositionY(int _py) {
+      if(null != model)
+      {
+         model.setViewPixelOffsetY(-_py);
+         scroller_y.setValue(-_py);
+         redraw();
+      }
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      TableModel model <= getTableModel();
+      if(null != model)
+         model.tableModelLookAndFeelChanged();
+   }
+
+   // public method onDraw() {
+   //    ////trace "xxx TableView: data.size=("+data.size_x+"; "+data.size_y+")";
+   //    ////trace "xxx TableView: scroller_y.size=("+scroller_y.size_x+"; "+scroller_y.size_y+")";
+   //    ////trace "xxx TableView: size_x="+size_x+" size_y="+size_y+" pref=("+getPreferredSizeX()+"; "+getPreferredSizeY()+")";
+   //    ////UIRenderer.DrawFilledRectangle(0,0,size_x,size_y,#ffff0000);
+   // }
+
+   public method setAllowMouseOverSelection(boolean _bAllow) {
+      if(null != data)
+         data.b_allow_mouseover_selection = _bAllow;
+   }
+
+   public method isMouseOverSelectionAllowed() : boolean {
+      if(null != data)
+         return data.b_allow_mouseover_selection;
+      return false;
+   }
+
+   protected method handleCursorMove() {
+      // // if(!b_multiple_toggle)
+      // // {
+         if(!isMouseOverSelectionAllowed())
+         {
+            handleRowSelection(false/*bClicked*/, false/*fold hint*/, false/*bPreview*/);
+         }
+         else if(b_mouseover_preview)
+         {
+            handleRowSelection(false/*bClicked*/, false/*fold hint*/, true/*bPreview*/);
+         }
+      // // }
+   }
+
+   public method setLeadSelection(int _leadIndex) {
+      if(null != model)
+      {
+         if(model.getLeadSelection() != _leadIndex)
+         {
+            model.setLeadSelection(_leadIndex);
+            data.redraw();
+         }
+      }
+   }
+
+   public method getLeadSelection() : int {
+      if(null != model)
+         return model.getLeadSelection();
+      return -1;
+   }
+
+   public method selectNone() {
+      if(null != model)
+      {
+         model.setCursorIndex(-1);
+         model.selectNone();
+         redraw();
+      }
+   }
+
+   public method deselectMultiple() {
+      if(null != model)
+      {
+         model.selectNone();
+         redraw();
+      }
+   }
+
+   public method selectAll() {
+      if(null != model)
+      {
+         model.selectAll();
+         redraw();
+      }
+   }
+
+   public method getCursorRow() : int {
+      return (null != model) ? model.getCursorIndex() : -1;
+   }
+
+   public method getNumRows() : int {
+      return (null != model) ? model.getNumRows() : 0;
+   }
+
+   public method moveCursorToRowNoAction(int _nr) {
+      if(null != model)
+      {
+         model.setCursorIndex(_nr);
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+      }
+   }
+
+   public method moveCursorToRow(int _nr) {
+      if(null != model)
+      {
+         moveCursorToRowNoAction(_nr);
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorToFirstRow() {
+      if(null != model)
+      {
+         model.setCursorIndexToFirstRow();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorToFirstRowNoAction() {
+      if(null != model)
+      {
+         model.setCursorIndexToFirstRow();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+      }
+   }
+
+   public method moveCursorToLastRow() {
+      if(null != model)
+      {
+         model.setCursorIndexToLastRow();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorToLastRowNoAction() {
+      if(null != model)
+      {
+         model.setCursorIndexToLastRow();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+      }
+   }
+
+   public method centerRow() {
+      explain "Adjust scroll offset so that the currently selected row is shown centered";
+
+      if(null != model)
+      {
+         model.centerRow();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+      }
+   }
+
+   public method makeCursorRowVisible() {
+      if(null != model)
+      {
+         model.calcViewOffsetY(1/*dir*/);
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         redraw();
+      }
+   }
+
+   public method makeCursorRowVisibleAlignTop() {
+      if(null != model)
+      {
+         int rowIdx = model.getCursorIndex();
+         if(rowIdx >= 0)
+         {
+            moveCursorToFirstRowNoAction();
+            loop(rowIdx)
+               moveCursorToNextRow();
+         }
+      }
+   }
+
+   public method moveCursorToPreviousRowNoAction() : boolean {
+      if(null != model)
+      {
+         model.decVisibleCursorIndex();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         return true;
+      }
+
+      // No change
+      return false;
+   }
+
+   public method moveCursorToPreviousRow() {
+      if(null != cancel_on_first_entry_up_listener)
+      {
+         if(null != model)
+         {
+            if(0 == model.getCursorIndex())
+            {
+               Action acCancel <= Action.New(ACTION_CANCEL_FIRST_UP, this);
+               cancel_on_first_entry_up_listener.consumeAction(acCancel);
+               return;
+            }
+         }
+      }
+
+      if(moveCursorToPreviousRowNoAction())
+      {
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorToPreviousPage(int _pageSize) {
+      boolean bChanged = false;
+      loop(_pageSize)
+      {
+         bChanged |= moveCursorToPreviousRowNoAction();
+      }
+      if(bChanged)
+      {
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorToFirstRowIfNoneSelected() {
+      if(null != model)
+      {
+         // trace "xxx TableView::moveCursorToFirstRowIfNoneSelected: model.getCursorIndex()="+model.getCursorIndex();
+         if(-1 == model.getCursorIndex())
+            moveCursorToNextRow();
+      }
+   }
+
+   public method moveCursorToFirstRowIfNoneSelectedNoAction() {
+      if(null != model)
+      {
+         if(-1 == model.getCursorIndex())
+            moveCursorToNextRowNoAction();
+      }
+   }
+
+   public method moveCursorToNextRowNoAction() : boolean {
+      if(null != model)
+      {
+         model.incVisibleCursorIndex();
+         scroller_y.setValue(-model.getViewPixelOffsetY());
+         return true;
+      }
+
+      // No change
+      return false;
+   }
+
+   public method moveCursorToNextRow() {
+      if(moveCursorToNextRowNoAction())
+      {
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorToNextPage(int _pageSize) {
+      boolean bChanged = false;
+      loop(_pageSize)
+      {
+         bChanged |= moveCursorToNextRowNoAction();
+      }
+      if(bChanged)
+      {
+         redraw();
+         handleCursorMove();
+      }
+   }
+
+   public method moveCursorWheelUp() {
+      //
+      // - scroll viewoffset by 1/3 of visible height if there are invisible rows
+      // - simply select next row if all rows visible
+      //
+      if(null != model)
+      {
+         float th = model.getTotalHeight();
+         float dsy = data.getSizeY();
+         if(!b_force_wheel_scroll_row && (th > dsy))
+         {
+            float cy  = scroller_y.getValue();
+            cy -= dsy*0.3;
+            if(cy < 0)
+               cy = 0;
+            scroller_y.setValue(cy);
+            scrollToPositionYNoScroller(cy);
+            redraw();
+         }
+         else
+         {
+            if(!b_multiple_toggle)
+               deselectRow(getCursorRow());
+            moveCursorToPreviousRow();
+         }
+      }
+   }
+
+   protected method moveCursorWheelDown() {
+      //
+      // - scroll viewoffset by 1/3 of visible height if there are invisible rows
+      // - simply select previous row if all rows visible
+      //
+      if(null != model)
+      {
+         float th = model.getTotalHeight();
+         float dsy = data.getSizeY();
+         if(!b_force_wheel_scroll_row && (th > dsy))
+         {
+            float cy  = scroller_y.getValue();
+            cy += dsy*0.3;
+            if(cy > (th-dsy))
+               cy = (th-dsy);
+            scroller_y.setValue(cy);
+            scrollToPositionYNoScroller(cy);
+            redraw();
+         }
+         else
+         {
+            if(!b_multiple_toggle)
+               deselectRow(getCursorRow());
+            moveCursorToNextRow();
+         }
+      }
+   }
+
+   public method scrollAhead(int _numRows) {
+      // (note) don't change row selection, simply make next or previous row(s) visible
+      if(null != model)
+      {
+         int cursorIndexOrig = model.getCursorIndex();
+         int visi = model.getUnsortedRowNr(cursorIndexOrig); // Map to visible row nr
+         int modelNumRows = model.getNumRows();
+         // // trace "xxx TableView::scrollAhead: cursorIndexOrig="+cursorIndexOrig+" visi="+visi+" _numRows="+_numRows+" modelNumRows="+modelNumRows;
+         if(0 <= (visi+_numRows) < modelNumRows)
+         {
+            int cursorIndexAhead = model.getSortedRowNr(visi+_numRows);  // map vis row idx to model idx
+            model.setCursorIndexRaw(cursorIndexAhead);
+            model.calcViewOffsetY(1);
+            model.setCursorIndexRaw(cursorIndexOrig);
+            scroller_y.setValue(-model.getViewPixelOffsetY());
+         }
+         else if( (cursorIndexOrig + _numRows) >= modelNumRows )
+         {
+            // Clip to last row
+            moveCursorToRowNoAction(modelNumRows - 1);
+            moveCursorToRowNoAction(cursorIndexOrig);
+         }
+      }
+   }
+
+   public method autoScrollAhead(int _numRows) {
+      if(null != model)
+      {
+         int cursorIndex = model.getCursorIndex();
+         int visIdx = model.getSortedRowNr(cursorIndex);
+         int visIdxFirst = model.getFirstVisibleRowNr();
+         // // trace "xxx visIdx="+visIdx+" visIdxFirst="+visIdxFirst;
+         scrollAhead( ((visIdx - visIdxFirst < _numRows) ? -_numRows : _numRows)/*numRows*/ );
+      }
+   }
+
+   public method setEnableDrawBorder(boolean _bEnabled) {
+      data.b_draw_border = _bEnabled;
+   }
+
+   public method setEnableProvideTab(boolean _bEnabled) {
+      data.b_provide_tab = _bEnabled;
+   }
+
+   public method provideActionTab() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TAB), this));
+   }
+
+   public method setEnableProvideKbdFocus(boolean _bEnabled) {
+      data.b_provide_kbdfocus = _bEnabled;
+   }
+
+   public method provideActionKbdFocus() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_KBDFOCUS), this));
+   }
+
+   public method selectRow(int _idx) {
+      if(null != model)
+         model.selectRow(_idx);
+   }
+
+   public method deselectRow(int _idx) {
+      if(null != model)
+         model.deselectRow(_idx);
+   }
+
+   public method isRowSelected(int _idx) {
+      if(null != model)
+         return model.isRowSelected(_idx);
+      return false;
+   }
+
+   public method handleMultipleSelection(int _newCsrRow, boolean _bCtrl, boolean _bShift) {
+      if(-1 == _newCsrRow)
+         return;
+
+      // Called by app when row is clicked
+      int lastCsrRow = getCursorRow();
+
+      // trace "xxx handleMultipleSelection: lastCsrRow="+lastCsrRow+" newCsrRow="+_newCsrRow+" model.selected_rows="+#(model.selected_rows);
+      // UI.Backtrace();
+
+      if(-1 != _newCsrRow)
+      {
+         if(_bCtrl || b_multiple_toggle)
+         {
+            if(isRowSelected(_newCsrRow))
+            {
+               // trace "xxx deselectRow("+_newCsrRow+")";
+               deselectRow(_newCsrRow);
+            }
+            else
+            {
+               // trace "xxx selectRow("+_newCsrRow+")";
+               if(!b_multiple_toggle)
+               {
+                  if(!isRowSelected(lastCsrRow))
+                     selectRow(lastCsrRow);
+               }
+               selectRow(_newCsrRow);
+            }
+
+            redraw();
+            provideActionMultipleSelection();
+         }
+         else if(_bShift)
+         {
+            // Select row range
+            // trace "xxx select row range lastCsrRow="+lastCsrRow;
+            if(_bCtrl)
+            {
+               // Add to selection
+               if(-1 != lastCsrRow)
+               {
+                  model.selectRowRange(lastCsrRow, _newCsrRow);
+                  redraw();
+                  provideActionMultipleSelection();
+               }
+            }
+            else
+            {
+               // New selection from last selected row to current row
+               if(-1 != lastCsrRow)
+               {
+                  model.selectNone();
+                  model.selectRowRange(lastCsrRow, _newCsrRow);
+                  redraw();
+                  provideActionMultipleSelection();
+               }
+               else
+               {
+                  // No selection, select current row
+                  model.selectNone();
+                  selectRow(_newCsrRow);
+                  redraw();
+                  provideActionMultipleSelection();
+               }
+            }
+         }
+         else
+         {
+            // No key modifiers
+            model.selectNone();
+            redraw();
+            provideActionMultipleSelection();
+         }
+
+      }
+   }
+
+   namespace method provideActionMultipleSelection() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_MULTIPLESELECTION), this));
+   }
+
+   namespace method handleRowSelection(boolean _bClicked, boolean _bFoldHint, boolean _bPreview) {
+      explain "LMB down over table row. Note: if the row was already selected, bClicked is set to true";
+
+      if(b_editable)
+      {
+         // trace "xxx TableView::handleRowSelection: bClicked="+_bClicked+" model="+#(model)+" cursorIndex="+model.getCursorIndex();
+
+         if(null != model)
+         {
+            int cursorIndex = model.getCursorIndex();
+            // trace "xxx TableView::handleRowSelection: cursorIndex="+cursorIndex+" bClicked="+_bClicked;
+            if(-1 != cursorIndex)
+            {
+               if(model.getNumRows())
+               {
+                  if(_bClicked)
+                  {
+                     if(b_multiple_toggle)
+                     {
+                        handleMultipleSelection(cursorIndex, false/*bCtrl*/, false/*bShift*/);
+                     }
+
+                     if(!model.handleRowClick(_bFoldHint))
+                        provideAction(IntAction.New(getProvidedActionAlias(ACTION_ROWCLICKED), this, model.getCursorIndex()));
+                  }
+                  else
+                  {
+                     if(!_bPreview)
+                        provideAction(IntAction.New(getProvidedActionAlias(ACTION_ROWSELECTED), this, model.getCursorIndex()));
+                     else
+                        provideAction(IntAction.New(getProvidedActionAlias(ACTION_ROWPREVIEW), this, model.getCursorIndex()));
+                  }
+
+               }
+            }
+         }
+      }
+   }
+
+   namespace method handleRowHold(boolean _bDown) {
+      provideAction(Action.New(getProvidedActionAlias(_bDown ? ACTION_ROWHOLDBEGIN : ACTION_ROWHOLDEND), this));
+   }
+
+   public method getSelectedRows() : IntArray {
+      if(null != model)
+         return model.getSelectedRows();
+      return null;
+   }
+
+   public method setSelectedRows(IntArray _ia) {
+      if(null != model)
+         model.setSelectedRows(_ia);
+   }
+
+   namespace method showContextMenu(boolean _bNearRow) {
+      // _bNearRow: true=show menu near selected row (triggered via keyboard shortcut), false=show menu near mouse
+
+      if(b_editable)
+      {
+         if(null != model)
+         {
+            int ci = model.getCursorIndex();
+
+            // Calculate suggested position of contextmenu popup
+            if(_bNearRow)
+            {
+               int py = model.getRowPixelOffsetY(ci);
+               py += model.getViewPixelOffsetY();
+
+               if(null != header)
+                  py += header.getSizeY();
+
+               Point2f p;
+               calcAbsolutePosition(p);
+               contextmenu_suggested_abs_x = p.x;
+               contextmenu_suggested_abs_y = p.y + py;
+            }
+            else
+            {
+               contextmenu_suggested_abs_x = Mouse.x / UI.zoom_x;
+               contextmenu_suggested_abs_y = Mouse.y / UI.zoom_y;
+            }
+
+            contextmenu_suggested_abs_x += model.getContextMenuOffsetX(_bNearRow);
+            contextmenu_suggested_abs_y += model.getContextMenuOffsetY(_bNearRow);
+            b_contextmenu_kbd = _bNearRow;
+
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHOWCONTEXTMENU), this, ci));
+         }
+      } // if editable
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      ////trace "xxx TableView: consumeAction name="+_ac.getActionName();
+      FloatAction fa;
+      switch(_ac.getActionProvider())
+      {
+         case scroller_y:
+            fa <= _ac;
+            scrollToPositionYNoScroller(fa.getFloatValue());
+            return true;
+      }
+
+      return false;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(b_editable)
+      {
+         if(null != model)
+         {
+            if(_ev.changed_state & (MOUSE_WHEELDOWN | MOUSE_WHEELUP))
+            {
+               if(_ev.current_state & MOUSE_WHEELDOWN)
+               {
+                  if(UI.GetKeyMod() & VMOD_LCTRL)
+                  {
+                     moveCursorToNextRow();
+                  }
+                  else
+                  {
+                     // Move row or page, depending on whether all rows are visible
+                     moveCursorWheelDown();
+                  }
+               }
+               else if(_ev.current_state & MOUSE_WHEELUP)
+               {
+                  if(UI.GetKeyMod() & VMOD_LCTRL)
+                  {
+                     moveCursorToPreviousRow();
+                  }
+                  else
+                  {
+                     // Move row or page, depending on whether all rows are visible
+                     moveCursorWheelUp();
+                  }
+               }
+               return true;
+            }
+         }
+      } // if editable
+      return false;
+   }
+
+   public virtual findTabCycleHeader() : Layer {
+      // not a member itself (TableViewData is) but used in tab cycle override lists
+      return this;
+   }
+
+   public virtual hasKeyboardFocus() : boolean {
+      explain "Query whether this layer currently has the keyboard focus";
+      return (@(UI.keyboard_layer)==@(this)) || (@(UI.keyboard_layer)==@(data));
+   }
+
+   public virtual onTabFocus() {
+      if(data.b_provide_kbdfocus)
+         provideActionKbdFocus();
+      redraw();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      int pageSize;
+
+      if(b_disable_space_key && (VKEY_SPACE == _k.code))
+         return false;
+
+      if(b_disable_return_key && (VKEY_RETURN == _k.code))
+         return false;
+
+      if(b_editable)
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_RETURN:
+            case VKEY_SPACE:
+               if(_k.modAlt())
+                  return false;
+               if(!b_select_on_key_release)
+               {
+                  if(_k.modCtrl() && b_multiple)
+                  {
+                     handleMultipleSelection(getCursorRow(),
+                                             (VMOD_LCTRL == UI.GetKeyMod()),
+                                             (0 != (UI.GetKeyMod() & VMOD_LSHIFT))
+                                             );
+                  }
+                  else
+                  {
+                     handleRowSelection(true/*bClicked*/, false/*fold hint*/, false/*bPreview*/);
+                  }
+               }
+               return true;
+
+            case VKEY_RIGHT:
+               if(_k.modNone())
+               {
+                  if(b_use_cursor_fold_keys)
+                  {
+                     if(!b_select_on_key_release)
+                        handleRowSelection(true/*bClicked*/, false/*fold hint*/, false/*bPreview*/);
+                     return true;
+                  }
+               }
+               return false;
+
+            case VKEY_LEFT:
+               if(_k.modNone())
+               {
+                  if(b_use_cursor_fold_keys)
+                  {
+                     handleRowSelection(true/*bClicked*/, true/*fold hint*/, false/*bPreview*/);
+                     return true;
+                  }
+               }
+               return false;
+
+            case VKEY_PAGEUP:
+               pageSize = _k.modShift() ? 100 : page_size;
+               moveCursorToPreviousPage(pageSize);
+               return true;
+
+            case VKEY_UP:
+               if(b_multiple)
+               {
+                  if(!_k.modCtrl())
+                  {
+                     if( _k.modNone() && !b_cursormove_keep_selection )
+                     {
+                        model.selectNone();
+                     }
+                     else if(_k.modShift())
+                     {
+                        model.selectRow(model.getCursorIndex());
+                     }
+                     moveCursorToPreviousRow();
+                     if(_k.modShift())
+                     {
+                        model.selectRow(model.getCursorIndex());
+                     }
+                     return true;
+                  }
+               }
+               else
+               {
+                  if(_k.modNone())
+                  {
+                     moveCursorToPreviousRow();
+                     return true;
+                  }
+               }
+               break;
+
+            case VKEY_PAGEDOWN:
+               pageSize = _k.modShift() ? 100 : page_size;
+               moveCursorToNextPage(pageSize);
+               return true;
+
+            case VKEY_DOWN:
+               if(b_multiple)
+               {
+                  if(!_k.modCtrl())
+                  {
+                     if( _k.modNone() && !b_cursormove_keep_selection )
+                     {
+                        model.selectNone();
+                     }
+                     else if(_k.modShift())
+                     {
+                        model.selectRow(model.getCursorIndex());
+                     }
+                     moveCursorToNextRow();
+                     if(_k.modShift())
+                     {
+                        model.selectRow(model.getCursorIndex());
+                     }
+                     return true;
+                  }
+               }
+               else
+               {
+                  if(_k.modNone())
+                  {
+                     moveCursorToNextRow();
+                     return true;
+                  }
+               }
+               break;
+
+            case VKEY_HOME:
+               if(!b_disable_home_end_keys)
+               {
+                  if(_k.modNone())
+                  {
+                     moveCursorToFirstRow();
+                     return true;
+                  }
+               }
+               break;
+
+            case VKEY_END:
+               if(!b_disable_home_end_keys)
+               {
+                  if(_k.modNone())
+                  {
+                     moveCursorToLastRow();
+                     return true;
+                  }
+               }
+               break;
+
+            case VKEY_RCTRL:
+               if(!b_disable_context_menu_ctrl_key)
+               {
+                  showContextMenu(true);
+                  return true;
+               }
+               break;
+
+            case 'a':
+               if(b_multiple && !b_multiple_no_a_key)
+               {
+                  if(_k.modCtrl())
+                  {
+                     int oldCursorIdx = model.getCursorIndex();
+                     if(_k.modShift())
+                     {
+                        selectNone();
+                        model.setCursorIndex(oldCursorIdx);
+                        provideActionMultipleSelection();
+                        provideAction(Action.New(getProvidedActionAlias(ACTION_SELECTNONE), this));
+                     }
+                     else
+                     {
+                        if(model.getNumSelectedRows() == model.getNumRows())
+                        {
+                           // Already selected, toggle
+                           selectNone();
+                           model.setCursorIndex(oldCursorIdx);
+                           provideActionMultipleSelection();
+                           provideAction(Action.New(getProvidedActionAlias(ACTION_SELECTNONE), this));
+                        }
+                        else
+                        {
+                           selectAll();
+                           provideActionMultipleSelection();
+                           provideAction(Action.New(getProvidedActionAlias(ACTION_SELECTALL), this));
+                        }
+                     }
+                     return true;
+                  }
+               }
+               if(b_context_menu_a_key)
+               {
+                  showContextMenu(true);
+                  return true;
+               }
+               break;
+
+         }
+
+         switch(_k.released)
+         {
+            case VKEY_RETURN:
+            case VKEY_SPACE:
+               if(_k.modAlt())
+                  return false;
+               if(b_select_on_key_release)
+                  handleRowSelection(true/*bClicked*/, false/*fold hint*/, false/*bPreview*/);
+               return true;
+
+            case VKEY_RIGHT:
+               if(b_use_cursor_fold_keys)
+               {
+                  if(b_select_on_key_release)
+                     handleRowSelection(true/*bClicked*/, false/*fold hint*/, false/*bPreview*/);
+                  return true;
+               }
+               return false;
+         }
+      } // if editable
+
+      return Layer::onKey(_k);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      b_use_cursor_fold_keys = true;
+      b_header = true;
+
+      initTableViewPre();
+
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+         String atnamelc;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+
+            switch(atname)
+            {
+               case ACTION_ROWSELECTED:
+                  _form.addHandledAction(atname, IntAction, atval);
+                  break;
+
+               case ACTION_ROWCLICKED:
+                  _form.addHandledAction(atname, IntAction, atval);
+                  break;
+            }
+
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "contextmenuctrlkey":
+                  b_disable_context_menu_ctrl_key = !int(atval);
+                  break;
+
+               case "contextmenuakey":
+                  b_context_menu_a_key = int(atval);
+                  break;
+
+               case "spacekey":
+                  b_disable_space_key = !int(atval);
+                  break;
+
+               case "returnkey":
+                  b_disable_return_key = !int(atval);
+                  break;
+
+               case "homeendkeys":
+                  b_disable_home_end_keys = !int(atval);
+                  break;
+
+               case "forcewheelscrollrow":
+                  b_force_wheel_scroll_row = int(atval);
+                  break;
+
+               case "scrollerxsy":
+                  scroller_x_sy = int(atval);
+                  break;
+
+               case "scrollerysx":
+                  scroller_y_sx = int(atval);
+                  break;
+
+               case "selectonkeyrelease":
+                  b_select_on_key_release = int(atval);
+                  break;
+
+               case "usecursorfoldkeys":
+                  b_use_cursor_fold_keys = int(atval);
+                  break;
+
+               case "multiple":
+               case "multi":
+                  b_multiple = int(atval);
+                  break;
+
+               case "multiplekeya":
+               case "multikeya":
+                  b_multiple_no_a_key = !int(atval);
+                  break;
+
+               case "dragmultiple":
+                  b_drag_multiple = int(atval);
+                  break;
+
+               case "multiplermbselect":
+                  b_multiple_rmb_select = int(atval);
+                  break;
+
+               case "multipletoggle":
+                  b_multiple_toggle = int(atval);
+                  break;
+
+               case "cursormovekeepselection":
+                  b_cursormove_keep_selection = int(atval);
+                  break;
+
+               case "header":
+                  b_header = int(atval);
+                  break;
+
+               case "bgcolor":
+                  setBackgroundColor(atval);
+                  break;
+
+               case "fgcolor":
+                  setForegroundColor(atval);
+                  break;
+
+               case "nopreferredsizey":
+                  b_no_preferred_size_y = int(atval);
+                  break;
+
+               case "providetab":
+                  setEnableProvideTab(int(atval));
+                  break;
+
+               case "providekbdfocus":
+                  setEnableProvideKbdFocus(int(atval));
+                  break;
+
+               case "forcecontextmenu":
+                  b_force_context_menu = int(atval);
+                  break;
+
+               case "hold":
+                  b_send_hold = int(atval);
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+      initTableView(b_header); // true=show table header
+
+      if(scroller_x_sy > 8)
+         scroller_x.setRequiredSizeY(scroller_x_sy);
+
+      if(scroller_y_sx > 8)
+         scroller_y.setRequiredSizeX(scroller_y_sx);
+
+      setLayerStyle(layer_style);
+   }
+
+}

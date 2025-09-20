@@ -1,0 +1,536 @@
+// ----
+// ---- file   : Window.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 03Apr2005
+// ---- changed: 19Apr2005, 20Apr2005, 28May2005, 07Jun2005, 09Jun2005, 10Jun2005, 18Jun2005
+// ----          23Jun2005, 24Jun2005, 02Jul2005, 17Jul2005, 31Jul2005, 24Jun2006, 12Aug2006,
+// ----          29Apr2007, 14Apr2008, 01Feb2009, 19Jan2010, 06Feb2010, 22Apr2010, 04Jan2012
+// ----          09Jan2012, 07May2013, 26Aug2013, 08Mar2014, 16Feb2018, 01Dec2018, 24Oct2019
+// ----          12Aug2022, 06Oct2023, 30Oct2023, 01Nov2023, 21Mar2024
+// ----
+// ----
+// ----
+
+module MWindow;
+
+namespace ui;
+
+use tkopengl;
+use tksdl;
+use tkfreetype2;
+use tkui;
+
+
+class Window extends FloatingLayer {
+   explain "A window is usually decorated with a border, a caption, and a set of close/hide/maximize/resize/help buttons.";
+
+   public String caption = "tkui Window";
+
+   protected WindowTitleBar *window_title_bar;
+
+   protected int resize_mask;
+   protected float resize_minimum_size_x;
+   protected float resize_minimum_size_y;
+
+   protected Panel *panel;
+   protected Layer *inner_layer;
+   protected boolean b_folded;
+   protected boolean b_docked;
+   protected boolean b_dockable = true;
+
+   protected WindowDock *default_dock;
+
+
+   public static New(Layer _l, String _caption, float _x, _y, _w, _h) {
+      local Window w;
+      // trace "xxx new Window inner geometry ("+_x+";"+_y+";"+_w+";"+_h+")";
+      w.initWindow(deref _l,
+                   _caption,
+                   _x, _y,
+                   _w, _h
+                   );
+      return deref w;
+   }
+
+   public getPanel() : Panel {
+      return panel;
+   }
+
+   public method initWindowInt() {
+      initPanel();
+      panel <= Panel.New();
+   }
+
+   protected initWindow(Layer _l, String _caption, float _x, _y, _w, _h) {
+
+      _w += UIConstants.WINDOW_BORDER_SIZE_X * 2 * UI.window_border_scaling;
+      _h += WindowTitleBar.GetHeight() + UIConstants.WINDOW_BORDER_SIZE_Y * 2 * UI.window_border_scaling;
+
+      initWindowInt();
+      setLayout(SuperBorderLayout);
+      setPadding4f(0,0,0,0);
+
+      panel.setLayout(SuperBorderLayout);
+      panel.setLayoutWeight2f(1.0f, 1.0f);
+      panel.setPadding4f(UIConstants.WINDOW_BORDER_SIZE_Y * UI.window_border_scaling,
+                         UIConstants.WINDOW_BORDER_SIZE_X * UI.window_border_scaling,
+                         UIConstants.WINDOW_BORDER_SIZE_Y * UI.window_border_scaling,
+                         UIConstants.WINDOW_BORDER_SIZE_X * UI.window_border_scaling
+                         );
+
+      window_title_bar <= new WindowTitleBar();
+      window_title_bar.initWindowTitleBar();
+      window_title_bar.setAlignment(Layout.LEFT|Layout.TOP);
+      window_title_bar.setLayoutWeightX(1.0f);
+      window_title_bar.setRequiredSizeY(WindowTitleBar.GetHeight());
+      window_title_bar.setCaption(_caption);
+      window_title_bar.setPadding4f(0,0,0,0);
+      panel.addLayer(window_title_bar, Layout.TOP);
+
+      _l.setPadding4f(0,0,0,0);
+      _l.setLayoutWeight2f(1.0f, 1.0f);
+      inner_layer <= deref _l;
+      panel.addLayer(inner_layer, Layout.CENTER);
+
+      layer_alpha = lnf.window_layer_alpha;
+
+      addLayer(panel, Layout.TOP);
+
+      setMinimumSize2f(48, 16);
+
+      setGeometry(_x, _y, _w, _h);
+      ////trace "----------------------------------\nxxx Window: layoutHierarchy";
+
+      ////trace "xxx Window::init finished. size_x="+size_x+" size_y="+size_y+" title_bar.size_x="+window_title_bar.size_x;
+   }
+
+   public method setWindowContentSizeX(float _w) {
+      setSizeX(_w + UIConstants.WINDOW_BORDER_SIZE_X*2*UI.window_border_scaling);
+   }
+
+   public method setWindowContentSizeY(float _h) {
+      setSizeY(_h + WindowTitleBar.GetHeight() + UIConstants.WINDOW_BORDER_SIZE_Y*4*UI.window_border_scaling);
+   }
+
+   public method setMinimumInnerSize2f(float _w, _h) {
+      // ? unused
+      setMinimumSize2f(_w+UIConstants.WINDOW_BORDER_SIZE_X*2,
+                       _h+WindowTitleBar.GetHeight()+UIConstants.WINDOW_BORDER_SIZE_Y*2*UI.window_border_scaling); // xxx hardcoded title height
+   }
+
+   protected virtual preShow() {
+      FloatingLayer::preShow();
+
+      if(!b_layer_postinit_done)
+      {
+         b_layer_postinit_done = true;
+
+         layoutHierarchy(true, false);
+         panel.recursiveOnResize();
+         recursiveBuildTabCycleLists();
+         recursiveOnLookAndFeelChanged();
+      }
+   }
+
+   public method setInnerLayer(Layer _l) {
+      // usually not called by applications
+      panel.removeChildLayer(inner_layer);
+      inner_layer <= deref _l;
+      if(null != inner_layer)
+         panel.addChildLayer(inner_layer);
+   }
+
+   public method fold() {
+      explain "Hide inner layer (i.e. only title bar remains visible)";
+      if(!isModal())
+      {
+         if(!b_folded)
+         {
+            b_folded = true;
+            panel.removeChildLayer(inner_layer);
+            setGeometry(position_x, position_y,
+                        size_x,
+                        WindowTitleBar.GetHeight()+UIConstants.WINDOW_BORDER_SIZE_Y*2*UI.window_border_scaling
+                        );
+
+            handleResize();
+         }
+      }
+   }
+
+   public method unfold() {
+      explain "Show inner layer";
+      if(b_folded)
+      {
+         b_folded = false;
+         panel.addChildLayer(inner_layer);
+         setGeometry(position_x, position_y, size_x, size_y+inner_layer.getSizeY());
+
+         handleResize();
+      }
+   }
+
+   public method toggleFolding() {
+      if(b_folded)
+         unfold();
+      else
+         fold();
+   }
+
+   public method isFolded() : boolean {
+      return b_folded;
+   }
+
+   public method hide() {
+      UI.SetPreferredMouseLayer(null);
+      FloatingLayer::hide();
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return (0 != resize_mask);
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      showCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      return (0 != resize_mask);
+   }
+
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   public method isMovable() : boolean {
+      return true;
+   }
+
+   protected method onWindowEndResize() {
+      // Derived classes can override this method to e.g. save the window geometry to a config file
+   }
+
+   protected method handleResizing(MouseEvent _ev, boolean _bForceEndResize) : boolean {
+      boolean bConsumed = false;
+
+      if(resize_mask)
+      {
+         Rectangle2f r = getScreenRegion();
+         if(resize_mask & Layout.RIGHT)
+         {
+            if(_ev.mouse_rel_x > resize_minimum_size_x)
+            {
+               r.px = r.qx + _ev.mouse_rel_x;
+            }
+            else
+            {
+               r.px = r.qx + resize_minimum_size_x;
+            }
+         }
+         else if(resize_mask & Layout.LEFT)
+         {
+            if(_ev.mouse_rel_x < (size_x - resize_minimum_size_x))
+            {
+               r.qx = r.qx + _ev.mouse_rel_x;
+            }
+            else
+            {
+               r.qx = r.px - resize_minimum_size_x;
+            }
+         }
+         if(resize_mask & Layout.TOP)
+         {
+            if(_ev.mouse_rel_y < (size_y - resize_minimum_size_y))
+            {
+               r.qy = r.qy + _ev.mouse_rel_y;
+            }
+            else
+            {
+               r.qy = r.py - resize_minimum_size_y;
+            }
+         }
+         else if(resize_mask & Layout.BOTTOM)
+         {
+            if(_ev.mouse_rel_y > resize_minimum_size_y)
+            {
+               r.py = r.qy + _ev.mouse_rel_y;
+            }
+            else
+            {
+               r.py = r.qy + resize_minimum_size_y;
+            }
+         }
+
+         if(_bForceEndResize || _ev.leftButtonUp())
+         {
+            resize_mask = 0;
+            bConsumed = true;
+            UI.EndMarkRegion();
+            if(!b_folded)
+            {
+               size_x = int(r.px-r.qx);
+               size_y = int(r.py-r.qy);
+               position_x = int(r.qx);
+               position_y = int(r.qy);
+               trace "[dbg] Window: new geometry is "+r.getPosSizeString();
+
+               handleResize();
+
+               invalidateAbsolutePositions();
+               //trace "xxx Window: size=("+size_x+";"+size_y+")";
+               //trace "xxx Window: minSize=("+getMinimumSizeX()+";"+getMinimumSizeY()+")";
+               bConsumed = true;
+
+               onWindowEndResize();
+            }
+         }
+         else
+         {
+            if(!b_folded)
+            {
+               UI.UpdateMarkedRegion(r);
+            }
+         }
+
+         UI.CompositeAll();
+      }
+      return bConsumed;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      return handleResizing(_ev, (0 != resize_mask) );
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      boolean bConsumed = false;
+      int new_resize_mask = 0;
+      // trace "xxx resize_mask="+resize_mask+" _ev.leftButtonDown="+_ev.leftButtonDown();
+      if(0 == resize_mask)
+      {
+         float borderSz = UIConstants.WINDOW_MOUSE_BORDER_SIZE * UI.window_border_scaling;
+         // // float borderSx = UIConstants.WINDOW_BORDER_SIZE_X * UI.window_border_scaling;
+         // // float borderSy = UIConstants.WINDOW_BORDER_SIZE_Y * UI.window_border_scaling;
+         float borderSx = borderSz;
+         float borderSy = borderSz;
+         if( isResizable() && (0 <= _ev.mouse_rel_x < size_x) && (0 <= _ev.mouse_rel_y < size_y) )
+         {
+            if(_ev.mouse_rel_x < borderSx)
+            {
+               if(_ev.mouse_rel_y < borderSy)
+               {
+                  bConsumed = true;
+                  showCursor(UIConstants.CURSOR_MOVEXYD);
+                  new_resize_mask = Layout.TOP | Layout.LEFT;
+               }
+               else if(_ev.mouse_rel_y >= (size_y - borderSy))
+               {
+                  bConsumed = true;
+                  showCursor(UIConstants.CURSOR_MOVEXYU);
+                  new_resize_mask = Layout.BOTTOM | Layout.LEFT;
+               }
+               else
+               {
+                  bConsumed = true;
+                  showCursor(UIConstants.CURSOR_MOVEX);
+                  new_resize_mask = Layout.LEFT;
+               }
+            }
+            else if(_ev.mouse_rel_x >= (size_x - borderSx))
+            {
+               if(_ev.mouse_rel_y < borderSy)
+               {
+                  bConsumed = true;
+                  showCursor(UIConstants.CURSOR_MOVEXYU);
+                  new_resize_mask = Layout.TOP | Layout.RIGHT;
+               }
+               else if(_ev.mouse_rel_y >= (size_y - borderSy))
+               {
+                  bConsumed = true;
+                  showCursor(UIConstants.CURSOR_MOVEXYD);
+                  new_resize_mask = Layout.BOTTOM | Layout.RIGHT;
+               }
+               else
+               {
+                  bConsumed = true;
+                  showCursor(UIConstants.CURSOR_MOVEX);
+                  new_resize_mask = Layout.RIGHT;
+               }
+            }
+            else if(_ev.mouse_rel_y < borderSy)
+            {
+               bConsumed = true;
+               showCursor(UIConstants.CURSOR_MOVEY);
+               new_resize_mask = Layout.TOP;
+            }
+            else if(_ev.mouse_rel_y >= (size_y - borderSy))
+            {
+               bConsumed = true;
+               showCursor(UIConstants.CURSOR_MOVEY);
+               new_resize_mask = Layout.BOTTOM;
+            }
+         } // if mouse within window and resizable
+
+         // trace "xxx   new_resize_mask="+new_resize_mask;
+
+         if(new_resize_mask)
+            UI.SetPreferredMouseLayer(this);
+         else
+            UI.SetPreferredMouseLayer(null);
+
+         if(_ev.leftButtonDown())
+         {
+            if(new_resize_mask)
+            {
+               resize_mask = new_resize_mask;
+               bConsumed = true;
+
+               // trace "\n\n\nxxx ------------------------------------------------------------- start window resize";
+
+               // Calculate minimum required size
+               //  to avoid issues with sizegroup members that use layout weights (or expand alignments), temporarily
+               //  set the size of this layer to (10; 10)
+               minimum_size_x = 0;
+               minimum_size_y = 0;
+               float origSx = size_x;
+               float origSy = size_y;
+               // trace "xxx window resize: origSize="+getSizeString();
+               size_x = 10;
+               size_y = 10;
+               b_layout_minsweep = true;
+
+               recursiveInvalidateSizeGroupMemberSizes(); // xxx 04Jan2012
+               invalidateSizeCaches(); // xxx 03Jan2012
+
+               // trace "xxx Window::beginResize: totalNumChildLayers="+getTotalNumChildLayers();
+               int t = milliSeconds();
+               // b_ui_debug = true;
+               // Configuration.debugLevel = 99;
+               layoutHierarchy(true, false); // xxx 03Jan2012
+               // b_ui_debug = false;
+               // trace "xxx Window::beginResize: minsweep layoutHierarchy took "+(milliSeconds()-t)+" ms";
+
+               resize_minimum_size_x = getMinimumSizeX(); // calculate minimum size if not cached
+               resize_minimum_size_y = getMinimumSizeY();
+               // trace "xxx window: resize minSize="+getMinimumSizeString();
+               b_layout_minsweep = false;
+
+               // Restore original size + re-layout
+               size_x = origSx;
+               size_y = origSy;
+               recursiveInvalidateSizeGroupMemberSizes(); // xxx 04Jan2012
+               invalidateSizeCaches(); // xxx 03Jan2012
+               layoutHierarchy(true, false);
+               // layoutHierarchy(true, false);
+
+               // trace "xxx window resize: restore origSize="+getSizeString();
+               getMinimumSizeX();
+               getMinimumSizeY();
+               // trace "xxx window: resize restore minSize="+getMinimumSizeString();
+
+               UI.BeginMarkRegion(getScreenRegion(), mathMaxi(UIConstants.WINDOW_BORDER_SIZE_X*UI.window_border_scaling,
+                                                              UIConstants.WINDOW_BORDER_SIZE_Y*UI.window_border_scaling
+                                                              )
+                                  );
+            }
+         }
+      }
+
+      bConsumed |= (0 != resize_mask);
+
+      getMinimumSizeX(); // calculate minimum size if not cached
+      getMinimumSizeY();
+
+      if(bConsumed)
+         handleResizing(_ev, false);
+      else
+         revertCursor(UIConstants.CURSOR_NORMAL);
+
+      return bConsumed;
+   }
+
+   public method focusWindowTitleBar() {
+      UI.SetKeyboardFocus(window_title_bar);
+   }
+
+   public virtual onOpen() { // xxx should not be required if getLayoutFirstChild() were implemented ?!
+      FloatingLayer::onOpen();
+
+      if(null != inner_layer)
+         inner_layer.recursiveOnOpen();
+   }
+
+   public method setWindowTitle(String _caption) {
+      explain "Set the caption of the window title bar.";
+
+      if(null != window_title_bar)
+      {
+         window_title_bar.setCaption(_caption);
+         window_title_bar.redraw();
+      }
+   }
+
+   public method getWindowTitle() :  String {
+      if(null != window_title_bar)
+         return window_title_bar.getCaption();
+   }
+
+   public method setDockable(boolean _b) {
+      b_dockable = _b;
+   }
+
+   public method isDockable() : boolean {
+      return b_dockable;
+   }
+
+   public method isDocked() : boolean {
+      return b_docked;
+   }
+
+   public method toggleDocking() {
+      if(b_dockable)
+      {
+         if(b_docked)
+            undock();
+         else
+            dock();
+      }
+   }
+
+   public method setDefaultDock(WindowDock _dock) {
+      default_dock <= deref _dock;
+   }
+
+   public method getDefaultDock() : WindowDock {
+      return default_dock;
+   }
+
+   public method dock() {
+      if(null != default_dock)
+      {
+         b_docked = true;
+         default_dock.dockWindow(this);
+      }
+   }
+
+   public method undock() {
+      if(null != default_dock)
+      {
+         default_dock.undockWindow(this);
+         b_docked = false;
+      }
+   }
+
+   public virtual handleDrawOverlays() {
+      if(b_docked || b_folded)
+         return;
+      else
+         FloatingLayer::handleDrawOverlays();
+   }
+
+}

@@ -1,0 +1,494 @@
+// ----
+// ---- file   : LayerSwitch.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created:
+// ---- changed: 15Jul2010, 17Jul2010, 12Feb2011, 04Jan2012, 09Jan2012, 11Aug2014, 22Sep2014
+// ----          19Apr2015, 15May2015, 19Jul2015, 19Jan2017, 28May2017, 16Feb2018, 17Feb2018
+// ----          01Jun2018, 28Nov2018, 31Jul2020, 27Dec2020, 27Jan2021, 17Jul2022, 27Oct2023
+// ----          31Oct2023, 10Nov2023, 23Jan2025, 10Sep2025, 13Sep2025
+// ----
+// ----
+// ----
+
+module MLayerSwitch;
+
+namespace ui;
+
+
+class LayerSwitch extends Composite {
+   explain "The layerswitch can be used to toggle between different child layers.";
+
+   protected int current_child_nr;
+   protected Layer *[] switch_child_layers;
+   protected boolean b_draw_bg; // autoreset to false, used to restore background after layer switch
+   namespace boolean b_calcsizeonlycurrent; // true=report only the minimum/preferred size of the current layer
+   protected boolean b_keep_parent; // true=keep invisible child parent (for events)
+
+   protected int c32_bg;
+   protected int c32_bg_tint;
+
+   namespace boolean b_debug;  // fill bg with green
+
+   define int BGSTYLE_CONTROL = 0;
+   define int BGSTYLE_WINDOW  = 1;
+   define int BGSTYLE_NONE    = 2;
+   protected int bg_style;
+
+   protected boolean b_layerswitch_debug;
+
+
+   public method initLayerSwitch() {
+      initLayer();
+      current_child_nr = 0;
+   }
+
+   public method getNumSwitchLayers() : int {
+      return switch_child_layers.numElements;
+   }
+
+   public method getCurrentChildNr() : int {
+      return current_child_nr;
+   }
+
+   public method getChildByIdx(int _nr) : Layer {
+      return switch_child_layers.get(_nr);
+   }
+
+   public virtual setDebug(boolean _bDebug) {
+      b_layerswitch_debug = _bDebug;
+   }
+
+   public virtual getDebug() : boolean {
+      return b_layerswitch_debug;
+   }
+
+   // // public virtual getBaselineY() : float {
+   // //    if(-1 == cached_baseline_y)
+   // //    {
+   // //       float maxBaselineY = 0;
+   // //       Layer *l;
+   // //       if(b_calcsizeonlycurrent)
+   // //       {
+   // //          l <= switch_child_layers.get(current_child_nr);
+   // //          if(null != l)
+   // //             maxBaselineY = l.getBaselineY();
+   // //       }
+   // //       else
+   // //       {
+   // //          foreach l in switch_child_layers
+   // //             maxBaselineY = mathMaxf(maxBaselineY, l.getBaselineY());
+   // //       }
+   // //       cached_baseline_y = maxBaselineY;
+   // //    }
+   // //    // trace "xxx LayerSwitch: return cached_baseline_y="+cached_baseline_y;
+   // //    return cached_baseline_y;
+   // // }
+
+   public virtual recursiveSetEditable(boolean _bEditable) {
+
+      setEditable(_bEditable);
+
+      if(switch_child_layers.numElements)
+      {
+         Layer *l;
+         foreach l in switch_child_layers
+         {
+            l.recursiveSetEditable(_bEditable);
+         }
+      }
+   }
+
+   public virtual recursiveOnOpen() {
+      onOpen();
+
+      if(switch_child_layers.numElements)
+      {
+         local Layer *l;
+         foreach l in switch_child_layers
+         {
+            // trace "xxx LS: recursiveOnOpen: l="+#(l);
+            l.recursiveOnOpen();
+         }
+      }
+   }
+
+   public method switchToLayerNr(int _nr) {
+      // trace "xxx switchToLayerNr("+_nr+") switch_child_layers.numElements="+switch_child_layers.numElements;
+      if(_nr >= 0)
+      {
+         if(_nr < switch_child_layers.numElements)
+         {
+            if(1)//_nr != current_child_nr)  // (note) breaks layout when skipped (e.g. TabSwitch)
+            {
+               Layer oldL <= switch_child_layers.get(current_child_nr);
+               UI.LoseKeyboardFocusIfWithin(oldL, true);
+
+               local Layer lastFirstChild <= first_child;
+
+               removeChildren();
+
+               if(b_keep_parent)
+               {
+                  if(null != lastFirstChild)
+                  {
+                     // Keep parent for events / actions
+                     // trace "[trc] tabbedview: keep parent";
+                     lastFirstChild.parent <= this;
+                  }
+               }
+
+               Layer l <= switch_child_layers[_nr];
+               addChildLayer(l);
+               l.setSize2f(getSizeX()-l.getPadLeft()-l.getPadRight(),
+                           getSizeY()-l.getPadTop()-l.getPadBottom()
+                           );
+               l.setPosition2f(l.getPadLeft(), l.getPadTop());
+
+               if(b_calcsizeonlycurrent)
+                  invalidateSizeCaches();
+
+               current_child_nr = _nr;
+
+               invalidateAbsolutePositions();
+
+               //  trace "xxx ---------- LayerSwitch::layoutHierarchy START numChildren="+getTotalNumChildLayers();
+               // int ms = milliSeconds();
+
+               relayout();
+               // // queueRelayout();  // [04Oct2024] queued relayout breaks TrigSeqEditor stepdetails
+               // // // layoutHierarchy(true, false);  // [17Jul2022] postpone relayout
+               redraw();
+
+               // trace "xxx LayerSwitch::layoutHierarchy took "+(milliSeconds() - ms);
+
+               b_draw_bg = true;
+               ////trace "xxx LayerSwitch: switched to child layer #"+_nr+" layer="+#(switch_child_layers[_nr])+" parent="+#(parent);
+            }
+         }
+      }
+   }
+
+   public method relayoutActiveLayer() {
+      if(b_calcsizeonlycurrent)
+         invalidateSizeCaches();
+
+      invalidateAbsolutePositions();
+
+      //  trace "xxx ---------- LayerSwitch::layoutHierarchy START numChildren="+getTotalNumChildLayers();
+      // int ms = milliSeconds();
+
+      layoutHierarchy(true, false);
+      redraw();
+      b_draw_bg = true;
+   }
+
+   public method switchToNextLayer() {
+      if(switch_child_layers.numElements > 0)
+      {
+         current_child_nr = (current_child_nr + 1) % (switch_child_layers.numElements);
+
+         switchToLayerNr(current_child_nr);
+      }
+   }
+
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      Layer l <= switch_child_layers.get(current_child_nr);
+      if(null != l)
+      {
+         l.addTabCycleOverrides(_retLayers);
+         _retLayers.add(l);
+      }
+   }
+
+   public virtual calcMinimumSizeX() {
+      local Layer *l;
+      local float msx = 0;
+
+      if(b_calcsizeonlycurrent)
+      {
+         l <= switch_child_layers.get(current_child_nr);
+         msx = l.getMinimumSizePadX();
+      }
+      else
+      {
+         foreach l in switch_child_layers
+         {
+            local float cmsx = l.getMinimumSizePadX();
+            if(cmsx > msx)
+               msx = cmsx;
+         }
+      }
+
+      minimum_size_x = msx;
+
+      ////trace "xxx LayerSwitch::calcMinimumSizeX: "+msx;
+   }
+
+   public virtual calcMinimumSizeY() {
+      local Layer *l;
+
+      local float msy = 0;
+
+      if(b_calcsizeonlycurrent)
+      {
+         l <= switch_child_layers.get(current_child_nr);
+         msy = l.getMinimumSizePadY();
+         ////trace "xxx LayerSwitch: b_calcsizeonlycurrent=1, msy="+msy;
+      }
+      else
+      {
+         foreach l in switch_child_layers
+         {
+            local float cmsy = l.getMinimumSizePadY();
+            if(cmsy > msy)
+               msy = cmsy;
+         }
+         /////trace "xxx LayerSwitch::calcMinimumSizeY: msy="+msy+" scl="+#(switch_child_layers);
+      }
+
+      minimum_size_y = msy;
+   }
+
+   public virtual calcPreferredSizeX() {
+      local Layer *l;
+      local float psx = 0;
+      // if("ls_browser" == getLayerId())
+      //    trace "------------------------------------------------ LayerSwitch::calcPreferredSizeX ls_browser";
+
+      if(b_calcsizeonlycurrent)
+      {
+         l <= switch_child_layers.get(current_child_nr);
+         psx = l.getPreferredSizePadX();
+         // trace "xxx LayerSwitch::calcPreferredSizeX: psx="+psx+" this="+#(this);
+      }
+      else
+      {
+         foreach l in switch_child_layers
+         {
+            local float cpsx = l.getPreferredSizePadX();
+            if(cpsx > psx)
+               psx = cpsx;
+         }
+      }
+
+      preferred_size_x = psx;
+   }
+
+   public virtual calcPreferredSizeY() {
+      local Layer *l;
+      local float psy = 0;
+
+      if(b_calcsizeonlycurrent)
+      {
+         l <= switch_child_layers.get(current_child_nr);
+         psy = l.getPreferredSizePadY();
+         if(getDebug())
+            trace "xxx LayerSwitch: b_calcsizeonlycurrent=1, psy="+psy;
+      }
+      else
+      {
+         foreach l in switch_child_layers
+         {
+            local float cpsy = l.getPreferredSizePadY();
+            if(getDebug())
+               trace "xxx LayerSwitch: b_calcsizeonlycurrent=0, cpsy="+cpsy;
+            if(cpsy > psy)
+               psy = cpsy;
+         }
+      }
+
+      preferred_size_y = psy;
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      // local boolean bDebug = ("ls_browser" == getLayerId());
+      // if(bDebug) trace "xxx LayerSwitch::layoutHierarchy: this="+#(this)+" layerId="+getLayerId()+" bInvalidateSizeCaches="+_bInvalidateSizeCaches+" bLayoutFinal="+_bLayoutFinal;
+
+      if(_bInvalidateSizeCaches)
+      {
+         // if(bDebug) trace "!\n!\n!\n!\n!\nxxx LayerSwitch::layoutHierarchy: invalidateSizeCache()";
+         invalidateSizeCaches();
+      }
+
+      // if(bDebug) trace "xxx LayerSwitch::layoutHierarchy: getSizeX()="+getSizeX()+" getSizeY()="+getSizeY();
+      // if(bDebug) trace "xxx LayerSwitch::layoutHierarchy: preferred_size_x="+preferred_size_x;
+      // if(bDebug) trace "xxx LayerSwitch::layoutHierarchy: getPreferredSizeX()="+getPreferredSizeX()+" getPreferredSizeY()="+getPreferredSizeY();
+      // if(bDebug) trace "xxx LayerSwitch::layoutHierarchy: getMinimumSizeX()="+getMinimumSizeX()+" getMinimumSizeY()="+getMinimumSizeY();
+
+      local Layer curChild <= switch_child_layers.get(current_child_nr);
+      // local Layer curChild <= first_child; // [19Sep2024] old code
+      if(null != curChild)
+      {
+         // if(bDebug) trace "xxx curChild.getMinimumSizeString()="+curChild.getMinimumSizeString();
+         // if(bDebug) trace "xxx curChild.getPreferredSizeString()="+curChild.getPreferredSizeString();
+
+         // // first_child.setSize2f(getSizeX(), getSizeY());
+         curChild.setSize2f(getSizeX()-curChild.getPadLeft()-curChild.getPadRight(),
+                            getSizeY()-curChild.getPadTop()-curChild.getPadBottom()
+                            );
+         curChild.setPosition2f(curChild.getPadLeft(), curChild.getPadTop());
+         curChild.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+         // // invalidateSizeCaches();
+         // // invalidateChildContainerMinSizeCaches();
+         // // first_child.layoutHierarchy();
+      }
+   }
+
+   // // public virtual layoutApplyCommonBaselineAdjustments(float _maxBaselineY, float _sizeAvail) {
+   // //    if(null != first_child)
+   // //    {
+   // //       if(first_child.alignment & Layout.BASELINEY)
+   // //          first_child.layoutApplyCommonBaselineAdjustments(_maxBaselineY, _sizeAvail);
+   // //    }
+   // // }
+
+   // // public virtual layoutApplyCompositeBaselineAdjustments() {
+   // //    if(null != first_child)
+   // //    {
+   // //       if(first_child.alignment & Layout.BASELINEY)
+   // //          first_child.layoutApplyCompositeBaselineAdjustments();
+   // //    }
+   // // }
+
+   public method addSwitchLayer(Layer _l) {
+      switch_child_layers.add(#(deref _l));
+   }
+
+   public method setEnableKeepParent(boolean _bEnable) {
+      b_keep_parent = _bEnable;
+   }
+
+   public method setEnableCalcSizeOnlyCurrent(boolean _bEnable) {
+      b_calcsizeonlycurrent = _bEnable;
+   }
+
+   public method setBGStyle(int _style) {
+      bg_style = _style;
+   }
+
+   protected method onLookAndFeelChanged_LayerSwitch() {
+      Layer::onLookAndFeelChanged();
+
+      c32_bg = lnf_colors.get((BGSTYLE_WINDOW == bg_style) ? LookAndFeel.COLOR_WINDOW_BG : LookAndFeel.COLOR_CONTROL_BG);
+   }
+
+   public virtual onLookAndFeelChanged() {
+      onLookAndFeelChanged_LayerSwitch();
+
+      local Layer *l;
+      foreach l in switch_child_layers
+      {
+         // trace "xxx LayerSwitch::recursiveOnLookAndFeelChanged: this.id="+getLayerId()+" l="+#(l)+" l.id="+l.getLayerId();
+         l.recursiveOnLookAndFeelChanged();
+      }
+   }
+
+   public virtual calcEffectiveBg32() : int {
+      return sdvg_TintARGB(c32_bg, c32_bg_tint);
+   }
+
+   public virtual onDraw() {
+      // trace "xxx LayerSwitch::onDraw: this="+#(this)+" pos="+getPositionString()+" size="+getSizeString();
+      if(b_draw_bg || b_debug)
+      {
+         b_draw_bg = false;
+
+         if(BGSTYLE_NONE != bg_style)
+            UIRenderer.DrawFilledRectangle(0, 0, size_x, size_y, b_debug ? 0xff00ff00 : sdvg_TintARGB(c32_bg, c32_bg_tint));
+      }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initLayerSwitch();
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "calcsizeonlycurrent":
+                  setEnableCalcSizeOnlyCurrent(int(atval));
+                  break;
+
+               case "keepparent":
+                  b_keep_parent = int(atval);
+                  break;
+
+               case "tint":
+                  c32_bg_tint = int(atval);
+                  break;
+
+               case "debug":
+                  b_debug = int(atval);
+                  break;
+
+               case "bgstyle":
+                  switch(atval.toLower())
+                  {
+                     default:
+                     case "control":
+                        bg_style = BGSTYLE_CONTROL;
+                        break;
+
+                     case "window":
+                        bg_style = BGSTYLE_WINDOW;
+                        break;
+
+                     case "none":
+                        bg_style = BGSTYLE_NONE;
+                        break;
+                  }
+                  break;
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   public method handleFinishAddSwitchLayers() {
+
+      if(current_child_nr >= (switch_child_layers.numElements))
+         current_child_nr = (switch_child_layers.numElements - 1);
+
+      if(current_child_nr >= 0)
+         addChildLayer(switch_child_layers[0]);
+
+      if(b_keep_parent)
+      {
+         Layer *c;
+         foreach c in switch_child_layers
+            c.parent <= this;
+      }
+
+      onLookAndFeelChanged_LayerSwitch();
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+      Composite::endXFMTag(_form, _attributes);
+
+      handleFinishAddSwitchLayers();
+   }
+
+   public virtual addXFMChild(Layer _c) {
+      // trace "xxx LayerSwitch::addXFMChild: this="+#(this)+" c="+#(_c);
+      addSwitchLayer(deref _c);
+   }
+
+//    public method onDraw() {
+//       trace "xxx layerswitch onDraw sx="+getSizeX()+" sy="+getSizeY();
+//       trace "xxx layerswitch onDraw first child sx="+first_child.getSizeX()+" sy="+first_child.getSizeY();
+//    }
+
+}

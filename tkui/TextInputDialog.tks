@@ -1,0 +1,404 @@
+// ----
+// ---- file   : TextInputDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 28Apr2007
+// ---- changed: 06Nov2007, 14Apr2008, 02Aug2008, 01Feb2009, 31May2009, 06Feb2010, 22Apr2010
+// ----          28Feb2011, 20Mar2011, 05Sep2014, 13Sep2014, 23Sep2014, 09Mar2015, 22Jan2017
+// ----          28Jan2017, 16Feb2018, 30Nov2018, 27Oct2019, 14Aug2020, 18Feb2023, 04Oct2023
+// ----          13Oct2023, 30Oct2023, 31Oct2023, 04Nov2023, 02Dec2023, 21Jun2025
+// ----
+// ----
+// ----
+
+module MTextInputDialog;
+
+namespace ui;
+
+
+class TextInputDialog extends Dialog, ActionConsumer, ActionProvider {
+
+   define int MIN_WIDTH = 200;
+   define int MIN_HEIGHT = 70;
+
+   define String ACTION_TEXTINPUTDIALOGCLOSED;
+   define String ACTION_TEXTINPUTDIALOGCLOSED_HOLD;
+   define String ACTION_TEXTINPUTDIALOGEDITED;  // char typed
+   define String ACTION_TEXTINPUTDIALOGCANCELED;
+
+   protected char accel_ok;
+   protected char accel_cancel;
+
+   protected ActionConsumer *recipient;
+
+   protected TextField *textfield;
+   protected Label     *lb_message;
+
+   protected Panel *p_extra;  // for derived classes (e.g. preset ComboBox in Synergy new-node dialog)
+
+   protected Button *bt_ok;
+   protected Button *bt_cancel;
+
+   public boolean b_provide_edited;  // true send message when text was typed
+
+
+   public static New(String _caption, String _message, String _btOkCaption, String _btCancelCaption,
+                     String _defaultText, int _maxCols, int _visCols,
+                     ActionConsumer _recipient
+                     ) : TextInputDialog {
+      local TextInputDialog d;
+      d.initTextInputDialog(deref _caption, deref _message, _btOkCaption, _btCancelCaption, _defaultText, _maxCols, _visCols, "textinput", false, _recipient);
+      return deref d;
+   }
+
+   public static NewHold(String _caption, String _message, String _btOkCaption, String _btCancelCaption,
+                         String _defaultText, int _maxCols, int _visCols,
+                         ActionConsumer _recipient
+                         ) : TextInputDialog {
+      local TextInputDialog d;
+      d.initTextInputDialog(deref _caption, deref _message, _btOkCaption, _btCancelCaption, _defaultText, _maxCols, _visCols, "textinput", true, _recipient);
+      return deref d;
+   }
+
+   public method initTextInputDialog(String _caption, String _message, String _btOkCaption, String _btCancelCaption,
+                                     String _defaultText, int _maxCols, int _visCols, String _iconName, boolean _bHold,
+                                     ActionConsumer _recipient
+                                     ) {
+
+      initDialog();
+
+      recipient <= deref _recipient;
+      int w, h;
+      local Panel l;
+      l.initPanel();
+      l.setLayout(SuperBorderLayout);
+      local Label lbMessage;
+      lbMessage.initLabel();
+      lbMessage.setCaption(_message);
+      Icon icon <= UI.GetIcon(_iconName);
+      if(null != icon)
+      {
+         lbMessage.setIcon(icon);
+         lbMessage.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+      }
+      l.addLayer(deref lbMessage, Layout.CENTER);
+      lb_message <= lbMessage;
+
+      // Add TextField
+      local Panel ptf;
+      ptf.initPanel();
+      ptf.setLayout(SuperBorderLayout);
+
+      local TextField tf;
+      tf.initTextField();
+      tf.setMaxTextLength(_maxCols);
+      tf.setVisibleTextLength(_visCols);
+      tf.setText(_defaultText);
+      tf.setAlignment(Layout.CENTER);
+      tf.setEnableSkipEsc(true);
+      tf.setPadding4f(0,2,0,2);
+      ptf.addLayer(deref tf, Layout.BOTTOM);
+      textfield <= tf;
+
+      p_extra <= Panel.New();
+      p_extra.setPadding4f(0,2,0,2);
+      p_extra.setAlignment(Layout.EXPANDX);
+      ptf.addLayer(deref p_extra, Layout.BOTTOM);
+
+      Layer customLayer <= getCustomLayerHook();
+      if(null != customLayer)
+      {
+         customLayer.setAlignment(Layout.LEFT);
+         p_extra.addLayer(deref customLayer, Layout.BOTTOM);
+      }
+
+      ptf.setAlignment(Layout.CENTER);
+      ptf.buildTabCycleList();
+      l.addLayer(deref ptf, Layout.BOTTOM);
+
+      // OK and cancel buttons
+      local Panel pnOkCancel;
+      pnOkCancel.initPanel();
+      pnOkCancel.setLayout(SuperBorderLayout);
+      pnOkCancel.setAlignment(Layout.CENTER);
+
+      // Add OK button
+      local Button btOk;
+      btOk.initButton();
+      btOk.setCaption(_btOkCaption);
+      btOk.setAlignment(Layout.CENTER);
+      btOk.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+      btOk.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT,
+                        UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+      btOk.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT,
+                             UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+      btOk.setProvidedActionAlias(Button.ACTION_CLICK, "ok");
+      if(UI.IsHiDPI())
+         btOk.setEnableLabelButton(true);
+      if(_bHold)
+      {
+         btOk.setEnableHold(true);
+         btOk.setProvidedActionAlias(Button.ACTION_HOLD_CLICK, "ok_hold");
+      }
+      pnOkCancel.addLayer(deref btOk, Layout.LEFT);
+      bt_ok <= btOk;
+
+      // Add Cancel button
+      local Button btCancel;
+      btCancel.initButton();
+      btCancel.setCaption(_btCancelCaption);
+      btCancel.setAlignment(Layout.CENTER);
+      btCancel.setIcon(UI.GetIcon("cancel"));
+      btCancel.setIconScale(0.5);
+      btCancel.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+      btCancel.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP,    UIConstants.DIALOGBUTTON_PAD_LEFT,
+                            UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT
+                            );
+      btCancel.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP,    UIConstants.DIALOGBUTTON_INSET_LEFT,
+                                 UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT
+                                 );
+      btCancel.setProvidedActionAlias(Button.ACTION_CLICK, "cancel");
+      btCancel.setEnableLabelButton(true);
+      bt_cancel <= btCancel;
+      pnOkCancel.addLayer(deref btCancel, Layout.RIGHT);
+
+      // Add ok/cancel panel
+      l.addLayer(deref pnOkCancel, Layout.BOTTOM);
+
+      // Calculate inner window size
+      w = l.getMinimumSizePadX();
+      h = l.getMinimumSizePadY();
+      l.setSize2f(w, h);
+
+      // Determine accelerator keys
+      accel_ok = UI.GetAcceleratorChar(_btOkCaption);
+      accel_cancel = UI.GetAcceleratorChar(_btCancelCaption);
+
+      // Initialize window
+      initWindow(deref l,
+                 _caption,
+                 0, 0, // update position in show()
+                 w, h
+                 );
+
+      recursiveBuildTabCycleLists();  // does not seem to work (focus is stuck in textfield)
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_TEXTINPUTDIALOGCLOSED,
+              ACTION_TEXTINPUTDIALOGCLOSED_HOLD,
+              ACTION_TEXTINPUTDIALOGEDITED,
+              ACTION_TEXTINPUTDIALOGCANCELED
+              ];
+   }
+
+   public method setEnableProvideEdited(boolean _bEnable) {
+      b_provide_edited = _bEnable;
+   }
+
+   public method getCustomLayerHook() : Layer {
+      // For adding additional widgets below textfield
+      return null;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public method setDefaultText(String _text) {
+      textfield.setText(_text);
+   }
+
+   public method getText() : String {
+      return textfield.getText();
+   }
+
+   public method setButtonFontByName(String _name) {
+      if(null != bt_ok)
+         bt_ok.setFontByName(_name);
+
+      if(null != bt_cancel)
+         bt_cancel.setFontByName(_name);
+   }
+
+   public method setMessageFontByName(String _name) {
+      if(null != lb_message)
+         lb_message.setFontByName(_name);
+   }
+
+   public method setTextFontByName(String _name) {
+      if(null != textfield)
+         textfield.setFontByName(_name);
+   }
+
+   public method setButtonIcons(Icon _icoYes, Icon _icoCancel) {
+      if(null != bt_ok)
+      {
+         bt_ok.setIcon(_icoYes);
+         bt_ok.setIconScale(1.0f * UI.icon_scaling);
+      }
+
+      if(null != bt_cancel)
+      {
+         bt_cancel.setIcon(_icoCancel);
+         bt_cancel.setIconScale(1.0f * UI.icon_scaling);
+      }
+   }
+
+   public method setOkButtonToolTipCaption(String _msg) {
+      if(null != bt_ok)
+         bt_ok.setToolTipCaption(_msg);
+   }
+
+   public method setCancelButtonToolTipCaption(String _msg) {
+      if(null != bt_cancel)
+         bt_cancel.setToolTipCaption(_msg);
+   }
+
+   public method setBackgroundTint(int _c32) {
+      // can be used to e.g. indicate that a preset name already exists (NAR_EditKitDialog)
+      textfield.setBackgroundTint(_c32);
+      textfield.redraw();
+   }
+
+   protected handleSelection(boolean _bOK, boolean _bHold) {
+      textfield.stopEditing(false/*bProvideAction*/, false/*bReturnKey*/, true/*bQuiet*/); // Do not provide new action to avoid recursion!
+
+      hide();
+
+      if(_bOK)
+      {
+         if(recipient instanceof ActionConsumer)
+         {
+            StringAction *sac;
+
+            if(_bHold)
+            {
+               sac <= StringAction.New(getProvidedActionAlias(ACTION_TEXTINPUTDIALOGCLOSED_HOLD),
+                                       this,
+                                       textfield.getText()
+                                       );
+            }
+            else
+            {
+               sac <= StringAction.New(getProvidedActionAlias(ACTION_TEXTINPUTDIALOGCLOSED),
+                                       this,
+                                       textfield.getText()
+                                       );
+            }
+            recipient.consumeAction(sac);
+            // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+         }
+      }
+      else
+      {
+         if(recipient instanceof ActionConsumer)
+         {
+            Action ac <= Action.New(getProvidedActionAlias(ACTION_TEXTINPUTDIALOGCANCELED), this);
+            recipient.consumeAction(ac);
+            // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+         }
+      }
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+      // // trace "xxx TextInputDialog: got acName="+acName;
+      switch(acName)
+      {
+         case "ok":
+            handleSelection(true/*ok*/, false/*bHold*/);
+            break;
+
+         case "ok_hold":
+            handleSelection(true/*ok*/, true/*bHold*/);
+            break;
+
+         case "cancel":
+            handleSelection(false/*ok*/, false/*bHold*/);
+            break;
+
+         case TextField.ACTION_TEXTENTERED:
+            handleSelection(true/*ok*/, false/*bHold*/);
+            break;
+
+         case TextField.ACTION_TEXTEDITED:
+            if(b_provide_edited)
+            {
+               if(recipient instanceof ActionConsumer)
+               {
+                  local StringAction sac <= StringAction.New(getProvidedActionAlias(ACTION_TEXTINPUTDIALOGEDITED),
+                                                             this,
+                                                             textfield.getText()
+                                                             );
+                  recipient.consumeAction(sac);
+               }
+            }
+            break;
+      }
+      return true;
+   }
+
+   public virtual onKey(Key _key) : boolean {
+      // // trace "xxx TextInputDialog::onKey: _key.pressed="+_key.pressed+" _key.released="+_key.released;
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleSelection(false/*ok*/, false/*bHold*/);
+            return true;
+
+         case VKEY_RETURN:
+            handleSelection(true/*ok*/, false/*bHold*/);
+            return true;
+
+         case VKEY_SPACE:
+            handleSelection(true/*ok*/, true/*bHold*/);
+            return true;
+
+         default:
+            if(_key.pressed)
+            {
+               if(accel_ok)
+               {
+                  if(_key.unicode == accel_ok)
+                  {
+                     // // trace "xxx TextInputDialog: handleSelection _key.pressed="+_key.pressed+" accel_ok="+accel_ok;
+                     handleSelection(true/*ok*/, false/*bHold*/);
+                     return true;
+                  }
+               }
+               if(accel_cancel)
+               {
+                  if(_key.unicode == accel_cancel)
+                  {
+                     // // trace "xxx TextInputDialog: handleSelection _key.pressed="+_key.pressed+" accel_cancel="+accel_cancel;
+                     handleSelection(false/*ok*/, false/*bHold*/);
+                     return true;
+                  }
+               }
+            }
+            break;
+      }
+      return false;
+   }
+
+   public virtual hideByMouseClick() {
+      handleSelection(false/*ok*/, false/*bHold*/); // Cancel
+   }
+
+   protected virtual preShow() {
+      Dialog::preShow();
+      resizeToMinimum();
+   }
+
+   protected virtual postShow() {
+      Dialog::postShow();
+      textfield.onTabFocus();
+   }
+
+}

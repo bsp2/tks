@@ -1,0 +1,1912 @@
+// ----
+// ---- file   : TextEdit.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 28Jul2006, 29Jul2006, 30Jul2006, 12Aug2006, 18May2007, 12Apr2008, 01Feb2009
+// ----          21Sep2009, 06Feb2010, 22Apr2010, 06Sep2015, 07Sep2015, 19Jan2017, 11Mar2017
+// ----          12Mar2017, 16Feb2018, 30Nov2018, 22Sep2019, 16Jul2020, 19Jul2020, 30Jul2021
+// ----          31Jul2021, 11Feb2023, 04May2023, 03Oct2023, 05Oct2023, 23Feb2024, 13Aug2024
+// ----          04Oct2024, 13Dec2024, 26Dec2024, 28Dec2024, 29Dec2024, 29Jan2025, 07Feb2025
+// ----          11Jun2025, 12Jun2025, 16Jun2025
+// ----
+// ----
+// ----
+
+//Shortcuts:
+//          ctrl-a : Move cursor to line start
+//    ctrl-shift-a : Expand selection to line start
+//            HOME : Move cursor to line start
+//      shift-HOME : Expand selection to line start
+//       ctrl-HOME : Move cursor to first line
+// ctrl-shift-HOME : Expand selection to first line
+//          ctrl-e : Move cursor to line end
+//    ctrl-shift-e : Expand selection to line end
+//             END : Move cursor to line end
+//        ctrl-END : Move cursor to last line
+//       shift-END : Expand selection to line end
+//  ctrl-shift-END : Expand selection to last line
+//          ctrl-f : find string
+//          ctrl-k : Kill until end of line
+//          ctrl-c : Copy selection to clipboard
+//          ctrl-x : Cut selection to clipboard
+//          ctrl-v : Paste selection at cursor position
+//          INSERT : Toggle insert/overwrite mode
+//             DEL : Delete character at cursor position
+//       shift-DEL : Delete current line
+//          PAGEUP : Move cursor half a page up
+//    shift-PAGEUP : Expand selection half a page up
+//        PAGEDOWN : Move cursor half a page down
+//  shift-PAGEDOWN : Expand selection half a page down
+//              UP : Move cursor to previous line
+//        shift-UP : Expand selection to previous row
+//         ctrl-UP : Move cursor to block start
+//   ctrl-shift-UP : Expand selection to block start
+//            DOWN : Move cursor to next line
+//      shift-DOWN : Expand selection to next row
+//       ctrl-DOWN : Move cursor to end of block
+// ctrl-shift-DOWN : Expand selection to end of block
+//            LEFT : Move cursor to previous column
+//      shift-LEFT : Expand selection to previous column
+//       ctrl-LEFT : Move cursor to start of word
+// ctrl-shift-LEFT : Expand selection to start of word
+//           RIGHT : Move cursor to next column
+//     shift-RIGHT : Expand selection to next column
+//      ctrl-RIGHT : Move cursor to end of word
+//ctrl-shift-RIGHT : Expand selection to end of word
+//          RETURN : Insert new line at cursor position
+//
+
+module MTextEdit;
+
+namespace ui;
+
+class TextEditUndoEntry {
+   String text;
+   int    cursor_x;
+   int    cursor_y;
+   int    view_x;
+   int    view_y;
+   int    sel_start_x;
+   int    sel_start_y;
+   int    sel_end_x;
+   int    sel_end_y;
+   int    sel_anc_x;
+   int    sel_anc_y;
+}
+
+class TextEditPlugin {
+
+   // Called when pressing TAB and there's no selection
+   //  => return true for textEditHandleTabOrRMBClick() to be called (instead of indenting line / inserting spaces)
+   public method textEditForceEditHandleTab(String _s, int _idx) : boolean { return false; }
+
+   // Called when pressing TAB or clicking RMB (before fallback to number-edit)
+   //  (note) return true when handled, false to allow FloatParamDialog number-edit fallback
+   //           s : current line
+   //         idx : cursor position relative to line start
+   public method textEditHandleTabOrRMBClick(String _s, int _idx, boolean _bRMB) : boolean { return false; }
+
+   // Called when pressing TAB on a number (show FloatParamDialog)
+   //           s : current line
+   // startX/endX : number value char position/range
+   public method textEditParseFloatParamHint(FloatParam _fp, String _s, int _startX, int _endX) { }
+
+   // Handle number edit (source change).
+   //  (note) when this returns false, TextEdit emits ACTION_NUMBER_EDIT instead
+   public method textEditHandleNumberEdit() : boolean { return false; }
+}
+
+
+class TextEdit : TextView {
+
+   define String ACTION_CURSOR_MOVED;
+   define String ACTION_TEXT_CHANGED;
+   define String ACTION_NUMBER_EDIT;
+   define String ACTION_SHORTCUT;
+
+   define int MAX_PASTE_LENGTH = (1024*256);
+
+   protected boolean b_editing;
+   protected boolean b_caret_visible;
+   protected boolean b_overwrite;
+   protected int     tab_size;
+   protected TimerAction ta_caret;
+
+   protected boolean b_provide_cursor_movement;  // e.g. for updating scroller in TextEditDialog
+   namespace boolean b_quiet_handle_esc;
+   protected boolean b_edit_number;  // 1=edit number via FloatParamDialog when pressing TAB and word under cursor is a number
+
+   int last_cursor_abs_x;  // see provideCursorMoved()
+   int last_cursor_abs_y;
+
+   define int UNDO_MINIEDIT_TIMEOUT_MS = 1000;
+   define int UNDO_EDIT_TIMEOUT_MS = 20;
+   define int UNDO_HISTORY_SIZE = 10;
+   protected TextEditUndoEntry *[] undo_history;
+   protected TextEditUndoEntry *[] redo_history;
+   protected int undo_start_ms;
+   protected boolean b_lock_reset_undo;
+
+   protected static FloatParamDialog *dlg_number;
+   protected static int dlg_number_start_x;  // (note) sorted
+   protected static int dlg_number_end_x;
+
+   protected TextEditPlugin *text_edit_plugin;
+
+
+   public method initTextEdit() {
+      initTextView();
+
+      ta_caret.setActionName("onCaretTimer");
+      ta_caret.setActionConsumer(this);
+      b_caret_visible = false;
+      b_overwrite = false;
+      b_editable = true;
+      tab_size = 3;
+   }
+
+   public method isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_CURSOR_MOVED, ACTION_TEXT_CHANGED, ACTION_SHORTCUT, ACTION_NUMBER_EDIT];
+   }
+
+   public virtual onTabFocus() {
+      startEditing();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      stopEditing(_bQuiet);
+   }
+
+   public method setText(String _text) {
+      TextView::setText(_text);
+      if(_text.length <= 1)
+         appendLine("");
+   }
+
+   public method setTabSize(int _size) {
+      explain "Set number of spaces to insert when tab key is pressed (1..20).";
+
+      if(0 < _size <= 20)
+         tab_size = _size;
+   }
+
+   public method getTabSize() : int {
+      explain "Query current tab size (number of spaces).";
+      return tab_size;
+   }
+
+   public method toggleOverwrite() {
+      b_overwrite = !b_overwrite;
+      if(b_caret_visible)
+         redraw();
+   }
+
+   public method setEnableQuietHandleEsc(boolean _bEnable) {
+      b_quiet_handle_esc = _bEnable;
+   }
+
+   public method setEnableProvideCursorMovement(boolean _bEnable) {
+      b_provide_cursor_movement = _bEnable;
+   }
+
+   public method setEnableEditNumber(boolean _bEnable) {
+      b_edit_number = _bEnable;
+   }
+
+   public method provideTextChanged() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_TEXT_CHANGED), this));
+   }
+
+   protected method provideCursorMoved() {
+      if(b_provide_cursor_movement)
+      {
+         int cursorAbsX = view_x + cursor_x;
+         int cursorAbsY = view_y + cursor_y;
+         if(last_cursor_abs_x != cursorAbsX || last_cursor_abs_y != cursorAbsY)
+         {
+            last_cursor_abs_x = cursorAbsX;
+            last_cursor_abs_y = cursorAbsY;
+            provideAction(Action.New(getProvidedActionAlias(ACTION_CURSOR_MOVED), this));
+         }
+      }
+   }
+
+   protected method restartCaretTimer() {
+      ta_caret.setTicks(480);
+      UI.Schedule(ta_caret);
+      redraw();
+   }
+
+   protected virtual startCaretTimer() {
+      b_caret_visible = true;
+      UI.CancelScheduleFor(this);
+      ta_caret.setTicks(480);
+      UI.Schedule(ta_caret);
+      redraw();
+
+      provideCursorMoved();
+   }
+
+   public method startEditing() {
+      // trace "xxx TextEdit: startEditing";
+      if(!b_lock_reset_undo)
+         undoReset();
+
+      b_editing = true;
+      b_focus = true;
+      b_caret_visible = true;
+      b_mouse_selection = false;
+      grabKeyboardFocus();
+      startCaretTimer();
+      selectNone();
+      redrawAllRows();
+   }
+
+   public method stopEditing(boolean _bQuiet) {
+      // trace "xxx TextEdit: stopEditing";
+      if(!b_lock_reset_undo)
+         undoReset();
+
+      b_editing = false;
+      b_focus = false;
+      b_caret_visible=false;
+      b_mouse_selection = false;
+
+      UI.CancelScheduleFor(this);
+
+      if(!_bQuiet)
+      {
+         redrawAllRows();
+//       if(text!=undo_text)
+//       {
+//          provideAction(StringAction.New(ACTION_TEXTCHANGED, this, text));
+//       }
+      }
+   }
+
+   protected method undoReset() {
+      undo_history.free();
+      redo_history.free();
+      undo_start_ms = -1;
+   }
+
+   protected method undoEntryInit(TextEditUndoEntry en) {
+      en.text = getText();
+      en.cursor_x    = cursor_x;
+      en.cursor_y    = cursor_y;
+      en.view_x      = view_x;
+      en.view_y      = view_y;
+      en.sel_start_x = sel_start_x;
+      en.sel_start_y = sel_start_y;
+      en.sel_end_x   = sel_end_x;
+      en.sel_end_y   = sel_end_y;
+      en.sel_anc_x   = sel_anc_x;
+      en.sel_anc_y   = sel_anc_y;
+   }
+
+   protected method undoEntryRestore(TextEditUndoEntry en) {
+      setText(en.text);
+      cursor_x    = en.cursor_x;
+      cursor_y    = en.cursor_y;
+      view_x      = en.view_x;
+      view_y      = en.view_y;
+      sel_start_x = en.sel_start_x;
+      sel_start_y = en.sel_start_y;
+      sel_end_x   = en.sel_end_x;
+      sel_end_y   = en.sel_end_y;
+      sel_anc_x   = en.sel_anc_x;
+      sel_anc_y   = en.sel_anc_y;
+   }
+
+   protected method undoAddInt() {
+      local TextEditUndoEntry en;
+      undoEntryInit(en);
+      undo_history.add(#(deref en));
+      if(undo_history.numElements > UNDO_HISTORY_SIZE)
+         undo_history.delete(0);
+      undo_start_ms = -1;
+   }
+
+   protected method undoRemoveLast() {
+      undo_history.remove(undo_history.last);
+   }
+
+   public method undoAdd() : boolean {
+      // (note) not really meant to be called externally but needs to be public for some special case utility functions
+      int tNow = milliSeconds();
+      if( (-1 == undo_start_ms) || ((tNow - undo_start_ms) > UNDO_EDIT_TIMEOUT_MS) )
+      {
+         undoAddInt();
+         undo_start_ms = tNow;
+         return true;
+      }
+      return false;
+   }
+
+   protected method undoAddMini() {
+      int tNow = milliSeconds();
+      if( (-1 == undo_start_ms) || ((tNow - undo_start_ms) > UNDO_MINIEDIT_TIMEOUT_MS) )
+      {
+         undoAddInt();
+         undo_start_ms = tNow;
+      }
+   }
+
+   protected method undo() {
+      if(isEditing())
+      {
+         TextEditUndoEntry en <= undo_history.last;
+         if(null != en)
+         {
+            local TextEditUndoEntry ren;
+            undoEntryInit(ren);
+            undoEntryRestore(en);
+
+            redo_history.add(#(deref ren));
+            if(redo_history.numElements > UNDO_HISTORY_SIZE)
+               redo_history.delete(0);
+
+            undo_history.delete(undo_history.numElements - 1);
+
+            redrawAllRows();
+
+            provideTextChanged();
+         }
+      }
+   }
+
+   protected method redo() {
+      if(isEditing())
+      {
+         TextEditUndoEntry ren <= redo_history.last;
+         if(null != ren)
+         {
+            undoAddInt();
+            undoEntryRestore(ren);
+            redo_history.delete(redo_history.numElements - 1);
+            redrawAllRows();
+
+            provideTextChanged();
+         }
+      }
+   }
+
+   public method isEditing() : boolean {
+      return b_editing;
+   }
+
+   public virtual pageDown() {
+      loop(num_rows >> 1)
+         moveCursorDown();
+   }
+
+   public virtual pageUp() {
+      loop(num_rows >> 1)
+      {
+         moveCursorUp();
+      }
+   }
+
+// //    public method scrollRight() {
+// //       explain "Overwrites §TextView.scrollRight";
+// //       TextView::scrollRight();
+// //    }
+
+// //    public method scrollLeft() {
+// //       explain "Overwrites §TextView.scrollLeft";
+// //       TextView::scrollLeft();
+// //    }
+
+// //    public method scrollDown() {
+// //       explain "Overwrites §TextView.scrollDown";
+// //       TextView::scrollDown();
+// //    }
+
+// //    public method scrollUp() {
+// //       explain "Overwrites §TextView.scrollUp";
+// //       TextView::scrollUp();
+// //    }
+
+   public method gotoStartOfLine() {
+      if( cursor_x > 0 || view_x > 0 )
+      {
+         cursor_x = 0;
+         if(0 != view_x)
+         {
+            view_x = 0;
+            redrawAllRows();
+         }
+         updatePreferredCursorX();
+         startCaretTimer();
+      }
+   }
+
+   public method gotoEndOfLine() {
+      int cl = getCurrentRowLength();
+      if(cl >= num_cols)
+      {
+         int oldViewX = view_x;
+         view_x = cl-num_cols;
+         cursor_x = num_cols-1;
+         if(view_x != oldViewX)
+            redrawAllRows();
+         updatePreferredCursorX();
+         startCaretTimer();
+      }
+      else
+      {
+         cursor_x = cl-1;
+         if(0 != view_x)
+         {
+            view_x = 0;
+            redrawAllRows();
+         }
+         startCaretTimer();
+      }
+   }
+
+   public method copyCursorLineToClipboard() {
+      gotoStartOfLine();
+      // // expandSelectionToLineEnd();
+      expandSelectionToNextLine();
+      UI.SetClipboard(getSelectedText());
+      selectNone();
+   }
+
+   public method gotoStartOfWord() {
+      int idx = view_x + cursor_x;
+      if(0 == idx)
+      {
+         moveCursorLeft();
+      }
+      else
+      {
+         String sRow <= getCurrentRow();
+         if(-1 != " 0123456789-".indexOfChar(sRow.getc(idx), 0))
+            gotoX(sRow.indexOfWordStart(idx));
+         else
+            gotoX(sRow.charsetIndexOfWordStart(".,:;)(=+*/[]{}_<>\"\'\\|#", idx));
+      }
+   }
+
+   public method gotoEndOfWord() {
+      int idx = view_x + cursor_x;
+      if(idx == (getCurrentRowLength() - 1))
+      {
+         moveCursorRight();
+      }
+      else
+      {
+         String s <= getCurrentRow();
+         if(null != s)
+         {
+            if(' ' == s.getc(idx))
+            {
+               // seek start of next word
+               while(' ' == s.getc(view_x + cursor_x))
+                  moveCursorRight();
+            }
+            else
+            {
+               if(-1 != "0123456789-".indexOfChar(s.getc(idx), 0))
+                  gotoX(s.indexOfWordEnd(idx));
+               else
+                  gotoX(s.charsetIndexOfWordEnd(".,:;)(=+*/[]{}_<>\"\'\\|#", idx));
+            }
+         }
+      }
+   }
+
+   public method gotoStartOfBlock() {
+      explain "Move cursor to first line before current block";
+      String s <= getCurrentRow();
+      if(null != s)
+      {
+         boolean bSkipBlank = s.isBlank();
+         while( (view_y+cursor_y) > 0)
+         {
+            s <= getCurrentRow();
+            if(null != s)
+            {
+               boolean bNewSkipBlank = s.isBlank();
+               if (!bNewSkipBlank)
+               {
+                  bSkipBlank = false;
+                  moveCursorUp();
+               }
+               else
+               {
+                  if(bSkipBlank)
+                  {
+                     moveCursorUp();
+                  }
+                  else
+                  {
+                     return;
+                  }
+               }
+            }
+            else
+               return;
+         }
+      }
+   }
+
+   public method gotoEndOfBlock() {
+      explain "Move cursor to first line after current block";
+      boolean bSkipBlank = getCurrentRow().isBlank();
+      while( (view_y+cursor_y) < (strings.numElements-1))
+      {
+         boolean bNewSkipBlank = getCurrentRow().isBlank();
+         if! (bNewSkipBlank)
+         {
+            bSkipBlank = false;
+            moveCursorDown();
+         }
+         else
+         {
+            if(bSkipBlank)
+               moveCursorDown();
+            else
+               return;
+         }
+      }
+   }
+
+   public method gotoTop() {
+      TextView::gotoTop();
+      cursor_y = 0;
+      validateCursorX();
+      updatePreferredCursorX();
+      startCaretTimer();
+   }
+
+   public method gotoEnd() {
+      TextView::gotoEnd();
+      if(strings.numElements>num_rows)
+         cursor_y = num_rows - 1;
+      else
+         cursor_y = strings.numElements - 1;
+      validateCursorX();
+      updatePreferredCursorX();
+      startCaretTimer();
+   }
+
+   public method gotoLine(int _lineIdx) {
+      // also see gotoYX()
+      if(0 <= _lineIdx < strings.numElements)
+      {
+         gotoTop();
+         loop(_lineIdx)
+            moveCursorDown();
+      }
+   }
+
+   protected method writeChar(int _c) {
+      // trace "xxx TextEdit::writeChar: cursor=("+cursor_x+";"+cursor_y+")";
+      String cs <= getCurrentRow();
+      if(null != cs)
+      {
+         if(b_overwrite)
+         {
+            undoAdd();
+            cs.deleteRegion(view_x + cursor_x, 1);
+            cs.insert(view_x + cursor_x, tcchar(_c));
+         }
+         else
+         {
+            undoAddMini();
+            cs.insert(view_x + cursor_x, tcchar(_c));
+         }
+         highlight_line_idx = -2;
+         redrawCurrentRow();
+         moveCursorRight();
+      }
+   }
+
+   protected method deleteCurrentChar() {
+      if(b_editing)
+      {
+         String cs <= getCurrentRow();
+         if(null != cs)
+         {
+            if(cs.length <= 1)
+            {
+               if( (view_y + cursor_y) < (strings.numElements - 1))
+               {
+                  deleteCurrentRow();
+               }
+            }
+            else
+            {
+               if( (view_x + cursor_x) == (cs.length - 1) )
+               {
+                  undoAddMini();
+                  moveCursorDown();
+                  gotoStartOfLine();
+                  deleteLeftChar();
+               }
+               else
+               {
+                  undoAdd();
+                  cs.deleteRegion(view_x + cursor_x, 1);
+                  redrawCurrentRow();
+               }
+            }
+
+            highlight_line_idx = -2;
+         }
+      }
+   }
+
+   protected method deleteLeftChar() {
+      if(b_editing)
+      {
+         String cs <= getCurrentRow();
+         if(null != cs)
+         {
+            if(view_x + cursor_x > 0)
+            {
+               undoAddMini();
+               moveCursorLeft();
+               cs.deleteRegion(view_x + cursor_x, 1);
+               redrawCurrentRow();
+            }
+            else
+            {
+               // Kill current line and append its contents to previous line.
+               if(view_y + cursor_y > 0)
+               {
+                  undoAddMini();
+                  String ps <= strings[(view_y + cursor_y - 1)];
+                  int nx = ps.length-1;
+                  ps.append(getCurrentRow());
+                  deleteCurrentRow2();
+                  moveCursorUp();
+                  gotoX(nx);
+                  redrawAllRows();
+                  validateCursorY();
+               }
+            }
+
+            highlight_line_idx = -2;
+
+            provideTextChanged();
+         }
+      }
+   }
+
+   protected method addEmptyLine() {
+      if(b_editing)
+      {
+         int lineNr;
+         String ns;
+         if( (view_x+cursor_x)==0)
+         {
+            lineNr = view_y + cursor_y;
+            ns = "";
+         }
+         else
+         {
+            lineNr = view_y + cursor_y + 1;
+            String cs <= getCurrentRow();
+            if(null != cs)
+            {
+               cs.substring((view_x+cursor_x), cs.length-(view_x+cursor_x)) => ns;
+               cs.deleteRegion((view_x+cursor_x), cs.length-(view_x+cursor_x));
+               view_x = 0;
+               cursor_x = 0;
+               updatePreferredCursorX();
+            }
+         }
+
+         strings.insert(lineNr, ns);
+
+         highlight_line_idx = -2;
+
+         redrawAllRows();
+
+         moveCursorDown();
+      }
+   }
+
+   protected method killUntilEndOfLine() {
+      if(b_editing)
+      {
+         String cs <= getCurrentRow();
+         if(null != cs)
+         {
+            undoAdd();
+            cs.deleteRegion((view_x+cursor_x), cs.length-(view_x+cursor_x));
+            highlight_line_idx = -2;
+            redrawCurrentRow();
+            updatePreferredCursorX();
+         }
+      }
+   }
+
+   protected method killSelection() {
+      if(b_editing)
+      {
+         if(-1 != sel_start_x)
+         {
+            undoAdd();
+            int i = sel_start_y;
+            int cx = sel_start_x;
+            String t;
+            String s;
+            int j=i;
+            s <= strings[j];
+            // First line
+            if(sel_end_y > sel_start_y)
+            {
+               s.deleteRegion(sel_start_x, s.length-sel_start_x);
+               i++;
+               j++;
+               while(i < sel_end_y)
+               {
+                  // Kill entire line
+                  strings.delete(j);
+                  i++;
+               }
+               s <= strings[j];
+               s.deleteRegion(0, sel_end_x);
+
+               gotoXY(0, j);
+               deleteLeftChar();
+            }
+            else
+            {
+               s.deleteRegion(sel_start_x, sel_end_x-sel_start_x);
+            }
+
+            gotoXY(sel_start_x, sel_start_y);
+            sel_start_x = -1;
+            highlight_line_idx = -2;
+            redrawAllRows();
+         }
+      }
+   }
+
+   protected method indentBlock(boolean _bDec) {
+      if(haveSelection())
+      {
+         int rowIdx;
+         String *s;
+
+         int selEndY = sel_end_y;
+         if(0 == getCursorX())
+            selEndY--;
+
+         if(_bDec)
+         {
+            boolean bCanDec = true;
+            rowIdx = sel_start_y;
+            while(rowIdx <= selEndY)
+            {
+               s <= strings[rowIdx];
+               if!(s <= " ")
+               {
+                  bCanDec = false;
+                  break;
+               }
+               rowIdx++;
+            }
+            if(bCanDec)
+            {
+               undoAdd();
+               rowIdx = sel_start_y;
+               while(rowIdx <= selEndY)
+               {
+                  s <= strings[rowIdx++];
+                  s.substring(1, 99999999);
+               }
+            }
+         }
+         else
+         {
+            undoAdd();
+            rowIdx = sel_start_y;
+            while(rowIdx <= selEndY)
+            {
+               s <= strings[rowIdx++];
+               s.insert(0, " ");
+            }
+         }
+         redrawAllRows();
+         redraw();
+      }
+   }
+
+   public method insertTextAtCursor(String _s) {
+      if(b_editing)
+      {
+         if(_s.length > 1)
+         {
+            if(_s.length < MAX_PASTE_LENGTH)
+            {
+               undoAdd();
+               local StringArray lines <= _s.splitChar('\n');
+               if(lines.numElements > 1)
+               {
+                  if(lines.last.isBlank())
+                     lines.delete(lines.numElements-1);
+               }
+               String line <= lines[0];
+               line.replace("\t","   ");
+               int cy = view_y + cursor_y;
+               String fline <= strings[cy];
+               local String srest;
+               // // trace "xxx paste #lines="+lines.numElements+" lines="+#(lines)+". text=\""+_s+"\" line0=\""+line+"\".";
+               if(lines.numElements < 2)
+               {
+                  fline.insert(view_x+cursor_x, line);
+                  if(_s.endsWith("\n"))
+                  {
+                     gotoX(view_x+cursor_x+line.numChars);
+                     addEmptyLine();
+                  }
+                  else
+                  {
+                     gotoX(view_x+cursor_x+line.numChars);
+                  }
+               }
+               else
+               {
+                  boolean bAddEmptyLine = (0 == fline.numChars);
+                  fline.substring(view_x+cursor_x, fline.length-view_x-cursor_x) => srest;
+                  // // trace "xxx fline=\""+fline+"\" srest=\""+srest+"\"";
+                  fline.deleteRegion(view_x+cursor_x, fline.length-view_x-cursor_x);
+                  fline.insert(view_x+cursor_x, line);
+
+                  int i = 1;
+                  cy++;
+                  while( i < (lines.numElements-1) )
+                  {
+                     line <= lines[i];
+                     line.replace("\t","   ");
+                     strings.insert(cy, line);
+                     cy++;
+                     i++;
+                  }
+                  line <= lines[i];
+                  line.replace("\t","   ");
+                  if(_s.endsWith("\n"))
+                  {
+                     strings.insert(cy, line);
+
+                     if(cy == (strings.numElements - 1))
+                        strings.add("");
+
+                     if(0 != srest.numChars)
+                        strings.insert(cy+1, srest);
+
+                     gotoXY(0, cy+1);
+
+                     if(bAddEmptyLine)
+                     {
+                        addEmptyLine();
+                        moveCursorUp();
+                     }
+                  }
+                  else
+                  {
+                     if(cy == strings.numElements)
+                        strings.add("");
+
+                     fline <= strings[cy];
+                     fline.insert(0, srest);
+                     fline.insert(0, line);
+
+                     gotoXY(line.length-1, cy);
+
+                     if(bAddEmptyLine)
+                     {
+                        addEmptyLine();
+                        gotoXY(line.length-1, cy);
+                     }
+                  }
+               }
+
+               highlight_line_idx = -2;
+               redrawAllRows();
+            }
+            else
+            {
+               trace "[---] TextEdit::insertTextAtCursor: string is too long ("+_s.length+" > "+MAX_PASTE_LENGTH+")";
+            }
+         }
+      }
+   }
+
+   protected method deleteCurrentRow2() {
+      strings.delete(view_y+cursor_y);
+      if(0 == strings.numElements)
+      {
+         appendLine("");
+      }
+   }
+
+   protected method deleteCurrentRow() {
+      if(b_editing)
+      {
+         if( (view_y + cursor_y) == (strings.numElements - 1) )
+         {
+            undoAdd();
+            gotoX(0);
+            killUntilEndOfLine();
+         }
+         else
+         {
+            undoAdd();
+            deleteCurrentRow2();
+            highlight_line_idx = -2;
+            redrawAllRows(); // xxx only redraw new bottom line if any
+            validateCursorY();
+         }
+      }
+   }
+
+   protected method expandSelectionToNextChar() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      moveCursorRight();
+      expandSelectionToCursor(ox, oy);
+      redrawCurrentRow();
+   }
+
+   protected method expandSelectionToWordEnd() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoEndOfWord();
+      expandSelectionToCursor(ox, oy);
+      redrawCurrentRow();
+   }
+
+   protected method expandSelectionToLineEnd() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoEndOfLine();
+      expandSelectionToCursor(ox, oy);
+      redrawCurrentRow();
+   }
+
+   protected method expandSelectionToNextLine() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      moveCursorDown();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows(); // xxx only redraw previous and current row
+   }
+
+   protected method expandSelectionToBlockEnd() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoEndOfBlock();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+   protected method expandSelectionToPageDown() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      pageDown();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+   protected method expandSelectionToEnd() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoEnd();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+   protected method expandSelectionToPreviousChar() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      moveCursorLeft();
+      expandSelectionToCursor(ox, oy);
+      redrawCurrentRow();
+   }
+
+   protected method expandSelectionToWordStart() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoStartOfWord();
+      expandSelectionToCursor(ox, oy);
+      redrawCurrentRow();
+   }
+
+   protected method expandSelectionToLineStart() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoStartOfLine();
+      expandSelectionToCursor(ox, oy);
+      redrawCurrentRow();
+   }
+
+   protected method expandSelectionToPreviousLine() {
+      redrawCurrentRow();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      startSelectionIfEmpty();
+      moveCursorUp();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows(); // xxx only redraw previous and current row
+   }
+
+   protected method expandSelectionToBlockStart() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoStartOfBlock();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+   protected method expandSelectionToPageUp() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      pageUp();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+   protected method expandSelectionToTop() {
+      startSelectionIfEmpty();
+      int ox = cursor_x + view_x, oy = cursor_y + view_y;
+      gotoTop();
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+// //    protected method verifySelection() {
+// //       trace "verify selection";
+// //       if(sel_start_x!=-1)
+// //       {
+// //          int t;
+// //          boolean bSwap = false;
+// //          bSwap = (sel_end_y<sel_end_y) || ((sel_end_y==sel_start_y)? (sel_end_x<sel_start_x) : 0);
+// //          if(bSwap)
+// //          {
+// //             t = sel_end_y;
+// //             sel_end_y = sel_start_y;
+// //             sel_start_y = t;
+// //             t = sel_end_x;
+// //             sel_end_x = sel_start_x;
+// //             sel_start_x = t;
+// //          }
+// //       }
+// //       trace "verify selection2 : start=("+sel_start_x+";"+sel_start_y+") end=("+sel_end_x+";"+sel_end_y+")";
+// //    }
+
+   public method setTextEditPlugin(TextEditPlugin _plugin) {
+      text_edit_plugin <= deref _plugin;
+   }
+
+   protected method tryEditNumberUnderCursor(boolean _bAutoHideAfterMouseDrag, int _delta) : boolean {
+      // (note) only called when there is no selection
+      // (note) delta: 0=show dialog  1=inc  -1=dec
+      if(b_edit_number)
+      {
+         boolean bUndoAdded = undoAdd();
+
+         selectWord();
+
+         // trace "xxx tryEditNumberUnderCursor: haveSelection()="+haveSelection();
+         if(haveSelection())
+         {
+            local String sWord <= getSelectedTextTrimToFirstLine();
+            // trace "xxx TextEdit::tryEditNumberUnderCursor: sWord=\""+sWord+"\" sWord.checkFloatConversion()="+sWord.checkFloatConversion();
+            if(sWord.checkFloatConversion())
+            {
+               b_lock_reset_undo = true;
+
+               if(sel_start_x < sel_end_x)
+               {
+                  dlg_number_start_x = sel_start_x;
+                  dlg_number_end_x = sel_end_x;
+               }
+               else
+               {
+                  dlg_number_start_x = sel_end_x;
+                  dlg_number_end_x = sel_start_x;
+               }
+               gotoX(dlg_number_start_x);
+
+               float fCur = sWord;
+               float fMin = -1.0f;
+               float fMax =  1.0f;
+               if(fCur < fMin)
+                  fMin = fCur;
+               else if(fCur > fMax)
+                  fMax = fCur;
+               float fStep = (fMax - fMin) / 200.0;
+
+               // // // provideAction(Action.New(getProvidedActionAlias(ACTION_EDIT_NUMBER), this));
+               dlg_number <= FloatParamDialog.NewHideOnTab("Edit number",
+                                                           null/*message*/,
+                                                           null/*iconName*/,
+                                                           "Ok",
+                                                           "Cancel",
+                                                           fCur, fMin, fMax,
+                                                           7/*cols*/,
+                                                           5/*precision*/,
+                                                           fStep,
+                                                           this/*recipient*/
+                                                           );
+               dlg_number.setEnableProvideChanging(true);
+               FloatParam fp <= dlg_number.getFloatParam();
+               fp.setEnableMinMaxEditable(true);
+               fp.setStepFine(fStep / 100.0);
+               fp.setResetValue(fCur);
+               if(null != text_edit_plugin)
+               {
+                  text_edit_plugin.textEditParseFloatParamHint(fp, getCurrentRow(), dlg_number_start_x, dlg_number_end_x);
+               }
+               if(!_bAutoHideAfterMouseDrag)
+                  fp.setEnableProvideDragValueChanged(false);  // keep dlg open after mouse drag
+
+               if(0 == _delta)
+               {
+                  float px = dlg_number_start_x * char_width_scaled;
+                  float py = (cursor_y + 1) * char_height_scaled;
+                  dlg_number.showNearLayerOffset(this, px, py);
+               }
+               else if(_delta > 0)
+               {
+                  fp.incFine();
+                  dlg_number <= null;
+               }
+               else if(_delta < 0)
+               {
+                  fp.decFine();
+                  dlg_number <= null;
+               }
+
+               return true;
+
+            } // if is number
+            selectNone();
+         } // if haveSelection
+         undoRemoveLast();
+      }
+      return false;
+   }
+
+   protected method updateNumberStringFromValue(float _f) {
+      // trace "xxx updateNumberStringFromDialog: f="+f+" startX="+dlg_number_start_x+" endX="+dlg_number_end_x;
+      String sLine <= getCurrentRow();
+      local String sNumber = _f;
+      sLine.replaceRegion(dlg_number_start_x,
+                          dlg_number_end_x,
+                          sNumber
+                          );
+      dlg_number_end_x = dlg_number_start_x + sNumber.numChars;
+      // trace "xxx  numChars="+sNumber.numChars+" => new dlg_number_end_x="+dlg_number_end_x;
+      sel_start_x = dlg_number_start_x;
+      sel_end_x = dlg_number_end_x;
+      redrawAllRows();
+      if!(null != text_edit_plugin && text_edit_plugin.textEditHandleNumberEdit())
+         provideAction(Action.New(getProvidedActionAlias(ACTION_NUMBER_EDIT), this));
+   }
+
+   protected method updateNumberStringFromDialog() {
+      updateNumberStringFromValue(dlg_number.getValue());      
+   }
+
+   public method onDraw() {
+      TextView::onDraw();
+
+      //trace "TextEdit::onDraw: pos=("+getAbsolutePositionX()+";"+getAbsolutePositionY()+") size=("+size_x+";"+size_y+")";
+
+      // ---- draw caret (cursor)
+      if(b_editing)
+      {
+         if(b_caret_visible)
+         {
+// //          if(selxl>=0)
+// //          {
+// //             if(cfw>=selxl)
+// //             {
+// //                if(cfw<=selxr)
+// //                {
+// //                   c32=UIConstants.COLOR32_CARET_SELECT_FG;
+// //                }
+// //             }
+// //          }
+            if(b_overwrite)
+            {
+               int c32Overwrite = lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_CARET_OVERWRITE_FG);
+               // // UIRenderer.DrawXORFilledRectangle(cursor_x*char_width_scaled+0.5, cursor_y*char_height_scaled/*+0.5*/, char_width_scaled, char_height_scaled);
+               UIRenderer.EnableBlendingKeepAlpha();
+               UIRenderer.DrawFilledRectangle(cursor_x*char_width_scaled+0.5, cursor_y*char_height_scaled/*+0.5*/,
+                                              char_width_scaled, char_height_scaled,
+                                              c32Overwrite
+                                              );
+               UIRenderer.DisableBlending();
+            }
+            else
+            {
+               int c32 = lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_CARET_FG);
+               UIRenderer.DrawFilledRectangle(cursor_x*char_width_scaled+0.5, cursor_y*char_height_scaled/*+0.5*/,
+                                              2, char_height_scaled,
+                                              c32
+                                              );
+            }
+         }
+      }
+      else
+      {
+         // (todo) XOR not available on macOS
+         UIRenderer.DrawXORRectangle(cursor_x*char_width_scaled+0.5, cursor_y*char_height_scaled/*+0.5*/, char_width_scaled, char_height_scaled, 1);
+      }
+   }
+
+   // (note) [13Dec2024] changed to default behaviour (return true)  lctrl-x still has priority when there is a selection
+   // // public virtual wantTriadKeyMode() : boolean {
+   // //    return false;
+   // // }
+
+   public virtual onKey(Key _k) : boolean {
+
+      // Filter numpad transport controls
+      if(1)
+      {
+         if([VKEY_KP0, VKEY_KP1, VKEY_KP2, VKEY_KP3, VKEY_KP4, VKEY_KP5, VKEY_KP6, VKEY_KP7, VKEY_KP8, VKEY_KP9, VKEY_KP_PLUS, VKEY_KP_MINUS, VKEY_KP_DIVIDE, VKEY_KP_MULTIPLY, VKEY_KP_PERIOD].contains(_k.code))
+            return false;
+      }
+
+      boolean ret = false;
+
+      boolean bShift = _k.modShift();
+      boolean bCtrl = (_k.modCtrl() && !_k.modAlt()) || (_k.modCmd() && UI.b_key_cmd_copy_paste); // workaround since SDL reports ctrl flag for alt-} keypress
+
+      // trace "xxx TextEdit::onKey: k.pressed="+_k.pressed+" bShift="+bShift+" bCtrl="+bCtrl;
+      ///trace "_k.code="+_k.code +" _k.pressed="+_k.pressed+ " mod="+_k.mod+"  _k.unicode="+_k.unicode;
+
+      if(VKEY_TAB == _k.pressed && !isEditing())
+         return Layer::onKey(_k);
+
+      if(VKEY_ESCAPE == _k.pressed && isEditing())
+      {
+         stopEditing(false/*bQuiet*/);
+         if(b_quiet_handle_esc)
+            return false;  // let parent dialog (also) handle VKEY_ESCAPE (e.g. close dialog)
+         return true;
+      }
+
+      if(bCtrl && (VKEY_SPACE == _k.pressed))
+      {
+         // lctrl-SPACE
+         //   (note) let TextEditDialog handle it (close multi-line textedit dialog opened with same shortcut)
+         // // provideTextChanged();
+         return false;
+      }
+
+      switch(_k.pressed)
+      {
+         default:
+            if(bCtrl)
+            {
+               // (note) SDL reports unicode==1 for ctrl-a
+               switch(_k.pressed)
+               {
+                  default:  // not a TextEdit shortcut but may be processed by consumer (e.g. lctrl-p=SynthDialog plugin export)
+                     if(_k.pressed)
+                     {
+                        // trace "xxx provide ACTION_SHORTCUT key="+_k.pressed+" ("+_k.name+")";
+                        provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), this, _k.pressed));
+                        ret = true;
+                     }
+                     break;
+
+                  case 'a':
+                     if(bShift)
+                     {
+                        expandSelectionToLineStart();
+                     }
+                     else
+                     {
+                        selectNone();
+                        if!(cursor_x+view_x)
+                        {
+                           selectAll();
+                        }
+                        else
+                        {
+                           gotoStartOfLine();
+                        }
+                     }
+                     ret = true;
+                     break;
+
+                  case 'c':
+                     if(!bShift)
+                     {
+                        if(!haveSelection())
+                           copyCursorLineToClipboard();
+                        else
+                           UI.SetClipboard(getSelectedText());
+                        ret = true;
+                     }
+                     break;
+
+                  case 'd':
+                     if(!bShift)
+                     {
+                        if(haveSelection())
+                        {
+                           // deleteSelection()
+                           selectNone();
+                        }
+                        else
+                        {
+                           deleteCurrentChar();
+                           provideTextChanged();
+                        }
+                        ret = true;
+                     }
+                     break;
+
+                  case 'e':
+                     if(bShift)
+                     {
+                        expandSelectionToLineEnd();
+                     }
+                     else
+                     {
+                        selectNone();
+                        gotoEndOfLine();
+                     }
+                     ret = true;
+                     break;
+
+                  case 'f':
+                     showFindDialogSelectedTextOrLastFindString();
+                     ret = true;
+                     break;
+
+                  case 'k':
+                     if(!bShift)
+                     {
+                        selectNone();
+                        killUntilEndOfLine();
+                        provideTextChanged();
+                        ret = true;
+                     }
+                     break;
+
+                  case 'v':
+                     if(!bShift)
+                     {
+                        killSelection();
+                        insertTextAtCursor(UI.GetClipboard());
+                        provideTextChanged();
+                        ret = true;
+                     }
+                     break;
+
+                  case 'x':
+                     if(!bShift && haveSelection())
+                     {
+                        UI.SetClipboard(getSelectedText());
+                        killSelection();
+                        provideTextChanged();
+                        ret = true;
+                     }
+                     break;
+
+                  case 'z':
+                  case 'y':
+                     if(bShift)
+                     {
+                        redo();
+                     }
+                     else
+                     {
+                        undo();
+                     }
+                     ret = true;
+                     break;
+               }
+            }
+            else if(VKEY_RCTRL == _k.pressed)  // used by SynthDialog alternatively to lctrl-p
+            {
+               // trace "xxx provide ACTION_SHORTCUT key="+_k.pressed+" ("+_k.name+")";
+               provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), this, VKEY_RALT));  // remap RCTRL to RALT
+               ret = true;
+            }
+            else if(TextView::onKey(_k))
+            {
+               ret = true;
+            }
+            else if(' '<=_k.unicode<=255)
+            {
+               if(b_editing)
+               {
+                  //trace "TextEdit: unikey="+tcchar(_k.unicode)+ "("+_k.unicode+") mod="+_k.mod;
+                  if(_k.pressed)
+                  {
+                     ret = true;
+                     killSelection();
+                     writeChar(_k.unicode);
+                     provideTextChanged();
+                  }
+               }
+            }
+            break;
+
+         case VKEY_LEFT:
+            if(bShift)
+            {
+               if(bCtrl)
+               {
+                  expandSelectionToWordStart();
+               }
+               else
+               {
+                  expandSelectionToPreviousChar();
+               }
+               ret = true;
+            }
+            else if(bCtrl)
+            {
+               selectNone();
+               gotoStartOfWord();
+               ret = true;
+            }
+            else if(0 == _k.mod)
+            {
+               selectNone();
+               moveCursorLeft();
+               ret = true;
+            }
+            break;
+
+         case VKEY_RIGHT:
+            if(bShift)
+            {
+               if(bCtrl)
+               {
+                  expandSelectionToWordEnd();
+               }
+               else
+               {
+                  expandSelectionToNextChar();
+               }
+               ret = true;
+            }
+            else if(bCtrl)
+            {
+               selectNone();
+               gotoEndOfWord();
+               ret = true;
+            }
+            else if(0 == _k.mod)
+            {
+               selectNone();
+               moveCursorRight();
+               ret = true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(bShift)
+            {
+               if(bCtrl)
+               {
+                  expandSelectionToBlockEnd();
+               }
+               else
+               {
+                  expandSelectionToNextLine();
+               }
+               ret = true;
+            }
+            else if(bCtrl)
+            {
+               selectNone();
+               gotoEndOfBlock();
+               ret = true;
+            }
+            else
+            {
+               selectNone();
+               moveCursorDown();
+               ret = true;
+            }
+            break;
+
+         case VKEY_UP:
+            if(bShift)
+            {
+               if(bCtrl)
+               {
+                  expandSelectionToBlockStart();
+               }
+               else
+               {
+                  expandSelectionToPreviousLine();
+               }
+               ret = true;
+            }
+            else if(bCtrl)
+            {
+               selectNone();
+               gotoStartOfBlock();
+               ret = true;
+            }
+            else
+            {
+               selectNone();
+               moveCursorUp();
+               ret = true;
+            }
+            break;
+
+         case VKEY_HOME:
+            if(bShift)
+            {
+               if(bCtrl)
+               {
+                  expandSelectionToTop();
+               }
+               else
+               {
+                  expandSelectionToLineStart();
+               }
+               ret = true;
+            }
+            else if(bCtrl)
+            {
+               selectNone();
+               gotoTop();
+               ret = true;
+            }
+            else
+            {
+               selectNone();
+               gotoStartOfLine();
+               ret = true;
+            }
+            break;
+
+         case VKEY_END:
+            if(bShift)
+            {
+               if(bCtrl)
+               {
+                  expandSelectionToEnd();
+               }
+               else
+               {
+                  expandSelectionToLineEnd();
+               }
+               ret = true;
+            }
+            else if(bCtrl)
+            {
+               selectNone();
+               gotoEnd();
+               ret = true;
+            }
+            else
+            {
+               selectNone();
+               gotoEndOfLine();
+               ret = true;
+            }
+            break;
+
+         case VKEY_INSERT:
+            toggleOverwrite();
+            ret = true;
+            break;
+
+         case VKEY_DELETE:
+            if(bShift)
+            {
+               selectNone();
+               deleteCurrentRow();
+               provideTextChanged();
+               ret = true;
+            }
+            else
+            {
+               // xxx delete selection
+               if(haveSelection())
+               {
+                  killSelection();
+                  selectNone();
+               }
+               else
+               {
+                  deleteCurrentChar();
+               }
+               provideTextChanged();
+               ret = true;
+            }
+            break;
+
+         case VKEY_BACKSPACE:
+            undoAddMini();
+            selectNone();
+            deleteLeftChar();
+            provideTextChanged();
+            ret = true;
+            break;
+
+         case VKEY_RETURN:
+            if(_k.modNone())
+            {
+               undoAdd();
+               selectNone();
+               // Note: win32 style editors delete the selected array before adding a new line
+               addEmptyLine();
+               provideTextChanged();
+               ret = true;
+            }
+            break;
+
+         case VKEY_PAGEUP:
+            if(bShift)
+            {
+               expandSelectionToPageUp();
+            }
+            else
+            {
+               selectNone();
+               pageUp();
+            }
+            ret = true;
+            break;
+
+         case VKEY_PAGEDOWN:
+            if(bShift)
+            {
+               expandSelectionToPageDown();
+            }
+            else
+            {
+               selectNone();
+               pageDown();
+            }
+            ret = true;
+            break;
+
+         case VKEY_TAB:           
+            if(!_k.mod || bShift)
+            {
+               if(b_editing)
+               {
+                  if(haveSelection())
+                  {
+                     indentBlock(_k.modShift()/*bDec*/);
+                     provideTextChanged();
+                  }
+                  else if( (null == text_edit_plugin || !text_edit_plugin.textEditForceEditHandleTab(getCurrentRow(), view_x+cursor_x)) &&
+                           (!b_edit_number || isCursorXBeforeFirstLineWord())
+                           )
+                  {
+                     loop(tab_size)
+                     {
+                        writeChar(' ');
+                     }
+                     provideTextChanged();
+                  }
+                  else
+                  {
+                     if(null != text_edit_plugin && _k.modNone())
+                     {
+                        if(text_edit_plugin.textEditHandleTabOrRMBClick(getCurrentRow(), view_x + cursor_x, false/*bRMB*/))
+                           return true;
+                     }
+
+                     // fallback to number-edit
+                     tryEditNumberUnderCursor(false/*bAutoHideAfterMouseDrag*/, 0/*delta*/);
+                  }
+                  ret = true;
+               }
+            }
+            else if(_k.modCtrl())
+            {
+               provideAction(IntAction.New(getProvidedActionAlias(ACTION_SHORTCUT), this, _k.pressed));
+               ret = true;
+            }
+            break;
+      }
+      if(!ret)
+      {
+         // // trace "xxx TextEdit: unhandled key name="+_k.name;
+         return Control::onKey(_k);
+      }
+      else
+      {
+         return true;
+      }
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      // trace "xxx TextEdit::onMouseBeginDrag: _ev.isRightButtonDown()="+_ev.isRightButtonDown();
+      if(_ev.isRightButtonDown())
+      {
+         setSelectionStartByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+         endMouseSelection(_ev);
+         if(tryEditNumberUnderCursor(true/*bAutoHideAfterMouseDrag*/, 0/*delta*/))
+         {
+            FloatParam fp <= dlg_number.getFloatParam();
+            UI.BeginMouseDragOther(fp, _ev);
+            
+            return maybe;
+         }
+      }
+      return false;
+   }
+
+   // // public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+   // //    // trace "xxx TextEdit::onMouseDrag";
+   // //    return true;
+   // // }
+
+   // // public virtual onMouseCancelDrag(MouseEvent _ev) {
+   // // }
+
+   // // public virtual onMouseEndDrag(MouseEvent _ev) {
+   // // }
+
+   public virtual onMouseFocus() {
+      startEditing();
+   }
+
+   public virtual onMouseUnfocus() {
+      stopEditing(false);
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         // trace "xxx TextEdit::onMouseClick<RMB>";
+         if(b_editing)
+         {
+            setSelectionStartByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+            endMouseSelection(_ev);
+
+            // try curve-edit
+            if(b_editing && null != text_edit_plugin)
+            {
+               if(text_edit_plugin.textEditHandleTabOrRMBClick(getCurrentRow(), view_x + cursor_x, true/*bRMB*/))
+                  return true;
+            }
+
+            // fallback to number-edit
+            if(tryEditNumberUnderCursor(false/*bAutoHideAfterMouseDrag*/, 0/*delta*/))
+            {
+               FloatParam fp <= dlg_number.getFloatParam();
+               fp.warpTo(fp.getSizeX()*0.5, fp.getSizeY()*0.5);
+            }
+         }
+         return true;
+      }
+      return TextView::onMouseClick(_ev);
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      boolean ret = false;
+      // Scroll 2 lines up or down (press/release)
+      if(_ev.wheelDown())
+      {
+         if(_ev.isRightButtonDown())
+         {
+            setSelectionStartByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+            endMouseSelection(_ev);
+            if(tryEditNumberUnderCursor(true/*bAutoHideAfterMouseDrag*/, -1/*delta*/))
+               return true;
+         }
+         scrollDown();
+         ret = true;
+      }
+      else if(_ev.wheelUp())
+      {
+         if(_ev.isRightButtonDown())
+         {
+            setSelectionStartByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+            endMouseSelection(_ev);
+            if(tryEditNumberUnderCursor(true/*bAutoHideAfterMouseDrag*/, 1/*delta*/))
+               return true;
+         }
+         scrollUp();
+         ret = true;
+      }
+      else if(_ev.middleButtonDown())
+      {
+         if(b_editing)
+         {
+            killSelection();
+            insertTextAtCursor(UI.GetClipboard());
+         }
+         ret = true;
+      }
+      else
+      {
+         ret = TextView::onMouse(_ev);
+      }
+      return ret;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(acName)
+      {
+         case "onCaretTimer":
+            b_caret_visible=!b_caret_visible;
+            restartCaretTimer();
+            return true;
+      }
+
+      if(@(dlg_number) == @(ap))
+      {
+         // trace "xxx TextEdit: dlg_number acName=\""+acName+"\"";
+         switch(acName)
+         {
+            // // case FloatParamDialog.ACTION_FLOATPARAMDIALOGEDITED:  // return/tab
+            case FloatParamDialog.ACTION_FLOATPARAMDIALOGCLOSED:
+               b_lock_reset_undo = false;
+               updateNumberStringFromDialog();
+               selectNone();
+               break;
+
+            case FloatParamDialog.ACTION_FLOATPARAMVALUECHANGING:
+               updateNumberStringFromDialog();
+               break;
+
+            case FloatParamDialog.ACTION_FLOATPARAMDIALOGCANCELED:
+               b_lock_reset_undo = false;
+               selectNone();
+               break;
+         }
+         return true;
+      }
+
+      return TextView::consumeAction(deref _ac);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initTextEdit();
+
+      if(TextView::beginXFMTag(_form, _attributes))
+      {
+         String atname, atval, atnamelc, atvallc;
+         StringArray atsplit;
+
+         foreach atname in _attributes
+         {
+            atval<=_attributes[atname];
+            atnamelc = atname;
+            atnamelc.toLower();
+
+            switch(atname)
+            {
+               case "provideCursorMovement":
+                  setEnableProvideCursorMovement(int(atval));
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+
+}

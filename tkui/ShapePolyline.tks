@@ -1,0 +1,1986 @@
+// ----
+// ---- file   : ShapePolyline.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 06Sep2022
+// ---- changed: xxSep2022, 29Mar2024, 30Mar2024, 31Mar2024, 01Apr2024, 02Apr2024, 03Apr2024
+// ----          04Apr2024, 05Apr2024, 06Apr2024, 08Apr2024, 09Apr2024, 10Apr2024, 30May2024
+// ----          03Jun2024, 07Jun2024, 11Sep2025
+// ----
+// ----
+// ----
+
+module MShapePolyline;
+
+namespace ui;
+
+
+class ShapePolyline : Shape {
+
+   define int LINE_JOINT_NONE      = 0;
+   define int LINE_JOINT_BEVEL     = 1;
+   define int LINE_JOINT_MITER     = 2;
+   define int LINE_JOINT_ROUND     = 3;
+   define int NUM_LINE_JOINT_TYPES = 4;
+
+   define int LINE_CAP_NONE      = 0;
+   define int LINE_CAP_BUTT      = 1;
+   define int LINE_CAP_ROUND     = 2;
+   define int LINE_CAP_SQUARE    = 3;
+   define int NUM_LINE_CAP_TYPES = 4;
+
+   protected FloatArray *line_vertices;
+   protected FloatArray *line_widths;
+
+   protected float const_line_width;  // used when line_widths is null. also used as reference line width in b_adaptive_width mode
+
+   protected float   line_miter_limit;           // [def=1024.0]
+   protected float   line_bevel_fb_dist;         // [def=4.0]
+   protected float   line_vis_min_ang;           // [def=0.2]
+   protected boolean b_line_closed;              // [def=false]
+   protected boolean b_line_joints;              // [def=true]
+   protected int     line_joint_type;            // 0=bevel, 1=miter, 2=round  [def=bevel]
+   protected int     line_cap_type;              // 0=butt, 1=round, 3=square  [def=butt]
+   protected int     num_div_round_line_joint;   // [def=11]
+   protected short   line_pattern;               // [def=#ffff(solid)]
+
+   protected ShapePolyline *shape_left;
+   protected ShapePolyline *shape_right;
+
+   protected FloatArray *left_vertices;   // null or ref to shape_left.line_vertices
+   protected FloatArray *right_vertices;  // null or ref to shape_right_vertices
+
+   protected FloatArray *left_widths;     // when b_adaptive_width = true
+   protected FloatArray *right_widths;
+
+   protected boolean b_adaptive_width;    // [def=false(const width)]
+   protected float   adaptive_width_min;  // [def=0]
+   protected float   adaptive_width_max;  // [def=0(unlimited)]
+
+   // protected boolean b_draw;  // debug
+
+   static StringArray line_joint_type_names = [ "BEVEL", "MITER", "ROUND" ];
+
+
+   public static New(FloatArray _vertices, int _c32, float _lineWidth, short _pattern) : ShapePolyline {
+      // (note) caller must invoke shape.tesselate() (after setting up attributes)
+      local ShapePolyline shape;
+      shape.initShapePolyline();
+      shape.setLineVertices(_vertices);
+      shape.setForegroundColor(_c32);
+      shape.setLineWidth(_lineWidth);
+      shape.setLinePattern(_pattern);
+      return deref shape;
+   }
+
+   public method initShapePolyline() {
+      initShape();
+
+      const_line_width         = 1.0f;
+      b_adaptive_width         = false;
+      line_miter_limit         = 1024.0;
+      line_bevel_fb_dist       = 1.0;
+      line_vis_min_ang         = 0.2;
+      b_line_closed            = false;
+      b_line_joints            = true;
+      line_joint_type          = LINE_JOINT_BEVEL; // 0=bevel, 1=miter, 2=round
+      line_cap_type            = LINE_CAP_BUTT;
+      num_div_round_line_joint = 11;
+      line_pattern             = #ffff;
+   }
+
+   public virtual freeShape() {
+      Shape::freeShape();
+
+      if(null != shape_left)
+      {
+         shape_left.freeShape();
+         shape_left <= null;
+      }
+
+      if(null != shape_right)
+      {
+         shape_right.freeShape();
+         shape_right <= null;
+      }
+   }
+
+   public method setLineVertices(Object _a) {
+      line_vertices <= new FloatArray;
+      line_vertices = _a;
+   }
+
+   public method setLineVerticesRef(FloatArray _a) {
+      line_vertices <= _a;
+   }
+
+   public method setLineWidth(float _w) {
+      // (note) the total effective line width is (w * 2)
+      const_line_width = _w;
+   }
+
+   public method getLineWidth() : float {
+      return const_line_width;
+   }
+
+   public method setEnableClosed(boolean _bEnable) {
+      b_line_closed = _bEnable;
+   }
+
+   public method getEnableClosed() : boolean {
+      return b_line_closed;
+   }
+
+   public method setLinePattern(short _pattern) {
+      line_pattern = _pattern;
+   }
+
+   public method getLinePattern() : short {
+      return line_pattern;
+   }
+
+   public method setMiterLimit(float _f) {
+      line_miter_limit = _f;
+   }
+
+   public method getMiterLimit() : float {
+      return line_miter_limit;
+   }
+
+   public method setBevelFallbackDistance(float _f) {
+      line_bevel_fb_dist = _f;
+   }
+
+   public method getBevelFallbackDistance() : float {
+      return line_bevel_fb_dist;
+   }
+
+   public method setLineJointType(int _type) {
+      line_joint_type = _type;
+   }
+
+   public method getLineJointType() : int {
+      return line_joint_type;
+   }
+
+   public method setEnableLineJoints(boolean _bEnable) {
+      b_line_joints = _bEnable;
+   }
+
+   public method getEnableLineJoints() : boolean {
+      return b_line_joints;
+   }
+
+   public method setLineCapType(int _type) {
+      line_cap_type = _type;
+   }
+
+   public method getLineCapType() : int {
+      return line_cap_type;
+   }
+
+   public method setNumDivRoundLineJoint(int _num) {
+      num_div_round_line_joint = _num;
+   }
+
+   public method getNumDivRoundLineJoint() : int {
+      return num_div_round_line_joint;
+   }
+
+   protected method allocLineVertices(int _num) : FloatArray {
+      if(null == line_vertices)
+         line_vertices <= new FloatArray;
+      line_vertices.realloc(_num * 2);
+      line_vertices.empty();
+      return line_vertices;
+   }
+
+   protected method allocLineWidths(int _num) : FloatArray {
+      if(null == line_widths)
+         line_widths <= new FloatArray;
+      line_widths.realloc(_num * 2);
+      line_widths.empty();
+      return line_widths;
+   }
+
+   public method setEnableAdaptiveWidth(boolean _bEnable) {
+      b_adaptive_width = _bEnable;
+   }
+
+   public method getEnableAdaptiveWidth() : boolean {
+      return b_adaptive_width;
+   }
+
+   public method setAdaptiveWidthMin(float _min) {
+      adaptive_width_min = _min;
+   }
+
+   public method getAdaptiveWidthMin() : float {
+      return adaptive_width_min;
+   }
+
+   public method setAdaptiveWidthMax(float _max) {
+      adaptive_width_max = _max;
+   }
+
+   public method getAdaptiveWidthMax() : float {
+      return adaptive_width_max;
+   }
+
+   public method getOrCreateShapeLeft() : ShapePolyline {
+      if(null == shape_left)
+      {
+         shape_left <= new ShapePolyline;
+         shape_left.initShapePolyline();
+         // shape_left.b_draw = true;
+      }
+      return shape_left;
+   }
+
+   public method getShapeLeft() : ShapePolyline {
+      return shape_left;
+   }
+
+   public method getOrCreateShapeRight() : ShapePolyline {
+      if(null == shape_right)
+      {
+         shape_right <= new ShapePolyline;
+         shape_right.initShapePolyline();
+         // shape_right.b_draw = true;
+      }
+      return shape_right;
+   }
+
+   public method getShapeRight() : ShapePolyline {
+      return shape_right;
+   }
+
+   public method setLineWidthArray(FloatArray _a) {
+      // (note) the total effective line width is (a[i] * 2)
+      line_widths <= new FloatArray;
+      line_widths = _a;
+   }
+
+   public method setLineWidthArrayRef(FloatArray _a) {
+      line_widths <= _a;
+   }
+
+   public method calcLineWidthArrayFromVertices(float _widthStart, float _widthEnd, float _exp) {
+      // exp: -f..+f
+      if(null != line_vertices)
+      {
+         if(_exp < 0.0f)
+         {
+            if(_exp > -0.001f)
+               _exp = -0.001f;
+            _exp = 1.0f / -_exp;
+         }
+         else if(_exp < 0.001f)
+            _exp = 0.001f;
+
+         int numVerts = line_vertices.numElements / 2;
+         if(numVerts > 1)
+         {
+            line_widths <= new FloatArray;
+            line_widths.alloc(numVerts);
+            float wNorm = 0.0f;
+            float wNormStep = 1.0f / (numVerts - 1);
+            loop(numVerts)
+            {
+               float w = _widthStart + (_widthEnd - _widthStart) * mathPowerf(wNorm, _exp);
+               // trace "xxx add linewidth wNorm="+wNorm+" exp="+_exp+" mathPowerf(wNorm, _exp)="+mathPowerf(wNorm, _exp)+" start="+_widthStart+" end="+_widthEnd+" w="+w;
+               line_widths.add(w);
+               wNorm += wNormStep;
+            }
+            // trace "xxx calcLineWidthArrayFromVertices: line_widths="+#(line_widths);
+         }
+      }
+   }
+
+   public static AppendEqualDistVertices(FloatArray _dstVertices,
+                                         FloatArray _srcVertices,
+                                         float _curveDistP,
+                                         boolean _bClosed
+                                         ) {
+      // (note) used when tesselating line patterns
+      boolean bDebug = 0;
+
+      if(_bClosed)
+      {
+         // (todo) add sumPathLen2dClosed()
+         float pathLen = _srcVertices.sumPathLen2d(0, _srcVertices.numElements/2);
+         float pathLastX = _srcVertices.get(_srcVertices.numElements - 2);
+         float pathLastY = _srcVertices.get(_srcVertices.numElements - 1);
+         float pathFirstX = _srcVertices.get(0);
+         float pathFirstY = _srcVertices.get(1);
+         float pathDistLastFirstX = (pathFirstX - pathLastX);
+         float pathDistLastFirstY = (pathFirstY - pathLastY);
+         pathLen += sqrt(pathDistLastFirstX*pathDistLastFirstX + pathDistLastFirstY*pathDistLastFirstY);
+
+         // trace "xxx AppendEqualDistVertices: srcVertices.pathLen="+pathLen+" curveDistP="+_curveDistP;
+         float numPatRep = pathLen / _curveDistP;
+         int newNumPatRep = (numPatRep+0.5);
+         newNumPatRep = int(newNumPatRep/16) * 16;
+         if(newNumPatRep < 1)
+            newNumPatRep = 1;
+         float newCurveDistP = pathLen / newNumPatRep;
+         // trace "xxx numPatRep="+numPatRep+" newNumPatRep="+newNumPatRep+" newCurveDistP="+newCurveDistP;
+         _curveDistP = newCurveDistP;
+      }
+
+      // trace "xxx AppendEqualDistVertices: srcVertices="+_srcVertices.string2;
+
+      float lastX = _srcVertices.get(0);
+      float lastY = _srcVertices.get(1);
+      int vtxOff = 2;
+      // int vtxIdxNoWrap = 1;
+
+      float accD = 0;
+      float lastD = 0;  // (todo) remove
+      float spillD = 0;
+
+      float curX = _srcVertices.get(vtxOff + 0);
+      float curY = _srcVertices.get(vtxOff + 1);
+
+      float lastReadX = curX;
+      float lastReadY = curY;
+
+      float nx = (curX - lastX);
+      float ny = (curY - lastY);
+      float d = sqrt(nx * nx + ny * ny);
+      // // float dLeft = d;
+      nx /= d;
+      ny /= d;
+      accD += d;
+
+      _dstVertices.add2(lastX, lastY);  // add start vertex
+      float lastAddedX = lastX;
+      float lastAddedY = lastY;
+
+      // float deltaToLastReadX;
+      // float deltaToLastReadY;
+      // float distToLastRead;
+
+      for(;;)
+      {
+         if(bDebug) trace "xxx .... accD="+accD+" spillD="+spillD+" lastD="+lastD;//+" dLeft="+dLeft;
+
+         if(accD >= _curveDistP)
+         {
+            // float curD = mathMinf(accD, _curveDistP);
+            // curD -= lastD;
+            float curD = _curveDistP - (lastD + spillD);
+            curX = lastX + nx * curD;
+            curY = lastY + ny * curD;
+            if(bDebug && vtxOff < 100)
+               trace "xxx add accD="+accD+" lastD="+lastD+" spillD="+spillD+" curD="+curD+" last=("+lastX+";"+lastY+") cur=("+curX+";"+curY+" d="+d+" curveDistP="+_curveDistP+" n=("+nx+";"+ny+")";
+            //+" dLeft="+dLeft;
+            _dstVertices.add2(curX, curY);
+
+            if(bDebug)
+            {
+               float deltaLastAddedX = (curX - lastAddedX);
+               float deltaLastAddedY = (curY - lastAddedY);
+               float distLastAdded = sqrt(deltaLastAddedX * deltaLastAddedX + deltaLastAddedY * deltaLastAddedY);
+               if!( (_curveDistP-0.001) < distLastAdded < (_curveDistP + 0.001) )
+                  trace "xxx  !!!!!!!!!!  vtxIdx="+(vtxOff/2)+" lastAdd=("+lastAddedX+";"+lastAddedY+") cur=("+curX+";"+curY+") curveDistP="+_curveDistP+" distLastAdded="+distLastAdded;
+            }
+            lastAddedX = curX;
+            lastAddedY = curY;
+
+            lastD = 0;
+            spillD = 0;
+
+            // deltaToLastReadX = (lastReadX - curX);
+            // deltaToLastReadY = (lastReadY - curY);
+            // distToLastRead = sqrt(deltaToLastReadX * deltaToLastReadX + deltaToLastReadY * deltaToLastReadY);
+            // spillD = distToLastRead;
+
+            // if(lastD >= _curveDistP)
+            //    lastD -= _curveDistP;
+            accD -= _curveDistP;
+
+            // float deltaToLastReadX = (lastReadX - curX);
+            // float deltaToLastReadY = (lastReadY - curY);
+            // float distToLastRead = sqrt(deltaToLastReadX * deltaToLastReadX + deltaToLastReadY * deltaToLastReadY);
+            // dLeft = distToLastRead;
+
+            // // dLeft -= curD;
+            if(bDebug) trace "xxx  add    new accD="+accD;//+" dLeft="+dLeft;
+
+            lastX = curX;
+            lastY = curY;
+         }
+         else
+         {
+            // Read next vertex
+
+            // if(vtxOff > 18)
+            //    break;
+
+            float deltaLastReadX = (curX - lastX);
+            float deltaLastReadY = (curY - lastY);
+            float distLastRead = sqrt(deltaLastReadX * deltaLastReadX + deltaLastReadY * deltaLastReadY);
+            spillD += distLastRead;
+
+            // spillD = dLeft;
+
+            lastX = curX;
+            lastY = curY;
+
+            // trace "xxx vtxOff="+vtxOff+" bClosed="+_bClosed;
+
+            if(_bClosed)
+            {
+               vtxOff = (vtxOff + 2) % _srcVertices.numElements;
+               if(2 == vtxOff)
+                  break;
+            }
+            else
+            {
+               vtxOff += 2;
+               if( (vtxOff+1) >= _srcVertices.numElements)
+                  break;
+            }
+
+            lastReadX = _srcVertices.get(vtxOff + 0);
+            lastReadY = _srcVertices.get(vtxOff + 1);
+
+            // deltaToLastReadX = (lastReadX - curX);
+            // deltaToLastReadY = (lastReadY - curY);
+            // distToLastRead = sqrt(deltaToLastReadX * deltaToLastReadX + deltaToLastReadY * deltaToLastReadY);
+            // spillD += distToLastRead;
+
+            curX = lastReadX;
+            curY = lastReadY;
+
+            nx = (curX - lastX);
+            ny = (curY - lastY);
+            d = sqrt(nx * nx + ny * ny);
+            // // dLeft = d;
+            nx /= d;
+            ny /= d;
+            accD += d;
+            lastD = 0;
+
+            if(bDebug && vtxOff < 100)
+               trace "xxx read vtxIdx="+(vtxOff/2)+" last=("+lastX+";"+lastY+") cur=("+curX+";"+curY+") d="+d+" spillD="+spillD+" accD="+accD;
+         }
+      } // for;;
+
+      // trace "xxx AppendEqualDistVertices: 1 dstVertices="+_dstVertices.string2;
+
+      if(_bClosed)
+      {
+         // Remove last (subdivided) vertex (polyline will be closed during shape tesselation)
+         if( (_dstVertices.get(0) == _dstVertices.get(_dstVertices.numElements - 2)) &&
+             (_dstVertices.get(1) == _dstVertices.get(_dstVertices.numElements - 1))
+             )
+         {
+            _dstVertices.numElements = _dstVertices.numElements - 2;
+         }
+      }
+      else if(0)
+      {
+         float lastSegDx = _dstVertices.get(_dstVertices.numElements - 2) - _srcVertices.get(_srcVertices.numElements - 2);
+         float lastSegDy = _dstVertices.get(_dstVertices.numElements - 1) - _srcVertices.get(_srcVertices.numElements - 1);
+         float lastSegD = sqrt(lastSegDx*lastSegDx + lastSegDy*lastSegDy);
+         // trace "xxx lastSegD="+lastSegD;
+         if(lastSegD > 0.25f)
+         {
+            _dstVertices.add(_srcVertices.get(_srcVertices.numElements - 2));
+            _dstVertices.add(_srcVertices.get(_srcVertices.numElements - 1));
+         }
+      }
+
+      // trace "xxx AppendEqualDistVertices: 2 dstVertices="+_dstVertices.string2;
+   }
+
+   public static SubdividePolylineVertices(FloatArray _dstVertices,
+                                           FloatArray _srcVertices,
+                                           float      _curveDistB,
+                                           float      _curveDistP,
+                                           boolean    _bClosed
+                                           ) {
+      // (note) used e.g. for preparing (straight) line pattern tesselation (GraphForm, Panel)
+      // (todo) optimize (don't use splines)
+      // float lastX = _srcVertices.get(0);
+      // float lastY = _srcVertices.get(1);
+      // int vtxOff = 2;
+
+      // FloatArray curveVertices; curveVertices.empty();
+
+      // loop( (_srcVertices.numElements - 2) / 2 + _bClosed )
+      // {
+      //    float curX = _srcVertices.get(vtxOff + 0);
+      //    float curY = _srcVertices.get(vtxOff + 1);
+
+      //    curveVertices.bezierCubicDeCasteljau2d(lastX, lastY,   // p1
+      //                                           curX,  curY,    // c1 (straight line)
+      //                                           lastX, lastY,   // c2 (straight line)
+      //                                           curX,  curY,    // p2
+      //                                           1.0, 1.0,    // scale x/y
+      //                                           9,           // recursion limit
+      //                                           _curveDistB, // bendiness threshold
+      //                                           _curveDistP, // distance threshold
+      //                                           null/*retCurveTArray*/
+      //                                           );
+
+      //    // remove last vertex of current segment (== start of next segment)
+      //    curveVertices.numElements = curveVertices.numElements - 2;
+
+      //    // Next curve segment
+      //    lastX = curX;
+      //    lastY = curY;
+      //    vtxOff = (vtxOff + 2) % _srcVertices.numElements;  // wrap-around for bClosed=true
+      // }
+
+      // if(!_bClosed)
+      //    RemoveDuplicateVertices(_srcVertices, _bClosed);
+
+      AppendEqualDistVertices(_dstVertices, _srcVertices, _curveDistP, _bClosed);
+   }
+
+   public static RemoveDuplicateVertices(FloatArray _vertices, boolean _bClosed) {
+      // line_vertices utility function
+
+      if(_vertices.numElements / 2)
+      {
+         float curX = _vertices.get(0);
+         float curY = _vertices.get(1);
+         int vtxOff = 2;
+         int vtxIdx = 0;
+         // (todo) 'bClosed'
+         while( (vtxIdx << 1) < (_vertices.numElements + _bClosed) )
+         {
+            float nextX = _vertices.get(vtxOff + 0);
+            float nextY = _vertices.get(vtxOff + 1);
+            if(nextX == curX && nextY == curY)
+            {
+               if(0 == vtxOff)
+               {
+                  // Delete last vertex
+                  _vertices.numElements = _vertices.numElements - 2;
+               }
+               else
+               {
+                  _vertices.delete(vtxOff);
+                  _vertices.delete(vtxOff);
+               }
+            }
+            else
+            {
+               vtxOff = (vtxOff + 2) % _vertices.numElements;
+               vtxIdx++;
+               curX = nextX;
+               curY = nextY;
+            }
+         }
+      }
+   }
+
+   public static AppendArc(FloatArray _vertices,
+                           float _x, float _y,
+                           float _w, float _h,
+                           int _numSeg/*12*/,
+                           boolean _bAddFinal,
+                           boolean _bFlip
+                           ) {
+      // line_vertices utility function
+
+      float w = PI / (2 * _numSeg);
+      float a = 0;
+      float cx = _x;
+      float cy = _y;
+      int idx = 0;
+      loop(_numSeg + _bAddFinal) // (note) don't add final vertex when it's the start of a next (polyline) segment
+      {
+         float tx = (_bFlip ? cos(a) : sin(a)) * _w;
+         float ty = (_bFlip ? sin(a) : cos(a)) * _h;
+         _vertices.add2(_x + tx,
+                        _y + ty
+                        );
+         a += w;
+      }
+   }
+
+   public static AppendRoundedRectangle(FloatArray _vertices,
+                                        float _x, float _y,
+                                        float _w, float _h,
+                                        float _arcW, float _arcH,
+                                        int _numArcSeg/*12*/,
+                                        float _rhombTx, float _rhombTy
+                                        ) {
+      // line_vertices utility function
+
+      // lt
+      AppendArc(_vertices,
+                _x + _arcW + _rhombTx,
+                _y + _arcH - _rhombTy,
+                -_arcW, -_arcH,
+                _numArcSeg,
+                true/*bAddFinal*/,
+                true/*bFlip*/
+                );
+
+      // rt
+      AppendArc(_vertices,
+                _x + _w - _arcW + _rhombTx,
+                _y + _arcH - _rhombTy,
+                _arcW, -_arcH,
+                _numArcSeg,
+                true/*bAddFinal*/,
+                false/*bFlip*/
+                );
+
+      // rb
+      AppendArc(_vertices,
+                _x + _w - _arcW - _rhombTx,
+                _y + _h - _arcH + _rhombTy,
+                _arcW, _arcH,
+                _numArcSeg,
+                true/*bAddFinal*/,
+                true/*bFlip*/
+                );
+
+      // lb
+      AppendArc(_vertices,
+                _x + _arcW -  _rhombTx,
+                _y + _h - _arcH + _rhombTy,
+                -_arcW, _arcH,
+                _numArcSeg,
+                true/*bAddFinal*/,
+                false/*bFlip*/
+                );
+   }
+
+   public static AppendRectangle(FloatArray _vertices,
+                                 float _x, float _y,
+                                 float _w, float _h,
+                                 float _rhombTx, float _rhombTy
+                                 ) {
+      // line_vertices utility function
+
+      // lt
+      _vertices.add2(_x + _rhombTx,
+                     _y - _rhombTy
+                     );
+
+      // rt
+      _vertices.add2(_x + _w + _rhombTx,
+                     _y - _rhombTy
+                     );
+
+      // rb
+      _vertices.add2(_x + _w - _rhombTx,
+                     _y + _h + _rhombTy
+                     );
+
+      // lb
+      _vertices.add2(_x - _rhombTx,
+                     _y + _h + _rhombTy
+                     );
+   }
+
+   public static AppendEllipse(FloatArray _vertices,
+                               float _cx, float _cy,
+                               float _rx, float _ry,
+                               int _numSeg
+                               ) {
+      // line_vertices utility function
+
+      float a = 0;
+      float w = (2PI / _numSeg);
+      loop(_numSeg)
+      {
+         float x = cos(a) * _rx + _cx;
+         float y = sin(a) * _ry + _cy;
+         _vertices.add2(x, y);
+         a += w;
+      }
+
+   }
+
+   public static AppendDiamond(FloatArray _vertices,
+                               float _cx, float _cy,
+                               float _rx, float _ry
+                               ) {
+      // line_vertices utility function
+
+      _vertices.add2(_cx,       _cy - _ry);
+      _vertices.add2(_cx + _rx, _cy      );
+      _vertices.add2(_cx,       _cy + _ry);
+      _vertices.add2(_cx - _rx, _cy      );
+   }
+
+   public static AppendHexagonA(FloatArray _vertices,
+                                float px, float py,
+                                float sx, float sy,
+                                float ax, float ay
+                                ) {
+      // line_vertices utility function
+      float rx = sx * 0.5;
+      float ry = sy * 0.5;
+
+      float cx = px + rx;
+      float cy = py + ry;
+
+      float drax = rx - ax;
+      float dray = ry - ay;
+
+      _vertices.add2(cx,        cy - ry);
+      _vertices.add2(cx + drax, cy - dray*0.5);
+      _vertices.add2(cx + drax, cy + dray*0.5);
+      _vertices.add2(cx,        cy + ry);
+      _vertices.add2(cx - drax, cy + dray*0.5);
+      _vertices.add2(cx - drax, cy - dray*0.5);
+   }
+
+   public static AppendTriangleAroundRect(FloatArray _vertices,
+                                          float px, float py,
+                                          float sx, float sy,
+                                          float ax, float ay
+                                          ) {
+      // line_vertices utility function
+      _vertices.add2(px+ax,        py + sy);
+      _vertices.add2(px+(sx*0.5),  py + ay);
+      _vertices.add2(px+sx-ax,     py + sy);
+   }
+
+   protected method addTri(Vector2f _vLT, Vector2f _vRT, Vector2f _vRB) {
+      v_tri.add2(_vLT.x, _vLT.y);
+      v_tri.add2(_vRT.x, _vRT.y);
+      v_tri.add2(_vRB.x, _vRB.y);
+   }
+
+   protected method addQuad(Vector2f _vLT, Vector2f _vRT, Vector2f _vRB, Vector2f _vLB) {
+      v_tri.add2(_vLT.x, _vLT.y);
+      v_tri.add2(_vRT.x, _vRT.y);
+      v_tri.add2(_vRB.x, _vRB.y);
+
+      v_tri.add2(_vLT.x, _vLT.y);
+      v_tri.add2(_vRB.x, _vRB.y);
+      v_tri.add2(_vLB.x, _vLB.y);
+   }
+
+   public method addRoundLineJoint_bezier(Vector2f _vCtr, Vector2f vL, Vector2f vMiter, Vector2f vR,
+                                          int _numDiv,
+                                          FloatArray _outerVerticesOrNull,
+                                          FloatArray _outerWidthsOrNull,
+                                          float _wEndScl
+                                          ) {
+
+      float aStep = 1.0 / (_numDiv - 1);
+      float a = aStep;
+
+      Vector2f vPrev = vL;
+      Vector2f vCur;
+      Vector2f vCtr = _vCtr;
+
+      int idx = 0;
+
+      if(b_debug)
+         trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ addRoundLineJoint";
+
+      Vector2f vDirL;
+      vMiter.sub(vL) => vDirL;
+
+      Vector2f vDirR;
+      vMiter.sub(vR) => vDirR;
+
+      Vector2f vDir;
+
+      Vector2f vMidL;
+      Vector2f vMidR;
+
+      loop(_numDiv - 1)
+      {
+         vDirL.mulf(a) => vMidL;
+         vDirR.mulf(1.0 - a) => vMidR;
+         vMidL.add(vL);
+         vMidR.add(vR);
+         vMidR.sub(vMidL) => vDir;
+         vDir.mulf(a) => vCur;
+         vCur.add(vMidL);
+
+         if(b_debug)
+            trace "xxx idx="+idx+" numDiv="+_numDiv+" a="+a+" vL="+vL+" vMiter="+vMiter+" vR="+vR+" vMidL="+vMidL+" vMidR="+vMidR+" vCur="+vCur;
+
+         if(b_debug && 0 == idx)
+            trace "xxx addRoundLineJoint_bezier<first>: vCtr="+vCtr+" vPrev="+vPrev+" vCur="+vCur;
+
+         addTri(vCtr, vPrev, vCur);
+
+         if(idx != _numDiv-2)
+         {
+            if(null != _outerVerticesOrNull)
+               _outerVerticesOrNull.add2(vCur.x, vCur.y);
+
+            if(null != _outerWidthsOrNull)
+               _outerWidthsOrNull.add(_wEndScl);
+         }
+
+         // Next vertex
+         vPrev = vCur;
+         a += aStep;
+         idx++;
+      }
+   }
+
+   public method addRoundLineCap_bezier(Vector2f vL, Vector2f vMiter, Vector2f vR,
+                                        int _numDiv,
+                                        FloatArray _outerVerticesOrNull,
+                                        FloatArray _outerWidthsOrNull,
+                                        float _wEndScl
+                                        ) {
+
+      float aStep = 1.0 / (_numDiv - 1);
+      float a = aStep;
+
+      Vector2f vPrev = vL;
+      Vector2f vCur;
+      // // Vector2f vCtr = _vCtr;
+
+      int idx = 0;
+
+      if(b_debug)
+         trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ addRoundLineCap";
+
+      Vector2f vDirL;
+      vMiter.sub(vL) => vDirL;
+
+      Vector2f vDirR;
+      vMiter.sub(vR) => vDirR;
+
+      Vector2f vDir;
+      Vector2f vMidL;
+      Vector2f vMidR;
+
+      // Vector2f v1;
+
+      loop(_numDiv - 1)
+      {
+         vDirL.mulf(a) => vMidL;
+         vDirR.mulf(1.0 - a) => vMidR;
+         vMidL.add(vL);
+         vMidR.add(vR);
+         vMidR.sub(vMidL) => vDir;
+         vDir.mulf(a) => vCur;
+         vCur.add(vMidL);
+
+         if(b_debug)
+            trace "xxx idx="+idx+" numDiv="+_numDiv+" a="+a+" vL="+vL+" vMiter="+vMiter+" vR="+vR+" vMidL="+vMidL+" vMidR="+vMidR+" vCur="+vCur;
+
+         if(b_debug && 0 == idx)
+            trace "xxx addRoundLineCap_bezier<first>: vPrev="+vPrev+" vCur="+vCur;
+
+         addTri(vPrev, vCur, vR);
+
+         if(idx != _numDiv-2)
+         {
+            if(null != _outerVerticesOrNull)
+               _outerVerticesOrNull.add2(vCur.x, vCur.y);
+
+            if(null != _outerWidthsOrNull)
+               _outerWidthsOrNull.add(_wEndScl);
+         }
+
+         // Next vertex
+         vPrev = vCur;
+         a += aStep;
+         idx++;
+      }
+   }
+
+   protected method calcAdaptiveWidth(float _wFactor) : float {
+      float w = _wFactor * const_line_width;
+      w = mathMaxf(adaptive_width_min, w);
+      if(adaptive_width_max > 0.0f)
+         w = mathMinf(adaptive_width_max, w);
+      // trace "xxx calcAdaptiveWidth: wFactor="+_wFactor+" => w="+w;
+      // w = const_line_width; // xxxxxxxxxxxxxx
+      return w;
+   }
+
+   public method tesselatePolyline(FloatArray _vertices,
+                                   FloatArray _widths,
+                                   boolean    _bClosed,
+                                   short      _pattern
+                                   ) {
+      allocTriVertices(_vertices.numElements * (12/2));
+      queueVBOUpdate();
+
+      if(null != shape_left && shape_left.const_line_width > 0)
+      {
+         left_vertices <= shape_left.allocLineVertices(_vertices.numElements * 3);
+         left_widths   <= shape_left.b_adaptive_width ? shape_left.allocLineWidths(_vertices.numElements) : null;
+      }
+      else
+      {
+         left_vertices <= null;
+         left_widths   <= null;
+      }
+
+      if(null != shape_right && shape_right.const_line_width > 0)
+      {
+         right_vertices <= shape_right.allocLineVertices(_vertices.numElements * 3);
+         right_widths   <= shape_right.b_adaptive_width ? shape_right.allocLineWidths(_vertices.numElements) : null;
+      }
+      else
+      {
+         right_vertices <= null;
+         right_widths   <= null;
+      }
+
+      if(b_debug)
+         trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~tesselatePolyline: #vertices="+(_vertices.numElements/2);
+      // trace "xxx this="+#(this)+" line_joint_type="+line_joint_type;
+      // trace "xxx line_miter_limit="+line_miter_limit;
+
+      if(b_debug) trace "xxx tesselatePolyline: shape_left="+#(shape_left)+" left_vertices="+#(left_vertices)+" shape_right="+#(shape_right)+" right_vertices="+#(right_vertices);
+
+      // trace "xxx tesselatePolyline: vertices="+#(_vertices);
+      // trace "xxx tesselatePolyline: widths="+#(_widths);
+      int numVertices = _vertices.numElements / 2;
+
+      Vector2f vStart;
+      Vector2f vStartLast;
+      float wStart;
+      float wStartLast;
+
+      Vector2f vEnd;
+      float wEnd;
+      float wFirst;
+
+      float wStartLastSclL;
+      float wStartLastSclR;
+      float wEndLastSclL;
+      float wEndLastSclR;
+      float wStartSclL;
+      float wStartSclR;
+      float wEndSclL;
+      float wEndSclR;
+      float wEndSclLFirst;
+      float wEndSclRFirst;
+
+      Vector2f vTmp;
+      Vector2f vTmp2;
+
+      Vector2f nLineStart;
+      Vector2f nLineEnd;
+
+      Vector2f vStartL;
+      Vector2f vStartR;
+      Vector2f vEndL;
+      Vector2f vEndR;
+
+      Vector2f vStartLastL;
+      Vector2f vStartLastR;
+      Vector2f vEndLastL;
+      Vector2f vEndLastR;
+
+      Vector2f vDirLast;
+      int skipQuad = 0;
+      int segIdx = 0;
+
+      if(0 == _pattern)
+         return;
+      int patternBit = _bClosed ? (1 << 0) : (1 << (15-(numVertices & 15)));
+      boolean bDrawQuadPrev = false;
+
+      // trace "xxx tesselatePolyline: line_joint_type="+line_joint_type;
+
+      if(_bClosed)
+      {
+         skipQuad = 1;
+         vStart.init(_vertices.get( (numVertices-1) * 2 +0),
+                     _vertices.get( (numVertices-1) * 2 +1)
+                     );
+         if(null != _widths)
+            wStart = _widths.get(numVertices - 1);
+         else
+            wStart = const_line_width;
+      }
+      else
+      {
+         vStart.init(_vertices.get(0),
+                     _vertices.get(1)
+                     );
+         if(null != _widths)
+            wStart = _widths.get(0);
+         else
+            wStart = const_line_width;
+      }
+
+      wFirst = wStart;
+
+      if(null != left_vertices)
+      {
+         wStartSclL = shape_left.calcAdaptiveWidth(wStart / const_line_width);
+      }
+
+      if(null != right_vertices)
+         wStartSclR = shape_right.calcAdaptiveWidth(wStart / const_line_width);
+
+      float wStartSclLFirst = wStartSclL;
+      float wStartSclRFirst = wStartSclR;
+
+      // if(null != left_widths)
+      // {
+      //    trace "xxx wFirst="+wFirst+" const_line_width="+const_line_width+" factor="+((wFirst / const_line_width))+" shape_left.const_line_width="+shape_left.const_line_width;
+      //    left_widths.add(mathMaxf(0.5f, (wFirst / const_line_width) * shape_left.const_line_width));
+      // }
+
+      // if(null != right_widths)
+      //    right_widths.add(mathMaxf(0.5f, (wFirst / const_line_width) * shape_right.const_line_width));
+
+      if(2 == numVertices)
+      {
+         // (todo) special case: single segment polyline
+      }
+
+      int aaEdgeFlags;
+
+      int vertexIdx = _bClosed ? 0 : 1;  // current line segment end vertex
+      int vertexIterIdx = 0;
+
+      Vector2f vISFirst;
+      float wISSclFirst;
+
+      boolean bFirstQuad = true;
+      Vector2f vCapCtr;
+      Vector2f vCapOuter;
+
+      loop(numVertices + (_bClosed*2))
+      {
+         vEnd.init(_vertices.get(vertexIdx*2 + 0),
+                   _vertices.get(vertexIdx*2 + 1)
+                   );
+
+         if(null != _widths)
+            wEnd = _widths.get(vertexIdx);
+         else
+            wEnd = const_line_width;
+
+         if(null != left_widths)
+         {
+            wEndSclL = shape_left.calcAdaptiveWidth(wEnd / const_line_width);
+            if(b_debug) trace "xxx this="+#(this)+" calc vertexIdx="+vertexIdx+" wEnd="+wEnd+" wEndSclL="+wEndSclL;
+         }
+
+         if(null != right_widths)
+            wEndSclR = shape_right.calcAdaptiveWidth(wEnd / const_line_width);
+
+         // Line start / end normals scaled to line start / end width
+         nLineStart.init(vStart.y - vEnd.y, vEnd.x - vStart.x);
+         nLineStart.unitScale(wEnd) => nLineEnd;
+         nLineStart.unitScale(wStart);
+
+         // Extrude start and end
+         vStartL.init(vStart.x - nLineStart.x, vStart.y - nLineStart.y);
+         vStartR.init(vStart.x + nLineStart.x, vStart.y + nLineStart.y);
+         vEndL.init(vEnd.x - nLineEnd.x, vEnd.y - nLineEnd.y);
+         vEndR.init(vEnd.x + nLineEnd.x, vEnd.y + nLineEnd.y);
+
+         Vector2f vDir; vDir.init(vEnd.x - vStart.x, vEnd.y - vStart.y);
+
+         // trace "xxx vertexIterIdx="+vertexIterIdx;
+         if(b_debug)
+            trace "xxx vertexIdx="+vertexIdx+" vertexIterIdx="+vertexIterIdx+" vStart="+vStart+" vEnd="+vEnd;
+
+         if(b_debug)
+         {
+            trace "xxx ................ vertexIdx="+vertexIdx+" / "+numVertices;
+            trace "xxx vStart="+vStart+" vEnd="+vEnd;
+            trace "xxx nLineStart="+nLineStart+" nLineEnd="+nLineEnd;
+            trace "xxx vStartL="+vStartL+" vStartR="+vStartR;
+            trace "xxx vEndL="+vEndL+" vEndR="+vEndR;
+            trace "xxx vDir="+vDir;
+         }
+
+         if(0 == vertexIdx)
+            patternBit = 1;
+
+         boolean bDrawQuad   = (_pattern & patternBit);
+         int patternBitNext;
+         if( (vertexIdx+1) == numVertices )
+            patternBitNext = 1;
+         else
+            patternBitNext = mathWrapi(patternBit << 1, 0, 65535);
+         // trace "xxx vertexIdx="+vertexIdx+" patternBit="+patternBit+" patternBitNext="+patternBitNext;
+         boolean bDrawQuadNext = (_pattern & patternBitNext);
+         boolean bAllowJoint = bDrawQuad && bDrawQuadNext;
+
+         if(vertexIterIdx > 0)
+         {
+            boolean bDrawSeg = bDrawQuad && !skipQuad && (vertexIterIdx >= (0 + _bClosed));
+
+            // Calc winding
+            boolean bLastVertex  = (vertexIterIdx == (numVertices - 1 + _bClosed*2));
+            // trace "xxx bLastVertex="+bLastVertex;
+            if(!bLastVertex || _bClosed)
+            {
+               Vector2f vIS;
+               Vector2f vLT;
+               Vector2f vRT;
+               // // Vector2f vRB;
+               // // Vector2f vLB;
+               float    wISScl;
+
+               Vector2f vMiterOrig;
+               Vector2f vMiter;
+               Vector2f vMiterL;
+               Vector2f vMiterR;
+               Vector2f vMiterStart;
+               Vector2f vMiterEnd;
+               float    wMiterScl;
+               float    wMiterSclL;
+               float    wMiterSclR;
+
+               Vector2f vLTDraw;
+               Vector2f vRTDraw;
+               // // Vector2f vRBDraw;
+               // // Vector2f vLBDraw;
+               Vector2f vISDraw;
+
+               int winding = int( (vDirLast.x*vDir.y - vDirLast.y * vDir.x) * 16.0 );
+
+               if(b_debug)
+                  trace "xxx vDirLast="+vDirLast+" vDir="+vDir+" winding="+winding;
+
+               float t;
+               float h;
+
+               boolean bBevel = (LINE_JOINT_BEVEL == line_joint_type);
+
+               if(winding > 0)
+               {
+                  // Right turn joint
+                  if(b_debug)
+                     trace "xxx right turn joint";
+
+                  if(null != left_vertices)
+                  {
+                     // (todo) proper-fix this
+                     if( ((line_joint_type != LINE_JOINT_MITER) &&  1 == vertexIterIdx) ||
+                         (line_joint_type == LINE_JOINT_MITER && vertexIterIdx == (numVertices + (_bClosed*2)))
+                         )
+                     {
+                        if(!_bClosed)
+                        {
+                           left_vertices.add2(vStartLastL.x, vStartLastL.y);
+                           left_vertices.add2(vEndLastL.x, vEndLastL.y);
+                           if(null != left_widths)
+                           {
+                              left_widths.add(wStartLastSclL);
+                              left_widths.add(wEndLastSclL);
+                           }
+                        }
+                        else
+                        {
+                           left_vertices.add2(vStartL.x, vStartL.y);
+                           if(null != left_widths)
+                              left_widths.add(wStartSclL);
+                        }
+                     }
+                     else
+                     {
+                        left_vertices.add2(vEndLastL.x, vEndLastL.y);
+                        if(null != left_widths)
+                           left_widths.add(wEndLastSclL);
+                     }
+                  }
+
+                  if(null != right_vertices && !_bClosed && 1 == vertexIterIdx)
+                  {
+                     right_vertices.add2(vStartLastR.x, vStartLastR.y);
+                     if(null != right_widths)
+                        right_widths.add(wStartLastSclR);
+                  }
+
+                  // Calc intersection between vStartLastR<>vEndLastR and vStartR<>vEndR
+                  if(1 && _bClosed && (vertexIterIdx == numVertices+1))
+                  {
+                     if(b_debug)
+                        trace "xxx <right> load vIS="+vIS+" vertexIdx="+vertexIdx;
+                     vIS = vISFirst;
+                     wISScl = wISSclFirst;
+                  }
+                  else
+                  {
+                     h = 0;
+                     vStartR.sub(vEndLastR) => vTmp;
+                     if(vTmp.abs < 2.0)
+                     {
+                        vStartR.add(vEndLastR) => vIS;
+                        vIS.mulf(0.5f);
+                        wISScl = wEndLastSclR;  // [02Apr2024]
+                        h = -999999;
+                     }
+                     else
+                     {
+                        vEndLastR.sub(vStartLastR) => vTmp;
+                        vEndR.sub(vStartR) => vTmp2;
+                        vTmp.unit();
+                        vTmp2.unit();
+                        t = (vTmp.x*vTmp2.y - vTmp.y*vTmp2.x);
+
+                        if(abs(t) < line_vis_min_ang)
+                        {
+                           vStartR.add(vEndLastR) => vIS;
+                           vIS.mulf(0.5f);
+                           wISScl = wEndLastSclR;  // [02Apr2024]
+                           h = -999999;
+                        }
+
+                        // trace "xxx vTmp="+vTmp+" vTmp2="+vTmp2+" vTmp X vTmp2="+t+" => h="+h;
+                     }
+
+                     if(h > -999999)
+                     {
+                        // h = Intersect(vStartLastR, vEndLastR,
+                        //               vStartR, vEndR,
+                        //               vIS,
+                        //               false/*bExtrapolate*/
+                        //               );
+                        h = vIS.intersect(vStartLastR, vEndLastR,
+                                          vStartR, vEndR,
+                                          false/*bExtrapolate*/
+                                          );
+                        if!(0.0f <= h <= 1.0)
+                        {
+                           vIS = vStartR;
+                           wISScl = wStartSclR;
+                        }
+                        else
+                        {
+                           wISScl = mathLerpf(wStartLastSclR, wEndLastSclR, h);
+                        }
+                     }
+                  }
+
+                  // if(b_debug)
+                  //    trace "xxx <right> vIS="+vIS+" h="+h;
+
+                  vEndLastR = vIS;
+                  vStartR   = vIS;
+
+                  wEndLastSclR = wISScl;
+                  wStartSclR   = wISScl;
+
+                  // trace "xxx vertexIdx="+vertexIdx+" vertexIterIdx="+vertexIterIdx+" vIS="+vIS;
+
+                  if(_bClosed && (vertexIterIdx == 1))
+                  {
+                     if(b_debug)
+                        trace "xxx save vIS="+vIS+" vertexIdx="+vertexIdx;
+                     vISFirst = vIS;
+                     wISSclFirst = wISScl;
+                  }
+
+                  if(b_debug)
+                     trace "xxx <right> h="+h+" vIS="+vIS+"  vIS_int=("+int(vIS.x)+";"+int(vIS.y)+")";
+
+                  // Fall back to Bevel joints ?
+                  vStartL.sub(vEndLastL) => vTmp;
+                  bBevel |= (vTmp.abs <= line_bevel_fb_dist);
+
+                  if!(_bClosed && (vertexIterIdx == numVertices+1))
+                  {
+                     if(null != right_vertices)
+                        right_vertices.add2(vIS.x, vIS.y);
+
+                     if(null != right_widths)
+                        right_widths.add(wEndSclR);
+                  }
+
+                  if(!bBevel)
+                  {
+                     // Calc miter intersection (right turn)
+                     // h = Intersect(vStartLastL, vEndLastL,
+                     //               vEndL, vStartL,
+                     //               vMiterOrig,
+                     //               true/*bExtrapolate*/
+                     //               );
+                     h = vMiterOrig.intersect(vStartLastL, vEndLastL,
+                                              vEndL, vStartL,
+                                              true/*bExtrapolate*/
+                                              );
+
+                     vMiterOrig.sub(vStart) => vTmp;
+
+                     wMiterScl = mathLerpf(wStartLastSclL, wEndLastSclL, h);//0.5f);
+                     wMiterSclL = wMiterScl;
+                     wMiterSclR = wMiterScl;
+
+                     if(b_debug)
+                        trace "xxx miterLen="+vTmp.abs+" line_miter_limit="+line_miter_limit+" h="+h;
+
+                     if(vTmp.abs > line_miter_limit)
+                     {
+                        vTmp.unitScale(line_miter_limit) => vMiter;
+                        vMiter.add(vStart);
+
+                        vMiterOrig.sub(vEndLastL) => vTmp;
+
+                        vEndLastL.sub(vEndLastL) => vMiterStart;
+                        vMiterStart.add(vMiter);
+                        vStartL.sub(vEndLastL) => vMiterEnd;
+                        vMiterEnd.add(vMiter);
+
+                        // Intersect(vEndLastL, vMiterOrig, vMiterStart, vMiterEnd,   vMiterL, true/*bExtrapolate*/);
+                        // Intersect(vStartL,   vMiterOrig, vMiterEnd,   vMiterStart, vMiterR, true/*bExtrapolate*/);
+                        vMiterL.intersect(vEndLastL, vMiterOrig, vMiterStart, vMiterEnd,   true/*bExtrapolate*/);
+                        vMiterR.intersect(vStartL,   vMiterOrig, vMiterEnd,   vMiterStart, true/*bExtrapolate*/);
+
+                        if(b_debug)
+                           trace "xxx vMiterOrig="+vMiterOrig+" vMiter="+vMiter+" vMiterStart="+vMiterStart+" vMiterEnd="+vMiterEnd+" vMiterL="+vMiterL+" vMiterR="+vMiterR;
+                     }
+                     else
+                     {
+                        vMiter = vMiterOrig;
+                        vMiterL = vMiter;
+                        vMiterR = vMiter;
+
+                        wMiterSclL = wMiterScl;
+                        wMiterSclR = wMiterScl;
+                     }
+
+
+                     // Draw line joint (right turn)
+                     if( (vertexIterIdx >= (1/*+_bClosed*/)))
+                     {
+                        if(LINE_JOINT_MITER == line_joint_type)
+                        {
+                           if(vMiter == vMiterOrig)
+                           {
+                              vEndLastL = vMiter;
+                              vStartL   = vMiter;
+
+                              wEndLastSclL = wMiterScl;
+                              wStartSclL   = wMiterScl;
+
+                              if(null != left_vertices)
+                                 left_vertices.add2(vMiter.x, vMiter.y);
+
+                              if(null != left_widths)
+                                 left_widths.add(wMiterScl);
+                           }
+                           else
+                           {
+                              vEndLastL = vMiterL;
+                              vStartL   = vMiterR;
+
+                              wEndLastSclL = wMiterSclL;
+                              wStartSclL   = wMiterSclR;
+
+                              bBevel = true;
+                           }
+                        }
+                     }
+
+                     if(b_line_joints && bAllowJoint && (vertexIterIdx >= (1+_bClosed)))
+                     {
+                        if(LINE_JOINT_ROUND == line_joint_type)
+                        {
+                           addRoundLineJoint_bezier(vIS, vEndLastL, vMiter, vStartL,
+                                                    num_div_round_line_joint,
+                                                    left_vertices/*outerVerticesOrNull*/,
+                                                    left_widths/*outerWidthsOrNull*/,
+                                                    wISScl
+                                                    );
+                        }
+                     }
+
+                  } // if !bBevel
+
+                  // trace "xxx bBevel="+bBevel+" b_line_joints="+b_line_joints+" bAllowJoint="+bAllowJoint;
+                  if(bBevel && b_line_joints && bAllowJoint && (vertexIterIdx >= (1+_bClosed)))
+                  {
+                     // bevel line joint (right turn)
+
+                     // top-side AA edge:
+                     vLT = vEndLastL;
+                     vRT = vStartL;
+
+                     // // bottom-side AA edge: shift top-side AA edge to vIS edge
+                     // // vLB = vEndLastL; vLB.sub(vEndLastL); vLB.add(vIS);  // (todo) remove
+                     // // vRB = vStartL;   vRB.sub(vEndLastL); vRB.add(vIS);  // (todo) remove
+
+                     // trace "xxx bevelLineJoint: bottom vRB="+vRB+" vAA3="+vAA3+" nAA3="+nAA3+" ilAA3="+ilAA3;
+
+                     if(1)
+                     {
+                        vLTDraw = vLT;
+                        vRTDraw = vRT;
+                        // // vRBDraw = vRB;  // (todo) remove
+                        // // vLBDraw = vLB;  // (todo) remove
+                        vISDraw = vIS;
+
+                        addTri(vLTDraw, vRTDraw, vISDraw);
+
+                        if!(_bClosed && (vertexIterIdx == numVertices+1))
+                        {
+                           if(null != left_vertices)
+                              left_vertices.add2(vRT.x, vRT.y);
+
+                           if(null != left_widths)
+                              left_widths.add(wEndLastSclL);
+                        }
+                     }
+                  } // if bBevel
+
+               }
+               else if(winding < 0)
+               {
+                  // Left turn joint
+                  if(b_debug)
+                     trace "xxx left turn joint";
+
+                  if(null != right_vertices)
+                  {
+                     // (todo) proper-fix this
+                     if( ((line_joint_type != LINE_JOINT_MITER) &&  1 == vertexIterIdx) ||
+                         (line_joint_type == LINE_JOINT_MITER && vertexIterIdx == (numVertices + (_bClosed*2)))
+                         )
+                     {
+                        if(!_bClosed)
+                        {
+                           right_vertices.add2(vStartLastR.x, vStartLastR.y);
+                           right_vertices.add2(vEndLastR.x, vEndLastR.y);
+
+                           if(null != right_widths)
+                           {
+                              right_widths.add(wStartLastSclR);
+                              right_widths.add(wEndLastSclR);
+                           }
+                        }
+                        else
+                        {
+                           right_vertices.add2(vStartR.x, vStartR.y);
+                           if(null != right_widths)
+                           {
+                              right_widths.add(wStartSclR);  // (todo) looks wrong in MITER mode
+                           }
+                        }
+                     }
+                     else
+                     {
+                        right_vertices.add2(vEndLastR.x, vEndLastR.y);
+                        if(null != right_widths)
+                           right_widths.add(wEndLastSclR);
+                     }
+                  }
+
+                  if(null != left_vertices && !_bClosed && 1 == vertexIterIdx)
+                  {
+                     left_vertices.add2(vStartLastL.x, vStartLastL.y);
+                     if(null != left_widths)
+                        left_widths.add(wStartLastSclL);
+                     // trace "xxx add wStartLastSclL="+#(wStartLastSclL);
+                  }
+
+                  // Calc intersection between vStartLastL<>vEndLastL and vStartL<>vEndL
+                  if(_bClosed && (vertexIterIdx == numVertices+1))
+                  {
+                     if(b_debug)
+                        trace "xxx <left> load vIS="+vIS+" vertexIdx="+vertexIdx;
+                     vIS = vISFirst;
+                     wISScl = wISSclFirst;
+                  }
+                  else
+                  {
+                     h = 0;
+                     vStartL.sub(vEndLastL) => vTmp;
+                     if(vTmp.abs < 2.0)
+                     {
+                        vStartL.add(vEndLastL) => vIS;
+                        vIS.mulf(0.5f);
+                        wISScl = wEndLastSclL;  // [02Apr2024]
+                        h = -999999;
+                     }
+                     else
+                     {
+                        vEndLastL.sub(vStartLastL) => vTmp;
+                        vEndL.sub(vStartL) => vTmp2;
+                        vTmp.unit();
+                        vTmp2.unit();
+                        t = (vTmp.x*vTmp2.y - vTmp.y*vTmp2.x);
+
+                        if(abs(t) < line_vis_min_ang)
+                        {
+                           vStartL.add(vEndLastL) => vIS;
+                           vIS.mulf(0.5f);
+                           h = -999999;
+                           wISScl = wEndLastSclL;  // [02Apr2024]
+                        }
+
+                        // trace "xxx vTmp="+vTmp+" vTmp2="+vTmp2+" vTmp X vTmp2="+t+" => h="+h;
+                     }
+
+                     // trace "xxx h="+h;
+                     if(h > -999999)
+                     {
+                        // h = Intersect(vStartLastL, vEndLastL,
+                        //               vEndL, vStartL,
+                        //               vIS,
+                        //               false/*bExtrapolate*/
+                        //               );
+                        h = vIS.intersect(vStartLastL, vEndLastL,
+                                          vEndL, vStartL,
+                                          false/*bExtrapolate*/
+                                          );
+                        if!(0.0f <= h <= 1.0)
+                        {
+                           vIS = vStartL;
+                           wISScl = wStartSclL;
+                        }
+                        else
+                        {
+                           wISScl = mathLerpf(wStartLastSclL, wEndLastSclL, h);
+                        }
+                     }
+
+                  }
+
+                  vEndLastL = vIS;
+                  vStartL   = vIS;
+
+                  wEndLastSclL = wISScl;
+                  wStartSclL   = wISScl;
+
+                  if(_bClosed && (vertexIterIdx == 1))
+                  {
+                     if(b_debug)
+                        trace "xxx save vIS="+vIS+" vertexIdx="+vertexIdx;
+                     vISFirst = vIS;
+                     wISSclFirst = wISScl;
+                  }
+
+                  if(b_debug)
+                     trace "xxx <left> vIS="+vIS;
+
+                  // Fall back to Bevel joints ?
+                  vStartR.sub(vEndLastR) => vTmp;
+                  bBevel |= (vTmp.abs < line_bevel_fb_dist);
+
+                  if(b_debug)
+                     trace "xxx <left> bBevel="+bBevel+" vTmp="+vTmp+" vTmp.abs="+vTmp.abs+" vEndLastR="+vEndLastR+" vStartR="+vStartR+" vStartLast="+vStartLast+" vStart="+vStart+" vEnd="+vEnd;
+
+                  if!(_bClosed && (vertexIterIdx == numVertices+1))
+                  {
+                     if(null != left_vertices)
+                        left_vertices.add2(vIS.x, vIS.y);
+
+                     if(null != left_widths)
+                     {
+                        left_widths.add(wISScl);
+                        if(b_debug) trace "xxx <left> wEnd="+wEnd+" wISScl="+wISScl;
+                        // trace "xxx add wISScl="+wISScl;
+                     }
+                  }
+
+                  if(!bBevel)
+                  {
+                     // Calc miter intersection (left turn)
+                     // h = Intersect(vStartLastR, vEndLastR,
+                     //               vEndR, vStartR,
+                     //               vMiterOrig,
+                     //               true/*bExtrapolate*/
+                     //               );
+                     h = vMiterOrig.intersect(vStartLastR, vEndLastR,
+                                              vEndR, vStartR,
+                                              true/*bExtrapolate*/
+                                              );
+
+                     vMiterOrig.sub(vStart) => vTmp;
+
+                     wMiterScl = mathLerpf(wStartLastSclR, wEndLastSclR, h);///0.5f);
+                     wMiterSclL = wMiterScl;
+                     wMiterSclR = wMiterScl;
+
+                     if(b_debug)
+                        trace "xxx miterLen="+vTmp.abs+" line_miter_limit="+line_miter_limit;
+
+                     if(vTmp.abs > line_miter_limit)
+                     {
+                        vTmp.unitScale(line_miter_limit) => vMiter;
+                        vMiter.add(vStart);
+
+                        vMiterOrig.sub(vEndLastR) => vTmp;
+
+                        vEndLastR.sub(vEndLastR) => vMiterStart;
+                        vMiterStart.add(vMiter);
+                        vStartR.sub(vEndLastR) => vMiterEnd;
+                        vMiterEnd.add(vMiter);
+
+                        // Intersect(vEndLastR, vMiterOrig, vMiterStart, vMiterEnd,   vMiterR, true/*bExtrapolate*/);
+                        // Intersect(vStartR,   vMiterOrig, vMiterEnd,   vMiterStart, vMiterL, true/*bExtrapolate*/);
+                        vMiterR.intersect(vEndLastR, vMiterOrig, vMiterStart, vMiterEnd,   true/*bExtrapolate*/);
+                        vMiterL.intersect(vStartR,   vMiterOrig, vMiterEnd,   vMiterStart, true/*bExtrapolate*/);
+
+                        if(b_debug)
+                           trace "xxx vMiterOrig="+vMiterOrig+" vMiter="+vMiter+" vMiterStart="+vMiterStart+" vMiterEnd="+vMiterEnd+" vMiterL="+vMiterL+" vMiterR="+vMiterR;
+                     }
+                     else
+                     {
+                        vMiter = vMiterOrig;
+                        vMiterL = vMiter;
+                        vMiterR = vMiter;
+
+                        wMiterSclL = wMiterScl;
+                        wMiterSclR = wMiterScl;
+                     }
+
+                     // Draw line joint (left turn)
+                     if(b_line_joints && bAllowJoint && (vertexIterIdx >= (1/*+_bClosed*/)))
+                     {
+                        if(LINE_JOINT_MITER == line_joint_type)
+                        {
+                           if(vMiter == vMiterOrig)
+                           {
+                              vEndLastR = vMiter;
+                              vStartR   = vMiter;
+
+                              wEndLastSclR = wMiterScl;
+                              wStartSclR   = wMiterScl;
+
+                              if(null != right_vertices)
+                                 right_vertices.add2(vMiter.x, vMiter.y);
+
+                              if(null != right_widths)
+                                 right_widths.add(wMiterScl);
+                           }
+                           else
+                           {
+                              vEndLastR = vMiterR;
+                              vStartR   = vMiterL;
+
+                              wEndLastSclR = wMiterSclR;
+                              wStartSclR   = wMiterSclL;
+
+                              bBevel = true;
+                           }
+                        }
+                     }
+
+                     if(b_line_joints && bAllowJoint && (vertexIterIdx >= (1+_bClosed)))
+                     {
+                        if(LINE_JOINT_ROUND == line_joint_type)
+                        {
+                           // // addRoundLineJoint_bezier(vIS, vStartR, vMiter, vEndLastR,
+                           addRoundLineJoint_bezier(vIS, vEndLastR, vMiter, vStartR,
+                                                    num_div_round_line_joint,
+                                                    right_vertices/*outerVerticesOrNull*/,
+                                                    right_widths/*outerWidthsOrNull*/,
+                                                    wISScl
+                                                    );
+                        }
+                     }
+                  } // if !bBevel
+
+                  if(bBevel && b_line_joints && bAllowJoint && (vertexIterIdx >= (1+_bClosed)))
+                  {
+                     // bevel line joint (left turn)
+
+                     // top-side AA edge:
+                     vLT = vStartR;
+                     vRT = vEndLastR;
+
+                     // // // bottom-side AA edge: shift top-side AA edge to vIS edge
+                     // // vLB = vStartR;   vLB.sub(vEndLastR); vLB.add(vIS);  // (todo) remove
+                     // // vRB = vEndLastR; vRB.sub(vEndLastR); vRB.add(vIS);  // (todo) remove
+                     // // if(b_debug)
+                     // //    trace "xxx bevelLineJoint: <left> vertexIterIdx="+vertexIterIdx+" bottom vRB="+vRB;
+
+                     if(1)
+                     {
+                        vLTDraw = vLT;
+                        vRTDraw = vRT;
+                        vISDraw = vIS;
+
+                        // trace "xxx ########### <left> draw Bevel joint vertexIterIdx="+vertexIterIdx+" vLT="+vLTDraw+" vRT="+vRTDraw+" vIS="+vISDraw;
+
+                        addTri(vLTDraw, vRTDraw, vISDraw);
+
+                        if!(_bClosed && (vertexIterIdx == numVertices+1))
+                        {
+                           if(null != right_vertices)
+                              right_vertices.add2(vLT.x, vLT.y);
+
+                           if(null != right_widths)
+                              right_widths.add(wStartSclR);
+                        }
+                     }
+                  } // if bBevel
+
+               }
+               else
+               {
+                  // Straight (no joint)
+                  vEndLastL = vStartL;
+                  vEndLastR = vStartR;
+
+                  wEndLastSclL = wStartSclL;
+                  wEndLastSclR = wStartSclR;
+
+                  if(null != right_vertices)
+                  {
+                     // (todo) proper-fix this
+                     if( ((line_joint_type != LINE_JOINT_MITER) &&  1 == vertexIterIdx) ||
+                         (line_joint_type == LINE_JOINT_MITER && vertexIterIdx == (numVertices + (_bClosed*2)))
+                         )
+                     {
+                        if(!_bClosed)
+                        {
+                           right_vertices.add2(vStartLastR.x, vStartLastR.y);
+                           right_vertices.add2(vEndLastR.x, vEndLastR.y);
+
+                           if(null != right_widths)
+                           {
+                              right_widths.add(wStartLastSclR);
+                              right_widths.add(wEndLastSclR);
+                           }
+                        }
+                        else
+                        {
+                           right_vertices.add2(vStartR.x, vStartR.y);
+                           if(null != right_widths)
+                           {
+                              right_widths.add(wStartSclR);  // (todo) looks wrong in MITER mode
+                           }
+                        }
+                     }
+                     else
+                     {
+                        right_vertices.add2(vEndLastR.x, vEndLastR.y);
+                        if(null != right_widths)
+                           right_widths.add(wEndLastSclR);
+                     }
+                  }
+
+                  if(null != left_vertices)
+                  {
+                     // (todo) proper-fix this
+                     if( ((line_joint_type != LINE_JOINT_MITER) &&  1 == vertexIterIdx) ||
+                         (line_joint_type == LINE_JOINT_MITER && vertexIterIdx == (numVertices + (_bClosed*2)))
+                         )
+                     {
+                        if(!_bClosed)
+                        {
+                           left_vertices.add2(vStartLastL.x, vStartLastL.y);
+                           left_vertices.add2(vEndLastL.x, vEndLastL.y);
+                           if(null != left_widths)
+                           {
+                              left_widths.add(wStartLastSclL);
+                              left_widths.add(wEndLastSclL);
+                              // trace "xxx add wStartLastSclL="+wStartLastSclL;
+                              // trace "xxx add wEndLastSclL="+wEndLastSclL;
+                           }
+                        }
+                        else
+                        {
+                           left_vertices.add2(vStartL.x, vStartL.y);
+                           if(null != left_widths)
+                              left_widths.add(wStartSclL);
+                        }
+                     }
+                     else
+                     {
+                        left_vertices.add2(vEndLastL.x, vEndLastL.y);
+                        if(null != left_widths)
+                           left_widths.add(wEndLastSclL);
+                     }
+                  }
+
+                  if(null != right_vertices && !_bClosed && 1 == vertexIterIdx)
+                  {
+                     right_vertices.add2(vStartLastR.x, vStartLastR.y);
+                     if(null != right_widths)
+                        right_widths.add(wStartLastSclR);
+                  }
+
+
+               } // winding
+            } // if !bLastVertex
+
+            if(!_bClosed && (vertexIdx == numVertices-1))
+            {
+               if(null != left_vertices)
+                  left_vertices.add2(vEndL.x, vEndL.y);
+
+               if(null != left_widths)
+                  left_widths.add(wEndSclL);
+
+               if(null != right_vertices)
+                  right_vertices.add2(vEndR.x, vEndR.y);
+
+               if(null != right_widths)
+                  right_widths.add(wEndSclR);
+            }
+
+            // Draw (previous) line segment
+            // trace "xxx skipQuad="+skipQuad;
+            if(!skipQuad)
+            {
+               // trace "xxx drawSeg: vertexIterIdx="+vertexIterIdx;
+               // // boolean bDrawSeg = (vertexIterIdx >= (0 + _bClosed));
+               if(bDrawSeg)
+               {
+                  if(!b_line_closed && (LINE_CAP_ROUND == line_cap_type))
+                  {
+                     if(bFirstQuad)
+                     {
+                        bFirstQuad = false;
+                        vCapCtr.init( (vStartLastL.x + vStartLastR.x) * 0.5,
+                                      (vStartLastL.y + vStartLastR.y) * 0.5
+                                      );
+                        vCapOuter = vEndLastL;
+                        vCapOuter.sub(vStartLastL);
+                        vCapOuter.unitScale(-const_line_width*2);
+                        vCapOuter.add(vCapCtr);
+
+                        // trace "xxx first vCapCtr="+vCapCtr;
+                        addRoundLineCap_bezier(vStartLastL, vCapOuter, vStartLastR,
+                                               num_div_round_line_joint,
+                                               left_vertices/*outerVerticesOrNull*/,
+                                               left_widths/*outerWidthsOrNull*/,
+                                               const_line_width*2
+                                               );
+                     }
+                     else if(vertexIdx == numVertices-1)
+                     {
+                        vCapCtr.init( (vEndL.x + vEndR.x) * 0.5,
+                                      (vEndL.y + vEndR.y) * 0.5
+                                      );
+                        // vDir ?
+                        vCapOuter = vEndL;
+                        vCapOuter.sub(vStartL);
+                        vCapOuter.unitScale(wStart*2);
+                        vCapOuter.add(vCapCtr);
+                        // trace "xxx last vCapCtr="+vCapCtr;
+                        // trace "xxx last vCapOuter="+vCapOuter;
+
+                        addRoundLineCap_bezier(vEndL, vCapOuter, vEndR,
+                                               num_div_round_line_joint,
+                                               left_vertices/*outerVerticesOrNull*/,
+                                               left_widths/*outerWidthsOrNull*/,
+                                               wStart*2
+                                               );
+                     }
+                  }
+
+                  // trace "xxx drawSeg: vertexIdx="+vertexIdx;
+                  addQuad(vStartLastL, vEndLastL, vEndLastR, vStartLastR);
+               } // if bDrawSeg
+            }
+            else
+               skipQuad--;
+
+            segIdx++;
+
+         } // if vertexIterIdx > 0
+
+         // Next line
+         vStartLast  = vStart;
+         vStart      = vEnd;
+         vStartLastL = vStartL;
+         vStartLastR = vStartR;
+         vEndLastL   = vEndL;
+         vEndLastR   = vEndR;
+
+         wStartLast  = wStart;
+         wStart      = wEnd;
+
+         wStartLastSclL = wStartSclL;
+         wStartLastSclR = wStartSclR;
+         wEndLastSclL   = wEndSclL;
+         wEndLastSclR   = wEndSclR;
+         wStartSclL     = wEndSclL;
+         wStartSclR     = wEndSclR;
+
+         vDirLast = vDir;
+         vertexIdx = (vertexIdx + 1) % numVertices;
+         vertexIterIdx++;
+         bDrawQuadPrev = bDrawQuad;
+         patternBit = patternBitNext;
+
+         // if(null != left_widths)
+         //    trace "xxx vertexIterIdx="+vertexIterIdx+" left_widths="+#(left_widths);
+      }
+
+      if(b_debug) trace "[dbg] ShapePolyline::tesselatePolyline: mesh has "+(v_tri.numElements/(2*3))+" triangles";
+
+      // trace "xxx lv="+#(left_vertices)+" rv="+#(right_vertices);
+      if(b_debug)
+      {
+         if(null != left_vertices || null != right_vertices)
+         {
+            if(null != line_widths)
+               trace "xxx ------------------ line_widths="+#(line_widths);
+         }
+
+         if(null != left_vertices)
+         {
+            trace "xxx #lv="+(left_vertices.numElements/2)+" #lw="+(left_widths.numElements);
+            trace "xxx lv="+#(left_vertices);
+            trace "xxx lw="+#(left_widths);
+         }
+
+         if(null != right_vertices)
+         {
+            trace "xxx #rv="+(right_vertices.numElements/2)+" #rw="+(right_widths.numElements);
+            trace "xxx rv="+#(right_vertices);
+            trace "xxx rw="+#(right_widths);
+         }
+      }
+
+      if(null != left_vertices)
+         shape_left.tesselatePolyline(left_vertices/*==shape_left.line_vertices*/,
+                                      left_widths,
+                                      _bClosed,
+                                      _pattern
+                                      );
+
+      if(null != right_vertices)
+         shape_right.tesselatePolyline(right_vertices/*==shape_right.line_vertices*/,
+                                       right_widths,
+                                       _bClosed,
+                                       _pattern
+                                       );
+   }
+
+   public virtual tesselate() {
+      tesselatePolyline(line_vertices, line_widths, b_line_closed, line_pattern);
+   }
+
+   public virtual draw() {
+
+      // zglColorARGB(#ff7f0000);
+      // glPointSize(1.0f);
+      // zglVertexPointer2f(line_vertices);
+      // glEnableClientState(GL_VERTEX_ARRAY);
+      // glDrawArrays(GL_POINTS, 0, line_vertices.numElements/2);
+      // glDisableClientState(GL_VERTEX_ARRAY);
+      // return;//xxxxxxxxxxxxxx
+
+      // if(b_draw)
+      // {
+         // trace "xxx draw: #verts="+line_vertices.numElements+" line_vertices="+#(line_vertices);
+         // trace "xxx draw: #widths="+line_widths.numElements+" line_widths="+#(line_widths);
+         Shape::draw();
+      // }
+
+      if(null != shape_left)
+         shape_left.draw();
+
+      if(null != shape_right)
+         shape_right.draw();
+   }
+
+}

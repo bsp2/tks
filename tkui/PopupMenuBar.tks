@@ -1,0 +1,425 @@
+// ----
+// ---- file   : PopupMenuBar.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 14May2007, 15May2007, 18May2007, 29Jan2008, 01Feb2009, 31May2009, 11Jan2010
+// ----          29Jan2010, 09Jun2010, 16Jan2012, 26Jan2015, 16Feb2018, 27Nov2018, 27Dec2020
+// ----          04Feb2023
+// ----
+// ----
+// ----
+
+module MPopupMenuBar;
+
+namespace ui;
+
+
+class PopupMenuBar extends Control, ActionConsumer {
+   explain "Manages a list of popupmenus.";
+
+   protected PointerArray popup_menus;
+   protected PointerArray popup_menu_buttons;
+
+   protected Layer *previous_keyboard_layer; // When an item has been selected or the menu was canceled return keyboard focus to this layer
+   protected boolean b_save_shade_modal = maybe; // Saves state of UI.b_shade_modal when first menu layer is opened
+
+   protected AcceleratorList *accel_list; // instance of accel list
+
+   public boolean b_use_provide; // true=provide action, false=use delegate (default)
+
+   // true=app manually calls checkAllAcceleratorLists() (e.g. when menu is not visible all the time)
+   // false=auto-add global accelerator lists via UI.AddAcceleratorList()
+   public boolean b_no_global_accelerator_list;
+
+
+   public method initPopupMenuBar() {
+      initLayer();
+   }
+
+   public method setPreviousKeyboardLayer(Layer _l) {
+      // // trace "xxx PopupMenuBar: setPreviousKeyboardLayer = "+#(_l)+" previous_keyboard_layer="+#(previous_keyboard_layer);
+      if(previous_keyboard_layer == null)
+      {
+         previous_keyboard_layer <= _l;
+      }
+   }
+
+   public method setEnableUseProvide(boolean _bEnabled) {
+      b_use_provide = _bEnabled;
+   }
+
+   public method saveShadeModal() {
+      if(maybe == b_save_shade_modal)
+      {
+         // (TODO) this is called even if the menu has never been opened ? (accel-key)
+         b_save_shade_modal = UI.SetEnableShadeModal(false);
+         // // trace "xxx PopupMenuBar:saveShadeModal: b_save_shade_modal="+b_save_shade_modal;
+      }
+   }
+
+   public method restoreShadeModal() {
+      // // trace "xxx PopupMenuBar::hide: b_save_shade_modal="+b_save_shade_modal;
+      UI.SetEnableShadeModal(b_save_shade_modal);
+      b_save_shade_modal = maybe;
+   }
+
+   public method focusPreviousKeyboardLayer() {
+      // // trace "xxx PopupMenuBar: focusPreviousKeyboardLayer="+#(previous_keyboard_layer);
+      if(previous_keyboard_layer instanceof Layer) // xxx The layer could have already been deleted! need to handle that case !!
+      {
+         UI.SetKeyboardFocus(previous_keyboard_layer);
+      }
+      previous_keyboard_layer <= null;
+   }
+
+   public method containsMenu(PopupMenu _pm) : boolean {
+      return popup_menus.containsPointer(_pm);
+   }
+
+   public method activatePreviousMenu(PopupMenuBarButton _sender, boolean _bShow) {
+      int idx = popup_menu_buttons.indexOfPointer(_sender, 0);
+      if(idx != -1)
+      {
+         if(idx == 0)
+         {
+            idx = (popup_menu_buttons.numElements-1);
+         }
+         else
+         {
+            idx--;
+         }
+         PopupMenuBarButton *newButton <= popup_menu_buttons[idx];
+
+         if(_bShow)
+         {
+            PopupMenu *pm <= newButton.popup_menu;
+            pm.showBelowLayer(newButton);
+            pm.focusNextMenuItem();
+            newButton.redraw();
+         }
+         else
+         {
+            UI.SetKeyboardFocus(newButton);
+         }
+      }
+   }
+
+   public method activateNextMenu(PopupMenuBarButton _sender, boolean _bShow) {
+      // (note) if _bShow is false, the popup_menu will be made visible in the consumeAction() handler (see below)
+      //         (called when the previous menu is closed/canceled)
+      int idx = popup_menu_buttons.indexOfPointer(_sender, 0);
+      if(idx != -1)
+      {
+         if(idx == (popup_menu_buttons.numElements-1))
+         {
+            idx = 0;
+         }
+         else
+         {
+            idx++;
+         }
+         PopupMenuBarButton *newButton <= popup_menu_buttons[idx];
+
+         if(_bShow)
+         {
+            PopupMenu *pm <= newButton.popup_menu;
+            pm.showBelowLayer(newButton);
+            pm.focusNextMenuItem();
+            newButton.redraw();
+         }
+         else
+         {
+            UI.SetKeyboardFocus(newButton);
+         }
+      }
+   }
+
+   public method handleAccelKey(Key _k) : boolean {
+      if(null != accel_list)
+      {
+         boolean bHandled = accel_list.handleKey(_k);
+         if(bHandled)
+         {
+            hideAllMenus();
+            focusPreviousKeyboardLayer();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx PopupMenuBar: key="+_k.name;
+      if(_k.pressed)
+      {
+         if(_k.unicode)
+         {
+            // Set keyboard focus to popupmenubarbutton with matching accelerator char
+            PopupMenuBarButton *mbb;
+            foreach mbb in popup_menu_buttons
+            {
+               if(UI.GetAcceleratorChar(mbb.popup_menu.getCaption()) == _k.unicode)
+               {
+                  UI.SetKeyboardFocus(mbb);
+                  mbb.focusFirstMenuButton();
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   public method onAcceleratorKey(AcceleratorKey _k) {
+      // Set keyboard focus to first menu button
+      if(!isAnyMenuOpen())
+      {
+         // // trace "xxx PopupMenuBar::onAcceleratorKey: !isAnyMenuOpen, UI.GetKeyboardFocus()="+#(UI.GetKeyboardFocus);
+
+         if(popup_menu_buttons.numElements > 0)
+         {
+            PopupMenuBarButton *mbb <= popup_menu_buttons[0];
+            UI.SetKeyboardFocus(mbb);
+         }
+      }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initPopupMenuBar();
+
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         String atname, atval, atvaluc;
+         StringArray atsplit;
+         foreach atname in _attributes
+         {
+            atval<=_attributes[atname];
+            switch(atname)
+            {
+               case "useProvide":
+                  b_use_provide = int(atval);
+                  break;
+
+               case "globalAcceleratorList":
+                  b_no_global_accelerator_list = !int(atval);
+                  break;
+
+               case "onItemSelected":
+                  _form.addHandledAction(atname, Action, atval);
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual addXFMChild(Layer _o) {
+      if(_o instanceof PopupMenu)
+      {
+         PopupMenu *pm <= _o;
+         pm.setRecipient(this);
+
+         popup_menus.add(#(deref _o));
+      }
+      else
+      {
+         trace "[---] PopupMenuBar::addXFMChild: object is not a PopupMenu.";
+      }
+   }
+
+   protected method isAnyMenuOpen() : boolean {
+      PopupMenu *pm;
+      foreach pm in popup_menus
+      {
+         if(pm.isFloatingLayerVisible())
+         {
+            // // trace "xxx PopupMenuBar::isAnyMenuOpen: open pm="+#(pm)+" caption="+pm.getCaption();
+            return true;
+         }
+      }
+      return false;
+   }
+
+
+   public method hideAllMenus() {
+      PopupMenu *pm;
+      // // trace "xxx PopupMenuBar: hideAllMenus";
+      foreach pm in popup_menus
+      {
+         pm.hide();
+      }
+   }
+
+   public method checkAcceleratorList(Key _k) : boolean {
+      // // trace "xxx PopupMenuBar::checkAcceleratorList: k.code="+_k.code+" k.name="+_k.name;
+      if(null != accel_list)
+      {
+         return accel_list.handleKey(_k);
+      }
+      return false;
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+      // // trace "xxx PopupMenuBar::endXFMTag";
+      Layer::endXFMTag(_form, _attributes);
+
+      // Build child layer hierarchy (PopupMenuBarButtons)
+      local AcceleratorList al;
+      accel_list <= deref al;
+      al.addAcceleratorKey(AcceleratorKey.New("lalt", this)); // Activate first menu item (Windows)
+
+      // (note) unlike on Windows, SDL on macOS reports "lalt" as "lalt-lalt" (i.e. with VMOD_LALT modifier)
+      //         => must set UI.b_key_modifier_key_clear_modifier = true to fix this properly
+      // // // al.addAcceleratorKey(AcceleratorKey.New("lalt-lalt", this)); // Activate first menu item (macOS)
+
+      setLayout(SuperBorderLayout);
+
+      local Panel p;
+      p.initPanel();
+      p.setLayout(SuperBorderLayout);
+
+      PopupMenu *pm;
+      int i = 0;
+      foreach pm in popup_menus
+      {
+         PopupMenuBarButton b <= new PopupMenuBarButton();
+         b.initButton();
+
+         b.popup_menu_bar <= this;
+         b.setCaption(pm.getCaption());
+         b.setProvidedActionAlias(PopupMenuBarButton.ACTION_CLICK, "mbb"+i);
+         b.popup_menu <= pm;
+         if(null != pm.getIconName())
+         {
+            b.setIcon(UI.GetIcon(pm.getIconName()));
+         }
+
+         char accelChar = UI.GetAcceleratorChar(pm.getCaption());
+         if(accelChar)
+         {
+            al.addAcceleratorKey(AcceleratorKey.New("lalt-"+tcchar(accelChar), b));
+         }
+
+         pm.addAcceleratorKeys(al);
+
+         pm.b_skip_restore_keyboard_focus = true;
+
+         pm.addActionConsumer(this); // 16Jan2012
+
+         p.addLayer(deref b, Layout.RIGHT);
+         popup_menu_buttons.add(b);
+         i++;
+      }
+      addLayer(deref p, Layout.LEFT);
+      p.buildTabCycleList();
+
+      if(!b_no_global_accelerator_list)
+      {
+         if(!al.isEmpty())
+         {
+            // Install global accelerator list
+            UI.AddAcceleratorList(accel_list);
+         }
+      }
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      // // trace "xxx PopupMenuBar::consumeAction: actionName=\""+_action.getActionName()+"\".";
+
+      ActionProvider ap <= _action.getActionProvider();
+      int idx = popup_menus.indexOfPointer(ap, 0);
+      if(idx != -1)
+      {
+         // // trace "xxx PopupMenuBar::consumeAction: provider is menu #"+idx;
+         UI.SetKeyboardFocus(popup_menu_buttons[idx]);
+         // Check if menu was canceled
+         if(_action.getActionName().isBlank())
+         {
+            // Menu was canceled (empty action name)
+
+            // // trace "xxx PopupMenuBar: menu was canceled.";
+
+            PopupMenuBarButton *mbb <= popup_menu_buttons[idx].popup_menu.getNextMenuBarButtonToActivate();
+
+            if(mbb != null)
+            {
+               UI.SetKeyboardFocus(mbb);
+               _= mbb.popup_menu.showBelowLayer(mbb);
+            }
+            else if(popup_menu_buttons[idx].popup_menu.shouldActivatePrevious()) // LEFT was pressed
+            {
+               activatePreviousMenu(popup_menu_buttons[idx], true);
+            }
+            else if(popup_menu_buttons[idx].popup_menu.shouldActivateNext()) // RIGHT was pressed
+            {
+               activateNextMenu(popup_menu_buttons[idx], true);
+            }
+            else if(popup_menu_buttons[idx].popup_menu.wasEscaped()) // ESC was pressed
+            {
+               UI.SetKeyboardFocus(popup_menu_buttons[idx]);
+            }
+            else
+            {
+               // Return focus to previous keyboard layer
+               //  (note) reached when PM is canceled by clicking on a non-popop layer
+               // // trace "xxx PopupMenuBar: Return keyboardfocus (never reached??)"; // xxx never reached ???
+               focusPreviousKeyboardLayer();
+               restoreShadeModal();
+            }
+            return true;
+         }
+         else if(_action.getActionName() == "quit_popupmenu_bar") // xxx 16Jan2012
+         {
+            focusPreviousKeyboardLayer();
+            restoreShadeModal();
+         }
+         else
+         {
+            // Return focus to previous keyboard layer
+            if(PopupMenu.IsFocusAction(_action))
+               return false;
+
+            focusPreviousKeyboardLayer();
+            restoreShadeModal();
+
+            if(b_use_provide)
+            {
+               provideAction(_action);
+            }
+            else
+            {
+               // delegate action
+               delegate "onItemSelected"(_action);
+            }
+         }
+
+         return true;
+      }
+
+      // Check if button was clicked
+      if(hasChildLayer(ap))
+      {
+         if(ap instanceof PopupMenuBarButton)
+         {
+            PopupMenuBarButton *b <= ap;
+            // Show popup menu
+            PopupMenu *pm <= b.popup_menu;
+            pm.showBelowLayer(ap);
+            if(b.isKeyDownClick()) // If DOWN was pressed then focus first menu item
+            {
+               pm.focusNextMenuItem();
+            }
+         }
+
+      }
+
+      return false;
+   }
+
+}

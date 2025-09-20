@@ -1,0 +1,219 @@
+// ----
+// ---- file   : DragHandleLabel.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 16Feb2018
+// ---- changed: 16Mar2018, 20Jul2019, 11Feb2022, 04Oct2023, 01Nov2023, 04Oct2024, 05Oct2024
+// ----          23Dec2024, 10Sep2025
+// ----
+// ----
+// ----
+
+module MDragHandleLabel;
+
+namespace ui;
+
+
+class DragHandleLabel extends Label, ActionProvider {
+
+   define String ACTION_DRAG_HANDLE_LMB_CLICK;
+   define String ACTION_DRAG_HANDLE_RMB_CLICK;
+   define String ACTION_DRAG_HANDLE_MMB_CLICK;
+
+   // (note) Layer user data is drop object
+
+   define float LABEL_INSET_X = 12.0f;
+   define float LABEL_INSET_PAD_X = 2.0f;
+
+   int handle_tint;
+
+
+   public method initDragHandleLabel() {
+      initLabel();
+      setTextPlacement(Layout.LEFT | Layout.CENTERY);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_DRAG_HANDLE_LMB_CLICK, ACTION_DRAG_HANDLE_RMB_CLICK, ACTION_DRAG_HANDLE_MMB_CLICK];
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Label::onLookAndFeelChanged();
+
+      setEnableCaptionDim(false);
+   }
+
+   protected virtual calcSizeX() : float {
+      return Label::calcSizeX() + LABEL_INSET_X + LABEL_INSET_PAD_X*4;
+   }
+
+   protected virtual calcSizeY() : float {
+      return Label::calcSizeY();
+   }
+
+   public method setHandleTint(int _c32) {
+      handle_tint = _c32;
+   }
+
+   public virtual onDraw() {
+      float sx = getSizeX();
+      float sy = getSizeY();
+      UIRenderer.DrawDefaultControlBackground(0, 0, sx, sy);
+
+      int c32Line = lnf_colors.get(LookAndFeel.COLOR_DRAGHANDLELABEL_LINE_FG);
+      c32Line = sdvg_TintARGB(c32Line, handle_tint);
+      float textW = getCaptionWidth();
+
+      float cy = (sy - (5 * 3.0f))*0.5;
+      loop(5)
+      {
+         UIRenderer.DrawLine(0.0f, cy, LABEL_INSET_X, cy, c32Line);
+         UIRenderer.DrawLine(LABEL_INSET_X + LABEL_INSET_PAD_X*3 + textW, cy, sx, cy, c32Line);
+         cy += 3.0f;
+      }
+
+      Label::drawTransparentCached(LABEL_INSET_X + LABEL_INSET_PAD_X, -1.0f);
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      UI.ShowCursor(UIConstants.CURSOR_MOVE);
+      return true;
+   }
+
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return false;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      UI.RevertCursor();
+
+      boolean bCanDrop = false;
+
+      Layer dropTarget <= UI.FindLayerAtXY(_currentEv.mouse_abs_x, _currentEv.mouse_abs_y);
+
+      if(null != dropTarget)
+      {
+         Layer c <= dropTarget;
+         Object dropObject <= getUserData();
+         do
+         {
+            Point2f p;
+            c.calcAbsolutePosition(p);
+            MouseEvent ev = _currentEv;
+            ev.mouse_rel_x = ev.mouse_abs_x - p.x;
+            ev.mouse_rel_y = ev.mouse_abs_y - p.y;
+
+            if(c.canDropObject(dropObject, ev))
+            {
+               bCanDrop = true;
+               break;
+            }
+
+            c <= c.parent;
+         }
+         while(null != c);
+      }
+
+      UI.ShowCursor(bCanDrop ? UIConstants.CURSOR_MOVE : UIConstants.CURSOR_DENIED);
+
+      return true;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+
+      Layer dropTarget <= UI.FindLayerAtXY(_ev.mouse_abs_x, _ev.mouse_abs_y);
+
+      // // trace "xxx DragHandleLabel::onMouseEndDrag: dropTarget="+#(dropTarget);
+
+      if(null != dropTarget)
+      {
+         Layer c <= dropTarget;
+         Object dropObject <= getUserData();
+         do
+         {
+            Point2f p;
+            c.calcAbsolutePosition(p);
+            MouseEvent ev = _ev;
+            ev.mouse_rel_x = ev.mouse_abs_x - p.x;
+            ev.mouse_rel_y = ev.mouse_abs_y - p.y;
+
+            if(c.onDropObject(dropObject, ev))
+            {
+               break;
+            }
+            else
+            {
+               c <= c.parent;
+            }
+         }
+         while(null != c);
+      }
+
+      UI.RevertCursor();
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         provideAction(Action.New(getProvidedActionAlias(ACTION_DRAG_HANDLE_RMB_CLICK), this));
+      }
+      else if(_ev.isLeftButton())
+      {
+         provideAction(Action.New(getProvidedActionAlias(ACTION_DRAG_HANDLE_LMB_CLICK), this));
+      }
+      else if(_ev.isMiddleButton())
+      {
+         provideAction(Action.New(getProvidedActionAlias(ACTION_DRAG_HANDLE_MMB_CLICK), this));
+      }
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      // don't let parent process this event
+      return maybe;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initDragHandleLabel();
+
+      setPadding4f(1, 2, 1, 2);
+
+      if(Label::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+
+            switch(atname.toLower())
+            {
+               case "actionalias":
+                  atsplit <= atval.splitChar('=');
+                  setProvidedActionAlias(atsplit.get(0), atsplit.get(1));
+                  break;
+
+               case "editable":
+                  setEditable(int(atval));
+                  break;
+
+               case "handletint":
+                  handle_tint = int(atval);
+                  break;
+            }
+         }
+
+      }
+
+      return true;
+   }
+
+}

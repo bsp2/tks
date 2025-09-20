@@ -1,0 +1,1926 @@
+// ----
+// ---- file   : TextView.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 28Jul2006, 29Jul2006, 30Jul2006, 12Aug2006, 14Apr2008, 31May2009, 06Feb2010
+// ----          22Apr2010, 20Mar2011, 09Jan2012, 13Nov2012, 24Aug2013, 08Mar2014, 07Sep2015
+// ----          19Jan2017, 11Mar2017, 19Dec2017, 16Feb2018, 30Nov2018, 10Sep2019, 11Jul2020
+// ----          05Oct2023, 17Jan2024, 03Feb2024, 23Feb2024, 14Dec2024, 26Dec2024, 07Feb2025
+// ----          29Mar2025, 12Jun2025, 11Sep2025, 14Sep2025
+// ----
+// ----
+// ----
+
+module MTextView;
+
+namespace ui;
+
+
+abstract class TextViewSyntaxHighlighter {
+   public method colorizeText(TextView _text) {}
+}
+
+
+class TextView : Control {
+
+   protected IntArray stripes; // indexes texture stripes
+   protected IntArray dirty_rows;
+   protected StringArray strings;
+   // 0: Copy + modulate by color
+   // 1: Copy inverse + modulate by color
+   // 2: Copy + underline + modulate by color
+   // 3: Copy inverse + underline + modulate by color
+   protected PointerArray attributes; // 0..num_rows
+   protected PointerArray colors; // 0..num_rows
+   protected int num_cols;
+   protected int num_rows;
+   protected int fixed_num_cols;
+   protected int fixed_num_rows;
+   protected int min_num_cols;
+   protected int min_num_rows;
+   protected int max_num_cols;
+   protected int max_num_rows;
+   protected boolean b_resizable_x; // false=use fixed size text, true=adapt to available size
+   protected boolean b_resizable_y; // false=use fixed size text, true=adapt to available size
+   protected Texture tex_screen;
+   protected Texture tex_font;
+   protected int char_width = 8;
+   protected int char_height = 16;
+   protected int char_width_scaled = 8;
+   protected int char_height_scaled = 16;
+   protected int view_x;
+   protected int view_y;
+   protected int sel_start_x;
+   protected int sel_start_y;
+   protected int sel_end_x;
+   protected int sel_end_y;
+   protected int sel_anc_x;
+   protected int sel_anc_y;
+   protected boolean b_focus;
+   protected boolean b_mouse_selection;
+   protected int cursor_x; // 0..num_cols
+   protected int cursor_y; // 0..num_rows
+   protected int preferred_cursor_x;  // while moving up/down, try to restore cursorx. updated when moving horizontally
+   protected boolean b_lock_preferred_cursor_x;
+   protected int log_max_lines; // see appendLogLine()
+
+   protected int col_limit = 1024;
+
+   protected int highlight_line_idx;  // -2=queue reset, -1=none, 0..n
+   protected int highlight_line_c32;
+
+   protected String last_find_string;
+   protected StringDialog *dlg_find;
+   protected int find_start_cursor_x;
+   protected int find_start_cursor_y;
+   protected int find_start_view_x;
+   protected int find_start_view_y;
+
+   // // protected boolean b_syntax_hl_queued;
+
+   protected TextViewSyntaxHighlighter *syntax_hl;
+   protected boolean b_queued_update_hl;
+
+
+   public method initTextView() {
+      initLayer();
+      // (todo) add HiDPI variant of fixed size pixelfont
+      tex_font.loadImage(UI.b_textview_hidpi_font ? "tkui:fonts/fixed_hidpi.png" : "tkui:fonts/fixed.png",
+                         0,0,0
+                         );  // (todo) move to onOpen()
+      char_width = UI.b_textview_hidpi_font ? 18 : 8;
+      char_height   = tex_font.sy;
+      char_width_scaled  = char_width  * UI.textview_font_scaling;
+      char_height_scaled = char_height * UI.textview_font_scaling;
+      view_x        = 0;
+      view_y        = 0;
+      sel_start_x   = -1;
+      sel_start_y   = 0;
+      sel_end_x     = 0;
+      sel_end_y     = 0;
+      b_focus       = false;
+      cursor_x      = 0;
+      cursor_y      = 0;
+      b_resizable_x = true;
+      b_resizable_y = true;
+      log_max_lines = 100;
+      highlight_line_idx = -1;
+   }
+
+   public method getNumCols() : int {
+      explain "Return current number of visible columns.";
+      return num_cols;
+   }
+
+   public method getNumRows() : int {
+      explain "Return current number of visible rows.";
+      return num_rows;
+   }
+
+   public method setMinNumCols(int _numCols) {
+      explain "Set minimum number of columns and enable dynamic x resizing.";
+
+      if(_numCols > 0)
+      {
+         min_num_cols = _numCols;
+         b_resizable_x = true;
+         invalidateSizeCache();
+      }
+      else
+      {
+         min_num_cols = 4;
+      }
+   }
+
+   public method getMinNumCols() : int {
+      explain "Return minimum number of columns.";
+
+      return min_num_cols;
+   }
+
+   public method setMinNumRows(int _numRows) {
+      explain "Set minimum number of rows and enable dynamic y resizing.";
+
+      if(_numRows > 0)
+      {
+         min_num_rows = _numRows;
+         b_resizable_y = true;
+         invalidateSizeCache();
+      }
+      else
+      {
+         min_num_rows = 1;
+      }
+   }
+
+   public method getMinNumRows() : int {
+      explain "Return minimum number of rows.";
+
+      return min_num_rows;
+   }
+
+   public method setMaxNumCols(int _numCols) {
+      explain "Set maximum number of columns and enable dynamic x resizing.";
+
+      if(_numCols > 0)
+      {
+         max_num_cols = _numCols;
+         b_resizable_x = true;
+      }
+      else
+      {
+         max_num_cols = 0;
+      }
+      invalidateSizeCache();
+   }
+
+   public method getMaxNumCols() : int {
+      explain "Get maximum number of columns.";
+
+      return max_num_cols;
+   }
+
+   public method setMaxNumRows(int _numRows) {
+      explain "Set maximum number of rows and enable dynamic y resizing.";
+
+      if(_numRows > 0)
+      {
+         max_num_rows = _numRows;
+         b_resizable_y = true;
+      }
+      else
+      {
+         max_num_rows = 0;
+      }
+      invalidateSizeCache();
+   }
+
+   public method getMaxNumRows() : int {
+      explain "Get maximum number of rows.";
+
+      return max_num_rows;
+   }
+
+   public method setFixedNumCols(int _numCols) {
+      explain "Set fixed number of columns and disable dynamic resizing.";
+
+      if(_numCols > 0)
+      {
+         fixed_num_cols = _numCols;
+         b_resizable_x = false;
+      }
+      else
+      {
+         fixed_num_cols = 0;
+         b_resizable_x = true;
+      }
+      invalidateSizeCache();
+   }
+
+   public method getFixedNumCols() : int {
+      return fixed_num_cols;
+   }
+
+   public method setFixedNumRows(int _numRows) {
+      explain "Set fixed number of rows and disable dynamic y resizing.";
+
+      if(_numRows > 0)
+      {
+         fixed_num_rows = _numRows;
+         b_resizable_y = false;
+      }
+      else
+      {
+         fixed_num_rows = 0;
+         b_resizable_y = true;
+      }
+      invalidateSizeCache();
+   }
+
+   public method getFixedNumRows() : int {
+      explain "Return fixed number of rows.";
+
+      return fixed_num_rows;
+   }
+
+   public method setLogMaxLines(int _maxLines) {
+      explain "Set number of lines in logview mode.";
+
+      log_max_lines = _maxLines;
+   }
+
+   protected method updateRequiredSize() {
+      if(!b_resizable_x)
+      {
+         setRequiredSizeX(fixed_num_cols * char_width_scaled);
+         ////trace "xxx TextView::updateRequiredSize: sx="+getSizeX();
+      }
+
+      if(!b_resizable_y)
+      {
+         setRequiredSizeY(fixed_num_rows * char_height_scaled);
+         // trace "xxx TextView::updateRequiredSize: sy="+getSizeY();
+      }
+   }
+
+   protected method updateDynamicSize() {
+      // trace "xxx TextView::updateDynamicSize: b_resizable_x="+b_resizable_x+" b_resizable_y="+b_resizable_y;
+
+      // Verify that minCols/Rows < maxCols/Rows and swap if necessary
+      int t;
+      if(max_num_cols < min_num_cols)
+      {
+         t = min_num_cols;
+         min_num_cols = max_num_cols;
+         max_num_cols = t;
+      }
+
+      if(max_num_rows < min_num_rows)
+      {
+         t = min_num_rows;
+         min_num_rows = max_num_rows;
+         max_num_rows = t;
+      }
+
+      // Calculate width dependent column count
+      if(b_resizable_x)
+      {
+         num_cols = (getSizeX()+0.5) / char_width_scaled;
+         // if(num_cols < min_num_cols)
+         // {
+         //    trace "[~~~] TextView: num_cols < min_num_cols ("+num_cols+" < "+min_num_cols+").";
+         // }
+      }
+      else
+      {
+         num_cols = fixed_num_cols;
+         setRequiredSizeX(num_cols * char_width_scaled);
+      }
+
+      // Calculate height dependent row count
+      if(b_resizable_y)
+      {
+         num_rows = (getSizeY()+0.5) / char_height_scaled;
+         // if(num_rows < min_num_rows)
+         // {
+         //    trace "[~~~] TextView: num_rows < min_num_rows ("+num_rows+" < "+min_num_rows+").";
+         // }
+      }
+      else
+      {
+         num_rows = fixed_num_rows;
+         setRequiredSizeY(num_rows * char_height_scaled);
+      }
+
+      // // trace "xxx TextView::updateDynamicSize: cols="+num_cols+" rows="+num_rows;
+   }
+
+   public method getViewX() : int {
+      return view_x;
+   }
+
+   public method getViewY() : int {
+      return view_y;
+   }
+
+   public method getCursorX() : int {
+      return cursor_x + view_x;
+   }
+
+   public method getCursorY() : int {
+      return cursor_y + view_y;
+   }
+
+   public method getCursorPx() : int {
+      return cursor_x * char_width_scaled;
+   }
+
+   public method getCursorPy() : int {
+      return cursor_y * char_height_scaled;
+   }
+
+   public method getCursorYRel() : float {
+      return float(cursor_y + view_y) / (strings.numElements-1);
+   }
+
+   protected method updatePreferredCursorX() {
+      if(!b_lock_preferred_cursor_x)
+         preferred_cursor_x = cursor_x;
+   }
+
+   protected method gotoPreferredCursorX() {
+      b_lock_preferred_cursor_x = true;
+      gotoX(preferred_cursor_x);
+      b_lock_preferred_cursor_x = false;
+   }
+
+   protected method allocRows() {
+      tex_screen.free();
+      tex_screen.alloc2n(getSizeX(), getSizeY(), 4);
+      tex_screen.clear(lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG));
+      // // tex_screen.flags = TEX_MAGFILTERLINEAR;
+      // // tex_screen.flags = TEX_MODULATE;// | TEX_ALPHA;
+      view_x = 0;
+      view_y = 0;
+      dirty_rows.alloc(num_rows);
+      dirty_rows.numElements = num_rows;
+      dirty_rows.fill(0);
+      stripes.alloc(num_rows);
+      stripes.identity(num_rows);
+
+      // Init attribute + color tables
+      attributes.alloc(num_rows);
+      colors.alloc(num_rows);
+      loop(num_rows)
+      {
+         IntArray attr <= new IntArray();
+         attr.alloc(col_limit);
+         attr.numElements = col_limit;
+         attr.fill(0);
+
+         IntArray cols <= new IntArray();
+         cols.alloc(col_limit);
+         cols.numElements = col_limit;
+         cols.fill(lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FG));
+
+         attributes.add(#(deref attr));
+         colors.add(#(deref cols));
+      }
+
+      validateCursorY();
+   }
+
+   public virtual calcPreferredSizeX() {
+      if(b_resizable_x)
+      {
+         if(max_num_cols)
+            preferred_size_x = max_num_cols * char_width_scaled;
+         else
+            preferred_size_x = DEFAULT_PREFERRED_SIZE_X;
+      }
+      else
+      {
+         preferred_size_x = fixed_num_cols * char_width_scaled;
+      }
+   }
+
+   public virtual calcPreferredSizeY() {
+      if(b_resizable_y)
+      {
+         if(max_num_rows)
+         {
+            preferred_size_y = max_num_rows * char_height_scaled;
+         }
+         else
+         {
+            preferred_size_y = DEFAULT_PREFERRED_SIZE_Y;
+         }
+      }
+      else
+      {
+         preferred_size_y = fixed_num_rows * char_height_scaled;
+      }
+   }
+
+   public virtual calcMinimumSizeX() {
+      if(b_resizable_x)
+      {
+         if(min_num_cols)
+            minimum_size_x = min_num_cols * char_width_scaled;
+         else
+            minimum_size_x = char_width_scaled;
+      }
+      else
+      {
+         minimum_size_x = fixed_num_cols * char_width_scaled;
+      }
+   }
+
+   public virtual calcMinimumSizeY() {
+      if(b_resizable_y)
+      {
+         if(min_num_rows)
+            minimum_size_y = min_num_rows * char_height_scaled;
+         else
+            minimum_size_y = char_height_scaled;
+      }
+      else
+      {
+         minimum_size_y = fixed_num_rows * char_height_scaled;
+      }
+
+      ////trace "xxx TextView::calcMinimumSizeY: r="+minimum_size_y+" b_resizable_y="+b_resizable_y;
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      invalidateAbsolutePositions();
+//       trace "TextView: size=("+size_x+";"+size_y+")";
+//       trace "TextView: prefSize=("+getPreferredSizeX()+";"+getPreferredSizeY()+")";
+   }
+
+   public method setSyntaxHighlighter(TextViewSyntaxHighlighter _hl) {
+      syntax_hl <= deref _hl;
+   }
+
+   public method setText(String _text) {
+      explain "Set text lines by string. Each line must be terminated with the \\n character.";
+      strings <= _text.splitChar('\n');
+      int lineIdx=0;
+
+      boolean bAddNewline = false;
+      String *cs;
+
+      loop(strings.numElements)
+      {
+         cs <= strings[lineIdx];
+
+         if(0 == cs.length)
+         {
+            cs = "";
+         }
+         //trace "strings["+lineIdx+"]=\""+strings[lineIdx];
+
+         if(lineIdx < num_rows)
+         {
+            dirty_rows[lineIdx] = true;
+         }
+
+         lineIdx++;
+      }
+
+      cs <= strings.last;
+      if(null != cs)
+      {
+         if(!cs.isBlank())
+         {
+            strings.add("");
+            if(lineIdx < num_rows)
+               dirty_rows[lineIdx] = true;
+         }
+      }
+
+      resetAllAttributes();
+      redrawAllRows();
+   }
+
+   public static AppendLines(StringArray _lines, String _ret) {
+      String *s;
+      int lineIdx = 0;
+      foreach s in _lines
+      {
+         _ret.append(s);
+         if(lineIdx++ != (_lines.numElements -1))
+            _ret.append("\n");
+      }
+   }
+
+   public method getText() : String {
+      explain "Return edited text (concatenates all lines).";
+      local String ret;
+      AppendLines(strings, ret);
+      return deref ret;
+   }
+
+   public method getTextLines() : StringArray {
+      return Object(strings);
+   }
+
+   public method appendLine(String _text) {
+      strings.add(_text);
+
+      int si = getCursorYForLine(strings.numElements-1);
+      if(si >= 0) // Is line visible? (true if getCursorYForLine returned a non-void value)
+      {
+         redrawAllRows(); // xxx only redraw new line if visible
+      }
+   }
+
+   public method appendLogLine(String _text) {
+      strings.add(_text);
+      scrollDown();
+      if(strings.numElements >= log_max_lines)
+      {
+         strings.delete(0);
+         if(view_y > 0)
+            view_y--;
+      }
+      redraw();
+   }
+
+   protected method getCursorYForLine(int _linenr) : int {
+      explain "Returns void (if not visible) or cursor y coordinate for the given line number.";
+      if(_linenr >= view_y)
+      {
+         if(_linenr < (view_y + num_rows))
+            return _linenr - view_y;
+      }
+      return -1;
+   }
+
+   public method onResize() {
+      // trace "xxx TextView::onResize: new size = ("+getSizeX()+"; "+getSizeY()+") pref=("+getPreferredSizeX()+"; "+getPreferredSizeY()+") min=("+getMinimumSizeX()+"; "+getMinimumSizeY()+").";
+
+      updateDynamicSize();
+      allocRows();
+      redrawAllRows();
+
+      validateCursorPosition();
+   }
+
+   public virtual onOpen() {
+      tex_screen.unload();
+   }
+
+   protected method render() {
+      explain "Render texture stripes. Assumes that the bg has already been filled.";
+
+      int rownr = 0;
+      int linenr = view_y;
+      int x = 0;
+      int num;
+      if(strings.numElements < num_rows)
+      {
+         num = strings.numElements;
+      }
+      else
+      {
+         num = num_rows;
+      }
+      loop(num)
+      {
+         if(dirty_rows[rownr])
+         {
+            String s;
+            int len;
+            IntArray col  <= colors[rownr];
+            IntArray at   <= attributes[rownr];
+            String   text <= strings[linenr];
+            int y = stripes.get(rownr)*char_height;
+            boolean bScrollH = (view_x+num_cols)< (text.length-1);
+            int oldChar, oldAttr, oldCol;
+            if( bScrollH )
+            {
+               int scrollCharIndex = num_cols-1;
+               oldAttr = at[scrollCharIndex];
+               oldCol = col[scrollCharIndex];
+               oldChar = text[view_x+scrollCharIndex];
+               text[view_x+scrollCharIndex] = 187/*>>*/;
+               // // text[view_x+scrollCharIndex] = UI.b_textview_hidpi_font ? '>' : 187/*>>*/;
+               at[scrollCharIndex] = 1;
+               col[scrollCharIndex] = 0;
+               len = scrollCharIndex + 1;
+            }
+            else
+            {
+               len = text.length-view_x;
+            }
+            s.visit(text, view_x, len);
+            // trace "xxx TextView::renderText \""+s+"\" col="+col.get(0);
+            tex_screen.renderFixedText(tex_font, char_width, s, 0, y, col, at);
+            if( bScrollH )
+            {
+               text[view_x+scrollCharIndex] = oldChar;
+               at  [scrollCharIndex] = oldAttr;
+               col [scrollCharIndex] = oldCol;
+            }
+            tex_screen.updateRegion(0, y, num_cols*char_width, char_height);
+            dirty_rows[rownr] = false;
+         }
+         linenr++;
+         rownr++;
+      }
+   }
+
+   protected method colorizeLine(int _lineIdx, int _c32) {
+
+      int rowIdx = _lineIdx - view_y;
+
+      if(0 <= rowIdx < colors.numElements)
+      {
+         IntArray cols <= colors.get(rowIdx);
+         // trace "xxx TextView::colorizeLine: rowIdx="+rowIdx+" c32="+_c32;
+         cols.fill(_c32);
+         IntArray attrs <= attributes.get(rowIdx);
+         attrs.fill(1);
+      }
+   }
+
+   public method setHighlightLineIdx(int _lineIdx, int _c32) {
+      // trace "xxx TextView::setHighlightLineIdx: lineIdx="+_lineIdx+" c32="+_c32;
+      highlight_line_idx = _lineIdx;
+      highlight_line_c32 = _c32;
+      redrawAllRows();
+   }
+
+   public method makeLineVisible(int _lineIdx) {
+      if(0 <= _lineIdx < strings.numElements)
+      {
+         int viewY = (_lineIdx - num_rows/2);
+         if( (viewY + num_rows) > strings.numElements)
+            viewY = strings.numElements - num_rows + 1;
+         if(viewY < 0)
+            viewY = 0;
+         view_y = viewY;
+         cursor_y = _lineIdx - view_y;
+         redrawAllRows();
+      }
+   }
+
+   public method scrollRight() {
+      if( (view_x+num_cols) < col_limit)
+      {
+         view_x++;
+         redrawAllRows();
+      }
+   }
+
+   public method scrollLeft() {
+      if(view_x > 0)
+      {
+         view_x--;
+         redrawAllRows();
+      }
+   }
+
+   public method scrollDown() {
+      if( (view_y+num_rows) < strings.numElements)
+      {
+         view_y++;
+         dirty_rows.delete(0);
+         dirty_rows.add(true);
+         ////tex_screen.drawFilledBox(ivector(0,stripes[0]*char_height), ivector(getSizeX(), char_height),
+         // trace "xxx stripes.numElements="+stripes.numElements;
+         tex_screen.drawFilledBox(0,stripes.get(0)*char_height, getSizeX(), char_height,
+                                  b_focus ? lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_BG) : lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG));
+         stripes.add(stripes.get(0));
+         stripes.delete(0);
+
+         // Scroll attributes
+         IntArray *at <= attributes.getDeref(0);
+         attributes.delete(0);
+         attributes.add(#(deref at));
+         IntArray *col <= colors.getDeref(0);
+         colors.delete(0);
+         colors.add(#(deref col));
+
+         updateLineSelection(view_y+num_rows-1, true/*bResetAttributes*/);
+         queueUpdateHighlightLine();
+         redraw();
+      }
+   }
+
+   public method scrollUp() {
+      if(view_y > 0)
+      {
+         view_y--;
+         dirty_rows.insert(0, true);
+         dirty_rows.delete(num_rows);
+         ////tex_screen.drawFilledBox(ivector(0,stripes[num_rows-1]*char_height), ivector(getSizeX(), char_height),
+         tex_screen.drawFilledBox(0,stripes.get(num_rows-1)*char_height, getSizeX(), char_height,
+                                  b_focus ? lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_BG) : lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG));
+         stripes.insert(0, stripes.get(num_rows-1));
+         stripes.delete(num_rows);
+
+         // Scroll attributes
+         IntArray *at <= attributes.getDeref(num_rows - 1);
+         attributes.delete(num_rows - 1);
+         attributes.insert(0, #(deref at));
+         IntArray *col <= colors.getDeref(num_rows - 1);
+         colors.delete(num_rows - 1);
+         colors.insert(0, #(deref col));
+
+         updateLineSelection(view_y, true/*bResetAttributes*/);
+         queueUpdateHighlightLine();
+         redraw();
+      }
+   }
+
+   public method pageDown() {
+      loop(num_rows >> 1)
+         scrollDown();
+   }
+
+   public method pageUp() {
+      loop(num_rows >> 1)
+         scrollUp();
+   }
+
+   public method gotoTop() {
+      view_y = 0;
+      redrawAllRows();
+   }
+
+   public method gotoEnd() {
+      view_y = strings.numElements-num_rows;
+      if(view_y < 0)
+         view_y = 0;
+      redrawAllRows();
+   }
+
+   protected method redrawCurrentRow() {
+      if(0 <= cursor_y < num_rows)
+      {
+         dirty_rows[cursor_y] = true;
+         // // tex_screen.drawFilledBox(ivector(0,stripes[cursor_y]*char_height), ivector(getSizeX(), char_height),
+         tex_screen.drawFilledBox(0,stripes.get(cursor_y)*char_height, getSizeX(), char_height,
+                                  b_focus
+                                  ? lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_BG)
+                                  : lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG)
+                                  );
+         updateLineSelection(cursor_y+view_y, true/*bResetAttributes*/);
+         queueUpdateHighlightLine();
+         redraw();
+      }
+   }
+
+   protected method redrawAllRows() {
+      stripes.identity(num_rows);
+      dirty_rows.fill(true);
+      tex_screen.clear(b_focus
+                       ? lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_BG)
+                       : lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG)
+                       );
+
+      updateSelection(true/*bResetAttributes*/);
+
+      queueUpdateHighlightLine();
+
+      redraw();
+   }
+
+   protected method updateHighlightLine() {
+      if(-1 != highlight_line_idx)
+      {
+         resetAllAttributes();
+
+         if(null != syntax_hl)
+            syntax_hl.colorizeText(this);
+
+         if(-2 != highlight_line_idx)
+         {
+            colorizeLine(highlight_line_idx, highlight_line_c32);
+         }
+         else
+         {
+            highlight_line_idx = -1;
+         }
+      }
+      else
+      {
+         if(null != syntax_hl)
+         {
+            syntax_hl.colorizeText(this);
+            updateSelection(false/*bResetAttributes*/);
+         }
+      }
+   }
+
+   protected method queueUpdateHighlightLine() {
+      b_queued_update_hl = true;
+   }
+
+   protected method resetAllAttributes() {
+      explain "Resets attributes+colors of all visible lines.";
+      int i = view_y;
+      loop( ((strings.numElements-view_y)<num_rows) ? (strings.numElements-view_y) : num_rows )
+      {
+         resetLineAttributes(i);
+         i++;
+      }
+   }
+
+   protected method resetLineAttributes(int _lineNr) {
+      _lineNr -= view_y;
+      if(0 <= _lineNr < num_rows)
+      {
+         IntArray *at <= attributes[_lineNr];
+         at.fill(0);
+         IntArray *c32 <= colors[_lineNr];
+         c32.fill(b_focus
+                  ? lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_FG)
+                  : lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FG)
+                  );
+      }
+   }
+
+   public method haveSelection() : boolean {
+      explain "Check if a selection is available.";
+      return (-1 != sel_start_x) && ((sel_end_y != sel_start_y) || (sel_end_x != sel_start_x));
+   }
+
+   public method getSelectedText() : String {
+      explain "Return selected text (concatenates selected region).";
+      local String ret;
+      if(-1 != sel_start_x)
+      {
+         int i = sel_start_y;
+         int cx = sel_start_x;
+         String t;
+         String s;
+         while(i < sel_end_y)
+         {
+            // Append row
+            s <= strings[i];
+            s.substring(cx, s.length-cx) => t;
+            ret.append(t);
+            ret.append("\n");
+            cx = 0;
+            i++;
+         }
+         s <= strings[i];
+         s.substring(cx, sel_end_x-cx) => t;
+         ret.append(t);
+      }
+      ///trace "xxx seltext=\""+ret+"\"";
+      return deref ret;
+   }
+
+   public method getSelectedTextTrimToFirstLine() : String {
+      // --- copy selection to clipboard
+      local String selText <= getSelectedText();
+      selText.trim();
+      int idxLF = selText.indexOfChar('\n', 0);
+      if(idxLF >= 0)
+         return selText.substring(0, idxLF).trim();
+      return deref selText;
+   }
+
+   public method isCursorXBeforeFirstLineWord() : boolean {
+      if(0 == view_x + cursor_x)
+         return true;
+      String sLine <= getCurrentRow();
+      if(null != sLine)
+      {
+         int idxWordStart = sLine.indexOf(sLine.trim(), 0);
+         if(idxWordStart >= 0)
+            return ((view_x + cursor_x) < idxWordStart);
+         else
+            return true;
+      }
+      return false;
+   }
+
+   protected method selectWord() {
+      explain "Select word under cursor";
+      String s <= getCurrentRow();
+      int ia = s.indexOfWordStart(view_x + cursor_x + 1);
+      int ie = s.indexOfWordEnd(view_x + cursor_x);
+      // trace "xxx TextView::selectWord: cursor_x="+cursor_x+" ia="+ia+" ie="+ie;
+      if(-1 != ia)
+      {
+         if(-1 != ie)
+         {
+            sel_anc_x = ia;
+            sel_anc_y = view_y + cursor_y;
+            sel_start_x = sel_anc_x;
+            sel_start_y = sel_anc_y;
+            sel_end_x = ie;
+            sel_end_y = view_y + cursor_y;
+            redrawAllRows();
+            return;
+         }
+      }
+      selectNone();
+   }
+
+   protected method startSelectionIfEmpty() {
+      if(-1 == sel_start_x)
+      {
+         sel_start_x = view_x+cursor_x;
+         sel_start_y = view_y+cursor_y;
+         sel_end_x = sel_start_x;
+         sel_end_y = sel_start_y;
+         sel_anc_x = sel_start_x;
+         sel_anc_y = sel_start_y;
+      }
+   }
+
+   protected method selectNone() {
+      explain "Select nothing";
+      if(sel_start_x != -1)
+      {
+         sel_start_x = -1;
+         if( (sel_start_y!=(cursor_y+view_y)) || (sel_end_y!=(cursor_y+view_y)) )
+            redrawAllRows();
+         else
+            redrawCurrentRow();
+      }
+   }
+
+   public method selectAll() {
+      explain "Select all text lines";
+      sel_start_x = 0;
+      sel_start_y = 0;
+      sel_end_x = strings[strings.numElements-1].length-1;
+      sel_end_y = strings.numElements-1;
+      redrawAllRows();
+   }
+
+   protected method updateSelection(boolean _bResetAttributes) {
+      explain "Prepare selection rendering for all visible lines. Called if the selection has changed.";
+      int i = view_y;
+      loop( ((strings.numElements-view_y)<num_rows) ? (strings.numElements-view_y) : num_rows )
+      {
+         updateLineSelection(i, _bResetAttributes);
+         i++;
+      }
+   }
+
+   protected method updateLineSelection(int _lineNr, boolean _bResetAttributes) {
+      if(_bResetAttributes)
+         resetLineAttributes(_lineNr);
+
+      // trace "xxxx updatelineselection("+_lineNr+") sel=("+sel_start_x+";"+sel_start_y+" , "+sel_end_x+";"+sel_end_y+")";
+
+      if(sel_start_x != -1)
+      {
+         if(sel_start_y <= _lineNr <= sel_end_y)
+         {
+            int si = getCursorYForLine(_lineNr);
+            if(si>=0)
+            {
+               IntArray at <= attributes[si];
+               IntArray col <= colors[si];
+               String *s <= strings[_lineNr];
+               int fg32;
+               if(b_focus)
+                  fg32 = lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_SELECT_FG);
+               else
+                  fg32 = lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_SELECT_FG);
+               int startx, endx;
+               if(sel_start_y == sel_end_y)
+               {
+                  startx = sel_start_x;
+                  endx = sel_end_x;
+               }
+               else if(sel_start_y < _lineNr)
+               {
+                  startx = 0;
+                  if(sel_end_y == _lineNr)
+                     endx = sel_end_x;
+                  else
+                     endx = s.length-1;
+               }
+               else {
+                  startx = sel_start_x;
+                  endx = s.length-1;
+               }
+               startx -= view_x;
+               endx   -= view_x;
+               if(startx < num_cols)
+               {
+                  if(endx > 0)
+                  {
+                     if(startx < 0)
+                        startx = 0;
+                     int i = startx;
+                     if(endx >= num_cols)
+                        endx = num_cols - 1;
+                     loop(endx - startx)
+                     {
+                        col[i] = fg32;
+                        i++;
+                     }
+
+                     int bg32;
+                     if(b_focus)
+                     {
+                        bg32 = lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_SELECT_BG);
+                     }
+                     else
+                     {
+                        bg32 = lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_SELECT_BG);
+                     }
+                     //trace "fill box si="+si+" stripes[0]="+stripes[0]+" start=("+(startx*char_width)+";"+(stripes[si]*char_height)+") size=("+((endx-startx)*char_width)+";"+char_height+")";
+                     ////tex_screen.drawFilledBox(ivector(startx*char_width, stripes[si]*char_height), ivector((endx-startx)*char_width, char_height), bg32);
+                     tex_screen.drawFilledBox(startx*char_width, stripes.get(si)*char_height, (endx-startx)*char_width, char_height, bg32);
+                  }
+                  else
+                  {
+                     // Draw thin line to indicate that the empty line has been selected
+                     ////tex_screen.drawFilledBox(ivector(0, stripes[si]*char_height), ivector(1, char_height), bg32);
+                     tex_screen.drawFilledBox(0, stripes.get(si)*char_height, 1, char_height, bg32);
+                  }
+               }
+            } // if _lineNr visible
+         } // if _lineNr is in selection
+      } // if selection
+   }
+
+   protected method showFindDialog() {
+      if(null == dlg_find)
+      {
+         dlg_find <= new StringDialog;
+         dlg_find.init(UIConstants.DEFAULT_FONT_NAME_TEXTFIELD);
+         dlg_find.setEnableProvideEdit(true);
+      }
+
+      find_start_view_x = view_x;
+      find_start_view_y = view_y;
+      find_start_cursor_x = cursor_x;
+      find_start_cursor_y = cursor_y;
+
+      dlg_find.configure(last_find_string, 256, 64/*visCols*/, this/*recipient*/);
+      dlg_find.showCenteredWithinLayer(this);
+   }
+
+   public method findTextAndSetCursor(String _text) {
+      last_find_string = _text;
+      int lineIdx = cursor_y + view_y;
+      int startCursorX = cursor_x + 1;
+      loop(strings.numElements)
+      {
+         String line <= strings.get(lineIdx);
+         int idx = line.indexOf(_text, startCursorX);
+         if(idx >= 0)
+         {
+            gotoXY(idx, lineIdx);
+            setHighlightLineIdx(lineIdx, lnf_colors.get(LookAndFeel.COLOR_TEXTVIEW_FIND_HL));
+            return;
+         }
+         startCursorX = 0;
+         lineIdx = mathWrapi(lineIdx + 1, 0, strings.numElements);
+      }
+      // not found
+      setHighlightLineIdx(-2/*queue reset*/, 0);
+   }
+
+   public method showFindDialogSelectedTextOrLastFindString() {
+      if(haveSelection())
+      {
+         last_find_string = getSelectedTextTrimToFirstLine();
+         selectNone();
+      }
+      showFindDialog();
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      resetAllAttributes();
+      redrawAllRows();
+   }
+
+   public virtual onDraw()  {
+
+      if(b_queued_update_hl)
+      {
+         b_queued_update_hl = false;
+         updateHighlightLine();  // also runs syntax highlighter (when installed)
+      }
+
+      if(UIRenderer.b_gl_attrib_stack)
+      {
+         glPushAttrib(GL_ALL_ATTRIBS_BITS);  // b_gl_attrib_stack   fixes flickering when TextView is used in Dialog/FloatingLayer
+         // // glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT | GL_CLIENT_VERTEX_ARRAY_BIT);
+      }
+      render();
+
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG));
+
+      UIRenderer.SetColorARGB(#ffffffff);
+      int rownr = 0;
+      int numVerts;
+
+      int num;
+      if(strings.numElements < num_rows)
+      {
+         num = strings.numElements;
+      }
+      else
+      {
+         num = num_rows;
+      }
+
+      if(num > 0)
+      {
+         // // glTranslatef(0.5, 0.5, 0);
+         UIRenderer.EnableTexture2D();
+         tex_screen.bind();
+         // // UIRenderer.EnableBlendingKeepAlpha();
+         // // tex_screen.saveImage("/tmp/t.png");
+         // // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+         // // glEnable(GL_BLEND);
+         // // glColor4f(0,0,1,1);
+
+         numVerts = num * 6;
+         if(UIRenderer.BeginTexturedTriangles(numVerts))
+         {
+            loop(num)
+            {
+               int   dy = rownr * char_height_scaled;
+               int   y  = stripes.get(rownr) * char_height;
+               float vt = float(y) / tex_screen.sy;
+               float vb = float(y + char_height) / tex_screen.sy;
+
+               // 1
+               UIRenderer.TexCoord2f(0, vt);
+               UIRenderer.Vertex2f  (0, dy);
+
+               UIRenderer.TexCoord2f(size_x/(tex_screen.sx * char_width_scaled/char_width), vt);
+               UIRenderer.Vertex2f  (size_x,  dy);
+
+               UIRenderer.TexCoord2f(size_x/(tex_screen.sx * char_width_scaled/char_width), vb);
+               UIRenderer.Vertex2f  (size_x, (dy+char_height_scaled));
+
+               // 2
+               UIRenderer.TexCoord2f(0, vt);
+               UIRenderer.Vertex2f  (0, dy);
+
+               UIRenderer.TexCoord2f(size_x/(tex_screen.sx * char_width_scaled/char_width), vb);
+               UIRenderer.Vertex2f  (size_x, (dy+char_height_scaled));
+
+               UIRenderer.TexCoord2f(0, vb);
+               UIRenderer.Vertex2f  (0, (dy+char_height_scaled));
+
+               rownr++;
+            }
+            UIRenderer.End();
+         }
+
+         UIRenderer.DisableTexture2D();
+      } // if num > 0
+
+      if(rownr < num_rows)
+      {
+         if(b_focus)
+            UIRenderer.SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_FOCUS_BG));
+         else
+            UIRenderer.SetColorARGB(lnf_colors.get(LookAndFeel.COLOR_MULTI_TEXT_BG));
+
+         numVerts = (num_rows - rownr) * 6;
+         if(UIRenderer.BeginFilledTriangles(numVerts))
+         {
+            while(rownr < num_rows)
+            {
+               dy = rownr * char_height_scaled;
+               UIRenderer.Vertex2f(0,      dy);
+               UIRenderer.Vertex2f(size_x, dy);
+               UIRenderer.Vertex2f(size_x, dy+char_height_scaled);
+
+               UIRenderer.Vertex2f(0,      dy);
+               UIRenderer.Vertex2f(size_x, dy+char_height_scaled);
+               UIRenderer.Vertex2f(0,      dy+char_height_scaled);
+               rownr++;
+            }
+            UIRenderer.End();
+         }
+      }
+
+      // // glTranslatef(-0.5, -0.5, 0);
+
+      UIRenderer.DisableBlending();
+
+      if(UIRenderer.b_gl_attrib_stack)
+      {
+         // // glPopClientAttrib();
+         glPopAttrib();  // b_gl_attrib_stack
+      }
+   }
+
+   protected method setSelectionStartByPixel(float _x, float _y) {
+      selectNone();
+      gotoPixelXY(_x, _y);
+      startSelectionIfEmpty();
+      redrawAllRows();
+   }
+
+   protected method setSelectionEndByPixel(float _x, float _y) {
+      if(_y < 0)
+      {
+         scrollUp();
+         _y = 0;
+      }
+      else if(_y >= (num_rows*char_height_scaled))
+      {
+         scrollDown();
+         _y = (num_rows*char_height_scaled);
+      }
+      if(_x < 0)
+      {
+         scrollLeft();
+         _x = 0;
+      }
+      else if(_x >= (num_cols*char_width_scaled))
+      {
+         scrollRight();
+         _x = (num_cols*char_width_scaled);
+      }
+      int ox = view_x + cursor_x;
+      int oy = view_y + cursor_y;
+      gotoPixelXY(_x, _y);
+      expandSelectionToCursor(ox, oy);
+      redrawAllRows();
+   }
+
+   protected method expandSelectionToCursor(int _ox, _oy) {
+      int x = view_x + cursor_x;
+      int y = view_y + cursor_y;
+
+      if(y > sel_anc_y)
+      {
+         sel_end_x = x;
+         sel_end_y = y;
+         if(_oy <= sel_anc_y) // Crosses anchor?
+         {
+            sel_start_y = sel_anc_y;
+            sel_start_x = sel_anc_x;
+         }
+      }
+      else if(y < sel_anc_y)
+      {
+         sel_start_x = x;
+         sel_start_y = y;
+         if(_oy>=sel_anc_y) // Crosses anchor?
+         {
+            sel_end_y = sel_anc_y;
+            sel_end_x = sel_anc_x;
+         }
+      }
+      else if(y == sel_anc_y)
+      {
+         if(x > sel_anc_x)
+         {
+            sel_end_y = y;
+            sel_end_x = x;
+            if(_oy < sel_anc_y) // Crosses anchor?
+            {
+               sel_start_x = sel_anc_x;
+               sel_start_y = sel_anc_y;
+            }
+            else if( (_oy == sel_anc_y) && (_ox < sel_anc_x) )
+            {
+               sel_start_x = sel_anc_x;
+            }
+         }
+         else if(x == sel_anc_x)
+         {
+            sel_end_x   = x;
+            sel_start_x = x;
+            sel_end_x   = x;
+            sel_end_y   = y;
+         }
+         else
+         {
+            sel_start_x = x;
+            sel_start_y = y;
+            if(_oy>sel_anc_y) // Crosses anchor?
+            {
+               sel_end_x = sel_anc_x;
+               sel_end_y = sel_anc_y;
+            }
+            else if( (_oy==sel_anc_y) && (_ox>sel_anc_x) )
+            {
+               sel_end_x = sel_anc_x;
+            }
+         }
+      }
+      // trace "xxx expandselect: start=("+sel_start_x+";"+sel_start_y+") end=("+sel_end_x+";"+sel_end_y+")";
+   }
+
+   protected method validateCursorX() {
+      int cl = getCurrentRowLength();
+      if(cl > 0)
+      {
+         if( (view_x+num_cols) >= cl )
+         {
+            int oldViewX = view_x;
+            view_x = cl - num_cols;
+            if(view_x < 0)
+            {
+               view_x = 0;
+               if(cursor_x >= cl)
+                  cursor_x = cl - 1;
+            }
+            if(view_x != oldViewX)
+               redrawAllRows();
+         }
+      }
+      else
+      {
+         view_x = 0;
+         cursor_x = 0;
+         redrawAllRows();
+      }
+   }
+
+   protected method validateCursorY() {
+
+      if(strings.numElements > 0)
+      {
+         if(cursor_y >= num_rows)
+         {
+            cursor_y = num_rows - 1;
+            if(cursor_y < 0)
+               cursor_y = 0;
+         }
+
+         int cl = strings.numElements;
+         if( (view_y+num_rows) >= cl )
+         {
+            int oldViewY = view_y;
+            view_y = cl - num_rows;
+            if(view_y<0)
+            {
+               view_y = 0;
+               if(cursor_y >= cl)
+                  cursor_y = cl-1;
+            }
+            if(view_y != oldViewY)
+            {
+               cursor_y += (oldViewY-view_y);
+               redrawAllRows();
+            }
+         }
+
+         if((view_y + cursor_y) >= strings.numElements)
+         {
+            view_y = 0;
+            cursor_y = strings.numElements - num_rows;
+            if(cursor_y < 0)
+               cursor_y = 0;
+            if(cursor_y >= num_rows)
+            {
+               view_y += (cursor_y - num_rows);
+               cursor_y = num_rows - 1;
+            }
+         }
+      }
+      else
+      {
+         view_y = 0;
+         cursor_y = 0;
+         redrawAllRows();
+      }
+   }
+
+   public method validateCursorPosition() {
+      validateCursorX();
+      validateCursorY();
+   }
+
+   public method gotoXY(int _x, int _y) {
+      gotoY(_y);
+      gotoX(_x);
+   }
+
+   public method gotoPixelXY(float _x, _y) {
+      gotoY( view_y + (_y / char_height_scaled) );
+      validateCursorY();
+      gotoX( view_x + (_x / char_width_scaled) );
+      validateCursorX();
+   }
+
+   public method gotoX(int _lineOffset) {
+      explain "Goto line offset";
+      if(_lineOffset>=0)
+      {
+         if( (view_x+cursor_x) < _lineOffset)
+         {
+            loop(_lineOffset-(cursor_x+view_x))
+               moveCursorRightWithinLine();
+         }
+         else
+         {
+            loop((view_x+cursor_x)-_lineOffset)
+               moveCursorLeft();
+         }
+      }
+   }
+
+   public method gotoY(int _line) {
+      explain "Goto line";
+      // trace "xxx TextView::gotoY("+_line+") view_y="+view_y+" cursor_y="+cursor_y;
+      if(_line>=0)
+      {
+         if( (view_y+cursor_y) < _line)
+         {
+            loop(_line-(cursor_y+view_y))
+               moveCursorDown();
+         }
+         else
+         {
+            loop((view_y+cursor_y)-_line)
+               moveCursorUp();
+         }
+      }
+      // trace "xxx => TextView::gotoY("+_line+") new view_y="+view_y+" cursor_y="+cursor_y;
+   }
+
+   public method gotoYRel(float _rel) {
+      // (note) called when moving Scroller in TextEditDialog
+      if(strings.numElements > 0)
+      {
+         int lineIdx = _rel * (strings.numElements-1);
+         gotoY(lineIdx);
+      }
+   }
+
+   public method getPercentageVisible() : float {
+      int numLines = strings.numElements;
+      if(numLines > 0)
+      {
+         if(num_rows < numLines)
+         {
+            float r = float(num_rows) / numLines;
+            return r;
+         }
+         else
+            return 1.0f;
+      }
+      return 0.0f;
+   }
+
+   public method centerY() {
+      int delta = cursor_y - (num_rows / 2);
+      // trace "xxx TextEdit::centerY: delta="+delta;
+      if(delta < 0)
+      {
+         // down
+         delta = mathMini(-delta, view_y);
+         loop(delta)
+         {
+            scrollUp();
+            cursor_y++;
+         }
+      }
+      else if(delta > 0)
+      {
+         // up
+         loop(delta)
+         {
+            int oldViewY = view_y;
+            scrollDown();
+            if(oldViewY == view_y)
+               break;
+            cursor_y--;
+         }
+      }
+   }
+
+   public method moveCursorLeft() : boolean {
+      if( (view_x+cursor_x) > 0 )
+      {
+         if(cursor_x > 0)
+            cursor_x--;
+         else
+            scrollLeft();
+         updatePreferredCursorX();
+         startCaretTimer();
+         return true;
+      }
+      else
+      {
+         if( (view_y+cursor_y) > 0 )
+         {
+            int oldViewX = view_x;
+            view_x = 0;
+            cursor_x = strings[cursor_y + view_y - 1].length - 1;
+            if(cursor_x >= num_cols)
+            {
+               view_x = cursor_x - num_cols + 1;
+               cursor_x = num_cols - 1;
+            }
+            if(cursor_y > 0)
+               cursor_y--;
+            else
+               scrollUp();
+            startCaretTimer();
+            if(view_x != oldViewX)
+               redrawAllRows();
+            updatePreferredCursorX();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public method moveCursorRight() : boolean {
+      if( (view_x+cursor_x) < (getCurrentRowLength()-1) )
+      {
+         if((cursor_x + 1) < num_cols)
+            cursor_x++;
+         else
+            scrollRight();
+         updatePreferredCursorX();
+         startCaretTimer();
+         return true;
+      }
+      else
+      {
+         if((view_y + cursor_y) < (strings.numElements - 1))
+         {
+            int oldViewX = view_x;
+            view_x = 0;
+            cursor_x = 0;
+            if(cursor_y < (num_rows-1) )
+               cursor_y++;
+            else
+               scrollDown();
+            updatePreferredCursorX();
+            startCaretTimer();
+            if(view_x != oldViewX)
+               redrawAllRows();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public method moveCursorRightWithinLine() : boolean {
+      // called by gotoX(), do not update preferred_cursor_x
+      if( (view_x+cursor_x) < (getCurrentRowLength()-1) )
+      {
+         if((cursor_x + 1) < num_cols)
+            cursor_x++;
+         else
+            scrollRight();
+         updatePreferredCursorX();
+         startCaretTimer();
+         return true;
+      }
+      return false;
+   }
+
+   public method moveCursorUp() : boolean {
+      if(cursor_y > 0)
+      {
+         cursor_y--;
+         validateCursorX();
+         gotoPreferredCursorX();
+         startCaretTimer();
+         return true;
+      }
+      else if(view_y > 0)
+      {
+         scrollUp();
+         validateCursorX();
+         gotoPreferredCursorX();
+         startCaretTimer();
+         return true;
+      }
+      return false;
+   }
+
+   public method moveCursorDown() : boolean {
+      if((cursor_y + 1) < num_rows)
+      {
+         if((cursor_y + 1) < strings.numElements)
+         {
+            cursor_y++;
+            validateCursorX();
+            gotoPreferredCursorX();
+            startCaretTimer();
+            return true;
+         }
+      }
+      else
+      {
+         scrollDown();
+         validateCursorX();
+         gotoPreferredCursorX();
+         startCaretTimer();
+         return true;
+      }
+      return false;
+   }
+
+   public method moveCursorToRow(int _row) {
+      gotoTop();
+
+      loop(_row)
+         moveCursorDown();
+   }
+
+   protected method startCaretTimer() {
+      redraw();
+   }
+
+   public method getVisibleRowAttributesByIndex(int _visY) : IntArray {
+      return attributes.get(_visY);
+   }
+
+   public method getVisibleRowColorsByIndex(int _visY) : IntArray {
+      return colors.get(_visY);
+   }
+
+   public method getVisibleRowStringByIndex(int _visY) {
+      // 'visY' is in range 0..num_rows-1
+      return strings.get(view_y + _visY);
+   }
+
+   protected method getCurrentRow() : String {
+      if(0 <= (cursor_y + view_y) < strings.numElements)
+         return strings[(cursor_y + view_y)];
+      else
+         return null;
+   }
+
+   protected method getCurrentRowLength() : int {
+      if(0 <= (cursor_y+view_y) < strings.numElements)
+         return strings[(cursor_y+view_y)].length;
+      else
+         return 0;
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      // // trace "TextView: onKeyboardFocusLost";
+      b_focus = false;
+      if(!_bQuiet)
+         redrawAllRows();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      boolean ret = false;
+
+      switch(_k.pressed)
+      {
+         default:
+            if(_k.modCtrl() && !_k.modAlt()) // workaround since SDL reports ctrl flag for alt-} keypress e.g..
+            {
+               // xxx Should use unicode but SDL reports unicode==1 for ctrl-a..
+               switch(_k.pressed)
+               {
+                  case 'a':
+                     selectNone();
+                     selectAll();
+                     ret = true;
+                     break;
+
+                  case 'c':
+                     trace "[dbg] TextView::onKey: copy to clipboard: selectedText=\""+getSelectedText()+"\"";
+                     UI.SetClipboard(getSelectedText());
+                     ret = true;
+                     break;
+
+                  case 'f':
+                     showFindDialogSelectedTextOrLastFindString();
+                     ret = true;
+                     break;
+               }
+            }
+            break;
+
+         case VKEY_HOME:
+            selectNone();
+            gotoTop();
+            ret = true;
+            break;
+
+         case VKEY_END:
+            selectNone();
+            gotoEnd();
+            ret = true;
+            break;
+
+         case VKEY_DOWN:
+            selectNone();
+            scrollDown();
+            ret = true;
+            break;
+
+         case VKEY_UP:
+            selectNone();
+            scrollUp();
+            ret = true;
+            break;
+
+         case VKEY_PAGEUP:
+            selectNone();
+            pageUp();
+            ret = true;
+            break;
+
+         case VKEY_PAGEDOWN:
+            selectNone();
+            pageDown();
+            ret = true;
+            break;
+
+         case VKEY_RIGHT:
+            selectNone();
+            scrollRight();
+            ret = true;
+            break;
+
+         case VKEY_LEFT:
+            selectNone();
+            scrollLeft();
+            ret = true;
+            break;
+      }
+
+      return ret;
+   }
+
+   public method isMouseFocusLocked() : boolean {
+      return b_mouse_selection;
+   }
+
+// //    public method onMouseHold(MouseEvent _ev) : boolean {
+// //       return b_mouse_selection;
+// //    }
+
+   protected method endMouseSelection(MouseEvent _ev) : boolean {
+      if(b_mouse_selection)
+      {
+         setSelectionEndByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+         b_mouse_selection = false;
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         gotoPixelXY(_ev.getMouseRelX(), _ev.getMouseRelY());
+         selectWord();
+         return true;
+      }
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         endMouseSelection(_ev);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      boolean ret = false;
+      // Scroll 2 lines up or down (press/release)
+      if(_ev.changed_state & MOUSE_WHEELDOWN)
+      {
+         scrollDown();
+         ret = true;
+      }
+      else if(_ev.changed_state & MOUSE_WHEELUP)
+      {
+         scrollUp();
+         ret = true;
+      }
+
+      if(_ev.isLeftButton())
+      {
+         if(_ev.isLeftButtonDown())
+         {
+            // ---- left mouse button click starts edit mode
+            setSelectionStartByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+            b_mouse_selection=true;
+            ret = true;
+         }
+         else
+         {
+            ret = endMouseSelection(_ev);
+         }
+      }
+      else if(!_ev.isRightButton())
+      {
+         if(b_mouse_selection)
+         {
+            setSelectionEndByPixel(_ev.getMouseRelX(), _ev.getMouseRelY());
+            ret = true;
+         }
+      }
+
+      return ret;
+   }
+
+   public virtual onMouseFocus() {
+      grabKeyboardFocus();
+      b_focus = true;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         initTextView();
+
+         // // trace "TextView::beginXFMTag";
+         String *atname, *atval;
+         StringArray *atsplit;
+         String text; text.empty();
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "text":
+                  text = atval;
+                  break;
+               case "cols":
+                  setFixedNumCols(atval);
+                  break;
+               case "rows":
+                  setFixedNumRows(atval);
+                  break;
+               case "mincols":
+                  setMinNumCols(atval);
+                  break;
+               case "minrows":
+                  setMinNumRows(atval);
+                  break;
+               case "maxcols":
+                  setMaxNumCols(atval);
+                  break;
+               case "maxrows":
+                  setMaxNumRows(atval);
+                  break;
+            }
+         }
+         updateRequiredSize();
+         setText(text);
+      }
+      return true;
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(dlg_find):
+            if(StringDialog.ACTION_RETURN == acName)
+            {
+               findTextAndSetCursor(dlg_find.getText());
+               UI.SetKeyboardFocus(this);
+            }
+            else if(StringDialog.ACTION_EDIT == acName)
+            {
+               gotoXY(find_start_view_x   + find_start_cursor_x,
+                      find_start_cursor_x + find_start_cursor_y
+                      );
+               findTextAndSetCursor(dlg_find.getText());
+            }
+            else if(StringDialog.ACTION_FINDNEXT == acName)  // lctrl-f in StringDialog
+            {
+               last_find_string = dlg_find.getText();
+               dlg_find.hide();
+               if(!last_find_string.isBlank())
+               {
+                  moveCursorRight();
+                  showFindDialog();
+                  findTextAndSetCursor(last_find_string);
+               }
+            }
+            return true;
+      }
+
+      return Control::consumeAction(_action);
+   }
+
+}

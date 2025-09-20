@@ -1,0 +1,5320 @@
+// ----
+// ---- file   : BezierEdit.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 18Jun2009
+// ---- changed: 19Jun2009, 20Jun2009, 23Jun2005, 26Jun2009, 27Jun2009, 06Feb2010, 08Feb2010
+// ----          09Feb2010, 20Mar2011, 24Apr2013, 20Apr2014, 16Feb2018, 27Mar2018, 28Dec2018
+// ----          08Jun2019, 09Jun2019, 10Jun2019, 10Sep2019, 26Jul2020, 02Aug2020, 12Aug2020
+// ----          13Aug2020, 17Aug2020, 27Dec2020, 05May2021, 10Aug2021, 19Apr2023, 06Aug2023
+// ----          19Oct2023, 02Nov2023, 10Feb2024, 22Mar2024, 25Apr2024, 26Apr2024, 28Apr2024
+// ----          23Jul2024, 13Aug2024, 03Oct2024, 06Dec2024, 28Dec2024, 30May2025, 20Jun2025
+// ----          21Jun2025, 10Sep2025, 11Sep2025, 12Sep2025, 13Sep2025, 14Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MBezierEdit;
+
+namespace ui;
+
+
+float dbg_ideal_cx;
+float dbg_ideal_cy;
+
+boolean b_bezier_debug = 0;
+
+
+class BezierHistory {
+   FloatArray segments;
+   int selection_idx;
+   int selection_off;
+}
+
+class BezierEditState {
+   // serializable bezier curve state
+
+   tag FloatArray segments;
+   tag int        recursion_limit;
+   tag float      bendiness_threshold;
+   tag float      distance_threshold;
+   tag float      out_exponent;  // out_level = mathPowerf(env_val, out_exponent) (applied when replayed or exported)
+   tag float      off_x;
+   tag float      off_y;
+   tag int        selection_idx;
+   tag int        selection_off;
+   tag int        scale_tbl_off_x;
+   tag int        scale_tbl_off_y;
+
+   public method getNumSegments() : int {
+      return segments.numElements / 6;
+   }
+}
+
+class BezierEdit : Control {
+
+   define String ACTION_RECALC; // // = "onRecalc";
+   define String ACTION_CLICK;  // see onMouseClick() / b_provide_click (def=false)
+   define String ACTION_TAB;    // see b_provide_tab (def=false)
+
+   float min_size_y = 96;
+
+   protected FloatArray points;   // generated points
+   protected FloatArray points_t; // curve time of generated points
+
+   protected FloatArray env; // deltatime/level encoded points
+
+   // bezier control points
+   //  a,b,c  x/y pairs => 6 elements per segment
+   //   a = start point
+   //   b = first control point (from a to b)
+   //   c = next control point (from c to next a)
+   //
+   protected FloatArray segments;
+
+   protected float points_min_y;
+   protected float points_max_y;
+   protected float points_unclip_min_y;
+   protected float points_unclip_max_y;
+   protected int   points_min_idx;
+   protected int   points_max_idx;
+
+   define int UNDO_STACK_SIZE = 32;
+   protected BezierHistory *[] undo_history;
+   protected int               undo_stacki;
+   protected int               undo_num;
+   protected BezierHistory    *redo_history;
+
+   protected IntArray point_segment_map; // maps point index to segment index
+   protected IntArray segment_numpoints_map; // maps segment index to #points
+
+   int   recursion_limit;
+   float bendiness_threshold;
+   float distance_threshold;
+   float out_exponent;
+
+   protected float scale_x; // <0:smaller, 0:normal
+   protected float scale_y; // -1:flat, 0:normal
+   protected float off_x;
+   protected float off_y;
+
+   protected static FloatArray scale_tbl_x = [-0.35, -0.05, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 8.0, 16.0];
+
+   protected static FloatArray scale_tbl_y = [4.0, 3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5,
+                                              -0.1,  // idx=8
+                                              -0.2, -0.3, -0.4, -0.5, -0.6, -0.7, -0.8, -0.9, -1.0
+                                              ];
+
+   protected int scale_tbl_off_x;
+   protected int scale_tbl_off_y;
+
+   protected int reset_scale_tbl_off_x;
+   protected int reset_scale_tbl_off_y;
+
+   protected int selection_idx; // 0..num ctl points
+   protected int selection_off; // 0=start point, 2=first ctl point, 4=second ctl point
+
+   protected int mouseover_point_idx;   // nearest point on curve
+
+   protected int mouseover_segment_idx; // nearest start/end point
+   protected int mouseover_segment_off;
+
+   protected float last_seen_mx;
+   protected float last_seen_my;
+
+   protected boolean b_lctrl;  // toggle symmetry (also RMB)
+   protected boolean b_lalt;   // zoom/pan (also MMB)
+   protected boolean b_lshift; // scale control point distance
+
+   protected boolean b_drag; // 1=mouse drag
+   protected boolean b_drag_moved; // 1= mouse moved during drag
+   protected float drag_start_x;
+   protected float drag_start_y;
+   protected float orig_x;
+   protected float orig_y;
+   protected float orig_c1x;
+   protected float orig_c1y;
+   protected float orig_c2x;
+   protected float orig_c2y;
+   protected boolean b_drag_start_sym; // 1=ctl points are symmetric at drag start
+   protected boolean b_last_keyboard_sel; // 1=last point was selected during kbd, don't reset when starting mouse drag
+   protected boolean b_cancel_drag_rmb;
+   protected boolean b_drag_scale_recalc_center;
+   protected boolean b_drag_scale;
+   protected boolean b_drag_scale_end;
+   protected float drag_scale_cx;
+   protected float drag_scale_cy;
+
+   protected boolean b_draw_env; // 1=draw env, 0=draw original bezier curve  . lctrl-lshift-SPACE
+
+   protected boolean b_drag_zoompan; // 1=zoom pan, 0=drag currently selected point
+   protected boolean b_manual_zoompan; // 1=zoom/pan changed manually after last point selection => do not clip to segment
+
+   protected boolean b_mmb_drag; // 1=mouse moved while MMB was pressed, 0=just a MMB click (lock last selected point)
+
+   protected boolean b_drag_zoomxy;
+   protected int     drag_start_scale_tbl_off_x;
+   protected int     drag_start_scale_tbl_off_y;
+   protected boolean b_drag_zoomxy_lock_x;
+
+   protected boolean b_drag_space;   // lctrl
+   protected boolean b_drag_rotate;
+   protected boolean b_allow_drag_rotate;
+
+   protected IntArray multisel_indices;  // segment indices (currently selected center points)
+   protected float multisel_px;
+   protected float multisel_py;
+   protected float multisel_qx;
+   protected float multisel_qy;
+   protected float multisel_sorted_px;
+   protected float multisel_sorted_py;
+   protected float multisel_sorted_qx;
+   protected float multisel_sorted_qy;
+   protected boolean b_drag_multisel_rect;
+
+   protected FloatArray orig_segments;
+
+   protected int segment_idx_before_mouse_x;  // valid during drag_rotate
+
+   protected static PopupMenu *pm_context;
+
+   protected BezierEditState *current_state; // if != null, save configuration to this object before switching to/loading a new state
+
+   protected boolean b_lock_first_last_x;
+
+   String *mtx_named_recalc;  // null by default. e.g. "replay".
+   Mutex *mtx_recalc;  // null by default. set externally to e.g. synchronize with audio thread.
+
+   boolean b_draw_tabfocus_border;
+
+   protected boolean b_draw_grid;
+   protected float grid_subdiv = 16.0f;
+   protected static FloatArray grid_subdiv_presets = [ 4, 6, 8, 12, 16, 18, 24, 32 ];
+
+   protected boolean b_snap_to_grid;
+   protected boolean b_allow_wasd_keys;
+
+   protected boolean b_smooth_ctl;  // true=move next ctlpoint halfway to ctlpoint after next and enable symmetry
+   protected boolean b_smooth_ctl_xdist_only;
+   protected boolean b_smooth_ctl_dist_ctlpoints;  // true=use distance to ctlpoint, false=use distance to centerpoints
+
+   // for angular last-to-first alignment
+   protected float align_last_cyclic;  // e.g. 360.0 or 2PI. 0=cyclic mode off
+   protected float scale_hint;  // also used for tooltip display (if != 0)
+   protected float offset_hint;
+
+   protected FloatArray *backdrop_smp;
+
+   protected boolean b_rmb;
+
+   protected boolean b_provide_click;
+   protected boolean b_provide_tab;    // w/o modifiers
+   protected boolean b_draw_fill;
+
+   protected Matrix2x3f mat_to_2d;
+   protected Vector2f v2d;
+   protected Vector2f v2d2;
+   protected Vector2f v2d3;
+   protected Vector2f v2d4;
+
+
+   public method initBezierEdit() {
+
+      initLayer();
+
+      reset_scale_tbl_off_x = 0;
+      reset_scale_tbl_off_y = 10;
+
+      loadDefaults();
+
+      selectNone();
+      clear();
+      recalc(false/*bAction*/);
+
+      b_drag  = false;
+      b_lctrl = false;
+      b_lalt = false;
+      b_draw_env = true;
+      b_draw_grid = false;
+      b_snap_to_grid = false;
+      b_allow_wasd_keys = true;
+      b_allow_drag_rotate = true;
+
+      undo_history.alloc(UNDO_STACK_SIZE);
+      undo_stacki = undo_history.maxElements -1;
+      undo_num    = 0;
+
+      setToolTipCaption("?");
+
+      b_draw_tabfocus_border = true;
+
+      b_smooth_ctl = false;
+      b_smooth_ctl_xdist_only = true;
+      b_smooth_ctl_dist_ctlpoints = true;
+
+      b_draw_fill = true;
+   }
+
+   public method loadDefaults() {
+      recursion_limit     = 8;
+      bendiness_threshold = 0.001 * 0.5;
+      distance_threshold  = 0.005 * 0.5;
+
+      out_exponent = 1.0;
+
+      resetZoom();
+
+      addScaleTblOffY(-3);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_RECALC, ACTION_CLICK, ACTION_TAB];
+   }
+
+   public method saveState(BezierEditState st) {
+      if(null != st)
+      {
+         // trace "xxx BezierEdit::saveState: old #seg="+(st.segments.numElements)+" #seg="+segments.numElements;
+         st.segments            = segments;
+         st.recursion_limit     = recursion_limit;
+         st.bendiness_threshold = bendiness_threshold;
+         st.distance_threshold  = distance_threshold;
+         st.out_exponent        = out_exponent;
+         st.off_x               = off_x;
+         st.off_y               = off_y;
+         st.selection_idx       = selection_idx;
+         st.selection_off       = selection_off;
+         st.scale_tbl_off_x     = scale_tbl_off_x;
+         st.scale_tbl_off_y     = scale_tbl_off_y;
+      }
+   }
+
+   public method saveCurrentState() {
+      saveState(current_state);
+   }
+
+   public method unsetCurrentState() {
+      current_state <= null;
+   }
+
+   public method loadState(BezierEditState st) {
+      if(null != current_state)
+      {
+         saveState(current_state);
+      }
+
+      if(null != st)
+      {
+         segments            = st.segments;
+         recursion_limit     = st.recursion_limit;
+         bendiness_threshold = st.bendiness_threshold;
+         distance_threshold  = st.distance_threshold;
+         out_exponent        = st.out_exponent;
+         off_x               = st.off_x;
+         off_y               = st.off_y;
+         selection_idx       = st.selection_idx;
+         selection_off       = st.selection_off;
+         scale_tbl_off_x     = st.scale_tbl_off_x;
+         scale_tbl_off_y     = st.scale_tbl_off_y;
+
+         // trace "[dbg] BezierEdit::loadState: st.numSegments = "+st.getNumSegments()+" segments";
+         // trace "[dbg] BezierEdit::loadState: loaded "+(segments.numElements / 6)+" segments";
+
+         env <= null; // loadState() must be followed by setEnvelope
+
+         scaleTblOffChanged();
+
+         redraw();
+      }
+
+      // Remember state object
+      current_state <= st;
+   }
+
+   public method saveResetScaleXY() {
+      reset_scale_tbl_off_x = scale_tbl_off_x;
+      reset_scale_tbl_off_y = scale_tbl_off_y;
+   }
+
+   public method resetZoom() {
+      off_x = 0;
+      off_y = 0;
+
+      scale_tbl_off_x = reset_scale_tbl_off_x;
+      scale_tbl_off_y = reset_scale_tbl_off_y;
+
+      scaleTblOffChanged();
+   }
+
+   public method setEnvelope(Envelope _env) {
+      env <= _env;
+
+      recalc(false/*bAction*/);
+      redraw();
+   }
+
+   public method setBackdrop(FloatArray _smp) {
+      if((null != _smp) && !_smp.isEmpty())
+         backdrop_smp <= deref _smp;
+      else
+         backdrop_smp <= null;
+      redraw();
+   }
+
+   public method setCurrentEnvAsBackdrop() {
+      local FloatArray fab;
+      local Envelope e = env;
+      float a = 0;
+      float w = 1.0f / (env.numElements / 2);
+      int j = 0;
+      loop(env.numElements / 2)
+      {
+         fab.add(e.valueAtTime(a));
+         a += w;
+      }
+      setBackdrop(deref fab);
+   }
+
+   public virtual calcMinimumSizeY() {
+      minimum_size_y = min_size_y * UI.font_scaling;
+   }
+
+   public method setEnableAllowWASDKeys(boolean _bEnable) {
+      b_allow_wasd_keys = _bEnable;
+   }
+
+   public method setEnableProvideClick(boolean _bEnable) {
+      b_provide_click = _bEnable;
+   }
+
+   public method setEnableProvideTab(boolean _bEnable) {
+      b_provide_tab = _bEnable;
+   }
+
+   public method recalc(boolean _bAction) {
+
+      if(null == env)
+         return;
+
+      points.empty();
+      points_t.empty();
+      point_segment_map.empty();
+      segment_numpoints_map.empty();
+
+      if(segments.numElements < 12)
+      {
+         // Early out: no bezier segments
+         return;
+      }
+
+      if(null != mtx_named_recalc)
+      {
+         TKS.lockNamedMutex(mtx_named_recalc);
+      }
+      else if(null != mtx_recalc)
+      {
+         mtx_recalc.lock();
+      }
+
+      int k = 0;
+      int numSeg = (segments.numElements / 6) - 1;
+      int segi = 0;
+      loop(numSeg)
+      {
+         int numNewPoints = points.numElements;
+         points.bezierCubicDeCasteljau2d(segments[k+0], segments[k+1],   // p1
+                                         segments[k+2], segments[k+3],   // c1
+                                         segments[k+4], segments[k+5],   // c2
+                                         segments[k+6], segments[k+7],   // p2
+                                         1.0, 1.0, // scale x/y
+                                         recursion_limit,
+                                         bendiness_threshold,
+                                         distance_threshold,
+                                         points_t
+                                         );
+
+         numNewPoints = (points.numElements - numNewPoints) / 2;
+         loop(numNewPoints)
+            point_segment_map.add(segi);
+         segment_numpoints_map.add(numNewPoints);
+
+         k += 6;
+         segi++;
+      }
+
+      // Calc deltatime envelope
+      env.empty();
+      k = 0;
+      float l = 0;
+      boolean bFirst = true;
+      boolean bLast = false;
+      int numPoints = (points.numElements/2);
+      loop(numPoints)
+      {
+         if(!bLast)
+         {
+            float tx = points[k];
+            float ty = points[k+1];
+            float dt = tx - l;
+            float px, py, pyi;
+            boolean bAdd;
+            if(dt <= 0)
+            {
+               dt = 0;
+               bAdd = !bFirst;
+            }
+            else
+            {
+               if(bFirst)
+               {
+                  bFirst = false;
+                  if(k > 0)
+                  {
+                     if(dt == 0)
+                     {
+                        bAdd = true;
+                     }
+                     else
+                     {
+                        // Calc intersection of first t>0 point with y axis at t=0
+                        //   y(t) = py + (ty - py) * t
+                        //   t = dt / (tx - px);
+                        env.add(0);
+                        px = points[k-2];
+                        py = points[k-1];
+                        dt = -px;
+                        // // trace "xxx intersect first: k="+k+" p=("+px+";"+py+")  t=("+tx+"; "+ty+")";
+                        pyi = py + (ty-py)* dt/(tx-px);
+                        // // trace "xxx                  dt="+dt+" (tx-px)="+(tx-px)+" pyi="+pyi;
+                        env.add(pyi);
+                        dt = tx;
+                        bAdd = true;
+                     }
+                  }
+                  else
+                  {
+                     // Sample&hold value
+                     env.add(0);
+                     env.add(ty);
+                     bAdd = true;
+                  }
+               }
+               else
+               {
+                  bAdd = true;
+               }
+            }
+            if(bAdd)
+            {
+               float nl = l + dt;
+               if(k>0) && (nl > 1.0)
+               {
+                  // Calc intersection of last t<1 point with y axis at t=1
+                  //   y(t) = py + (ty - py) * t
+                  //   t = dt / (nl - l)
+                  //   dt = 1.0 - l;
+                  py = points[k-1];
+                  dt = 1.0 - l;
+                  pyi = py + (ty-py) * dt/(nl-l);
+                  env.add(dt);
+                  env.add(pyi);
+                  bLast = true;
+               }
+               else
+               {
+                  env.add(dt);
+                  env.add(ty);
+               }
+               l = nl;
+            }
+            k += 2;
+         } // not last
+      } // loop
+      if(env.numElements == 0)
+      {
+         env.add(0);
+         env.add(0);
+      }
+
+      if(null != mtx_named_recalc)
+      {
+         TKS.unlockNamedMutex(mtx_named_recalc);
+      }
+      else if(null != mtx_recalc)
+         mtx_recalc.unlock();
+
+      // trace "xxx env="+env;
+
+      // File f;
+      // f.openLocal("debug_env.dat", IOS_OUT);
+      // f << env;
+      // f.close();
+
+
+      recalcPointsMinMax();
+
+      if(mouseover_point_idx >= points.numElements)
+      {
+         mouseover_point_idx = points.numElements -1;
+      }
+      if(mouseover_segment_idx >= (segments.numElements/6))
+      {
+         mouseover_segment_idx = (segments.numElements/6)-1;
+      }
+      // // mouseover_segment_off = 0;
+
+      if(_bAction)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_RECALC), this));
+   }
+
+
+   protected method recalcPointsMinMax() {
+      float x = 0.5;
+      float minY=999999, maxY=-99999;
+      int k=1;
+      int minPointIdx = -1;
+      int maxPointIdx = -1;
+      loop(points.numElements/2)
+      {
+         float v = points[k];
+         if(v < minY)
+         {
+            minPointIdx = (k-1) / 2;
+            minY = v;
+         }
+         if(v > maxY)
+         {
+            maxPointIdx = (k-1) / 2;
+            maxY = v;
+         }
+         k += 2;
+      }
+      if(minY > 9999)
+         minY = 0.0;
+
+      points_unclip_min_y = minY;
+
+      if(minY > 0)
+         minY = 0.0;
+      if(maxY < -9999)
+         maxY =  1.0;
+
+      points_unclip_max_y = maxY;
+
+      minY -= 0.18 / (1.0 + scale_y); // center correction hack
+
+      points_min_y = minY;
+      points_max_y = maxY;
+      points_min_idx = minPointIdx;
+      points_max_idx = maxPointIdx;
+
+      // // trace "xxx points: minY="+minY+" maxY="+maxY+" minIdx="+minPointIdx+" maxIdx="+maxPointIdx;
+   }
+
+   public method setEnableLockFirstLastX(boolean _bEnable) {
+      b_lock_first_last_x = _bEnable;
+   }
+
+   protected method pushUndoStack() {
+      BezierHistory h <= makeHistory();
+      undo_stacki = (undo_stacki - 1);
+      if(undo_stacki < 0) undo_stacki = undo_history.numElements-1;
+      undo_history[undo_stacki] = deref h;
+      undo_num++;
+      if(undo_num > undo_history.numElements)
+         undo_num = undo_history.numElements;
+   }
+
+   protected method popUndoStack() {
+      if(undo_num)
+      {
+         BezierHistory h <= undo_history[undo_stacki];
+         recallHistory(h);
+         undo_stacki = (undo_stacki + 1) % undo_history.numElements;
+         undo_num--;
+      }
+   }
+
+   protected method makeHistory() : BezierHistory {
+      local BezierHistory h;
+      h.segments = segments;
+      h.selection_idx = selection_idx;
+      h.selection_off = selection_off;
+      return deref h;
+   }
+
+   protected method recallHistory(BezierHistory h) : BezierHistory {
+      segments = h.segments;
+      selection_idx = h.selection_idx;
+      selection_off = h.selection_off;
+   }
+
+   protected method undo() {
+      // // trace "xxx undo";
+      redo_history <= makeHistory();
+      popUndoStack();
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method redo() {
+      if(null != redo_history)
+      {
+         // // trace "xxx redo";
+
+         recallHistory(redo_history);
+         redo_history <= null;
+
+         recalc(true/*bAction*/);
+         redraw();
+      }
+   }
+
+   public method addCtlPoint(float ax, ay,
+                             float bx, by,
+                             float cx, cy
+                             )
+   {
+      segments.add(ax);
+      segments.add(ay);
+      segments.add(bx);
+      segments.add(by);
+      segments.add(cx);
+      segments.add(cy);
+   }
+
+   public method selectNone() {
+      selection_off = 0;
+      //selection_idx = -1;
+      selection_idx = 0;
+      mouseover_point_idx = -1;
+      mouseover_segment_off = 0;
+      mouseover_segment_idx = -1;
+      multisel_indices.empty();
+   }
+
+   public method haveSelection() : boolean {
+      return (multisel_indices.numElements > 0);
+   }
+
+   public method clearCtlPoints() {
+      // must call addCtlPoint() and recalc() afterwards
+      points.free();
+      segments.free();
+   }
+
+   protected method clear() {
+      // must call recalc afterwards
+      points.free();
+      segments.free();
+
+      addCtlPoint(0.0,1.0, 0.333, 1.0-0.333, 0.666,1.0-0.666);
+      addCtlPoint(1.0,0.0, 0.0,0.0, 0.0,0.0);
+   }
+
+   public virtual wantTriadKeyMode() : boolean {
+      // Note: lctrl key is already used by this widget
+      return false;
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      if(!_bQuiet)
+      {
+         redraw();
+      }
+   }
+
+   protected method renderSmallCircle(float x, y,
+                                      float r,g,b,a,
+                                      int bg32,
+                                      float radius,
+                                      float outlineWidth
+                                      ) {
+      UIRenderer.SetPointSize(radius + outlineWidth);
+      UIRenderer.SetColor4f(r, g, b, a);
+      UIRenderer.BeginPointsRoundAA(1);
+      vertex2f(x, y);
+      UIRenderer.End();
+
+      UIRenderer.SetPointSize(radius);
+      UIRenderer.SetColorARGB(bg32);
+      UIRenderer.BeginPointsRoundAA(1);
+      vertex2f(x, y);
+      UIRenderer.End();
+   }
+
+   protected method drawBackdrop() {
+      if(null != backdrop_smp)
+      {
+         int bg32 = lnf_colors.get(LookAndFeel.COLOR_CUSTOM_EDITOR_BG_DARK); // COLOR_BORDER_DARK
+         int c32 = sdvg_TintARGB(bg32, #ff00ffff);
+         if(bg32_tint)
+            c32 = sdvg_TintARGB(c32, bg32_tint);
+
+         float stepX = 1.0 / backdrop_smp.numElements;
+         float cx = 0;
+         UIRenderer.SetColorARGB(c32);
+         UIRenderer.BeginLineStrip(backdrop_smp.numElements + 1);
+         int i = 0;
+         vertex2f(0.0f, 0.0f);
+         loop(backdrop_smp.numElements)
+         {
+            float cy = backdrop_smp.get(i++);
+            vertex2f(cx, cy);
+            cx += stepX;
+         }
+         glEnd();
+      }
+   }
+
+   protected method drawLineAA(float _x1, float _y1,
+                               float _x2, float _y2,
+                               int _c32
+                               ) {
+      v2d.init(_x1, _y1); v2d.transform(mat_to_2d);
+      v2d2.init(_x2, _y2); v2d2.transform(mat_to_2d);
+      UIRenderer.DrawLineAA(v2d.x, v2d.y,
+                            v2d2.x, v2d2.y,
+                            _c32
+                            );
+   }
+
+   protected method vertex2f(float _x, float _y) {
+      v2d.init(_x, _y); v2d.transform(mat_to_2d);
+      UIRenderer.Vertex2f(v2d.x, v2d.y);
+   }
+
+   protected method drawQuadFill(float _x1, float _y1,
+                                 float _x2, float _y2,
+                                 float _x3, float _y3,
+                                 float _x4, float _y4,
+                                 int _c32
+                                 ) {
+      v2d .init(_x1, _y1); v2d .transform(mat_to_2d);
+      v2d2.init(_x2, _y2); v2d2.transform(mat_to_2d);
+      v2d3.init(_x3, _y3); v2d3.transform(mat_to_2d);
+      v2d4.init(_x4, _y4); v2d4.transform(mat_to_2d);
+      UIRenderer.DrawQuadFill(v2d.x,  v2d.y,
+                              v2d2.x, v2d2.y,
+                              v2d3.x, v2d3.y,
+                              v2d4.x, v2d4.y,
+                              _c32
+                              );
+   }
+
+   protected method drawQuadStroke(float _x1, float _y1,
+                                   float _x2, float _y2,
+                                   float _x3, float _y3,
+                                   float _x4, float _y4,
+                                   int _c32
+                                   ) {
+      v2d .init(_x1, _y1); v2d .transform(mat_to_2d);
+      v2d2.init(_x2, _y2); v2d2.transform(mat_to_2d);
+      v2d3.init(_x3, _y3); v2d3.transform(mat_to_2d);
+      v2d4.init(_x4, _y4); v2d4.transform(mat_to_2d);
+      UIRenderer.DrawQuadStroke(v2d.x,  v2d.y,
+                                v2d2.x, v2d2.y,
+                                v2d3.x, v2d3.y,
+                                v2d4.x, v2d4.y,
+                                _c32
+                                );
+   }
+
+   public virtual onDraw() {
+      int numPoints;
+
+      // hack: should be called after layout:
+      scaleTblOffChanged();
+
+      int bg32 = lnf.getTintedColor(LookAndFeel.COLOR_CUSTOM_EDITOR_BG_DARK, bg32_tint); // COLOR_BORDER_DARK
+
+      UIRenderer.DrawFilledRectangle(0, 0, size_x, size_y, bg32);
+
+      boolean bFocus = hasKeyboardFocus();
+
+      if(bFocus && b_draw_tabfocus_border)
+         UIRenderer.DrawTabFocusTextBorder(2, 2, getSizeX()-4, getSizeY()-4);
+
+      if(null == env)
+      {
+         // Early out: no env reference
+         return;
+      }
+
+      //trace "xxx BezierEdit::onDraw: #points is "+points.numElements/2;
+      if(points.numElements < 2)
+      {
+         // Early out: points not calculated, yet
+         return;
+      }
+
+      if(segments.numElements < 12)
+      {
+         // Early out: no bezier segments
+         return;
+      }
+
+      if( (selection_idx*6+5) >= segments.numElements )
+      {
+         trace "[!!!] BezierEdit::onDraw: invalid selection_idx="+selection_idx+" segments.numElements="+segments.numElements;
+         selection_idx = 0;
+      }
+
+      if(UIRenderer.b_gl_attrib_stack)
+         glPushAttrib(GL_ALL_ATTRIB_BITS);  // b_gl_attrib_stack
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.PushViewport(abspos.x, abspos.y, size_x, size_y);
+
+      UIRenderer.PushProjMatrix();
+      UIRenderer.ProjInit2D(size_x, size_y);
+
+      mat_to_2d.initOrtho(-1.0f, 1.0f,
+                          1.0f, -1.0f
+                          );
+
+      mat_to_2d.scalef(1.0f, -1.0f);
+      mat_to_2d.translatef(size_x*0.5f, size_y*0.5f);
+      mat_to_2d.scalef(size_x*0.5f, -size_y*0.5f);
+
+      mat_to_2d.translatef(-1.0f - (scale_x*0.5f), 0.0f);
+      mat_to_2d.scalef(2.0f + scale_x, (1.0f + scale_y));
+      mat_to_2d.translatef(off_x, off_y);
+      // trace "xxx mat_to_2d="+mat_to_2d;
+
+      UIRenderer.PushModelMatrix();
+      UIRenderer.ModelInitIdentity();
+
+      sdvg_AlphaWrite(false);
+
+      UIRenderer.EnableBlending();
+
+      UIRenderer.SetLineWidth(1.0f);
+
+      if(1)
+      {
+         drawBackdrop();
+
+         if(b_draw_grid)
+         {
+            if(grid_subdiv > 1.0f)
+            {
+               float gridStepX = 1.0f / grid_subdiv;
+               float gridStepY = 2.0f / grid_subdiv;
+               float gridCx = 0.0f;
+               float gridCy = -1.0f;
+               int gridC32 = sdvg_TintARGB(bg32, #10ffffff);
+               while(gridCx <= 1.0f)
+               {
+                  drawLineAA(gridCx,  1.0f,
+                             gridCx, -1.0f,
+                             gridC32
+                             );
+
+                  drawLineAA(0.0f, gridCy,
+                             1.0f, gridCy,
+                             gridC32
+                             );
+
+                  gridCx += gridStepX;
+                  gridCy += gridStepY;
+               }
+            }
+         }
+
+         // Draw center (horizontal)
+         drawLineAA(0.0f, 0.0f,
+                    1.0f, 0.0f,
+                    #FF666666
+                    );
+
+         // Draw center (vertical)
+         if(b_draw_grid)
+         {
+            drawLineAA(0.5f, -1.0f,
+                       0.5f,  1.0f,
+                       sdvg_TintARGB(bg32, #48888888)
+                       );
+         }
+
+         // Draw top (1.0)
+         drawLineAA(0.0f, 1.0f,
+                    1.0f, 1.0f,
+                    #FF669966
+                    );
+
+         // Draw bottom (-1.0)
+         drawLineAA(0.0f, -1.0f,
+                    1.0f, -1.0f,
+                    #FF996666
+                    );
+
+
+         // Render lines
+
+         int k;
+         float lx, ly;
+         float nx, ny;
+         int c32;
+
+         if(b_draw_env)
+         {
+            if(env.numElements >= 2)
+            {
+               // Fill
+               if(b_draw_fill)
+               {
+                  UIRenderer.SetColorARGB(sdvg_TintARGB(#1ACCA66B, fg32_tint));
+                  k = 2;
+                  nx = 0;
+                  ny = 0;
+                  UIRenderer.BeginLines( ((env.numElements/2)-1) * 2 );
+                  loop((env.numElements/2)-1)
+                  {
+                     nx += env[k];
+                     ny = env[k+1];
+                     vertex2f(nx, 0); // vertical
+                     vertex2f(nx, ny);
+                     k += 2;
+                  }
+                  UIRenderer.End();
+               }
+
+               // Outline
+               UIRenderer.SetColorARGB(sdvg_TintARGB(#FFCCCC33, fg32_tint));
+               k = 2;
+               nx = 0;
+               ny = 0;
+               UIRenderer.BeginLineStripAA( ((env.numElements/2)-1) + 1 );
+               vertex2f(env[0], env[1]);
+               loop((env.numElements/2)-1)
+               {
+                  nx += env[k];
+                  ny = env[k+1];
+                  vertex2f(nx, ny);
+                  k += 2;
+               }
+               UIRenderer.End();
+            }
+         }
+         else
+         {
+            k = 2;
+            int cpi = 0;
+            UIRenderer.SetColorARGB(sdvg_TintARGB(#FFCCCC33, fg32_tint));
+            UIRenderer.BeginLineStripAA( ((points.numElements - 2) >> 1) + 1 );
+            vertex2f(points[0], points[1]);
+            loop( (points.numElements - 2) >> 1 )
+            {
+               nx = points[k];
+               ny = points[k+1];
+               vertex2f(nx, ny);
+               k += 2;
+               cpi++;
+            }
+            UIRenderer.End();
+         }
+
+
+         // Show selected point/handles, but only if we have the keyboard focus
+         if(bFocus)
+         {
+            // Render orig point during mouse drag
+            if(b_drag)
+            {
+               UIRenderer.SetPointSize(6.0f);
+               UIRenderer.SetColorARGB(sdvg_TintARGB(#B33399FF, fg32_tint));
+               UIRenderer.BeginPointsRoundAA(1);
+               switch(selection_off)
+               {
+                  case -2:
+                     vertex2f(orig_c1x, orig_c1y);
+                     break;
+                  default:
+                  case 0:
+                     vertex2f(orig_x, orig_y);
+                     break;
+                  case 2:
+                     vertex2f(orig_c2x, orig_c2y);
+                     break;
+               }
+               UIRenderer.End();
+            }
+
+
+            // Render main points
+            UIRenderer.SetPointSize(4.0f);
+            UIRenderer.SetColorARGB(sdvg_TintARGB(#99E6E6E6, fg32_tint));
+            int maxPoints = segments.numElements/6;
+            UIRenderer.BeginPointsRoundAA(maxPoints);
+            k = 0;
+            cpi = 0;
+            loop(segments.numElements/6)
+            {
+               if((cpi == selection_idx) || multisel_indices.contains(cpi))
+               {
+                  UIRenderer.End();
+                  UIRenderer.SetPointSize(6.0);
+                  if(0 == selection_off)
+                  {
+                     UIRenderer.BeginPointsSquare(1);
+                  }
+                  else
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#991AFF1A, fg32_tint));
+                     UIRenderer.BeginPointsRoundAA(1);
+                  }
+                  vertex2f(segments[k], segments[k+1]);
+                  UIRenderer.End();
+
+                  UIRenderer.SetColorARGB(sdvg_TintARGB(#99E6E6E6, fg32_tint));
+                  UIRenderer.SetPointSize(4.0f);
+                  if(0 == selection_off)
+                     UIRenderer.BeginPointsRoundAA(maxPoints);
+                  else
+                     UIRenderer.BeginPointsRoundAA(maxPoints);
+               }
+               if((cpi == mouseover_segment_idx) && !b_last_keyboard_sel)
+               {
+                  UIRenderer.End();
+                  if(0 == selection_off)
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#99FFFF1A, fg32_tint));
+                  }
+                  UIRenderer.SetPointSize(6.0f);
+                  UIRenderer.BeginPointsRoundAA(1);
+                  vertex2f(segments[k], segments[k+1]);
+                  UIRenderer.End();
+                  UIRenderer.SetColor4f(0.9,0.9,0.9, 0.6);
+                  UIRenderer.SetPointSize(4.0f);
+                  UIRenderer.BeginPointsRoundAA(maxPoints);
+               }
+               else
+               {
+                  vertex2f(segments[k], segments[k+1]);
+               }
+               k += 6;
+               cpi++;
+            }
+            UIRenderer.End();
+
+
+            // Render mouseover curve point
+            if(!b_drag)
+            {
+               if(-1 != mouseover_point_idx)
+               {
+                  k = mouseover_point_idx * 2;
+                  UIRenderer.SetColorARGB(sdvg_TintARGB(#ffff9000, fg32_tint));
+                  UIRenderer.SetPointSize(5.0f);
+                  UIRenderer.BeginPointsRoundAA(1);
+                  vertex2f(points[k], points[k+1]);
+                  UIRenderer.End();
+               }
+
+               // debug: render ideal bezier point
+               if(0)
+               {
+                  UIRenderer.SetColor4f(1.0, 0.1, 0.1, 0.4);
+                  UIRenderer.SetPointSize(5.0);
+                  if(UIRenderer.BeginPointsRoundAA(1))
+                  {
+                     vertex2f(dbg_ideal_cx, dbg_ideal_cy);
+                     UIRenderer.End();
+                  }
+               }
+            }
+
+            // // trace "xxx onDraw: selection_idx="+selection_idx+" selection_off="+selection_off;
+            // // trace "xxx onDraw: mouseover_segment_idx="+mouseover_segment_idx+" mouseover_segment_off="+mouseover_segment_off;
+            // // trace "xxx onDraw: mouseover_point_idx="+mouseover_point_idx;
+            // // trace "xxx onDraw: minY="+points_unclip_min_y+" maxY="+points_unclip_max_y;
+
+            if(-1 != selection_idx)
+            {
+               k = 2 + selection_idx*6;
+               boolean bSym = false;
+               if( (k > 6) && (k<segments.numElements-6))
+               {
+                  float tx = segments[k  ] - segments[k-2];
+                  float ty = segments[k+1] - segments[k-1];
+                  bSym =
+                     (segments[k-4] == segments[k-2] - tx) &&
+                     (segments[k-3] == segments[k-1] - ty) ;
+               }
+
+               // Render selected control point #1 (next of previous point)
+               if(selection_idx < ((segments.numElements/6)-1))
+               {
+                  k = 2 + selection_idx*6;
+
+                  // Draw connection with previous point
+                  if(bSym)
+                  {
+                     c32 = sdvg_TintARGB(#80CCFFCC, fg32_tint);
+                  }
+                  else
+                  {
+                     c32 = sdvg_TintARGB(#9980FF80, fg32_tint);
+                  }
+                  drawLineAA(segments[k-2], segments[k-1],
+                             segments[k], segments[k+1],
+                             c32
+                             );
+
+                  // Render mouseover/selection circle
+                  float radius = 9.0;
+                  float outlineW;
+                  float alpha;
+                  if((mouseover_segment_idx*6+mouseover_segment_off == k) && !b_last_keyboard_sel)
+                  {
+                     outlineW = 3.0;
+                  }
+                  else
+                  {
+                     outlineW = 2.0;
+                  }
+                  if(selection_off == 2)
+                  {
+                     alpha = 0.75;
+                  }
+                  else
+                  {
+                     alpha = 0.5;
+                  }
+                  renderSmallCircle(segments[k], segments[k+1],
+                                    1.0, 1.0, 1.0, alpha,
+                                    bg32,
+                                    radius, outlineW
+                                    );
+
+                  if(selection_off == 2)
+                  {
+                     UIRenderer.SetPointSize(7.0f);
+                  }
+                  else
+                  {
+                     UIRenderer.SetPointSize(4.0f);
+                  }
+                  if(bSym)
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#ffE6E6E6, fg32_tint));
+                  }
+                  else
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#ff99E699, fg32_tint));
+                  }
+                  UIRenderer.BeginPointsRoundAA(1);
+                  vertex2f(segments[k], segments[k+1]);
+                  UIRenderer.End();
+               }
+
+               // Render control point #2 (previous of next point)
+               if(selection_idx >= 1)
+               {
+                  k = 4 + (selection_idx-1)*6;
+                  // Draw connection with next point
+                  if(bSym)
+                  {
+                     c32 = sdvg_TintARGB(#80FFCCCC, fg32_tint);
+                  }
+                  else
+                  {
+                     c32 = sdvg_TintARGB(#ff8080CC, fg32_tint);
+                  }
+                  drawLineAA(segments[k+2], segments[k+3],
+                             segments[k], segments[k+1],
+                             c32
+                             );
+
+                  radius = 9.0;
+                  if((mouseover_segment_idx*6+mouseover_segment_off == k) && !b_last_keyboard_sel)
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#66FFFF33, fg32_tint));
+                     outlineW = 3.0;
+                  }
+                  else
+                  {
+                     outlineW = 2.0;
+                  }
+                  if(selection_off == -2)
+                  {
+                     alpha = 0.75;
+                  }
+                  else
+                  {
+                     alpha = 0.5;
+                  }
+                  renderSmallCircle(segments[k], segments[k+1],
+                                    1.0, 1.0, 1.0, alpha,
+                                    bg32,
+                                    radius, outlineW);
+
+
+                  if(selection_off == -2)
+                  {
+                     UIRenderer.SetPointSize(7.0f);
+                  }
+                  else
+                  {
+                     UIRenderer.SetPointSize(4.0f);
+                  }
+
+                  if(bSym)
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#ffE6E6E6, fg32_tint));
+                  }
+                  else
+                  {
+                     UIRenderer.SetColorARGB(sdvg_TintARGB(#ffE69999, fg32_tint));
+                  }
+                  UIRenderer.BeginPointsRoundAA(1);
+                  vertex2f(segments[k], segments[k+1]);
+                  UIRenderer.End();
+               }
+            }
+
+         } // if bFocus
+
+
+         if(b_drag_multisel_rect)
+         {
+            drawQuadFill(multisel_sorted_px, multisel_sorted_py,
+                         multisel_sorted_qx, multisel_sorted_py,
+                         multisel_sorted_qx, multisel_sorted_qy,
+                         multisel_sorted_px, multisel_sorted_qy,
+                         #18ffffff
+                         );
+
+            drawQuadStroke(multisel_sorted_px, multisel_sorted_py,
+                           multisel_sorted_qx, multisel_sorted_py,
+                           multisel_sorted_qx, multisel_sorted_qy,
+                           multisel_sorted_px, multisel_sorted_qy,
+                           #30ffffff
+                           );
+         }
+
+      } // 1
+
+      if(0) // debug
+      {
+         UIRenderer.ProjInitOrtho(1,-1);
+         UIRenderer.ModelInitIdentity();
+         // glDisable(GL_CULL_FACE);
+         UIRenderer.SetPointSize(20.0f);
+         UIRenderer.SetColorARGB(#ffff5050);
+         UIRenderer.BeginPointsRoundAA(1);
+         vertex2f(0.0f, 0.0f);
+         UIRenderer.End();
+      }
+
+      // Restore previous GL state
+
+      sdvg_AlphaWrite(true);
+      UIRenderer.PopModelMatrix();
+      UIRenderer.PopProjMatrix();
+      UIRenderer.PopViewport();
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      if(UIRenderer.b_gl_attrib_stack)
+         glPopAttrib();  // b_gl_attrib_stack
+
+      UIRenderer.DisableBlending();
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, size_x, size_y);
+   }
+
+   public virtual onDrawOverlays() {
+      if(env instanceof Envelope)
+      {
+         Envelope e <= env;
+         Point2f abspos;
+         calcAbsolutePosition(abspos);
+
+         sdvg_PushScissor(abspos.x+0.5f, abspos.y+0.5f, size_x+0.5f, size_y+0.5f);
+         sdvg_EnableScissor();
+
+         if(UIRenderer.b_gl_attrib_stack)
+            glPushAttrib(GL_ALL_ATTRIB_BITS);  // b_gl_attrib_stack
+
+         UIRenderer.PushViewport(abspos.x, abspos.y, size_x, size_y);
+
+         UIRenderer.PushProjMatrix();
+         UIRenderer.ProjInit2D(size_x, size_y);
+
+         mat_to_2d.initOrtho(-1.0f, 1.0f,
+                             1.0f, -1.0f
+                             );
+
+         mat_to_2d.scalef(1.0f, -1.0f);
+         mat_to_2d.translatef(size_x*0.5f, size_y*0.5f);
+         mat_to_2d.scalef(size_x*0.5f, -size_y*0.5f);
+
+         mat_to_2d.translatef(-1.0f - (scale_x*0.5f), 0.0f);
+         mat_to_2d.scalef(2.0f + scale_x, (1.0f + scale_y));
+         mat_to_2d.translatef(off_x, off_y);
+
+         UIRenderer.PushModelMatrix();
+         UIRenderer.ModelInitIdentity();
+
+         float t = e.time;
+         if(0.001f < t < 0.999f)
+         {
+            UIRenderer.EnableBlending();
+            UIRenderer.SetLineWidth(1.5f);
+            drawLineAA(t, -100.0f,
+                       t,  100.0f,
+                       #1fffffff
+                       );
+            UIRenderer.DisableBlending();
+         }
+
+         UIRenderer.PopProjMatrix();
+         UIRenderer.PopModelMatrix();
+         UIRenderer.PopViewport();
+
+         if(UIRenderer.b_gl_attrib_stack)
+            glPopAttrib();  // b_gl_attrib_stack
+
+         sdvg_PopScissor();
+         sdvg_DisableScissor();
+      }
+   }
+
+   protected method transformMouseNoOff(Float mx, Float my) {
+      transformMouse(mx, my);
+      mx += off_x;
+      my += off_y;
+   }
+
+   protected method transformMouse(Float mx, Float my) {
+      mx = mx / size_x;
+      my = my / size_y;
+
+      mx =  (mx -0.5);
+      my = -(my -0.5);
+
+      mx = mx / (1.0 + scale_x*0.5);
+      my = my / (1.0 + scale_y/**0.5*/);
+
+      // // /trace "mx="+mx+" off_x="+off_x;
+      // //       mx -= 1.0f - scale_x;
+
+      mx = mx + 0.5;
+      my = my * 2;
+
+      mx -= off_x;
+      my -= off_y;
+   }
+
+   protected method transformMouseX(float _mx) : float {
+      _mx = _mx / size_x;
+      _mx -= 0.5;
+      _mx = _mx / (1.0 + scale_x*0.5);
+      _mx = _mx + 0.5;
+      _mx -= off_x;
+      return _mx; // == x
+   }
+
+   protected method untransformX(float _x) : float {
+      _x += off_x;
+      _x -= 0.5;
+      _x = _x * (1.0 + scale_x*0.5);
+      _x += 0.5;
+      _x *= size_x;
+      return _x; // == mx
+   }
+
+   // // protected method transformCoord(Float mx, Float my) {
+   // //    // (todo) remove (unused)
+   // //    mx = mx - 0.5;
+   // //    my = my / 2;
+
+   // //    mx = mx * (1.0 + scale_x*0.5);
+   // //    my = my * (1.0 + scale_y*0.5);
+
+   // //    mx =  (mx +0.5);
+   // //    my =  (my +0.5);
+
+   // //    mx = mx * size_x;
+   // //    my = size_y - my * size_y;
+   // // }
+
+   protected method getSnappedX(float _x) : float {
+      if(b_snap_to_grid)
+      {
+         float gridX = (1.0f / grid_subdiv);
+         _x = int((_x / gridX)+0.5f) * gridX;
+      }
+      return _x;
+   }
+
+   protected method getSnappedY(float _y) : float {
+      if(b_snap_to_grid)
+      {
+         float gridY = (2.0f / grid_subdiv);
+         if(_y >= 0.0f)
+            _y = int((_y / gridY)+0.5f) * gridY;
+         else
+            _y = int((_y / gridY)-0.5f) * gridY;
+      }
+      return _y;
+   }
+
+   protected method calcMouseOverPointIdx(MouseEvent _ev) {
+      mouseover_point_idx = -1;
+
+      if(points.numElements)
+      {
+         Float mx = _ev.mouse_rel_x;
+         Float my = _ev.mouse_rel_y;
+
+         // trace "xxx calcMouseOverPointIdx: scale=("+(1.0+scale_x*0.5)+"; "+(1.0 +scale_y*0.5)+")";
+         transformMouse(mx, my);
+
+         mx = getSnappedX(mx);
+         my = getSnappedX(my);
+
+// //          Float xx, yy;
+// //          xx = mx;
+// //          yy = my;
+// //          transformCoord(xx, yy);
+// //          trace "xxx backproject: mscreen=("+xx+";"+yy+")";
+
+         int oldIdx = mouseover_point_idx;
+
+         mouseover_point_idx = points.findNearestIdx2d(mx, my, 0, 2, 0.2/mathMaxf(scale_x, 1.0f), size_x/size_y);
+         // //mouseover_point_idx = points.findNearestIdx1d(mx, 0, 2, 99999.0);
+         //trace "xxx m="+mx+";"+my+"  point_idx="+mouseover_point_idx;
+         last_seen_mx = mx;
+         last_seen_my = my;
+
+         if(-1 != mouseover_point_idx)
+         {
+            mouseover_point_idx = (mouseover_point_idx/2);
+         }
+
+         // Debug: show pathlen offset
+         if(-1 != mouseover_point_idx)
+         {
+            int segi = point_segment_map[mouseover_point_idx];
+// //             int pointOff = 0;
+// //             int i = 0;
+// //             loop(segi)
+// //                {
+// //                   trace "xxx i="+i+" segi="+segi;
+// //                   pointOff += segment_numpoints_map[i++];
+// //                }
+            // // float pathLen = points.sumPathLen2d(pointOff, mouseover_point_idx+1-pointOff);
+            // // float totalPathLen = points.sumPathLen2d(pointOff, segment_numpoints_map[segi]);
+            // // float t = pathLen / totalPathLen;
+            // // trace "xxx mouseover_point_idx="+mouseover_point_idx+" pathLen="+pathLen+" / "+totalPathLen+" => t="+t;
+
+            // // float t = points.sumPathLen1d(pointOff, mouseover_point_idx+1-pointOff);
+
+            float t = points_t[mouseover_point_idx];
+            // // trace "xxx mouseover_point_idx="+mouseover_point_idx+" pointOff="+pointOff+" t="+t;
+
+            int ok = segi*6;
+            int nk = ok + 6;
+            // Debug: show ideal point on bezier curve according to t
+            float p0x = segments[ok+0];
+            float p0y = segments[ok+1];
+            float p1x = segments[ok+2];
+            float p1y = segments[ok+3];
+            float p2x = segments[ok+4];
+            float p2y = segments[ok+5];
+            float p3x = segments[nk+0];
+            float p3y = segments[nk+1];
+
+            float q0x = mathLerpf(p0x, p1x, t);
+            float q0y = mathLerpf(p0y, p1y, t);
+            float q1x = mathLerpf(p1x, p2x, t);
+            float q1y = mathLerpf(p1y, p2y, t);
+            float q2x = mathLerpf(p2x, p3x, t);
+            float q2y = mathLerpf(p2y, p3y, t);
+
+            float r0x = mathLerpf(q0x, q1x, t);
+            float r0y = mathLerpf(q0y, q1y, t);
+            float r1x = mathLerpf(q1x, q2x, t);
+            float r1y = mathLerpf(q1y, q2y, t);
+
+            dbg_ideal_cx = mathLerpf(r0x, r1x, t);
+            dbg_ideal_cy = mathLerpf(r0y, r1y, t);
+            // // trace "xxx calc: dbg_ideal_c="+dbg_ideal_cx+";"+dbg_ideal_cy;
+         }
+
+         if(mouseover_point_idx != oldIdx)
+         {
+            redraw();
+         }
+      }
+   }
+
+   protected method calcMouseOverSegmentIdx(MouseEvent _ev) {
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+      calcMouseOverSegmentIdxNorm(mx, my);
+   }
+
+   protected method calcMouseOverSegmentIdxNorm(float mx, my) {
+      int oldSI  = mouseover_segment_idx;
+      int oldOff = mouseover_segment_off;
+      mouseover_segment_idx = -1;
+
+      if(segments.numElements)
+      {
+         // // trace "xxx seg m="+mx+";"+my;
+         int oldIdx = mouseover_segment_idx*6 + mouseover_segment_off;
+         int newIdx = segments.findNearestIdx2d(mx, my, 0, 2, 0.2/mathMaxf(scale_x, 1.0f), size_x/size_y);
+         //mouseover_point_idx = points.findNearestIdx1d(mx, 0, 2, 99999.0);
+
+         // // trace "xxx newIdx="+newIdx;
+
+         if(-1 != newIdx)
+         {
+            mouseover_segment_idx = newIdx/6;
+            mouseover_segment_off = newIdx % 6;
+            if(mouseover_segment_off == 4) // previous control point
+            {
+               mouseover_segment_idx += 1;
+               mouseover_segment_off = -2;
+            }
+
+            if(selection_idx == -1)
+            {
+               if(mouseover_segment_off != 0)
+               {
+                  // Only allow center points, reset
+                  mouseover_segment_idx = oldSI;
+                  mouseover_segment_off = oldOff;
+                  return;
+               }
+            }
+            else
+            {
+               // Only allow center points or control points of selected point
+               if(mouseover_segment_off != 0)
+               {
+                  if(mouseover_segment_idx != selection_idx)
+                  {
+                     mouseover_segment_idx = oldSI;
+                     mouseover_segment_off = oldOff;
+                  }
+               }
+            }
+         }
+
+         int lastSeg = segments.numElements/6;
+         if(mouseover_segment_idx >= lastSeg)
+         {
+            mouseover_segment_idx = lastSeg-1;
+         }
+
+         //trace "mouseover_segment idx="+mouseover_segment_idx+" off="+mouseover_segment_off;
+
+         if(newIdx != oldIdx)
+         {
+            restartToolTipTimer();
+            redraw();
+         }
+      }
+   }
+
+   protected method isMouseNearPoint(MouseEvent _ev, float _maxDist) : boolean {
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+      int pointIdx = points.findNearestIdx2d(mx, my, 0, 2, _maxDist, size_x/size_y/*aspect*/);
+      return (-1 != pointIdx);
+   }
+
+   protected method isMouseNearCtlPoint(MouseEvent _ev, float _maxDist) : boolean {
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+
+      // Near any center point ?
+      int pointIdx = segments.findNearestIdx2d(mx, my, 0, 6, _maxDist, size_x/size_y/*aspect*/);  // p
+
+      if(-1 == pointIdx)
+      {
+         if(-1 != selection_idx)
+         {
+            // Near selected ctl point 1 ?
+            pointIdx = segments.findNearestIdx2d(mx, my, 2, 6, _maxDist, size_x/size_y/*aspect*/);   // c1
+
+            if(-1 != pointIdx)
+            {
+               if(pointIdx != (selection_idx*6 + 2))
+                  pointIdx = -1;
+            }
+
+            if(-1 == pointIdx)
+            {
+               pointIdx = segments.findNearestIdx2d(mx, my, 4, 6, _maxDist, size_x/size_y/*aspect*/);   // c2
+
+               if(-1 != pointIdx)
+               {
+                  if(pointIdx != (selection_idx*6 - 2))
+                     pointIdx = -1;
+               }
+            }
+         }
+      }
+
+      return (-1 != pointIdx);
+   }
+
+   protected method findSegmentIdxBeforeMouseX(MouseEvent _ev) {
+      // (note) this can only be used in envelope mode (i.e. not when editing arbitrary 2D curves)
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+
+      segment_idx_before_mouse_x = -1;
+
+      int numSeg = segments.numElements / 6;
+      int k = 0;
+      loop(numSeg)
+      {
+         // trace "xxx mx="+mx+" segments[k+0]="+segments[k+0];
+         if(segments[k+0] > mx)
+            return;
+         segment_idx_before_mouse_x++;
+         k += 6;
+      }
+   }
+
+   protected method calcK() {
+      int k = selection_idx*6 + selection_off;
+//       if(selection_off == 4)
+//          k -= 6;
+      return k;
+   }
+
+   protected method beginDragZoomPan(MouseEvent _ev) {
+      // // trace "xxx begin drag zoom/pan";
+
+      b_drag = true;
+      b_drag_zoompan = true;
+      b_manual_zoompan = true;
+
+      b_mmb_drag = false;
+
+      orig_x = off_x;
+      orig_y = off_y;
+
+      Float dsx = _ev.mouse_rel_x;
+      Float dsy = _ev.mouse_rel_y;
+      transformMouseNoOff(dsx, dsy);
+      drag_start_x = dsx;
+      drag_start_y = dsy;
+
+   }
+
+   protected method dragZoomPan(MouseEvent _ev) {
+      // // trace "xxx dragZoomPan";
+
+      b_mmb_drag = true;
+
+
+      Float dx = _ev.mouse_rel_x;
+      Float dy = _ev.mouse_rel_y;
+      transformMouseNoOff(dx, dy);
+      dx -= drag_start_x;
+      dy -= drag_start_y;
+
+      // // trace "xxx dx="+dx+" off_x="+off_x;
+
+      off_x = orig_x + dx*1.44;
+
+      if(true)//if(b_lctrl)
+      {
+         off_y = orig_y + dy;
+      }
+
+      scaleTblOffChanged();
+
+      trace "xxx dragZoomPan: off_x="+off_x;
+
+      redraw();
+   }
+
+   protected method endDragZoomPan() {
+      // // trace "xxx end drag zoom/pan";
+      b_drag = false;
+      b_drag_zoompan = false;
+
+      if(!b_mmb_drag)
+      {
+         setEnableLockSelection(true);
+      }
+      else b_mmb_drag = false;
+   }
+
+   protected method beginDragSpace(MouseEvent _ev) {
+      // // trace "xxx begin drag space";
+
+      hideToolTip();
+
+      pushUndoStack();
+
+      b_drag = true;
+      drag_start_x = _ev.mouse_rel_x;
+      drag_start_y = _ev.mouse_rel_y;
+
+      b_drag_space = true;
+
+      orig_segments = segments;
+   }
+
+   protected method dragSpace(MouseEvent _ev) {
+      //trace "xxx drag space";
+
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+
+      Float dsx = drag_start_x;
+      Float dsy = drag_start_y;
+      transformMouse(dsx, dsy);
+
+
+      float mdx = mx - dsx;
+      float mdy = my - dsy;
+
+      //trace "xxx dragSpace: dx="+mdx;
+      ///drag_space_dx = mdx;
+
+      segments = orig_segments;
+
+
+      // Now shift all previous/next points
+      if(true)
+      {
+         float lx, ldist, cx;
+         int k;
+         float dd, ddRel, totalDist, newDist, dx, dy;
+
+         // Sum distance to left points
+         k = selection_idx*6; // Center point
+         if(k >= 6)
+         {
+            lx = orig_segments[k+0];
+            ldist = 0.0;
+            while(k >= 6)
+            {
+               k -= 6;
+               cx = orig_segments[k+0];
+               ldist += abs(cx - lx);
+               lx = cx;
+            }
+            //trace "xxx ldist="+ldist;
+
+            dd = ldist + mdx;
+            ddRel = (dd/ldist);
+            totalDist = ldist;
+            if(ddRel > 0)
+            {
+               //trace "xxx dd="+dd+" rel="+ddRel;
+
+               // Scale distances and control points
+               k = 6;
+               lx = orig_segments[0];
+               while(k < ((selection_idx)*6))
+               {
+                  //trace "xxx k="+k;
+                  cx = orig_segments[k] - orig_segments[k-6+0];
+                  ldist = cx;
+                  newDist = ldist * ddRel;
+                  //trace "xxx newDist="+newDist+" ldist="+ldist;
+                  if(k > 0)
+                  {
+                     //segments[k+0] = orig_segments[k-6] + newDist;
+                     segments[k+0] = segments[k-6] + newDist;
+                  }
+                  if(k == 6)
+                  {
+                     // Next ctl. of previous point
+                     dx = orig_segments[k-6+2] - orig_segments[k-6+0];
+                     dy = orig_segments[k-6+3] - orig_segments[k-6+1];
+                     segments[k-6+2] = segments[k-6+0] + dx*ddRel;
+                     segments[k-6+3] = segments[k-6+1] + dy*ddRel;
+                  }
+
+                  // Scale previous of current point
+                  dx = orig_segments[k-2] - orig_segments[k+0];
+                  dy = orig_segments[k-1] - orig_segments[k+1];
+                  segments[k-2] = segments[k+0] + dx*ddRel;
+                  segments[k-1] = segments[k+1] + dy*ddRel;
+
+                  // Scale next of current point
+                  dx = orig_segments[k+2] - orig_segments[k+0];
+                  dy = orig_segments[k+3] - orig_segments[k+1];
+                  segments[k+2] = segments[k+0] + dx*ddRel;
+                  segments[k+3] = segments[k+1] + dy*ddRel;
+
+                  k += 6;
+               }
+
+            }
+         }
+
+
+
+         // Sum distance to right points
+         k = selection_idx*6; // Center point
+         int lastK = segments.numElements-6;
+         if(k < lastK)
+         {
+            lx = orig_segments[k+0];
+            ldist = 0.0;
+            while(k < lastK)
+            {
+               k += 6;
+               cx = orig_segments[k+0];
+               ldist += abs(cx - lx);
+               lx = cx;
+            }
+            //trace "xxx R ldist="+ldist;
+
+            dd = ldist + mdx;
+            ddRel = (dd/ldist);
+            totalDist = ldist;
+            if(ddRel > 0)
+            {
+               //trace "xxx R dd="+dd+" rel="+ddRel;
+
+               // Scale distances and control points
+               k = lastK-6;
+
+               // Previous ctl. of last point
+               dx = orig_segments[lastK-2] - orig_segments[lastK+0];
+               dy = orig_segments[lastK-1] - orig_segments[lastK+1];
+               segments[lastK-2] = segments[lastK+0] + dx*ddRel;
+               segments[lastK-1] = segments[lastK+1] + dy*ddRel;
+
+
+               while(k > ((selection_idx)*6))
+               {
+                  //trace "xxx R k="+k;
+                  cx = orig_segments[k+6+0] - orig_segments[k+0];
+                  ldist = cx;
+                  newDist = ldist * ddRel;
+                  //trace "xxx R newDist="+newDist+" ldist="+ldist;
+                  if(k < lastK)
+                  {
+                     segments[k+0] = segments[k+6] - newDist;
+                  }
+
+                  // Scale previous of current point
+                  dx = orig_segments[k-2] - orig_segments[k+0];
+                  dy = orig_segments[k-1] - orig_segments[k+1];
+                  segments[k-2] = segments[k+0] + dx*ddRel;
+                  segments[k-1] = segments[k+1] + dy*ddRel;
+
+                  // Scale next of current point
+                  dx = orig_segments[k+2] - orig_segments[k+0];
+                  dy = orig_segments[k+3] - orig_segments[k+1];
+                  segments[k+2] = segments[k+0] + dx*ddRel;
+                  segments[k+3] = segments[k+1] + dy*ddRel;
+
+                  k -= 6;
+               }
+
+            }
+         }
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method endDragSpace() {
+      ///trace "xxx end drag space";
+      b_drag = false;
+      b_drag_space = false;
+
+
+      setEnableLockSelection(false);
+      restartToolTipTimer();
+      redraw();
+   }
+
+   protected method endDragSpaceReset() {
+      b_drag = false;
+      b_drag_space = false;
+
+      // // trace "xxx end drag space reset";
+
+      segments = orig_segments;
+
+      setEnableLockSelection(false);
+      restartToolTipTimer();
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method beginDragRotate(MouseEvent _ev) {
+      // // trace "xxx begin drag rotate";
+
+      if(segments.numElements >= (6*2))
+      {
+         hideToolTip();
+
+         pushUndoStack();
+
+         b_drag = true;
+         drag_start_x = _ev.mouse_rel_x;
+         drag_start_y = _ev.mouse_rel_y;
+
+         b_drag_rotate = true;
+
+         orig_segments = segments;
+
+         findSegmentIdxBeforeMouseX(_ev);
+      }
+   }
+
+   protected method dragRotate(MouseEvent _ev) {
+      //trace "xxx drag rotate";
+
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+
+      Float dsx = drag_start_x;
+      Float dsy = drag_start_y;
+      transformMouse(dsx, dsy);
+
+      float mdx = mx - dsx;  // scaling
+      float mdy = my - dsy;  // rotation
+
+      // trace "xxx dragRotate: dx="+mdy;  // ~-0.5..0.5
+
+      float a = mdy*2PI;
+      int k = segment_idx_before_mouse_x * 6;
+      int nk = k + 6;
+      // trace "xxx a="+a+" k="+k+" nk="+nk;
+
+      segments = orig_segments;
+      float tx, ty;
+
+      boolean bLockSym1 = false;
+      boolean bLockSym2 = false;
+
+      // Distance-dependent ctl point influence
+      float a1 = a;
+      float a2 = -a;
+
+      float distXP = segments[nk+0] - segments[k+0];
+      float relDistX = (dsx - segments[k+0]) / distXP;  // => 0.0=left point, 1.0=right point
+
+      float scl;
+      if(relDistX >= 0.5f)  // closer to right point ?
+         scl = -2.0f*mdx + 1.0f;
+      else
+         scl = 2.0f*mdx + 1.0f;
+      float scl1 = scl;
+      float scl2 = scl;
+
+      a1 *= (1.0f - relDistX);
+      a2 *= relDistX;
+
+      scl1 = 1.0f + (scl1 - 1.0f) * (1.0f - relDistX);
+      scl2 = 1.0f + (scl2 - 1.0f) * relDistX;
+      // trace "xxx relDistX="+relDistX+" scl1="+scl1+" scl2="+scl2;
+
+      // Rotate about center point
+      float c1x = segments[k+2] - segments[k+0];
+      float c1y = segments[k+3] - segments[k+1];
+
+      if(k > 0)
+      {
+         bLockSym1 =
+            (-c1x == (segments[k-6+4] - segments[k+0])) &&
+            (-c1y == (segments[k-6+5] - segments[k+1])) ;
+      }
+
+      // trace "xxx c1=("+c1x+";"+c1y+")";
+      tx = c1x * cos(a1) - c1y * sin(a1);
+      ty = c1x * sin(a1) + c1y * cos(a1);
+      tx *= scl1;
+      ty *= scl1;
+      segments[k+2] = tx + segments[k+0];
+      segments[k+3] = ty + segments[k+1];
+      if(bLockSym1)
+      {
+         segments[k-6+4] = -tx + segments[k+0];
+         segments[k-6+5] = -ty + segments[k+1];
+      }
+
+      // Rotate about next center point
+      float c2x = segments[k+4] - segments[nk+0];
+      float c2y = segments[k+5] - segments[nk+1];
+
+      if((k+6) < segments.numElements)
+      {
+         bLockSym2 =
+            (-c2x == (segments[k+6+2] - segments[nk+0])) &&
+            (-c2y == (segments[k+6+3] - segments[nk+1])) ;
+      }
+
+      // trace "xxx c2=("+c2x+";"+c2y+")";
+      tx = c2x * cos(a2) - c2y * sin(a2);
+      ty = c2x * sin(a2) + c2y * cos(a2);
+      tx *= scl2;
+      ty *= scl2;
+      segments[k+4] = tx + segments[nk+0];
+      segments[k+5] = ty + segments[nk+1];
+      if(bLockSym2)
+      {
+         segments[nk+2] = -tx + segments[nk+0];
+         segments[nk+3] = -ty + segments[nk+1];
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method endDragRotate() {
+      ///trace "xxx end drag rotate";
+      b_drag = false;
+      b_drag_rotate = false;
+
+      setEnableLockSelection(false);
+      restartToolTipTimer();
+      redraw();
+   }
+
+   protected method endDragRotateReset() {
+      b_drag = false;
+      b_drag_rotate = false;
+
+      // // trace "xxx end drag rotate reset";
+
+      segments = orig_segments;
+
+      setEnableLockSelection(false);
+      restartToolTipTimer();
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method beginDrag(MouseEvent _ev) {
+      // // trace "begin drag";
+
+      hideToolTip();
+      pushUndoStack();
+      b_drag = true;
+      drag_start_x = _ev.mouse_rel_x;
+      drag_start_y = _ev.mouse_rel_y;
+      orig_segments = segments;
+      b_drag_moved = false;
+
+      if(multisel_indices.numElements > 0)
+      {
+         // Position of blue dot marker (reset position)
+         orig_x = segments.get(multisel_indices.get(0)*6+0);
+         orig_y = segments.get(multisel_indices.get(1)*6+1);
+
+         orig_c1x = segments.get(multisel_indices.get(0)*6-2);
+         orig_c1y = segments.get(multisel_indices.get(1)*6-1);
+
+         orig_c2x = segments.get(multisel_indices.get(0)*6+2);
+         orig_c2y = segments.get(multisel_indices.get(1)*6+3);
+         return;
+      }
+
+      // Single-selection drag
+      int k = calcK();
+      if(k < 0)
+      {
+         return;
+      }
+
+      if(b_lshift)
+      {
+         // Don't wait for mouse move if lshift is already pressed at drag start
+         b_drag_scale_recalc_center = false;
+         b_drag_scale = true;
+         b_drag_scale_end = false;
+      }
+
+
+      // Check whether control points are symmetric
+      // also modify neighbour control point
+      b_drag_start_sym = false;
+      float tx, ty;
+      if(0 == selection_off)
+      {
+         orig_x = segments[k];
+         orig_y = segments[k+1];
+         if(k >= 6)
+         {
+            orig_c1x = segments[k-2];
+            orig_c1y = segments[k-1];
+         }
+         orig_c2x = segments[k+2];
+         orig_c2y = segments[k+3];
+      }
+      else if(2 == selection_off)
+      {
+         orig_x   = segments[k-2];
+         orig_y   = segments[k-1];
+         if(k >= 6)
+         {
+            orig_c1x = segments[k-4];
+            orig_c1y = segments[k-3];
+         }
+         orig_c2x = segments[k];
+         orig_c2y = segments[k+1];
+         if(k >= 6)
+         {
+            tx = segments[k  ] - segments[k-2];
+            ty = segments[k+1] - segments[k-1];
+            b_drag_start_sym =
+               (segments[k-4] == segments[k-2] - tx) &&
+               (segments[k-3] == segments[k-1] - ty) ;
+         }
+         drag_scale_cx = orig_c2x;
+         drag_scale_cy = orig_c2y;
+      }
+      else if(-2 == selection_off)
+      {
+         orig_x   = segments[k+2];
+         orig_y   = segments[k+3];
+         orig_c1x = segments[k];
+         orig_c1y = segments[k+1];
+         orig_c2x = segments[k+4];
+         orig_c2y = segments[k+5];
+         tx = segments[k  ] - segments[k+2];
+         ty = segments[k+1] - segments[k+3];
+         b_drag_start_sym =
+            (segments[k+4] == segments[k+2] - tx) &&
+            (segments[k+5] == segments[k+3] - ty) ;
+         // // trace "xxx b_drag_start_sym=="+b_drag_start_sym;
+         drag_scale_cx = orig_c1x;
+         drag_scale_cy = orig_c1y;
+      }
+
+      if(_ev.isRightButtonDown())
+      {
+         // Force smoothing
+         b_drag_start_sym ^= 1;
+      }
+
+      // // trace "xxx b_drag_start_sym="+b_drag_start_sym;
+   }
+
+   protected method endDrag(MouseEvent _ev) {
+      // // trace "xxx end drag";
+      b_drag = false;
+      b_drag_scale = false;
+      setEnableLockSelection(false);
+      restartToolTipTimer();
+      redraw();
+   }
+
+   protected method endDragReset(MouseEvent _ev) {
+      // trace "xxx end drag reset: multisel_indices.numElements="+multisel_indices.numElements;
+
+      popUndoStack();
+
+      if(multisel_indices.numElements > 0)
+      {
+         segments = orig_segments;
+         recalc(true/*bAction*/);
+         redraw();
+         b_drag = false;
+         return;
+      }
+
+
+      int k = calcK();
+      if(0 == selection_off)
+      {
+         if(k >= 6)
+         {
+            segments[k-2] = orig_c1x;
+            segments[k-1] = orig_c1y;
+         }
+         segments[k+2] = orig_c2x;
+         segments[k+3] = orig_c2y;
+      }
+      else if(-2 == selection_off)
+      {
+         segments[k]   = orig_c1x;
+         segments[k+1] = orig_c1y;
+      }
+      else if(2 == selection_off)
+      {
+         segments[k]   = orig_c2x;
+         segments[k+1] = orig_c2y;
+      }
+      b_drag = false;
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method dragMultiSelection(MouseEvent _ev) {
+      Float dx = _ev.mouse_rel_x;
+      Float dy = _ev.mouse_rel_y;
+
+      // // trace "xxx drag: orig d=("+dx+";"+dy+")";
+
+      b_drag_moved = true;
+
+      Float dsx = drag_start_x;
+      Float dsy = drag_start_y;
+      transformMouse(dsx, dsy);
+
+      transformMouse(dx, dy);
+      dx -= dsx;
+      dy -= dsy;
+
+      segments = orig_segments;
+      int selIdx;
+      int k;
+      boolean bAllowMove;
+
+      if(b_lctrl)
+      {
+         float scl0 = dy + 1.0;
+
+         foreach selIdx in multisel_indices
+         {
+            k = selIdx * 6;
+            // bAllowMove = (k >= 0);
+
+            // if(b_lock_first_last_x && (k < 6))
+            //    bAllowMove = false;
+            // if(b_lock_first_last_x && (k >= (segments.numElements-6)))
+            //    bAllowMove = false;
+
+            // if(bAllowMove)
+            {
+               if(k >= 2)
+               {
+                  segments[k-1] = segments[k-1] * scl0;
+               }
+               segments[k+1] = segments[k+1] * scl0;
+               segments[k+3] = segments[k+3] * scl0;
+            }
+         }
+      }
+      else if(b_lshift)
+      {
+         float sclCtr = dy + 1.0;
+         float ty;
+         float bboxCtrY = multisel_sorted_py + (multisel_sorted_qy - multisel_sorted_py)*0.5;
+         // trace "xxx bboxCtrY="+bboxCtrY+" sclCtr="+sclCtr;
+
+         foreach selIdx in multisel_indices
+         {
+            k = selIdx * 6;
+            // bAllowMove = (k >= 0);
+
+            // if(b_lock_first_last_x && (k < 6))
+            //    bAllowMove = false;
+            // if(b_lock_first_last_x && (k >= (segments.numElements-6)))
+            //    bAllowMove = false;
+
+            // if(bAllowMove)
+            {
+               ty = segments[k+1] - bboxCtrY;
+               segments[k+1] = ty * sclCtr + bboxCtrY;
+               if(k >= 2)
+               {
+                  ty = segments[k-1] - bboxCtrY;
+                  segments[k-1] = ty * sclCtr + bboxCtrY;
+               }
+               ty = segments[k+3] - bboxCtrY;
+               segments[k+3] = ty * sclCtr + bboxCtrY;
+            }
+         }
+      }
+      else
+      {
+         float moveDx = -999999;
+         float moveDy;
+
+         foreach selIdx in multisel_indices
+         {
+            k = selIdx * 6;
+            bAllowMove = (k >= 0);
+
+            if(b_lock_first_last_x && (k < 6))
+               bAllowMove = false;
+            if(b_lock_first_last_x && (k >= (segments.numElements-6)))
+               bAllowMove = false;
+
+            // // if(bAllowMove)
+            {
+               if(-999999 == moveDx)
+               {
+                  moveDx = getSnappedX(segments[k+0] + dx) - segments[k+0];
+                  moveDy = getSnappedY(segments[k+1] + dy) - segments[k+1];
+               }
+
+               if(bAllowMove)
+                  segments[k+0] = segments[k+0] + moveDx;
+               segments[k+1] = segments[k+1] + moveDy;
+
+               if(k >= 2)
+               {
+                  segments[k-2] = segments[k-2] + moveDx;
+                  segments[k-1] = segments[k-1] + moveDy;
+               }
+               segments[k+2] = segments[k+2] + moveDx;
+               segments[k+3] = segments[k+3] + moveDy;
+            }
+         }
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method beginDragZoomXY(MouseEvent _startEv) {
+      b_drag = true;
+      b_drag_zoomxy = true;
+      b_drag_zoomxy_lock_x = maybe;
+      drag_start_x = _startEv.mouse_rel_x;
+      drag_start_y = _startEv.mouse_rel_y;
+      drag_start_scale_tbl_off_x = scale_tbl_off_x;
+      drag_start_scale_tbl_off_y = scale_tbl_off_y;
+      UI.LogDebug("BezierEdit::beginDragZoomXY()");
+   }
+
+   // <ui_handle.png>
+   protected method handleDragZoomXY(MouseEvent _ev) {
+      float zoomRelX = _ev.mouse_rel_x - drag_start_x;
+      float zoomRelY = _ev.mouse_rel_y - drag_start_y;
+      // UI.LogTrace("BezierEdit::handleDragZoomXY: drag_start_scale_tbl_off_x="+drag_start_scale_tbl_off_x+" zoomRel=("+zoomRelX+","+zoomRelY+")");
+      if(maybe == b_drag_zoomxy_lock_x)
+      {
+         if(abs(zoomRelX) > 8)
+            b_drag_zoomxy_lock_x = false;
+         else if(abs(zoomRelY) > 4)
+            b_drag_zoomxy_lock_x = true;
+      }
+
+      Float oldX = drag_start_x;
+      Float oldY = drag_start_y;
+      transformMouse(oldX, oldY);
+      if(false == b_drag_zoomxy_lock_x)
+         setScaleTblOffY(drag_start_scale_tbl_off_y - zoomRelX * 0.025);
+      else if(true == b_drag_zoomxy_lock_x)
+         setScaleTblOffX(drag_start_scale_tbl_off_x - zoomRelY * 0.2);
+      makeXVisibleAtMouseX(oldX, drag_start_x);
+      clipScaleAndOff(false);
+      redraw();
+   }
+
+   public method smoothToggle() {
+      b_smooth_ctl = !b_smooth_ctl;
+      trace "[dbg] BezierEdit: b_smooth_ctl="+b_smooth_ctl;
+      UI.LogInfoFast("Smooth-ctl is "+UI.GetEnableString(b_smooth_ctl));
+   }
+
+   public method smoothToggleXDist() {
+      b_smooth_ctl_xdist_only = !b_smooth_ctl_xdist_only;
+      trace "[dbg] BezierEdit: b_smooth_ctl_xdist_only="+b_smooth_ctl_xdist_only;
+      UI.LogInfoFast("Smooth-ctl-xdist-only is "+UI.GetEnableString(b_smooth_ctl_xdist_only));
+   }
+
+   public method smoothToggleCtlPoints() {
+      b_smooth_ctl_dist_ctlpoints = !b_smooth_ctl_dist_ctlpoints;
+      trace "[dbg] BezierEdit: b_smooth_ctl_dist_ctlpoints="+b_smooth_ctl_dist_ctlpoints;
+      UI.LogInfoFast("Smooth-ctl-dist-ctl is "+UI.GetEnableString(b_smooth_ctl_dist_ctlpoints));
+   }
+
+   protected method smoothPoint(int k, float _amt) {
+      if(b_bezier_debug) trace "xxx smoothctl";
+      float smoothCtlNX;
+      float smoothCtlNY;
+      float smoothCtlPX;
+      float smoothCtlPY;
+      if(k >= 6)
+      {
+         float tx;
+         float ty;
+         float distNx;
+         float distN;
+         float distP;
+         float distPx;
+         float amtN;
+         float amtP;
+
+         tx = segments[k+2]-segments[k+0];
+         ty = segments[k+3]-segments[k+1];
+         float origLenN = sqrt(tx*tx+ty*ty);
+
+         tx = segments[k-2]-segments[k+0];
+         ty = segments[k-1]-segments[k+1];
+         float origLenP = sqrt(tx*tx+ty*ty);
+
+         if(b_smooth_ctl_dist_ctlpoints)
+         {
+            tx = segments[k+4] - segments[k];
+            if(!b_smooth_ctl_xdist_only)
+            {
+               ty = segments[k+5] - segments[k+1];
+               distNx = sqrt(tx*tx + ty*ty);
+            }
+            else
+               distNx = sqrt(tx*tx);
+            distN = distNx;
+
+            tx = segments[k-4] - segments[k];
+            if(!b_smooth_ctl_xdist_only)
+            {
+               ty = segments[k-3] - segments[k+1];
+               distPx = sqrt(tx*tx + ty*ty);
+            }
+            else
+               distPx = sqrt(tx*tx);
+            distP = distPx;
+         }
+         else
+         {
+            tx = segments[k+6] - segments[k];
+            if(!b_smooth_ctl_xdist_only)
+            {
+               ty = segments[k+7] - segments[k+1];
+               distNx = sqrt(tx*tx);
+               distN = sqrt(tx*tx + ty*ty);
+            }
+            else
+            {
+               distNx = sqrt(tx*tx);
+               distN = distNx;
+            }
+
+            tx = segments[k-6] - segments[k];
+            if(!b_smooth_ctl_xdist_only)
+            {
+               ty = segments[k-5] - segments[k+1];
+               distPx = sqrt(tx*tx);
+               distP = sqrt(tx*tx + ty*ty);
+            }
+            else
+            {
+               distPx = sqrt(tx*tx);
+               distP = distPx;
+            }
+         }
+
+         if(b_bezier_debug) trace "xxx distN="+distN;
+         if(b_bezier_debug) trace "xxx distP="+distP;
+
+         amtN = distN / (distN + distP);
+         amtP = distP / (distN + distP);
+
+         amtN = 1.0 - amtN;
+         amtP = 1.0 - amtP;
+
+         if(b_bezier_debug) trace "xxx weight n="+amtN+" p="+amtP;
+
+         smoothCtlNX = (segments[k+4] - segments[k  ])*0.5;
+         smoothCtlNY = (segments[k+5] - segments[k+1])*0.5;
+         smoothCtlPX =  (segments[k  ] - segments[k-4])*0.5;
+         smoothCtlPY =  (segments[k+1] - segments[k-3])*0.5;
+
+         if(b_bezier_debug) trace "xxx n=("+smoothCtlNX+";"+smoothCtlNY+")";
+         if(b_bezier_debug) trace "xxx p=("+smoothCtlPX+";"+smoothCtlPY+")";
+
+         // // if(1)//amtN > amtP)
+         {
+            smoothCtlNX = (smoothCtlNX*amtN + smoothCtlPX*amtP);
+            smoothCtlNY = (smoothCtlNY*amtN + smoothCtlPY*amtP);
+            if(b_bezier_debug) trace "xxx avg<n>=("+smoothCtlNX+";"+smoothCtlNY+")";
+
+            float newLen = sqrt(smoothCtlNX*smoothCtlNX + smoothCtlNY*smoothCtlNY);
+            // float origLen = mathMinf(origLenN, origLenP);
+            float origLen = (origLenN + origLenP)*0.5f;
+            if(b_bezier_debug) trace "xxx newLen="+newLen+" origLen="+origLen;
+
+            float nx = smoothCtlNX * (origLen / newLen);
+            float ny = smoothCtlNY * (origLen / newLen);
+
+            segments[k+2] = mathLerpf(segments[k+2], segments[k+0] + nx, _amt);
+            segments[k+3] = mathLerpf(segments[k+3], segments[k+1] + ny, _amt);
+
+            float px = -smoothCtlNX * (origLen / newLen);
+            float py = -smoothCtlNY * (origLen / newLen);
+
+            // symmetry
+            // segments[k-2] = -(segments[k+2]-segments[k  ]) + segments[k  ];
+            // segments[k-1] = -(segments[k+3]-segments[k+1]) + segments[k+1];
+            segments[k-2] = mathLerpf(segments[k-2], segments[k+0] + px, _amt);
+            segments[k-1] = mathLerpf(segments[k-1], segments[k+1] + py, _amt);
+         }
+         // // else
+         // // {
+         // //    smoothCtlNX = (smoothCtlNX*amtN + smoothCtlPX*amtP);
+         // //    smoothCtlNY = (smoothCtlNY*amtN + smoothCtlPY*amtP);
+         // //    if(b_bezier_debug) trace "xxx avg<n>=("+smoothCtlNX+";"+smoothCtlNY+")";
+
+         // //    segments[k-2] = segments[k+0] - (smoothCtlNX*amtN + smoothCtlPX*amtP);
+         // //    segments[k-1] = segments[k+1] - (smoothCtlNY*amtN + smoothCtlPY*amtP);
+
+         // //    // symmetry
+         // //    // segments[k+2] = -(segments[k-2]-segments[k  ]) + segments[k  ];
+         // //    // segments[k+3] = -(segments[k-1]-segments[k+1]) + segments[k+1];
+         // //    segments[k-2] = segments[k+0] - smoothCtlNX;
+         // //    segments[k-1] = segments[k+1] - smoothCtlNY;
+         // // }
+
+      }
+      else
+      {
+         segments[k+2] = mathLerpf(segments[k+2], segments[k  ] + (segments[k+4]-segments[k  ])*0.25, _amt);
+         segments[k+3] = mathLerpf(segments[k+3], segments[k+1] + (segments[k+5]-segments[k+1])*0.25, _amt);
+      }
+   }
+
+   public method smoothAll(float _amt) {
+      int numSeg = (segments.numElements / 6) ;
+      if(numSeg > 0)
+      {
+         pushUndoStack();
+         int k = 0;
+         loop(numSeg-1)
+         {
+            smoothPoint(k, _amt);
+            k += 6;
+         }
+         recalc(true/*bAction*/);
+         redraw();
+         trace "[dbg] BezierEdit::smoothAll: amt="+_amt;
+         UI.LogInfoFast("Smooth-all amt="+_amt);
+      }
+   }
+
+   public method toggleAllowDragRotate() {
+      b_allow_drag_rotate = !b_allow_drag_rotate;
+      UI.LogInfoFast("Allow drag-rotate is "+UI.GetEnableString(b_allow_drag_rotate));
+   }
+
+   public method setEnableDragRotate(boolean _bEnable) {
+      b_allow_drag_rotate = _bEnable;
+   }
+
+   public method simplify(float _symAngThresholdNear, float _symAngThresholdFar, float _distFar, float _distExp) {
+      boolean bDebug = 0;
+      int numSeg = (segments.numElements / 6) ;
+      if(numSeg >= 3)
+      {
+         pushUndoStack();
+
+         int numRemoved = 0;
+
+         for(;;)
+         {
+            boolean bChanged = false;
+
+            numSeg = (segments.numElements / 6) ;
+            if(numSeg >= 3)
+            {
+               int k = 0;
+               loop(numSeg-2)
+               {
+                  local Vector2f pa;  pa .init(segments[k+0], segments[k+1]);
+                  local Vector2f c1a; c1a.init(segments[k+2], segments[k+3]);
+                  local Vector2f c2a; c2a.init(segments[k+4], segments[k+5]);
+
+                  local Vector2f pb;  pb .init(segments[k+6+0], segments[k+6+1]);
+                  local Vector2f c1b; c1b.init(segments[k+6+2], segments[k+6+3]);
+                  local Vector2f c2b; c2b.init(segments[k+6+4], segments[k+6+5]);
+
+                  local Vector2f pc;  pc .init(segments[k+12+0], segments[k+12+1]);
+                  local Vector2f c1c; c1c.init(segments[k+12+2], segments[k+12+3]);
+                  local Vector2f c2c; c2c.init(segments[k+12+4], segments[k+12+5]);
+
+                  float distX = (pc.x - pa.x);
+                  float distRel = mathPowerf(mathMinf(1.0f, distX/_distFar), _distExp);
+                  // // float distRel = 1.0f - mathPowerf(1.0f - mathMinf(1.0f, distX/_distFar), _distExp);
+                  float symAngThreshold = mathLerpf(_symAngThresholdNear,
+                                                    _symAngThresholdFar,
+                                                    distRel
+                                                    );
+
+
+                  // Check if center control points are symmetric
+                  local Vector2f clRel = pb - c2a; clRel.unit();
+                  local Vector2f crRel = c1b - pb; crRel.unit();
+                  float angSym = acos(clRel.dot(crRel));
+
+                  if(bDebug) trace "xxx pointIdx="+((k+6)/6)+" pb="+pb+" c1b="+c1b+" c2b="+c2b+" pc="+pc+" clRel="+clRel+" crRel="+crRel+" distX="+distX+" symAngThreshold="+symAngThreshold+"("+(symAngThreshold*(360/2PI))+" deg) angSym="+angSym+" ("+(angSym*(360/2PI))+" deg)";
+
+                  if( clRel == crRel || abs(angSym) < symAngThreshold )
+                  {
+                     local Vector2f cpRel = c1a - pa; cpRel.unit();
+                     angSym = acos(clRel.dot(cpRel));
+                     if(bDebug) trace "xxx  clRel="+clRel+" cpRel="+cpRel+"  acos(clRel.dot(cpRel))="+angSym+" ("+(angSym*360/2PI)+" deg)";
+                     if( clRel == cpRel || abs(angSym) < symAngThreshold )
+                     {
+                        if(bDebug) trace "xxx   ok, clRel.dot(cpRel)="+angSym;
+                        local Vector2f cnRel = pc - c2b; cnRel.unit();
+                        angSym = acos(clRel.dot(cnRel));
+                        if( clRel == cnRel || abs(angSym) < symAngThreshold )
+                        {
+                           if(bDebug) trace "xxx   ok, clRel.dot(cnRel)="+angSym;
+
+                           // Move prev point right c 25% towards next point
+                           local Vector2f vt;
+                           vt = pa + (pc - pa) * 0.25;
+                           segments[k+2] = vt.x;
+                           segments[k+3] = vt.y;
+
+                           // // // Move next point left c 25% towards prev point
+                           // // vt = pa + (pc - pa) * 0.75;
+                           // // segments[k+4] = vt.x;
+                           // // segments[k+5] = vt.y;
+
+                           // Create left/right c symmetry
+                           vt = pc - (vt - pa);
+                           segments[k+4] = vt.x;
+                           segments[k+5] = vt.y;
+
+                           // Remove center point
+                           loop(6)
+                              segments.delete(k+6);
+                           bChanged = true;
+                           numRemoved++;
+                           break;
+                        }
+                     }
+                  }
+
+                  // Next segment
+                  k += 6;
+               }
+            }
+
+            if(!bChanged)
+               break;
+         }
+
+         recalc(true/*bAction*/);
+         selectNone();
+         redraw();
+         trace "[dbg] BezierEdit::simplify: remove "+numRemoved+" point(s)";
+         UI.LogInfoFast("Simplify: remove "+numRemoved+" point(s)");
+      }
+   }
+
+   public method simplifyCoarse() {
+      simplify( ((30.0/360)*2PI)/*symAngThresholdNear*/,
+                (( 4.5/360)*2PI)/*symAngThresholdFar*/,
+                0.07/*distFar*/,
+                1.7/*distExp*/
+                );
+   }
+
+   public method simplifyFine() {
+      simplify( ((20.0/360)*2PI)/*symAngThresholdNear*/,
+                (( 0.5/360)*2PI)/*symAngThresholdFar*/,
+                0.04/*distFar*/,
+                0.5/*distExp*/
+                );
+   }
+
+   protected method dragSelection(MouseEvent _ev) {
+
+      if(multisel_indices.numElements > 0)
+      {
+         dragMultiSelection(_ev);
+         return;
+      }
+
+      Float dx = _ev.mouse_rel_x;
+      Float dy = _ev.mouse_rel_y;
+
+      // // trace "xxx drag: orig d=("+dx+";"+dy+")";
+
+      b_drag_moved = true;
+
+      Float dsx = drag_start_x;
+      Float dsy = drag_start_y;
+      transformMouse(dsx, dsy);
+
+      transformMouse(dx, dy);
+      dx -= dsx;
+      dy -= dsy;
+      // // trace "xxx drag: d=("+dx+"; "+dy+")";
+      // // trace "xxx drag: idx="+selection_idx+" off="+selection_off;
+
+      // Single-selection drag
+      int k = calcK();
+
+      float cpdx, cpdy, cpd, cpnx, cpny, mdx, mdy, pld;
+      float tx, ty;
+      float moveDx = dx;
+      float moveDy = dy;
+
+      if(selection_off == 0)
+      {
+         boolean bLast = (((segments.numElements/6)-1) == selection_idx);
+         // Modify center point
+         if(! (((0 == selection_idx) || bLast) && b_lock_first_last_x))
+         {
+            segments[k] = getSnappedX(orig_x + dx);
+            moveDx = segments[k] - orig_x;
+         }
+         segments[k+1] = getSnappedY(orig_y + dy);
+         moveDy = segments[k+1] - orig_y;
+
+         // also move control points
+         if(k >= 6)
+         {
+            segments[k-2] = orig_c1x + moveDx; // // getSnappedX(orig_c1x + dx);
+            segments[k-1] = orig_c1y + moveDy; // // getSnappedY(orig_c1y + dy);
+         }
+
+         if(b_smooth_ctl && !bLast)
+         {
+            smoothPoint(k, 1.0/*amt*/);
+         }
+         else
+         {
+            segments[k+2] = orig_c2x + moveDx;
+            segments[k+3] = orig_c2y + moveDy;
+         }
+      }
+      else if(selection_off == -2)
+      {
+         if(b_drag_scale && !b_drag_scale_recalc_center)
+         {
+            // Scale control point distance
+            // // trace "xxx orig_c1=("+orig_c1x+";"+orig_c1y+") orig=("+orig_x+";"+orig_y+")";
+            // // trace "xxx drag_scale_c=("+drag_scale_cx+";"+drag_scale_cy+")";
+            cpdx = drag_scale_cx - orig_x; // original distance
+            cpdy = drag_scale_cy - orig_y;
+            cpd = sqrt(cpdx*cpdx + cpdy*cpdy);
+            // // trace "xxx cpdx="+cpdx+" cpdy="+cpdy+" cpd="+cpd;
+
+            cpnx = cpdx / cpd;
+            cpny = cpdy / cpd;
+
+            mdx = dx;
+            mdy = dy;
+
+            pld = mathDistancePointPlane2d(drag_scale_cx+mdx, drag_scale_cy + mdy, drag_scale_cx, drag_scale_cy, cpnx, cpny);
+
+            cpd += pld;
+
+            segments[k] = orig_x + cpnx*cpd;
+            segments[k+1] = orig_y + cpny*cpd;
+         }
+         else
+         {
+            // Move previous control point
+            segments[k]   = getSnappedX(orig_c1x + dx);
+            segments[k+1] = getSnappedY(orig_c1y + dy);
+         }
+      }
+      else if(selection_off == 2)
+      {
+         // Move next control point
+         if(b_drag_scale && !b_drag_scale_recalc_center)
+         {
+            // Scale control point distance
+            // // trace "xxx orig_c2=("+orig_c2x+";"+orig_c2y+") orig=("+orig_x+";"+orig_y+")";
+            cpdx = drag_scale_cx - orig_x; // original distance
+            cpdy = drag_scale_cy - orig_y;
+            cpd = sqrt(cpdx*cpdx + cpdy*cpdy);
+            // // trace "xxx cpdx="+cpdx+" cpdy="+cpdy+" cpd="+cpd;
+
+            cpnx = cpdx / cpd;
+            cpny = cpdy / cpd;
+
+            mdx = dx;
+            mdy = dy;
+
+            pld = mathDistancePointPlane2d(drag_scale_cx+mdx, drag_scale_cy + mdy, drag_scale_cx, drag_scale_cy, cpnx, cpny);
+
+            cpd += pld;
+
+            segments[k] = orig_x + cpnx*cpd;
+            segments[k+1] = orig_y + cpny*cpd;
+         }
+         else
+         {
+            segments[k]   = getSnappedX(orig_c2x + dx);
+            segments[k+1] = getSnappedY(orig_c2y + dy);
+         }
+      }
+
+
+
+      if( ((!b_lctrl) ^ !b_drag_start_sym) )
+      {
+         // also modify neighbour control point
+         if(selection_off == 2)
+         {
+            // Next control point symmetry
+            if(k >= 6)
+            {
+               tx = segments[k  ] - segments[k-2];
+               ty = segments[k+1] - segments[k-1];
+               segments[k-4] = segments[k-2] - tx;
+               segments[k-3] = segments[k-1] - ty;
+            }
+         }
+         else if(selection_off == -2)
+         {
+            // Previous control point symmetry
+            tx = segments[k  ] - segments[k+2];
+            ty = segments[k+1] - segments[k+3];
+            segments[k+4] = segments[k+2] - tx;
+            segments[k+5] = segments[k+3] - ty;
+         }
+      }
+
+      if(b_drag_scale_end)
+      {
+         b_drag_scale_end = false;
+         b_drag_scale = false;
+         if( (2 == selection_off) || (-2 == selection_off) )
+         {
+            drag_scale_cx = segments[k];
+            drag_scale_cy = segments[k+1];
+            drag_start_x = _ev.mouse_rel_x;
+            drag_start_y = _ev.mouse_rel_y;
+            if(2== selection_off)
+            {
+               orig_c2x = drag_scale_cx;
+               orig_c2y = drag_scale_cy;
+            }
+            else
+            {
+               orig_c1x = drag_scale_cx;
+               orig_c1y = drag_scale_cy;
+            }
+            // // trace "xxx new drag start=("+drag_start_x+"; "+drag_start_y+")";
+         }
+      }
+
+      if(b_drag_scale_recalc_center)
+      {
+         b_drag_scale_recalc_center = false;
+         if( (2 == selection_off) || (-2 == selection_off) )
+         {
+            // // trace "xxx drag_scale_c=("+drag_scale_cx+";"+drag_scale_cy+")";
+            drag_scale_cx = segments[k];
+            drag_scale_cy = segments[k+1];
+            drag_start_x = _ev.mouse_rel_x;
+            drag_start_y = _ev.mouse_rel_y;
+         }
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method setEnableLockSelection(boolean _bEnable) {
+      b_last_keyboard_sel = _bEnable;
+
+      if(_bEnable)
+      {
+         UI.ShowCursor(UIConstants.CURSOR_MOVE);
+      }
+      else
+      {
+         UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      }
+   }
+
+   protected method insertSegmentAtMouseOverPoint(boolean _bStraightLine) {
+
+      // trace "xxx insertSegmentAtMouseOverPoint: mouseover_point_idx="+mouseover_point_idx+" #points="+(points.numElements/2);
+
+      if((mouseover_point_idx >= 2) && (mouseover_point_idx < (points.numElements/2 -1)))
+      {
+         pushUndoStack();
+
+         float cx = points[mouseover_point_idx*2+0];
+         float cy = points[mouseover_point_idx*2+1];
+         float lx = points[mouseover_point_idx*2-2];
+         float ly = points[mouseover_point_idx*2-1];
+         float nx = points[mouseover_point_idx*2+2];
+         float ny = points[mouseover_point_idx*2+3];
+         int segi = point_segment_map[mouseover_point_idx];
+         // // trace "xxx insert: idx="+mouseover_point_idx+" segi="+segi+" #seg="+segments.numElements+" c=("+cx+"; "+cy+")";
+
+         // Insert new segment after segment #segi
+         int k = (segi+1)*6;
+         segments.insert(k, 0); // px
+         segments.insert(k, 0); // py
+         segments.insert(k, 0); // c1x
+         segments.insert(k, 0); // c1y
+         segments.insert(k, 0); // c2x
+         segments.insert(k, 0); // c2y
+
+         int ok = k - 6;
+         int nk = k + 6;
+
+
+         // Calc segment path len
+//          int i = 0;
+//          int pointOff = 0;
+//          int numSegPoints;
+//          loop(segi)
+//          {
+//             numSegPoints = segment_numpoints_map[i++];
+//             pointOff += numSegPoints;
+//          }
+//          numSegPoints = segment_numpoints_map[segi];
+
+         // // float plenCursor = points.sumPathLen2d(pointOff, (mouseover_point_idx+1 - pointOff));
+         // // float plenAll = plenCursor + points.sumPathLen2d(mouseover_point_idx, numSegPoints - (mouseover_point_idx - pointOff));
+         // // float t = points_t.sumPathLen1d(pointOff, (mouseover_point_idx+1 - pointOff));
+         // // trace "xxx segi="+segi+" pointOff="+pointOff+" mousePointIdx="+mouseover_point_idx+" numSegPoints="+numSegPoints+" t="+t;
+         float t = points_t[mouseover_point_idx];
+
+         // // trace "xxx  => "+plenCursor+" / "+plenAll;
+         // // float t = plenCursor / plenAll;
+
+         // // trace "xxx t="+t;
+
+         float p0x = segments[ok+0];
+         float p0y = segments[ok+1];
+         float p1x = segments[ok+2];
+         float p1y = segments[ok+3];
+         float p2x = segments[ok+4];
+         float p2y = segments[ok+5];
+         float p3x = segments[nk+0];
+         float p3y = segments[nk+1];
+
+         float q0x = mathLerpf(p0x, p1x, t);
+         float q0y = mathLerpf(p0y, p1y, t);
+         float q1x = mathLerpf(p1x, p2x, t);
+         float q1y = mathLerpf(p1y, p2y, t);
+         float q2x = mathLerpf(p2x, p3x, t);
+         float q2y = mathLerpf(p2y, p3y, t);
+
+         float r0x = mathLerpf(q0x, q1x, t);
+         float r0y = mathLerpf(q0y, q1y, t);
+         float r1x = mathLerpf(q1x, q2x, t);
+         float r1y = mathLerpf(q1y, q2y, t);
+
+         cx = mathLerpf(r0x, r1x, t);
+         cy = mathLerpf(r0y, r1y, t);
+
+         if(_bStraightLine)
+         {
+            // trace "xxx p0=("+p0x+";"+p0y+")";
+            // trace "xxx p1=("+p1x+";"+p1y+")";
+            // trace "xxx p2=("+p2x+";"+p2y+")";
+            // trace "xxx p3=("+p3x+";"+p3y+")";
+
+            q0x = (p0x + cx) * 0.5f;
+            q0y = (p0y + cy) * 0.5f;
+
+            r0x = (p0x + cx) * 0.5f;
+            r0y = (p0y + cy) * 0.5f;
+         }
+
+         segments[ok+2] = q0x;
+         segments[ok+3] = q0y;
+
+         segments[ok+4] = r0x;
+         segments[ok+5] = r0y;
+
+         segments[k+0] = cx;
+         segments[k+1] = cy;
+
+         segments[k+2] = r1x;
+         segments[k+3] = r1y;
+
+         segments[k+4] = q2x;
+         segments[k+5] = q2y;
+
+         selection_idx = k / 6;
+         selection_off = 0;
+
+         // hack to move center point first after insert
+         setEnableLockSelection(true);
+
+         recalc(true/*bAction*/);
+         redraw();
+      }
+   }
+
+   protected method deleteSegmentAtMouseOver(boolean _bUndo) {
+      int msi = mouseover_segment_idx;
+      if(msi > 0)
+      {
+         if(msi < (segments.numElements/6)-1)
+         {
+            int k = msi * 6;
+
+            if(_bUndo)
+               pushUndoStack();
+
+            float oldcx = segments[k+0];
+            float oldcy = segments[k+1];
+
+            if(b_lctrl)
+            {
+               // Simply delete, do not adjust adjoining control points (-> dampen)
+               float o3x = segments[k+4];
+               float o3y = segments[k+5];
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments[k-2] = o3x;
+               segments[k-1] = o3y;
+            }
+            else
+            {
+               // Calc length of left hand segment path
+               float plenAll, plenCursor;
+               int i = 0;
+               int pointOff = 0;
+               int numSegPoints;
+               loop((msi-1))
+               {
+                  numSegPoints = segment_numpoints_map[i++];
+                  pointOff += numSegPoints;
+               }
+               numSegPoints = segment_numpoints_map[msi-1];
+
+               plenCursor = points.sumPathLen2d(pointOff, numSegPoints);
+               pointOff += numSegPoints;
+               plenAll = plenCursor;
+
+               // Add length of right hand segment path
+               numSegPoints = segment_numpoints_map[msi];
+               plenAll += points.sumPathLen2d(pointOff, numSegPoints);
+
+               ///trace "xxx pNew=("+pxNew+";"+pyNew+")";
+               // // trace "xxx  => "+plenCursor+" / "+plenAll;
+               float t = plenCursor / plenAll;
+
+               // // trace "xxx t="+t;
+
+               float ok = k - 6;
+               float nk = k + 6;
+
+               float p0x = segments[ok+0];
+               float p0y = segments[ok+1];
+               float p3x = segments[nk+0];
+               float p3y = segments[nk+1];
+
+               float q0x = segments[ok+2];
+               float q0y = segments[ok+3];
+               float q2x = segments[k+4];
+               float q2y = segments[k+5];
+
+               float p1x = p0x + (q0x - p0x)*(1.0/t);
+               float p1y = p0y + (q0y - p0y)*(1.0/t);
+               float p2x = p3x + (q2x - p3x)*(1.0/(1.0-t));
+               float p2y = p3y + (q2y - p3y)*(1.0/(1.0-t));
+
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments.delete(k);
+               segments[k-2] = p2x;
+               segments[k-1] = p2y;
+               segments[k-4] = p1x;
+               segments[k-3] = p1y;
+            }
+
+
+            // Select nearest segment
+            calcMouseOverSegmentIdxNorm(oldcx, oldcy);
+            handleSelectSegmentUsingMouse(b_lshift && !b_lctrl/*bStraightLine*/);
+
+            recalc(true/*bAction*/);
+            redraw();
+         }
+      }
+   }
+
+   protected method deleteSelectedSegments() {
+      if(multisel_indices.numElements > 0)
+      {
+         // (note) assumes that multiple-selection is ascending / sorted
+         int selIdx;
+         int segShift = 0;
+         boolean bUndoStarted = false;
+         foreach selIdx in multisel_indices
+         {
+            mouseover_segment_idx = selIdx + segShift;
+
+            boolean bDelete = true;
+
+            if(b_lock_first_last_x && (0 == mouseover_segment_idx))
+               bDelete = false;
+            if(b_lock_first_last_x && ((segments.numElements/6 -1) == mouseover_segment_idx))
+               bDelete = false;
+
+            if(bDelete)
+            {
+               if(!bUndoStarted)
+               {
+                  pushUndoStack();
+                  bUndoStarted = true;
+               }
+               deleteSegmentAtMouseOver(false/*bUndo*/);
+               segShift--;
+            }
+         }
+
+         // New (single) selection
+         selection_idx = multisel_indices.first - 1;
+         if(selection_idx < 0)
+            selection_idx = multisel_indices.last + 1 + segShift;
+         if((selection_idx < 0) || (selection_idx >= segments.numElements/6))
+            selection_idx = 0;
+      }
+   }
+
+   // <method.png>
+   protected method handleSelectSegmentUsingMouse(boolean _bStraightLine) {
+      // // trace "xxx handleSelectSegmentUsingMouse: b_last_keyboard_sel="+b_last_keyboard_sel;
+
+      b_manual_zoompan = true;
+
+      if(b_last_keyboard_sel)
+      {
+         // // /b_last_keyboard_sel = false;
+      }
+      else if(-1 != mouseover_segment_idx)
+      {
+// //          int oldSel = selection_idx*6 + selection_off;
+
+         selection_off = mouseover_segment_off;
+         selection_idx = mouseover_segment_idx;
+
+         if(_bStraightLine && (0 == selection_off))
+         {
+            if(mouseover_point_idx > 0)
+            {
+               pushUndoStack();
+               int segi = mouseover_segment_idx;
+               int k = segi * 6;
+               int ok = k - 6;
+
+               float p0x = segments[ok+0];
+               float p0y = segments[ok+1];
+               float p3x = segments[ k+0];
+               float p3y = segments[ k+1];
+
+               float q0x = (p0x + p3x) * 0.5f;
+               float q0y = (p0y + p3y) * 0.5f;
+
+               float r0x = (p0x + p3x) * 0.5f;
+               float r0y = (p0y + p3y) * 0.5f;
+
+               segments[ok+2] = q0x;
+               segments[ok+3] = q0y;
+
+               segments[ok+4] = r0x;
+               segments[ok+5] = r0y;
+
+               recalc(true/*bAction*/);
+            }
+         }
+
+         redraw();
+
+// //             if(oldSel == (selection_idx*6 + selection_off))
+// //             {
+// //                beginDrag(_ev);
+// //             }
+      }
+
+      clipSelectionIdx();
+   }
+
+   // <method.png>
+   protected method scaleTblOffChanged() {
+      scale_x = scale_tbl_x[scale_tbl_off_x];
+      scale_y = scale_tbl_y[scale_tbl_off_y];
+      clipScaleAndOff(false);
+   }
+
+   // <method.png>
+   protected method scaleTblOffChangedNoClip() {
+      scale_x = scale_tbl_x[scale_tbl_off_x];
+      scale_y = scale_tbl_y[scale_tbl_off_y];
+   }
+
+   // <method.png>
+   protected method clipScaleAndOff(boolean _bClipSegment) {
+      // // trace "xxx scale: xi="+scale_tbl_off_x+" yi="+(scale_tbl_off_y-8)+" scale_x="+scale_x+" scale_y="+scale_y;
+
+      // // trace "\n\n------------------------------------\n";
+
+      // // trace "xxx clipScaleAndOff: b_manual="+b_manual_zoompan;
+
+
+
+      float x = 0.5;
+      int k;
+
+      int minPointIdx = points_min_idx;
+      int maxPointIdx = points_max_idx;
+      float minY = points_min_y;
+      float maxY = points_max_y;
+
+      boolean bAllowDragClipMin = false;
+      boolean bAllowDragClipMax = false;
+      if(b_drag && !b_drag_zoompan && (selection_off==0) )
+      {
+         // // trace "xxx pointIdx.minMax=("+minPointIdx+";"+maxPointIdx+")";
+         if(minPointIdx != -1)
+         {
+            // // trace "xxx selection_idx="+selection_idx+" psm[min]="+point_segment_map[minPointIdx];
+            bAllowDragClipMin =
+               (selection_idx == point_segment_map[minPointIdx]) ||
+               (selection_idx == (point_segment_map[minPointIdx]+1)) ;
+         }
+         if(maxPointIdx != -1)
+         {
+            // // trace "xxx selection_idx="+selection_idx+" psm[max]="+point_segment_map[maxPointIdx];
+            bAllowDragClipMax =
+               (selection_idx == point_segment_map[maxPointIdx]) ||
+               (selection_idx == (point_segment_map[maxPointIdx]+1)) ;
+         }
+      }
+      // // trace "xxx bAllowDrag min="+bAllowDragClipMin+" max="+bAllowDragClipMax;
+
+      // // trace "xxx norm minY="+minY+" maxY="+maxY+" scale=("+(1.0+scale_x*0.5)+"; "+(1.0+scale_y*0.5)+")";
+      x = x / (1.0 + scale_x*0.5);
+
+      // // trace "xxx orig scale_y="+scale_y;
+      // // trace "xxx (1/(1+scale_y)) = "+ (1.0/(1.0+scale_y));
+      float sclYClip = (0.87/(1.0+scale_y));
+      // // trace "xxxx sclYClip="+sclYClip;
+
+      float sclXClip = (0.6/(1.0+scale_x));
+
+      // distance from center of widget to border(s), in bezier coord. system
+
+      // // trace "xxx off=("+off_x+";"+off_y+") range=("+x+";min:"+minY+",max:"+maxY+")";
+
+
+
+      // Clip Y
+
+      // // trace "maxY+off_y="+maxY+" + "+off_y+" = "+(maxY+off_y);
+
+      // clip to maximum y while dragging a point
+      if(b_drag && !b_drag_zoompan)
+      {
+         if(bAllowDragClipMax)
+         {
+            // // trace "xxx dragclipmax off_y="+off_y+" maxY="+maxY;
+            if( (off_y + maxY) > sclYClip)
+            {
+               off_y = sclYClip - maxY;
+            }
+         }
+
+         if(bAllowDragClipMin)
+         {
+            // // trace "xxx dragclipmin   off_y-minY="+off_y+" - "+minY+" = " + (off_y-minY);
+            if( (off_y - minY) > sclYClip)
+            {
+               off_y = sclYClip - minY;
+            }
+         }
+      }
+
+
+      // Clip to previous or next center point while dragging a point
+      if(segments.numElements && ( (b_drag && !b_drag_zoompan) || _bClipSegment ) && !b_manual_zoompan)
+      {
+         k = selection_idx*6;
+         if((k >= 0))
+         {
+            // TODO: check whether control point is visible (testClip()) and skip the following code if it is out of range
+            //          - if code is skipped, clip control point
+            //          - try to fit control point and center point on screen
+            if(selection_off == 2)
+            {
+               k = k + 6;
+            }
+            else if (selection_off == -2)
+            {
+               k = k - 6;
+            }
+
+            // Clip Y
+            float py = segments[k+1];
+            // // trace "xxx py="+py+" off_y="+off_y+" sclYClip="+sclYClip;
+            if( (off_y + py) > sclYClip)
+            {
+               off_y = sclYClip - py;
+            }
+            if( (off_y + py) < -sclYClip)
+            {
+               off_y = -sclYClip - py;
+            }
+
+            // Clip X
+            float px = segments[k+0];
+            // // trace "xxx off_x="+off_x+" px="+px+" sclXClip="+sclXClip;
+            float sum = (0.5 + (px + off_x)) - 1.0;
+            // // trace "xxx sumr="+sum;
+            if(sum > sclXClip)
+            {
+               off_x -= (sum - sclXClip);
+            }
+
+            sum = 0.5 - (px + off_x);
+            // // trace "xxx suml="+sum;
+            if(sum > sclXClip)
+            {
+               off_x += (sum - sclXClip);
+            }
+
+         }
+      }
+
+
+      // Make sure that control or center point currently being dragged is visible
+      if(segments.numElements && ( (b_drag && !b_drag_zoompan) || _bClipSegment) )
+      {
+         k = calcK();
+         if((k >= 0))
+         {
+            // Clip Y
+            py = segments[k+1];
+            // // trace "xxx py="+py+" off_y="+off_y+" sclYClip="+sclYClip;
+            if( (off_y + py) > sclYClip)
+            {
+               off_y = sclYClip - py;
+            }
+            if( (off_y + py) < -sclYClip)
+            {
+               off_y = -sclYClip - py;
+            }
+
+            // Clip X
+            px = segments[k+0];
+            // // trace "xxx off_x="+off_x+" px="+px+" sclXClip="+sclXClip;
+            sum = (0.5 + (px + off_x)) - 1.0;
+            // // trace "xxx sumr="+sum;
+            if(sum > sclXClip)
+            {
+               off_x -= (sum - sclXClip);
+            }
+
+            sum = 0.5 - (px + off_x);
+            // // trace "xxx suml="+sum;
+            if(sum > sclXClip)
+            {
+               off_x += (sum - sclXClip);
+            }
+
+         }
+      }
+
+
+
+      // Clip top
+      if( (off_y + maxY) < sclYClip )
+      {
+         off_y = sclYClip - maxY;
+      }
+
+      // Bottom
+      // // trace "minY+off_y="+minY+" + "+off_y+" = "+(minY+off_y);
+      if( (off_y + minY) > -sclYClip )
+      {
+         off_y = -sclYClip - minY;
+      }
+
+      // Clip X
+      if( (off_x + x) > 0.6)
+      {
+         off_x = 0.6 - x;
+      }
+
+      if( (x - off_x) > 0.6)
+      {
+         off_x = x - 0.6;
+      }
+
+   }
+
+   // <method.png>
+   public method setScaleTblOffX(int _off) {
+      // // trace "xxx setScaleTblOffX(off="+_off+")";
+      scale_tbl_off_x = _off;
+      if(scale_tbl_off_x < 0)
+         scale_tbl_off_x = 0;
+      else if(scale_tbl_off_x >= scale_tbl_x.numElements)
+         scale_tbl_off_x = scale_tbl_x.numElements -1;
+      scaleTblOffChanged();
+   }
+
+   // <method.png>
+   public method addScaleTblOffX(int _off) {
+      setScaleTblOffX(scale_tbl_off_x + _off);
+   }
+
+   // <method.png>
+   public method setScaleTblOffXNoClip(int _off) {
+      scale_tbl_off_x = _off;
+      if(scale_tbl_off_x < 0)
+         scale_tbl_off_x = 0;
+      else if(scale_tbl_off_x >= scale_tbl_x.numElements)
+         scale_tbl_off_x = scale_tbl_x.numElements -1;
+      scaleTblOffChangedNoClip();
+   }
+
+   // <method.png>
+   public method addScaleTblOffXNoClip(int _off) {
+      setScaleTblOffXNoClip(scale_tbl_off_x + _off);
+   }
+
+   // <method.png>
+   public method setScaleTblOffY(int _off) {
+      scale_tbl_off_y = _off;
+      if(scale_tbl_off_y < 0)
+         scale_tbl_off_y = 0;
+      else if(scale_tbl_off_y >= scale_tbl_y.numElements)
+         scale_tbl_off_y = scale_tbl_y.numElements -1;
+      scaleTblOffChanged();
+   }
+
+   // <method.png>
+   public method addScaleTblOffY(int _off) {
+      setScaleTblOffY(scale_tbl_off_y + _off);
+   }
+
+   // <method.png>
+   protected method selectPreviousCenterPoint() {
+      multisel_indices.empty();
+      if(selection_off == 2)
+      {
+         selection_off = 0;
+      }
+      else
+      {
+         selection_off = 0;
+         addSelectionIdx(-1);
+      }
+      redraw();
+   }
+
+   // <method.png>
+   protected method selectNextCenterPoint() {
+      multisel_indices.empty();
+      if(selection_off == -2)
+      {
+         selection_off = 0;
+      }
+      else
+      {
+         selection_off = 0;
+         addSelectionIdx(1);
+      }
+      redraw();
+   }
+
+   // <method.png>
+   protected method selectPreviousPoint() {
+      // // trace "xxx selectPreviousPoint";
+      multisel_indices.empty();
+      if(selection_off == 2)
+      {
+         selection_off = 0;
+      }
+      else if(selection_off == -2)
+      {
+         addSelectionIdx(-1);
+         selection_off = 2;
+      }
+      else
+      {
+         selection_off = -2;
+      }
+
+      clipSelectionOff();
+
+      b_manual_zoompan = false;
+      clipScaleAndOff(true);
+      setEnableLockSelection(true);
+   }
+
+   // <method.png>
+   protected method selectNextPoint() {
+      // // trace "xxx selectNextPoint";
+      multisel_indices.empty();
+      if(selection_off == 2)
+      {
+         selection_off = -2;
+         addSelectionIdx(1);
+      }
+      else if(selection_off == -2)
+      {
+         selection_off = 0;
+      }
+      else
+      {
+         selection_off = 2;
+      }
+      clipSelectionOff();
+      b_manual_zoompan = false;
+      clipScaleAndOff(true);
+      setEnableLockSelection(true);
+   }
+
+   // <method.png>
+   protected method toggleDragScale() {
+      // // trace "xxx toggleDragScale";
+      if(b_drag_scale)
+      {
+         b_drag_scale_end = true;
+      }
+      else
+      {
+         b_drag_scale_recalc_center = true;
+         b_drag_scale = true;
+      }
+   }
+
+   // <method.png>
+   protected method dragMultiSelRect(MouseEvent _ev) {
+      Float mx = _ev.mouse_rel_x;
+      Float my = _ev.mouse_rel_y;
+      transformMouse(mx, my);
+      multisel_qx = mx;
+      multisel_qy = my;
+
+      // Sort rectangle
+      if(multisel_px < multisel_qx)
+      {
+         multisel_sorted_px = multisel_px;
+         multisel_sorted_qx = multisel_qx;
+      }
+      else
+      {
+         multisel_sorted_px = multisel_qx;
+         multisel_sorted_qx = multisel_px;
+      }
+
+      if(multisel_py < multisel_qy)
+      {
+         multisel_sorted_py = multisel_py;
+         multisel_sorted_qy = multisel_qy;
+      }
+      else
+      {
+         multisel_sorted_py = multisel_qy;
+         multisel_sorted_qy = multisel_py;
+      }
+
+      redraw();
+   }
+
+   // <method.png>
+   protected method endDragMultiSelRect() {
+      b_drag_multisel_rect = false;
+      b_drag = false;
+
+      // Find points within rectangle
+      multisel_indices.empty();
+      int k = 0;
+      while(k < segments.numElements)
+      {
+         if((multisel_sorted_px <= segments[k+0] < multisel_sorted_qx) &&
+            (multisel_sorted_py <= segments[k+1] < multisel_sorted_qy)
+            )
+         {
+            multisel_indices.add(k/6);
+         }
+         k += 6;
+      }
+      trace "[dbg] BezierEdit: multiselect "+multisel_indices.numElements+" point(s)";
+      UI.LogInfoFast("Multi-select "+multisel_indices.numElements+" point"+UI.GetPluralString(multisel_indices.numElements));
+      if(multisel_indices.numElements > 0)
+      {
+         selection_idx = multisel_indices.get(0);
+      }
+      redraw();
+   }
+
+   // <method.png>
+   protected method makeXVisibleAtMouseX(float _x, float _mouseRelX) {
+      float newX = transformMouseX(_mouseRelX);
+      off_x -= (_x - newX);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseLeave(MouseEvent _ev) {
+      setEnableLockSelection(false);
+      return Control::onMouseLeave(_ev);
+   }
+
+// //    public virtual onMouseClick(MouseEvent _ev) : boolean {
+// //       if(_ev.rightButtonUp())
+// //       {
+// //          if(!b_lctrl)
+// //          {
+// //             if(-1 != mouseover_point_idx)
+// //             {
+// //                insertSegmentAtMouseOverPoint();
+// //                return true;
+// //             }
+// //          }
+// //          else
+// //          {
+// //             if(-1 != mouseover_segment_idx)
+// //             {
+// //                deleteSegmentAtMouseOver();
+// //                return true;
+// //             }
+// //          }
+// //       }
+// //    }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      // trace "xxx onMouseDoubleClick: cbs="+_ev.current_state;
+      if(true)//b_lctrl)
+      {
+         if(_ev.isLeftButton())
+         {
+            // trace "xxx insert point_idx="+mouseover_point_idx+" #points="+points.numElements;
+            if(-1 != mouseover_point_idx)
+            {
+               insertSegmentAtMouseOverPoint(b_lshift&&!b_lctrl/*bStraightLine*/);
+               return true;
+            }
+         }
+         else if(_ev.isRightButton())
+         {
+            // // trace "xxx delete";
+            if(multisel_indices.numElements > 0)
+            {
+               deleteSelectedSegments();
+               return true;
+            }
+            if(-1 != mouseover_segment_idx)
+            {
+               if(! (b_lock_first_last_x && ((0 == mouseover_segment_idx) || (((segments.numElements/6)-1) == mouseover_segment_idx))))
+               {
+                  deleteSegmentAtMouseOver(true/*bUndo*/);
+               }
+               return true;
+            }
+         }
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual isMouseFocusLocked() : boolean {
+      return b_drag || b_rmb;
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return b_rmb;
+   }
+
+   // <ui_mouse.png>
+   protected virtual wantToolTipNearMouse() : boolean {
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(b_provide_click)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_CLICK), this));
+
+      if(_ev.isLeftButton())
+      {
+         multisel_indices.empty();
+      }
+
+      return onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _startEv) : boolean {
+      // // trace "xxx BezierEdit::onMouseHold.";
+      if(!b_drag || (b_drag && !b_drag_moved))
+      {
+         if(_startEv.isLeftButtonDown())
+         {
+            b_drag_zoompan       = false;
+            b_drag_space         = false;
+            b_drag_rotate        = false;
+            b_drag_multisel_rect = false;
+            b_drag_zoomxy        = false;
+
+            if(_startEv.isRightButtonDown())
+            {
+               beginDragZoomXY(_startEv);
+            }
+            else
+            {
+               Float mx = _startEv.mouse_rel_x;
+               Float my = _startEv.mouse_rel_y;
+               transformMouse(mx, my);
+               // trace "xxx BezierEdit: start rectangular selection at ("+mx+";"+my+")";
+               multisel_px = mx;
+               multisel_py = my;
+               multisel_qx = mx;
+               multisel_qy = my;
+               multisel_sorted_px = mx;
+               multisel_sorted_py = my;
+               multisel_sorted_qx = mx;
+               multisel_sorted_qy = my;
+               multisel_indices.empty();
+               b_drag = true;
+               b_drag_multisel_rect = true;
+            }
+            return true;
+         }
+         else if(_startEv.isRightButtonDown())
+         {
+            showPopupMenu();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      Float oldX;
+      float oldY;
+
+      // // trace "xxx onMouse: abs=("+_ev.mouse_abs_x+"; "+_ev.mouse_abs_y+")";
+      // // trace "xxx onMouse: rel=("+_ev.mouse_rel_x+"; "+_ev.mouse_rel_y+")";
+
+      b_rmb = _ev.isRightButtonDown();
+
+      scheduleToolTipTimer();
+
+      if(_ev.changed_state & MOUSE_WHEELDOWN)
+      {
+         if(_ev.current_state & MOUSE_WHEELDOWN)
+         {
+            if(b_drag && !b_drag_zoompan)
+            {
+               toggleDragScale();
+            }
+            else
+            {
+               if(b_lalt)
+               {
+                  if(b_lctrl)
+                  {
+                     addScaleTblOffY(1);
+                  }
+                  else
+                  {
+                     oldX = _ev.mouse_rel_x;
+                     oldY = _ev.mouse_rel_y;
+                     transformMouse(oldX, oldY);
+                     addScaleTblOffXNoClip(-1);
+                     makeXVisibleAtMouseX(oldX, _ev.mouse_rel_x);
+                     clipScaleAndOff(false);
+                  }
+                  redraw();
+               }
+               else
+               {
+                  if(b_lctrl)
+                     selectPreviousCenterPoint();
+                  else
+                     selectPreviousPoint();
+               }
+            }
+
+            return true;
+         }
+      }
+      else if(_ev.changed_state & MOUSE_WHEELUP)
+      {
+         if(_ev.current_state & MOUSE_WHEELUP)
+         {
+            if(b_drag && !b_drag_zoompan)
+            {
+               toggleDragScale();
+            }
+            else
+            {
+               // trace "xxx BezierEdit: wheel: b_lalt="+b_lalt+" b_lctrl="+b_lctrl;
+               if(b_lalt)
+               {
+                  if(b_lctrl)
+                  {
+                     addScaleTblOffY(-1);
+                  }
+                  else
+                  {
+                     oldX = _ev.mouse_rel_x;
+                     oldY = _ev.mouse_rel_y;
+                     transformMouse(oldX, oldY);
+                     addScaleTblOffXNoClip(1);
+                     makeXVisibleAtMouseX(oldX, _ev.mouse_rel_x);
+                     clipScaleAndOff(false);
+                  }
+                  redraw();
+               }
+               else
+               {
+                  if(b_lctrl)
+                     selectNextCenterPoint();
+                  else
+                     selectNextPoint();
+               }
+            }
+            return true;
+         }
+      }
+
+      if(_ev.middleButtonDown())
+      {
+         if(!b_drag)
+         {
+            beginDragZoomPan(_ev);
+         }
+         return true;
+      }
+      else if(_ev.middleButtonUp())
+      {
+         if(b_drag)
+         {
+            if(b_drag_zoompan)
+            {
+               endDragZoomPan();
+            }
+         }
+         return true;
+      }
+
+      if(b_drag_zoomxy)
+      {
+         if(_ev.isLeftButtonDown() || _ev.isRightButtonDown())
+         {
+            handleDragZoomXY(_ev);
+         }
+         else
+         {
+            UI.LogTrace("BezierEdit: end drag_zoomxy. sclTblOffX="+scale_tbl_off_x+" sclTblOffY="+scale_tbl_off_y);
+            b_drag_zoomxy = false;
+            b_drag = false;
+         }
+         return true;
+      }
+
+      // LMB now pressed ?
+      if(_ev.leftButtonDown())
+      {
+         grabKeyboardFocus();
+
+         if(!b_drag)
+         {
+            if(b_lalt)
+            {
+               beginDragZoomPan(_ev);
+            }
+            else
+            {
+               if(multisel_indices.numElements > 0)
+               {
+                  beginDrag(_ev);
+                  b_cancel_drag_rmb = true;
+                  return true;
+               }
+
+               handleSelectSegmentUsingMouse(b_lshift && !b_lctrl && (0 == multisel_indices.numElements)/*bStraightLine*/);
+
+               boolean bForceDragRotate =
+                  b_allow_drag_rotate &&
+                  (0 == multisel_indices.numElements) &&
+                  !isMouseNearCtlPoint(_ev, 0.05/mathMaxf(scale_x, 1.0f)/*maxDist*/) &&
+                  isMouseNearPoint(_ev, 0.05/mathMaxf(scale_x, 1.0f)/*maxDist*/)     ;
+
+               if( (!b_lshift || (0 != selection_off)) || (b_lshift && b_lctrl && (0 == selection_off)) || bForceDragRotate)
+               {
+                  if(-1 != selection_idx)
+                  {
+                     if( bForceDragRotate || (b_lctrl && b_lshift && (0 == selection_off)) )
+                     {
+                        beginDragRotate(_ev);
+                     }
+                     else if(b_lctrl && (0 == selection_off))
+                     {
+                        beginDragSpace(_ev);
+                     }
+                     else
+                     {
+                        beginDrag(_ev);
+                        b_cancel_drag_rmb = true;
+                     }
+                  }
+               }
+            }
+            return true;
+         }
+      }
+      else if(_ev.leftButtonUp())
+      {
+         if(b_drag)
+         {
+            if(b_drag_multisel_rect)
+            {
+               endDragMultiSelRect();
+            }
+            else if(b_drag_zoompan)
+            {
+               endDragZoomPan();
+            }
+            else if(b_drag_space)
+            {
+               endDragSpace();
+            }
+            else if(b_drag_rotate)
+            {
+               endDragRotate();
+            }
+            else
+            {
+               if(!b_cancel_drag_rmb)
+               {
+                  endDragReset(_ev);
+               }
+               else
+               {
+                  endDrag(_ev);
+               }
+            }
+            return true;
+         }
+      }
+      else if(_ev.rightButtonDown())
+      {
+         grabKeyboardFocus();
+         if(!b_drag)
+         {
+            handleSelectSegmentUsingMouse(b_lshift/*bStraightLine*/);
+            if(-1 != selection_idx)
+            {
+               beginDrag(_ev);
+            }
+            b_cancel_drag_rmb = false;
+            setEnableLockSelection(false);
+            return true;
+         }
+      }
+      else if(_ev.rightButtonUp())
+      {
+         if(b_lctrl)
+         {
+            showPopupMenu();
+            return true;
+         }
+         if(b_drag)
+         {
+            if(!b_drag_zoompan)
+            {
+               if(b_drag_space)
+               {
+                  endDragSpaceReset();
+               }
+               else if(b_drag_rotate)
+               {
+                  endDragRotateReset();
+               }
+               else if(b_cancel_drag_rmb)
+               {
+                  endDragReset(_ev);
+               }
+               else
+               {
+                  endDrag(_ev);
+               }
+            }
+            return true;
+         }
+      }
+
+      // trace "xxx b_drag="+b_drag+" b_drag_multisel_rect="+b_drag_multisel_rect;
+
+      if(b_drag)
+      {
+         if(b_drag_zoompan)
+         {
+            dragZoomPan(_ev);
+         }
+         else if(b_drag_space)
+         {
+            dragSpace(_ev);
+         }
+         else if(b_drag_rotate)
+         {
+            dragRotate(_ev);
+         }
+         else if(b_drag_multisel_rect)
+         {
+            dragMultiSelRect(_ev);
+         }
+         else
+         {
+            dragSelection(_ev);
+         }
+         return true;
+      }
+      else
+      {
+         calcMouseOverPointIdx(_ev);
+         calcMouseOverSegmentIdx(_ev);
+         return handleMouseEventByDefault();
+      }
+
+   }
+
+   protected method addSelectionOff(int _off) {
+      selection_off += _off;
+      clipSelectionOff();
+      redraw();
+      // // trace "[dbg] BezierEdit: selection_off="+selection_off;
+      setEnableLockSelection(true);
+   }
+
+   protected method clipSelectionIdx() {
+      if(b_lctrl) // not shift because of keyjazz (upper case letters)
+      {
+         // Wrap-around
+         if(selection_idx < 0)
+         {
+            selection_idx = ((segments.numElements/6)-1);
+         }
+         else if(selection_idx >= (segments.numElements/6))
+         {
+            selection_idx = 0;
+         }
+      }
+      else
+      {
+         // Clamp to first/last point
+         if(selection_idx < 0)
+         {
+            selection_idx = 0;
+         }
+         else if(selection_idx >= (segments.numElements/6))
+         {
+            selection_idx = (segments.numElements/6)-1;
+         }
+      }
+   }
+
+   protected method clipSelectionOff() {
+      if(selection_off > 2)
+      {
+         selection_off = 2;
+      }
+      else if(selection_off < -2)
+      {
+         selection_off = -2;
+      }
+
+      if(selection_idx == ((segments.numElements/6)-1))
+      {
+         if(selection_off == 2)
+         {
+            selection_off = 0;
+         }
+      }
+      else if(selection_idx == 0)
+      {
+         if(selection_off == -2)
+         {
+            selection_off = 0;
+         }
+      }
+   }
+
+   protected method addSelectionIdx(int _idx) {
+      selection_idx += _idx;
+      clipSelectionIdx();
+      clipSelectionOff();
+      clipScaleAndOff(true);
+      redraw();
+      // // trace "[dbg] BezierEdit: selection_idx="+selection_idx;
+      setEnableLockSelection(true);
+   }
+
+   public virtual getToolTipCaption() : String {
+      if((mouseover_segment_idx != -1) && !b_lctrl)
+      {
+         float x = segments[mouseover_segment_idx*6+mouseover_segment_off+0];
+         float y = segments[mouseover_segment_idx*6+mouseover_segment_off+1];
+         if(scale_hint != 0.0f)
+         {
+            y = y * scale_hint + offset_hint;
+         }
+         if(align_last_cyclic != 0.0f)
+            return "x:"+x+" y:"+y+" / cyclic:"+(y % align_last_cyclic);
+         else
+            return "x:"+x+" y:"+y;
+      }
+      else
+      {
+         return "mx="+last_seen_mx+" my="+last_seen_my;
+      }
+   }
+
+   protected method showPopupMenu() {
+
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+      PopupMenu *pm;
+      pm_context <= PopupMenu.New(this);
+      pm <= pm_context;
+
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Zoom..", deref spm);
+
+      pmb <= spm.addDefaultButton("Reset Zoom", "zoom_reset");
+      pmb.setAccelerators("lctrl-SPACE", "");
+
+      pmb <= spm.addDefaultButton("Zoom out (x)", "zoom_out_x");
+      pmb.setAccelerators("u", "lalt-WHEELDOWN");
+
+      pmb <= spm.addDefaultButton("Zoom in (x)", "zoom_in_x");
+      pmb.setAccelerators("i", "lalt-WHEELUP");
+
+      pmb <= spm.addDefaultButton("Zoom out (y)", "zoom_out_y");
+      pmb.setAccelerators("o", "lctrl-lalt-WHEELDOWN");
+
+      pmb <= spm.addDefaultButton("Zoom in (y)", "zoom_in_y");
+      pmb.setAccelerators("p", "lctrl-lalt-WHEELUP");
+
+      pm.addSeparator();
+
+      pm.addDefaultButton("NormalizeY 0..1", "normy01");
+      pm.addDefaultButton("NormalizeY -1..1", "normy11");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Flip X", "flip_x");
+      pmb.setAccelerators("f", "");
+
+      pmb <= pm.addDefaultButton("Flip Y", "flip_y");
+      pmb.setAccelerators("lshift-f", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Trim to selection", "trim");
+      pmb.setAccelerators("lctrl-t", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Simplify (coarse)", "simplify_coarse");
+      pmb.setAccelerators("lctrl-q", "");
+      pmb.setToolTipCaption("Simplify\n\n (note) remove segments if control point angle between prev / next segment is below threshold (straight line)\n\n (note) try lctrl-q, lctrl-r, lctrl-q to remove even more points and also smoothen then remaining ones");
+
+      pmb <= pm.addDefaultButton("Simplify (fine)", "simplify_fine");
+      pmb.setAccelerators("lctrl-lshift-q", "");
+
+      pm.addSeparator();
+      pmb <= pm.addCheckButton("Drag+Rotate", b_allow_drag_rotate, "drag_rotate");
+      pmb.setToolTipCaption("When checked, allow curve segments to be bent by LMB-dragging the mouse near them");
+      pmb.setAccelerators("lctrl-e", "");
+
+      // Backdrop
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Set backdrop", "backdrop_set");
+      pmb.setAccelerators("lctrl-b", "");
+      pmb <= pm.addDefaultButton("Clear backdrop", "backdrop_clear");
+      pmb.setAccelerators("lctrl-lshift-b", "");
+
+      // Smoothing submenu
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Smoothing..", deref spm);
+      pmb <= spm.addCheckButton("Smooth Edit Mode", b_smooth_ctl, "smooth_toggle");
+      pmb.setAccelerators("", "m");
+
+      pmb <= spm.addCheckButton("X-Dist Only", b_smooth_ctl_xdist_only, "smooth_toggle_xdist");
+      pmb.setToolTipCaption("When checked, only use x-coordinates for distance calculation\n\nWhen unchecked, use both x and y coordinates");
+      pmb.setAccelerators("", "lshift-m");
+
+      pmb <= spm.addCheckButton("CtlPoint Dist", b_smooth_ctl_dist_ctlpoints, "smooth_toggle_ctlpoints");
+      pmb.setToolTipCaption("When checked, use ctlpoints for distance calculation\n\nWhen unchecked, use center points");
+      pmb.setAccelerators("", "lctrl-m");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Smooth All (5%)", "smooth_all_5");
+      pmb.setAccelerators("", "lshift-n");
+
+      pmb <= spm.addDefaultButton("Smooth All (10%)", "smooth_all_10");
+      pmb.setAccelerators("", "n");
+
+      pmb <= spm.addDefaultButton("Smooth All (25%)", "smooth_all_25");
+      pmb.setAccelerators("", "lctrl-n");
+
+      pmb <= spm.addDefaultButton("Smooth All (50%)", "smooth_all_50");
+      pmb.setAccelerators("", "lctrl-lshift-n");
+
+      pmb <= spm.addDefaultButton("Smooth All (100%)", "smooth_all_100");
+
+      pm.addSeparator();
+      pmb <= pm.addCheckButton("Grid", b_draw_grid, "grid_toggle");
+      pmb.setAccelerators("g", "");
+      pmb <= pm.addDefaultButton("Cycle Grid Subdivision ["+grid_subdiv+"]", "grid_cycle");
+      pmb.setAccelerators("lshift-g", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Create symmetry <45deg", "symmetry_45");
+      pmb.setAccelerators("lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("Create symmetry", "symmetry");
+      pmb.setAccelerators("lctrl-lshift-r", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Align last to first", "align_last"); // make seamless
+      pmb.setAccelerators("lctrl-lshift-f", "");
+
+      pm_context.showNearMouse(-6, -6);
+
+      b_drag = false;
+
+      hideToolTip();
+      cancelToolTipTimer();
+   }
+
+   protected method normalizeY01() {
+      trace "[dbg] BezierEdit::normalizeY01";
+      UI.LogInfoFast("Normalize 0..1");
+
+      float minY = points_unclip_min_y;
+      float maxY = points_unclip_max_y;
+      // // trace "xxx  minY="+minY+" maxY="+maxY;
+      float scly = 1.0 / (maxY - minY);
+      float offy = -minY;
+      // // trace "xxx scly="+scly+" offy="+offy;
+
+      int k =0;
+      loop(segments.numElements/2)
+      {
+         segments[k+1] = (segments[k+1] - minY) * scly;
+         k += 2;
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method normalizeY11() {
+      trace "[dbg] BezierEdit::normalizeY11";
+      UI.LogInfoFast("Normalize -1..1");
+
+      float minY = points_unclip_min_y;
+      float maxY = points_unclip_max_y;
+      // // trace "xxx  minY="+minY+" maxY="+maxY;
+      float scly = 2.0 / (maxY - minY);
+      float offy = -minY -1;
+      // // trace "xxx scly="+scly+" offy="+offy;
+
+      int k = 0;
+      loop(segments.numElements/2)
+      {
+         segments[k+1] = (segments[k+1] - minY) * scly - 1.0;
+         k += 2;
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   protected method flipX() {
+      trace "[dbg] BezierEdit::flipX";
+      UI.LogInfoFast("Flip X");
+      int numSeg = segments.numElements / 6;
+
+      if(numSeg >= 2)
+      {
+         float minX = segments[0];
+         float maxX = segments[segments.numElements - 6];
+         // trace "xxx  minX="+minX+" maxX="+maxX;
+
+         int k  = segments.numElements - 6;
+         int pk = segments.numElements - 12;
+         local FloatArray newSeg;
+         newSeg.alloc(segments.numElements);
+         float tx;
+         loop(numSeg)
+         {
+            tx = segments[k+0];
+            tx = maxX - (tx - minX);
+            newSeg.add(tx);            // px
+            newSeg.add(segments[k+1]); // py
+            if(pk >= 0)
+            {
+               tx = segments[pk+4];
+               tx = maxX - (tx - minX);
+               newSeg.add(tx);             // c2x
+               newSeg.add(segments[pk+5]); // c2y
+               tx = segments[pk+2];
+               tx = maxX - (tx - minX);
+               newSeg.add(tx);             // c1x
+               newSeg.add(segments[pk+3]); // c1y
+            }
+            else
+            {
+               newSeg.add(tx);            // c1x
+               newSeg.add(segments[k+1]); // c1y
+               newSeg.add(tx);            // c2x
+               newSeg.add(segments[k+1]); // c2y
+            }
+            k -= 6;
+            pk -= 6;
+         }
+
+         segments.unlinkFrom(newSeg);
+
+         recalc(true/*bAction*/);
+         redraw();
+      }
+   }
+
+   protected method flipY() {
+      trace "[dbg] BezierEdit::flipY";
+      UI.LogInfoFast("Flip Y");
+
+      float minY = points_unclip_min_y;
+      float maxY = points_unclip_max_y;
+      // // trace "xxx  minY="+minY+" maxY="+maxY;
+      // // trace "xxx scly="+scly+" offy="+offy;
+
+      int k = 0;
+      loop(segments.numElements/2)
+      {
+         segments[k+1] = maxY - (segments[k+1] - minY);
+         k += 2;
+      }
+
+      recalc(true/*bAction*/);
+      redraw();
+   }
+
+   public method setScaleOffsetHints(float _scale, float _off) {
+      // used for cyclic alignment and also for tooltip display (e.g. convert to degrees)
+      scale_hint  = _scale;
+      offset_hint = _off;
+   }
+
+   public method setAlignLastCyclic(float _cyclic) {
+      align_last_cyclic = _cyclic;
+   }
+
+   public method alignLastToFirst() {
+      int numSeg = segments.numElements / 6;
+      if(numSeg >= 2)
+      {
+         pushUndoStack();
+         int k     = (numSeg - 1) * 6;
+         float dx = segments[2] - segments[0];
+         float dy = segments[3] - segments[1];
+
+         // Copy y
+         if(align_last_cyclic > 0.0f)
+         {
+            float c = segments[1] * scale_hint + offset_hint;
+            float n = segments[k+1] * scale_hint + offset_hint;
+            trace "xxx align cyclic c="+c+" n="+n+" cyclic="+align_last_cyclic;
+            if(abs(n - c) >= (align_last_cyclic*0.5f))
+            {
+               if(n > c)
+                  n = c - align_last_cyclic;
+               else
+                  n = c + align_last_cyclic;
+            }
+            else
+               n = c;
+            // // n = mathNextCyclicf(c, n, align_last_cyclic);
+            // trace "xxx   ==> n="+n;
+            n -= offset_hint;
+            n /= scale_hint;
+            segments[k + 1] = n;
+         }
+         else
+         {
+            segments[k + 1] = segments[1];
+         }
+
+         segments[k - 2] = (segments[k+0] - dx);
+         segments[k - 1] = (segments[k+1] - dy);
+         recalc(true/*bAction*/);
+         redraw();
+      }
+   }
+
+   public method makeSymmetrical(float _maxAngle/*radians*/) {
+      int numSeg = segments.numElements / 6;
+      if(numSeg >= 2)
+      {
+         pushUndoStack();
+
+         int k = 6;
+         loop(numSeg-1)
+         {
+            local Vector2f c2a; c2a.init(segments[k-6+4], segments[k-6+5]);
+            local Vector2f pb;  pb .init(segments[k+0], segments[k+1]);
+            local Vector2f c1b; c1b.init(segments[k+2], segments[k+3]);
+            local Vector2f clRel = pb - c2a; clRel.unit();
+            local Vector2f crRel = c1b - pb; crRel.unit();
+            float angSym = acos(clRel.dot(crRel));
+
+            if(angSym < _maxAngle)
+            {
+               float px = segments[k-2] - segments[k+0];
+               float py = segments[k-1] - segments[k+1];
+
+               float nx = segments[k+2] - segments[k+0];
+               float ny = segments[k+3] - segments[k+1];
+
+               float avgx = (px - nx) * 0.5;
+               float avgy = (py - ny) * 0.5;
+
+               segments[k-2] = segments[k+0] + avgx;
+               segments[k-1] = segments[k+1] + avgy;
+
+               segments[k+2] = segments[k+0] - avgx;
+               segments[k+3] = segments[k+1] - avgy;
+            }
+
+            k += 6;
+         }
+
+         recalc(true/*bAction*/);
+         redraw();
+      }
+   }
+
+   public method toggleGrid() {
+      b_draw_grid = !b_draw_grid;
+      trace "[dbg] BezierEdit: b_draw_grid="+b_draw_grid;
+      UI.LogInfoFast("Grid is "+UI.GetEnableString(b_draw_grid));
+   }
+
+   public method cycleGridSubDiv() {
+      int subdivIdx = grid_subdiv_presets.findNearestIdx1d(grid_subdiv, 0, 1/*stride*/, 1.0f/*maxDist*/);
+      subdivIdx = (subdivIdx + 1) % grid_subdiv_presets.numElements;
+      grid_subdiv = grid_subdiv_presets[subdivIdx];
+      trace "[dbg] BezierEdit::cycleGridSubDiv: subdivIdx="+(subdivIdx+1)+"/"+(grid_subdiv_presets.numElements)+" subdiv="+grid_subdiv;
+      UI.LogInfoFast("Grid sub-division is "+grid_subdiv);
+      redraw();
+   }
+
+   // <method_parse.png>
+   protected static ParseXYValuesFromASCII(String _buf, Boolean bRetCtlPoints) : FloatArray {
+      // either y per line (autox = 0..1)
+      // or "x y" per line
+      // or "px py c1x c1y c2x c2y"  per line
+      local FloatArray ret;
+      local StringArray a <= _buf.splitChar('\n');
+      boolean bAutoX = true;
+      bRetCtlPoints = false;
+      if(null != a)
+      {
+         String *s;
+         foreach s in a
+         {
+            s.trim();
+            if!((s <= "#") || (s <= ";") || (s <= "//"))
+            {
+               local StringArray av <= s.splitSpace(true);
+               if(av.numElements >= 6)
+               {
+                  trace "xxx av="+av;
+                  ret.add(float(av.get(0)));  // p1x
+                  ret.add(float(av.get(1)));  // p1y
+                  ret.add(float(av.get(2)));  // c1x
+                  ret.add(float(av.get(3)));  // c1y
+                  ret.add(float(av.get(4)));  // c2x
+                  ret.add(float(av.get(5)));  // c2y
+                  bAutoX = false;
+                  bRetCtlPoints = true;
+               }
+               else if(av.numElements >= 2)
+               {
+                  ret.add(float(av.get(0)));  // x
+                  ret.add(float(av.get(1)));  // y
+                  bAutoX = false;
+               }
+               else if(bAutoX && (av.numElements >= 1))
+               {
+                  ret.add(0);  // place holder x
+                  ret.add(float(av.get(0)));  // y
+               }
+            }
+            // else: skip comment line
+         }
+         if(bAutoX)
+         {
+            // Create "x" values (0..1)
+            int numKeyFrames = ret.numElements / 2;
+            if(numKeyFrames > 1)
+            {
+               float t = 0;
+               float tStep = 1.0 / (numKeyFrames-1);
+               int idx = 0;
+               loop(numKeyFrames)
+               {
+                  ret[idx] = t;
+                  t += tStep;
+                  idx += 2;
+               }
+            }
+         }
+         else if(ret.numElements >= 2 && !bRetCtlPoints)
+         {
+            // Fix first/last point x to 0;1
+            ret[0] = 0;
+            ret[ret.numElements-2] = 1;
+         }
+      }
+      return deref ret;
+   }
+
+   // <method.png>
+   public method importFromString(String sClipboard) {
+      Boolean bRetCtlPoints = false;
+      local FloatArray values <= ParseXYValuesFromASCII(sClipboard, bRetCtlPoints);
+      if(values.numElements >= 4)
+      {
+         int numKeyFrames = values.numElements / (bRetCtlPoints ? 6 : 2);
+         if(numKeyFrames >= 1)
+         {
+            pushUndoStack();
+
+            clearCtlPoints();
+
+            int idx;
+
+            if(bRetCtlPoints)
+            {
+               // p1x p2y c1x c1y
+               // c2x c2y p2x p2y
+               // ..
+               idx = 0;
+               loop(numKeyFrames)
+               {
+                  addCtlPoint(values.get(idx+0), values.get(idx+1),  // px, py
+                              values.get(idx+2), values.get(idx+3),  // c1x, c1y
+                              values.get(idx+4), values.get(idx+5)   // c2x, c2y
+                              );
+                  trace "[dbg] BezierEdit::importFromString: addCtlPoint ("+values.get(idx+0)+";"+values.get(idx+1)+") ("+values.get(idx+2)+";"+values.get(idx+3)+") ("+values.get(idx+4)+";"+values.get(idx+5)+")";
+                  idx += 6;
+               }
+               if(1.0 != values.get(idx - 6))
+               {
+                  // finish curve at (1.0,y)
+                  trace "[dbg] BezierEdit::importFromString: finish curve at (1.0; "+values.get(idx-5)+")";
+                  addCtlPoint(1.0f, values.get(idx-5),  // px, py
+                              (1.0f + values.get(idx-6))*0.5, values.get(idx-5),  // c1x, c1y
+                              (1.0f + values.get(idx-6))*0.5, values.get(idx-5)   // c1x, c1y
+                              );
+               }
+            }
+            else
+            {
+
+               float scl = 1.0;//env.getFloatParamById("scl");
+               float off = 0.0;//env.getFloatParamById("off");
+
+               float tc = values.get(0);
+               float fc = values.get(1);
+               fc = (fc - off) / scl;
+
+               float fn;
+               float tn;
+
+               idx = 2;
+               loop(numKeyFrames - 1)
+               {
+                  tn = values.get(idx+0);
+                  fn = values.get(idx+1);
+                  fn = (fn - off) / scl;
+
+                  float ctlX = (tc+tn)*0.5;
+                  float ctlY = (fc+fn)*0.5;
+
+                  // trace "xxx import: tc="+tc+" fc="+fc+"   tn="+tn+" fn="+fn+"   ctl=("+ctlX+";"+ctlY+")";
+
+                  addCtlPoint(tc, fc,
+                              ctlX, ctlY,
+                              ctlX, ctlY
+                              );
+
+                  // Next key frame
+                  tc = tn;
+                  fc = fn;
+                  idx += 2;
+               }
+
+               // Last key frame
+               addCtlPoint(1.0, fn, 0,0, 0,0);
+            }
+
+            recalc(false/*bAction*/);
+            resetZoom();
+            redraw();
+            saveCurrentState();
+
+            // if(GConfig.b_curve1_autosmooth)
+            // {
+            //    beVal.makeSymmetrical();
+            //    beVal.alignLastToFirst();
+            // }
+
+            UI.LogSuccess("Import "+numKeyFrames+" key frame"+UI.GetPluralString(numKeyFrames));
+            return true;
+         }
+         else
+            UI.LogWarning("Import: no keyframes (ASCII x/y pairs from clipboard)");
+      }
+      else
+         UI.LogWarning("Import: not enough values (<4) (empty clipboard?)");
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method trimCurveToSelection() {
+
+      if(multisel_indices.numElements >= 2)
+      {
+         pushUndoStack();
+
+         int numSel = multisel_indices.numElements;
+
+         // Find min/max center point x
+         float px;
+         float minX = 1.0f;
+         float maxX = 0.0f;
+         int multiIdx = 0;
+         int idx;
+         int k;
+         loop(numSel)
+         {
+            idx = multisel_indices.get(multiIdx);
+            k = idx * 6;
+            px = segments.get(k+0);
+            if(px < minX)
+               minX = px;
+            if(px > maxX)
+               maxX = px;
+
+            // Next center point
+            multiIdx++;
+         }
+
+         float sclX = 1.0 / (maxX - minX);
+
+         // Create new, scaled segments
+         local FloatArray ne;
+         ne.alloc(numSel * 6);
+         multiIdx = 0;
+         loop(numSel)
+         {
+            idx = multisel_indices.get(multiIdx);
+            k = idx * 6;
+            ne.add( (segments.get(k+0) - minX) * sclX );  // px
+            ne.add( (segments.get(k+1)       )        );  // py
+            ne.add( (segments.get(k+2) - minX) * sclX );  // c1x
+            ne.add( (segments.get(k+3)       )        );  // c1y
+            ne.add( (segments.get(k+4) - minX) * sclX );  // c2x
+            ne.add( (segments.get(k+5)       )        );  // c2y
+
+            // Next center point
+            multiIdx++;
+         }
+
+         segments = ne;
+
+         recalc(true/*bAction*/);
+         redraw();
+
+         UI.LogInfo("Trim curve to selection ("+numSel+" points)");
+      }
+      else
+      {
+         UI.LogWarning("trim: no selection");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      //trace "xxx BezierEdit::onKey: k.pressed="+_k.pressed;
+
+      switch(_k.pressed)
+      {
+         case 319: // windows menu button
+            showPopupMenu();
+            return true;
+
+         case 'a':
+            if(_k.modCtrl())
+            {
+               showPopupMenu();
+               return true;
+            }
+            break;
+
+         case 'b':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  setBackdrop(null);
+               else
+                  setCurrentEnvAsBackdrop();
+               return true;
+            }
+            break;
+
+         case VKEY_TAB:
+            if(_k.modNone() && b_provide_tab)
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_TAB), this));
+               return true;
+            }
+            return false;
+
+         case VKEY_SPACE:
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  b_draw_env = !b_draw_env;
+               else
+                  resetZoom();
+               redraw();
+               return true;
+            }
+            return false;
+
+         case VKEY_DELETE:
+            if(0 == multisel_indices.numElements)
+            {
+               if(-1 != selection_idx)
+                  multisel_indices.add(selection_idx);
+            }
+            if(multisel_indices.numElements > 0)
+            {
+               deleteSelectedSegments();
+            }
+            return true;
+
+         case VKEY_LCTRL:
+            b_lctrl = true;
+            return true;
+
+         case VKEY_LALT:
+            b_lalt = true;
+            return true;
+
+         case VKEY_LSHIFT:
+            if(b_drag && !b_drag_zoompan)
+            {
+               // // trace "xxx begin scale";
+               b_drag_scale_recalc_center = true;
+               b_drag_scale = true;
+            }
+            b_lshift = true;
+            // // trace "xxx b_lshift down";
+            return true;
+
+         case VKEY_LEFT:
+            addSelectionOff(-2);
+            return true;
+
+         case VKEY_RIGHT:
+            addSelectionOff(2);
+            return true;
+
+         case VKEY_DOWN:
+            selectPreviousCenterPoint();
+            return true;
+
+         case VKEY_UP:
+            selectNextCenterPoint();
+            return true;
+
+         case 'z':
+         case 'y':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  redo();
+               }
+               else
+               {
+                  undo();
+               }
+               return true;
+            }
+            return false;
+
+         case 'e':
+            if(_k.modCtrl())
+            {
+               toggleAllowDragRotate();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modShift())
+            {
+               if(_k.modCtrl())
+               {
+                  alignLastToFirst();
+               }
+               else
+               {
+                  flipY();
+               }
+            }
+            else if(_k.modNone())
+            {
+               flipX();
+            }
+            else if(_k.modCtrlOnly())
+            {
+               b_draw_fill = !b_draw_fill;
+               UI.LogInfo("Draw-fill is "+b_draw_fill);
+               redraw();
+            }
+            return true;
+
+         case 'g':
+            if(_k.modShift())
+            {
+               cycleGridSubDiv();
+            }
+            else
+            {
+               toggleGrid();
+            }
+            redraw();
+            return true;
+
+         case 't':
+            if(_k.modCtrl())
+            {
+               trimCurveToSelection();
+               redraw();
+               return true;
+            }
+            return false;
+
+         case 'u':
+            if(0 == _k.mod)
+            {
+               addScaleTblOffX(-1);
+               redraw();
+               return true;
+            }
+            break;
+
+         case 'i':
+            if(0 == _k.mod)
+            {
+               addScaleTblOffX(1);
+               redraw();
+               return true;
+            }
+            break;
+
+         case 'm':
+            if(0 == _k.mod)
+            {
+               smoothToggle();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               smoothToggleXDist();
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               smoothToggleCtlPoints();
+               return true;
+            }
+            break;
+
+         case 'n':
+            if(0 == _k.mod)
+            {
+               smoothAll(0.10);
+            }
+            else if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  smoothAll(0.50);
+               }
+               else
+               {
+                  smoothAll(0.25);
+               }
+            }
+            else if(_k.modShift())
+            {
+               smoothAll(0.05);
+            }
+            return true;
+
+         case 'o':
+            if(0 == _k.mod)
+            {
+               addScaleTblOffY(1);
+               redraw();
+               return true;
+            }
+            break;
+
+         case 'p':
+            if(0 == _k.mod)
+            {
+               addScaleTblOffY(-1);
+               redraw();
+               return true;
+            }
+            break;
+
+         case 'q':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  simplifyFine();
+               }
+               else
+               {
+                  simplifyCoarse();
+               }
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  makeSymmetrical(999.0f/*maxAngle*/);
+               }
+               else
+               {
+                  makeSymmetrical(45.0f*(2PI/360)/*maxAngle*/);
+               }
+               return true;
+            }
+            break;
+
+         case 's':
+            if(0 == _k.mod)
+            {
+               b_snap_to_grid = !b_snap_to_grid;
+               trace "[dbg] BezierEdit: b_snap_to_grid="+b_snap_to_grid;
+               UI.LogInfoFast("Snap-to-grid is "+UI.GetEnableString(b_snap_to_grid));
+               return true;
+            }
+            break;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_LCTRL:
+            b_lctrl = false;
+            return true;
+
+         case VKEY_LALT:
+            b_lalt = false;
+            if(b_drag_zoompan)
+            {
+               endDragZoomPan();
+            }
+            return true;
+
+         case VKEY_LSHIFT:
+            if(b_drag && !b_drag_zoompan)
+            {
+               // // trace "xxx end scale";
+               b_drag_scale_end = true;
+            }
+            b_lshift = false;
+            // // trace "xxx b_lshift up";
+            return true;
+      }
+
+      if(b_lctrl && b_allow_wasd_keys)
+      {
+         switch(_k.pressed) // for lshift/lctrl modifier to work
+         {
+            case 'a':
+               addSelectionOff(-2);
+               return true;
+
+            case 'd':
+               addSelectionOff(2);
+               return true;
+
+            case 's':
+               selectPreviousCenterPoint();
+               return true;
+
+            case 'w':
+               selectNextCenterPoint();
+               return true;
+
+         }
+
+         switch(_k.unicode)
+         {
+            case 'a':
+               addSelectionOff(-2);
+               return true;
+
+            case 'd':
+               addSelectionOff(2);
+               return true;
+
+            case 's':
+               selectPreviousCenterPoint();
+               return true;
+
+            case 'w':
+               selectNextCenterPoint();
+               return true;
+         }
+      }
+      else if(!b_allow_wasd_keys)
+      {
+         switch(_k.pressed)
+         {
+            case 'a':
+               selectPreviousCenterPoint();
+               return true;
+
+            case 'd':
+               selectNextCenterPoint();
+               return true;
+         }
+      }
+
+      return Control::onKey(_k);
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(@(ap) == @(pm_context))
+      {
+         // trace "xxx BezierEdit: acName=\""+acName+"\"";
+         switch(acName)
+         {
+            case PopupMenu.ACTION_CANCEL:
+            case "":
+               UI.LogDebug("Close context menu.");
+               UI.SetKeyboardFocus(this);
+               break;
+
+            case "normy01":
+               restartToolTipTimer();
+               normalizeY01();
+               break;
+
+            case "normy11":
+               restartToolTipTimer();
+               normalizeY11();
+               break;
+
+            case "flip_x":
+               restartToolTipTimer();
+               flipX();
+               break;
+
+            case "flip_y":
+               restartToolTipTimer();
+               flipY();
+               break;
+
+            case "trim":
+               restartToolTipTimer();
+               trimCurveToSelection();
+               break;
+
+            case "simplify_coarse":
+               simplifyCoarse();
+               break;
+
+            case "simplify_fine":
+               simplifyFine();
+               break;
+
+            case "backdrop_set":
+               restartToolTipTimer();
+               setCurrentEnvAsBackdrop();
+               break;
+
+            case "backdrop_clear":
+               restartToolTipTimer();
+               setBackdrop(null);
+               break;
+
+            case "align_last":
+               restartToolTipTimer();
+               alignLastToFirst();
+               break;
+
+            case "grid_toggle":
+               toggleGrid();
+               redraw();
+               break;
+
+            case "grid_cycle":
+               cycleGridSubDiv();
+               redraw();
+               break;
+
+            case "zoom_reset":
+               resetZoom();
+               redraw();
+               break;
+
+            case "zoom_out_x":
+               addScaleTblOffX(-1);
+               redraw();
+               break;
+
+            case "zoom_in_x":
+               addScaleTblOffX(1);
+               redraw();
+               break;
+
+            case "zoom_out_y":
+               addScaleTblOffY(1);
+               redraw();
+               break;
+
+            case "zoom_in_y":
+               addScaleTblOffY(-1);
+               redraw();
+               break;
+
+            case "symmetry_45":
+               restartToolTipTimer();
+               makeSymmetrical(45*(2PI/360)/*maxAngle*/);
+               break;
+
+            case "symmetry":
+               restartToolTipTimer();
+               makeSymmetrical(999.0f/*maxAngle*/);
+               break;
+
+            case "smooth_toggle":
+               smoothToggle();
+               break;
+
+            case "smooth_toggle_xdist":
+               smoothToggleXDist();
+               break;
+
+            case "smooth_toggle_ctlpoints":
+               smoothToggleCtlPoints();
+               break;
+
+            case "smooth_all_5":
+               smoothAll(0.05);
+               break;
+
+            case "smooth_all_10":
+               smoothAll(0.10);
+               break;
+
+            case "smooth_all_25":
+               smoothAll(0.25);
+               break;
+
+            case "smooth_all_50":
+               smoothAll(0.50);
+               break;
+
+            case "smooth_all_100":
+               smoothAll(1.00);
+               break;
+
+            case "drag_rotate":
+               toggleAllowDragRotate();
+               break;
+         }
+         return true;
+      }
+      return Control::consumeAction(_ac);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         initBezierEdit();
+
+         String *atname, *atval;
+         StringArray *atsplit;
+         String *atsplitval;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            String atnamelc;
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "dragrotate":
+                  setEnableDragRotate(int(atval));
+                  break;
+
+               case "scaletbloffx":
+                  setScaleTblOffX(int(atval));
+                  break;
+
+               case "scaletbloffy":
+                  setScaleTblOffY(int(atval));
+                  break;
+            }
+         }
+
+         return true;
+      }
+   }
+
+}

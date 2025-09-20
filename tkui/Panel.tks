@@ -1,0 +1,1939 @@
+// ----
+// ---- file   : Panel.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 18Jun2005, 05May2007, 12Apr2008, 01Feb2009, 10Jun2010, 14Jul2010, 15Mar2011
+// ----          20Dec2011, 04Jan2012, 09Jan2012, 19Aug2014, 20Sep2014, 03Feb2015, 23Feb2015
+// ----          15Mar2015, 27Apr2015, 10Feb2018, 11Feb2018, 12Feb2018, 16Feb2018, 24Feb2018
+// ----          20May2018, 03Dec2018, 11Dec2018, 26Jun2020, 27Jun2020, 22Oct2023, 11Mar2024
+// ----          12Mar2024, 13Mar2024, 15Mar2024, 16Mar2024, 19Mar2024, 21Mar2024, 22Mar2024
+// ----          23Mar2024, 24Mar2024, 25Mar2024, 26Mar2024, 01Apr2024, 03Apr2024, 04Apr2024
+// ----          05Apr2024, 06Apr2024, 08Apr2024, 09Apr2024, 19Sep2024, 21Feb2025, 10Sep2025
+// ----          11Sep2025, 12Sep2025, 13Sep2025
+// ----
+// ----
+// ----
+
+module MPanel;
+
+namespace ui;
+
+
+class Panel extends Composite {
+
+   define int ELLIPSE_NUMSEG = 128;
+
+   protected HashTable size_groups; // holds instances of all size groups
+
+   protected byte panel_alpha;  // (todo) remove and use layer_alpha ?
+   protected int  panel_tint;
+   namespace int  panel_tint2;  // used by Buttons which are embedded in outer panel (e.g. round (border) shape)
+   public    int  panel_highlight_tint;  // user defined highlight-tint (e.g. for GraphPort)
+
+   define int STYLE_DEFAULT = 0;
+   define int STYLE_FLAT    = 1;  // (todo) remove and keep "SOLID" ?
+   define int STYLE_RAISED  = 2;
+   define int STYLE_SUNKEN  = 3;
+   define int STYLE_NONE    = 4;
+   define int STYLE_SOLID   = 5;  // (todo) remove and keep "FLAT" ?
+   define int STYLE_DOTTED  = 6;
+   define int STYLE_DASHED  = 7;
+   protected int   panel_bg_style;
+   protected int   panel_border_style;
+
+   protected int   panel_bg_blend;  // see UIConstants.BLEND_xxx
+   protected byte  panel_bg_alpha;
+
+   protected int   panel_bg_pattern_idx;  // see Shader_PatternFill.pattern_names
+   protected float panel_bg_pattern_intensity;
+
+   protected int   panel_border_pattern_idx;  // see Shader_PatternFill.pattern_names
+   protected float panel_border_pattern_intensity;
+
+   // (note) standard UI panels use SHAPE_DEFAULT, ignore c32_bg and use tinted COLOR_WINDOW_BG instead
+   // (note) GR and other custom panels should setPanelBackgroundShape(Panel.SHAPE_RECT) to use both c32_bg and tint(s)
+   define int SHAPE_DEFAULT = 0;
+   define int SHAPE_RECT    = 1;
+   define int SHAPE_ROUND   = 2;
+   define int SHAPE_NONE    = 3;
+   define int SHAPE_RHOMB   = 4;  // parallelogram
+   define int SHAPE_DIAMOND = 5;  // rotated rhomb
+   define int SHAPE_ELLIPSE = 6;
+   define int SHAPE_HEXAGON = 7;
+   define int SHAPE_TRI     = 8;
+   protected int   panel_bg_shape;
+   protected int   panel_border_shape;
+
+   protected float panel_shape_round_amount;  // def=0.125
+   protected float panel_shape_round_aspect;  // def=16/10
+   protected float panel_shape_round_limit;   // px. def=12
+
+   protected float panel_shape_rhomb_tx;  // scaled by UI.font_scaling
+   protected float panel_shape_rhomb_ty;
+
+   protected float panel_shape_ellipse_rx;  // scaled by UI.font_scaling
+   protected float panel_shape_ellipse_ry;
+
+   protected float panel_shape_diamond_rx;  // scaled by UI.font_scaling
+   protected float panel_shape_diamond_ry;
+
+   protected float panel_shape_hexagon_scale;  // <1: shrink max side (tighter fit). unaffected by UI.font_scaling   (todo) REMOVE
+   protected float panel_shape_hexagon_ax;  // scaled by UI.font_scaling
+   protected float panel_shape_hexagon_ay;
+
+   protected float panel_shape_tri_ax;  // scaled by UI.font_scaling
+   protected float panel_shape_tri_ay;
+
+   protected float panel_border_width;  // unscaled
+   protected int   panel_border_c24;
+   protected int   panel_border_dir;  // top|left|bottom|right|all
+
+   protected int   panel_border_blend;  // see UIConstants.BLEND_xxx
+   protected byte  panel_border_alpha;
+
+   define int GRADIENT_SHAPE_V = 0;  // vertical
+   define int GRADIENT_SHAPE_H = 1;  // horizontal
+   define int GRADIENT_SHAPE_R = 2;  // radial
+
+   protected int      panel_bg_gradient_shape;
+   protected Texture *panel_bg_gradient_tex;
+
+   protected int      panel_border_gradient_shape;
+   protected Texture *panel_border_gradient_tex;
+
+   protected int   panel_stack;
+   protected float panel_stack_off_x;  // scaled by UI.font_scaling
+   protected float panel_stack_off_y;
+   protected float panel_stack_alpha_decay;  // 1=none .. 0=invisible
+   protected float panel_stack_alpha_exp;    // [def=1]
+
+   protected ShapePolyline *border_shape;
+   protected boolean        b_update_border_shape;
+
+
+   public static New() : Panel {
+      local Panel p;
+      p.initPanel();
+      return deref p;
+   }
+
+   public method initPanel() {
+      initLayer();
+      setLayout(SuperBorderLayout);
+
+      setPanelBorderWidth(0.5f);
+      setPanelBorderColor(#ff000000);
+      setPanelBorderDir(Layout.CENTER/*all*/);
+      setPanelShape(SHAPE_DEFAULT);
+      setPanelShapeRoundAmount(0.125f);
+      setPanelShapeRoundAspect(16.0f/10.0f);
+      setPanelShapeRoundLimit(12.0f);
+      setPanelShapeRhombTx(12.0f);
+      setPanelShapeRhombTy(10.0f);
+      setPanelShapeEllipseRx(16.0f);
+      setPanelShapeEllipseRy(12.0f);
+      setPanelShapeDiamondRx(16.0f);
+      setPanelShapeDiamondRy(16.0f);
+      setPanelShapeHexagonScale(1.0f);
+      setPanelShapeHexagonAx(0.0f);
+      setPanelShapeHexagonAy(0.0f);
+      setPanelShapeTriAx(0.0f);
+      setPanelShapeTriAy(0.0f);
+      setPanelBorderBlend(UI.BLEND_OFF);
+      setPanelBorderAlpha(255);
+      setPanelBackgroundPatternIntensity(0.15f);
+      setPanelBorderPatternIntensity(0.15f);
+      setPanelStackOffScaled(3, 3);
+
+      b_fill_bg                = true;
+      panel_alpha              = 0;
+      panel_bg_alpha           = 255;
+      panel_stack_alpha_decay  = 1.0f;
+      panel_stack_alpha_exp    = 1.4f;
+
+      panel_bg_pattern_idx     = -1;
+      panel_border_pattern_idx = -1;
+
+      // if(null == lnf_colors)
+      //    die "initPanel: lnf_colors is null";
+   }
+
+   public virtual freeLayer() {
+      freeBorderShape();
+   }
+
+   public method setPanelAlphaAndTint(byte _alpha, int _tint) {
+      explain "Set background alpha and tint";
+
+      panel_alpha = _alpha;
+      panel_tint  = _tint;
+   }
+
+   public method setPanelAlpha(byte _alpha) {
+      explain "Set alpha";
+      panel_alpha = _alpha;
+   }
+
+   public method getPanelAlpha() : byte {
+      return panel_alpha;
+   }
+
+   public method setPanelTint(int _tint) {
+      explain "Set background tint";
+      panel_tint = _tint;
+   }
+
+   public method getPanelTint() : int {
+      return panel_tint;
+   }
+
+   public method setPanelBackgroundBlend(int _blend) {
+      panel_bg_blend = _blend;
+   }
+
+   public method setPanelBackgroundAlpha(byte _alpha) {
+      panel_bg_alpha = _alpha;
+      // // if(null != bg_shape)
+      // //    bg_shape.setAlpha(_alpha);
+   }
+
+   public method setPanelShape(int _shape) {
+      // // trace "xxx this="+#(this)+" setPanelShape("+_shape+")";
+      panel_bg_shape     = _shape;
+      panel_border_shape = _shape;
+   }
+
+   public method setPanelBackgroundShape(int _shape) {
+      panel_bg_shape = _shape;
+   }
+
+   public method getPanelBackgroundShape() : int {
+      return panel_bg_shape;
+   }
+
+   public method setPanelBorderShape(int _shape) {
+      panel_border_shape = _shape;
+      b_update_border_shape = true;
+   }
+
+   public method getPanelBorderShape() : int {
+      return panel_border_shape;
+   }
+
+   public method setPanelShapeRoundAmount(float _amt) {
+      panel_shape_round_amount = _amt;
+      b_update_border_shape = true;
+   }
+
+   public method setPanelShapeRoundAspect(float _aspect) {
+      panel_shape_round_aspect = _aspect;
+   }
+
+   public method setPanelShapeRoundLimit(float _limit) {
+      panel_shape_round_limit = _limit;
+   }
+
+   public method setPanelShapeRhombTx(float _tx) {
+      panel_shape_rhomb_tx = _tx * UI.font_scaling;
+   }
+
+   public method getPanelShapeRhombTx() : float {
+      return panel_shape_rhomb_tx;
+   }
+
+   public method setPanelShapeRhombTy(float _ty) {
+      panel_shape_rhomb_ty = _ty * UI.font_scaling;
+   }
+
+   public method getPanelShapeRhombTy() : float {
+      return panel_shape_rhomb_ty;
+   }
+
+   public method setPanelShapeEllipseRx(float _rx) {
+      panel_shape_ellipse_rx = _rx * UI.font_scaling;
+   }
+
+   public method getPanelShapeEllipseRx() : float {
+      return panel_shape_ellipse_rx;
+   }
+
+   public method setPanelShapeEllipseRy(float _ry) {
+      panel_shape_ellipse_ry = _ry * UI.font_scaling;
+   }
+
+   public method getPanelShapeEllipseRy() : float {
+      return panel_shape_ellipse_ry;
+   }
+
+   public method setPanelShapeDiamondRx(float _rx) {
+      panel_shape_diamond_rx = _rx * UI.font_scaling;
+   }
+
+   public method getPanelShapeDiamondRx() : float {
+      return panel_shape_diamond_rx;
+   }
+
+   public method setPanelShapeDiamondRy(float _ry) {
+      panel_shape_diamond_ry = _ry * UI.font_scaling;
+   }
+
+   public method getPanelShapeDiamondRy() : float {
+      return panel_shape_diamond_ry;
+   }
+
+   public method setPanelShapeHexagonScale(float _scale) {
+      panel_shape_hexagon_scale = _scale;
+   }
+
+   public method getPanelShapeHexagonScale() : float {
+      return panel_shape_hexagon_scale;
+   }
+
+   public method setPanelShapeHexagonAx(float _ax) {
+      panel_shape_hexagon_ax = _ax * UI.font_scaling;
+   }
+
+   public method getPanelShapeHexagonAx() : float {
+      return panel_shape_hexagon_ax;
+   }
+
+   public method setPanelShapeHexagonAy(float _ay) {
+      panel_shape_hexagon_ay = _ay * UI.font_scaling;
+   }
+
+   public method getPanelShapeHexagonAy() : float {
+      return panel_shape_hexagon_ay;
+   }
+
+   public method setPanelShapeTriAx(float _ax) {
+      panel_shape_tri_ax = _ax * UI.font_scaling;
+   }
+
+   public method getPanelShapeTriAx() : float {
+      return panel_shape_tri_ax;
+   }
+
+   public method setPanelShapeTriAy(float _ay) {
+      panel_shape_tri_ay = _ay * UI.font_scaling;
+   }
+
+   public method getPanelShapeTriAy() : float {
+      return panel_shape_tri_ay;
+   }
+
+   public static ParsePanelShapeFromString(String _sShape) : int {
+      int retShape;
+      switch(_sShape)
+      {
+         default:
+         case "none":
+            retShape = SHAPE_NONE;
+            break;
+
+         case "default":
+         case "rect":
+            retShape = SHAPE_RECT;
+            break;
+
+         case "round":
+            retShape = SHAPE_ROUND;
+            break;
+
+         case "rhomb":
+            retShape = SHAPE_RHOMB;
+            break;
+
+         case "diamond":
+            retShape = SHAPE_DIAMOND;
+            break;
+
+         case "ellipse":
+            retShape = SHAPE_ELLIPSE;
+            break;
+
+         case "hex":
+         case "hexagon":
+            retShape = SHAPE_HEXAGON;
+            break;
+
+         case "tri":
+         case "triangle":
+            retShape = SHAPE_TRI;
+            break;
+      }
+      return retShape;
+   }
+
+   protected method calcBorderShapeCurveDistB(short _pattern) : float {
+      return
+         (#FFFF == _pattern) ? 2.0f : 99999.0f
+         * UI.font_scaling
+         ;
+   }
+
+   protected method calcBorderShapeCurveDistP(short _pattern) : float {
+      return
+         ((#FFFF == _pattern) ? 2.0f : (#FFC0/*dash*/ == _pattern) ? 0.55f : 0.75f/*dot*/)
+         * UI.font_scaling
+         ;
+   }
+
+   public method getOrCreateBorderShape() : ShapePolyline {
+
+      if(b_update_border_shape)
+      {
+         // Re-create shape, e.g. after border width or style has changed
+         b_update_border_shape = false;
+         freeBorderShape();
+      }
+
+      if(null == border_shape)
+      {
+         float pbw = panel_border_width * UI.font_scaling * 0.5;
+
+         float w = getSizeX();
+         float h = getSizeY();
+
+         float x, y;
+         float x2, y2;
+
+         // // trace "xxx  border_shape p1=("+x+";"+y+") p2=("+x2+";"+y2+")";
+
+         short pattern =
+            (STYLE_SOLID  == panel_border_style)   ? #FFFF :
+            (STYLE_DOTTED == panel_border_style)   ? #CCCC :
+            /*(STYLE_DASHED == panel_border_style)*/ #FFC0 ;
+
+         // // pattern = #FFFF; // xxxxxxxxxxxx
+         // // pattern = #FFC0; // xxxxxxxxxxxx
+         // // pattern = #AAAA; // xxxxxxxxxxxx
+
+         // // if(panel_border_dir & Layout.TOP);  // (todo) create multiple shapes when w.g. just the top and bottom borders are enabled
+         // // srcVertices.add2(x,  y);
+         // // srcVertices.add2(x2, y);
+         // // srcVertices.add2(x2, y2);
+         // // srcVertices.add2(x,  y2);
+
+         float arcW = calcPanelArcW();
+         float arcH = calcPanelArcH();
+
+         FloatArray dstVertices;
+         dstVertices.empty();
+
+         FloatArray srcVerticesSubdiv;
+         FloatArray *srcVertices;
+
+         if(#ffff == pattern)
+         {
+            srcVertices <= dstVertices;
+         }
+         else
+         {
+            srcVerticesSubdiv.empty();
+            srcVertices <= srcVerticesSubdiv;
+         }
+
+         if([SHAPE_RECT, SHAPE_RHOMB].contains(panel_border_shape))
+         {
+            arcW = pbw;
+            arcH = pbw;
+         }
+
+         // (todo) use panel_border_dir
+         int lineJointType = ShapePolyline.LINE_JOINT_BEVEL;
+
+         switch(panel_border_shape)
+         {
+            default:
+            case SHAPE_RECT:
+               x = pbw*0.5;
+               y = pbw*0.5;
+               ShapePolyline.AppendRectangle(srcVertices,
+                                             x, y,
+                                             w - pbw*0.5,
+                                             h - pbw*0.5,
+                                             0/*rhombTx*/, 0/*rhombTy*/
+                                             );
+               lineJointType = ShapePolyline.LINE_JOINT_MITER;
+               break;
+
+            case SHAPE_ROUND:
+               x = pbw*0.5;
+               y = pbw*0.5;
+               x2 = w - pbw*0.5;
+               y2 = h - pbw*0.5;
+               ShapePolyline.AppendRoundedRectangle(srcVertices,
+                                                    x, y,
+                                                    x2 - x, y2 - y,
+                                                    arcW, arcH,
+                                                    6/*numArcSeg*/,
+                                                    0/*rhombTx*/, 0/*rhombTy*/
+                                                    );
+               break;
+
+            case SHAPE_RHOMB:
+               x = pbw;
+               y = pbw;
+               x2 = w - pbw;
+               y2 = h - pbw;
+               arcW = 1;
+               arcH = 1;
+               if(1)
+                  ShapePolyline.AppendRectangle(srcVertices,
+                                                x, y,
+                                                x2 - x, y2 - y,
+                                                panel_shape_rhomb_tx*0.5,
+                                                panel_shape_rhomb_ty*0.5
+                                                );
+               else
+                  ShapePolyline.AppendRoundedRectangle(srcVertices,
+                                                       x, y,
+                                                       x2 - x, y2 - y,
+                                                       arcW, arcH,
+                                                       6/*numArcSeg*/,
+                                                       panel_shape_rhomb_tx*0.5,
+                                                       panel_shape_rhomb_ty*0.5
+                                                       );
+               // // lineJointType = ShapePolyline.LINE_JOINT_MITER;
+               break;
+
+            case SHAPE_DIAMOND:
+               ShapePolyline.AppendDiamond(srcVertices,
+                                           w*0.5,
+                                           h*0.5,
+                                           w*0.5 - pbw*1.0,
+                                           h*0.5 - pbw*1.0
+                                           );
+               // lineJointType = ShapePolyline.LINE_JOINT_MITER;
+               break;
+
+            case SHAPE_ELLIPSE:
+               ShapePolyline.AppendEllipse(srcVertices,
+                                           w*0.5,
+                                           h*0.5,
+                                           w*0.5 - pbw*1.0,
+                                           h*0.5 - pbw*1.0,
+                                           ELLIPSE_NUMSEG
+                                           );
+               // lineJointType = ShapePolyline.LINE_JOINT_ROUND;
+               break;
+
+            case SHAPE_HEXAGON:
+               ShapePolyline.AppendHexagonA(srcVertices,
+                                            0, 0,
+                                            w - pbw*0, h - pbw*0,
+                                            panel_shape_hexagon_ax,
+                                            panel_shape_hexagon_ay
+                                            );
+               lineJointType = ShapePolyline.LINE_JOINT_MITER;
+               break;
+
+            case SHAPE_TRI:
+               ShapePolyline.AppendTriangleAroundRect(srcVertices,
+                                                      0, 0,
+                                                      w - pbw*0, h - pbw*0,
+                                                      panel_shape_tri_ax,
+                                                      panel_shape_tri_ay
+                                                      );
+               lineJointType = ShapePolyline.LINE_JOINT_MITER;
+               break;
+         }
+
+         // // trace "xxx srcVertices="+srcVertices.string2;
+
+         if(#ffff != pattern)
+         {
+            ShapePolyline.SubdividePolylineVertices(dstVertices,
+                                                    srcVertices,
+                                                    calcBorderShapeCurveDistB(pattern),
+                                                    calcBorderShapeCurveDistP(pattern),
+                                                    true/*bClosed*/
+                                                    );
+         }
+
+         // // trace "xxx Panel: dstVertices="+dstVertices.string2;
+
+         // // dstVertices = srcVertices;//xxxxxxxxxxxxx
+         // // pattern = #FFC0;
+
+         // // (note) default miter limit is 1024.0
+         border_shape <= ShapePolyline.New(dstVertices, panel_border_c24, pbw, pattern);
+         border_shape.setAlpha(panel_border_alpha);
+         border_shape.setLineJointType(lineJointType);
+         border_shape.setEnableClosed(true);
+         // border_shape.setAlpha(96);
+         // border_shape.setBlendMode(UI.BLEND_SRCOVER);
+         // border_shape.setEnableLineJoints(false);
+
+         border_shape.tesselate();
+      }
+
+      return border_shape;
+   }
+
+   public method getBorderShape() : ShapePolyline {
+      return border_shape;
+   }
+
+   public method freeBorderShape() {
+      if(null != border_shape)
+      {
+         // // trace "xxx Panel::freeBorderShape";
+         border_shape.freeShape();
+         border_shape <= null;
+      }
+   }
+
+   public method setPanelStyle(int _style) {
+      panel_bg_style     = _style;
+      panel_border_style = _style;
+   }
+
+   public method setPanelBackgroundStyle(int _style) {
+      panel_bg_style = _style;
+   }
+
+   public method getPanelBackgroundStyle() : int {
+      return panel_bg_style;
+   }
+
+   public method setPanelBackgroundPatternIndex(int _index) {
+      panel_bg_pattern_idx = _index;
+   }
+
+   public method getPanelBackgroundPatternIndex() : int {
+      return panel_bg_pattern_idx;
+   }
+
+   public method setPanelBackgroundPatternByName(String _name) {
+      panel_bg_pattern_idx = Shader_PatternFill.GetPatternIndexByName(_name);
+   }
+
+   public method setPanelBackgroundPatternIntensity(float _intensity) {
+      panel_bg_pattern_intensity = _intensity;
+   }
+
+   public method getPanelBackgroundPatternIntensity() : float {
+      return panel_bg_pattern_intensity;
+   }
+
+   public method setPanelBackgroundGradientShape(int _shape) {
+      panel_bg_gradient_shape = _shape;
+   }
+
+   public method setPanelBackgroundGradientTexture(Texture _tex) {
+      panel_bg_gradient_tex <= deref _tex;
+   }
+
+   public method setPanelBorderStyle(int _style) {
+      // // if(STYLE_NONE == _style)
+      // //    trace "xxx setPanelBorderStyle(none) this="+#(this)+" id="+layer_id;
+      panel_border_style = _style;
+      b_update_border_shape = true;
+   }
+
+   public method getPanelBorderStyle() : int {
+      return panel_border_style;
+   }
+
+   public method setPanelBorderPatternIndex(int _index) {
+      panel_border_pattern_idx = _index;
+   }
+
+   public method getPanelBorderPatternIndex() : int {
+      return panel_border_pattern_idx;
+   }
+
+   public method setPanelBorderPatternByName(String _name) {
+      panel_border_pattern_idx = Shader_PatternFill.GetPatternIndexByName(_name);
+   }
+
+   public method setPanelBorderPatternIntensity(float _intensity) {
+      panel_border_pattern_intensity = _intensity;
+   }
+
+   public method getPanelBorderPatternIntensity() : float {
+      return panel_border_pattern_intensity;
+   }
+
+   public method setPanelBorderGradientShape(int _shape) {
+      panel_border_gradient_shape = _shape;
+   }
+
+   public method setPanelBorderGradientTexture(Texture _tex) {
+      panel_border_gradient_tex <= deref _tex;
+   }
+
+   public static ParsePanelStyleFromString(String _sStyle) : int {
+      int retStyle;
+      switch(_sStyle)
+      {
+         default:
+         case "default":
+            retStyle = STYLE_DEFAULT;
+            break;
+
+         case "flat":
+            retStyle = STYLE_FLAT;
+            break;
+
+         case "raised":
+            retStyle = STYLE_RAISED;
+            break;
+
+         case "sunken":
+            retStyle = STYLE_SUNKEN;
+            break;
+
+         case "none":
+            retStyle = STYLE_NONE;
+            break;
+
+         case "solid":
+            retStyle = STYLE_SOLID;
+            break;
+
+         case "dotted":
+            retStyle = STYLE_DOTTED;
+            break;
+
+         case "dashed":
+            retStyle = STYLE_DASHED;
+            break;
+      }
+      return retStyle;
+   }
+
+   public method setPanelBorderWidth(float _w) {
+      panel_border_width = _w;
+      b_update_border_shape = true;
+   }
+
+   public method getPanelBorderWidth() : float {
+      return panel_border_width;
+   }
+
+   public method setPanelBorderColor(int _c24) {
+      panel_border_c24 = _c24;
+      if(null != border_shape)
+         border_shape.setForegroundColor(_c24);
+   }
+
+   public method getPanelBorderColor() : int {
+      return panel_border_c24;
+   }
+
+   public method setPanelBorderDir(int _dir) {
+      panel_border_dir = _dir;
+      b_update_border_shape = true;
+   }
+
+   public method getPanelBorderDir() : int {
+      return panel_border_dir;
+   }
+
+   public static ParsePanelBlendFromString(String _sBlend) : int {
+      return UI.ParseBlendMode(_sBlend);
+   }
+
+   public method setPanelBorderBlend(int _blend) {
+      panel_border_blend = _blend;
+   }
+
+   public method setPanelBorderAlpha(byte _alpha) {
+      panel_border_alpha = _alpha;
+      if(null != border_shape)
+         border_shape.setAlpha(_alpha);
+   }
+
+   public static ParsePanelGradientShapeFromString(String _s) : int {
+      switch(_s)
+      {
+         default:
+         case "v":
+         case "vertical":
+            return GRADIENT_SHAPE_V;
+
+         case "h":
+         case "horizontal":
+            return GRADIENT_SHAPE_H;
+
+         case "r":
+         case "radial":
+            return GRADIENT_SHAPE_R;
+      }
+   }
+
+   public method setPanelStack(int _num) {
+      panel_stack = _num;
+   }
+
+   public method setPanelStackOff(float _x, float _y) {
+      panel_stack_off_x = _x;
+      panel_stack_off_y = _y;
+   }
+
+   public method setPanelStackOffScaled(float _x, float _y) {
+      setPanelStackOff(_x * UI.font_scaling, _y * UI.font_scaling);
+   }
+
+   public method setPanelStackAlphaDecay(float _amt) {
+      panel_stack_alpha_decay = mathClampf(_amt, 0.0f, 1.0f);
+   }
+
+   public method setPanelStackAlphaExponent(float _exp) {
+      panel_stack_alpha_exp = _exp;
+   }
+
+   public method configureAsControlPanel() {
+      setPanelAlphaAndTint(255, 0);
+      setPanelStyle(Panel.STYLE_FLAT);
+   }
+
+   // no onDraw() !
+   public virtual isTranslucent() : boolean {
+      return (0 == panel_alpha);
+   }
+
+   public method setPanelHighlightTint(int _c32) {
+      panel_highlight_tint = _c32;
+      if(null != border_shape)
+         border_shape.setHighlightTint(_c32);
+   }
+
+   public method getPanelHighlightTint() : int {
+      return panel_highlight_tint;
+   }
+
+   public virtual isTabCycleRoot() : boolean {
+      return true;
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   public virtual invalidateSizeGroupMemberSizes() {
+      if(size_groups.numElements)
+      {
+         PointerArray sgMembers;
+         String *id;
+         foreach id in size_groups
+         {
+            // // trace "xxx Panel::invalidateSizeGroupMemberSizes: id=\""+id+"\"";
+            SizeGroup sg <= size_groups[id];
+            sgMembers.empty();
+            findSizeGroupMembers(sg, sgMembers);
+
+            Layer *l;
+            float maxPadT = -1.0f;
+            float maxPadL = -1.0f;
+            float maxPadB = -1.0f;
+            float maxPadR = -1.0f;
+            boolean bSGX = (sg instanceof SizeGroupX);
+            boolean bSGY = (sg instanceof SizeGroupY);
+            foreach l in sgMembers
+            {
+               if(bSGX)
+               {
+                  l.b_force_size_x =   false;
+                  // // l.b_force_min_size_x = false;  // [30Oct2023]
+                  // // l.minimum_size_x   = 0.0f;
+                  l.preferred_size_x = 0.0f;
+                  // // // l.size_x           = 0.0f;
+                  // // trace "xxx invalidate SizeGroupX l="+#(l);
+                  maxPadL = mathMaxf(maxPadL, l.pad_left);
+                  maxPadR = mathMaxf(maxPadR, l.pad_right);
+               }
+               if(bSGY)
+               {
+                  l.b_force_size_y   = false;
+                  // // l.b_force_min_size_y = false;  // [30Oct2023]
+                  // // l.minimum_size_y   = 0.0f;
+                  l.preferred_size_y = 0.0f;
+                  // // // l.size_y           = 0.0f;
+                  // // trace "xxx invalidate SizeGroupY l="+#(l);
+                  maxPadT = mathMaxf(maxPadT, l.pad_top);
+                  maxPadB = mathMaxf(maxPadB, l.pad_bottom);
+               }
+            }
+
+            if(1)
+            {
+               // // trace "xxx ui::Panel: sg.id="+id+" displayedText=\""+getDisplayedText()+"\" maxPad=("+maxPadT+";"+maxPadL+";"+maxPadB+";"+maxPadR+")";
+               foreach l in sgMembers
+               {
+                  if(maxPadT >= 0.0f)
+                     l.pad_top    = maxPadT;
+
+                  if(maxPadL >= 0.0f)
+                     l.pad_left   = maxPadL;
+
+                  if(maxPadB >= 0.0f)
+                     l.pad_bottom = maxPadB;
+
+                  if(maxPadR >= 0.0f)
+                     l.pad_right  = maxPadR;
+               }
+            }
+         } // foreach id in size_groups
+      }
+   }
+
+   public virtual layoutFindEffectiveBaselineY() : float {
+      return layoutFindChildEffectiveBaselineY();
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      // // trace "xxx Panel::layoutHierarchy this="+#(this)+" size="+getSizeString()+" first_child="+#(getLayoutFirstChild());
+
+      if(!_bLayoutFinal)
+      {
+         if(0/*regular/tested code which does not work with test23e.gr, though [12Mar2024]*/)
+         {
+            // Delete forced sizes (from previous layout pass, available region may be smaller now)
+            invalidateSizeGroupMemberSizes();
+
+            if(_bInvalidateSizeCaches)
+            {
+               invalidateMinSizeCache();
+               invalidateChildContainerMinSizeCaches();
+               // // invalidateSizeCaches();
+            }
+
+            // Create un-aligned layout / determine sizeGroup sizes
+            //  - using *Layout.layoutChildLayersOf()
+            Layer::layoutHierarchy(false, false);
+
+            if(size_groups.numElements)
+            {
+               // Align width/heights of size group members
+               layoutSizeGroups();
+            }
+
+            if(_bInvalidateSizeCaches)
+            {
+               // Since the child sizes may have changed we need to recalc the size of container-like layers
+               invalidateMinSizeCache();
+               invalidateChildContainerMinSizeCaches();
+               invalidateSizeCaches();
+            }
+
+            // re-run *Layout.layoutChildLayersOf()
+            //  - invalidate absolute positions
+            Layer::layoutHierarchy(false, true);
+         }
+         else
+         {
+            // Delete forced sizes (from previous layout pass, available region may be smaller now)
+            invalidateSizeGroupMemberSizes();
+
+            if(_bInvalidateSizeCaches)
+            {
+               invalidateMinSizeCache();
+               invalidateChildContainerMinSizeCaches();
+               // // invalidateSizeCaches();
+            }
+
+            // Create un-aligned layout / determine sizeGroup sizes
+            //  - using *Layout.layoutChildLayersOf()
+            Layer::layoutHierarchy(false, false);
+
+            if(size_groups.numElements)
+            {
+               // Align width/heights of size group members
+               layoutSizeGroups();
+            }
+
+            if(1)
+            {
+               // (note) [18Mar2024] invalidate/update panelsizeof only when this panel has size groups
+               if(_bInvalidateSizeCaches)
+               {
+                  // Since the child sizes may have changed we need to recalc the size of container-like layers
+                  invalidateMinSizeCache();
+                  invalidateChildContainerMinSizeCaches();
+                  invalidateSizeCaches();
+                  // // trace "xxx ------------------------------------------------- invalidate";
+               }
+
+               // [12Mar2024] added for test23e.gr
+               if(null != layout)
+               {
+                  // // trace "xxx Panel: this="+getDebugString()+" old psx="+preferred_size_x;
+                  // // // layout.calcPreferredSizeOf(this); // [12Mar2024]
+                  layout.recursiveUpdatePreferredPanelSizeOf(this);
+                  // trace "xxx Panel: this="+getDebugString()+"   => new psx="+preferred_size_x;
+               }
+
+               // re-run *Layout.layoutChildLayersOf()
+               //  - invalidate absolute positions
+               Layer::layoutHierarchy(false, true);
+            }
+
+
+            // // if(size_groups.numElements)
+            // // {
+            // //    // Align width/heights of size group members
+            // //    layoutSizeGroups();
+
+            // //    if(_bInvalidateSizeCaches)
+            // //    {
+            // //       // Since the child sizes may have changed we need to recalc the size of container-like layers
+            // //       invalidateMinSizeCache();
+            // //       invalidateChildContainerMinSizeCaches();
+            // //       invalidateSizeCaches();
+            // //    }
+
+            // //    // re-run *Layout.layoutChildLayersOf()
+            // //    //  - invalidate absolute positions
+            // //    Layer::layoutHierarchy(false, true);
+            // // }
+         } // end experimental
+      }
+      else
+      {
+         // // trace "xxx Panel::layoutHierarchy PASS2 this="+#(this)+" size="+getSizeString()+" first_child="+#(getLayoutFirstChild());
+
+         // // // if(size_groups.numElements) // xxxxxxxxxxxxxxxxxxx [12Mar2024]
+         // // // {
+         // // //    invalidateSizeGroupMemberSizes();
+         // // //    // Align width/heights of size group members
+         // // //    // layoutSizeGroups();
+         // // // }
+
+         // Re-layout with adjusted (min-) sizes
+         Layer::layoutHierarchy(false, true);
+      }
+   }
+
+   public method addSizeGroup(String _name, SizeGroup _sizeGroup) : SizeGroup {
+      size_groups[_name] = deref _sizeGroup;
+      return _sizeGroup;
+   }
+
+   public method lazyAddSizeGroupXByName(String _name) : SizeGroupX {
+      SizeGroupX sgx <= size_groups.get(_name);
+      if(null == sgx)
+      {
+         sgx <= new SizeGroupX;
+         size_groups[_name] = deref sgx;
+      }
+      return sgx;
+   }
+
+   public method lazyAddSizeGroupYByName(String _name) : SizeGroupX {
+      SizeGroupX sgy <= size_groups.get(_name);
+      if(null == sgy)
+      {
+         sgy <= new SizeGroupY;
+         size_groups[_name] = deref sgy;
+      }
+      return sgy;
+   }
+
+   public method lazyAddSizeGroupXYByName(String _name) : SizeGroupX {
+      SizeGroupXY sgxy <= size_groups.get(_name);
+      if(null == sgxy)
+      {
+         sgxy <= new SizeGroupXY;
+         size_groups[_name] = deref sgxy;
+      }
+      return sgxy;
+   }
+
+   public method getSizeGroupByName(String _name) : SizeGroup {
+      return size_groups.get(_name);
+   }
+
+   public virtual setDebug(boolean _bDebug) {
+      if(_bDebug)
+      {
+         panel_alpha = 255;
+         panel_tint  = #ff00fe00;
+
+         setBackgroundColor(#ff00fe00);
+         setPanelShape(Panel.SHAPE_RECT);
+         setPanelBackgroundAlpha(255);
+         setPanelBackgroundStyle(Panel.STYLE_DEFAULT);
+      }
+      else
+      {
+         panel_alpha = 0;
+         panel_tint  = 0;
+      }
+   }
+
+   public virtual getDebug() : boolean {
+      return (255 == panel_alpha) && (#ff00fe00 == panel_tint);
+   }
+
+   protected method layoutSizeGroups() {
+      // Process size groups
+      if(null != size_groups)
+      {
+         Layer *[] sgMembers;
+         String *id;
+         foreach id in size_groups
+         {
+            // // trace "xxx Panel::layoutSizeGroups id=\""+id+"\"";
+            SizeGroup sg <= size_groups[id];
+            sgMembers.empty();
+            findSizeGroupMembers(sg, sgMembers);
+            sg.layoutMembers(sgMembers);
+         }
+      }
+   }
+
+   protected method tryBindPatternGradientShader(int _patternIdx, float _patternIntensity,
+                                                 int _shape, Texture _texGradient, float _w, float _h
+                                                 ) : Shader {
+
+      if(null != _texGradient)
+      {
+         Point2f absPos;
+         float absBufferLTY;
+         // // trace "[xxx] Panel:tryBindGradientShader: shape="+_shape;
+         if(GRADIENT_SHAPE_V == _shape)
+         {
+            if(-1 != _patternIdx && _patternIntensity > 0.0f)
+            {
+               Shader_PatternGradientV shaderPatternGradientV <= UI.GetShader(Shader_PatternGradientV);
+               calcAbsolutePosition(absPos);
+               absBufferLTY = UI.buffer_height - 1.0f - (absPos.y/* * UI.zoom_y*/);
+               absBufferLTY *= UI.supersample_factor;
+               shaderPatternGradientV.bindPatternGradientV(_patternIdx, 1.0/UI.font_scaling/*sclX*/, 1.0/UI.font_scaling/*sclY*/, _patternIntensity,
+                                                           _texGradient, absBufferLTY, absBufferLTY - _h*UI.supersample_factor
+                                                           );
+               return shaderPatternGradientV;
+            }
+            else
+            {
+               Shader_GradientV shaderGradientV <= UI.GetShader(Shader_GradientV);
+               calcAbsolutePosition(absPos);
+               absBufferLTY = UI.buffer_height - 1.0f - (absPos.y/* * UI.zoom_y*/);
+               absBufferLTY *= UI.supersample_factor;
+               shaderGradientV.bindGradientV(_texGradient, absBufferLTY, absBufferLTY - _h*UI.supersample_factor);
+               return shaderGradientV;
+            }
+         }
+         else if(GRADIENT_SHAPE_H == _shape)
+         {
+            if(-1 != _patternIdx && _patternIntensity > 0.0f)
+            {
+               Shader_PatternGradientH shaderPatternGradientH <= UI.GetShader(Shader_PatternGradientH);
+               calcAbsolutePosition(absPos);
+               shaderPatternGradientH.bindPatternGradientH(_patternIdx, 1.0/UI.font_scaling/*sclX*/, 1.0/UI.font_scaling/*sclY*/, _patternIntensity,
+                                                           _texGradient, absPos.x*UI.supersample_factor, (absPos.x + _w)*UI.supersample_factor
+                                                           );
+               return shaderPatternGradientH;
+            }
+            else
+            {
+               Shader_GradientH shaderGradientH <= UI.GetShader(Shader_GradientH);
+               calcAbsolutePosition(absPos);
+               shaderGradientH.bindGradientH(_texGradient, absPos.x*UI.supersample_factor, (absPos.x + _w)*UI.supersample_factor);
+               return shaderGradientH;
+            }
+         }
+         else if(GRADIENT_SHAPE_R == _shape)
+         {
+            if(-1 != _patternIdx && _patternIntensity > 0.0f)
+            {
+               Shader_PatternGradientR shaderPatternGradientR <= UI.GetShader(Shader_PatternGradientR);
+               calcAbsolutePosition(absPos);
+               shaderPatternGradientR.bindPatternGradientR(_patternIdx, 1.0/UI.font_scaling/*sclX*/, 1.0/UI.font_scaling/*sclY*/, _patternIntensity,
+                                                           _texGradient,
+                                                           (absPos.x + _w * 0.5f)*UI.supersample_factor,
+                                                           ((UI.buffer_height - 1.0f - absPos.y) - _h*0.5)*UI.supersample_factor,
+                                                           _w*0.5f*UI.supersample_factor, _h*0.5f*UI.supersample_factor
+
+                                                           );
+               return shaderPatternGradientR;
+            }
+            else
+            {
+               Shader_GradientR shaderGradientR <= UI.GetShader(Shader_GradientR);
+               calcAbsolutePosition(absPos);
+               shaderGradientR.bindGradientR(_texGradient,
+                                             (absPos.x + _w * 0.5f)*UI.supersample_factor,
+                                             ((UI.buffer_height - 1.0f - absPos.y) - _h*0.5)*UI.supersample_factor,
+                                             _w*0.5f*UI.supersample_factor, _h*0.5f*UI.supersample_factor
+                                             );
+               return shaderGradientR;
+            }
+         }
+      }
+
+      // // trace "xxx tryBindGradientShader: patternIdx="+_patternIdx+" patternIntensity="+_patternIntensity;
+
+      if(-1 != _patternIdx && _patternIntensity > 0.0f)
+      {
+         Shader_PatternFill shaderPatternFill <= UI.GetShader(Shader_PatternFill);
+         shaderPatternFill.bindPatternFill(_patternIdx, 1.0/UI.font_scaling/*sclX*/, 1.0/UI.font_scaling/*sclY*/, _patternIntensity);
+         // trace "xxx call shader.bindPatternFill: panel_bg_style="+panel_bg_style+" alpha="+panel_alpha+" tint="+UI.GetColorString(panel_tint)+" intensity="+_patternIntensity;
+         return shaderPatternFill;
+      }
+
+      return null;
+   }
+
+   public virtual calcEffectiveBg32() : int {
+      // called by Layer::findParentBackgroundColor()
+      if(0 != panel_alpha && b_fill_bg)
+      {
+         // // trace "xxx Panel::onDraw: this="+#(this)+" bg_shape="+panel_bg_shape+" panel_alpha="+panel_alpha+" b_fill_bg="+b_fill_bg+" c32_bg="+UI.GetColorString(c32_bg)+" border_style="+panel_border_style;
+
+         byte bgAlpha = panel_alpha * (panel_bg_alpha * (1.0 / 255.0));
+         int c32Bg = sdvg_TintARGB(c32_bg, bg32_tint);
+         c32Bg = sdvg_TintARGB(c32Bg, panel_tint);
+         c32Bg = sdvg_TintARGB(c32Bg, panel_tint2);
+         c32Bg = (c32Bg & 0x00FFFFFF) | (bgAlpha << 24);
+
+         if((SHAPE_DEFAULT == panel_bg_shape) && [STYLE_DEFAULT, STYLE_FLAT].contains(panel_bg_style))
+         {
+            // (note) required for (non-GR based) UI apps
+            c32Bg = lnf.getTintedColor(LookAndFeel.COLOR_WINDOW_BG, panel_tint);
+            if(0 != panel_tint2)
+               c32Bg = sdvg_TintARGB(c32Bg, panel_tint2);
+            c32Bg = (c32Bg & 0x00FFffFF) | (panel_alpha << 24);
+         }
+
+         if(0 != panel_highlight_tint)
+            c32Bg = sdvg_TintARGB(c32Bg, panel_highlight_tint);
+
+         return c32Bg;
+      }
+      return 0;
+   }
+
+   public virtual method onDraw() {
+      if(getDebug())
+         trace "xxx Panel::onDraw: size="+getSizeString()+" b_fill_bg="+b_fill_bg+" panel_alpha="+panel_alpha+" c32_bg="+UI.GetColorString(c32_bg);
+
+      if(#ff00ff00 == panel_tint)
+         trace "[trc] Panel::onDraw: id="+layer_id+" panel_alpha="+panel_alpha+" c32_bg="+UI.GetColorString(c32_bg)+" tint="+UI.GetColorString(panel_tint)+" this="+#(this)+" size="+getSizeString()+" bg_style="+panel_bg_style+" border_style="+panel_border_style+" border_width="+panel_border_width+" border_color="+UI.GetColorString(panel_border_c24)+" border_alpha="+panel_border_alpha;
+
+      // // if(SHAPE_ROUND == panel_bg_shape)
+      // //    trace "xxx Panel::onDraw: this="+#(this)+" SHAPE_ROUND: panel_alpha="+panel_alpha;
+
+      if(0 != panel_alpha && b_fill_bg)
+      {
+         // // trace "xxx Panel::onDraw: this="+#(this)+" bg_shape="+panel_bg_shape+" panel_alpha="+panel_alpha+" b_fill_bg="+b_fill_bg+" c32_bg="+UI.GetColorString(c32_bg)+" border_style="+panel_border_style;
+
+         float w = getSizeX();
+         float h = getSizeY();
+
+         byte bgAlpha = panel_alpha * (panel_bg_alpha * (1.0 / 255.0));
+         int c32Bg = sdvg_TintARGB(c32_bg, bg32_tint);
+         c32Bg = sdvg_TintARGB(c32Bg, panel_tint);
+         c32Bg = sdvg_TintARGB(c32Bg, panel_tint2);
+         c32Bg = (c32Bg & 0x00FFFFFF) | (bgAlpha << 24);
+
+         // // trace "xxx this="+#(this)+" panel bg_shape="+panel_bg_shape+" bg_style="+panel_bg_style+" c32_bg="+UI.GetColorString(c32_bg)+" c32Bg="+UI.GetColorString(c32Bg);
+
+         // (todo) move to init/setup
+         if((SHAPE_DEFAULT == panel_bg_shape) && [STYLE_DEFAULT, STYLE_FLAT].contains(panel_bg_style))
+         {
+            // (note) required for (non-GR based) UI apps
+            c32Bg = lnf.getTintedColor(LookAndFeel.COLOR_WINDOW_BG, panel_tint);
+            if(0 != panel_tint2)
+               c32Bg = sdvg_TintARGB(c32Bg, panel_tint2);
+            c32Bg = (c32Bg & 0x00FFffFF) | (panel_alpha << 24);
+         }
+
+         if(0 != panel_highlight_tint)
+            c32Bg = sdvg_TintARGB(c32Bg, panel_highlight_tint);
+
+         float pbw = panel_border_width * UI.font_scaling;
+
+         int   stackNum  = (panel_stack > 1) ? (panel_stack - 1) : 0;
+         float stackOffX = stackNum * panel_stack_off_x;
+         float stackOffY = stackNum * panel_stack_off_y;
+         // // float stackAlpha = 1.0f;
+
+         int stackIdx = stackNum + 1;
+         loop(stackNum + 1)
+         {
+            // // trace "xxx Panel::onDraw: stackIdx="+stackIdx+" panel_stack="+panel_stack+" stackNum="+stackNum;
+            Shader shader <= tryBindPatternGradientShader(panel_bg_pattern_idx, panel_bg_pattern_intensity,
+                                                          panel_bg_gradient_shape, panel_bg_gradient_tex, w, h
+                                                          );
+            // // trace "xxx Panel::onDraw: panel_bg_pattern_idx="+panel_bg_pattern_idx+" => shader="+#(shader);
+
+            byte curAlpha = (stackIdx > 1) ? (bgAlpha * mathPowerf(panel_stack_alpha_decay, stackIdx * panel_stack_alpha_exp)) : bgAlpha;
+            c32Bg = (c32Bg & 0x00FFffFF) | (curAlpha << 24);
+
+            if(panel_bg_blend)
+               enablePanelBackgroundBlending();
+
+            switch(panel_bg_style)
+            {
+               default:
+               case STYLE_DEFAULT:
+                  switch(panel_bg_shape)
+                  {
+                     case SHAPE_NONE:
+                        break;
+
+                     default:
+                     case SHAPE_RECT:
+                        // // // UIRenderer.DrawPanelBackground(0, 0, w, h, panel_alpha, panel_tint);
+                        if(getDebug())
+                           trace "xxx Panel::onDraw:  DrawFilledRectangle(w="+w+" h="+h+" c32Bg="+UI.GetColorString(c32Bg)+") curAlpha="+curAlpha;
+                        if(null != shader)
+                           UIRenderer.DrawFilledRectangleEx(stackOffX, stackOffY, w, h, c32Bg, false/*bBuiltinShader*/);
+                        else
+                           UIRenderer.DrawFilledRectangle(stackOffX, stackOffY, w, h, c32Bg);
+                        break;
+
+                     case SHAPE_ROUND:
+                        float arcW = calcPanelArcW();
+                        float arcH = calcPanelArcH();
+                        // //    trace "xxx Panel: this="+#(this)+" bg SHAPE_ROUND arc=("+arcW+";"+arcH+") stackOff=("+stackOffX+";"+stackOffY+") c32_bg="+UI.GetColorString(c32_bg)+" c32Bg="+UI.GetColorString(c32Bg);
+                        if(null != shader)
+                           UIRenderer.DrawFilledRoundedRectangleTriEx(stackOffX + pbw*0.5,
+                                                                      stackOffY + pbw*0.5,
+                                                                      w - pbw, h - pbw,
+                                                                      arcW, arcH,
+                                                                      c32Bg,
+                                                                      false/*bBuiltinShader*/
+                                                                      );
+                        else
+                           UIRenderer.DrawFilledRoundedRectangle(stackOffX + pbw*0.5,
+                                                                 stackOffY + pbw*0.5,
+                                                                 w - pbw, h - pbw,
+                                                                 arcW, arcH,
+                                                                 c32Bg
+                                                                 );
+                        break;
+
+                     case SHAPE_RHOMB:
+                        // // trace "xxx Panel: bg SHAPE_RHOMB t=("+panel_shape_rhomb_tx+";"+panel_shape_rhomb_ty+")";
+                        // // trace "xxx DrawFilledRhomb c32Bg="+UI.GetColorString(c32Bg)+" blend="+panel_bg_blend;
+                        UIRenderer.DrawFilledRhombEx(stackOffX + pbw*0.5*2,
+                                                     stackOffY + pbw*0.5*2,
+                                                     w-pbw*2, h-pbw*2,
+                                                     panel_shape_rhomb_tx*0.5, panel_shape_rhomb_ty*0.5,
+                                                     c32Bg,
+                                                     (null == shader)/*bBuiltinShader*/
+                                                     );
+                        break;
+
+                     case SHAPE_DIAMOND:
+                        // // trace "xxx DrawFilledDiamond c32Bg="+UI.GetColorString(c32Bg)+" blend="+panel_bg_blend+" panel_alpha="+panel_alpha+" panel_bg_alpha="+panel_bg_alpha;
+                        UIRenderer.DrawFilledDiamondEx(stackOffX + w * 0.5,
+                                                       stackOffY + h * 0.5,
+                                                       w*0.5 - pbw*1.0,
+                                                       h*0.5 - pbw*1.0,
+                                                       c32Bg,
+                                                       (null == shader)/*bBuiltinShader*/
+                                                       );
+                        break;
+
+                     case SHAPE_ELLIPSE:
+                        // // trace "xxx DrawFilledEllipse c32Bg="+UI.GetColorString(c32Bg)+" blend="+panel_bg_blend;
+                        if(null != shader)
+                           UIRenderer.DrawFilledEllipseTriEx(stackOffX + w * 0.5,
+                                                             stackOffY + h * 0.5,
+                                                             w*0.5 - pbw*1.0,
+                                                             h*0.5 - pbw*1.0,
+                                                             ELLIPSE_NUMSEG,
+                                                             c32Bg,
+                                                             false/*bBuiltinShader*/
+                                                             );
+                        else
+                           UIRenderer.DrawFilledEllipse(stackOffX + w * 0.5,
+                                                        stackOffY + h * 0.5,
+                                                        w*0.5 - pbw*1.0,
+                                                        h*0.5 - pbw*1.0,
+                                                        ELLIPSE_NUMSEG,
+                                                        c32Bg
+                                                        );
+                        break;
+
+                     case SHAPE_HEXAGON:
+                        // // trace "xxx DrawFilledHexagon c32Bg="+UI.GetColorString(c32Bg)+" blend="+panel_bg_blend;
+                        UIRenderer.DrawFilledHexagonAEx(stackOffX, stackOffY,
+                                                        w - pbw*0, h - pbw*0,
+                                                        panel_shape_hexagon_ax,
+                                                        panel_shape_hexagon_ay,
+                                                        c32Bg,
+                                                        (null == shader)/*bBuiltinShader*/
+                                                        );
+                        // // if(1)
+                        // //    UIRenderer.DrawRectangle(0, 0, w, h, 1, #ffff0000);
+                        break;
+
+                     case SHAPE_TRI:
+                        // // trace "xxx DrawFilledDiamond c32Bg="+UI.GetColorString(c32Bg)+" blend="+panel_bg_blend+" panel_alpha="+panel_alpha+" panel_bg_alpha="+panel_bg_alpha;
+                        UIRenderer.DrawFilledTriangleAroundRectEx(stackOffX, stackOffY,
+                                                                  w - pbw*0, h - pbw*0,
+                                                                  panel_shape_tri_ax, panel_shape_tri_ay,
+                                                                  c32Bg,
+                                                                  (null == shader)/*bBuiltinShader*/                                                                     );
+                        break;
+                  }
+                  break;
+
+               case STYLE_FLAT:
+               case STYLE_RAISED:
+               case STYLE_SUNKEN:
+                  // // case STYLE_PATTERN:
+                  // // UIRenderer.DrawDefaultControlBackgroundAlphaTint(0, 0, w, h, panel_alpha, panel_tint);
+                  if(null != shader)
+                     UIRenderer.DrawFilledRectangleEx(stackOffX, stackOffY, w, h, c32Bg, false/*bBuiltinShader*/);
+                  else
+                     UIRenderer.DrawFilledRectangle(stackOffX, stackOffY, w, h, c32Bg);
+                  break;
+
+               case STYLE_NONE:
+                  break;
+            }
+
+            if(null != shader)
+               shader.unbind();
+
+            if(--stackIdx > 0)
+            {
+               // // trace "xxx drawPanelBorder: stackOff=("+stackOffX+";"+stackOffY+") stackIdx="+stackIdx+"(dcy="+panel_stack_alpha_decay+" exp="+panel_stack_alpha_exp+") border_blend="+panel_border_blend;
+               drawPanelBorder(stackOffX, stackOffY,
+                               mathPowerf(panel_stack_alpha_decay, stackIdx * panel_stack_alpha_exp)
+                               );
+               stackOffX -= panel_stack_off_x;
+               stackOffY -= panel_stack_off_y;
+            }
+
+            if(panel_bg_blend)
+               UIRenderer.DisableBlending();
+
+         } // loop stack
+
+         // debug-draw outer panel boundaries
+         if(0 && [/*SHAPE_ROUND, */SHAPE_RHOMB, SHAPE_ELLIPSE, SHAPE_DIAMOND, SHAPE_HEXAGON, SHAPE_TRI].contains(panel_bg_shape))
+            UIRenderer.DrawRectangle(-pad_top, -pad_left, w+(pad_left+pad_right), h+(pad_top+pad_bottom), 3, #ff009000);
+      }
+   }
+
+   public method calcPanelArcW() : float {
+      // ==calcPanelLabelShrinkX()
+      float w = getSizeX();  // (todo) w/h is still 0 when calculating panel padding
+      float h = getSizeY();
+      float pbw = panel_border_width * UI.font_scaling;
+      // // trace "xxx calcPanelArcW: shape="+panel_bg_shape+" w="+w+" h="+h;
+      if(Panel.SHAPE_ROUND == panel_bg_shape || Panel.SHAPE_ROUND == panel_border_shape)
+      {
+         // // trace "xxx calcPanelArcW: SHAPE_ROUND: w="+w+" h="+h;
+         float arcW = (w >= h) ? w*(panel_shape_round_amount/panel_shape_round_aspect)/*0.078125*/ : w*panel_shape_round_amount;
+         arcW = mathMinf(panel_shape_round_limit*UI.font_scaling, arcW);
+         arcW = mathMaxf(arcW, pbw);
+         return arcW;
+      }
+      else if(Panel.SHAPE_RHOMB == panel_bg_shape)
+      {
+         float p1x = - panel_shape_rhomb_tx;
+         float p1y =   panel_shape_rhomb_ty + h;
+
+         float p2x =    panel_shape_rhomb_tx;
+         float p2y =  - panel_shape_rhomb_ty;
+
+         float nx = (p2x - p1x);
+         float ny = (p2y - p1y);
+
+         float lv = sqrt(nx*nx + ny*ny);
+         nx /= lv;
+         ny /= lv;
+         float nbx =  nx * pbw;
+         float nby = -ny * pbw;
+         return mathMaxf(panel_shape_rhomb_tx+nbx-pbw, pbw);
+      }
+      else if(Panel.SHAPE_DIAMOND == panel_bg_shape)
+      {
+         // // trace "xxx calcPanelArcW: SHAPE_DIAMOND: w="+w+" h="+h;
+         return mathMaxf(panel_shape_diamond_rx+pbw, pbw);  // (todo) max ?
+      }
+      else if(Panel.SHAPE_ELLIPSE == panel_bg_shape)
+      {
+         // // trace "xxx calcPanelArcW: SHAPE_ELLIPSE: w="+w+" h="+h;
+         return mathMaxf(panel_shape_ellipse_rx+pbw, pbw);  // (todo) max ?
+      }
+      else if(Panel.SHAPE_HEXAGON == panel_bg_shape || Panel.SHAPE_HEXAGON == panel_border_shape)
+      {
+         // trace "xxx calcPanelArcW: SHAPE_HEXAGON: w="+w+" h="+h+" ax="+panel_shape_hexagon_ax;
+         // // float hexT = mathMaxf(w, h) * panel_shape_hexagon_scale * 2/*R = 2 * t*/;
+         // // trace "xxx calcArcW: shape="+panel_bg_shape+" w="+w+" h="+h+" hexT="+hexT+" scale="+panel_shape_hexagon_scale+" ret="+hexT;
+         // // return hexT;
+         return panel_shape_hexagon_ax + pbw;
+      }
+      else if(Panel.SHAPE_TRI == panel_bg_shape || Panel.SHAPE_TRI == panel_border_shape)
+      {
+         // // trace "xxx calcPanelArcW: SHAPE_TRI: w="+w+" h="+h+" ax="+panel_shape_tri_ax;
+         return panel_shape_tri_ax + pbw;
+      }
+      return 0;
+   }
+
+   public method calcPanelArcH() : float {
+      // ==calcPanelLabelShrinkY()
+      float w = getSizeX();
+      float h = getSizeY();
+      float pbw = panel_border_width * UI.font_scaling;
+      if(Panel.SHAPE_ROUND == panel_bg_shape || Panel.SHAPE_ROUND == panel_border_shape)
+      {
+         float arcH = (w < h)  ? h*(panel_shape_round_amount/panel_shape_round_aspect)/*0.078125*/ : h*panel_shape_round_amount;
+         arcH = mathMinf(panel_shape_round_limit*UI.font_scaling, arcH);
+         arcH = mathMaxf(arcH, pbw);
+         return arcH;
+      }
+      else if(Panel.SHAPE_RHOMB == panel_bg_shape)
+      {
+         float p1x = - panel_shape_rhomb_tx;
+         float p1y =   panel_shape_rhomb_ty + h;
+
+         float p2x =    panel_shape_rhomb_tx;
+         float p2y =  - panel_shape_rhomb_ty;
+
+         float nx = (p2x - p1x);
+         float ny = (p2y - p1y);
+
+         float lv = sqrt(nx*nx + ny*ny);
+         nx /= lv;
+         ny /= lv;
+         float nbx =  nx * pbw;
+         float nby = -ny * pbw;
+         return mathMaxf(panel_shape_rhomb_ty+nby-pbw, pbw);
+      }
+      else if(Panel.SHAPE_DIAMOND == panel_bg_shape)
+      {
+         return mathMaxf(panel_shape_diamond_ry+pbw, pbw);
+      }
+      else if(Panel.SHAPE_ELLIPSE == panel_bg_shape)
+      {
+         return mathMaxf(panel_shape_ellipse_ry+pbw, pbw);
+      }
+      else if(Panel.SHAPE_HEXAGON == panel_bg_shape || Panel.SHAPE_HEXAGON == panel_border_shape)
+      {
+         // trace "xxx calcPanelArcH: SHAPE_HEXAGON: w="+w+" h="+h+" ax="+panel_shape_hexagon_ay;
+         // // float hexT = mathMaxf(w, h) * panel_shape_hexagon_scale * 2/*R = 2 * t*/;
+         // // trace "xxx calcArcH: shape="+panel_bg_shape+" w="+w+" h="+h+" hexT="+hexT+" scale="+panel_shape_hexagon_scale+" ret="+hexT;
+         // // return hexT;
+         return panel_shape_hexagon_ay + pbw;
+      }
+      else if(Panel.SHAPE_TRI == panel_bg_shape || Panel.SHAPE_TRI == panel_border_shape)
+      {
+         // // trace "xxx calcPanelArcW: SHAPE_TRI: w="+w+" h="+h+" ay="+panel_shape_tri_ay;
+         return panel_shape_tri_ay + pbw;
+      }
+      return 0;
+   }
+
+   public method calcPanelStackExtraWidth() : float {
+      if(panel_stack > 1)
+         return (panel_stack - 1) * panel_stack_off_x;
+      return 0.0f;
+   }
+
+   public method calcPanelStackExtraHeight() : float {
+      if(panel_stack > 1)
+         return (panel_stack - 1) * panel_stack_off_y;
+      return 0.0f;
+   }
+
+   public method calcPanelLabelShrinkX() : float {
+      float arcW = calcPanelArcW();
+      // // trace "xxx calcPanelLabelShrinkX: shape="+panel_bg_shape+" arcW="+arcW;
+      float r = 0.0f;
+      if(arcW > 0.0f)
+         r = arcW + panel_border_width;
+      // // r += calcPanelStackExtraWidth();
+      return r;
+   }
+
+   public method calcPanelLabelShrinkY() : float {
+      float arcH = calcPanelArcH();
+      float r = 0.0f;
+      if(arcH > 0.0f)
+         r += arcH - panel_border_width;  // [26Mar2024] add "arcH -"
+      // // r += calcPanelStackExtraHeight();
+      return r;
+   }
+
+   protected method enablePanelBackgroundBlending() {
+      UIRenderer.SelectBlendMode(panel_bg_blend);
+   }
+
+   protected method enablePanelBorderBlending() {
+      UIRenderer.SelectBlendMode(panel_border_blend);
+   }
+
+   protected method drawPanelBorder(float _stackOffX, float _stackOffY, float _alpha) {
+      ////if(0 != panel_alpha)
+      if(1)
+      {
+         // // if(panel_stack > 1)
+         // //    trace "xxx drawPanelBorder<stack>(alpha="+_alpha+")";
+
+         float w = getSizeX();
+         float h = getSizeY();
+
+         float pbw = panel_border_width * UI.font_scaling;
+
+         // trace "xxx Panel::drawPanelBorder: this="+#(this)+" b_fill_bg="+b_fill_bg+" panel_alpha="+panel_alpha+" _alpha="+_alpha+" panel_border_alpha="+panel_border_alpha;
+         byte borderAlpha = panel_alpha * (_alpha * panel_border_alpha * (1.0 / 255.0));  // (todo) use layer_alpha instead of panel_alpha (?)
+         int c32Border = (panel_border_c24 & 0x00FFFFFF) | (borderAlpha << 24);
+
+         if(0 != panel_highlight_tint)
+            c32Border = sdvg_TintARGB(c32Border, panel_highlight_tint);
+
+         Shader shader <= tryBindPatternGradientShader(panel_border_pattern_idx, panel_border_pattern_intensity,
+                                                       panel_border_gradient_shape, panel_border_gradient_tex, w, h
+                                                       );
+
+         // // trace "xxx drawPanelBorder: id="+layer_id+" s="+getSizeString()+" border_blend="+panel_border_blend+" border_width="+panel_border_width+" c32Border="+UI.GetColorString(c32Border)+" border_color="+UI.GetColorString(panel_border_c24)+" panel_alpha="+panel_alpha+" border_alpha="+panel_border_alpha+" borderAlpha="+borderAlpha+" border_shape="+panel_border_shape+" bg_shape="+panel_bg_shape+" border_style="+panel_border_style;
+
+         if(panel_border_blend)
+            enablePanelBorderBlending();
+
+         switch(panel_border_style)
+         {
+            default:
+            case STYLE_DEFAULT:
+            case STYLE_FLAT:
+               break;
+
+            case STYLE_RAISED:
+               UIRenderer.SetLineWidth(1.0f);
+               UIRenderer.DrawDefaultRaisedBorder(_stackOffX, _stackOffY, w, h);
+               break;
+
+            case STYLE_SUNKEN:
+               UIRenderer.SetLineWidth(1.0f);
+               UIRenderer.DrawDefaultSunkenBorder(_stackOffX, _stackOffY, w, h);
+               break;
+
+            case STYLE_NONE:
+               break;
+
+            case STYLE_SOLID:
+            case STYLE_DOTTED:  // (todo) implement dotted borders (currently only in exportSVG())
+            case STYLE_DASHED:  // (todo) implement dashed borders
+               // // trace "xxx this="+getDebugString()+" panel border shape="+panel_border_shape+" width="+pbw+" c32="+UI.GetColorString(panel_border_c24);
+               switch(panel_border_shape)
+               {
+                  case SHAPE_NONE:
+                     break;
+
+                  default:
+                  case SHAPE_RECT:
+                     if(STYLE_SOLID == panel_border_style)
+                     {
+                        UIRenderer.DrawRectangleWithDir(_stackOffX, _stackOffY,
+                                                        w, h,
+                                                        pbw,
+                                                        c32Border,
+                                                        panel_border_dir
+                                                        );
+                     }
+                     else
+                     {
+                        getOrCreateBorderShape();
+                        border_shape.setAlphaMod(_alpha);
+
+                        if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                        {
+                           // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                           UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                        }
+
+                        border_shape.draw();
+
+                        if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                        {
+                           // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                           UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                        }
+                     }
+                     break;
+
+                  case SHAPE_ROUND:
+                     float arcW = calcPanelArcW();
+                     float arcH = calcPanelArcH();
+                     if(STYLE_SOLID == panel_border_style)
+                     {
+                        UIRenderer.DrawRoundedRectangle(_stackOffX + pbw*0.5,
+                                                        _stackOffY + pbw*0.5,
+                                                        w - pbw, h - pbw,
+                                                        arcW, arcH,
+                                                        pbw,
+                                                        c32Border
+                                                        );
+                     }
+                     else
+                     {
+                        // // trace "xxx 1 SHAPE_ROUND: panel_border_style="+panel_border_style;
+                        getOrCreateBorderShape();
+                        border_shape.setAlphaMod(_alpha);
+
+                        if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                        {
+                           // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                           UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                        }
+
+                        border_shape.draw();
+
+                        if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                        {
+                           // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                           UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                        }
+                        // // trace "xxx    2 SHAPE_ROUND";
+                     }
+                     break;
+
+                  case SHAPE_RHOMB:
+                     if(STYLE_SOLID == panel_border_style)
+                     {
+                        // // trace "xxx SHAPE_RHOMB: c32Border="+UI.GetColorString(c32Border);
+                        UIRenderer.DrawRhomb(_stackOffX + pbw,
+                                             _stackOffY + pbw,
+                                             w-pbw*2, h-pbw*2,
+                                             panel_shape_rhomb_tx*0.5, panel_shape_rhomb_ty*0.5,
+                                             pbw,
+                                             c32Border
+                                             );
+                     }
+                     else
+                     {
+                        // // trace "xxx 1 SHAPE_RHOMB: panel_border_style="+panel_border_style;
+                        getOrCreateBorderShape();
+                        border_shape.setAlphaMod(_alpha);
+
+                        if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                        {
+                           // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                           UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                        }
+
+                        border_shape.draw();
+
+                        if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                        {
+                           // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                           UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                        }
+                        // // trace "xxx    2 SHAPE_RHOMB";
+                     }
+                     break;
+
+                  case SHAPE_DIAMOND:
+                     // // trace "xxx 1 SHAPE_DIAMOND: panel_border_style="+panel_border_style;
+                     getOrCreateBorderShape();
+                     border_shape.setAlphaMod(_alpha);
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                     }
+
+                     border_shape.draw();
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                     }
+                     // // trace "xxx    2 SHAPE_DIAMOND";
+                     break;
+
+                  case SHAPE_ELLIPSE:
+                     // // trace "xxx 1 SHAPE_ELLIPSE: panel_border_style="+panel_border_style;
+                     // (todo) use sdvg_DrawEllipseFillAA()
+                     getOrCreateBorderShape();
+                     border_shape.setAlphaMod(_alpha);
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                     }
+
+                     border_shape.draw();
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                     }
+                     // // trace "xxx    2 SHAPE_ELLIPSE";
+                     break;
+
+                  case SHAPE_HEXAGON:
+                     // // trace "xxx 1 SHAPE_HEXAGON: panel_border_style="+panel_border_style;
+                     getOrCreateBorderShape();
+                     border_shape.setAlphaMod(_alpha);
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                     }
+
+                     border_shape.draw();
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                     }
+                     // // trace "xxx    2 SHAPE_HEXAGON";
+                     break;
+
+                  case SHAPE_TRI:
+                     // // trace "xxx 1 SHAPE_TRI: panel_border_style="+panel_border_style;
+                     getOrCreateBorderShape();
+                     border_shape.setAlphaMod(_alpha);
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(_stackOffX, _stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(_stackOffX, _stackOffY);
+                     }
+
+                     border_shape.draw();
+
+                     if( 0.0f != _stackOffX || 0.0f != _stackOffY )
+                     {
+                        // // glTranslatef(-_stackOffX, -_stackOffY, 0.0f);
+                        UIRenderer.ModelTranslate2f(-_stackOffX, -_stackOffY);
+                     }
+                     // // trace "xxx    2 SHAPE_TRI";
+                     break;
+               }
+               break;
+         }
+
+         if(panel_border_blend)
+            UIRenderer.DisableBlending();
+
+         if(null != shader)
+            shader.unbind();
+      }
+   }
+
+   public virtual onDrawPost() {
+      drawPanelBorder(0/*stackOffX*/, 0/*stackOffY*/, 1.0f/*a*/);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initPanel();
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         local StringArray *atsplit;
+         String atnamelc;
+         String atvallc;
+         int shape;
+         int style;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "alpha":
+                  setPanelAlpha(atval);
+                  break;
+
+               case "tint":
+                  setPanelTint(atval);
+                  break;
+
+               case "panelshape":
+                  shape = ParsePanelShapeFromString(atval.toLower());
+                  setPanelBackgroundShape(shape);
+                  setPanelBorderShape(shape);
+                  break;
+
+               case "panelbgshape":
+                  shape = ParsePanelShapeFromString(atval.toLower());
+                  setPanelBackgroundShape(shape);
+                  break;
+
+               case "panelbordershape":
+                  shape = ParsePanelShapeFromString(atval.toLower());
+                  setPanelBorderShape(shape);
+                  break;
+
+               case "panelstyle":
+                  style = ParsePanelStyleFromString(atval.toLower());
+                  setPanelBackgroundStyle(style);
+                  setPanelBorderStyle(style);
+                  break;
+
+               case "panelbgstyle":
+                  style = ParsePanelStyleFromString(atval.toLower());
+                  setPanelBorderStyle(style);
+                  break;
+
+               case "panelbgpattern":
+                  setPanelBackgroundPatternByName(atval.toLower());
+                  break;
+
+               case "panelborderstyle":
+                  style = ParsePanelStyleFromString(atval.toLower());
+                  setPanelBorderStyle(style);
+                  break;
+
+               case "panelborderwidth":
+                  setPanelBorderWidth(atval);
+                  break;
+
+               case "panelbordercolor":
+                  setPanelBorderColor(atval);
+                  break;
+
+               case "panelborderblend":
+                  setPanelBorderBlend(ParsePanelBlendFromString(atval.toLower()));
+                  break;
+
+               case "panelborderdir":
+                  atval.toLower() => atvallc;
+                  atsplit <= atvallc.splitChar(';');
+                  setPanelBorderDir( ParseAlignmentFlagsFromArray(atsplit) );
+                  break;
+
+               case "panelbggradientshape":
+                  setPanelBackgroundGradientShape(ParsePanelGradientShapeFromString(atval.toLower()));
+                  break;
+
+               case "panelbordergradientshape":
+                  setPanelBorderGradientShape(ParsePanelGradientShapeFromString(atval.toLower()));
+                  break;
+
+               case "panelstack":
+                  setPanelStack(atval);
+                  break;
+
+               case "panelstackoff":
+                  local StringArray aStackOff <= atval.splitChar(';');
+                  setPanelStackOff(aStackOff.get(0),
+                                   (aStackOff.numElements >= 2) ? aStackOff.get(1) : aStackOff.get(0)
+                                   );
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+}

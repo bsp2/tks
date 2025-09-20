@@ -1,0 +1,1330 @@
+// ----
+// ---- file   : Slider.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 23Jun2005, 02Jul2005, 10Jul2005, 31Jul2005, 14Aug2005, 18May2007, 30Oct2007
+// ----          11Nov2007, 14Apr2008, 09Aug2008, 10Aug2008, 01Feb2009, 31May2009, 22Apr2010
+// ----          16Jun2010, 20Mar2011, 19Apr2014, 22Jan2017, 23Feb2017, 04Apr2017, 10Feb2018
+// ----          11Feb2018, 20May2018, 13Nov2018, 29Nov2018, 10Sep2019, 22Sep2019, 03Nov2019
+// ----          18Aug2020, 03Apr2021, 03Oct2023, 04Oct2023, 21Oct2023, 04Nov2023, 09Nov2023
+// ----          11Nov2023, 21Mar2024, 22Mar2024, 09Oct2024, 10Oct2024, 29Dec2024, 10Sep2025
+// ----          11Sep2025
+// ----
+// ----
+// ----
+module MSlider;
+
+namespace ui;
+
+
+class Slider extends Control {
+
+   define String ACTION_VALUECHANGING = "onValueChanging";
+   define String ACTION_VALUECHANGED  = "onValueChanged";
+
+   define String DELEGATE_GETSTEPCOARSE/* = "delGetStepCoarse"*/; // For dynamic step sizes (e.g. TableView)
+
+   define float MAX_KNOB_SIZE = 0.7;
+
+   define float MIN_WIDTH  = 16;
+   define float MIN_HEIGHT = 16;
+
+   protected boolean b_pressed;
+   protected int     last_dir;  // 0=? -1= left/up, 1=right/down
+
+   protected float cur_value;
+   protected float min_value;
+   protected float max_value;
+   protected float step_coarse;
+   protected float knob_size;
+
+   protected float       reset_value;
+   protected FloatArray *cycle_reset_values;
+
+   // // protected boolean b_ignore_next_click; // after dblclick
+
+   protected int border_size; // 0==disable borders ("scroller look")
+
+   protected boolean b_grabbed;
+   protected float   grab_start_mouserel;   // mouse position at grab-start (relative to top/left widget position)
+   protected float   grab_undo_value;       // value before grab
+   protected int     grab_start_mouse_abs;  // see grabMouse() (set when LSHIFT modifier is pressed)
+   protected int     grab_start_ms;         // milliSeconds() when grab first started (detect lctrl-LMB click)
+
+   protected boolean b_vertical;
+   protected boolean b_flip; // false:0=left/top, true:0=right/bottom
+
+   protected boolean b_adaptive_knob_size;
+   protected boolean b_recalc_knob_size;
+
+   protected float last_mouserel; // last mouse offset (relative to top or left widget edge)
+   protected float last_kp;       // last knob position
+   protected float knob_anchor;   // mouse offset relative to top/left knob position
+
+   define String TA_REPEAT;
+   protected TimerAction ta_repeat;
+   protected int repeat_count;
+
+   protected boolean b_blend_replace_alpha;
+
+   protected boolean b_detail_edit;
+   static FloatParamDialog *dlg_floatparam;
+
+
+   public function New(float _min, _max, _value, _step) : Slider {
+      local Slider sl;
+      sl.initSlider(_min, _max, _value, _step);
+      return deref sl;
+   }
+
+   public function NewVertical(float _min, _max, _value, _step) : Slider {
+      local Slider sl;
+      sl.b_vertical = true;
+      sl.initSlider(_min, _max, _value, _step);
+      return deref sl;
+   }
+
+   public method initSlider(float _min, _max, _value, _step) {
+
+      initLayer();
+
+      b_editable = true;
+
+      b_adaptive_knob_size = true;
+      b_recalc_knob_size = true;
+
+      min_value   = 0;
+      max_value   = 10;
+      step_coarse = 1;
+      knob_size   = GetDefaultKnobSize();
+      border_size = UIConstants.DEFAULT_BORDER_SIZE;
+      knob_anchor = 0f;
+      last_dir    = 0;
+
+      setPadding4f(2,2,2,2);
+
+      min_value   = _min;
+      max_value   = _max;
+      cur_value   = _value;
+      step_coarse = _step;
+      last_dir    = 0;
+
+      layer_style = lnf.slider_layer_style;
+
+      ta_repeat.setActionName(TA_REPEAT);
+      ta_repeat.setActionConsumer(this);
+   }
+
+   public virtual setLayerStyle(int _style) {
+      Control::setLayerStyle(_style);
+      if(LookAndFeel.STYLE_FLAT == layer_style)
+         border_size = 0;
+   }
+
+   public method setEnableDetailEdit(boolean _bEnable) {
+      b_detail_edit = _bEnable;
+   }
+
+   public method setEnableBlendReplaceAlpha(boolean _bEnable) {
+      b_blend_replace_alpha = _bEnable;
+   }
+
+   public method setVertical(boolean _b) {
+      explain "Enable vertical orientation instead of horizontal (default)";
+      b_vertical = _b;
+   }
+
+   public method isVertical() : boolean {
+      explain "Query orientation of the slider; true=vertical, false=horizontal";
+      return b_vertical;
+   }
+
+   public method setFlip(boolean _b) {
+      b_flip =_b;
+   }
+
+   public method isFlipped() : boolean {
+      return b_flip;
+   }
+
+   public method setBorderSize(int _bs) {
+      border_size = _bs;
+   }
+
+   public method getBorderSize() {
+      return border_size;
+   }
+
+   public method showDetailEdit() {
+      String *sTitle;
+      if(user_data instanceof String)
+         sTitle <= user_data;
+      else if(!layer_name.isBlank())
+         sTitle <= layer_name;
+      else
+         sTitle <= "Slider Detail-Edit";
+      dlg_floatparam <= FloatParamDialog.New(sTitle,
+                                             ""/*message*/,
+                                             null/*iconName*/,
+                                             "Ok",
+                                             "Cancel",
+                                             getValue(),
+                                             getMinValue(),
+                                             getMaxValue(),
+                                             5/*cols*/,
+                                             5/*precision*/,
+                                             (getMaxValue() - getMinValue())/200.0/*step*/,
+                                             this/*recipient*/
+                                             );
+      dlg_floatparam.showNearMouse(-30,-30);
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      // // return (0 != border_size) && !b_disable_tab_cycle;
+      return !b_disable_tab_cycle;  // [29Dec2024] removed (0 != border_size) condition
+   }
+
+   public virtual onTabFocus() {
+      redraw();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      if(!_bQuiet)
+         redraw();
+   }
+
+   protected method continueGrabAtNewMousePosition() {
+      // when toggling between fine+coarse edit mode via LSHIFT/RSHIFT
+      knob_anchor         = last_mouserel - last_kp;
+      grab_start_mouserel = last_mouserel;
+      // // trace "xxx Slider::continueGrabAtNewMousePosition: knob_anchor="+knob_anchor+" new grab_start_mouserel="+grab_start_mouserel;
+   }
+
+   public virtual onMouseKey(Key _k) : boolean {
+      // // trace "xxx Slider::onMouseKey: k.name="+_k.name+" k.pressed="+_k.pressed+" _k.released="+_k.released+" _k.mod="+_k.mod;
+
+      switch(_k.pressed)
+      {
+         case VKEY_LSHIFT:
+         case VKEY_RSHIFT:
+            if(b_grabbed)
+            {
+               // begin fine edit
+               continueGrabAtNewMousePosition();
+               grabMouse();
+               return true;
+            }
+            break;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_LSHIFT:
+         case VKEY_RSHIFT:
+            if(b_grabbed)
+            {
+               // back to coarse edit
+               ungrabMouse();
+               continueGrabAtNewMousePosition();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_HOME:
+               setValue(min_value);
+               handleValueChanged();
+               return true;
+
+            case VKEY_END:
+               setValue(max_value);
+               handleValueChanged();
+               return true;
+
+            case VKEY_LEFT:
+               if(!b_vertical)
+               {
+                  decCoarse();
+                  return true;
+               }
+               break;
+
+            case VKEY_UP:
+               if(b_vertical)
+               {
+                  decCoarse();
+                  return true;
+               }
+               break;
+
+            case VKEY_RIGHT:
+               if(!b_vertical)
+               {
+                  incCoarse();
+                  return true;
+               }
+               break;
+
+            case VKEY_DOWN:
+               if(b_vertical)
+               {
+                  incCoarse();
+                  return true;
+               }
+               break;
+         }
+      }
+      return Control::onKey(_k);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED];
+   }
+
+   protected method handleValueChanging() {
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGING), this, cur_value));
+   }
+
+   protected method handleValueChanged() {
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, cur_value));
+   }
+
+   public method setEnableAdaptiveKnobSize(boolean _b) {
+      b_adaptive_knob_size = _b;
+      b_recalc_knob_size   = true;
+   }
+
+   public method isKnobSizeAdaptive() : boolean {
+      return b_adaptive_knob_size;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return b_grabbed;
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      // workaround to avoid mousedrag over scrollbar area in scrollpanes
+      return true;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      // // trace "xxx Slider::onMouseDrag currentEv.mouse_rel_y="+_currentEv.mouse_rel_y;
+      onMouse(_currentEv);
+      return true;
+   }
+
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      if(b_grabbed)
+      {
+         ungrabMouse();
+         b_pressed = false;
+         b_grabbed = false;
+         grab_start_ms = 0;
+         cancelSliderTimer();
+         setValue(grab_undo_value);
+         handleValueChanged();
+      }
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      // // return b_pressed;
+      // Not actually used but prevents parent from consuming the event
+      //  (e.g. RMB-hold-click is used to go to previous page in Eureka)
+      return true;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      b_pressed = false;
+      b_grabbed = false;
+      grab_start_ms = 0;
+      redraw();
+      return Control::onMouseEnter(_ev);
+   }
+
+   protected method grabMouse() {
+      if(UI.b_slider_mouse_grab)
+      {
+         grab_start_mouse_abs =
+            b_vertical
+            ? (UI.GetMouseX() - getAbsolutePositionX())
+            : (UI.GetMouseY() - getAbsolutePositionY())
+            ;
+         // // trace "xxx grabMouse: grab_start_mouse_abs="+grab_start_mouse_abs;
+         UI.GrabMouse(/*_dragStart*/);
+      }
+   }
+
+   protected method ungrabMouse() {
+      if(UI.b_mouse_grab)
+      {
+         // UngrabMouse() warps to GrabMouse() start position
+         //   => override that and warp to current knob position instead
+         UI.UngrabMouse();
+         last_mouserel = last_kp + knob_anchor;
+         if(b_vertical)
+            warpTo(grab_start_mouse_abs, last_mouserel);
+         else
+            warpTo(last_mouserel, grab_start_mouse_abs);
+      }
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      ungrabMouse();
+      b_pressed = false;
+      b_grabbed = false;
+      grab_start_ms = 0;
+      cancelSliderTimer();
+      redraw();
+      return Control::onMouseLeave(_ev);
+   }
+
+   private method cancelSliderTimer() {
+      ta_repeat.cancel();
+      repeat_count = 0;
+   }
+
+   public method incCoarse() : boolean {
+      explain "Add step_coarse to current slider value";
+
+      if(cur_value < max_value)
+      {
+         float f = cur_value + getStepCoarse();
+         if(UI.KeyModCtrl())
+            f = quantizeValue(f);
+         setValue(f);
+         handleValueChanged();
+         redraw();
+         return true;
+      }
+      return false;
+   }
+
+   public method incFine() : boolean {
+      // (todo)
+      return incCoarse();
+   }
+
+   public method decCoarse() : boolean {
+      explain "Subtract step_coarse from current slider value";
+
+      if(cur_value > min_value)
+      {
+         float f = cur_value - getStepCoarse();
+         if(UI.KeyModCtrl())
+            f = quantizeValue(f);
+         setValue(f);
+         handleValueChanged();
+         redraw();
+         return true;
+      }
+      return false;
+   }
+
+   public method decFine() : boolean {
+      // (todo)
+      return decCoarse();
+   }
+
+   protected method handleResetValue() : boolean {
+      // // trace "xxx Slider::handleResetValue: reset_value="+reset_value+" b_editable="+b_editable;
+      if(b_editable)
+      {
+         if(b_grabbed)
+         {
+            ungrabMouse();
+            b_grabbed = false;
+            b_pressed = false;
+            grab_start_ms = 0;
+         }
+
+         if(null != cycle_reset_values)
+         {
+            int bestMatchIdx = -1;
+            float bestMatchDist = 999999;
+            int idx = 0;
+            loop(cycle_reset_values.numElements)
+            {
+               float d = abs(cycle_reset_values[idx] - cur_value);
+               if(d < bestMatchDist)
+               {
+                  bestMatchDist = d;
+                  bestMatchIdx = idx;
+               }
+               idx++;
+            }
+            if(bestMatchDist < 0.01)
+            {
+               bestMatchIdx = (bestMatchIdx + 1) % cycle_reset_values.numElements;
+               setValue(cycle_reset_values.get(bestMatchIdx));
+            }
+            else
+               setValue(cycle_reset_values.get(0));
+         }
+         else
+         {
+            setValue(reset_value);
+         }
+
+         handleValueChanged();
+         // // b_ignore_next_click = true;
+
+         return true;
+
+      } // if b_editable
+      return false;
+   }
+
+   private method handleMouseClickOrPress() {
+
+      float ps = b_vertical ? getSizeY() : getSizeX();
+      float frange;
+
+      frange = (max_value - min_value);
+      float ks = getKnobSize();
+      if(b_flip)
+         last_kp = (ps - ks - border_size*2) - ( (ps - ks - border_size*2*2) * ((cur_value - min_value) / frange) );
+      else
+         last_kp = border_size + ( (ps - ks - border_size*3) * ((cur_value - min_value) / frange) );
+
+      if(last_mouserel > (last_kp + ks))
+      {
+         // ---- right side of knob
+         if(UI.KeyModShift())
+         {
+            if(b_flip)
+               decFine();
+            else
+               incFine();
+         }
+         else
+         {
+            if(b_flip)
+               decCoarse();
+            else
+               incCoarse();
+         }
+      }
+      else if(last_mouserel < last_kp)
+      {
+         // ---- left side of knob
+         if(UI.KeyModShift())
+         {
+            if(b_flip)
+               incFine();
+            else
+               decFine();
+         }
+         else
+         {
+            if(b_flip)
+               incCoarse();
+            else
+               decCoarse();
+         }
+      }
+      else
+      {
+         // ---- within knob rectangle => beginGrab
+         b_grabbed           = true;
+         knob_anchor         = last_mouserel - last_kp;
+         grab_start_mouserel = last_mouserel;
+         grab_undo_value     = cur_value;
+         grab_start_ms       = milliSeconds();
+         if(UI.KeyModShift())
+            grabMouse();
+      }
+
+      // ---- start click repeat timer
+      if(b_pressed && !b_grabbed)
+      {
+         int tnr = ++repeat_count;
+         if(tnr > 20)
+            tnr = 20;
+         tnr = (20.0f / tnr) * 10;
+         ta_repeat.scheduleTicks(tnr);
+      }
+      redraw();
+   }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      return onMouse(_ev);
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      handleResetValue();
+      b_pressed = false;
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // trace "xxx Slider::onMouse: cbs="+_ev.current_state+" nbs="+_ev.changed_state;
+      boolean r = false;
+
+      last_mouserel = b_vertical ? _ev.getMouseRelY() : _ev.getMouseRelX();
+      // // trace "xxx slider::onMouse: mouserel="+mouserel;
+      if(last_mouserel < 0)
+         last_mouserel = 0;
+      float ps = b_vertical ? getSizeY() : getSizeX(), ks = getKnobSize();
+
+      if(_ev.current_state & MOUSE_WHEELDOWN)
+      {
+         if(b_flip ^ !b_vertical)
+         {
+            if(UI.KeyModShift())
+               decFine();
+            else
+               decCoarse();
+            r = true;
+         }
+         else
+         {
+            if(UI.KeyModShift())
+               incFine();
+            else
+               incCoarse();
+            r = true;
+         }
+      }
+      else if(_ev.current_state & MOUSE_WHEELUP)
+      {
+         if(b_flip ^ !b_vertical)
+         {
+            if(UI.KeyModShift())
+               incFine();
+            else
+               incCoarse();
+            r = true;
+         }
+         else
+         {
+            if(UI.KeyModShift())
+               decFine();
+            else
+               decCoarse();
+            r = true;
+         }
+      }
+      else if(_ev.changed_state & MOUSE_LBUTTON)
+      {
+         if(_ev.current_state & MOUSE_LBUTTON)
+         {
+            grabKeyboardFocus();
+
+            // trace "xxx LMB down b_pressed="+b_pressed;
+
+            if(!b_pressed)
+            {
+               // // if(!b_ignore_next_click)
+               // // {
+                  b_pressed = true;
+                  handleMouseClickOrPress();
+               // // }
+               // // else
+               // // {
+               // //    b_ignore_next_click = false;  // after dblclick
+               // // }
+            }
+         }
+         else
+         {
+            // LMB release
+            b_pressed = false;
+
+            // trace "xxx LMB release, msDelta="+(milliSeconds() - grab_start_ms);
+
+            if(UI.KeyModCtrl() &&
+               (!b_grabbed || (milliSeconds() - grab_start_ms) < UIConstants.MOUSE_CLICK_TIMEOUT)
+               )
+            {
+               // trace "xxx lctrl-LMB-click";
+               handleResetValue();  // lazy-ends mouse grab
+            }
+            else if(b_grabbed)
+            {
+               // ---- end grab
+               ungrabMouse();
+               b_grabbed = false;
+               grab_start_ms = 0;
+               handleValueChanged();
+            }
+
+            cancelSliderTimer();
+         }
+         r = true;
+      }
+      else if(_ev.rightButtonDown())
+      {
+         // [18Aug2020] not reached (anymore), see onMouseCancelDrag() instead
+         // // trace "xxx Slider: RMB down b_grabbed="+b_grabbed;
+         if(b_grabbed)
+         {
+            ungrabMouse();
+
+            b_pressed = false;
+            b_grabbed = false;
+            grab_start_ms = 0;
+
+            cancelSliderTimer();
+            setValue(grab_undo_value);
+            handleValueChanged();
+         }
+         r = true;
+      }
+      else if(_ev.rightButtonUp())
+      {
+         // Consume to prevent fallback to parent widget context menu
+         if(!b_grabbed && b_detail_edit)
+         {
+            showDetailEdit();
+            return true;
+         }
+         r = true;
+      }
+
+      if(b_grabbed)
+      {
+         // mouse-drag knob
+         // trace "...........................";
+         // trace "xxx Mouse=("+Mouse.x+","+Mouse.y+")  UI.Mouse=("+UI.GetMouseX()+","+UI.GetMouseY()+")";
+         ks = int(ks);
+         float availSize = (ps - ks - border_size*4);
+         float dragRel = (last_mouserel - grab_start_mouserel);
+         if(UI.KeyModShift())
+            dragRel *= 0.1;
+         // trace "xxx dragRel="+dragRel;
+         float dragPos = dragRel + grab_start_mouserel;
+         last_kp = dragPos - knob_anchor;  // calc top/left knob pixel position
+         last_kp = int(last_kp); // Prevent subpixel glitches
+         // // if(kp > availSize)
+         // //    kp = availSize;
+         // trace "xxx dragPos="+dragPos+" knob_anchor="+knob_anchor+" last_kp="+last_kp;
+         float oldValue = cur_value;
+         float frange = (max_value - min_value);
+         float relValue = frange * ((last_kp - border_size*2) / availSize);
+
+         if(UI.KeyModCtrl())
+            relValue = quantizeValue(relValue);
+
+         if(b_flip)
+            setValueGrabbed(max_value - relValue);
+         else
+            setValueGrabbed(min_value + relValue);
+
+         if(cur_value != oldValue)
+         {
+            handleValueChanging();
+         }
+
+         r = true;
+      }
+
+      redraw();
+
+      if(r)
+         return r;
+      else
+         return Control::onMouse(_ev);  // start tool tip timer
+   }
+
+   public static GetDefaultKnobSize() : float {
+      if(1.0 == UI.font_scaling)
+         return UIConstants.DEFAULT_KNOB_SIZE;
+      else
+         return UIConstants.DEFAULT_KNOB_SIZE * UI.font_scaling * 0.7;
+   }
+
+   public static GetMinWidth() : int {
+      if(2.0 == UI.font_scaling)
+         return 28;
+      else
+         return MIN_WIDTH * UI.font_scaling;
+   }
+
+   public static GetMinHeight() : int {
+      if(2.0 == UI.font_scaling)
+         return 28;
+      else
+         return MIN_HEIGHT * UI.font_scaling;
+   }
+
+   protected virtual calcSizeX() : float {
+      if(b_vertical)
+         return GetMinWidth();
+      else
+         return GetDefaultKnobSize() + border_size*4;
+   }
+
+   protected virtual calcSizeY() : float {
+      if(b_vertical)
+         return GetDefaultKnobSize() + border_size*4;
+      else
+         return GetMinHeight();
+   }
+
+   public method validateValue() {
+      if(cur_value > max_value)
+         cur_value = max_value;
+      else if(cur_value < min_value)
+         cur_value = min_value;
+   }
+
+   public method recalcKnobSize() {
+      b_recalc_knob_size = true;
+   }
+
+   public method setRelativeKnobSize(float _visible) {
+      explain "Set the size of the slider knob (visible range of values)";
+
+      if(b_adaptive_knob_size)
+      {
+         b_recalc_knob_size = false;
+
+         float s = b_vertical ? getSizeY() : getSizeX();
+         // // trace "xxx Slider::setRelativeKnobSize: visible="+_visible;
+
+         if(_visible > MAX_KNOB_SIZE)
+            _visible = MAX_KNOB_SIZE;
+         else if(_visible > 1f)
+            _visible = 1f;
+         else if(_visible < 0f)
+            _visible = 0f;
+
+         knob_size = (s - border_size*4) * _visible;
+         // // trace "xxx Slider::setRelativeKnobSize: knob_size="+knob_size;
+         if(knob_size < GetDefaultKnobSize())
+            knob_size = GetDefaultKnobSize();
+      }
+   }
+
+   public method setKnobSize(float _size) {
+      explain "Set the size of the slider knob (in pixels)";
+
+      if(!b_adaptive_knob_size)
+      {
+         b_recalc_knob_size = false;
+         if(_size >= (b_vertical ? getSizeY() : getSizeX()))
+            knob_size = GetDefaultKnobSize();
+         else
+            knob_size = _size;
+      }
+   }
+
+   public method getKnobSize() : float {
+      explain "Query the size of the slider knob";
+
+      // // trace "xxx Slider::getKnobSize: b_adaptive_knob_size="+b_adaptive_knob_size+" b_recalc_knob_size="+b_recalc_knob_size;
+
+      if(b_recalc_knob_size)
+      {
+         b_recalc_knob_size = false;
+         if(b_adaptive_knob_size)
+         {
+            float s = (b_vertical ? getSizeY() : getSizeX()) - border_size*2;
+            float r = 1.0 / (max_value - min_value);
+            // // trace "xxx min_value="+min_value+" max_value="+max_value+" r="+r;
+            if(r > MAX_KNOB_SIZE)
+               r = MAX_KNOB_SIZE;
+
+            knob_size = mathMaxf(s * r, GetDefaultKnobSize());
+         }
+         else
+         {
+            knob_size = GetDefaultKnobSize();
+         }
+      }
+      return knob_size;
+   }
+
+   public method setRange(float _min, _max) {
+      min_value = _min;
+      max_value = _max;
+      if(min_value > max_value)
+      {
+         // swap min / max
+         float t = min_value; min_value = max_value; max_value = t;
+      }
+      b_recalc_knob_size = true;
+   }
+
+   public method setResetValue(float _reset) {
+      reset_value = _reset;
+   }
+
+   public method setResetValues(FloatArray _fa) {
+      if(null != _fa)
+      {
+         cycle_reset_values <= new FloatArray;
+         cycle_reset_values  = _fa;
+      }
+      else
+      {
+         cycle_reset_values <= null;
+      }
+   }
+
+   public method setMinValue(float _min) {
+      explain "Set the minimum slider position";
+      min_value = _min;
+      if(min_value > max_value)
+      {
+         float t = min_value; min_value = max_value; max_value = t;
+      }
+      b_recalc_knob_size = true;
+   }
+
+   public method getMinValue() : float {
+      explain "Query the minimum slider position";
+      return min_value;
+   }
+
+   public method setMaxValue(float _max) {
+      explain "Set the maximum slider position";
+      max_value = _max;
+      if(min_value > max_value)
+      {
+         float t = min_value; min_value = max_value; max_value = t;
+      }
+      b_recalc_knob_size = true;
+   }
+
+   public method getMaxValue() : float {
+      explain "Query the maximum slider position";
+      return max_value;
+   }
+
+   public method setMinMaxValues(float _min, float _max) {
+      setMinValue(_min);
+      setMaxValue(_max);
+   }
+
+   public method setStepCoarse(float _val) {
+      explain "Set the default position change inc/dec size.";
+      step_coarse = _val;
+   }
+
+   public method getStepCoarse() : float {
+      explain "Query the default position change inc/dec size.";
+
+      var sz = delegate(DELEGATE_GETSTEPCOARSE)();
+      if(typeid(sz) != YAC_TYPE_VOID)
+         return sz;
+      else
+         return step_coarse;
+   }
+
+   public method getMoveDirection() : int {
+      explain "Return direction of last slider movement, -1=up/left, 0=none, 1=right/down";
+      return last_dir;
+   }
+
+   public method getValue() : float {
+      return cur_value;
+   }
+
+   protected method quantizeValue(float _value) : float {
+      float frange = (max_value - min_value);
+      if(frange >= 10)
+      {
+        _value = round(_value);
+      }
+      else
+      {
+         // e.g. 0..1 percentage range
+         // trace "xxx (_value*100)="+(_value*100)+" round(_value * 100)="+round(_value * 100);
+        _value = round(_value * 100) / 100.0;
+      }
+      return _value;
+   }
+
+   public method setValue(float _value) {
+      if(!b_grabbed)
+      {
+         // Do not allow applications to update slider value while knob is grabbed
+         setValueGrabbed(_value);
+      }
+   }
+
+   protected method setValueGrabbed(float _value) {
+      float oldValue = cur_value;
+
+      if(_value < cur_value)
+         last_dir = -1;
+      else
+         last_dir = 1;
+
+      cur_value = mathClampf(_value, min_value, max_value);
+
+      // // trace "xxx slider::setValue: cur_value="+cur_value+" _value="+_value+" min="+min_value+" max="+max_value;
+
+      if(cur_value != oldValue)
+      {
+         redraw();
+         updateToolTipIfVisible();
+      }
+   }
+
+   public virtual onDraw() {
+
+      float sx = getSizeX(), sy = getSizeY();
+      float s  = b_vertical ? sy : sx;
+      float ps = b_vertical ? sy : sx, ks = getKnobSize();
+
+      // // trace "xxx slider border_size="+border_size+" style="+layer_style;
+      // // trace "xxx Slider::onDraw: knob_size="+ks;
+
+      // ---- calc pixel position and size of knob and draw it
+      float frange = (max_value - min_value);
+      float availSize = (ps - ks - border_size*4);
+
+      float kp;
+      int c32;
+
+      if(b_blend_replace_alpha)
+         UIRenderer.EnableBlending();  // ComboBoxPopup
+      else
+         UIRenderer.EnableBlendingKeepAlpha();
+
+      if(b_flip)
+         kp = (ps - border_size*2 - ks) - (availSize * ((cur_value - min_value) / frange));
+      else
+         kp = border_size*2 + (availSize * ((cur_value - min_value) / frange));
+
+      kp = int(kp); // Prevent subpixel glitches
+      ks = int(ks);
+
+      if(kp > availSize)
+         kp = availSize;
+
+      // // trace "xxx layer_style="+layer_style+" lnf="+lnf.getName();
+      if(LookAndFeel.STYLE_BEVEL == layer_style)
+      {
+         // ---- Draw background
+         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, bg32_tint));
+
+         if(border_size > 0)
+         {
+            if(kp > border_size)
+            {
+               if(b_vertical)
+               {
+                  UIRenderer.DrawGradientFilledRectangle(border_size, border_size,
+                                                         sx-border_size*2, kp-border_size,
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         );
+               }
+               else
+               {
+                  UIRenderer.DrawGradientFilledRectangle(border_size, border_size,
+                                                         kp-border_size, sy-border_size*2,
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         );
+               }
+            }
+            if(b_vertical)
+            {
+               if( (kp + ks) < (sy - border_size) )
+               {
+                  UIRenderer.DrawGradientFilledRectangle(border_size, kp+ks,
+                                                         sx-border_size*2, sy-(kp+ks+border_size),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         );
+               }
+            }
+            else
+            {
+               if( (kp + ks) < (sx - border_size) )
+               {
+                  UIRenderer.DrawGradientFilledRectangle(kp+ks, border_size,
+                                                         sx-(kp+ks+border_size), sy-border_size*2,
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIM,      bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM,   bg32_tint),
+                                                         lnf.getTintedColor(LookAndFeel.COLOR_BORDER_DIMLIGHT, bg32_tint)
+                                                         );
+               }
+            }
+
+            UIRenderer.DrawSoftShadowSunkenBorderTint(0, 0, sx, sy, bg32_tint);
+
+            if(isMouseOver())
+            {
+               if(b_pressed)
+               {
+                  if(b_vertical)
+                     UIRenderer.DrawDefaultActiveBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                  else
+                     UIRenderer.DrawDefaultActiveBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+               }
+               else
+               {
+                  if(b_vertical)
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                  else
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+               }
+
+               if(b_vertical)
+                  UIRenderer.DrawDefaultRaisedBorderTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+               else
+                  UIRenderer.DrawDefaultRaisedBorderTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+            }
+            else
+            {
+               if(b_vertical)
+               {
+                  UIRenderer.DrawDefaultControlBackgroundTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+                  UIRenderer.DrawDefaultRaisedBorderTint(border_size*2, kp,  sx-border_size*4, ks, bg32_tint);
+               }
+               else
+               {
+                  UIRenderer.DrawDefaultControlBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+                  UIRenderer.DrawDefaultRaisedBorderTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+               }
+            }
+
+            // // trace "xxx slider::ondraw border_size="+border_size+" hasKeyboardFocus="+hasKeyboardFocus();
+
+            if(hasKeyboardFocus())
+            {
+               if(b_vertical)
+                  UIRenderer.DrawTabFocusTextBorder(border_size*2+2, kp+2, border_size*2+2+sx-border_size*4-2-3, kp+2+ks-2-2);
+               else
+                  UIRenderer.DrawTabFocusTextBorder(kp+2, border_size*2+2, kp+2 + ks-2-3, border_size*2+2 + sy-border_size*4-2-3);
+            }
+
+         } // if (border_size > 0)
+         else
+         {
+            // ---- no border (Scroller)
+            // (note) 13Nov2018 never reached ? border_size=1 for scrollers
+            UIRenderer.DrawFilledRectangle(0, 0, sx, sy, lnf.getTintedColor(LookAndFeel.COLOR_SCROLLER_BG, bg32_tint));
+
+            if(isMouseOver())
+            {
+               if(b_pressed)
+               {
+                  if(b_vertical)
+                     UIRenderer.DrawDefaultActiveBackgroundTint(0, kp,  sx, ks, bg32_tint);
+                  else
+                     UIRenderer.DrawDefaultActiveBackgroundTint(kp, 0,  ks, sy, bg32_tint);
+               }
+               else
+               {
+                  if(b_vertical)
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(0, kp,  sx, ks, bg32_tint);
+                  else
+                     UIRenderer.DrawDefaultInactiveBackgroundTint(kp, 0,  ks, sy, bg32_tint);
+               }
+
+               if(b_vertical)
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(0, kp, sx, ks, bg32_tint);
+               else
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(kp, 0, ks, sy, bg32_tint);
+            }
+            else
+            {
+               if(b_vertical)
+               {
+                  UIRenderer.DrawDefaultControlBackgroundTint(0, kp,  sx, ks, bg32_tint);
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(0, kp, sx, ks, bg32_tint);
+               }
+               else
+               {
+                  UIRenderer.DrawDefaultControlBackgroundTint(kp, border_size*2,  ks, sy-border_size*4, bg32_tint);
+                  UIRenderer.DrawSoftShadowRaisedBorderTint(kp, 0, ks, sy, bg32_tint);
+               }
+            }
+         } // else border_size > 0
+      }
+      else
+      {
+         // Flat style
+
+         // Draw background
+         if(b_flat_high_contrast)
+            c32 = lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_FLAT_HIGHCONTRAST_BG, bg32_tint);
+         else
+            c32 = lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_FLAT_BG, bg32_tint);  // ScrollPane, TableView, ..
+
+         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, c32);
+
+         if(hasKeyboardFocus())
+            c32 = sdvg_TintARGB(c32, lnf_colors.get(LookAndFeel.COLOR_SLIDER_FLAT_HANDLE_KBDFOCUS_TINT));
+
+         if(isMouseOver())
+            c32 = sdvg_TintARGB(c32, lnf_colors.get(LookAndFeel.COLOR_SLIDER_FLAT_HANDLE_MOUSEOVER_TINT));
+         else
+            c32 = sdvg_TintARGB(c32, lnf_colors.get(LookAndFeel.COLOR_SLIDER_FLAT_HANDLE_TINT));
+
+         if(b_flat_high_contrast)
+            c32 = sdvg_TintARGB(c32, lnf_colors.get(LookAndFeel.COLOR_SLIDER_FLAT_HANDLE_HIGHCONTRAST_TINT));
+
+         if(bg32_tint)
+            c32 = sdvg_TintARGB(c32, bg32_tint);
+
+         int c32Fg = sdvg_TintARGB(c32, fg32_tint);
+
+         // Draw knob
+         if(b_vertical)
+            UIRenderer.DrawFilledRectangle(0, kp, sx, ks, c32Fg);
+         else
+            UIRenderer.DrawFilledRectangle(kp, 0, ks, sy, c32Fg);
+      }
+
+      if(b_grabbed)
+      {
+         float origPos = ((grab_undo_value - min_value) / frange) * availSize;
+         if(b_flip)
+            origPos = (ps - border_size*2) - origPos;
+
+         UIRenderer.SetLineWidth(UI.font_scaling);
+         if(b_vertical)
+            UIRenderer.DrawLine(2, origPos, sx-2, origPos, lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_ORIGVAL, bg32_tint));
+         else
+            UIRenderer.DrawLine(origPos, 2, origPos, sy-2, lnf.getTintedColor(LookAndFeel.COLOR_SLIDER_ORIGVAL, bg32_tint));
+         UIRenderer.SetLineWidth(1.0f);
+      }
+
+      UIRenderer.DisableBlending();
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initSlider(0, 1, 0, 0.1);
+
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+         String *atsplitval;
+         step_coarse = 1;
+
+         reset_value = -999999;
+
+         b_editable = true;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            String atnamelc;
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "min":
+               case "minvalue":  // **DEPRECATED**
+                  min_value = atval;
+                  break;
+
+               case "max":
+               case "maxvalue":  // **DEPRECATED**
+                  max_value = atval;
+                  break;
+
+               case "value":
+                  cur_value = atval;
+                  break;
+
+               case "resetvalue":  // **DEPRECATED**
+               case "reset":
+                  if(atval & ";")
+                  {
+                     // multiple reset values (cycle list)
+                     atsplit <= atval.splitChar(';');
+                     cycle_reset_values <= new FloatArray;
+                     foreach atsplitval in atsplit
+                        cycle_reset_values.add(atsplitval);
+                  }
+                  else
+                  {
+                     cycle_reset_values <= null;
+                     reset_value = atval;
+                  }
+                  break;
+
+               case "step":
+               case "stepcoarse":
+                  step_coarse = atval;
+                  break;
+
+               case "vertical":
+                  setVertical(int(atval));
+                  break;
+
+               case "flip":
+                  b_flip = atval;
+                  break;
+
+               case "flat_high_contrast":
+                  setEnableFlatHighContrast(int(atval));
+                  break;
+
+               case ACTION_VALUECHANGED:  // **DEPRECATED**
+               case ACTION_VALUECHANGING:
+                  _form.addHandledAction(atname, FloatAction, atval);
+                  break;
+
+               case "detailedit":
+                  b_detail_edit = (0 != int(atval));
+                  break;
+            }
+         }
+
+         if(reset_value <= -999999)
+            reset_value = cur_value;
+
+         setLayerStyle(layer_style);
+      }
+      return true;
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      if(!b_grabbed)
+      {
+         ActionProvider ap <= _action.getActionProvider();
+         String acName <= _action.getActionName();
+
+         if(@(ap) == @(dlg_floatparam))
+         {
+            if(FloatParamDialog.ACTION_FLOATPARAMDIALOGCLOSED == acName)
+               setValue(dlg_floatparam.getValue());
+            return true;
+         }
+
+         switch(acName)
+         {
+            case TA_REPEAT:
+               handleMouseClickOrPress();
+               return true;
+         }
+      }
+      return Control::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,262 @@
+// ----
+// ----    file: FlowLayout.tks
+// ----  author: (c) 2024 by Bastian Spiegel <bs@tkscript.de>
+// ---- license:
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ----    info: this is part of the "ui" toolkit.
+// ----
+// ---- created: 03Aug2024
+// ---- changed: 
+// ----
+// ----
+// ----
+
+module MFlowLayout;
+
+namespace ui;
+
+
+class FlowLayout extends Layout {
+
+   static boolean b_debug = 0;
+
+
+   public method findGridSxOf(Layer _l) : int {
+      Layer c <= _l.getLayoutFirstChild();
+      int maxX = 0;  // exclusive
+      while(null != c)
+      {
+         if((c.layout_grid_x + c.layout_grid_w) > maxX)
+            maxX = (c.layout_grid_x + c.layout_grid_w);
+
+         c <= c.next;
+      }
+      return maxX;
+   }
+
+   public method findGridSyOf(Layer _l) : int {
+      Layer c <= _l.getLayoutFirstChild();
+      int maxY = 0;
+      while(null != c)
+      {
+         if((c.layout_grid_y + c.layout_grid_h) > maxY)
+            maxY = (c.layout_grid_y + c.layout_grid_h);
+
+         c <= c.next;
+      }
+      return maxY;
+   }
+
+   public virtual calcMinimumSizeXOf(local Layer _layer) : boolean {
+      // trace "xxx FlowLayout::calcMinimumSizeXOf("+#(_layer)+")";
+      local Layer thisLayer <= _layer;
+      local Layer cFirst <= thisLayer.getLayoutFirstChild();
+      if(null == cFirst)
+      {
+         thisLayer.setMinimumSizeX(0);
+         thisLayer.setPreferredSizeX(0);
+         return;
+      }
+      
+      local int minSx;
+      local int maxMinSx = 0;
+      local int totalSx = 0;
+
+      local Layer c <= cFirst;
+      while(null != c)
+      {
+         minSx = c.getMinimumSizePadX();
+         if(minSx > maxMinSx)
+            maxMinSx = minSx;
+
+         totalSx += minSx;
+
+         c <= c.next;
+      }
+
+      if(b_debug) trace "xxx FlowLayout::calcMinimumSizeXOf: thisLayer("+#(thisLayer)+".minimumSizeX="+maxMinSx+" prefSx="+totalSx;
+      thisLayer.setMinimumSizeX(maxMinSx);
+      thisLayer.setPreferredSizeX(totalSx);
+
+      // Update min/pref sizes
+      layoutChildLayersOf(_layer, false/*bInvalidateSizeCaches*/, false/*bLayoutFinal*/);
+   }
+
+   public virtual calcMinimumSizeYOf(local Layer _layer) : boolean {
+      // trace "xxx FlowLayout::calcMinimumSizeYOf("+#(_layer)+")";
+      local Layer thisLayer <= _layer;
+      local Layer cFirst <= thisLayer.getLayoutFirstChild();
+      if(null == cFirst)
+      {
+         thisLayer.setMinimumSizeY(0);
+         thisLayer.setPreferredSizeY(0);
+         return;
+      }
+
+      local int minSy;
+      local int maxMinSy = 0;
+      local int totalSy = 0;
+
+      local Layer c <= cFirst;
+      while(null != c)
+      {
+         minSy = c.getMinimumSizePadY();
+         if(minSy > maxMinSy)
+            maxMinSy = minSy;
+
+         totalSy += minSy;
+
+         c <= c.next;
+      }
+
+      if(b_debug) trace "xxx FlowLayout::calcMinimumSizeYOf: thisLayer("+#(thisLayer)+".minimumSizeY="+maxMinSy+" prefSy="+totalSy;
+      thisLayer.setMinimumSizeY(maxMinSy);
+      thisLayer.setPreferredSizeY(totalSy);
+
+      // Update min/pref sizes
+      layoutChildLayersOf(_layer, false/*bInvalidateSizeCaches*/, false/*bLayoutFinal*/);
+   }
+
+   private method applyCommonBaselineY(local PointerArray aCurRow, local float maxBaselineY, local float availY) {
+      if(b_debug) trace "xxx FlowLayout::applyCommonBaselineY: maxBaselineY="+maxBaselineY+" availY="+availY+" #layers="+aCurRow.numElements;
+      local Layer *c;
+      foreach c in aCurRow
+      {
+         c.layoutApplyCommonBaselineAdjustments(maxBaselineY, availY);
+      }
+   }
+
+   public virtual layoutChildLayersOf(local Layer _thisLayer, local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      if(b_debug) trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ FlowLayout::layoutChildLayersOf "+#(_thisLayer);
+
+      local Layer cFirst <= _thisLayer.getLayoutFirstChild();
+      if(null == cFirst)
+         return;
+
+      local float thisX = _thisLayer.getLayoutSizeX();
+      local float thisY = _thisLayer.getLayoutSizeY();
+
+      if( (0 == thisX) || (0 == thisY) )
+      {
+         if(Configuration.debugLevel > 1)
+            trace "[~~~] FlowLayout: this layer has not been layouted yet (layer="+#(_thisLayer)+" parent="+#(_thisLayer.getParent())+").";
+         return;
+      }
+
+      if(b_debug) trace "xxx FlowLayout::layoutChildLayersOf: thisLayer="+#(_thisLayer)+" thisX="+thisX+" thisY="+thisY;
+
+      local int curY = 0;
+      local int curX = 0;
+
+      local int minSizeX;
+      local int minSizeY;
+      local int maxRowSizeX;
+      local int totalSizeY;
+      local int rowSizeY = 0;
+
+      local PointerArray aCurRow;
+
+      float maxBaselineY = 0;
+      local float baselineY;
+      local int rowIdx = 0;
+
+      local Layer c <= cFirst;
+      while(null != c)
+      {
+         minSizeX = c.getMinimumSizePadX();
+         minSizeY = c.getMinimumSizePadY();
+         
+         if(b_debug) trace "xxx c.displayedText=\""+c.getDisplayedText()+"\" minSize=("+minSizeX+";"+minSizeY+") cur=("+curX+";"+curY+") maxRowSizeX="+maxRowSizeX+" totalSizeY="+totalSizeY+" this=("+thisX+";"+thisY+")";
+
+         if(curX + minSizeX > thisX)
+         {
+            // Does not fit => advance to next row
+            if(_bLayoutFinal)
+            {
+               applyCommonBaselineY(aCurRow, maxBaselineY, thisY/*availY*/);
+               maxBaselineY = 0;
+               aCurRow.empty();
+            }
+            if(b_debug) trace "xxx curX="+curX+" + minSizeX="+minSizeX+" > thisX="+thisX+" => does not fit => next row";
+            curX = 0;
+            curY += rowSizeY;
+            totalSizeY += rowSizeY;
+            rowSizeY = 0;
+            rowIdx++;
+         }
+
+         float endX = curX + minSizeX;
+         if(endX > maxRowSizeX)
+            maxRowSizeX = endX;
+
+         if(minSizeY > rowSizeY)
+            rowSizeY = minSizeY;
+
+         c.setPosition2f(curX, curY);
+         c.setSize2f(minSizeX, minSizeY);
+
+         if(_bLayoutFinal)
+         {
+            baselineY = c.getBaselineY();
+            baselineY += curY;
+            if(baselineY > 0.0f)
+            {
+               if(baselineY > maxBaselineY)
+                  maxBaselineY = baselineY;
+            }
+            aCurRow.add(c);
+         }
+
+         curX += minSizeX;
+
+         c <= c.next;
+      }
+
+      if(_bLayoutFinal)
+      {
+         if(0 == rowIdx)  // update 'thisLayer' baselineY when there's just one row
+         {
+            _thisLayer.cached_composite_effective_baseline_y = maxBaselineY;
+            if(b_debug)
+               trace "xxx FlowLayout: set _thisLayer.cached_composite_effective_baseline_y="+_thisLayer.cached_composite_effective_baseline_y;
+         }
+
+         applyCommonBaselineY(aCurRow, maxBaselineY, thisY);
+         maxBaselineY = 0;
+         aCurRow.empty();
+      }
+
+      // // aRowHeights.add(rowSizeY);
+      totalSizeY += rowSizeY;
+      if(b_debug) trace "xxx last rowSizeY="+rowSizeY+" => totalSizeY="+totalSizeY;
+
+      if(b_debug) trace "xxx FlowLayout::layoutChildLayersOf: thisLayer="+#(_thisLayer)+" maxRowSizeX="+maxRowSizeX+" totalSizeY="+totalSizeY;
+
+      // Update panel size
+      _thisLayer.setMinimumSize2f  (maxRowSizeX, totalSizeY);
+      _thisLayer.setPreferredSize2f(maxRowSizeX, totalSizeY);
+      _thisLayer.setSize2f         (maxRowSizeX, totalSizeY);
+
+      // ---- All layers have been layouted by now, now layout their child layers
+      // ---- This section may be called recursively so we may not refer to the variables above
+      c <= cFirst;
+      while(null != c)
+      {
+         // trace "xxx FlowLayout: this="+#(thisLayer)+" ch="+#(ch)+" thisSize="+_thisLayer.getSizeX()+";"+_thisLayer.getSizeY();
+         c.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+         c <= c.next;
+      }
+
+      if(1 && _bLayoutFinal)
+      {
+         // Recursively move composite layers to common baseline
+         //  (note) baseline justifications _within_ composite layers have already been done
+         // trace "xxx ------------- shift  FlowLayout: call thisLayer.layoutApplyCompositeBaselineAdjustments() #childLayers="+_thisLayer.getNumChildLayers()+" --------------";
+         _thisLayer.layoutApplyCompositeBaselineAdjustments();
+      }
+
+   }
+
+}

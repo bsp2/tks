@@ -1,0 +1,154 @@
+// ----
+// ---- file   : TimerAction.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2015 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 03Apr2005
+// ---- changed: 19Apr2005, 20Apr2005, 28May2005, 07Jun2005, 09Jun2005, 10Jun2005, 18Jun2005
+// ----          23Jun2005, 24Jun2005, 02Jul2005, 17Jul2005, 31Jul2005, 01Feb2009, 21Feb2012
+// ----          05Jan2013, 27May2013, 11Mar2015, 16Mar2015, 26Jul2015, 24Aug2015
+// ----
+// ----
+// ----
+
+module MTimerAction;
+
+namespace ui;
+
+
+class TimerAction extends Action {
+   protected int ticks; // scheduled point in time when this action should be provided (i.e. timer expires)
+   protected ActionConsumer *consumer; // who wants to receive this action
+
+   public int default_tick_delta; // default timeout for schedule() method
+   public int   short_tick_delta; // default timeout for scheduleShort() method
+   public int  medium_tick_delta; // default timeout for scheduleMedium() method
+   public int    long_tick_delta; // default timeout for scheduleLong() method
+
+   protected boolean b_scheduled; // true if timer has been scheduled (and has not expired)
+
+   namespace boolean b_ondraw;
+
+
+   public function New(String _name, ActionConsumer _consumer, int _tickDelta) {
+      local TimerAction ta; 
+      ta.init(_name, _consumer, _tickDelta);
+      return deref ta;
+   }
+
+   public method init(String _name, ActionConsumer _consumer, int _tickDelta) {
+      consumer <= _consumer;
+      provider <= _consumer;
+      name      = _name;
+      default_tick_delta = _tickDelta;
+
+      short_tick_delta  = default_tick_delta;
+      medium_tick_delta = default_tick_delta;
+      long_tick_delta   = default_tick_delta;
+   }
+
+   public method setDefaultTicks(int _def, int _short, _medium, _long) {
+      explain "A utility method to help with timers that have different timeouts, like e.g. a redraw timer. Also see §scheduleShort, §scheduleMedium, §scheduleLong.";
+
+      if(0 != _def)
+      {
+         default_tick_delta = _def;
+      }
+      short_tick_delta  = _short;
+      medium_tick_delta = _medium;
+      long_tick_delta   = _long;
+   }
+
+   public method setTicks(int _deltaTicks) {
+      ////trace "xxx TimerAction::setTicks: delta="+_deltaTicks+" SDL.ticks="+SDL.ticks;
+      if(b_ondraw)
+      {
+         int frameShift = (SDL.ticks - UI.event_handle_starttime) / (1000.0 / 60);///FPS.tickInterval;
+         ticks = UI.frame_counter + _deltaTicks + frameShift;
+      }
+      else
+      {
+         ticks = SDL.ticks + _deltaTicks;
+      }
+   }
+
+   public method getTicks() : int {
+      return ticks;
+   }
+
+   public method setActionConsumer(ActionConsumer _aac) {
+      consumer <= _aac;
+   }
+
+   public method getActionConsumer() : ActionConsumer {
+      return consumer;
+   }
+
+   public =uitimer= method scheduleTicks(int _tickDelta) {
+      if(!b_scheduled)
+      {
+         setTicks(_tickDelta);
+         b_scheduled = true;
+         UI.Schedule(this);
+      }
+   }
+
+   public method schedule() {
+      scheduleTicks(default_tick_delta);
+   }
+
+   public method scheduleShort() {
+      scheduleTicks(short_tick_delta);
+   }
+
+   public method scheduleMedium() {
+      scheduleTicks(medium_tick_delta);
+   }
+
+   public method scheduleLong() {
+      scheduleTicks(long_tick_delta);
+   }
+
+   public =uitimer= method cancel() {
+      UI.CancelSchedule(this);
+      b_scheduled = false;
+   }
+
+   public method reschedule() {
+      cancel();
+      schedule();
+   }
+
+   public method rescheduleShort() {
+      cancel();
+      scheduleShort();
+   }
+
+   public method rescheduleMedium() {
+      cancel();
+      scheduleMedium();
+   }
+
+   public method rescheduleLong() {
+      cancel();
+      scheduleLong();
+   }
+
+   public =uitimer= method isScheduled() : boolean {
+      return b_scheduled;
+   }
+
+   public method onTimerExpired() {
+      // Called while =uitimer= is (temporarily) unlocked
+      b_scheduled = false;
+      if!(consumer instanceof ActionConsumer)
+         trace "[!!!] onTimerExpired: name=\""+name+"\" invalid consumer="+#(consumer);
+      else
+         consumer.consumeAction(this);
+   }
+
+}

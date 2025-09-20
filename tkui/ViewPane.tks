@@ -1,0 +1,533 @@
+// ----
+// ---- file   : ViewPane.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 17Jul2005, 31Jul2005, 01Feb2009, 22May2009, 22Apr2010, 23Apr2010, 09Jan2012
+// ----          08Mar2014, 28Sep2014, 12Feb2015, 29Apr2015, 04Nov2015, 05Nov2015, 09Jul2016
+// ----          16Feb2018, 30Nov2018, 27Jun2021, 29Oct2023, 12Mar2024, 29Mar2024, 10Sep2025
+// ----          14Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MViewPane;
+
+namespace ui;
+
+
+class ViewPane extends Control {
+
+   explain "Virtual root layer that supports clipping and scrolling of child hierarchies.";
+
+   protected Layer *inner_layer;
+   protected float view_top, view_left;
+   protected float view_sx, view_sy;
+   protected boolean b_adaptive_view_size; // true=adapt to size of inner layer
+   protected boolean b_collapse; // true=prefer minimized state
+   protected boolean b_force_min_size_x;
+   protected boolean b_force_min_size_y;
+
+
+   public static New() : ViewPane {
+      local ViewPane vp;
+      vp.initViewPane();
+      return deref vp;
+   }
+
+   public method initViewPane() {
+      initLayer();
+      setPadding4f(0,0,0,0);
+      view_top  = 0;
+      view_left = 0;
+      view_sx   = 1024;
+      view_sy   = 1024;
+   }
+
+   public method setInnerLayer(Layer _l) {
+      explain "Set the layer to be displayed in the ViewPane";
+
+      if(_l instanceof Layer)
+      {
+         if(null != inner_layer)
+         {
+            inner_layer.parent <= null;
+         }
+
+         inner_layer <= deref _l;
+         inner_layer.parent <= this; // "virtual" parent, so events backpropagate correctly
+         inner_layer.invalidateAbsolutePositions();
+      }
+   }
+
+   public method getInnerLayer() : Layer {
+      explain "Returns the layer currently being displayed in the ViewPane";
+
+      return inner_layer;
+   }
+
+   public method validateViewOffset() {
+      validateViewOffsetX();
+      validateViewOffsetY();
+   }
+
+   protected method validateViewOffsetX() {
+      if(view_left < 0)
+      {
+         view_left = 0;
+      }
+      else
+      {
+         if(view_left > view_sx)
+            view_left = view_sx;
+
+         float maxViewLeft = (view_sx - getSizeX());
+
+         if(maxViewLeft < 0)
+            view_left = 0;
+         else if(view_left > maxViewLeft)
+            view_left = maxViewLeft;
+      }
+   }
+
+   protected method validateViewOffsetY() {
+      // trace "xxx validateViewOffsetY: view_top="+view_top+" view_sy="+view_sy+" sizeY="+getSizeY();
+      if(view_top < 0)
+      {
+         view_top = 0;
+      }
+      else
+      {
+         if(view_top > view_sy)
+            view_top = view_sy;
+
+         float maxViewTop = (view_sy - getSizeY());
+
+         if(maxViewTop < 0)
+            view_top = 0;
+         else if(view_top > maxViewTop)
+            view_top = maxViewTop;
+      }
+   }
+
+   public method setViewOffset(float _top, _left) {
+      explain "Set the top left position of the inner Layer";
+
+      view_top  = int(_top + 0.5);
+      view_left = int(_left + 0.5);
+
+      validateViewOffsetX();
+      validateViewOffsetY();
+
+      if(null != inner_layer)
+      {
+         inner_layer.invalidateAbsolutePositions();
+      }
+
+      UI.RedrawAll();
+   }
+
+   public method setViewOffsetY(float _top) {
+      explain "Set the vertical offset of the inner layer";
+
+      view_top = int(_top + 0.5);
+
+      validateViewOffsetY();
+
+      if(null != inner_layer)
+         inner_layer.invalidateAbsolutePositions();
+
+      UI.RedrawAll();
+   }
+
+   public method setViewOffsetX(float _left) {
+      explain "Set the horizontal offset of the inner layer";
+
+      view_left = int(_left + 0.5);
+
+      validateViewOffsetX();
+
+      if(null != inner_layer)
+         inner_layer.invalidateAbsolutePositions();
+
+      UI.RedrawAll();
+   }
+
+   public method getViewOffsetY() : float {
+      explain "Query the vertical view offset (distance to the top of the inner layer)";
+
+      return view_top;
+   }
+
+   public method getViewOffsetX() : float {
+      explain "Query the horizontal view offset (distance to the left border of the inner layer)";
+
+      return view_left;
+   }
+
+   public method getViewSizeY() : float {
+      explain "Query the y-size available for the inner layer";
+      return view_sy;
+   }
+
+   public method getViewSizeX() : float {
+      explain "Query the h-size available for the inner layer";
+      return view_sx;
+   }
+
+   public method setViewSize2f(float _width, _height) {
+      explain "Set the size available for the inner layer";
+
+      view_sx = _width;
+      view_sy = _height;
+   }
+
+   public method setViewSizeX(float _w) {
+      explain "Set the horizontal size available for the inner layer";
+      view_sx = _w;
+   }
+
+   public method setViewSizeY(float _h) {
+      explain "Set the vertical size available for the inner layer";
+      view_sy = _h;
+   }
+
+   public method makeWidgetVisible(Layer _l) {
+      explain "Adjust scroll offsets so that the widget becomes visible";
+
+      if(null != _l)
+      {
+         if(null != inner_layer)
+         {
+            if(inner_layer.hasChildLayer(_l))
+            {
+               Point2f lPos;
+               _l.calcParentPosition(lPos);
+
+               Size2f lSize;
+               _l.getSize(lSize);
+
+               // trace "xxx lPos="+lPos.getString()+" lSize="+lSize.getString()+" size="+size_x+";"+size_y;
+
+               makeRectVisible(lPos, lSize);
+            }
+         }
+      }
+   }
+
+   public method makeRectVisible(Point2f _pos, Size2f _size) {
+      getSizeX();
+      getSizeY();
+
+      if( ((_pos.x + _size.x) > (view_left + size_x)) ||
+          (_pos.x < view_left)
+          )
+      {
+         // Show centered
+         setViewOffsetX(_pos.x - (size_x-_size.x)*0.5);
+      }
+
+      if( ((_pos.y + _size.y) > (view_top + size_y)) ||
+          (_pos.y < view_top)
+          )
+      {
+         // Show centered
+         setViewOffsetY(_pos.y - (size_y-_size.y)*0.5);
+      }
+   }
+
+   protected virtual calcSizeX() : float {
+      if(b_force_min_size_x)
+      {
+         if(null != inner_layer)
+         {
+            return inner_layer.getMinimumSizeX();
+         }
+         return 1;
+      }
+      else
+      {
+         return Control::calcSizeX();
+      }
+   }
+
+   protected virtual calcSizeY() : float {
+      if(b_force_min_size_y)
+      {
+         if(null != inner_layer)
+            return inner_layer.getMinimumSizeY();
+
+         return 1;
+      }
+      else
+      {
+         return Control::calcSizeY();
+      }
+   }
+
+   protected virtual calcPreferredSizeX() {
+      if(b_collapse)
+      {
+         if(null != inner_layer)
+            preferred_size_x = inner_layer.getMinimumSizeX();
+         else
+            preferred_size_x = 1;
+      }
+      else
+      {
+         Control::calcPreferredSizeX();
+      }
+   }
+
+   protected virtual calcPreferredSizeY() : float {
+      if(b_collapse)
+      {
+         if(null != inner_layer)
+            preferred_size_y = inner_layer.getMinimumSizeY();
+         else
+            preferred_size_y = 1;
+      }
+      else
+      {
+         Control::calcPreferredSizeY();
+      }
+   }
+
+   public virtual getLayoutSizeX() : float {
+      return view_sx;
+   }
+
+   public virtual getLayoutSizeY() : float {
+      return view_sy;
+   }
+
+   public virtual getLayoutFirstChild() : Layer {
+      return inner_layer;
+   }
+
+   public virtual recursiveBeginResize() {
+      if(null != inner_layer)
+         inner_layer.recursiveBeginResize();
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      if(inner_layer instanceof Layer)
+      {
+         // ---- delegate to inner layer
+         if(b_adaptive_view_size)
+         {
+            //if(!_bLayoutFinal)  // 17Mar2015
+            {
+               inner_layer.invalidateAbsolutePositions();
+               inner_layer.invalidateSizeCaches();
+
+               int minSx = inner_layer.getMinimumSizeX();
+               int minSy = inner_layer.getMinimumSizeY();
+
+               // trace "xxx vp il minSx="+minSx+" this.sx="+getSizeX();
+
+               if(minSx > getSizeX())
+               {
+                  inner_layer.setSizeX(minSx);
+                  setViewSizeX(minSx);
+               }
+               else
+               {
+                  inner_layer.setSizeX(getSizeX());
+                  setViewSizeX(getSizeX());
+               }
+
+               if(minSy > getSizeY())
+               {
+                  inner_layer.setSizeY(minSy);
+                  setViewSizeY(minSy);
+               }
+               else
+               {
+                  inner_layer.setSizeY(getSizeY());
+                  setViewSizeY(getSizeY());
+               }
+
+            }
+         }
+         else
+         {
+            inner_layer.setSize2f(view_sx, view_sy);
+         }
+
+         inner_layer.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+         validateViewOffset();
+      }
+   }
+
+   public virtual onOpen() {
+      if(inner_layer instanceof Layer)
+      {
+         inner_layer.recursiveOnOpen();
+      }
+   }
+
+   // ----
+   // ---- assumes that this layer is neither scaled nor rotated
+   // ---- please notice that the inner layer is *not* drawn using
+   // ---- drawHierarchy()!
+   // ----
+   public virtual onDraw() {
+      // // UIRenderer.DrawFilledRectangle(0, 0, size_x, size_y, #ffff0000);
+
+      if(255 != layer_alpha)
+      {
+         UIRenderer.EnableBlending();
+         UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(),
+                                        ((lnf_colors.get(LookAndFeel.COLOR_VIEWPANE_BG))&0xFFFFFF)|(layer_alpha<<24));
+         UIRenderer.DisableBlending();
+      }
+   }
+
+   protected virtual drawChildHierarchy(local boolean _bForceRedraw, local boolean _bCheckIntersect,
+                                        local int _viewShiftX, local int _viewShiftY,
+                                        local int _viewSizeX, local int _viewSizeY
+                                        ) {
+      // trace "xxx Viewpane::drawChildHierarchy: inner_layer="+#(inner_layer)+" size="+getSizeString();
+
+      if(inner_layer instanceof Layer)
+      {
+         if(UIRenderer.b_gl_attrib_stack)
+            glPushAttrib(GL_ALL_ATTRIB_BITS);  // b_gl_attrib_stack
+
+         local Point2f abspos;
+         calcAbsolutePositionFBO(abspos); // (todo) optimize/cache
+
+         sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, getSizeX()+0.5, getSizeY()+0.5);
+         sdvg_EnableScissor();
+
+         UIRenderer.ProjTranslate2f(-view_left, -view_top);
+
+         inner_layer.drawHierarchy(_bForceRedraw, _bCheckIntersect,
+                                   -view_left/*viewShiftX*/, -view_top/*viewShiftY*/,
+                                   getSizeX(), getSizeY()
+                                   );
+
+         UIRenderer.ProjTranslate2f(view_left, view_top);
+
+         sdvg_PopScissor();
+         sdvg_DisableScissor();
+
+         if(UIRenderer.b_gl_attrib_stack)
+            glPopAttrib();  // b_gl_attrib_stack
+      }
+   }
+
+   public virtual invalidateAbsolutePositions() {
+      abs_position_x = ABS_INVALID;
+      abs_position_y = ABS_INVALID;
+
+      if(null != inner_layer)
+      {
+         inner_layer.invalidateAbsolutePositions();
+      }
+   }
+
+   public method setEnableAdaptiveViewSize(boolean _bEnabled) {
+      b_adaptive_view_size = _bEnabled;
+   }
+
+   public method setEnableCollapse(boolean _bEnabled) {
+      b_collapse = _bEnabled;
+   }
+
+   public method setEnableForceMinSizeX(boolean _bEnabled) {
+      b_force_min_size_x = _bEnabled;
+   }
+
+   public method setEnableForceMinSizeY(boolean _bEnabled) {
+      b_force_min_size_y = _bEnabled;
+   }
+
+   public virtual onResize() {
+      // // trace "xxx viewpane: size="+getSizeString();
+      // // invalidateAbsolutePositions();
+      // // invalidateSizeCaches();
+      // // relayout();
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initViewPane();
+
+      setPadding4f(0,0,0,0);
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         String atname, atval, atvaluc;
+         StringArray atsplit;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            String atnamelc;
+            atname.toLower() => atnamelc;
+
+            switch(atnamelc)
+            {
+               case "viewsize":
+                  // "<width>;<height>"
+                  atsplit <= atval.splitChar(';');
+                  if(atsplit.numElements >= 1)
+                  {
+                     setViewSize2f(atsplit[0],
+                                   (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                   );
+                  }
+                  else
+                  {
+                     trace "[---] ViewPane::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                     return false;
+                  }
+                  break;
+
+               case "viewsizex":
+                  setViewSizeX(atval);
+                  break;
+
+               case "viewsizey":
+                  setViewSizeY(atval);
+                  break;
+
+               case "adaptiveviewsize":
+                  setEnableAdaptiveViewSize(atval);
+                  break;
+
+               case "collapse":
+                  setEnableCollapse(atval);
+                  break;
+
+               case "forceminsizex":
+                  setEnableForceMinSizeX(atval);
+                  break;
+
+               case "forceminsizey":
+                  setEnableForceMinSizeY(atval);
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual addXFMChild(Layer _c) {
+      if(null != inner_layer)
+      {
+         trace "[---] ViewPane::addXFMChild: already have an inner_layer !! (deleting previous)";
+      }
+      setInnerLayer(deref _c);
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+   }
+
+}

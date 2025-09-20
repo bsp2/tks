@@ -1,0 +1,489 @@
+// ----
+// ---- file   : XMLForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 12Aug2005
+// ---- changed: 13Aug2005, 14Aug2005, 05May2007, 12Apr2008, 03Jun2009, 21Nov2010, 24Feb2011
+// ----          04Jan2012, 07May2013, 03Jan2014, 06Sep2014, 16Feb2018, 27Mar2018, 09Feb2019
+// ----          20Nov2019, 30Apr2021, 27Oct2023
+// ----
+// ----
+// ----
+
+module MXMLForm;
+
+namespace ui;
+
+
+class XMLForm extends Form, AbstractXMLForm {
+
+   // ---- Holds references to "named" entities (e.g <Button id=mybutton/>)
+   protected HashTable all_size_groups;
+   protected HashTable *script_layers; // used while parsing; holds all layers that have scripts attached
+   protected String    *s_script;      // used while parsing; holds the delegate methods for the tempscript
+   protected String    *s_scriptvars;  // used while parsing; holds the vardecls for the tempscript
+   protected int       num_nodes;      // used while parsing
+   protected Layer     *current_layer; // used while parsing; holds the current layer
+   protected Panel     *current_panel; // used while parsing; holds the current (parent) Panel. mainly used for size groups.
+   protected Script    *script;        // created by parser
+
+
+   // ---- Create form from .XFM resource loaded from virtual file system
+   public static New_PakFile(String _name) : XMLForm {
+      String s;
+      if(s.load(_name, true/*replaceCR*/))
+      {
+         return New(s);
+      }
+      else
+      {
+         trace "[---] XMLForm::New_PakFile(): cannot open VFS resource \""+_name+"\".";
+         return null;
+      }
+   }
+
+   // ---- Create form from .XFM resource loaded from local file system
+   public static New_LocalFile(String _name) : XMLForm {
+      String s;
+      if(s.loadLocal(_name, true/*replaceCR*/))
+      {
+         return New(s);
+      }
+      else
+      {
+         trace "[---] XMLForm::New_LocalFile(): cannot open local file \""+_name+"\".";
+         return null;
+      }
+   }
+
+   // ---- Create form from .XFM formatted String
+   public static New(String _s.notnull) : XMLForm {
+      local XMLForm f;
+      if(f.parseXMLForm(_s))
+      {
+         return deref f;
+      }
+      else
+      {
+         trace "[---] XMLForm::New(): parseXFM() failed.";
+         return null;
+      }
+   }
+
+   public method initPakFile(String _name) : boolean {
+      local String s;
+      if(s.load(_name, true/*replaceCR*/))
+      {
+         if(parseXMLForm(s))
+         {
+            return true;
+         }
+         else
+         {
+            trace "[---] XMLForm::initPakFile(): parseXFM() failed.";
+            return false;
+         }
+      }
+      else
+      {
+         trace "[---] XMLForm::initPakFile(): cannot open VFS resource \""+_name+"\".";
+         return false;
+      }
+   }
+
+   // ---- Only used during parsing, called by child layers in order to add script "callbacks"
+   // _action: onClick, onDoubleClick, ...
+   public method addHandledAction(String _action, Class _actionClass, String _scriptBody) {
+      String nodeName=current_layer.getLayerId();
+      String lclass=current_layer.yacMetaClassName();
+      String dlname=nodeName+"_"+_action;
+      // ---- Create "Button xfm_1;" style script code (will be filled up with real object reference later)
+      compile {
+         s_script.append("delegate ");
+         s_script.append(lclass);
+         s_script.append(":");
+         s_script.append(dlname);
+         s_script.append("(");
+         s_script.append(_actionClass.yacMetaClassName());
+         s_script.append(" _ac) : boolean {\n");
+         s_script.append(_scriptBody);
+         s_script.append("\n}\ndelegate ");
+         s_script.append(nodeName);
+         s_script.append(":");
+         s_script.append("\"");
+         s_script.append(_action);
+         s_script.append("\"");
+         s_script.append("=");
+         s_script.append(dlname);
+         s_script.append(";\n");
+      }
+
+   }
+
+   static int out_count = 0;
+
+   public method parseXMLForm(String _s) : boolean {
+      // trace "xxx XMLForm::parseXMLForm: ENTER";
+      // ---- init state
+      initLayer();
+      num_nodes = 0;
+      script <= new Script;
+      script_layers <= new HashTable;
+      script_layers.alloc(1768);
+      s_script <= new String;
+      s_script = "";
+      s_scriptvars <= new String;
+      current_panel <= null;
+      all_size_groups.alloc(389);
+      // trace "xxx XMLForm::parseXMLForm: 2";
+
+      // ---- parse string and create tree of hashtables
+      local TreeNode troot <= _s.parseXML();
+      if(null != troot)
+      {
+         // trace "xxx XMLForm::parseXMLForm: 3";
+         String rootName = troot.name;
+         rootName.toLower();
+         if(rootName != "xfm")
+         {
+            //
+            // This is because the outmost layer (this) needs to setup some parameters (e.g. layout manager)
+            // for its contained layers.
+            //
+            trace "[---] XMLForm::parseXFM: the first entity has to be \"xfm\".";
+            return false;
+         }
+
+         //
+         // The parseXML() method already did a syntax check so we can assume
+         // that this is a "well-formed" XML document tree.
+         //
+         if(null != troot.right)
+         {
+            // trace "xxx XMLForm::parseXMLForm: 3_2";
+
+            // int origLayoutHints = layout_hints;
+            beginXFMTag(this, troot.objectValue);
+            // layout_hints = origLayoutHints;
+
+            // trace "xxx XMLForm::parseXMLForm: 3_3";
+
+            if(parseXFM(this, troot.right)) // parse children
+            {
+               // trace "xxx XMLForm::parseXMLForm: 3_3_1";
+
+               endXFMTag(this, troot.objectValue);
+
+               if(!s_script.isBlank())
+               {
+                  // print "[...] parseXMLForm(): form has "+num_nodes+" child-nodes.";
+                  String modName = @(this);
+                  modName.replaceChar('-', '_'); // might be negative int!
+                  String t <= "module M" + modName + ";";
+                  t.append("use namespace ui;");
+                  t.append(s_scriptvars);
+                  t.append(s_script);
+                  s_script <= deref t;
+                  //s_script.saveLocal("out"+(++out_count)); // xxx
+
+//                print "s_script:";
+//                print s_script;
+//                print "end s_script.";
+
+                  // trace "xxx XMLForm::parseXMLForm: 4";
+
+                  if(script.load(s_script))
+                  {
+                     // ---- Initialize script variables
+                     String slayer;
+                     foreach slayer in script_layers
+                     {
+                        Variable v <= script.findVariable(slayer);
+                        if(null != v)
+                        {
+                           // trace "fix var \""+slayer+"\" from "+#(v.getObjectValue())+" to "+#(script_layers[slayer]);
+
+                           v.setObjectValue(script_layers[slayer]);
+                           v.store();
+                        }
+                        else
+                        {
+                           print "[---] parseXMLForm(): internal error. cannot resolve variable \""+slayer+"\".";
+                        }
+                     }
+                     script.eval(); // init
+                     return true;
+                  }
+                  else
+                  {
+                     print "[---] parseXMLForm(): failed to compile script. s_script=\""+s_script+"\"";
+                  }
+               }
+               else
+               {
+                  // No callback functions, skip script module
+                  return true;
+               }
+            }
+         }
+         else
+         {
+            print "[---] parseXMLForm(): form is empty.";
+         }
+      }
+      return false;
+   }
+
+   protected method parseXFM(local XFMObject _parent, local TreeNode _treeNode) : boolean {
+      local Layer *nl; // current new Layer
+      local XFMObject *no; // current new XFMObject
+      local TreeNode n <= _treeNode;
+
+      // trace "xxx parseXFM: ENTER this="+#(this)+" parent="+#(_parent)+" treeNode="+#(_treeNode);
+
+      // trace "xxx parseXFM: this="+#(this);
+
+      while(null != n)
+      {
+         local String    nodeName    = n.name;
+         local String    nodeId      = n.id;
+         local HashTable nodeAttrib <= n.objectValue;
+
+         // trace "xxx parseXFM: this="+#(this)+" parent="+#(_parent)+" nodeName=\""+nodeName+"\" id=\""+nodeId+"\"";
+
+         no <= UI.NewObjectByFQName(nodeName);
+
+         // trace "xxx parseXFM:    => no="+#(no);
+
+         if(no instanceof Layer)
+         {
+            // Element is derived from Layer baseclass
+            nl <= deref no;
+            num_nodes++;
+
+            // ---- we just created an instance of a Layer derived script class
+            current_layer <= nl;
+
+            if(nodeId.isBlank())
+            {
+               nodeId = "xfm_"+String(num_nodes);
+            }
+
+            nl.setLayerId(nodeId);
+            script_layers[nodeId] = current_layer;
+            s_scriptvars.append(nodeName);
+            s_scriptvars.append(" *");
+            s_scriptvars.append(nodeId);
+            s_scriptvars.append(";\n");
+
+            // Has reference to size group ?
+            String szGrpName = "";
+            if(nodeAttrib.exists("sizeGroup"))
+            {
+               szGrpName = nodeAttrib["sizeGroup"];
+            }
+            else if(nodeAttrib.exists("sizegroup"))
+            {
+               szGrpName = nodeAttrib["sizegroup"];
+            }
+
+            if(!szGrpName.isBlank())
+            {
+               // Resolve SizeGroup
+               SizeGroup sg <= all_size_groups[szGrpName];
+
+               if(null == sg)
+               {
+                  trace "[---] XMLForm::parseXFM: unknown reference to size group \""+(nodeAttrib["sizeGroup"])+"\".";
+                  return false;
+               }
+
+               nl.setSizeGroup(sg);
+               nodeAttrib.delete("sizeGroup");
+            }
+
+            nl.beginXFMTag(this, nodeAttrib); // objectValue stores the attribute HashTable
+
+            if(null != n.right) // has children?
+            {
+               if(!parseXFM(nl, n.right))
+               {
+                  trace "[---] XMLForm::parseXFM: failed to parse child layer of \""+nodeName+"\"";
+                  return false;
+               }
+            }
+
+            current_layer <= nl;
+
+            // Some Layer classes need to update their state after all child layers have been added
+            nl.endXFMTag(this, nodeAttrib);
+            _parent.addXFMChild(deref nl);
+         }
+         else
+         {
+            if(null == no)
+            {
+               trace "[---] XMLForm::parseXFM: cannot resolve script class for entity \""+nodeName+"\" (id=\""+nodeId+"\").";
+               return false;
+            }
+            else if(no instanceof SizeGroup)
+            {
+               if(!nodeAttrib.exists("id"))
+               {
+                  trace "[---] XMLForm::parseXFM: size group has no \"id\" attribute.";
+                  return false;
+               }
+
+               String sizeGroupName <= String(nodeAttrib["id"]);
+
+               if(_parent instanceof Panel)
+               {
+                  Panel parentPanel <= _parent;
+
+                  // Add size group to panel and remember in "all_size_groups" hashtable
+                  parentPanel.addSizeGroup(sizeGroupName, deref no);
+                  all_size_groups[sizeGroupName] = no;
+               }
+               else
+               {
+                  trace "[---] XMLForm::parseXFM: size group \""+sizeGroupName+"\" parent is not a Panel.";
+                  return false;
+               }
+            }
+            else if(no instanceof XFMObject)
+            {
+               // Object is derived from XFMObject but not Layer
+               no.beginXFMTag(this, nodeAttrib); // objectValue stores the attribute HashTable
+               if(null != n.right) // has children?
+               {
+                  if(!parseXFM(no, n.right))
+                  {
+                     print "[---] XMLForm::parseXFM: failed to parse child layer of \""+nodeName+"\"";
+                     return false;
+                  }
+               }
+
+               // Some XFMObject classes need to update their state after all child objects have been added
+               no.endXFMTag(this, nodeAttrib);
+
+               _parent.addXFMObject(deref no);
+            }
+            else
+            {
+               trace "[---] XMLForm::parseXFM: entity \""+nodeName+"\" (id=\""+nodeId+"\") script class is not an instance of \"Layer\".";
+               return false;
+            }
+         }
+
+         n <= n.left; // next node
+      }
+
+      buildTabCycleList();
+      return true;
+   }
+
+   public method findLayerById(String _id) : Layer {
+      explain "Returns the layer whose node id equals _id";
+      Layer l <= script_layers[_id];
+      // // if(null == l)
+      // // {
+      // //    trace "[~~~] XMLForm::findLayerById(id=\""+_id+"\"): layer NOT found.";
+      // // }
+      return l;
+   }
+
+   public method findSizeGroupById(String _id) : SizeGroup {
+      return all_size_groups.get(_id);
+   }
+
+   public method isTranslucent() : boolean {
+      return true;
+   }
+
+   public method autoResolveIds(Object _sci) : boolean {
+      explain "Resolve references to named UI elements and store the reference in same-named 'sci' class members.
+
+For example, if the form has an element that has been assigned the id 'bt_quit', this method will try to store the reference to that element in a script class member named 'bt_quit'.
+
+
+By adding the attribute autoresolve=0 to a UI element, it will be excluded from auto-resolving (useful in some rare cases).
+
+@arg sci Destination object (must be a script class instance)
+@return true if all element references could be resolved / stored in the provided object. false if an id could not be mapped to a UI element or if the object misses the required (object-type) member
+";
+      String *id;
+      XFMObject *o;
+      foreach id in script_layers
+      {
+         if(!id.isBlank())
+         {
+            if(!id.startsWith("xfm_")) // auto-generated id?
+            {
+               o <= script_layers[id];
+               // trace "xxx id="+id+" o="+#(o)+" script_layers[id]="+#(script_layers[id]);
+               if(null == o)
+               {
+                  trace "[---] XMLForm::autoResolveIds: failed to resolved id \""+id+"\", sci="+#(_sci);
+                  return false;
+               }
+               // trace "xxx _sci="+#(_sci)+" id="+id+" o="+#(o);
+               if(!o.b_noautoresolve)
+               {
+                  TKS.setObjectPropertyByName(_sci, id, o);
+                  Object *vnl <= TKS.getPropertyByName(_sci, id);
+                  if(vnl != o)
+                  {
+                     trace "[---] XMLForm::autoResolveIds: failed to store reference to id \""+id+"\", sci="+#(_sci);
+                  }
+               }
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initForm();
+
+      if(Form::beginXFMTag(_form, _attributes))
+      {
+         local String atname, atval;
+         local StringArray atsplit;
+         local String src;
+
+         foreach atname in _attributes
+         {
+            atval<=_attributes[atname];
+            switch(atname)
+            {
+               case "logic":
+                  if(src.load(atval, true))
+                  {
+                     if(parseXMLForm(src))
+                     {
+                        break;
+                     }
+                  }
+                  return false;
+               case "local":
+                  if(src.loadLocal(atval, true))
+                  {
+                     if(parseXMLForm(src))
+                     {
+                        break;
+                     }
+                  }
+                  return false;
+            }
+         }
+      }
+      return true;
+   }
+
+}

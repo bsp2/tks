@@ -1,0 +1,254 @@
+// ----
+// ---- file   : TreeTableNode.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2020 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 26May2007
+// ---- changed: 24Oct2007, 29Oct2007, 04Nov2007, 05Nov2007, 08Jan2008, 14Apr2008, 01Feb2009
+// ----          02Feb2009, 03Feb2009, 20Dec2012, 15Jun2020, 16Jun2020
+// ----          
+// ----          
+// ----
+
+module MTreeTableNode;
+
+namespace ui;
+
+
+class TreeTableNode {
+   TreeTableModel *tm;            // reference to the TreeTableModel that owns this node
+   TreeTableNode  *parent;        // parent node
+   TreeTableNode  *left;          // next node on same level
+   TreeTableNode  *right;         // first child node
+   boolean         b_open;        // true=child nodes are visible
+   boolean         b_leaf_node;   // true=can be openend (but may not have child nodes, yet!)
+   int             indent;        // nesting level (0=root)
+   Icon           *icon_open;     // icon to display when this node is unfolded
+   Icon           *icon_closed;   // if null, re-use icon_open. displayed when this node is folded
+   String          caption;       // text to appear right beside the icon
+   Object          user_data;     // arbitrary user data. TODO: extended attribute interface class (ähnlich TM)
+   int             flat_index;
+
+   public method open() {
+      b_open = true;
+   }
+
+   public method isOpen() : boolean {
+      return b_open;
+   }
+
+   public method isLeafNode() : boolean {
+      return b_leaf_node;
+   }
+
+   public method setLeafNode(boolean _b) {
+      b_leaf_node = _b;
+   }
+
+   public method setIconOpen(Icon _icon) {
+      icon_open <= _icon;
+   }
+
+   public method setIconClosed(Icon _icon) {
+      icon_closed <= _icon;
+   }
+
+   public method setIcons(Icon _iconOpen, Icon _iconClosed) {
+      icon_open   <= _iconOpen;
+      icon_closed <= _iconClosed;
+   }
+
+   public method getIconWidth() : int {
+      if(b_open || b_leaf_node)
+      {
+         if(null != icon_open)
+         {
+            return icon_open.getIconWidth();
+         }
+      }
+      else if(null != icon_closed)
+      {
+         return icon_closed.getIconWidth();
+      }
+      return 0;
+   }
+
+   public method recursiveBuildFlatNodes() {
+      ////trace "xxx recursiveBuildFlatNodes this="+#(this)+" right="+#(right)+" tm="+#(tm);
+      PointerArray fn <= tm.flat_tree_nodes;
+      local TreeTableNode c <= this;
+      while(c != null)
+      {
+         if(!(c.b_leaf_node && tm.b_hide_leaves))
+         {
+            c.flat_index = fn.numElements;
+            fn.add(c);
+            if(c.b_open)
+            {
+               if(c.right != null)
+               {
+                  c.right.recursiveBuildFlatNodes();
+               }
+            }
+         }
+         c <= c.left;
+      }
+   }
+
+   protected method recursiveAddIndent(int _indentDelta) {
+      local TreeTableNode c <= this;
+      while(c != null)
+      {
+         c.indent += _indentDelta;
+         if(c.right != null)
+         {
+            c.right.recursiveAddIndent(_indentDelta);
+         }
+         c <= c.left;
+      }
+   }
+
+   protected method unlinkLeft() : TreeTableNode {
+      return = deref left;
+      left <= null;
+   }
+
+   public method removeLeft() : TreeTableNode {
+      explain "Remove next node (and all child nodes) on same level. new next node becomes next of removed node. returns new next node.";
+
+      // TODO: handle (optimized) table model update
+
+      if(left != null)
+      {
+         left <= left.unlinkLeft();
+      }
+   }
+
+   public method removeAllLeft() {
+      explain "Remove all following nodes (and their child node) on the same level as this node.";
+      while(left != null)
+      {
+         removeLeft();
+      }
+   }
+
+   public method removeRight() : TreeTableNode  {
+      explain "Remove first child node (plus its child nodes). new right/first_child node becomes next of removed node. returns new first child node.";
+
+      // TODO: handle (optimized) table model update
+
+      if(right != null)
+      {
+         right <= right.unlinkLeft();
+         if(right != null)
+         {
+            right.recursiveAddIndent(-1);
+         }
+      }
+   }
+
+   public method removeAllRight() {
+      explain "Remove all child nodes of this node.";
+
+      while(right != null)
+      {
+         removeRight();
+      }
+   }
+
+   public method initNode(Icon _iconOpen, Icon _iconClosed, String _caption, Object _userData) {
+      icon_open <= deref _iconOpen;
+
+      b_leaf_node = true;
+
+      if(_iconClosed != null)
+      {
+         icon_closed <= deref _iconClosed;
+      }
+      else
+      {
+         icon_closed <= _iconOpen;
+      }
+
+      caption = Object(deref _caption); // create copy if necessary
+
+      user_data <= deref _userData;
+   }
+
+   public method insertLeft(Icon _iconOpen, Icon _iconClosed, String _caption, Object _userData) : TreeTableNode {
+      explain "Insert new next node. the previous next node becomes the next node of the new node. returns new TreeTableNode object.";
+
+      local TreeTableNode tn;
+      tn.tm <= tm;
+      tn.initNode(deref _iconOpen, deref _iconClosed, deref _caption, deref _userData);
+      if(left != null)
+      {
+         tn.left <= deref left;
+      }
+      left <= deref tn;
+
+      left.indent = indent;
+
+      // TODO: handle (optimized) table model update
+
+      return tn;
+   }
+
+   public method insertRight(Icon _iconOpen, Icon _iconClosed, String _caption, Object _userData) : TreeTableNode {
+      explain "Insert new child node. the previous child node becomes the child node of the new node. returns new TreeTableNode object.";
+
+      local TreeTableNode tn;
+      tn.tm <= tm;
+      tn.parent <= this;
+      tn.initNode(deref _iconOpen, deref _iconClosed, deref _caption, deref _userData);
+      if(right != null)
+      {
+         tn.left <= deref right;
+      }
+
+      tn.indent = indent + 1;
+
+      right <= deref tn;
+
+      // TODO: handle table model update
+
+      return tn;
+   }
+
+   public method fold() {
+      explain "Hide/collapse direct child nodes";
+
+      // let applications have a chance to immediately delete the child nodes to cut down memory consumption..
+      tm.handleFold(this);
+
+      b_open = false;
+   }
+
+   public method unfold() {
+      explain "Show/expand direct child nodes.";
+      
+      b_open = true;
+
+      // let applications have a chance to dynamically generate/add the child nodes
+      tm.handleUnfold(this);
+
+   }
+
+   public method toggleFolding() {
+      if(b_open)
+      {
+         fold();
+      }
+      else
+      {
+         unfold();
+      }
+   }
+
+}
+
+

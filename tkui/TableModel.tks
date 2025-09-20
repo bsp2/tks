@@ -1,0 +1,1204 @@
+// ----
+// ---- file   : TableModel.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26May2007
+// ---- changed: 24Oct2007, 29Oct2007, 04Nov2007, 05Nov2007, 08Jan2008, 14Apr2008, 01Feb2009
+// ----          02Feb2009, 03Feb2009, 31May2009, 29Dec2009, 25Jan2010, 22Apr2010, 11Jul2010
+// ----          18Jul2010, 29Mar2011, 15Jan2012, 07Feb2012, 08Feb2012, 20Dec2012, 25Mar2013
+// ----          31Mar2013, 12Aug2014, 08Sep2014, 06Feb2015, 21Mar2016, 13Apr2016, 13Feb2018
+// ----          16Mar2018, 04Jun2018, 29Nov2018, 13Dec2018, 20Jul2019, 21Jul2019, 24Jul2019
+// ----          14Oct2019, 15May2020, 16Jun2020, 11Dec2021, 04Oct2023, 13Oct2023, 19Nov2023
+// ----          22Mar2024, 03Jan2025, 04Feb2025, 10Sep2025
+// ----
+// ----
+// ----
+
+module MTableModel;
+
+namespace ui;
+
+
+class TableModel {
+   explain "A TableModel is assigned to exactly one TableView. TableModels are used to query cell attributes like values, renderers and editors.";
+
+   define int MINIMUM_ROW_HEIGHT = 14;
+
+   public    TableView *table_view;              // References the TableView that this model is currently assigned to
+   protected IntArray   sorted_rows;             // Maps visible to model row numbers
+   public    IntArray   selected_rows;           // Store the currently selected row indices
+   protected IntArray   column_widths;
+   protected IntArray   preferred_column_widths;
+   protected int        lead_selection_index;    // -1 or row number
+   protected int        cursor_index;            // -1 or row number, in "unsorted model space"
+   protected int        primary_sort_column;     // Column index or -1
+   protected int        secondary_sort_column;   // Column index or -1
+   protected Label     *tmp_label;
+   protected int        view_pixel_offset_y;     // actually part of the TableView, currently pixel scroll offset
+   protected int        last_view_cursor_index;  // aka "visi"..
+   protected IntArray   row_pixel_y_offsets;     // num_rows + 1 elements, calc'd in tableModelChanged()
+   protected IntArray   cached_row_heights;      // updated in tableModelChanged()
+
+   protected TableCellEditor *current_editor;
+
+   public IntArray *lnf_colors_def;
+   public IntArray *lnf_colors;
+
+
+   public initTableModel() {
+
+      lnf_colors_def <= UI.lnf_colors;
+      lnf_colors <= lnf_colors_def;
+
+      calcPreferredColumnWidths();
+      column_widths = preferred_column_widths;
+
+      tmp_label <= new Label;
+      tmp_label.initLabel();
+      tmp_label.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      tmp_label.setTextPlacement(Layout.LEFT);
+      tmp_label.setInnerPadding4f(1,2,1,1);
+      tableModelLookAndFeelChanged();
+
+      view_pixel_offset_y    =  0;
+      primary_sort_column    = -1;
+      secondary_sort_column  = -1;
+      lead_selection_index   = -1;
+      cursor_index           = -1;
+      last_view_cursor_index = -1;
+
+      tableModelChanged();
+   }
+
+   public method tableModelGetTmpLabelFont() : Font {
+      return tmp_label.font;
+   }
+
+   public method tableModelLookAndFeelChanged() {
+      if(null != table_view)
+      {
+         lnf_colors_def <= table_view.lnf_colors;
+         lnf_colors <= lnf_colors_def;
+      }
+      tmp_label.onLookAndFeelChanged();
+      tmp_label.setBackgroundColor(lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_DATA_BG));
+      tmp_label.setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_TEXT_FG));
+   }
+
+   public method tableModelChanged() {
+      int numRows = getNumRows();
+      local IntArray oldSelRows = selected_rows;
+      selected_rows.empty();
+
+      cached_row_heights.alloc(numRows);
+      cached_row_heights.useAll();
+      cached_row_heights.fill(0);
+
+      sortRows();
+      calcRowPixelYOffsets();
+
+      // Check if table model shrunk and the cursor index is beyond the last table row
+      // Correct view offset if tm got smaller..
+      if(numRows > 0)
+      {
+         if(cursor_index >= numRows)
+         {
+            if(last_view_cursor_index >= numRows)
+            {
+               int k = 0; // paranoia
+               do
+               {
+                  cursor_index = getSortedRowNr(--last_view_cursor_index);
+                  k++;
+               } while( (cursor_index == -1) && (k<numRows) );
+            }
+            else
+            {
+               // Default fallback if number of last selected row is unknown..
+               cursor_index = getSortedRowNr(numRows - 1);
+            }
+            calcViewOffsetY(-1);
+         }
+
+         // Restore multi selection
+         int rowIdx;
+         foreach rowIdx in oldSelRows
+            if(rowIdx < numRows)
+               selected_rows.add(rowIdx);
+      }
+      else
+      {
+         // TableModel is now empty
+         cursor_index = -1;
+         last_view_cursor_index = -1;
+      }
+
+      handleCursorIndexChanged();
+   }
+
+   public method cloneLookAndFeelColors() : IntArray {
+      // (note) same semantics as Layer.cloneLookAndFeelColors()
+      IntArray colors <= new IntArray;
+      colors = lnf_colors;
+      lnf_colors <= deref colors;
+      return lnf_colors;
+   }
+
+   protected method calcRowPixelYOffsets() : int {
+      int visi;
+      int rowi;
+      int cy;
+      int rh;
+      visi = 0;
+      cy = 0;
+      int numRows = getNumRows();
+      row_pixel_y_offsets.realloc(numRows);
+
+      if(numRows)
+      {
+         row_pixel_y_offsets.numElements = numRows;
+
+         while(visi < numRows)
+         {
+            rowi = getSortedRowNr(visi);
+            rh   = getRowHeight(rowi);
+            row_pixel_y_offsets[visi] = cy;
+
+            // Next row
+            cy += rh + TableView.CELL_SEPARATOR_SIZE;
+            visi++;
+         }
+         row_pixel_y_offsets[visi] = cy;
+      }
+   }
+
+
+   public method sortRows() {
+      explain "Sort rows by primary/secondary columns. This method will use @compareCells to build the sorted_rows array.";
+      // xxx TODO..
+   }
+
+   protected method calcPreferredColumnWidthsByCaption() {
+      int i = 0;
+      loop(getNumColumns())
+      {
+         tmp_label.setCaption(getColumnCaption(i));
+         float psx = tmp_label.getPreferredSizeX();
+
+         if(psx < getMinimumColumnWidthScaled(i))
+            psx = getMinimumColumnWidthScaled(i);
+         else if(psx > getMaximumColumnWidthScaled(i))
+            psx = getMaximumColumnWidthScaled(i);
+
+         preferred_column_widths[i] = psx;
+
+         // Next column
+         i++;
+      }
+   }
+
+   protected method calcPreferredColumnWidths() {
+      int i = 0;
+      float sum = 0.0f;
+      loop(getNumColumns())
+      {
+         float prefW = getPreferredColumnWidthScaled(i);
+         preferred_column_widths[i] = prefW;
+         sum += prefW;
+
+         // Next column
+         i++;
+      }
+
+      if(sum < 0.01f)
+         calcPreferredColumnWidthsByCaption();
+   }
+
+   public method getViewPixelOffsetY() : int {
+      return view_pixel_offset_y;
+   }
+
+   public method setViewPixelOffsetY(int _y) {
+      // y = 0..(totalRowHeight - dataSizeY)
+      // trace "xxx setViewPixelOffsetY: y="+_y+" th="+getTotalHeight()+" dsy="+getDataSizeY();
+      if(0 <= _y <= (getTotalHeight() - getDataSizeY()))
+         view_pixel_offset_y = -_y;
+   }
+
+   public method handleCursorIndexChanged() {
+      // called whenever the selected row changes
+      // may be implemented by applications to support in-place cell editing
+      //  (by copying the current row to an edit buffer / widget)
+   }
+
+   public method setCursorIndexByPixel(float _py) {
+      ////trace "xxx setCursorIndexByPixel()";
+      int visi = getFirstVisibleRowNr();
+      if(-1 != visi)
+      {
+         int cy = getRowPixelOffsetY(visi) + view_pixel_offset_y;
+         int sy = getDataSizeY();
+         int rowi;
+         int rh;
+
+         if(_py < cy)
+            return;
+
+         while( (visi < getNumRows()) && (cy < sy) )
+         {
+            rowi = getSortedRowNr(visi);
+            rh = getRowHeight(rowi);
+            cy += rh + TableView.CELL_SEPARATOR_SIZE;
+
+            if(_py < cy)
+            {
+               cursor_index = rowi;
+               handleCursorIndexChanged();
+               return;
+            }
+            visi++;
+         }
+      }
+   }
+
+   public method getDataSizeY() : int {
+      explain "Return height of table data view (pixels).";
+      if(null != table_view)
+         return table_view.data.getSizeY();
+      return 0;
+   }
+
+   public method alignViewPixelOffsetY(int _moveDir) { // XXX TODO: fixme, the method is (a little) broken!!
+      explain "Align first resp. last row to border (depending on move direction).";
+
+      return; // XXX ...since its kinda buggy ATM
+
+      int py;
+      int rowi;
+      int visi;
+      int rh;
+
+      visi = getFirstVisibleRowNr();
+      if(-1 != visi)
+      {
+         py = getRowPixelOffsetY(rowi);
+
+         if(_moveDir>0)
+         {
+            // Align last visible row to bottom edge
+
+            py += view_pixel_offset_y; // Translate to layer coordinates
+            int sizeY = getDataSizeY();
+
+            while(visi < getNumRows())
+            {
+               rowi = getSortedRowNr(visi);
+               rh = getRowHeight(rowi) + TableView.CELL_SEPARATOR_SIZE;
+               py += rh;
+               if(py >= sizeY)
+               {
+                  // Found last visible row
+                  view_pixel_offset_y += sizeY - py;
+                  break;
+               }
+               visi++;
+            }
+         }
+         else
+         {
+            // Align first visible row to upper edge (i.e. set pixel offset to 0)
+            view_pixel_offset_y = -(getRowPixelOffsetY(getFirstVisibleRowNr()));
+         }
+      }
+   }
+
+   public method layoutColumns(int _totalX) {
+      int sum = 0;
+
+      column_widths = preferred_column_widths;
+
+      // Calc sum of all column widths
+      int px;
+      int numCols = getNumColumns();
+      if(numCols > 0)
+      {
+         _totalX = _totalX - (getNumColumns()-1) * TableView.CELL_SEPARATOR_SIZE; // Reserve space for cell separator lines
+         if(_totalX<1)
+            _totalX = 1; // well..d'oh :)
+
+         foreach px in preferred_column_widths
+            sum += px;
+
+         // Now layout the columns
+         int i = 0;
+         int cw;
+         int cSum = 0;
+         loop(numCols)
+         {
+            cw = getMinimumColumnWidthScaled(i);
+            column_widths[i] = cw;
+            cSum += cw;
+            i++;
+         }
+
+         FloatArray prefColWidths = preferred_column_widths;
+
+         if(cSum < _totalX)
+         {
+            // Spread remaining space to cells according to their weight
+            loop(2)
+            {
+               float spcLeft = _totalX - cSum;
+               float nSum = 0.0f;
+               i = 0;
+               loop(numCols)
+               {
+                  float psx = prefColWidths[i];
+                  int maxW = getMaximumColumnWidthScaled(i);
+                  cw = column_widths[i];
+                  cw = cw + spcLeft * (psx / sum);
+                  if(cw > maxW)
+                  {
+                     cw = maxW;
+                     prefColWidths[i] = 0;
+                  }
+                  column_widths[i] = cw;
+                  nSum += cw;
+
+                  i++;
+               }
+               cSum = nSum;
+            }
+         }
+
+         if(cSum < _totalX)
+            column_widths[i-1] += (_totalX - cSum);
+      }
+   }
+
+   public method setPrimarySortColumn(int _col) {
+      if(_col < getNumColumns())
+         primary_sort_column = _col;
+      else
+         primary_sort_column = -1;
+   }
+
+   public method setSecondarySortColumn(int _col) {
+      if(_col < getNumColumns())
+         secondary_sort_column = _col;
+      else
+         secondary_sort_column = -1;
+   }
+
+   public method getSortedRowNr(int _viewNr) : int {
+      explain "Map visible row number to model row number. If the row cannot be mapped, -1 is returned.";
+      if(0 <= _viewNr < getNumRows())
+         return _viewNr;
+      return -1;
+   }
+
+   public method getUnsortedRowNr(int _rowNr) : int {
+      explain "Map model row number to visible row number.";
+      if(0 <= _rowNr < getNumRows())
+      {
+         int i = 0;
+         loop(getNumRows())
+         {
+            int rowi = getSortedRowNr(i);
+            if(rowi == _rowNr)
+               return i;
+            i++;
+         }
+      }
+      //trace "[~~~] TableView: getUnsortedRowNr: could not find matching row..";
+      return -1;
+   }
+
+   public method compareCells(int _col, _rowA, _rowB) : int {
+      explain "Compare cell values and return -1 if _rowA precedes _rowB, 1 if _rowB precedes _rowA and 0 if the cell values are equal. Used by the table sorter. The default behaviour is to compare the cell string values. In case a column stores e.g. a timestamp you may want to implement a custom comparison.";
+      return 0;
+   }
+
+   public method getNumColumns() : int {
+      explain "Return the number of columns";
+      return 0;
+   }
+
+   public method getColumnCaption(int _col) : String {
+      explain "Return the caption for the given column.";
+      return "";
+   }
+
+   public method getColumnIcon(int _col) : String {
+      explain "Return the icon name for the given column. Must return null if the column has no icon.";
+      return null;
+   }
+
+   public method getColumnWidth(int _col) : int {
+      explain "Return the column width (pixels). Used for the column header and to calculate cell positions.";
+      return column_widths[_col];
+   }
+
+   public method getColumnAtX(float _x) : int {
+      float cw = 0;
+      int colIdx = 0;
+      loop(getNumColumns())
+      {
+         float ccw = cw;
+         cw += getColumnWidth(colIdx);
+         if(ccw <= _x < cw)
+            return colIdx;
+         colIdx++;
+      }
+      return -1;
+   }
+
+   public method editColumn(int _colNr, int _rowNr) : boolean {
+      TableCellEditor tce <= getCellEditor(_colNr, _rowNr);
+      current_editor <= tce;
+      if(null != tce)
+      {
+         tce.setCellEditorContext(this, _colNr, _rowNr);
+
+         Point2f p;
+         getCellPosition(_colNr, _rowNr, p);
+         Point2f abs;
+         TableViewData tvd <= table_view.getTableViewData();
+         tvd.calcAbsolutePosition(abs);
+         p.add(abs);
+         tce.showAtXY(p.x + tce.offset_x, p.y + view_pixel_offset_y);
+         return true;
+      }
+      // else: cell not editable
+      return false;
+   }
+
+   public method editColumnAtX(float _x) : boolean {
+      int rowNr = getCursorIndex();
+      if(-1 != rowNr)
+      {
+         int colNr = getColumnAtX(_x);
+         if(-1 != colNr)
+            return editColumn(colNr, rowNr);
+      }
+      return false;
+   }
+
+   public method editColumnPreviousRow() {
+      if(null != current_editor)
+      {
+         int rowIdx = current_editor.table_row;
+         if(rowIdx > 0)
+         {
+            int colIdx = current_editor.table_col;
+            handleCellEdited(current_editor);
+            current_editor <= null;
+            table_view.moveCursorToRow(rowIdx-1);
+            editColumn(colIdx, rowIdx-1);
+         }
+      }
+   }
+
+   public method editColumnNextRow() {
+      if(null != current_editor)
+      {
+         int rowIdx = current_editor.table_row;
+         if((rowIdx+1) < getNumRows())
+         {
+            int colIdx = current_editor.table_col;
+            handleCellEdited(current_editor);
+            current_editor <= null;
+            table_view.moveCursorToRow(rowIdx+1);
+            editColumn(colIdx, rowIdx+1);
+         }
+      }
+   }
+
+   public method calcAbsCellPosition(int _col, int _row, Point2f _ret) {
+      getCellPosition(_col, _row, _ret);
+      Point2f abs;
+      TableViewData tvd <= table_view.getTableViewData();
+      tvd.calcAbsolutePosition(abs);
+      _ret.add(abs);
+      _ret.y += view_pixel_offset_y;
+   }
+
+   public method setColumnWidth(int _col, int _width) {
+      explain "Called when the user has resized a column.";
+      column_widths[_col] = _width;
+   }
+
+   public method getPreferredColumnWidth(int _col) : int {
+      explain "Return the preferred colum width (relative pixels). When layouting the column header, the effective column width is calculated by adding all preferred column widths to get the \"100%\" width and then using the preferred column width of a single column as a weight relative to the current table width.";
+      return 1;
+   }
+
+   public method getPreferredColumnWidthScaled(int _col) : int {
+      return getPreferredColumnWidth(_col) * UI.font_scaling;
+   }
+
+   public method getMinimumColumnWidth(int _col) : int {
+      explain "Used to limit the column width to a sane value when the user resizes a column.";
+      return 4;
+   }
+
+   public method getMinimumColumnWidthScaled(int _col) : int {
+      return getMinimumColumnWidth(_col) * UI.font_scaling * UI.table_min_col_width_scaling;
+   }
+
+   public method getMaximumColumnWidth(int _col) : int {
+      explain "Used to limit the column width to a sane value when the user resizes a column.";
+      return 4096;
+   }
+
+   public method getMaximumColumnWidthScaled(int _col) : int {
+      return getMaximumColumnWidth(_col) * UI.font_scaling;
+   }
+
+   public method getNumRows() : int {
+      explain "Return the number of data rows.";
+      return 0;
+   }
+
+   public method getTotalWidth() : int {
+      explain "Return the width (in pixels) of all columns.";
+      int r = 0;
+      int i = 0;
+      loop(getNumColumns())
+         r += column_widths[i++];
+      return r;
+   }
+
+   public method calcMinimumWidth() : int {
+      explain "Return the minimum width (sum of all columns)";
+      int r = 0;
+      int i = 0;
+      loop(getNumColumns())
+      {
+         int msx = getMinimumColumnWidthScaled(i++);
+         r += msx;
+      }
+      return r;
+   }
+
+   public method getTotalHeight() : int {
+      explain "Return the height (in pixels) of all rows.";
+      int i = 0;
+      int r = 0;
+      int numRows = getNumRows();
+      loop(numRows)
+         r += getRowHeight(i++);
+      if(numRows > 0)
+         r += TableView.CELL_SEPARATOR_SIZE * (numRows /*-1*/);
+      return r;
+   }
+
+   public method getCellCaption(int _col, int _row) : String {
+      explain "Return string representation of the respective cell value. Used in conjunction with the default cell renderer and the default @compareCells implementation.";
+      return "";
+   }
+
+   public method getCellIcon(int _col, int _row) : Icon {
+      explain "Return icon for the respective cell value. Used in conjunction with the default cell renderer. Must return null if the cell has no icon.";
+   }
+
+   public method getCellToolTipCaption(int _col, int _row) : String {
+      // (note) tablemodels that do support tooltips should return a valid String object to indicate this capability
+      return null; // null==tablemodel does not support tooltips
+   }
+
+   public method getRowHeight(int _row) : int {
+      explain "Return the height (in pixels) of the given row. Used to calculate the cell position. _row must be a model space row number.";
+      int rh = cached_row_heights.get(_row);
+      if(0 == rh)
+      {
+         // Not cached, yet
+
+         rh = MINIMUM_ROW_HEIGHT * UI.font_scaling;
+
+         int col = 0;
+         int visi = _row; // (todo) support sorting  //getUnsortedRowNr(_row);
+
+         loop(getNumColumns())
+         {
+            Layer l <= getCellRenderer(col, _row, visi);
+            int crh = l.getMinimumSizeY();
+
+            // trace "xxx getRowHeight: visi="+visi+" cell.minSizeY="+crh+" rh="+rh;
+
+            if(crh > rh)
+               rh = crh;
+
+            // Next column
+            col++;
+         }
+
+         cached_row_heights[_row] = rh;
+      }
+
+      return rh;
+   }
+
+   public method getDragObject(int _row) : Object {
+      // drag'n'drop
+      //  get drag object for selected_rows (multiple selection) or _row (single selection)
+      //  return null if TableModel does not support drag'n'drop
+      //  (note) drag object will be deleted when object is dropped or drag'n'drop is canceled
+      return null;
+   }
+
+   public method canDropObject(Object _dragObject, int _row) : boolean {
+      return false;
+   }
+
+   public method onDropObject(Object _o, int _row) : boolean {
+      return false;
+   }
+
+   protected method initCheckBox(CheckBox cb) {
+      cb.initCheckBox(false, null);
+      cb.setInnerPadTop(0.0f);
+      cb.setPadTop(0.0f);
+      cb.b_transparent = true;
+      cb.b_skip_kbdfocus = true;
+      cb.setIconNamePrefix("chb2x");
+   }
+
+   public method hasDataViewKeyboardFocus() : boolean {
+      if(null != table_view)
+         return table_view.data.hasKeyboardFocus() || table_view.hasKeyboardFocus();
+      return false;
+   }
+
+   public method updateCellRendererColors(Layer l, int _col, int _row, int _visibleRow) {
+      // Called by TableViewData::onDraw()
+      int fg;
+      int bg;
+      if(cursor_index == _row)
+      {
+         float lsMix;
+
+         boolean bHasFocus = hasDataViewKeyboardFocus();
+
+         if(bHasFocus)
+         {
+            bg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_CURSOR);
+            fg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_CURSOR);
+            lsMix = 0.6;
+         }
+         else
+         {
+            bg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_CURSOR_NOFOCUS);
+            fg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_CURSOR_NOFOCUS);
+            lsMix = 0.4;
+         }
+
+         if(isRowSelected(_row))
+         {
+            // bg = sdvg_MixARGBf(bg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_SELECTED), 0.73);
+            // fg = sdvg_MixARGBf(fg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_SELECTED), 0.73);
+            bg = sdvg_TintARGB(bg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_SELECTED_TINT));
+            fg = sdvg_TintARGB(fg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_SELECTED_TINT));
+         }
+
+         if(lead_selection_index == _row)
+         {
+            if(bHasFocus)
+            {
+               bg = sdvg_MixARGBf(bg,
+                                  lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_LEADSELECTION),
+                                  lsMix
+                                  );
+               fg = sdvg_MixARGBf(fg,
+                                  lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_LEADSELECTION),
+                                  lsMix
+                                  );
+            }
+            else
+            {
+               bg = sdvg_MixARGBf(bg,
+                                  lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_LEADSELECTION_NOFOCUS),
+                                  lsMix
+                                  );
+               fg = sdvg_MixARGBf(fg,
+                                  lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_LEADSELECTION_NOFOCUS),
+                                  lsMix
+                                  );
+            }
+         }
+      }
+      else if(isRowSelected(_row))
+      {
+         bg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_NORMAL);
+         fg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_NORMAL);
+         bg = sdvg_TintARGB(bg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_SELECTED_TINT));
+         fg = sdvg_TintARGB(fg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_SELECTED_TINT));
+
+         if(lead_selection_index == _row)
+         {
+            bg = sdvg_MixARGBf(bg,
+                               lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_LEADSELECTION),
+                               0.3
+                               );
+
+            fg = sdvg_MixARGBf(fg,
+                               lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_LEADSELECTION),
+                               0.3
+                               );
+         }
+      }
+      else if(lead_selection_index == _row)
+      {
+         bg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_LEADSELECTION);
+         fg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_LEADSELECTION);
+      }
+      else
+      {
+         bg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_BG_NORMAL);
+         fg = lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_FG_NORMAL);
+      }
+
+      if(!table_view.isEditable())
+      {
+         bg = sdvg_TintARGB(bg, lnf_colors.get(LookAndFeel.COLOR_TABLEVIEW_CELL_NONEDITABLE_BG_TINT));
+      }
+
+      // if(table_view.getDebug())
+      //    trace "xxx TableModel::updateCellRendererColors: bg="+UI.GetColorString(bg);//xxxxxxxxxxxxxxxxx
+
+      l.setBackgroundColor(bg);
+      l.setForegroundColor(fg);
+   }
+
+   public method getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      explain "Return cell renderer layer. The cell renderer should have been updated with the current cell value before it is returned. The geometry of the renderer will be set by the caller. The default behaviour is to call @getCellCaption and @getCellIconName and use a Label to display the cell content.";
+
+      tmp_label.setBackgroundTint(0);
+      tmp_label.setCaption(getCellCaption(_col, _row));
+      tmp_label.setIcon(getCellIcon(_col, _row));
+      tmp_label.setIconPlacement(Layout.LEFT);
+      tmp_label.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      tmp_label.setInnerPadding4f(0, 2, 0, 2);
+      tmp_label.setIconScale(1.0f);
+      tmp_label.setEnableCaptionDim(false);
+      return tmp_label;
+   }
+
+   public method getCellEditor(int _col, _row) : TableCellEditor {
+      explain "Return custom cell editor or null (= cell not editable). The returned editor will be displayed in a frameless modal dialog. If a value has been entered (and the editor was not canceled) the setCellValue() method will be called with the new value.";
+      return null;
+   }
+
+   public method handleCellEdited(TableCellEditor _tce) {
+      explain "Can be used to retrieve the final editor value (value changed)";
+      current_editor <= null; // May delete editor instance
+   }
+
+   public method handleCellEditing(TableCellEditor _tce) {
+      explain "Can be used to retrieve the current editor value (value changing)";
+   }
+
+   public method handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+      explain "Can be used to implement in-place cell editing.";
+      return false;
+   }
+
+   public method selectNone() {
+      explain "Deselect all rows";
+      selected_rows.empty();
+   }
+
+   public method selectAll() {
+      explain "Select all rows";
+      selected_rows.empty();
+      int rowIdx = 0;
+      loop(getNumRows())
+         selected_rows.add(rowIdx++);
+   }
+
+   public method selectRow(int _row) : boolean {
+      if(0 <= _row < getNumRows())
+      {
+         if(!isRowSelected(_row))
+         {
+            selected_rows.add(_row);
+            // trace "xxx selectRow: selected_rows="+#(selected_rows);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   public method deselectRow(int _row) : boolean {
+      int idx = selected_rows.indexOf(_row, 0);
+
+      if(-1 != idx)
+      {
+         selected_rows.delete(idx);
+         // trace "xxx deselectRow: selected_rows="+#(selected_rows);
+         return true;
+      }
+
+      return false;
+   }
+
+   public method selectRowRange(int _startIdx, int _endIdx) {
+      // trace "xxx TableModel::selectRowRange: startIdx="+_startIdx+" endIdx="+_endIdx;
+      int rowIdx;
+      if(_startIdx < _endIdx)
+      {
+         rowIdx = _startIdx;
+         while(rowIdx <= _endIdx)
+            selectRow(rowIdx++);
+      }
+      else
+      {
+         rowIdx = _startIdx;
+         while(rowIdx >= _endIdx)
+            selectRow(rowIdx--);
+      }
+   }
+
+   public method isRowSelected(int _idx) {
+      return (-1 != selected_rows.indexOf(_idx, 0));
+   }
+
+   public method getFirstSelectedRow() : int {
+      if(selected_rows.numElements >= 1)
+         return selected_rows.first;
+      return -1;
+   }
+
+   public method getLastSelectedRow() : int {
+      if(selected_rows.numElements >= 1)
+         return selected_rows.last;
+      return -1;
+   }
+
+   public method getSelectedRows() : IntArray {
+      // (note) returns empty array when there's no multiple selection
+      return selected_rows;
+   }
+
+   public method getSelectedRowsIncludingCursor() : IntArray {
+      // (note) multiple selection + cursor pos
+      local IntArray selRows = getSelectedRows();
+      if(-1 != cursor_index)
+         if(!selRows.contains(cursor_index))
+            selRows.add(cursor_index);
+      return deref selRows;
+   }
+
+   public method setSelectedRows(IntArray _ia) {
+      int rowIdx;
+      selected_rows.empty();
+      int numRows = getNumRows();
+      if(numRows > 0)
+      {
+         foreach rowIdx in _ia
+            if(0 <= rowIdx < numRows)
+               selected_rows.add(rowIdx);
+      }
+   }
+
+   public method getNumSelectedRows() : int {
+      return selected_rows.numElements;
+   }
+
+   public method getCursorIndex() : int {
+      return cursor_index;
+   }
+
+   public method handleRowClick(boolean _bFoldHint) : boolean {
+      explain "May be overwritten by derived classes to internally handle row clicks.";
+      return false;
+   }
+
+   public method setCursorIndexToFirstRow() {
+      cursor_index = 0;
+      calcViewOffsetY(-1);
+      handleCursorIndexChanged();
+   }
+
+   public method setCursorIndexToLastRow() {
+      cursor_index = getNumRows() - 1;
+      calcViewOffsetY(1);
+      handleCursorIndexChanged();
+   }
+
+   public method decVisibleCursorIndex() {
+      int visi = getUnsortedRowNr(cursor_index); // Map to visible row nr
+      if((visi-1) >= 0)
+      {
+         cursor_index = getSortedRowNr(visi-1);
+         calcViewOffsetY(-1);
+         handleCursorIndexChanged();
+      }
+   }
+
+   public method incVisibleCursorIndex() {
+      int visi = getUnsortedRowNr(cursor_index); // Map to visible row nr
+      if((visi+1) < getNumRows())
+      {
+         cursor_index = getSortedRowNr(visi+1);
+         calcViewOffsetY(1);
+         handleCursorIndexChanged();
+      }
+   }
+
+   public method setCursorIndex(int _index) {
+      // trace "xxx setCursorIndex("+_index+") view_pixel_offset_y="+view_pixel_offset_y;
+      if(_index < getNumRows())
+      {
+         cursor_index = (_index < -1) ? -1 : _index;
+         calcViewOffsetY(1);
+      }
+      else if(_index >= 0)
+      {
+         cursor_index = getNumRows() - 1;
+         calcViewOffsetY(1);
+      }
+      else
+      {
+         cursor_index = -1;
+      }
+      handleCursorIndexChanged();
+   }
+
+   namespace method setCursorIndexRaw(int _cursorIndex) {
+      // used by TableView::scrollRowDown()
+      cursor_index = _cursorIndex;
+   }
+
+   public method setLeadSelection(int _leadIndex) {
+      if(_leadIndex < getNumRows())
+      {
+         lead_selection_index = _leadIndex;
+         if(-1 == cursor_index)
+         {
+            cursor_index = _leadIndex;
+            handleCursorIndexChanged();
+         }
+      }
+      else
+      {
+         lead_selection_index = -1;
+      }
+   }
+
+   public method getLeadSelection() : int {
+      return lead_selection_index;
+   }
+
+   public method isLeadSelection() : boolean {
+      return (lead_selection_index == cursor_index);
+   }
+
+   public method getRowPixelOffsetY(int _row) : int {
+      // _row is visible row nr
+      if( (_row >= 0) && (_row < getNumRows()) )
+      {
+         return row_pixel_y_offsets.get(_row);
+      }
+      return 0; // Not a valid row
+   }
+
+   public method getFirstVisibleRowNr() : int {
+      // returns visible row number
+      // trace "xxx getFirstVisibleRowNr: view_pixel_offset_y="+view_pixel_offset_y;
+      int numRows = getNumRows();
+      if(numRows)
+      {
+         int visi;
+         int cy;
+         int rh;
+         visi = 0;
+         rh = 0;
+         cy = view_pixel_offset_y;
+         IntArray rpo <= row_pixel_y_offsets;
+         // trace "xxx row_pixel_y_offsets="+#(row_pixel_y_offsets);
+         if(rpo.numElements > 1)
+         {
+            do
+            {
+               rh = rpo[visi+1] - rpo[visi];
+               cy += rh;
+               visi ++;
+            } while( ((cy+rh) <= 0) && (visi < numRows) );
+            return visi - 1;
+         }
+      }
+      return -1;
+   }
+
+   public method getLastVisibleRowNr() : int {
+      // returns visible row number
+      int numRows = getNumRows();
+      if(numRows > 0)
+      {
+         int visi;
+         int cy;
+         int rh;
+         int dsy = getDataSizeY();
+         visi = 0;
+         rh = 0;
+         cy = view_pixel_offset_y;
+         IntArray rpo <= row_pixel_y_offsets;
+         do
+         {
+            rh = rpo[visi+1] - rpo[visi];
+            cy += rh;
+            visi ++;
+         } while( ((cy+rh) < dsy) && (visi < numRows) );
+         return visi - 1;
+      }
+      return -1;
+   }
+
+   public method getFirstVisibleRowHeight() : int {
+      int visi = getFirstVisibleRowNr();
+      if(visi >= 0)
+         return row_pixel_y_offsets[visi+1] - row_pixel_y_offsets[visi];
+      return 0;
+   }
+
+   public method getLastVisibleRowHeight() : int {
+      int visi = getLastVisibleRowNr();
+      if(visi >= 0)
+         return row_pixel_y_offsets[visi+1] - row_pixel_y_offsets[visi];
+      return 0;
+   }
+
+   namespace method calcViewOffsetY(int _dir) {
+      if(null != table_view)
+      {
+         if(cursor_index >= getNumRows())
+            cursor_index = getNumRows() - 1;
+
+         if(-1 != cursor_index)
+         {
+            int visi = getUnsortedRowNr(cursor_index);
+            last_view_cursor_index = visi;
+            ////trace "xxx calcViewOffsetY: cursor_index="+cursor_index+" last_view_cursor_index="+last_view_cursor_index;
+            int cy = getRowPixelOffsetY(visi);
+            int sy = table_view.data.getSizeY();
+            int rh = getRowHeight(cursor_index);
+
+            // trace "xxx TableModel::calcViewOffsetY: cy="+cy+" sy="+sy+" rh="+rh+" vpy="+view_pixel_offset_y;
+            // trace "xxx calcViewOffsetY: cy="+cy+" sy="+sy+" rh="+rh+" view_pixel_offset_y="+view_pixel_offset_y+" dir="+_dir;
+            if(_dir > 0)
+            {
+               if( (cy + view_pixel_offset_y + rh) > sy)
+               {
+                  view_pixel_offset_y = - ((cy + rh) - sy);
+               }
+            }
+
+            if(cy < -view_pixel_offset_y)
+               view_pixel_offset_y = -cy;
+
+            int th = getTotalHeight();
+            if(th < sy)
+            {
+               view_pixel_offset_y = 0;
+            }
+            else if( (view_pixel_offset_y + th) < sy)
+            {
+               // trace "xxx clip sy="+sy+" th="+th+" view_pixel_offset_y="+view_pixel_offset_y;
+               view_pixel_offset_y = sy - th;
+            }
+
+            // trace "xxx calcViewOffsetY: new view_pixel_offset_y="+view_pixel_offset_y;
+         }
+      }
+   }
+
+   public method centerRow() {
+      explain "Adjust scroll offset so that the currently selected row is shown centered";
+
+      if(-1 != cursor_index)
+      {
+         int cy = getRowPixelOffsetY(cursor_index);
+         int sy = table_view.data.getSizeY();
+         int rh = getRowHeight(cursor_index);
+         int th = getTotalHeight();
+         if(th < sy)
+         {
+            view_pixel_offset_y = 0;
+         }
+         else
+         {
+            view_pixel_offset_y = -cy + (sy-rh)*0.5;
+
+            if(view_pixel_offset_y > 0)
+               view_pixel_offset_y = 0;
+            else if( -view_pixel_offset_y  > (th-sy))
+               view_pixel_offset_y = -(th-sy);
+         }
+
+         // trace "xxx TableModel::centerRow: cy="+cy+" sy="+sy+" rh="+rh+" th="+th+" vpy="+view_pixel_offset_y;
+      }
+   }
+
+   public method getVisibleRowNrAtY(int _py) : int {
+      int cy = view_pixel_offset_y;
+      int visrowi = getFirstVisibleRowNr();
+      if(-1 != visrowi)
+      {
+         cy += getRowPixelOffsetY(visrowi); // translate to layer coordinates
+
+         int numRows = getNumRows();
+         while(visrowi < numRows)
+         {
+            int rowi = getSortedRowNr(visrowi);
+            int rh   = getRowHeight(rowi);
+            cy += rh + TableView.CELL_SEPARATOR_SIZE;
+            if(cy >= _py)
+               return visrowi;
+            visrowi++;
+         }
+      }
+      return -1;
+   }
+
+   public method getCellPosition(int _col, int _row, Point2f _ret) {
+      float x = 0;
+      int coli = 0;
+      while(coli < _col)
+      {
+         x += column_widths[coli++];
+         x += 1;
+      }
+
+      float y = row_pixel_y_offsets[_row];
+
+      _ret.x = x;
+      _ret.y = y;
+   }
+
+   public method getCellSize(int _col, int _row, Point2f _ret) {
+      _ret.x = column_widths.get(_col) - 1;
+      _ret.y = cached_row_heights.get(_row);
+   }
+
+   public method getContextMenuOffsetX(boolean _bKeyboard) : int {
+      if(_bKeyboard)
+      {
+         // for typical ST2 tables that have an ~20 pixel wide 'id' column
+         return 23*UI.font_scaling;
+      }
+      return -2*UI.font_scaling;
+   }
+
+   public method getContextMenuOffsetY(boolean _bKeyboard) : int {
+      if(_bKeyboard)
+         return 5*UI.font_scaling;
+      return 0;
+   }
+
+} // end class TableModel

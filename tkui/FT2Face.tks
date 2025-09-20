@@ -1,0 +1,851 @@
+// ----
+// ---- file   : FT2Face.tks
+// ---- info   : script side of the tks freetype2 plugin. includes OpenGL text renderer.
+// ---- author : (C) 2005-2025 by Bastian Spiegel
+// ---- license: GNU Lesser General Public License. See <http://www.gnu.org/copyleft/lesser.html> for details.
+// ----
+// ---- changed: 25Apr2005, 27Apr2005, 30Apr2005, 06May2005, 12Jun2005, 25Jun2005, 31Jul2005
+// ----          09May2007, 12May2007, 20Jan2008, 22Apr2010, 14Apr2013, 13Aug2014, 27Dec2020
+// ----          24Mar2024, 10Sep2025, 11Sep2025, 12Sep2025, 14Sep2025, 20Sep2025
+// ----
+// ----
+// ----
+
+module MFT2Face;
+
+namespace ui;
+
+use tkfreetype2;
+use tkopengl;
+
+
+class FT2Face {
+
+   // ---- General font info
+   private String   name;         // "verdana.ttf"
+   private String   family_name;  // "FreeMono", ..
+   private int      height;       // standard glyph height
+
+   // ---- Glyph objects (0..255)
+   private FT2Glyph glyphs[];     // ASCII encoding, 256 glyphs (actually 255). Not every glyph is actually used.
+   private float glyphs_advancex[256]; // How many pixels to advance after printing glyph [0..255].
+                                  // Kerning is not supported, yet. It should still be rather easy to add.
+
+   // ---- Disable bilinear texture filter for fonts smaller than the threshold
+   define int FILTER_SIZE_THRESHOLD = 18;
+
+   private String style_name;   // "Regular", "Medium", "Oblique", ..
+   private int    style_flags;  // bit0=italic, bit1=bold.  See Font.STYLE_xxx
+
+   private float    ascender;     // "maximal ascender"
+   private float    descender;    // "minimal ascender"
+   private float    underline_position;  // Y position (in pixels) of the underline position
+   private float    underline_thickness; // Thickness of the underline line
+
+   // ---- OpenGL texture rendering fields
+   define int DEFAULT_TEXTURE_SIZE = 512; // 128
+
+   private int      num_textures;    // >0 if a font has been successfully loaded.
+   private int      tex_cursor_x;    // Used during font loading
+   private int      tex_cursor_y;    // Used during font loading
+   private int      tex_cursor_line_max_y; // Used during font loading
+   private Texture *tex_current;     // Used during font loading
+   private int      rtexsize;        // The size (width/height) of a single texture "page"
+   private List     textures;        // The glyph bitmaps are spread across n textures (depending on font pixel size)
+   private boolean  texture_filter;  // Can be changed at runtime by calling setEnableTextureFilter()
+
+
+   // ----
+   // ---- Holds a C++ object which is used to do the actual glyph loading, querying and bitmap rendering (using freetype2)
+   // ---- The object also holds an internal representation of the glyph infos.
+   // ----
+   private NativeFT2Face ft2;
+
+   // ----
+   // ---- Query the height font attributes selected by the native freetype2 loader.
+   // ---- Returns the font size in pixels.
+   // ----
+   public method getHeight()             { return height; }
+
+   // ---- Return the font ascender in pixels. (Distance from baseline to topmost scanline of all glyphs)
+   public method getAscender()           { return ascender; }
+
+   // ---- Return the font descender in pixels. (Distance from baseline to bottommost scanline of all glyphs)
+   public method getDescender()          { return descender; }
+
+   // ---- Y position (in pixels) of the underline position
+   public method getUnderlinePosition()  { return underline_position; }
+
+   // ---- Thickness of the underline line
+   public method getUnderlineThickness() { return underline_thickness; }
+
+   // ---- Font family name ("FreeMono", ..)
+   public method getFamilyName()         { return family_name; }
+
+   // ---- Return the font style name ("Oblique", "Regular", "Medium", ..)
+   public method getStyleName()          { return style_name; }
+
+   // ---- Return the font style flags (bit0=italics, bit1=bold)
+   public method getStyleFlags()         { return style_flags; }
+
+   // ---- Return string representation of the current font style flags ("", "italic", "bold", "bold italic")
+   public method getStyleFlagsString()   { return Font.GetStyleFlagsStringFor(style_flags & Font.STYLE_MASK); }
+
+   // ---- Query the number of textures used by the glyph loader.
+   public method getNumTextures()        { return num_textures; }
+
+   // ---- Query the number of bytes occupied by the font texture pages
+   public method getTextureByteSize()    { return textures.size * rtexsize * rtexsize; }
+
+   // ---- Query glyph ----
+   public method getGlyph(int _char) : FT2Glyph {
+      return glyphs.get(_char);
+   }
+
+   // ---- Enable texture filtering
+   public method setEnableTextureFilter(boolean _b) {
+      texture_filter = _b;
+      ListNode l;
+      foreach l in textures
+      {
+         Texture t <= l.objectValue;
+         if(_b)
+            t.flags |= TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR;
+         else
+            t.flags &= ~(TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR);
+      }
+   }
+
+   // ---- Select monochrome/antialiased mode
+   public method setEnableMonochrome(boolean _bMono) {
+      ft2.monochrome = _bMono;
+   }
+
+   // ---- Return the texture #_index (or null)
+   public method getTexture(int _index) : Texture {
+      return textures[_index];
+   }
+
+   // ----
+   // ---- Calculate and return the width (in pixels) for the given String _s.
+   // ---- Return 0 if no font face has been loaded, yet.
+   // ----
+   public method stringWidth(String _s) {
+      float rmax = 0.0;
+      if(_s instanceof String)
+      {
+         int i = 0;
+         float r = 0.0;
+         loop(_s.length)
+         {
+            char c = _s[i++];
+            if('\n' == c)
+            {
+               if(r > rmax)
+                  rmax = r;
+               r = 0.0f;
+            }
+            else
+            {
+               r += glyphs_advancex[c];
+            }
+         }
+         if(r > rmax)
+            rmax = r;
+      }
+      return rmax;
+   }
+
+   // ----
+   // ---- Return the index of the char at pixel coordinate _x
+   // ---- Return -1 if the coordinate is outside of the text rectangle.
+   // ----
+   public method stringIndexAtPixelX(String _s, float _x) : int {
+      float w = 0.0;
+      if(_s instanceof String)
+      {
+         int i = 0;
+         loop(_s.length)
+         {
+            float gadv = glyphs_advancex[_s[i++]];
+            w += gadv;
+            if(w > (_x + gadv*0.5))
+               return i - 1;
+         }
+      }
+      return _s.length - 1;
+   }
+
+   // ----
+   // ---- Load a font from the given local file (by first copying it to a buffer which is then passed to loadFace())
+   // ----    _name: local filename (e.g. "fonts/test.ttf")
+   // ----       _w: 0 (=defaults to _h) or the width of the font
+   // ----       _h: 0 (=defaults to _w) or the height of the font. if both _w and _h are 0, 10 is assumed.
+   // ---- _texsize: width and height of a single texture-"page". If _texsize is 0, 256 is assumed.
+   // ----
+   public method openLocalFile(String _name, float _w, float _h, int _texsize) {
+      if(ft2.openFileFace(_name, _w, _h))
+      {
+         trace "[trc] FT2Face::openLocalFile: openFileFace() OK";
+         name = _name;
+         return loadFace(_texsize);
+      }
+      else
+      {
+         trace "[---] FT2Face::loadFromLocalFile(): failed to open face.\n";
+         return false;
+      }
+   }
+
+   // ----
+   // ---- Load a font from the given "logic" pak file name (maps to a file in a .tkx pak file or the local fs (dev mode))
+   // ---- The behaviour is otherwise equal to loadFromLocalFile().
+   // ----
+   public method openPakFile(String _name, float _w, float _h, int _texsize) {
+      PakFile f;
+      if(f.open(_name))
+      {
+         local Buffer b; f.readBuffer(b, 0, f.size, true);
+         f.close();
+         if(ft2.openMemoryFace(b, _w, _h))
+         {
+            name = _name;
+            return loadFace(_texsize);
+         }
+         else
+         {
+            trace "[---] FT2Face::openPakFile(): failed to open face.\n";
+         }
+      }
+      return false;
+   }
+
+   // ---- Allocate a new texture "page" and add it to the "textures" List.
+   private method newTexture() : Texture {
+      local Texture t;
+      t.alloc(rtexsize, rtexsize, ft2.monochrome ? 1 : 4); // mono=>8bit, alpha=>32bit
+      t.clear(0);
+      tex_cursor_x = 1; // add extra border for filtering
+      tex_cursor_y = 1;
+      tex_cursor_line_max_y = -1;
+      num_textures++;
+      t.flags = TEX_MODULATE | TEX_ALPHA;
+      if(texture_filter)
+         t.flags |= TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+      textures.addLast(#(deref t)); // wrap in Value object and pass to native c++ method
+      tex_current <= t;
+      return t;
+   }
+
+   // ----
+   // ---- Load and render a TrueType, Type 1, CID-keyed or OpenType/CFF font to a bitmap
+   // ---- and copy the bitmap glyphs to areas within 2^n size textures.
+   // ----
+   private method loadFace(int _texsize)/*:boolean*/ {
+
+      num_textures = 0;
+      textures.removeAll();
+      if(_texsize <= 0)
+         rtexsize = DEFAULT_TEXTURE_SIZE;
+      else
+         rtexsize = 2n(_texsize); // next 2^n size
+
+      glyphs.alloc(256);
+      height = ft2.height;
+      if(height >= rtexsize)
+      {
+         trace "[---] FT2Face::loadFace: average glyph height("+height+") exceeds texture height ("+rtexsize+"). bailing out..";
+         return false;
+      }
+
+      ascender  = ft2.ascender;
+      descender = ft2.descender;
+      underline_position = ft2.underlinePosition;
+      underline_thickness = ft2.underlineThickness;
+      if(underline_thickness == 0.0)
+      {
+         underline_position = ft2.descender;
+         underline_thickness = 0.5;
+      }
+      ft2.storeFamilyName(family_name);
+      ft2.storeStyleName(style_name);
+
+      style_flags = ft2.styleFlags;
+
+      int i = ' '; // the first face is unused (ASCIIZ)
+      FT2Glyph g; glyphs.numElements = i;
+      loop(255 - i)
+      {
+         g <= glyphs.nextFree;
+         // ---- determine size of char, returns glyph bearing and bitmap extents in "g"
+         ft2.loadChar(g, i);
+         // // trace "glyph["+i+"] width="+g.width+" height="+g.height;
+         if(g.width)
+         {
+            // ---- convert glyph to bitmap (and copy it to the given texture)
+            Texture t <= tex_current;
+            boolean b_render = true;
+            if(!t)
+            {
+               // ---- begin first Texture
+               t <= newTexture();
+            }
+            // ---- check whether glyph fits into current texture
+            if( (tex_cursor_x + g.width) >= (rtexsize - 1) )
+            {
+               if(g.width >= (rtexsize-1))
+               {
+                  trace "[---] FT2Face::loadFace: glyph("+i+") width("+g.width+") exceeds texture width ("+rtexsize+".";
+                  b_render = false;
+               }
+               else
+               {
+                  tex_cursor_y += tex_cursor_line_max_y + 1;
+                  tex_cursor_x = 1; // plus border for texfilter
+                  tex_cursor_line_max_y = -1;
+               }
+            }
+            if( (tex_cursor_y + g.height) >= (rtexsize - 1) )
+            {
+               if(g.height >= (rtexsize - 1))
+               {
+                  trace "[---] FT2Face::loadFace: glyph("+i+") height("+g.height+") exceeds texture height ("+rtexsize+".";
+                  b_render = false;
+               }
+               t <= newTexture();
+            }
+            /*if(i<'z')
+            {
+               if( (g.offsety+g.height) > height )
+               {
+                  print "i="+tcchar(i)+" height="+height;
+                  height = (g.offsety+g.height);
+                  print "i="+tcchar(i)+" 2 height="+height;
+               }
+               }*/
+            if(b_render)
+            {
+               if(g.height > tex_cursor_line_max_y)
+                  tex_cursor_line_max_y = g.height;
+               g.init(tex_cursor_x, tex_cursor_y, t);
+               Texture window; window.setScreenArea(t, tex_cursor_x, tex_cursor_y, g.width, g.height);
+               // // trace "screen area set tex_cursor_x="+tex_cursor_x+" tex_cursor_y="+tex_cursor_y+" width="+g.width+" height="+g.height;
+               ft2.renderGlyph(window);
+               tex_cursor_x += g.width + 2;
+            }
+         }
+         i++;
+      }
+      // ---- normalize texture coordinates
+      foreach g in glyphs
+         g.normalizeTexCoords(rtexsize);
+
+      // ---- Store the advancex fields of glyphs 0..255
+      ft2.storeGlyphsAdvanceX(glyphs_advancex);
+
+      if(Configuration.debugLevel > 1)
+         UI.Debug("FT2Face::loadFace(): OK. The bitmap glyphs use "+num_textures+" texture(s).");
+
+      // ---- Delete native ft2 object and associated glyph info, bitmap resources..
+      ft2 <= new NativeFT2Face();
+
+      // // t.saveImage("test.png");
+
+      return true;
+   }
+
+   // ----
+   // ---- Upload the textures associated with this font face
+   // ----
+   public method uploadTextures() {
+      ListNode *l;
+      ////trace "xxx FT2Face::uploadTextures: this="+#(this)+" name="+name+" family_name="+family_name+" height="+height+" style_name="+style_name+" style_flags="+style_flags+" textures="+#(textures);
+      foreach l in textures
+      {
+         Texture t <= l.objectValue;
+         t.unload();
+      }
+   }
+
+   // ----
+   // ---- Render the given String to the current OpenGL viewport.
+   // ---- The GL state should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test, set color etc..)
+   // ----
+   public method writeGL(String _text, float _x, float _y, int _fgColor32, int _ulColor32) {
+      // trace "xxx FT2Face::writeGL("+_text+", _x="+_x+" _y="+_y+") glyphs.numElements="+glyphs.numElements;
+      if( null != _text && glyphs.numElements > 0 )
+      {
+         Texture ctex <= null;
+         float cx = _x, cy = _y + ascender, lsx = _x;
+         int texti = 0;
+         int bNextIsAccel = false; // '\a' sequence underlines next char
+         UIRenderer.SetColorARGB(_fgColor32);
+         int maxVerts = _text.length * (2 * 3);
+         UIRenderer.BeginTexturedTriangles(maxVerts);
+         loop(_text.length)
+         {
+            char c = _text[texti++];
+            if(c)
+            {
+               if(c == '\a') // Underline accelerator key?
+               {
+                  bNextIsAccel = true;
+               }
+               else if(c == '\n')
+               {
+                  cx  = lsx;
+                  cy += height; // ---- should be line_gap??
+               }
+               else
+               {
+                  if(c < ' ')
+                     c = '.';
+               }
+
+               FT2Glyph g <= glyphs[c];
+
+               if(g.width > 0f) // ---- in use??
+               {
+                  if(g.texture != ctex)
+                  {
+                     UIRenderer.End();
+                     ctex <= g.texture;
+                     ctex.bind();
+                     UIRenderer.BeginTexturedTriangles(maxVerts);
+                  }
+
+                  // ---- offsety is distance from baseline to first scanline of glyph (up is positive)
+                  // ---- btw: this page <http://msdn.microsoft.com/library/default.asp?url=/library/en-us/opengl/apptips_7wqb.asp> saved my day
+                  float tx = cx + g.offsetx + 0.375f;
+                  float ty = cy - g.offsety + 0.375f;
+
+                  // // trace "g.sz=("+g.width+";"+g.height+") c=("+cx+";"+cy+") g.offset=("+g.offsetx+";"+g.offsety+") g.ltu="+g.ltu*rtexsize+" g.ltv="+g.ltv*rtexsize+" g.rtu="+g.rtu*rtexsize+" g.rtv="+g.rtv*rtexsize+" g.rbu="+g.rbu*rtexsize+" g.rbv="+g.rbv*rtexsize+" d=("+tx+";"+ty+")";
+                  // // trace "c='"+tcchar(c)+"' g.sz=("+g.width+";"+g.height+") c=("+cx+";"+cy+") g.offset=("+g.offsetx+";"+g.offsety+") d=("+tx+";"+ty+")";
+
+                  // // trace "xxx tx="+tx+" ty="+ty;
+
+                  // 1
+                  UIRenderer.TexCoord2f(g.ltu,      g.ltv      );
+                  UIRenderer.Vertex2f  (tx,         ty         );
+
+                  UIRenderer.TexCoord2f(g.rtu,      g.rtv      );
+                  UIRenderer.Vertex2f  (tx+g.width, ty         );
+
+                  UIRenderer.TexCoord2f(g.rbu,      g.rbv      );
+                  UIRenderer.Vertex2f  (tx+g.width, ty+g.height);
+
+                  // 2
+                  UIRenderer.TexCoord2f(g.ltu,      g.ltv      );
+                  UIRenderer.Vertex2f  (tx,         ty         );
+
+                  UIRenderer.TexCoord2f(g.rbu,      g.rbv      );
+                  UIRenderer.Vertex2f  (tx+g.width, ty+g.height);
+
+                  UIRenderer.TexCoord2f(g.lbu,      g.lbv      );
+                  UIRenderer.Vertex2f  (tx,         ty+g.height);
+
+                  if(bNextIsAccel) // Underline character ?
+                  {
+                     bNextIsAccel = false;
+                     UIRenderer.End();
+
+                     UIRenderer.DisableTexture2D();
+                     UIRenderer.DrawLine(tx,         cy-underline_position+1,
+                                         tx+g.width, cy-underline_position+1,
+                                         _ulColor32
+                                         );
+
+                     UIRenderer.SetColorARGB(_fgColor32);
+                     UIRenderer.EnableTexture2D();
+                     UIRenderer.BeginTexturedTriangles(maxVerts);
+                  }
+               }
+               cx += g.advancex;
+            }
+         }
+         UIRenderer.End();
+      }
+   }
+
+   // Calc actual string height (glyph bounding box)
+   public method calcStringMinMaxY(String _text, Float _retMinY, Float _retMaxY) {
+      _retMinY = 9999;
+      _retMaxY = 0;
+
+      int texti = 0;
+      loop(_text.length)
+      {
+         char c = _text[texti++];
+         if(c)
+         {
+            if(c<' ')
+               c='.';
+            FT2Glyph g <= glyphs[c];
+            if(g.width > 0f) // ---- in use??
+            {
+               float ty = ascender - g.offsety + 0.375f;
+               if(ty < _retMinY)
+                  _retMinY = ty;
+               if(ty + g.height > _retMaxY)
+                  _retMaxY = ty + g.height;
+            }
+         }
+      }
+
+      if(_retMinY == 9999)
+         _retMinY = 0;
+   }
+
+   // ----
+   // ---- Render the given String to the current OpenGL viewport.
+   // ---- The GL state should have been initialized prior to this call
+   // ----  (enable texturing, disable z-test, set color etc..)
+   // ----
+   public method writeGLClipped(String _text, float _x, float _y,
+                                float _clipLeft, _clipTop, _clipRight, _clipBottom,
+                                int _fgColor32,
+                                int _ulColor32
+                                ) {
+      // trace "writeClippedGL("+_text+", _x="+_x+" _y="+_y+") asc="+ascender+" glyphs.numElements="+glyphs.numElements;
+      if(null != _text && glyphs.numElements > 0)
+      {
+         Texture ctex <= null;
+         float cx = _x, cy = _y + ascender, lsx = _x;
+         int texti = 0;
+         boolean bNextIsAccel = false; // '\a' sequence underlines next char
+         UIRenderer.SetColorARGB(_fgColor32);
+         int maxVerts = _text.length * (2 * 3);
+         UIRenderer.BeginTexturedTriangles(maxVerts);
+         loop(_text.length)
+         {
+            char c = _text[texti++];
+            if(c)
+            {
+               if('\a' == c) // Underline accelerator key?
+               {
+                  bNextIsAccel = true;
+               }
+               else if('\n' == c)
+               {
+                  cx  = lsx;
+                  cy += height; // ---- should be line_gap??
+               }
+               else
+               {
+                  if(c < ' ')
+                     c = '.';
+               }
+
+               FT2Glyph g <= glyphs[c];
+
+               if(g.width) // ---- in use??
+               {
+                  if(g.texture != ctex)
+                  {
+                     UIRenderer.End();
+                     ctex <= g.texture;
+                     ctex.bind();
+                     UIRenderer.BeginTexturedTriangles(maxVerts);
+                  }
+
+                  // ---- offsety is distance from baseline to first scanline of glyph (up is positive)
+                  float tx = cx + g.offsetx + 0.375;
+                  float ty = cy - g.offsety + 0.375;
+
+                  // trace "xxx c="+tcchar(c)+" tx="+tx+" ty="+ty+" cx="+cx+" cy="+cy+" offx="+g.offsetx+" offy="+g.offsety+" w="+g.width+" h="+g.height;
+
+                  if( (tx < _clipLeft) || (ty < _clipTop) )
+                  {
+                     // Clip Left/Top
+                     if( (tx+g.width) > _clipLeft )
+                     {
+                        if( (ty+g.height) > _clipTop )
+                        {
+                           float clip_lu, clip_tv, clip_tx, clip_ty;
+                           if(tx < _clipLeft)
+                           {
+                              clip_lu = g.rtu - ((g.rtu - g.ltu)/g.width)*( (tx+g.width) - _clipLeft );
+                              clip_tx = _clipLeft;
+                           }
+                           else
+                           {
+                              clip_lu = g.ltu;
+                              clip_tx = tx;
+                           }
+                           if(ty < _clipTop)
+                           {
+                              clip_tv = g.rbv - ((g.rbv - g.rtv)/g.height)*( (ty+g.height) - _clipTop );
+                              clip_ty = _clipTop;
+                           }
+                           else
+                           {
+                              clip_tv = g.rtv;
+                              clip_ty = ty;
+                           }
+
+                           // 1
+                           UIRenderer.TexCoord2f ( clip_lu,      clip_tv       );
+                           UIRenderer.Vertex2f   ( clip_tx,      clip_ty       );
+
+                           UIRenderer.TexCoord2f ( g.rtu,        clip_tv       );
+                           UIRenderer.Vertex2f   ( tx+g.width,   clip_ty       );
+
+                           UIRenderer.TexCoord2f ( g.rbu,        g.rbv         );
+                           UIRenderer.Vertex2f   ( tx+g.width,   ty+g.height   );
+
+                           // 2
+                           UIRenderer.TexCoord2f ( clip_lu,      clip_tv       );
+                           UIRenderer.Vertex2f   ( clip_tx,      clip_ty       );
+
+                           UIRenderer.TexCoord2f ( g.rbu,        g.rbv         );
+                           UIRenderer.Vertex2f   ( tx+g.width,   ty+g.height   );
+
+                           UIRenderer.TexCoord2f ( clip_lu,      g.lbv         );
+                           UIRenderer.Vertex2f   ( clip_tx,      ty+g.height   );
+
+                           if(bNextIsAccel) // Underline character ?
+                           {
+                              bNextIsAccel = false;
+                              UIRenderer.End();
+
+                              UIRenderer.DisableTexture2D();
+                              UIRenderer.SetColorARGB(_ulColor32);
+                              if(UIRenderer.BeginLineStrip(2))
+                              {
+                                 UIRenderer.Vertex2f(clip_tx, ty+g.height+2);
+                                 UIRenderer.Vertex2f(tx+g.width, ty+g.height+2);
+                                 UIRenderer.End();
+                              }
+
+                              UIRenderer.SetColorARGB(_fgColor32);
+                              UIRenderer.EnableTexture2D();
+                              UIRenderer.BeginTexturedTriangles(maxVerts);
+                           }
+                        }
+                     }
+                     if(bNextIsAccel)
+                     {
+                        bNextIsAccel = false;
+                     }
+                  }
+                  else if( ((tx+g.width) < _clipRight) && ((ty+g.height) < _clipBottom) )
+                  {
+                     // Render normal (unclipped)
+
+                     // 1
+                     UIRenderer.TexCoord2f ( g.ltu,        g.ltv         );
+                     UIRenderer.Vertex2f   ( tx,           ty            );
+
+                     UIRenderer.TexCoord2f ( g.rtu,        g.rtv         );
+                     UIRenderer.Vertex2f   ( tx+g.width,   ty            );
+
+                     UIRenderer.TexCoord2f ( g.rbu,        g.rbv         );
+                     UIRenderer.Vertex2f   ( tx+g.width,   ty+g.height   );
+
+                     // 2
+                     UIRenderer.TexCoord2f ( g.ltu,        g.ltv         );
+                     UIRenderer.Vertex2f   ( tx,           ty            );
+
+                     UIRenderer.TexCoord2f ( g.rbu,        g.rbv         );
+                     UIRenderer.Vertex2f   ( tx+g.width,   ty+g.height   );
+
+                     UIRenderer.TexCoord2f ( g.lbu,        g.lbv         );
+                     UIRenderer.Vertex2f   ( tx,           ty+g.height   );
+
+                     if(bNextIsAccel) // Underline character ?
+                     {
+                        bNextIsAccel = false;
+                        UIRenderer.End();
+
+                        UIRenderer.DisableTexture2D();
+                        UIRenderer.SetColorARGB(_ulColor32);
+                        if(UIRenderer.BeginLineStrip(2))
+                        {
+                           UIRenderer.Vertex2f(tx, ty+g.height+2);
+                           UIRenderer.Vertex2f(tx+g.width, ty+g.height+2);
+                           UIRenderer.End();
+                        }
+                        UIRenderer.SetColorARGB(_fgColor32);
+                        UIRenderer.EnableTexture2D();
+                        UIRenderer.BeginTexturedTriangles(maxVerts);
+                     }
+                  }
+                  else
+                  {
+                     // Clip right/bottom
+                     if(tx < _clipRight)
+                     {
+                        if(ty < _clipBottom)
+                        {
+                           // trace "xxx FT2Face: c="+tcchar(c)+" clip R/B  tx="+tx+" clipRight="+_clipRight+" ty="+ty+" clipBottom="+_clipBottom;
+                           float clip_ru, clip_bv, clip_txr, clip_tyb;
+                           if( (tx + g.width) > _clipRight )
+                           {
+                              // ClipX
+                              clip_txr = _clipRight;
+                              clip_ru = g.ltu + ((g.rtu - g.ltu)/g.width)*(clip_txr-tx);
+                           }
+                           else
+                           {
+                              clip_txr = tx + g.width;
+                              clip_ru = g.rtu;
+                           }
+                           if( ((ty+g.height) >_clipBottom ) )
+                           {
+                              // ClipY
+                              clip_tyb = _clipBottom;
+                              clip_bv = g.rtv + ((g.rbv - g.rtv)/g.height)*(clip_tyb-ty);
+                           }
+                           else
+                           {
+                              clip_tyb = ty + g.height;
+                              clip_bv = g.rbv;
+                           }
+
+                           // 1
+                           UIRenderer.TexCoord2f(g.ltu,    g.ltv   );
+                           UIRenderer.Vertex2f  (tx,       ty      );
+
+                           UIRenderer.TexCoord2f(clip_ru,  g.rtv   );
+                           UIRenderer.Vertex2f  (clip_txr, ty      );
+
+                           UIRenderer.TexCoord2f(clip_ru,  clip_bv );
+                           UIRenderer.Vertex2f  (clip_txr, clip_tyb);
+
+                           // 2
+                           UIRenderer.TexCoord2f(g.ltu,    g.ltv   );
+                           UIRenderer.Vertex2f  (tx,       ty      );
+
+                           UIRenderer.TexCoord2f(clip_ru,  clip_bv );
+                           UIRenderer.Vertex2f  (clip_txr, clip_tyb);
+
+                           UIRenderer.TexCoord2f(g.lbu,    clip_bv );
+                           UIRenderer.Vertex2f  (tx,       clip_tyb);
+
+                           if(bNextIsAccel) // Clipped underline character ?
+                           {
+                              if( ((ty+g.height+2) < _clipBottom) )
+                              {
+                                 UIRenderer.End();
+
+                                 UIRenderer.DisableTexture2D();
+                                 // // UIRenderer.SetColorARGB(UI.GetColor(LookAndFeel.COLOR_ACCEL_UL_FG));
+                                 UIRenderer.SetColorARGB(_ulColor32);
+                                 if(UIRenderer.BeginLineStrip(2))
+                                 {
+                                    UIRenderer.Vertex2f(tx, ty+g.height+2);
+                                    UIRenderer.Vertex2f(clip_txr, ty+g.height+2);
+                                    UIRenderer.End();
+                                 }
+                                 UIRenderer.SetColorARGB(_fgColor32);
+                                 UIRenderer.EnableTexture2D();
+                                 UIRenderer.BeginTexturedTriangles(maxVerts);
+                              }
+                           }
+                        }
+                     }
+                     if(bNextIsAccel)
+                     {
+                        bNextIsAccel = false;
+                     }
+                  } // clip right/bottom
+               }
+               cx += g.advancex;
+            }
+         }
+         UIRenderer.End();
+      }
+   }
+
+
+   // ----
+   // ---- Render the underlines for the given String to the current OpenGL viewport.
+   // ---- The GL state should have been initialized prior to this call
+   // ----  (disable texturing, disable z-test, set color etc..)
+   // ----
+   public method writeGLUnderlines(String _text, float _x, float _y) {
+      if(_text)
+      {
+         float cx = _x, cy = _y + ascender, lsx = _x, uly = underline_position, ult = underline_thickness;
+         if(ult < 1.0) ult = 1.0;
+         int texti = 0;
+         int maxVerts = _text.length * (2 * 3);
+         UIRenderer.BeginFilledTriangles(maxVerts);
+         loop(_text.length)
+         {
+            char c = _text[texti++];
+            if(c)
+            {
+               if(c == '\n')
+               {
+                  if(cx != lsx)
+                  {
+                     // 1
+                     UIRenderer.Vertex2f(lsx, cy-uly);
+                     UIRenderer.Vertex2f(cx,  cy-uly);
+                     UIRenderer.Vertex2f(cx,  cy-uly-ult);
+
+                     // 2
+                     UIRenderer.Vertex2f(lsx, cy-uly);
+                     UIRenderer.Vertex2f(cx,  cy-uly-ult);
+                     UIRenderer.Vertex2f(lsx, cy-uly-ult);
+                  }
+                  cx = lsx;
+                  cy += height; // ---- should be line_gap??
+               }
+               else
+               {
+                  if(c < ' ')
+                     c = '.';
+               }
+               FT2Glyph g <= glyphs[c];
+               cx += g.advancex;
+            }
+         }
+
+         if(cx != lsx)
+         {
+            // 1
+            UIRenderer.Vertex2f(lsx, cy-uly);
+            UIRenderer.Vertex2f(cx,  cy-uly);
+            UIRenderer.Vertex2f(cx,  cy-uly-ult);
+
+            // 2
+            UIRenderer.Vertex2f(lsx, cy-uly);
+            UIRenderer.Vertex2f(cx,  cy-uly-ult);
+            UIRenderer.Vertex2f(lsx, cy-uly-ult);
+         }
+
+         UIRenderer.End();
+      }
+   }
+
+   // [05Oct2023]
+   public method saveFixedPixelFont(String _outNamePNG, int _charW, int _charH, int _yOff) {
+      char c = 33;
+      local Texture texOut;
+      int i = 0;
+      loop(256 - 33)
+      {
+         FT2Glyph g <= glyphs[c];
+         if(g.width) // ---- in use??
+         {
+            Texture texGlyph <= g.texture;
+            if(0 == texOut.sx)
+            {
+               texOut.alloc(_charW * (256 - 33), _charH, texGlyph.z);
+               texOut.clear(#00000000);
+            }
+            int dx = (i * _charW) + g.offsetx;
+            int dy = _charH + descender - g.offsety + _yOff;
+            trace "xxx i="+i+" d=("+dx+";"+dy+") src.z="+texGlyph.z;
+            texOut.copyRegion(texGlyph, g.bitmapx, g.bitmapy, g.width, g.height, dx, dy);
+         }
+         i++;
+         c++;
+      }
+      texOut.saveImage(_outNamePNG);
+   }
+
+}

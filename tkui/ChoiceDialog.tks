@@ -1,0 +1,387 @@
+// ----
+// ---- file   : ChoiceDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2023 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 27Apr2007
+// ---- changed: 28Apr2007, 06Nov2007, 14Apr2008, 01Feb2009, 31May2009, 06Feb2010, 25May2013
+// ----          30May2013, 18Aug2014, 31Aug2014, 17Mar2015, 24Feb2017, 22Jan2018, 16Mar2018
+// ----          30Nov2018, 03Dec2018, 04Oct2023, 06Oct2023, 21Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module MChoiceDialog;
+
+namespace ui;
+
+
+class ChoiceDialog extends Dialog, ActionConsumer, ActionProvider {
+
+   // Selection IDs that are used while notifying the recipient
+   define int SELECT_YES    = 0;
+   define int SELECT_NO     = 1;
+   define int SELECT_CANCEL = 2;
+
+   define int MIN_WIDTH = 120;
+   define int MIN_HEIGHT = 60;
+
+   define String ACTION_CHOICEDIALOGCLOSED = "onChoiceDialogClosed";
+
+   protected char accel_yes;
+   protected char accel_no;
+   protected char accel_cancel;
+   protected Button *bt_yes;
+   protected Button *bt_no;
+   protected Button *bt_cancel;
+   protected int default_selection = SELECT_YES;
+   protected ActionConsumer recipient; // Reference to recipient
+
+   protected Label *lb_msg;
+
+   protected CheckBox *cb_always;
+
+   protected boolean b_popup;
+
+
+   public static New(String _caption, String _message, 
+                     String _btYesCaption, String _btNoCaption, String _btCancelCaption,
+                     String _iconName,
+                     ActionConsumer _recipient) : ChoiceDialog {
+      local ChoiceDialog d;
+      d.initChoiceDialog(deref _caption, deref _message, _btYesCaption, _btNoCaption, _btCancelCaption, deref _iconName, _recipient, false);
+      return deref d;
+   }
+
+   public static NewYesNo(String _caption, String _message, ActionConsumer _recipient) : ChoiceDialog {
+      local ChoiceDialog d;
+      d.initChoiceDialog(deref _caption, deref _message, "\aYes", "\aNo", null, "choice", _recipient, false/*bAlways*/);
+      return deref d;
+   }
+
+   public static NewYesNoAlways(String _caption, String _message, ActionConsumer _recipient) : ChoiceDialog {
+      local ChoiceDialog d;
+      d.initChoiceDialog(deref _caption, deref _message, "\aYes", "\aNo", null, "choice", _recipient, true/*bAlways*/);
+      return deref d;
+   }
+
+   public static NewYesNoCancel(String _caption, String _message, ActionConsumer _recipient) : ChoiceDialog {
+      local ChoiceDialog d;
+      d.initChoiceDialog(deref _caption, deref _message, "\aYes", "\aNo", "\aCancel", "choice", _recipient, false/*bAlways*/);
+      return deref d;
+   }
+
+   protected initChoiceDialog(String _caption, String _message, 
+                              String _btYesCaption, String _btNoCaption, String _btCancelCaption,
+                              String _iconName,
+                              ActionConsumer _recipient,
+                              boolean _bAlways) {
+      initDialog();
+
+      recipient <= deref _recipient;
+      int w, h;
+
+      local Panel l;
+      l.initPanel();
+      l.setLayout(SuperBorderLayout);
+
+      local Label lbMessage;
+      lbMessage.initLabel();
+      lbMessage.setCaption(_message);
+      lbMessage.setEnableFillBackground(false);
+
+      if(null != _iconName)
+      {
+         Icon icon <= UI.GetIcon(_iconName);
+         if(null != icon)
+         {
+            lbMessage.setIcon(icon);
+            lbMessage.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+         }
+      }
+
+      l.addLayer(deref lbMessage, Layout.CENTER);
+
+      lb_msg <= lbMessage;
+
+      // "Yes" button
+      local Button btYes;
+      btYes.initButton();
+      btYes.setCaption(_btYesCaption);
+      btYes.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+      btYes.setAlignment(Layout.CENTER);
+      btYes.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT, 
+                        UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+      btYes.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT, 
+                             UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+      btYes.setProvidedActionAlias(Button.ACTION_CLICK, "yes");
+      if(UI.IsHiDPI())
+         btYes.setEnableLabelButton(true);
+      // // btYes.setLookAndFeelLight();
+      bt_yes <= btYes;
+      accel_yes = UI.GetAcceleratorChar(_btYesCaption);
+
+      // "No" button
+      local Button btNo;
+      btNo.initButton();
+      btNo.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+      btNo.setCaption(_btNoCaption);
+      btNo.setAlignment(Layout.CENTER);
+      btNo.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT, 
+                        UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+      btNo.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT, 
+                             UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+      btNo.setProvidedActionAlias(Button.ACTION_CLICK, "no");
+      if(UI.IsHiDPI())
+         btNo.setEnableLabelButton(true);
+      bt_no <= btNo;
+      accel_no = UI.GetAcceleratorChar(_btNoCaption);
+
+      Button *btCancel;
+      if(null != _btCancelCaption)
+      {
+         btCancel <= new Button;
+         btCancel.initButton();
+         btCancel.setIconPlacement(Layout.LEFT | Layout.CENTERY);
+         btCancel.setCaption(_btCancelCaption);
+         btCancel.setAlignment(Layout.CENTER);
+         btCancel.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP, UIConstants.DIALOGBUTTON_PAD_LEFT, 
+                               UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT);
+         btCancel.setInnerPadding4f(UIConstants.DIALOGBUTTON_INSET_TOP, UIConstants.DIALOGBUTTON_INSET_LEFT, 
+                                    UIConstants.DIALOGBUTTON_INSET_BOTTOM, UIConstants.DIALOGBUTTON_INSET_RIGHT);
+         btCancel.setProvidedActionAlias(Button.ACTION_CLICK, "cancel");
+         if(UI.font_scaling >= 1.2)
+            btCancel.setEnableLabelButton(true);
+         bt_cancel <= btCancel;
+         accel_cancel = UI.GetAcceleratorChar(_btCancelCaption);
+      }
+
+      if(_bAlways)
+      {
+         cb_always <= new CheckBox;
+         cb_always.initCheckBox(false, "Always");
+         cb_always.setPadTop(5);
+      }
+
+      // Group the buttons in a layer
+      local Panel p;
+      local Panel p2;
+      p.initPanel();
+      p2.initPanel();
+      p.setLayout(SuperBorderLayout);
+      p2.setLayout(SuperBorderLayout);
+
+      p2.addLayer(deref btYes, Layout.RIGHT);
+      p2.addLayer(deref btNo, Layout.RIGHT);
+      if(_btCancelCaption != null)
+      {
+         p2.addLayer(deref btCancel, Layout.RIGHT);
+      }
+      p2.setAlignment(Layout.CENTER);
+      p.addLayer(deref p2, Layout.CENTER);
+      if(_bAlways)
+      {
+         p.addLayer(cb_always, Layout.RIGHT);
+         cb_always.setAlignment(Layout.RIGHT | Layout.CENTERY);
+      }
+      p.setAlignment(Layout.EXPANDX);
+
+      l.addLayer(deref p, Layout.BOTTOM);
+
+      // Calculate dialog size
+      w = mathMaxf(p.getPreferredSizePadX(), lbMessage.getPreferredSizePadX());
+      if(w < MIN_WIDTH)
+      {
+         w = MIN_WIDTH;
+      }
+      h = mathMaxf(p.getPreferredSizePadY() + lbMessage.getPreferredSizePadY(), MIN_HEIGHT);
+      ////h += 20;
+      l.setSize2f(w, h);
+      initWindow(deref l,
+                 _caption,
+                 0, 0, // update position in show()
+                 w, h
+                 );
+   }
+
+   public virtual isPopup() : boolean {
+      return b_popup;
+   }
+
+   public method setEnablePopup(boolean _bEnable) {
+      explain "Set dialog popup mode (non-child click closes dialog when it's a popup)";
+
+      b_popup = _bEnable;
+   }
+
+   public method setMessageFont(String _fontName) {
+      lb_msg.setFontByName(_fontName);
+   }
+
+   public method setButtonFont(String _fontName) {
+      
+      if(null != bt_yes)
+      {
+         bt_yes.setFontByName(_fontName);
+      }
+
+      if(null != bt_no)
+      {
+         bt_no.setFontByName(_fontName);
+      }
+
+      if(null != bt_cancel)
+      {
+         bt_cancel.setFontByName(_fontName);
+      }
+   }
+
+   public method setButtonIcons(Icon _icoYes, Icon _icoNo, Icon _icoCancel) {
+
+      if(null != bt_yes)
+      {
+         bt_yes.setIcon(_icoYes);
+      }
+
+      if(null != bt_no)
+      {
+         bt_no.setIcon(_icoNo);
+      }
+
+      if(null != bt_cancel)
+      {
+         bt_cancel.setIcon(_icoCancel);
+      }
+   }
+
+   public method getProvidedActionNames() : StringArray {
+      return [ACTION_CHOICEDIALOGCLOSED];
+   }
+
+   public setDefaultSelection(int _selection) {
+      default_selection = _selection;
+   }
+
+   protected handleSelection(int _selection) {
+      hide();
+      // Inform recipient
+      if(recipient instanceof ActionConsumer)
+      {
+         ////trace "xxx ChoiceDialog: handleSelection("+_selection+") recipient="+#(recipient);
+         IntAction *ac <= IntAction.New(getProvidedActionAlias(ACTION_CHOICEDIALOGCLOSED), this, _selection);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   public method isAlwaysEnabled() : boolean {
+      if(null != cb_always)
+      {
+         return cb_always.isSelected();
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String name = _ac.getActionName();
+      ////trace "xxx got action name="+name;
+      switch(name) {
+         case "yes":
+            handleSelection(SELECT_YES);
+            break;
+         case "no":
+            handleSelection(SELECT_NO);
+            break;
+         case "cancel":
+            handleSelection(SELECT_CANCEL);
+            break;
+      }
+      return true;
+   }
+
+   public virtual onKey(Key _key) : boolean {
+      if(_key.pressed)
+      {
+         // trace "xxx ChoiceDialog::onKey: key.pressed="+_key.pressed;
+
+         // trace "xxx choicedialog: _key="+_key.name+" accel_yes="+accel_yes;
+         // trace "xxx choicedialog: _key.unicode="+_key.unicode+" _key.alpha="+_key.alpha+" accel_yes.alpha="+accel_yes.alpha;
+         // trace "xxx choicedialog: _key.unicode="+_key.unicode;
+
+         switch(_key.pressed)
+         {
+            case VKEY_ESCAPE:
+               handleSelection(SELECT_CANCEL);
+               return true;
+         }
+
+         switch(_key.unicode)
+         {
+            case accel_yes:
+               if(0 != accel_yes)
+                  handleSelection(SELECT_YES);
+               return true;
+               
+            case accel_no:
+               if(0 != accel_no)
+                  handleSelection(SELECT_NO);
+               return true;
+               
+            case accel_cancel:
+               if(0 != accel_cancel)
+                  handleSelection(SELECT_CANCEL);
+               return true;
+         }
+
+         // trace "xxx ChoiceDialog::onKey: 2 key.pressed="+_key.pressed;
+
+      }
+      return true; // Block all other events
+   }
+
+   protected virtual postShow() {
+      Dialog::postShow();
+
+      switch(default_selection)
+      {
+         case SELECT_YES: 
+            UI.SetKeyboardFocus(bt_yes); 
+            break;
+
+         case SELECT_NO: 
+            UI.SetKeyboardFocus(bt_no); 
+            break;
+
+         case SELECT_CANCEL: 
+            if(bt_cancel != null)
+            {
+               UI.SetKeyboardFocus(bt_cancel); 
+            }
+            break;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+
+      if(null != bt_yes)
+      {
+         _retLayers.add(bt_yes);
+      }
+
+      if(null != bt_no)
+      {
+         _retLayers.add(bt_no);
+      }
+
+      if(null != bt_cancel)
+      {
+         _retLayers.add(bt_cancel);
+      }
+   }
+
+}

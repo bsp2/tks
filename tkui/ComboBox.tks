@@ -1,0 +1,1346 @@
+// ----
+// ---- file   : ComboBox.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 24Oct2007
+// ---- changed: 29Oct2007, 06Nov2007, 11Nov2007, 14Apr2008, 02Aug2008, 03Sep2008, 01Feb2009
+// ----          16Jun2009, 09Jan2010, 22Apr2010, 18Jul2010, 09Oct2010, 12Feb2011, 20Mar2011
+// ----          29Mar2011, 06Jan2012, 09Jan2012, 08Jan2013, 23Mar2013, 17Jun2013, 27Aug2013
+// ----          02Feb2014, 12Aug2014, 21Aug2014, 05Sep2014, 06Sep2014, 14Sep2014, 20Sep2014
+// ----          22Sep2014, 17Oct2014, 03Feb2015, 04Feb2015, 07Feb2015, 11Feb2015, 22Feb2015
+// ----          17Mar2015, 22Mar2015, 19Mar2016, 16Feb2017, 21Feb2017, 23Feb2017, 24Feb2017
+// ----          12Mar2017, 24Mar2017, 01Jul2017, 14Jul2017, 18Aug2017, 01Sep2017, 01Dec2017
+// ----          10Feb2018, 16Feb2018, 23Feb2018, 24Feb2018, 25Feb2018, 17Mar2018, 31May2018
+// ----          01Jun2018, 17Nov2018, 27Nov2018, 01Dec2018, 05Jan2019, 28Jan2019, 02Mar2019
+// ----          12May2019, 29Jul2019, 08Sep2019, 21Sep2019, 22Sep2019, 02Oct2019, 26Oct2019
+// ----          29Oct2020, 02Apr2021, 12Apr2021, 03Jun2021, 23Apr2022, 09Oct2022, 10Oct2022
+// ----          22Oct2022, 23Oct2022, 27Oct2022, 16Aug2023, 10Sep2023, 03Oct2023, 04Oct2023
+// ----          05Oct2023, 08Oct2023, 15Oct2023, 20Oct2023, 21Oct2023, 22Oct2023, 27Oct2023
+// ----          01Nov2023, 04Nov2023, 25Nov2023, 30Nov2023, 17Jan2024, 03Feb2024, 22Mar2024
+// ----          13Apr2024, 27Sep2024, 04Oct2024, 05Oct2024, 31Jan2025, 01Feb2025, 22May2025
+// ----          10Sep2025, 11Sep2025, 12Sep2025, 18Sep2025
+// ----
+// ----
+// ----
+
+module MComboBox;
+
+namespace ui;
+
+
+class ComboBox extends Label, ActionProvider, ActionConsumer {
+
+   define int MIN_ARROW_WIDTH  = 12;
+   define int DEFAULT_ARROW_WIDTH  = 16;
+   define int MIN_SIZE_Y = 13;
+
+   define String ACTION_OPTIONSELECTED  = "onOptionSelected";
+   define String ACTION_OPTIONPREVIEWED;
+
+   public    StringArray  options;
+   public    StringArray *options_long;
+   protected StringArray *tooltip_captions;
+   public    IntArray    *option_bgcolors;
+   public    IntArray    *option_fgtints;
+   protected String      *option_size_reserve; // or null
+   protected boolean      b_force_option_size_reserve;  // (todo) remove? breaks long options popup
+
+   protected boolean b_recalc_max_option_width;
+   protected boolean b_recalc_max_option_width_long;
+   protected int     max_option_width;
+   protected int     max_option_width_long;
+   protected boolean b_pressed;
+
+   protected int selected_option; // currently selected option number, or -1 for invalid option
+
+   namespace String *invalid_option_name;
+   namespace String *invalid_option_tooltip;
+
+   protected Icon *icon_arr_d;
+
+   protected boolean b_save_shade_modal; // saves setting of ShadeModal before opening the popup menu
+
+   protected static ComboBoxPopup *popup;
+
+   // // protected int bg_tint32;  // (todo) use Label::c32_bg_tint
+   protected int bg32_invalid_tint;
+
+   protected boolean b_arrow_text_bg;  // 1=draw array bg in same color as text background (default=false)
+
+   namespace int arrow_width;
+
+   protected boolean b_reverse_wheel_dir;
+   protected boolean b_disable_nonchild_wheel;  // can be used when combobox is placed in scrollpane to avoid accidental combobox changes when top or bottom of scrollpane is reached
+   protected boolean b_disable_wheel;  // can be used when combobox is placed in scrollpane to avoid accidental combobox changes when top or bottom of scrollpane is reached
+
+   protected boolean b_allow_reselect;  // added for MorphScene to select "*" entry when there are no other options
+
+   protected boolean b_allow_home_end;
+   protected boolean b_allow_alt;
+
+   protected boolean b_preview;  // true=send action when cycling through popup with mousewheel/cursorkeys/..
+
+   protected boolean b_no_borders; // true=don't fill/draw sunken borders
+
+   protected boolean b_no_arrow;
+
+
+   public static New() : ComboBox {
+      local ComboBox cm;
+      cm.initComboBox();
+      return deref cm;
+   }
+
+   public virtual setDefaultInnerPadding() {
+      if(!b_xfm_ipad)
+      {
+         boolean bBevelBorder = haveBorders();
+         // trace "xxx ComboBox::setDefaultInnerPadding: UI.IsHiDPI()="+UI.IsHiDPI()+" bBevelBorder="+bBevelBorder;
+         setInnerPadding4f((UI.IsHiDPI()?0:1) + bBevelBorder?2:0,
+                           5,
+                           bBevelBorder?1:0,
+                           2
+                           );
+      }
+   }
+
+   public method initComboBoxPre() {
+
+      if(null == lnf_colors)
+         initLayer();  // usually called by beginXFMTag() via initLabel()
+
+      selected_option = 0;
+
+      setEnableLargeArrow(false);
+      setEnableCaptionDim(false);
+   }
+
+   public method initComboBoxPost() {
+
+      if(null == lnf_colors)
+         initComboBoxPre();
+
+      // Note: should be called *after* options have been set
+      b_recalc_max_option_width = true;
+      b_recalc_max_option_width_long = true;
+      max_option_width = 0;
+      max_option_width_long = 0;
+      b_pressed = false;
+
+      if(selected_option >= options.numElements)
+         selected_option = 0;
+
+      if(options.numElements)
+         setCaption(options[selected_option]);
+
+      onLookAndFeelChanged();
+   }
+
+   // // public virtual onLookAndFeelChanged() {
+   // //    Label::onLookAndFeelChanged();
+
+   // //    setEnableCaptionDim(false);
+   // // }
+
+   // // public method initComboBoxNoXFM() {
+   // //    // **deprecated** (text y position is off in HiDPI mode) => use initComboBox() instead
+   // //    initLabel();
+   // //    text_placement = Layout.LEFT | Layout.CENTERY;
+   // //    b_editable = true;
+   // //    initComboBoxPre();
+   // //    initComboBoxPost();
+   // // }
+
+   public method initComboBox() {
+      initLabel();
+      text_placement = Layout.LEFT | Layout.CENTERY;
+      b_editable = true;
+      initComboBoxPre();
+      initComboBoxPost();
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OPTIONSELECTED, ACTION_OPTIONPREVIEWED];
+   }
+
+   public virtual setEditable(boolean _bEditable) {
+      b_editable = _bEditable;
+      redraw();
+   }
+
+   public method setEnableNonChildMouseWheel(boolean _bEnable) {
+      b_disable_nonchild_wheel = !_bEnable;
+   }
+
+   public method setEnableMouseWheel(boolean _bEnable) {
+      b_disable_wheel = !_bEnable;
+   }
+
+   public method setEnableReselect(boolean _bEnable) {
+      b_allow_reselect = _bEnable;
+   }
+
+   public method setEnablePreview(boolean _bEnable) {
+      b_preview = _bEnable;
+   }
+
+   public method setEnableBorders(boolean _bEnable) {
+      b_no_borders = !_bEnable;
+      setDefaultInnerPadding();
+   }
+
+   protected method haveBorders() : boolean {
+      return !b_no_borders && !UI.b_skip_bevel_border && lnf.b_combobox_bevel_border;
+   }
+
+   // // public method setBackgroundTint(int _c32) {
+   // //    if(_c32 != c32_bg_tint32)
+   // //    {
+   // //       bg_tint32 = _c32;
+   // //       redraw();
+   // //    }
+   // // }
+
+   public static GetMinArrowWidth() : int {
+      if(UI.font_scaling == 2)
+         return MIN_ARROW_WIDTH * 1.5;
+      else
+         return MIN_ARROW_WIDTH * UI.font_scaling;
+   }
+
+   public static GetDefaultArrowWidth() : int {
+      if(UI.font_scaling == 2)
+         return DEFAULT_ARROW_WIDTH * 1.5;  // 24
+      else
+         return DEFAULT_ARROW_WIDTH * UI.font_scaling;
+   }
+
+   public method setEnableArrow(boolean _bEnable) {
+      b_no_arrow = !_bEnable;
+      if(b_no_arrow)
+         arrow_width = 0;
+      else if(0 == arrow_width)
+         arrow_width = GetMinArrowWidth();
+   }
+
+   public method setArrowWidth(int _sx) {
+      if(_sx > 0)
+      {
+         if(_sx < GetMinArrowWidth())
+            _sx = GetMinArrowWidth();
+      }
+
+      arrow_width = _sx;
+   }
+
+   public method setArrowSx(int _sx) {
+      // **DEPRECATED**
+      setArrowWidth(_sx);
+   }
+
+   public method setEnableLargeArrow(boolean _bEnable) {
+      if(_bEnable)
+      {
+         if(UI.font_scaling <= 1.2)
+            setArrowIcon(UI.GetIcon("arr2x_d"));
+         else
+            setArrowIcon(UI.GetIcon("arr_d"));
+         if(UI.font_scaling == 2.0)
+            setArrowWidth(Slider.GetMinWidth());  // PageTrack PluginList ComboBox above vertical slider
+         else
+            setArrowWidth(24 * UI.font_scaling);
+      }
+      else
+      {
+         setArrowIcon(UI.GetIcon("arr_d"));
+         setArrowWidth(DEFAULT_ARROW_WIDTH * UI.font_scaling);
+      }
+   }
+
+   public method setEnableSliderArrow(boolean _bEnable) {
+      // match width of Slider, e.g. PageTrack PluginList ComboBox above vertical slider
+      if(_bEnable)
+         setArrowWidth(Slider.GetMinWidth() - 2*UI.font_scaling);
+      else
+         setArrowWidth(DEFAULT_ARROW_WIDTH * UI.font_scaling);
+   }
+
+   public method setArrowIcon(Icon _icon) {
+      icon_arr_d <= deref _icon;
+   }
+
+   public method setEnableArrowTextBg(boolean _bEnable) {
+      b_arrow_text_bg = _bEnable;
+   }
+
+   public method getEnableArrowTextBg() : boolean {
+      return b_arrow_text_bg;
+   }
+
+   protected method getLabelRightAlignPadRight() : int {
+      // adjust right-aligned text (\t) so it does not overlap with arrow icon
+      return arrow_width + 1 + 1*UI.font_scaling;
+   }
+
+   protected method calcOptionWidth(StringArray _options) : int {
+      float ret = -1;
+
+      if(null == font)
+         setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+      int w;
+
+      for(int i = 0; i < _options.numElements; i++)
+      {
+         w = font.stringWidth(_options[i]) + 1;
+         if(w > ret)
+            ret = w;
+      }
+
+      if(null != option_size_reserve)
+      {
+         w = font.stringWidth(option_size_reserve) + 1;
+         if(b_force_option_size_reserve)
+            ret = w;
+         else if(w > ret)
+            ret = w;
+      }
+
+      return ret;
+   }
+
+   protected virtual calcSizeX() : float {
+
+      Label::calcSizeX();
+
+      if(b_recalc_max_option_width)
+      {
+         b_recalc_max_option_width = false;
+
+         max_option_width = calcOptionWidth(options);
+      }
+
+      return max_option_width + ipad_l + ipad_r + (b_no_arrow?0:arrow_width) + 2;
+   }
+
+   protected virtual calcSizeY() : float {
+
+      // trace "xxx ComboBox::calcSizeY: b_no_borders="+b_no_borders;
+
+      float sy = Label::calcSizeY() + (b_no_borders?1:2);
+
+      // // trace "xxx ComboBox::calcSizeY: label sy="+sy;
+
+      if(sy < (MIN_SIZE_Y * UI.font_scaling))
+         sy = (MIN_SIZE_Y * UI.font_scaling);
+
+      if(getDebug())
+         trace "xxx ComboBox::calcSizeY: displayedText=\""+getDisplayedText()+"\" sy="+sy+" ipad_t="+ipad_t+" ipad_b="+ipad_b;
+
+      return sy;
+   }
+
+   public method showComboBoxPopup() {
+      if(options.numElements)
+      {
+         int sx = getSizeX();
+
+         // (todo) +1 hack currently needed to prevent label abbreviation
+         int prefSx = sx + 1;
+
+         // trace "xxx showComboBoxPopup: sx="+sx+" cm.size_x="+size_x;
+
+         StringArray optLong <= (null != options_long) ? options_long : options;
+         if(null != optLong)
+         {
+            if(b_recalc_max_option_width_long)
+            {
+               b_recalc_max_option_width_long = false;
+               max_option_width_long = calcOptionWidth(optLong);
+            }
+
+            prefSx = max_option_width_long + (ipad_l + ipad_r + mathMaxi(GetMinArrowWidth(), arrow_width) + 2) + 2;
+         }
+
+         popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                 font,
+                                                 options,
+                                                 options_long,
+                                                 selected_option,
+                                                 prefSx,
+                                                 tooltip_captions,
+                                                 option_bgcolors,
+                                                 option_fgtints
+                                                 );
+         popup.recursiveSetLookAndFeel(lnf.getName());
+         popup.showNearComboBox(this);
+         popup.table.centerRow();
+         b_pressed = true;
+         popup.focusFirstTabCycleMember();
+         if(b_preview)
+            popup.setEnableMouseOverPreview(true);
+         redraw();
+      }
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      redraw();
+      return Layer::onMouseEnter(_ev);
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      redraw();
+      return Layer::onMouseLeave(_ev);
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(b_editable && _ev.rightButtonDown())
+      {
+         setSelectedOptionAction(0);
+         return true;
+      }
+      return Layer::onMouseHold(_ev);
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      // trace "xxx ComboBox::onMouse: b_editable="+b_editable;
+      if(b_editable)
+      {
+         if(_ev.rightButtonDown())
+         {
+            // let parent layer handle it (e.g. open context menu)
+            return false;
+         }
+         else if(_ev.leftButtonDown())
+         {
+            hideToolTip();
+            showComboBoxPopup();
+            return true;
+         }
+         else
+         {
+            boolean bAllowWheel = !b_disable_nonchild_wheel;
+
+            if(!bAllowWheel)
+            {
+               bAllowWheel =
+                  (0 <= _ev.mouse_rel_x < getSizeX()) &&
+                  (0 <= _ev.mouse_rel_y < getSizeY()) ;
+            }
+
+            if(!hasKeyboardFocus())
+            {
+               bAllowWheel = bAllowWheel && !b_disable_wheel;
+            }
+
+            if(bAllowWheel)
+            {
+               if(_ev.current_state&MOUSE_WHEELDOWN)
+               {
+                  hideToolTip();
+                  if(b_reverse_wheel_dir)
+                     selectPreviousOptionAction();
+                  else
+                     selectNextOptionAction();
+                  return true;
+               }
+               else if(_ev.current_state&MOUSE_WHEELUP)
+               {
+                  hideToolTip();
+                  if(b_reverse_wheel_dir)
+                     selectNextOptionAction();
+                  else
+                     selectPreviousOptionAction();
+                  return true;
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   public method handlePopupSelection(int _nr, boolean _bPreview) {
+      explain "Called when the ComboBoxPopup is closed or an item is previewed.";
+
+      if(_bPreview && b_preview)
+      {
+         if(_nr != selected_option)
+         {
+            setSelectedOption(_nr);
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OPTIONPREVIEWED), this, selected_option));
+            hideToolTip();
+         }
+      }
+      else
+      {
+         popup.hide();
+         popup <= null;
+         b_pressed = false;
+
+         if(_nr >= 0)
+            setSelectedOptionAction(_nr);
+
+         if(!b_dont_set_kbdfocus_on_mouse)
+            UI.SetKeyboardFocus(this);
+
+         UI.SetMouseFocus(this);
+      }
+   }
+
+
+   public method setSelectedOptionAction(int _option) {
+      if(isEditable())
+      {
+         int op = selected_option;
+
+         setSelectedOption(_option);
+
+         if(op != selected_option)
+         {
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this, selected_option));
+            hideToolTip();
+         }
+         else if(b_allow_reselect)
+         {
+            provideAction(IntAction.New(getProvidedActionAlias(ACTION_OPTIONSELECTED), this, selected_option));
+            hideToolTip();
+         }
+      }
+   }
+
+   public method selectNextOption() {
+      if(isEditable())
+      {
+         if( (selected_option+1) < options.numElements)
+            setSelectedOption(selected_option + 1);
+         else if(b_allow_reselect)
+            setSelectedOption(selected_option);
+      }
+   }
+
+   public method selectNextOptionAction() {
+      if(isEditable())
+      {
+         if( (selected_option + 1) < options.numElements )
+            setSelectedOptionAction(selected_option + 1);
+         else if(b_allow_reselect)
+            setSelectedOptionAction(selected_option);
+      }
+   }
+
+   public method selectNextOptionCycle() {
+      if(isEditable())
+      {
+         if( (selected_option + 1) < options.numElements)
+            setSelectedOption(selected_option + 1);
+         else
+            setSelectedOption(0);
+      }
+   }
+
+   public method selectNextOptionCycleAction() {
+      if(isEditable())
+      {
+         if( (selected_option + 1) < options.numElements)
+            setSelectedOptionAction(selected_option + 1);
+         else
+            setSelectedOptionAction(0);
+      }
+   }
+
+   public method selectPreviousOptionCycle() {
+      if(isEditable())
+      {
+         if(selected_option > 0)
+            setSelectedOption(selected_option - 1);
+         else
+            setSelectedOption(options.numElements - 1);
+      }
+   }
+
+   public method selectPreviousOption() {
+      if(isEditable())
+      {
+         if(selected_option > 0)
+            setSelectedOption(selected_option - 1);
+         else if(b_allow_reselect)
+            setSelectedOption(selected_option);
+      }
+   }
+
+   public method selectPreviousOptionAction() {
+      if(isEditable())
+      {
+         if(selected_option > 0)
+            setSelectedOptionAction(selected_option - 1);
+         else if(b_allow_reselect)
+            setSelectedOptionAction(selected_option);
+      }
+   }
+
+   public method selectNextOptionByChar(char _c) : boolean {
+      if(isEditable())
+      {
+         if(options.numElements > 1)
+         {
+            int bestIdx = 999999;
+            int bestI = -1;
+            int i = selected_option;
+            if(i < 0)
+               i = 0;  // Filter invalid option
+
+            loop(options.numElements - 1)
+            {
+               i = (i + 1) % options.numElements;
+               String s <= options[i];
+               String cs = (tcchar(_c).toLower()) + (tcchar(_c).toUpper());
+               int idx = s.charsetIndexOf(cs, 0);
+               if(-1 != idx)
+               {
+                  if(idx < bestIdx)
+                  {
+                     bestIdx = idx;
+                     bestI   = i;
+                  }
+               }
+            }
+            if(-1 != bestI)
+            {
+               setSelectedOptionAction(bestI);
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   public method randomize() {
+      setSelectedOption(rand(options.numElements));
+   }
+
+   public method getSelectedOption() : int {
+      return selected_option;
+   }
+
+   public method getSelectedOptionName() : String {
+      explain "Get currently selected option string";
+
+      if(selected_option >= 0)
+      {
+         if(isEditable())
+            return options.get(selected_option);
+         else
+            return "-";
+      }
+      else
+      {
+         return invalid_option_name;
+      }
+   }
+
+   public method getSelectedOptionNameLeft() : String {
+      // return left-hand side string of tab-separated entry
+      explain "Get currently selected option string";
+
+      if(selected_option >= 0)
+      {
+         if(isEditable())
+         {
+            String sOpt <= options.get(selected_option);
+            if(null != sOpt)
+            {
+               int idxTab = sOpt.indexOfChar('\t',0);
+               if(idxTab > 0)
+                  return sOpt.substring(0, idxTab);
+            }
+            return sOpt;
+         }
+         else
+            return "-";
+      }
+      else
+      {
+         return invalid_option_name;
+      }
+   }
+
+   public virtual getDisplayedText() : String {
+      return getSelectedOptionName();
+   }
+
+   public method getOptionNameByIdx(int _idx) : String {
+      explain "Get option string by index";
+      return options.get(_idx);
+   }
+
+   public method getOptionNameLongByIdx(int _idx) : String {
+      explain "Get option string by index";
+      return (null != options_long) ? options_long.get(_idx) : options.get(_idx);
+   }
+
+   public method getSelectedOptionNameLong() : String {
+      explain "Get currently selected long option string";
+
+      if(selected_option >= 0)
+      {
+         if(isEditable())
+         {
+            if(null != options_long)
+            {
+               String sOptLong <= options_long.get(selected_option);
+               int idxTab = sOptLong.indexOfChar('\t', 0);
+               if(-1 != idxTab)
+               {
+                  // Two column option. Return the larger column
+                  local String sCol1;
+                  local String sCol2;
+                  sOptLong.substring(0,        idxTab) => sCol1;
+                  sOptLong.substring(idxTab+1, 999   ) => sCol2;
+                  if(sCol1.numChars > sCol2.numChars)
+                     return deref sCol1;
+                  else
+                     return deref sCol2;
+               }
+               else
+                  return sOptLong;
+            }
+            else
+               return options.get(selected_option);
+         }
+         else
+            return "-";
+      }
+      else
+         return invalid_option_name;
+   }
+
+   public method getNumOptions() : int {
+      return options.numElements;
+   }
+
+   public method setSelectedOption(int _nr) {
+      explain "Set selected option by index";
+
+      if(_nr >= 0)
+      {
+         if(_nr >= options.numElements)
+         {
+            if(options.numElements > 0)
+               _nr = options.numElements - 1;
+            else
+               _nr = 0;
+         }
+
+         if(selected_option < 0)
+         {
+            // Revert invalid option highlight
+            bg32_invalid_tint = #00000000;
+         }
+
+         selected_option = _nr;
+
+         if(options.numElements > 0)
+            setCaption(options[selected_option]);
+         else
+            setCaption("");
+      }
+      else
+      {
+         // Invalid option
+         selected_option = -1;
+         setCaption(invalid_option_name);
+         bg32_invalid_tint = lnf_colors.get(LookAndFeel.COLOR_COMBOBOX_INVALID_OPTION_BG_TINT);
+      }
+
+      redraw();
+   }
+
+   public method setSelectedOptionAndEnable(int _nr) {
+      setEditable(true);
+      setSelectedOption(_nr);
+   }
+
+   public method setSelectedOptionAndDisable(int _nr) {
+      setEditable(false);
+      setSelectedOption(_nr);
+   }
+
+   public method setSelectedOptionByName(String _name) {
+      setSelectedOption(options.indexOfObject(_name, 0));
+   }
+
+   public method setOptions(StringArray _options) {
+      explain "Set option names.";
+
+      options = _options;
+      b_recalc_max_option_width = true;
+      b_recalc_max_option_width_long = true;
+      invalidateSizeCache();
+      setSelectedOption(selected_option); // Update selected option string
+   }
+
+   public method setOptionsAndReselectByName(StringArray _opt) {
+      local String cOpt = getSelectedOptionName();
+      setOptions(deref _opt);
+      setSelectedOptionByName(cOpt);
+   }
+
+   public method getOptions() : StringArray {
+      return Object(options);  // return copy
+   }
+
+   public method setOptionsLong(StringArray _options) {
+      explain "Set combobox option names.";
+
+      if(null != _options)
+      {
+         options_long <= new StringArray;
+         options_long = _options;
+      }
+      else
+      {
+         options_long <= null;
+      }
+
+      b_recalc_max_option_width_long = true;
+   }
+
+   public method getOptionsLong() : StringArray {
+      return Object(options_long);  // return copy
+   }
+
+   public method setInvalidOptionName(String _invName) {
+      invalid_option_name <= Object(_invName);
+   }
+
+   public method setInvalidOptionToolTip(String _invToolTip) {
+      invalid_option_tooltip <= String(_invToolTip);
+   }
+
+   public method setOptionSizeReserve(String _text) {
+      if( (null != _text) && !_text.isBlank() )
+         option_size_reserve <= Object(_text);
+      else
+         option_size_reserve <= null;
+   }
+
+   public method setEnableForceOptionSizeReserve(boolean _bEnable) {
+      b_force_option_size_reserve = _bEnable;
+   }
+
+   public virtual getToolTipCaption() : String {
+      if(selected_option >= 0)
+      {
+         if(null != tooltip_captions)
+            return tooltip_captions.get(selected_option);
+         else
+            return Label::getToolTipCaption();
+      }
+      else
+      {
+         return invalid_option_tooltip;
+      }
+   }
+
+   public method setToolTipCaptions(StringArray _tooltipcaptions) {
+      explain "Set option tooltip captions.";
+
+      if(null != _tooltipcaptions)
+      {
+         if(null == tooltip_captions)
+            tooltip_captions <= new StringArray;
+
+         tooltip_captions = _tooltipcaptions;
+
+         setToolTipCaption(" "); // install tooltip timer
+      }
+      else
+      {
+         tooltip_captions <= null;
+      }
+   }
+
+   public method getSelectedToolTipCaption() : String {
+      if(null != tooltip_captions)
+         return tooltip_captions.get(getSelectedOption());
+      return null;
+   }
+
+   public method setOptionBGColors(IntArray _bgColors) {
+      if(null != _bgColors)
+         option_bgcolors <= Object(_bgColors);
+      else
+         option_bgcolors <= null;
+   }
+
+   public method setOptionFGTints(IntArray _fgTints) {
+      if(null != _fgTints)
+         option_fgtints <= Object(_fgTints);
+      else
+         option_fgtints <= null;
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public virtual onKeyboardFocus() {
+      redraw();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      if(!_bQuiet)
+         redraw();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      if(!b_allow_alt && _k.modAlt())
+         return Layer::onKey(_k);
+
+      if(b_editable)
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_HOME:
+               if(_k.modNone())
+               {
+                  if(b_allow_home_end)
+                  {
+                     setSelectedOptionAction(0);
+                     return true;
+                  }
+               }
+               break;
+
+            case VKEY_END:
+               if(_k.modNone())
+               {
+                  if(b_allow_home_end)
+                  {
+                     setSelectedOptionAction(options.numElements ? (options.numElements - 1) : 0);
+                     return true;
+                  }
+               }
+               break;
+
+               // // case VKEY_LEFT:
+            case VKEY_UP:
+               if( _k.modNone() || _k.modAltOnly() )
+               {
+                  selectPreviousOptionAction();
+               }
+               return true;
+
+               // // case VKEY_RIGHT:
+            case VKEY_DOWN:
+               if( _k.modNone() || _k.modAltOnly() )
+               {
+                  selectNextOptionAction();
+               }
+               return true;
+
+            case VKEY_RETURN:
+            case VKEY_SPACE:
+               if(_k.modNone())
+               {
+                  showComboBoxPopup();
+                  return true;
+               }
+               // (note) let parent layers handle lctrl-SPACE etc
+               break;
+
+            default:
+               if( _k.modNone() || _k.modAltOnly() )
+               {
+                  if(_k.unicode)
+                  {
+                     if(9/*TAB*/ != _k.unicode)
+                     {
+                        if(selectNextOptionByChar(_k.unicode))
+                        {
+                           return true;
+                        }
+                     }
+                  }
+               }
+               break;
+         }
+      }
+
+      return Layer::onKey(_k);
+   }
+
+   public virtual layoutContent() {
+      float origSx = getSizeX();
+      size_x =  origSx - arrow_width - 2;
+      Label::layoutContent();
+      size_x = origSx;
+
+      // // if(!lnf.b_combobox_bevel_border)
+      // // {
+      // //    cached_baseline_y += 1;
+      // //    cached_text_y += 1;
+      // // }
+   }
+
+   public virtual onDraw() {
+      int fg32, bg32;
+
+      boolean bBevelBorder = haveBorders();
+      // // trace "xxx ComboBox: bBevelBorder="+bBevelBorder;
+      boolean bBevelBorderArrow = bBevelBorder;// && UI.IsLoDPI();
+
+      float bx = 2;
+      float by = ipad_t + text_offset_y;/// + ((ipad_t < 0) ? ipad_t : 0)/*SamplePluginForm cm_type*/;
+      float bw = getSizeX() - 2;////(bBevelBorder ? 2 : 2);
+      float bh = getSizeY() - 2;////(bBevelBorder ? 2 : 2);
+
+      // if(getDebug())
+      //    trace "xxx ComboBox::onDraw: sy="+getSizeY()+" caption=\""+getSelectedOptionName()+"\" ipad_t="+ipad_t+" ipad_b="+ipad_b;
+
+      // Draw background
+      if(hasKeyboardFocus())
+      {
+         bg32 = lnfGetTintedColor(LookAndFeel.COLOR_COMBOBOX_KBDFOCUS_BG, bg32_tint);
+         if(bg32_invalid_tint)
+            bg32 = sdvg_TintARGB(bg32, bg32_invalid_tint);
+
+         if(null != option_bgcolors)
+            bg32 = sdvg_TintARGB(bg32, option_bgcolors.get(selected_option));
+
+         UIRenderer.DrawFilledRectangle(bx+2, by+2, bw-arrow_width-5, bh-(bBevelBorder?6:2), bg32);
+         UIRenderer.DrawRectangle(bx, by, bw-arrow_width/*-2*/, bh-(bBevelBorder?2:0), 1, lnf.getTintedColor(LookAndFeel.COLOR_TEXT_EDIT_BG, bg32_tint));
+         setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_TEXT_EDITING_SELECT_FG)); // Label caption color
+         UIRenderer.DrawTabFocusTextBorder(bx+2, by+1+1, getSizeX()-arrow_width-3-1, getSizeY()-(bBevelBorder?3:4));
+
+         if(b_arrow_text_bg)
+         {
+            bg32 = lnfGetTintedColor(LookAndFeel.COLOR_TEXT_EDIT_BG, bg32_tint);
+            if(bg32_invalid_tint)
+               bg32 = sdvg_TintARGB(bg32, bg32_invalid_tint);
+         }
+      }
+      else
+      {
+         bg32 = lnfGetTintedColor(LookAndFeel.COLOR_TEXT_EDIT_BG, bg32_tint);
+         if(bg32_invalid_tint)
+            bg32 = sdvg_TintARGB(bg32, bg32_invalid_tint);
+
+         if(null != option_bgcolors)
+            bg32 = sdvg_TintARGB(bg32, option_bgcolors.get(selected_option));
+
+         if(bBevelBorder)
+         {
+            UIRenderer.DrawFilledRectangle(bx, by, bw-arrow_width, bh, bg32);
+         }
+         else
+         {
+            // try rounded corners
+            if(parent instanceof Panel)
+            {
+               int c32Parent = findParentBackgroundColor();
+               // trace "xxx ComboBox: c32Parent="+UI.GetColorString(c32Parent);
+               if(0 != c32Parent)
+               {
+                  UIRenderer.DrawFilledRectangle(bx+2, by+2, bw-arrow_width-5, bh-(bBevelBorder?6:2), c32Parent);
+                  UIRenderer.DrawFilledRoundedRectangle(bx, by,
+                                                        bw-arrow_width-5+2, bh,
+                                                        6/*arcW*/, 6/*arcH*/,
+                                                        bg32
+                                                        );
+               }
+               else
+               {
+                  UIRenderer.DrawFilledRectangle(bx, by, bw-arrow_width-5+2, bh, bg32);
+               }
+            }
+            else
+            {
+               UIRenderer.DrawFilledRectangle(bx, by, bw-arrow_width-5+2, bh, bg32);
+            }
+         }
+
+         fg32 = lnf_colors.get(LookAndFeel.COLOR_TEXT_EDIT_FG);
+         if(null != option_fgtints)
+            fg32 = sdvg_TintARGB(fg32, option_fgtints.get(selected_option));
+
+         setForegroundColor(fg32); // Label caption color
+      }
+
+      // Draw text
+      Label::drawTransparentCached(0, 0);
+
+      // Draw button
+      if(arrow_width > 0)
+      {
+         bx = bw - arrow_width + 1;
+         by = bBevelBorder ? (2+1) : (UI.IsHiDPI()?0:2);
+         // // by = bBevelBorder ? (2+1) : (bBevelBorder ? 2 : 0);  // [24Sep2024]
+         bw = arrow_width - 1;
+         bh = getSizeY()- (bBevelBorder?(2+2+1):2);
+         // // bh = getSizeY()- (bBevelBorder?(2+2+1):0);  // [24Sep2024]
+
+         int origIconShaderType = icon_arr_d.getShaderType();
+         if(icon_arr_d.isMono() && lnf.b_icon_invert_mono)
+            icon_arr_d.setShaderType(Icon.SHADER_INVERTCOLOR);
+
+         int iconY = bBevelBorder ? 0 : 2;
+
+         if(b_pressed)
+         {
+            if(b_arrow_text_bg)
+            {
+               UIRenderer.DrawFilledRectangle(bx-1, by, bw+1+(bBevelBorder?0:2), bh, bg32);
+            }
+            else
+            {
+               fg32 = lnf.getTintedColor(LookAndFeel.COLOR_CONTROL_BG, bg32_tint);
+               UIRenderer.DrawFilledRectangle(bx, by, bw, bh, fg32);
+               fg32 = lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, bg32_tint);
+               UIRenderer.DrawRectangle(bx-1, by-1, bw+1, bh+1, 1, fg32);
+            }
+
+            /// if(UI.font_scaling > 1.0)
+            //    bx += 2;
+
+             if(!bBevelBorder && UI.font_scaling > 1.0)
+                bx += 1;
+
+            fg32 = icon_blend_c32;
+            if(fg32_tint)
+               fg32 = sdvg_TintARGB(fg32, fg32_tint);
+
+            if(0 == fg32)
+            {
+               icon_arr_d.drawIconScaled(bx + (arrow_width - (icon_arr_d.getIconWidth() * UI.icon_scaling))*0.5,
+                                         iconY + UI.font_scaling*(bBevelBorder?0.25:-1) + (getSizeY()-icon_arr_d.getIconHeight())*0.5,
+                                         UI.icon_scaling, UI.icon_scaling
+                                         );
+            }
+            else
+            {
+               icon_arr_d.drawIconScaledC32(bx + (arrow_width - (icon_arr_d.getIconWidth() * UI.icon_scaling))*0.5,
+                                            iconY + UI.font_scaling*(bBevelBorder?0.25:-1) + (getSizeY()-(icon_arr_d.getIconHeight() * UI.icon_scaling))*0.5,
+                                            UI.icon_scaling, UI.icon_scaling,
+                                            fg32
+                                            );
+            }
+         }
+         else
+         {
+            fg32 = lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, bg32_tint);
+            if(bBevelBorder)
+               UIRenderer.DrawRectangle(bx-1, by-1, bw+1, bh+1, 1, fg32);
+
+            if(isMouseOver())
+            {
+               if(b_arrow_text_bg)
+                  UIRenderer.DrawFilledRectangle(bx, by, bw+(bBevelBorder?0:2), bh, bg32);
+               else
+                  UIRenderer.DrawDefaultInactiveBackgroundTint(bx, by, bw, bh, bg32_tint);
+               if(bBevelBorderArrow)
+                  UIRenderer.DrawDefaultRaisedBorderTint(bx, by, bw, bh, bg32_tint);
+            }
+            else
+            {
+               // // trace "xxx bg32_tint="+UI.GetColorString(bg32_tint);
+               if(b_arrow_text_bg)
+                  UIRenderer.DrawFilledRectangle(bx, by, bw+(bBevelBorder?0:2), bh, bg32);
+               else
+                  UIRenderer.DrawDefaultControlBackgroundTint(bx, by, bw, bh, bg32_tint);
+               if(bBevelBorderArrow)
+                  UIRenderer.DrawDefaultRaisedBorderTint(bx, by, bw, bh, bg32_tint);
+            }
+
+            if(0 == icon_blend_c32)
+            {
+               icon_arr_d.drawIconScaled(bx-(bBevelBorder?1:0) + (arrow_width - (icon_arr_d.getIconWidth() * UI.icon_scaling))*0.5,
+                                         iconY + UI.font_scaling*(bBevelBorder?0:-1) + (getSizeY()-(icon_arr_d.getIconHeight() * UI.icon_scaling))*0.5,
+                                         UI.icon_scaling, UI.icon_scaling
+                                         );
+            }
+            else
+            {
+               icon_arr_d.drawIconScaledC32(bx-(bBevelBorder?1:0) + (arrow_width - (icon_arr_d.getIconWidth() * UI.icon_scaling))*0.5,
+                                            iconY + UI.font_scaling*(bBevelBorder?0:-1) + (getSizeY()-(icon_arr_d.getIconHeight() * UI.icon_scaling))*0.5,
+                                            UI.icon_scaling, UI.icon_scaling,
+                                            icon_blend_c32
+                                            );
+            }
+
+         }
+
+         icon_arr_d.setShaderType(origIconShaderType);
+      }
+
+      if(b_editable)
+      {
+         if(bBevelBorder)
+            UIRenderer.DrawSoftShadowSunkenBorderTint(0, 0, getSizeX(), getSizeY(), bg32_tint);
+      }
+      else
+      {
+         UIRenderer.EnableBlendingKeepAlpha();
+         int c32 = lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG);
+         c32 = 0x58000000 | (c32&0xFFFFFF);
+         if(bg32_tint)
+            c32 = sdvg_TintARGB(c32, bg32_tint);
+         UIRenderer.DrawFilledRectangle(2, 2, getSizeX()-4, getSizeY()-4, c32);
+         UIRenderer.DisableBlending();
+         if(bBevelBorder)
+            UIRenderer.DrawSoftShadowSunkenBorderTint(0, 0, getSizeX(), getSizeY(), bg32_tint);
+      }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initLabel();
+
+      text_placement = Layout.LEFT;
+
+      b_editable = true;
+
+      if(Label::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval, atvaluc;
+         StringArray *atsplit;
+
+         initComboBoxPre();
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            String atnamelc;
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "font":
+                  setFontByName(atval);
+                  break;
+
+               case "actionalias":
+                  atsplit <= atval.splitChar('=');
+                  setProvidedActionAlias(atsplit.get(0), atsplit.get(1));
+                  break;
+
+               case "options": // ";" separated list of options
+                  setOptions(atval.splitChar(';'));
+                  break;
+
+               case "optionslong": // ";" separated list of options
+                  setOptionsLong(atval.splitChar(';'));
+                  break;
+
+               case "optiontooltipcaptions":
+                  setToolTipCaptions(atval.splitChar(';'));
+                  break;
+
+               case "selectedoption":
+                  selected_option = atval;
+                  break;
+
+               case "optionsizereserve":
+                  setOptionSizeReserve(atval);
+                  break;
+
+               case "forceoptionsizereserve":
+                  setEnableForceOptionSizeReserve(int(atval));
+                  break;
+
+               case "arrowsx":
+               case "arrowwidth":
+                  // **DEPRECATED**
+                  setArrowWidth(atval);
+                  break;
+
+               case "arrow":
+                  setEnableArrow(0 != int(atval));
+                  break;
+
+               case "largearrow":
+                  if("hidpi" == atval)
+                     setEnableLargeArrow(UI.IsHiDPI());
+                  else
+                     setEnableLargeArrow(int(atval));
+                  break;
+
+               case "sliderarrow":
+                  setEnableSliderArrow(int(atval));
+                  break;
+
+               case "arrowicon":
+                  setArrowIcon(UI.GetIcon(atval));
+                  break;
+
+               case "arrowtextbg":
+                  setEnableArrowTextBg(int(atval));
+                  break;
+
+               case "reversewheeldir":
+                  b_reverse_wheel_dir = int(atval);
+                  break;
+
+               case "disablenonchildwheel":
+                  b_disable_nonchild_wheel = int(atval);
+                  break;
+
+               case "disablewheel":
+                  b_disable_wheel = int(atval);
+                  break;
+
+               case "reselect":
+                  setEnableReselect(0 != int(atval));
+                  break;
+
+               case "homeend":
+                  b_allow_home_end = (0 != int(atval));
+                  break;
+
+               case "alt":
+                  b_allow_alt = (0 != int(atval));
+                  break;
+
+               case "invalidoptionname":
+                  setInvalidOptionName(atval);
+                  break;
+
+               case "invalidoptiontooltip":
+                  setInvalidOptionToolTip(atval);
+                  break;
+
+               case "bgtint":
+                  setBackgroundTint(atval);
+                  break;
+
+               case "preview":
+                  setEnablePreview(int(atval));
+                  break;
+
+               case "borders":
+                  setEnableBorders(int(atval));
+                  break;
+
+               case ComboBoxPopup.ACTION_OPTIONSELECTED:
+                  // **DEPRECATED**
+                  _form.addHandledAction(atname, IntAction, atval);
+                  break;
+
+               case ComboBoxPopup.ACTION_CANCEL_OPTION_SELECTION:
+                  break;
+            }
+         }
+
+         text_placement |= Layout.CENTERY;
+
+         initComboBoxPost();
+      }
+      return true;
+   }
+
+}

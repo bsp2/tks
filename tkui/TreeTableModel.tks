@@ -1,0 +1,346 @@
+// ----
+// ---- file   : TreeTableModel.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26May2007
+// ---- changed: 24Oct2007, 29Oct2007, 04Nov2007, 05Nov2007, 08Jan2008, 14Apr2008, 01Feb2009
+// ----          02Feb2009, 03Feb2009, 23Jan2010, 11Jul2010, 21Nov2010, 27Dec2011, 09Jan2012
+// ----          20Dec2012, 21Dec2012, 15Jun2020, 18Jun2020, 11Jul2020, 13Jul2020, 03Aug2024
+// ----          04Feb2025
+// ----
+// ----
+// ----
+
+module MTreeTableModel;
+
+namespace ui;
+
+
+class TreeTableModel extends TableModel {
+   TreeTableNode tree_nodes[];
+   PointerArray  flat_tree_nodes;
+
+   public boolean b_hide_leaves;
+
+   int indent_size = 8; // in pixels
+
+
+   public method getTreeNumColumns() : int {
+      explain "Return number of user_data columns.";
+
+      return 0;
+   }
+
+   public method getTreeColumnCaption(int _col) : String {
+      explain "Return caption for the given user_data column.";
+      return "";
+   }
+
+   public method getTreeCellCaption(Object _userData, int _col) : String {
+      explain "Return text label for the given user_data column.";
+      return "";
+   }
+
+   public method getTreeCellIcon(Object _userData, int _col) : Icon {
+      explain "Return custom icon for the given user_data column.";
+      return null;
+   }
+
+   public method getTreeCellRenderer(Object _userData, int _col) : Layer {
+      explain "Return custom tree cell renderer. If this method returns null (default impl.), the standard Label renderer is used.";
+      return null;
+   }
+
+   public method getTreeRowHeight(Object _userData) : int {
+      explain "Can be used to override the default row height for specific nodes.";
+      return default;
+   }
+
+   public virtual getNumRows() : int {
+      return flat_tree_nodes.numElements;
+   }
+
+   public method freeTreeNodes() {
+      tree_nodes.free();
+      flat_tree_nodes.free();
+   }
+
+   public method initRootNode(Icon _iconOpen, Icon _iconClosed, String _caption, Object _userData) : TreeTableNode {
+      local TreeTableNode tn;
+      tn.tm <= this;
+      tn.initNode(deref _iconOpen, deref _iconClosed, deref _caption, deref _userData);
+      tn.b_leaf_node = false;
+      tree_nodes.alloc(1);
+      tree_nodes.add(#(deref tn));
+      return tn;
+   }
+
+   public method getRootNode() : TreeTableNode {
+      return tree_nodes.get(0);
+   }
+
+   public method setEnableHideLeaves(boolean _bHide) {
+      if(_bHide != b_hide_leaves)
+      {
+         b_hide_leaves = _bHide;
+
+         tableModelChanged();
+      }
+   }
+
+   public virtual tableModelChanged() {
+      flat_tree_nodes.empty();
+
+      if(tree_nodes.numElements)
+      {
+         TreeTableNode tn <= tree_nodes[0];
+         tn.recursiveBuildFlatNodes();
+      }
+
+      ////trace "[dbg] TreeTableModel::tableModelChanged: flat_tree has "+flat_tree_nodes.numElements+" nodes.";
+
+      TableModel::tableModelChanged();
+
+      if(table_view != null)
+      {
+         table_view.layoutHierarchy(true, false);
+         table_view.redraw();
+      }
+   }
+
+   public method getTreeHierarchyCaption() : String {
+      return "hierarchy";
+   }
+
+   public method getColumnCaption(int _col) : String {
+      if(0 == _col)
+         return getTreeHierarchyCaption();
+      else
+         return getTreeColumnCaption(_col - 1);
+   }
+
+   public virtual getCellCaption(int _col, _row) : String {
+      TreeTableNode tn <= flat_tree_nodes[_row];
+      if(0 == _col)
+         return tn.caption;
+      else
+         return getTreeCellCaption(tn.user_data, _col - 1);
+   }
+
+   public virtual getCellIcon(int _col, int _row) : Icon {
+      TreeTableNode tn <= flat_tree_nodes[_row];
+      if(0 == _col)
+         return tn.b_open ? tn.icon_open : tn.icon_closed ? tn.icon_closed : tn.icon_open;
+      else
+         return getTreeCellIcon(tn.user_data, _col - 1);
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      TreeTableNode tn <= flat_tree_nodes.get(_row);
+
+      if(0 == _col)
+      {
+         // Return renderer for "tree" column
+         Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow); // (TODO) not all cell renderers are necessarely Labels...
+         lb.setInnerPadLeft(tn.indent * indent_size);
+         lb.setInnerPadTop(2);
+         lb.setInnerPadBottom(2);
+         lb.setInnerPadRight(2);
+         return deref lb;
+      }
+      else
+      {
+         Layer l <= getTreeCellRenderer(tn.user_data, _col - 1);
+         if(null != l)
+         {
+            // Return custom tree cell renderer
+            return deref l;
+         }
+         else
+         {
+            // Return default "Label" cell renderer
+            return TableModel::getCellRenderer(_col, _row, _visibleRow);
+         }
+      }
+   }
+
+   public method updateTreeCellRendererLabelColor(Object _userData, Label _lb, int _col) {
+      // (note) col 0 = hierarchy column
+   }
+
+   public virtual updateCellRendererColors(Layer _l, int _col, int _row, int _visibleRow) {
+      TableModel::updateCellRendererColors(_l, _col, _row, _visibleRow);
+      if(_l instanceof Label)
+      {
+         TreeTableNode tn <= flat_tree_nodes.get(_row);
+         updateTreeCellRendererLabelColor(tn.user_data, _l, _col);
+      }
+   }
+
+   public virtual getCellEditor(int _col, _row) : TableCellEditor {
+      TreeTableNode tn <= flat_tree_nodes.get(_row);
+      TableCellEditor tce <= getTreeCellEditor(tn.user_data, _col);
+      if(null != tce)
+         // // tce.offset_x = (tn.indent + 2) * indent_size;
+         tce.offset_x = tn.indent * indent_size + tn.getIconWidth();
+      // // if(null != _tce)
+      // //    _tce.table_row = _row;  // (note) already done by caller, can remove this (?!!)
+      return deref tce;
+   }
+
+   public method getTreeCellEditor(Object _userData, int _col) : TableCellEditor {
+      // (note) col 0 is hierarchy column (e.g. object id)
+      return null;
+   }
+
+   public virtual handleCellEdited(TableCellEditor _tce) {
+      TreeTableNode tn <= flat_tree_nodes.get(_tce.table_row);
+      handleTreeCellEdited(tn.user_data, _tce);
+      TableModel::handleCellEdited(_tce); // May delete editor instance
+   }
+
+   public method handleTreeCellEdited(Object _userData, TableCellEditor _tce) {
+   }
+
+   public virtual handleCellEditing(TableCellEditor _tce) {
+      TreeTableNode tn <= flat_tree_nodes.get(_tce.table_row);
+      handleTreeCellEditing(tn.user_data, _tce);
+      TableModel::handleCellEditing(_tce);
+   }
+
+   public method handleTreeCellEditing(Object _userData, TableCellEditor _tce) {
+   }
+
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+      TreeTableNode tn <= flat_tree_nodes.get(_row);
+      // trace "xxx TreeTableModel::handleCellOnMouse: tn="+#(tn);
+      return handleTreeCellOnMouse(tn.user_data, _col, _ev);
+   }
+
+   public method handleTreeCellOnMouse(Object _userData, int _col, MouseEvent _ev) : boolean {
+      // (note) col 0 is hierarchy column (e.g. object id)
+      return false;
+   }
+
+   public virtual getRowHeight(int _row) : int {
+      TreeTableNode tn <= flat_tree_nodes.get(_row);
+      if(null != tn)
+      {
+         int trh = getTreeRowHeight(tn.user_data);
+         if(default != trh)
+            return trh;
+         return TableModel::MINIMUM_ROW_HEIGHT*UI.font_scaling + 2;
+      }
+   }
+
+   public virtual getNumColumns() : int {
+      // Note: first column is used for tree
+      return 1 + getTreeNumColumns();
+   }
+
+   public method handleFold(TreeTableNode tn) {
+      explain "can be implemented by applications to delete child nodes when they become invisible.";
+   }
+
+   public method handleUnfold(TreeTableNode tn) {
+      explain "can be implemented by applications to dynamically add child nodes when the given node is openend.";
+   }
+
+   public virtual handleRowClick(boolean _bFoldHint) : boolean {
+      int rowNr = getCursorIndex();
+      if(-1 != rowNr)
+      {
+         TreeTableNode tn <= flat_tree_nodes[rowNr];
+
+         ////trace "[dbg] TreeTableModel::handleRowClick: tn="+#(tn);
+
+         if(!tn.isLeafNode())
+         {
+            if(_bFoldHint)
+            {
+               if(!tn.b_open)
+               {
+                  if(null != tn.parent)
+                  {
+                     // select parent node and fold it
+                     tn <= tn.parent;
+                     table_view.moveCursorToRow(tn.flat_index);
+                     tn.toggleFolding();
+                     tableModelChanged();
+                     return true;
+                  }
+               }
+            }
+            tn.toggleFolding();
+            tableModelChanged();
+            return true;
+         }
+         else if(_bFoldHint)
+         {
+            // select parent node and fold it
+            tn <= tn.parent;
+            if(null != tn)
+            {
+               table_view.moveCursorToRow(tn.flat_index);
+               tn.toggleFolding();
+               tableModelChanged();
+            }
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   public method setRootTreeUserData(Object _o) {
+      TreeTableNode tn <= flat_tree_nodes.get(0);
+      if(null != tn)
+         tn.user_data <= deref _o;
+   }
+
+   public method getSelectedTreeUserDataByIndex(int _rowIdx) : Object {
+      if(-1 != _rowIdx)
+      {
+         TreeTableNode tn <= flat_tree_nodes.get(_rowIdx);
+         if(null != tn)
+            return tn.user_data;
+      }
+      return null;
+   }
+
+   public method getSelectedTreeUserData() : Object {
+      return getSelectedTreeUserDataByIndex(cursor_index);
+   }
+
+   public method getNextRowIdxByTreeNodeCaptionSubString(String _s, int _startRowIdx) : int {
+      int numRows = flat_tree_nodes.numElements;
+      if(numRows > 0)
+      {
+         int rowIdx = _startRowIdx;
+         local String s <= _s.toLower();
+         if(-1 == rowIdx)
+            rowIdx = 0;
+         else
+            rowIdx = rowIdx % numRows;
+         int startRowIdx = rowIdx;
+         for(;;)
+         {
+            TreeTableNode tn <= flat_tree_nodes.get(rowIdx);
+            if((tn.caption.toLower()) & s)
+               return rowIdx;
+            rowIdx++;
+            if(rowIdx == numRows)
+               rowIdx = 0;
+            if(rowIdx == startRowIdx)
+               return -1;
+         }
+      }
+      return -1;
+   }
+
+} // end class TreeTableModel

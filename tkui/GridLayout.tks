@@ -1,0 +1,783 @@
+// ----
+// ----    file: GridLayout.tks
+// ----  author: (c) 2024 by Bastian Spiegel <bs@tkscript.de>
+// ---- license:
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ----    info: this is part of the "ui" toolkit.
+// ----
+// ---- created: 19Mar2024
+// ---- changed: 20Mar2024, 23Mar2024, 26Mar2024, 27Mar2024
+// ----
+// ----
+// ----
+
+module MGridLayout;
+
+namespace ui;
+
+
+class GridLayout extends Layout {
+
+   static boolean b_debug = 0;
+
+
+   public method findGridSxOf(Layer _l) : int {
+      Layer c <= _l.getLayoutFirstChild();
+      int maxX = 0;  // exclusive
+      while(null != c)
+      {
+         if((c.layout_grid_x + c.layout_grid_w) > maxX)
+            maxX = (c.layout_grid_x + c.layout_grid_w);
+
+         c <= c.next;
+      }
+      return maxX;
+   }
+
+   public method findGridSyOf(Layer _l) : int {
+      Layer c <= _l.getLayoutFirstChild();
+      int maxY = 0;
+      while(null != c)
+      {
+         if((c.layout_grid_y + c.layout_grid_h) > maxY)
+            maxY = (c.layout_grid_y + c.layout_grid_h);
+
+         c <= c.next;
+      }
+      return maxY;
+   }
+
+   public virtual calcMinimumSizeXOf(local Layer _layer) : boolean {
+      // trace "xxx GridLayout::calcMinimumSizeXOf("+#(_layer)+")";
+      local Layer thisLayer <= _layer;
+      local Layer cFirst <= thisLayer.getLayoutFirstChild();
+      if(null == cFirst)
+      {
+         thisLayer.setMinimumSizeX(0);
+         thisLayer.setPreferredSizeX(0);
+         return;
+      }
+
+      local int gridW = findGridSxOf(_layer);
+
+      if(b_debug) trace "xxx GridLayout::calcMinimumSizeXOf: gridW="+gridW;
+
+      local Layer c <= cFirst;
+      local float minSx;
+      local float totalSx = 0;
+
+      local int gridX = 0;
+      loop(gridW)
+      {
+         local float colMaxSx = 0;
+
+         c <= cFirst;
+         while(null != c)
+         {
+            if(b_debug) trace "xxx GridLayout: c.layout_grid=("+c.layout_grid_x+","+c.layout_grid_y+") gridX="+gridX;
+            if(c.layout_grid_x == gridX)// && c.layout_grid_w <= 1)
+            {
+               minSx = c.getMinimumSizePadX();
+               if(minSx > colMaxSx)
+                  colMaxSx = minSx;
+            }
+
+            c <= c.next;
+         }
+
+         if(b_debug) trace "xxx GridLayout:    gridX="+gridX+" colMaxSx="+colMaxSx;
+
+         totalSx += colMaxSx;
+
+         gridX++;
+      }
+
+      if(b_debug) trace "xxx GridLayout::calcMinimumSizeXOf: initial gridW="+gridW+" thisLayer("+#(thisLayer)+".minimumSizeX="+totalSx;
+      thisLayer.setMinimumSizeX(totalSx);
+      thisLayer.setPreferredSizeX(totalSx);
+
+      // Update min/pref sizes by taking into account row/col spans
+      layoutChildLayersOf(_layer, false/*bInvalidateSizeCaches*/, false/*bLayoutFinal*/);
+   }
+
+   public virtual calcMinimumSizeYOf(local Layer _layer) : boolean {
+      // trace "xxx GridLayout::calcMinimumSizeYOf("+#(_layer)+")";
+      local Layer thisLayer <= _layer;
+      local Layer cFirst <= thisLayer.getLayoutFirstChild();
+      if(null == cFirst)
+      {
+         thisLayer.setMinimumSizeY(0);
+         thisLayer.setPreferredSizeY(0);
+         return;
+      }
+
+      local int gridH = findGridSyOf(_layer);
+
+      if(b_debug) trace "xxx GridLayout::calcMinimumSizeYOf: gridH="+gridH;
+
+      local Layer c <= cFirst;
+      local float minSy;
+      local float totalSy = 0;
+
+      local int gridY = 0;
+      loop(gridH)
+      {
+         local float rowMaxSy = 0;
+
+         c <= cFirst;
+         while(null != c)
+         {
+            if(c.layout_grid_y == gridY)// && c.layout_grid_h <= 1)
+            {
+               minSy = c.getMinimumSizePadY();
+               if(minSy > rowMaxSy)
+                  rowMaxSy = minSy;
+            }
+
+            c <= c.next;
+         }
+
+         totalSy += rowMaxSy;
+
+         gridY++;
+      }
+
+      if(b_debug) trace "xxx GridLayout::calcMinimumSizeYOf: gridH="+gridH+" thisLayer("+#(thisLayer)+".minimumSizeY="+totalSy;
+      thisLayer.setMinimumSizeY(totalSy);
+      thisLayer.setPreferredSizeY(totalSy);
+
+      // Update min/pref sizes by taking into account row/col spans
+      layoutChildLayersOf(_layer, false/*bInvalidateSizeCaches*/, false/*bLayoutFinal*/);
+   }
+
+   public virtual layoutChildLayersOf(local Layer _thisLayer, local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      if(b_debug) trace "xxx ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ layoutChildLayersOf "+#(_thisLayer);
+
+      local Layer cFirst <= _thisLayer.getLayoutFirstChild();
+      if(null == cFirst)
+         return;
+
+      local float thisX = _thisLayer.getLayoutSizeX();
+      local float thisY = _thisLayer.getLayoutSizeY();
+
+      if( (0 == thisX) || (0 == thisY) )
+      {
+         if(Configuration.debugLevel > 1)
+            trace "[~~~] GridLayout: this layer has not been layouted yet (layer="+#(_thisLayer)+" parent="+#(_thisLayer.getParent())+").";
+         return;
+      }
+
+      local int gridW = findGridSxOf(_thisLayer);
+      local int gridH = findGridSyOf(_thisLayer);
+
+      if(b_debug)
+         trace "xxx GridLayout::layoutChildLayersOf: gridSz=("+gridW+";"+gridH+")";
+
+      local Layer *c;
+      local int gridX;
+      local int gridY;
+      local float minSx;
+      local float minSy;
+      local float spanLeftSx;
+      local float spanLeftSy;
+
+      local FloatArray aCellW;  // gridW * gridH
+      local FloatArray aCellH;
+      local Layer *[] aCellLayer;
+      local IntArray   aCellXNumHSpans;
+      local IntArray   aCellYNumVSpans;
+      aCellLayer.alloc(gridW * gridH);
+      aCellLayer.useAll();
+      aCellW.allocAndFill(gridW * gridH, 0);
+      aCellH.allocAndFill(gridW * gridH, 0);
+      aCellXNumHSpans.allocAndFill(gridW, 0);
+      aCellYNumVSpans.allocAndFill(gridH, 0);
+      local int totalNumHSpans;
+      local int totalNumVSpans;
+
+      local FloatArray aRowH;  // gridH
+      aRowH.allocAndFill(gridH, 0);
+
+      local FloatArray aColW;  // gridW
+      aColW.allocAndFill(gridW, 0);
+
+      gridY = 0;
+      loop(gridH)
+      {
+         gridX = 0;
+         loop(gridW)
+         {
+            c <= cFirst;
+            while(null != c)
+            {
+               // // c.b_layout_grid_done = false;
+               // trace "xxx c="+c.getDebugString()+" c.grid=("+c.layout_grid_x+","+c.layout_grid_y+")";
+
+               if(c.layout_grid_x == gridX && c.layout_grid_y == gridY)
+               {
+                  minSx = int(c.getMinimumSizePadX() + 0.5);
+                  minSy = int(c.getMinimumSizePadY() + 0.5);
+                  aCellLayer[gridY*gridW + gridX] = c;
+                  if(b_debug) trace "xxx GridLayout: layout grid=("+gridX+","+gridY+") gridSz=("+c.layout_grid_w+","+c.layout_grid_h+") min=("+minSx+";"+minSy+") c="+c.getDebugString()+" c.layout_grid_w="+c.layout_grid_w+" c.layout_grid_h="+c.layout_grid_h+" numChildren="+c.getNumChildLayers();  // cFirstLabel="+c.getFirstLabelDebugString()
+
+                  if(c.layout_grid_w > 1)
+                  {
+                     c.layout_grid_orig_span_sx  = minSx;
+                     c.layout_grid_avail_span_sx = minSx;
+                     aCellXNumHSpans[gridX] = aCellXNumHSpans[gridX] + 1;
+                     totalNumHSpans++;
+                  }
+                  else
+                  {
+                     c.layout_grid_orig_span_sx  = 0;
+                     c.layout_grid_avail_span_sx = 0;
+                  }
+
+                  if(c.layout_grid_h > 1)
+                  {
+                     c.layout_grid_orig_span_sy  = minSy;
+                     c.layout_grid_avail_span_sy = minSy;
+                     aCellYNumVSpans[gridY] = aCellYNumVSpans[gridY] + 1;
+                     totalNumVSpans++;
+                  }
+                  else
+                  {
+                     c.layout_grid_orig_span_sy  = 0;
+                     c.layout_grid_avail_span_sy = 0;
+                  }
+
+                  aCellW[gridY*gridW + gridX] = minSx;
+                  aCellH[gridY*gridW + gridX] = minSy;
+               }
+
+               c <= c.next;
+            }
+            gridX++;
+         }
+         gridY++;
+      }
+
+      local int spanX;
+      local int spanY;
+
+      local int otherX;
+      local int otherY;
+
+      local float otherSpanW;
+      local float otherSpanH;
+
+      local float colMaxSx;
+      local float rowMaxSy;
+
+      local float extraX;
+      local float extraY;
+
+      // Find max height of single-node cells for each row
+      gridY = 0;
+      loop(gridH)
+      {
+         gridX = 0;
+         rowMaxSy = 0;
+         loop(gridW)
+         {
+            c <= aCellLayer[gridY*gridW + gridX];
+            if(null != c)
+            {
+               if(c.layout_grid_h <= 1)
+               {
+                  if(aCellH[gridY*gridW + gridX] > rowMaxSy)
+                     rowMaxSy = aCellH[gridY*gridW + gridX];
+               }
+            }
+            gridX++;
+         }
+
+         aRowH[gridY] = rowMaxSy;
+
+         gridY++;
+      }
+
+      if(b_debug) trace "xxx GridLayout: initial aRowH="+#(aRowH);
+
+      // Find max width of single-node cells for each column
+      gridX = 0;
+      loop(gridW)
+      {
+         gridY = 0;
+         colMaxSx = 0;
+         loop(gridH)
+         {
+            c <= aCellLayer[gridY*gridW + gridX];
+            if(null != c)
+            {
+               if(c.layout_grid_w <= 1)
+               {
+                  if(aCellW[gridY*gridW + gridX] > colMaxSx)
+                     colMaxSx = aCellW[gridY*gridW + gridX];
+               }
+            }
+            gridY++;
+         }
+
+         aColW[gridX] = colMaxSx;
+
+         gridX++;
+      }
+
+      if(b_debug)
+         trace "xxx GridLayout: initial 1 aColW="+#(aColW);
+
+
+      // Calc vertical cell span avail height / distribute extraY to cells / assign maxRowY to all row cells
+      loop(_bLayoutFinal ? totalNumVSpans : 1)
+      {
+         gridY = 0;
+         loop(gridH)
+         {
+            local int numVSpans = 1;//aCellYNumVSpans[gridY]; // totalNumVSpans
+            if(b_debug) trace "xxx calc vspan height: gridY="+gridY+" numVSpans="+numVSpans;
+            loop(numVSpans)
+            {
+               gridX = 0;
+               loop(gridW)
+               {
+                  c <= aCellLayer[gridY*gridW + gridX];
+
+                  if(null != c)
+                  {
+                     if(c.layout_grid_h > 1)
+                     {
+                        // Layer starts new vertical cell span
+                        //  - distribute height over span cells
+                        // // c.b_layout_grid_done = true;
+
+                        // Find total height of other (single-node) cells in this span
+                        otherSpanH = 0;
+                        spanY = c.layout_grid_y;
+                        loop(c.layout_grid_h)
+                        {
+                           otherSpanH += aRowH[spanY];
+                           spanY++;
+                        }
+
+                        spanLeftSy = c.layout_grid_orig_span_sy;
+
+                        if(b_debug) trace "xxx GridLayout: grid=("+gridX+","+gridY+") rowSpanH="+c.layout_grid_h+" this.spanSy="+spanLeftSy+" otherSpanH="+otherSpanH;
+
+                        if(otherSpanH > spanLeftSy)
+                        {
+                           // height of other cells exceeds current cell span height
+                           //  => stretch/expand cell span height
+                           spanY = c.layout_grid_y;
+                           loop(c.layout_grid_h)
+                           {
+                              aCellH[spanY*gridW + gridX] = aRowH[spanY];
+                              spanY++;
+                           }
+                           c.layout_grid_avail_span_sy = otherSpanH;
+                        }
+                        else
+                        {
+                           // cell span height exceeds (or equals) total height of other cells
+                           //  => evenly distribute extra py to other cells
+                           extraY = (spanLeftSy - otherSpanH) / c.layout_grid_h;
+                           spanY = c.layout_grid_y;
+                           loop(c.layout_grid_h)
+                           {
+                              aRowH[spanY] = aRowH[spanY] + extraY;
+                              spanY++;
+                           }
+                        }
+                     }
+                     else
+                     {
+                        // regular (single-cell) node
+                     }
+
+                     // assign max rowH to all cells in this row
+                     otherX = 0;
+                     loop(gridW)
+                     {
+                        aCellH[gridY*gridW + otherX] = aRowH[gridY];
+                        otherX++;
+                     }
+                  }
+                  // else: empty cell
+
+                  // Next column
+                  gridX++;
+               }
+            } // loop numVSpans
+
+            // Next row
+            gridY++;
+         }
+      } // loop totalNumVSpans
+
+      if(b_debug) trace "xxx GridLayout: 2 aRowH="+#(aRowH);
+
+
+      // Calc horizontal cell span avail width / distribute extraX to cells / assign maxColSx to all column cells
+      loop(_bLayoutFinal ? totalNumHSpans : 1)
+      {
+         gridX = 0;
+         loop(gridW)
+         {
+            local int numHSpans = 1;//aCellXNumHSpans[gridX]; // totalNumHSpans
+            if(b_debug) trace "xxx calc hspan width: gridX="+gridX+" numHSpans="+numHSpans;
+            loop(numHSpans)
+            {
+               gridY = 0;
+               loop(gridH)
+               {
+                  c <= aCellLayer[gridY*gridW + gridX];
+
+                  if(null != c)
+                  {
+                     if(c.layout_grid_w > 1)
+                     {
+                        // Layer starts new horizontal cell span
+                        //  - distribute width over span cells
+                        if(b_debug)
+                           trace "~~~~~~~~ calc hspan width:  gridX="+gridX+" gridY="+gridY+" c.layout_grid_w="+c.layout_grid_w+" aColW["+gridX+"]="+aColW[gridX];
+
+                        // Find total width of other (single-node) cells in this span
+                        otherSpanW = 0;
+                        spanX = c.layout_grid_x;
+                        loop(c.layout_grid_w)
+                        {
+                           if(b_debug) trace "xxx otherSpanW += aColW[spanX="+spanX+"]("+aColW[spanX]+") (gridX="+gridX+" gridY="+gridY+")";
+                           otherSpanW += aColW[spanX];
+                           spanX++;
+                        }
+
+                        spanLeftSx = c.layout_grid_orig_span_sx;
+
+                        if(b_debug)
+                           trace "xxx GridLayout: grid=("+gridX+","+gridY+") colSpanW="+c.layout_grid_w+" this.spanSx="+spanLeftSx+" otherSpanW="+otherSpanW;
+
+                        if(otherSpanW > spanLeftSx)
+                        {
+                           // width of other cells exceeds current cell span width
+                           //  => stretch/expand cell span width
+                           spanX = c.layout_grid_x;
+                           loop(c.layout_grid_w)
+                           {
+                              aCellW[gridY*gridW + spanX] = aColW[spanX];
+                              spanX++;
+                           }
+                           c.layout_grid_avail_span_sx = otherSpanW;
+                        }
+                        else
+                        {
+                           // cell span width exceeds (or equals) total width of other cells
+                           //  => evenly distribute extra px to other cells
+                           extraX = (spanLeftSx - otherSpanW) / c.layout_grid_w;
+                           spanX = c.layout_grid_x;
+                           loop(c.layout_grid_w)
+                           {
+                              aColW[spanX] = aColW[spanX] + extraX;
+                              spanX++;
+                           }
+                        }
+                     }
+                     else
+                     {
+                        // regular (single-cell) node
+                     }
+
+                     // assign max colW to all cells in this column
+                     otherY = 0;
+                     loop(gridH)
+                     {
+                        aCellW[otherY*gridW + gridX] = aColW[gridX];
+                        otherY++;
+                     }
+                  }
+                  // else: empty cell
+
+                  // Next row
+                  gridY++;
+               }
+            }
+
+            // Next column
+            gridX++;
+         }
+      } // loop totalNumHSpans
+
+      if(b_debug)
+         trace "xxx GridLayout: 2 aColW="+#(aColW);
+
+
+      //
+      // Layout X
+      //
+
+      gridX = 0;
+      local int curX = 0;
+      loop(gridW)
+      {
+         colMaxSx = aColW[gridX];
+         if(b_debug)
+            trace "xxx GridLayout: colMaxSx["+gridX+"]="+colMaxSx;
+
+         gridY = 0;
+         loop(gridH)
+         {
+            c <= aCellLayer[gridY*gridW + gridX];
+            if(null != c)
+            {
+               if(c.layout_grid_x == gridX)
+               {
+                  local float availW;
+                  if(c.layout_grid_w > 1)
+                  {
+                     // Cell starts horizontal col span
+                     availW = c.layout_grid_avail_span_sx;
+                  }
+                  else
+                  {
+                     // Single-cell node
+                     availW = colMaxSx;
+                  }
+
+                  minSx = c.getMinimumSizeX();
+
+                  if(c.layout_weight_x > 0.0f)
+                  {
+                     if(b_debug) trace "xxx GridLayout: c.layout_weight_x="+c.layout_weight_x+" availW="+availW+" minSx="+minSx;
+                     minSx = mathMaxf(minSx, (availW - c.pad_left - c.pad_right) * c.layout_weight_x);
+                     if(b_debug) trace "xxx GridLayout:    => minSx="+minSx;
+                  }
+
+                  minSx = int(minSx + 0.5);
+
+                  float slantOffX = _thisLayer.layout_grid_slant_factor * gridY;
+
+                  if(b_debug) trace "xxx GridLayer<h>: c="+c.getDebugString()+" alignment="+c.alignment+" curX="+curX+" availW="+availW+" minSx="+minSx;
+
+                  switch(c.alignment & (Layout.CENTERX|Layout.EXPANDX))
+                  {
+                     default:
+                     case Layout.LEFT:
+                        if(b_debug) trace "xxx GridLayer: LEFT c="+c.getDebugString()+" curX="+curX+" availW="+availW+" minSx="+minSx;
+                        c.setPositionX(slantOffX + curX + c.pad_left);
+                        c.setSizeX(minSx);
+                        break;
+
+                     case Layout.RIGHT:
+                        if(b_debug) trace "xxx GridLayout: RIGHT c="+c.getDebugString()+" curX="+curX+" availW="+availW+" minSx="+minSx;
+                        c.setPositionX(slantOffX + curX + c.pad_left + (availW - minSx - c.pad_left - c.pad_right));
+                        c.setSizeX(minSx);
+                        break;
+
+                     case Layout.CENTERX:
+                        c.setPositionX(slantOffX + curX + (availW - minSx - c.pad_left - c.pad_right)*0.5 + c.pad_left);
+                        c.setSizeX(minSx);
+                        break;
+
+                     case Layout.EXPANDX:
+                        if(b_debug) trace "xxx GridLayout:   EXPANDX: availW="+availW+" minSx="+minSx+" padL="+c.pad_left+" padR="+c.pad_right;
+                        c.setPositionX(slantOffX + curX + c.pad_left);
+                        c.setSizeX(availW - c.pad_left - c.pad_right);
+                        break;
+                  }
+               }
+            } // if null != c
+
+            gridY++;
+         } // loop gridH
+
+         curX += colMaxSx;
+
+         gridX++;
+      } // loop gridW
+
+
+      //
+      // Layout Y
+      //
+      local int curY = 0;
+      gridY = 0;
+      loop(gridH)
+      {
+         rowMaxSy = aRowH[gridY];
+
+         gridX = 0;
+         loop(gridW)
+         {
+            c <= aCellLayer[gridY*gridW + gridX];
+            if(null != c)
+            {
+               if(c.layout_grid_y == gridY)
+               {
+                  local float availH;
+                  if(c.layout_grid_h > 1)
+                  {
+                     // Cell starts vertical row span
+                     availH = c.layout_grid_avail_span_sy;
+                     if(b_debug) trace "xxx grid=("+gridX+","+gridY+") c.layout_grid_h="+c.layout_grid_h+" c.layout_weight_y="+c.layout_weight_y+" c.alignment="+c.alignment+" availH="+availH;
+                  }
+                  else
+                  {
+                     // Single-cell node
+                     availH = rowMaxSy;
+                  }
+
+                  minSy = int(c.getMinimumSizeY() + 0.5);
+
+                  if(c.layout_weight_y > 0.0f)
+                  {
+                     if(b_debug) trace "xxx GridLayout: c.layout_weight_y="+c.layout_weight_y+" c.alignment="+c.alignment+" availH="+availH+" minSy="+minSy;
+                     minSy = mathMaxf(minSy, (availH - c.pad_top - c.pad_bottom) * c.layout_weight_y);
+                     if(b_debug) trace "xxx GridLayout:    => minSy="+minSy;
+                  }
+
+                  minSy = int(minSy + 0.5);
+
+                  if(b_debug) trace "xxx GridLayout: grid=("+gridX+","+gridY+") c.alignment="+c.alignment+" minSy="+minSy+" availH="+availH+" padT="+c.pad_top+" padB="+c.pad_bottom;
+                  switch(c.alignment & (Layout.CENTERY|Layout.EXPANDY))
+                  {
+                     default:
+                     case Layout.TOP:
+                        c.setPositionY(curY + c.pad_top);
+                        c.setSizeY(minSy);
+                        break;
+
+                     case Layout.BOTTOM:
+                        c.setPositionY(curY + availH - minSy - c.pad_bottom);
+                        c.setSizeY(minSy);
+                        break;
+
+                     case Layout.CENTERY:
+                        c.setPositionY(curY + (availH - minSy - c.pad_top - c.pad_bottom)*0.5 + c.pad_top);
+                        c.setSizeY(minSy);
+                        break;
+
+                     case Layout.EXPANDY:
+                        c.setPositionY(curY + c.pad_top);
+                        c.setSizeY(availH - c.pad_top - c.pad_bottom);
+                        break;
+                  }
+
+                  if(b_debug) trace "xxx GridLayout:    => layoutY: c="+c.getDebugString();
+
+               }
+            } // if null != c
+
+            gridX++;
+         }
+
+         curY += rowMaxSy;
+
+         gridY++;
+      } // loop gridH
+
+      // Update panel size
+      curX = int(curX + _thisLayer.layout_grid_slant_factor * (gridH - 1) + 0.5f);
+      _thisLayer.setMinimumSize2f  (curX, curY);
+      _thisLayer.setPreferredSize2f(curX, curY);
+      _thisLayer.setSize2f         (curX, curY);
+
+      if(_bLayoutFinal)
+         applyCommonBaselineAdjustmentsH(_thisLayer,
+                                         gridW, gridH,
+                                         aCellLayer,
+                                         aRowH
+                                         );
+
+
+      // ---- All layers have been layouted by now, now layout their child layers
+      // ---- This section may be called recursively so we may not refer to the variables above
+      c <= cFirst;
+      while(null != c)
+      {
+         // trace "xxx GridLayout: this="+#(thisLayer)+" ch="+#(ch)+" thisSize="+_thisLayer.getSizeX()+";"+_thisLayer.getSizeY();
+         c.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+         c <= c.next;
+      }
+
+      if(1 && _bLayoutFinal)
+      {
+         // Recursively move composite layers to common baseline
+         //  (note) baseline justifications _within_ composite layers have already been done
+         // trace "xxx ------------- shift  GridLayout: call thisLayer.layoutApplyCompositeBaselineAdjustments() #childLayers="+thisLayer.getNumChildLayers()+" --------------";
+         _thisLayer.layoutApplyCompositeBaselineAdjustments();
+      }
+
+   }
+
+   private findCommonBaseline(local Layer _parent, local PointerArray _layers, local float _maxBaselineY) : float {
+      local Layer *c;
+      foreach c in _layers
+      {
+         if(c.alignment & Layout.BASELINEY)
+         {
+            local float baselineY = c.getBaselineY();
+            if(baselineY > 0.0f)
+            {
+               if(_parent.getDebug())
+                  trace "xxx shift  this="+#(_parent)+" find c="+#(c)+" c.id="+c.layer_id+" c.caption=\""+c.getDisplayedText()+"\" py="+c.getPositionY()+" baselineY="+baselineY+" oldMaxBaseLineY="+_maxBaselineY;
+               baselineY += c.getPositionY();
+               if(baselineY > _maxBaselineY)
+                  _maxBaselineY = baselineY;
+            }
+         }
+      }
+      return _maxBaselineY;
+   }
+
+   private applyCommonBaselineAdjustments(local PointerArray _layers, local float _maxBaselineY, local float _sizeAvail) {
+      // Shift layers vertically to common baseline (e.g. mixed font sizes)
+      local Layer *c;
+      foreach c in _layers
+         c.layoutApplyCommonBaselineAdjustments(_maxBaselineY, _sizeAvail);
+   }
+
+   private method applyCommonBaselineAdjustmentsH(local Layer        _thisLayer,
+                                                  local int          _gridW,
+                                                  local int          _gridH,
+                                                  local PointerArray _aCellLayer,
+                                                  local PointerArray _aRowH
+                                                  ) {
+      local int gridY = 0;
+      loop(_gridH)
+      {
+         local Layer *c;
+
+         // Find layers in current row that do not start a row span
+         local Layer *[] aRowLayers; aRowLayers.empty();
+         local int gridX = 0;
+         loop(_gridW)
+         {
+            c <= _aCellLayer[gridY*_gridW + gridX];
+            if(null != c)
+            {
+               if(c.layout_grid_h <= 1)
+                  aRowLayers.add(c);
+            }
+
+            // Next column
+            gridX++;
+         }
+
+         local float maxBaselineY = findCommonBaseline(_thisLayer, aRowLayers, 0);
+         // trace "xxx applyCommonBaselineAdjustmentsH: maxBaselineY="+maxBaselineY;
+
+         // Remember baseline for Layer::layoutApplyCompositeBaselineAdjustments()
+         if(_thisLayer.getDebug())
+            trace "xxx shift  this="+#(_thisLayer)+" this.id="+_thisLayer.layer_id+" update cached_composite_effective_baseline_y to maxBaselineY="+maxBaselineY;
+         _thisLayer.cached_composite_effective_baseline_y = maxBaselineY;
+
+         if(maxBaselineY > 0.0f)
+            applyCommonBaselineAdjustments(aRowLayers,  maxBaselineY, _aRowH[gridY]/*sizeAvail*/);
+
+         // Next row
+         gridY++;
+      }
+   }
+
+}

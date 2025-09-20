@@ -1,0 +1,395 @@
+// ----
+// ---- file   : WindowTitleBar.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 24Jun2006
+// ---- changed: 12Aug2006, 05May2007, 01Feb2009, 06Feb2010, 22Apr2010, 23Apr2010, 08Jul2011
+// ----          04Jan2012, 09Jan2012, 16Feb2018, 27Nov2018, 10Sep2019, 27Dec2020, 04Oct2023
+// ----          06Oct2023, 30Oct2023, 01Nov2023, 24Mar2024, 16Feb2025
+// ----
+// ----
+// ----
+
+module MWindowTitleBar;
+
+namespace ui;
+
+
+class WindowTitleBar extends Label {
+   private boolean b_pressed;
+
+   define float MIN_HEIGHT = 20;
+
+   static Icon *icon_dockbtn;
+   static Icon *icon_dockbtndn;
+
+   protected boolean b_dockbtn_pressed;
+   protected float startdrag_position_x;
+   protected float startdrag_position_y;
+
+
+   public method initWindowTitleBar() {
+      initLabel();
+      if(UI.font_scaling >= 1.2)
+         setFontByName(UIConstants.DEFAULT_FONT_NAME_WINDOWTITLE_HIDPI);
+      else
+         setFontByName(UIConstants.DEFAULT_FONT_NAME_WINDOWTITLE);
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Label::onLookAndFeelChanged();
+
+      setEnableCaptionDim(false);
+
+      setInnerPadLeft(2);// + UIConstants.WINDOW_BORDER_SIZE_X * UI.window_border_scaling);
+   }
+
+   public static GetHeight() : float {
+      if(UI.font_scaling == 2.0)
+         return MIN_HEIGHT * 1.5;
+      else
+         return MIN_HEIGHT;
+   }
+
+   private method isActive() : boolean {
+      Window w <= getRoot();
+      return w.isActive();
+   }
+
+   public virtual setCaption(String _text) {
+      Label::setCaption(_text);
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return b_pressed;
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      Window w <= getRoot();
+      if(_ev.isRightButton())
+      {
+         // RMB doubleclick
+         if(w.isDockable())
+         {
+            w.toggleDocking();
+         }
+      }
+      else
+      {
+         // LMB doubleclick
+         w.toggleFolding();
+      }
+      return true;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         Window w <= getRoot();
+         if(!w.isDockable())
+         {
+            // Close window
+            w.hide();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      Window w <= getRoot();
+
+      if(_ev.leftButtonDown())
+      {
+         UI.SetKeyboardFocus(this);
+
+         // Handle dock button
+         if(w.isDockable())
+         {
+            if(_ev.isRelPosWithinBBox(getDockBtnPx(),
+                                      getDockBtnPy(),
+                                      getDockBtnPx() + icon_dockbtn.getIconWidth(),
+                                      getDockBtnPy() + icon_dockbtn.getIconHeight()
+                                      ))
+            {
+               b_dockbtn_pressed = true;
+               redraw();
+               return true;
+            }
+         }
+
+         UI.ShowCursor(UIConstants.CURSOR_GRABBED);
+         b_pressed = true;
+         redraw();
+         return true;
+      }
+      else if(_ev.leftButtonUp())
+      {
+         // Handle dock button
+         if(w.isDockable())
+         {
+            if(b_dockbtn_pressed)
+            {
+               if(_ev.isRelPosWithinBBox(getDockBtnPx(),
+                                         getDockBtnPy(),
+                                         getDockBtnPx() + icon_dockbtn.getIconWidth(),
+                                         getDockBtnPy() + icon_dockbtn.getIconHeight()
+                                         ))
+               {
+                  b_dockbtn_pressed = false;
+                  w.dock();
+                  redraw();
+                  return true;
+               }
+            }
+         }
+
+         b_pressed = false;
+         UI.ShowCursor(UIConstants.CURSOR_GRAB);
+         redraw();
+         return true;
+      }
+
+      // Handle dock button
+      if(b_dockbtn_pressed)
+      {
+         if(w.isDockable())
+         {
+            if(!_ev.isRelPosWithinBBox(getDockBtnPx(),
+                                      getDockBtnPy(),
+                                      getDockBtnPx() + icon_dockbtn.getIconWidth(),
+                                      getDockBtnPy() + icon_dockbtn.getIconHeight()
+                                      ))
+            {
+               b_dockbtn_pressed = false;
+               redraw();
+               return true;
+            }
+         }
+      }
+      return true;
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _firstEv, MouseEvent _ev) : boolean {
+      // // trace "xxx onMouseBeginDrag";
+      Window w <= getRoot();
+      if(!UI.GetEnableRedrawWindowMoveResize())
+      {
+         UI.BeginMarkRegion(w.getScreenRegion(), mathMaxi(UIConstants.WINDOW_BORDER_SIZE_X, UIConstants.WINDOW_BORDER_SIZE_Y));
+      }
+
+      // Remember original position in case the window is dragged into a WindowDock
+      startdrag_position_x = w.getPositionX();
+      startdrag_position_y = w.getPositionY();
+
+      UI.ShowCursor(UIConstants.CURSOR_MOVE);
+
+      if(b_dockbtn_pressed)
+      {
+         b_dockbtn_pressed = false;
+         redraw();
+      }
+
+      UI.UpdateFrameRate(true); // hack to make window positioning look smooth
+
+      return true;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _ev):boolean {
+      // // trace "xxx onMouseDrag";
+      Window w <= getRoot();
+      w.moveToPosition2f(w.getPositionX()+(_ev.mouse_abs_x-_lastEv.mouse_abs_x),
+                         w.getPositionY()+(_ev.mouse_abs_y-_lastEv.mouse_abs_y));
+      if(!UI.GetEnableRedrawWindowMoveResize())
+      {
+         UI.UpdateMarkedRegion(w.getScreenRegion());
+      }
+
+      if(w.isDockable())
+      {
+         Layer l <= UI.FindLayerAtXY(_ev.mouse_abs_x, _ev.mouse_abs_y);
+         if(l instanceof WindowDock)
+            UI.ShowCursor(UIConstants.CURSOR_ADD);
+         else
+            UI.ShowCursor(UIConstants.CURSOR_MOVE);
+      }
+
+      compositeAll();
+      // // UI.RedrawAll();
+// //             Rectangle2f o,n;
+// //             o.init(r.getPositionX(), r.getPositionY(),
+// //                    r.getPositionX()+r.getSizeX(), r.getPositionY()+r.getSizeY());
+// //             n.init(r.getPositionX()+(_ev.mouse_abs_x-last_mouse_abs_x),
+// //                    r.getPositionY()+(_ev.mouse_abs_y-last_mouse_abs_y),
+// //                    r.getPositionX()+(_ev.mouse_abs_x-last_mouse_abs_x)+r.getSizeX(),
+// //                    r.getPositionY()+(_ev.mouse_abs_y-last_mouse_abs_y)+r.getSizeY());
+// //             UI.AddDirtyRegion(o);
+// //             UI.AddDirtyRegion(n);
+      return true;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      // // trace "xxx onMouseEndDrag";
+      b_pressed = false;
+      if(!UI.GetEnableRedrawWindowMoveResize())
+      {
+         UI.EndMarkRegion();
+      }
+      UI.ShowCursor(UIConstants.CURSOR_GRAB);
+      Window w <= getRoot();
+      w.validateClippedPosition();
+      w.layoutHierarchy(true, false);
+      // // // w.invalidateAbsolutePositions();
+
+      if(w.isDockable())
+      {
+         Layer l <= UI.FindLayerAtXY(_ev.mouse_abs_x, _ev.mouse_abs_y);
+         if(l instanceof WindowDock)
+         {
+            w.setDefaultDock(l);
+            w.dock();
+            w.moveToPosition2f(startdrag_position_x, startdrag_position_y);
+         }
+      }
+
+      UI.UpdateFrameRate(false); // hack to make window positioning look smooth (==> go back to low FPS)
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) {
+      Window w <= getRoot();
+
+      UI.ShowCursor(UIConstants.CURSOR_GRAB);
+
+// //       if(_ev.isLeftButtonDown())
+// //       {
+// //          if(w.isDockable())
+// //          {
+// //             if(_ev.isRelPosWithinBBox(getDockBtnPx(),
+// //                                       getDockBtnPy(),
+// //                                       getDockBtnPx() + icon_dockbtn.getIconWidth(),
+// //                                       getDockBtnPy() + icon_dockbtn.getIconHeight()
+// //                                       ))
+// //             {
+// //                b_dockbtn_pressed = true;
+// //                redraw();
+// //             }
+// //          }
+// //       }
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) {
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      b_dockbtn_pressed = false;
+      redraw();
+   }
+
+   public virtual onKey(Key _key) : boolean {
+      Window *w;
+
+      switch(_key.pressed)
+      {
+         case VKEY_SPACE:
+            w <= getRoot();
+            w.toggleFolding();
+            return true;
+
+         case VKEY_LEFT:
+         case VKEY_UP:
+            UI.ActivatePreviousWindow();
+            return true;
+
+         case VKEY_RIGHT:
+         case VKEY_DOWN:
+            UI.ActivateNextWindow();
+            return true;
+
+         case VKEY_TAB:
+            // Focus first tabcycle member of window..if the window is not folded ATM
+            w <= getRoot();
+            if(!w.isFolded())
+            {
+               Layer n <= FindFirstNonRootTabCycleMember(w.getPanel(), 1);
+               if(n != null)
+               {
+                  handleNewTabCycleFocus(n);
+               }
+            }
+            return true;
+      }
+      return false;
+   }
+
+   protected method getDockBtnPx() : float {
+      Icon icon <= getIconDockBtn();
+      return (getSizeX() - icon.getIconWidth()) - 2;
+   }
+
+   protected method getDockBtnPy() : float {
+      Icon icon <= getIconDockBtn();
+      return (getSizeY() - icon.getIconHeight())*0.5;
+   }
+
+   protected method getIconDockBtn() : Icon {
+      if(null == icon_dockbtn)
+         icon_dockbtn  <= UI.GetIcon("dockbtn");
+      return icon_dockbtn;
+   }
+
+   protected method getIconDockBtnDn() : Icon {
+      if(null == icon_dockbtndn)
+         icon_dockbtndn <= UI.GetIcon("dockbtndn");
+      return icon_dockbtndn;
+   }
+
+   public virtual onDraw() {
+      Window w <= getRoot();
+
+      // Font init is usually done during layout. In case the window was not initialized correctly (too large => FBO init failed)
+      //  "font" might be null.
+      lazyInitFont();
+
+      UIRenderer.EnableBlending();
+
+      if(isActive())
+      {
+         UIRenderer.DrawGradientFilledRectangle(0,0,getSizeX(),getSizeY(),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_ACTIVE_LT_BG),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_ACTIVE_RT_BG),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_ACTIVE_RB_BG),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_ACTIVE_LB_BG));
+      }
+      else
+      {
+         UIRenderer.DrawGradientFilledRectangle(0,0,getSizeX(),getSizeY(),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_INACTIVE_LT_BG),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_INACTIVE_RT_BG),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_INACTIVE_RB_BG),
+                                                lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_INACTIVE_LB_BG));
+      }
+      UIRenderer.DisableBlending();
+      UIRenderer.DrawText(caption, font,
+                          lnf_colors.get(LookAndFeel.COLOR_WINDOWTITLE_CAPTION),
+                          lnf_colors.get(LookAndFeel.COLOR_ACCEL_UL_FG),
+                          ipad_l, 0.5*(size_y-font.stringHeight("Z"))-1,
+                          0/*availW*/, 0/*align*/
+                          );
+
+      if(w.isDockable())
+      {
+         Icon icon <= b_dockbtn_pressed ? getIconDockBtnDn() : getIconDockBtn();
+         icon.drawIcon(getDockBtnPx(), getDockBtnPy());
+      }
+
+   }
+
+}

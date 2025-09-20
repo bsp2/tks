@@ -1,0 +1,1339 @@
+// ----
+// ---- file   : Button.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 18Jun2005, 23Jun2005, 31Jul2005, 10Aug2005, 28Apr2007, 04May2007, 11Nov2007,
+// ----          14Apr2008, 01Feb2009, 31May2009, 22Apr2010, 15Jun2010, 12Feb2011, 20Mar2011
+// ----          20Aug2014, 12Sep2014, 28Sep2014, 03Feb2015, 07Feb2015, 21Feb2015, 17Mar2015
+// ----          20Apr2015, 21Dec2015, 31Dec2015, 19Jan2017, 29Jan2017, 16Apr2017, 14Oct2017
+// ----          21Dec2017, 16Feb2018, 24Feb2018, 18Jun2018, 21Jul2018, 13Nov2018, 28Nov2018
+// ----          15Jan2019, 25Jul2019, 10Sep2019, 14Sep2019, 22Sep2019, 30Oct2019, 01Nov2019
+// ----          02Nov2019, 26Feb2020, 24Aug2020, 16Apr2021, 10Aug2022, 11Aug2022, 22Oct2022
+// ----          17Nov2022, 04Mar2023, 12Jun2023, 12Sep2023, 06Oct2023, 16Oct2023, 21Oct2023
+// ----          28Oct2023, 29Oct2023, 30Oct2023, 01Nov2023, 07Jan2024, 16Mar2024, 22Mar2024
+// ----          13Aug2024, 03Oct2024, 05Oct2024, 23Oct2024, 06Jan2025, 10Jan2025, 12Feb2025
+// ----          21Feb2025, 10Sep2025, 11Sep2025
+// ----
+// ----
+// ----
+
+module MButton;
+
+namespace ui;
+
+
+class Button extends Label, ActionProvider {
+
+   define String ACTION_CLICK;
+   define String ACTION_RIGHT_CLICK;
+   define String ACTION_MIDDLE_CLICK;
+   define String ACTION_HOLD_CLICK;
+   define String ACTION_RIGHT_HOLD_CLICK;
+   define String ACTION_KEY;
+   define String ACTION_PRESS;
+   define String ACTION_RELEASE;
+   define String ACTION_RIGHT_PRESS;
+   define String ACTION_RIGHT_RELEASE;
+   define String ACTION_WHEEL_UP;
+   define String ACTION_WHEEL_DOWN;
+
+   define String TA_REPEAT;
+
+   protected Icon *icon_pressed;
+
+   protected boolean b_pressed;  // 1=LMB or RMB currently pressed
+   protected boolean b_rmb;      // 1=last mouseevent was right button
+
+   protected boolean      b_repeat;
+   protected int          repeat_delay;
+   protected int          repeat_interval;
+   protected TimerAction *ta_repeat;  // used for repeat or hold mode
+
+   protected boolean b_hold;   // true=send HOLD events
+
+   protected boolean b_hold_click; // true=TO expired
+
+   // true=LMB-click toggles between pressed/released state (like a checkbox)
+   //  (note) button can still support (external) toggling (e.g. via HOLD_CLICK handler) when this is set to false
+   //          (=> must use getToggleStateRaw() in that case)
+   protected boolean b_toggle;
+   protected boolean b_toggle_state;  // true=pressed, false=released
+   protected boolean b_toggle_draw_pressed;  // true=shift label by one pixel when toggle button is in active state
+
+   protected boolean b_delta;  // true=send press/release events
+
+   protected boolean b_allow_delta_click;  // true=allow MMC delta events to click toggle-style button
+
+   protected boolean b_skip_mouse_buttons;  // 1=skip LMB/MMB/RMB (but potentially allow mouse wheel)
+
+   protected boolean b_label_button; // draw button as label
+
+   // true=provide action when cursor keys are pressed. false=let layer handle cursor keys (focus selection)
+   protected boolean b_provide_cursor_key_action;
+
+   protected boolean b_provide_wheel_action; // 1=provide action when wheel up/down is pressed
+
+   public static boolean b_hold_dot;
+
+   protected boolean b_disable_mouseover_tint2;
+   protected int mouseover_tint2b;  // user defined (def=0). see setMouseOverTint()
+
+   protected boolean b_no_lctrl_hold_modifier;
+
+   protected int toggle_tint;
+
+   protected boolean b_dont_draw_pressed;
+   protected boolean b_dont_draw_mouseover;
+   protected boolean b_dont_draw_kbdfocus;
+
+   protected boolean b_provide_right_click;
+   protected boolean b_provide_middle_click;
+
+   protected boolean b_ignore_mouse_events;  // e.g. GraphForm ports
+
+   protected int button_chained_redraws_left;  // after updating outer_border_panel tint, may need to redraw again to reflect current state
+
+
+   public static New() : Button {
+      local Button bt;
+      bt.initButton();
+      return deref bt;
+   }
+
+   public method initButton() {
+      initButtonOnly();
+      // // initLabel();
+      initButtonPre();
+      initButtonPost();
+   }
+
+   protected method initButtonOnly() {
+      b_editable = true;
+
+      initLabel();
+
+      setDefaultInnerPadding();
+
+      repeat_delay    = 20 * 10;
+      repeat_interval = 50;
+
+      b_toggle_draw_pressed = true;
+   }
+
+   protected method initButtonPre() {
+      // called after Label::beginXFMTag()
+      setEnableCaptionDim(false);
+   }
+
+   protected method initButtonPost() {
+      // called after parsing button XFM attributes
+   }
+
+   public virtual setDefaultInnerPadding() {
+      Label::setDefaultInnerPadding();
+
+      if(b_xfm_ipad)
+         return;
+
+      if(b_label_button || !lnf.b_button_bevel_border)
+      {
+         if(UI.IsHiDPI())
+         {
+            setInnerPadding4f(UIConstants.LABELBUTTON_INSET_TOP,    2*UIConstants.LABELBUTTON_INSET_LEFT,
+                              UIConstants.LABELBUTTON_INSET_BOTTOM, 2*UIConstants.LABELBUTTON_INSET_RIGHT
+                              );
+         }
+         else
+         {
+            setInnerPadding4f(UIConstants.LABELBUTTON_INSET_TOP,    UIConstants.LABELBUTTON_INSET_LEFT,
+                              UIConstants.LABELBUTTON_INSET_BOTTOM, UIConstants.LABELBUTTON_INSET_RIGHT
+                              );
+         }
+      }
+      else
+      {
+         if(UI.IsHiDPI())
+         {
+            setInnerPadding4f(UIConstants.BUTTON_INSET_TOP,    2*UIConstants.BUTTON_INSET_LEFT,
+                              UIConstants.BUTTON_INSET_BOTTOM, 2*UIConstants.BUTTON_INSET_RIGHT
+                              );
+         }
+         else
+         {
+            setInnerPadding4f(UIConstants.BUTTON_INSET_TOP,    UIConstants.BUTTON_INSET_LEFT,
+                              UIConstants.BUTTON_INSET_BOTTOM, UIConstants.BUTTON_INSET_RIGHT
+                              );
+         }
+      }
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      if(UI.b_debug_lnf_changed_reset_custom_color_flags) // when toggling lnf via sysbrk
+      {
+         b_custom_fg = false;
+         b_custom_bg = false;
+      }
+
+      if(!b_custom_fg)
+         c32_fg = lnf_colors.get(LookAndFeel.COLOR_BUTTON_CAPTION_FG);
+
+      if(!b_custom_bg)
+         c32_bg = lnf_colors.get(LookAndFeel.COLOR_BUTTON_BG);
+
+      // // if( !b_xfm_ipad && !b_label_button && (!lnf.b_button_bevel_border || (LookAndFeel.STYLE_FLAT == layer_style)) )
+      // // {
+         setDefaultInnerPadding();
+      // // }
+
+      if(0 == icon_blend_c32)
+         icon_blend_c32 = lnf_colors.get(LookAndFeel.COLOR_DEFAULT_ICON_BLEND_C32);
+   }
+
+   public function NewDefaultButton(String _caption) {
+      local Button b;
+      b.initButton();
+      b.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      return deref b;
+   }
+
+   public function NewIconButton(String _iconName, int _placement) {
+      local Button b;
+      b.initButton();
+      b.setIcon(UI.GetIcon(_iconName));
+      b.setIconPlacement(_placement);
+      return deref b;
+   }
+
+   public function NewOkButton() {
+      local Button b <= NewDefaultButton("Ok");
+      return deref b;
+   }
+
+   public function NewCancelButton() {
+      local Button b <= NewDefaultButton("Cancel");
+      return deref b;
+   }
+
+   public function NewLoadButton() {
+      local Button b <= NewDefaultButton("Load");
+      return deref b;
+   }
+
+   public function NewSaveButton() {
+      local Button b <= NewDefaultButton("Save");
+      return deref b;
+   }
+
+   public function NewDeleteButton() {
+      local Button b <= NewDefaultButton("Delete");
+      return deref b;
+   }
+
+   protected virtual calcSizeX() : float {
+      return Label::calcSizeX() + (b_label_button ? 0 : lnf.b_button_bevel_border?2:0); // Bevel+TabFocus border
+   }
+
+   protected virtual calcSizeY() : float {
+      return Label::calcSizeY() + (b_label_button ? 0 : lnf.b_button_bevel_border?2:0); // Bevel+TabFocus border
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_CLICK,
+              ACTION_RIGHT_CLICK,
+              ACTION_MIDDLE_CLICK,
+              ACTION_HOLD_CLICK,
+              ACTION_RIGHT_HOLD_CLICK,
+              ACTION_KEY,
+              ACTION_PRESS,
+              ACTION_RELEASE,
+              ACTION_RIGHT_PRESS,
+              ACTION_RIGHT_RELEASE,
+              ACTION_WHEEL_UP,
+              ACTION_WHEEL_DOWN
+              ];
+   }
+
+   protected method lazyAllocRepeatTimer() {
+      if(b_hold || b_repeat)
+         ta_repeat <= TimerAction.New(TA_REPEAT, this, repeat_delay);
+   }
+
+   public virtual setEditable(boolean _bEditable) {
+      if(b_editable != _bEditable)
+      {
+         Label::setEditable(_bEditable);
+
+         b_pressed = false;
+         b_rmb     = false;
+         redraw();
+
+         if(null != ta_repeat)
+            ta_repeat.cancel();
+      }
+   }
+
+   public method setEnableMouseButtons(boolean _bEnable) {
+      b_skip_mouse_buttons = !_bEnable;
+   }
+
+   public method setEnableMouseEvents(boolean _bEnable) {
+      b_ignore_mouse_events = !_bEnable;
+   }
+
+   public method setEnableRepeat(boolean _bRepeat) {
+      b_repeat = _bRepeat;
+      b_hold   = false;
+
+      lazyAllocRepeatTimer();
+   }
+
+   public method getEnableRepeat() : boolean {
+      return b_repeat;
+   }
+
+   public method setEnableHold(boolean _bHold) {
+      b_repeat = false;
+      b_hold   = _bHold;
+
+      lazyAllocRepeatTimer();
+   }
+
+   public method getEnableHold() : boolean {
+      return b_hold;
+   }
+
+   public method isPressed() : boolean {
+      return b_pressed;
+   }
+
+   public method setEnableDrawPressed(boolean _bEnable) {
+      b_dont_draw_pressed = !_bEnable;
+   }
+
+   public method setEnableDrawMouseOver(boolean _bEnable) {
+      b_dont_draw_mouseover = !_bEnable;
+   }
+
+   public method setEnableDrawKeyboardFocus(boolean _bEnable) {
+      b_dont_draw_kbdfocus = !_bEnable;
+   }
+
+   public method setEnableProvideRightClick(boolean _bEnable) {
+      b_provide_right_click = _bEnable;
+   }
+
+   public method setEnableProvideMiddleClick(boolean _bEnable) {
+      b_provide_middle_click = _bEnable;
+   }
+
+   public method setEnableProvideWheelAction(boolean _bEnable) {
+      b_provide_wheel_action = _bEnable;
+   }
+
+   public method setEnableAllowDeltaClick(boolean _bEnable) {
+      // for toggle-style buttons which are not actual toggle buttons (e.g. seq TrackForm follow/mute/solo)
+      b_allow_delta_click = _bEnable;
+   }
+
+   public method allowDeltaClick() : boolean {
+      return b_allow_delta_click;
+   }
+
+   public method setEnableToggle(boolean _bEnabled) {
+      b_toggle = _bEnabled;
+      if(!b_toggle)
+         setToggleState(false);
+   }
+
+   public method getEnableToggle() : boolean {
+      return b_toggle;
+   }
+
+   public method isToggle() : boolean {
+      return b_toggle;
+   }
+
+   public method setToggleState(boolean _bEnabled) {
+      if(_bEnabled ^ b_toggle_state)
+      {
+         b_toggle_state = _bEnabled;
+         redraw();
+      }
+   }
+
+   public method getToggleState() : boolean {
+      return b_toggle && b_toggle_state;
+   }
+
+   public method getToggleStateRaw() : boolean {
+      // e.g. when toggling via HOLD_CLICK
+      return b_toggle_state;
+   }
+
+   public method setToggleTint(int _c32) {
+      toggle_tint = _c32;
+   }
+
+   public method setSelected(boolean _bEnabled) {
+      // checkbox API compatibility
+      setToggleState(_bEnabled);
+   }
+
+   public method isSelected() : boolean {
+      // checkbox API compatibility
+      return b_toggle && b_toggle_state;
+   }
+
+   public method toggleState() {
+      b_toggle_state = !b_toggle_state;
+      redraw();
+   }
+
+   public method toggleStateAction() {
+      toggleState();
+      hideToolTip();
+      provideAction(Action.New(getProvidedActionAlias(ACTION_CLICK), this));
+   }
+
+   public method toggleSelection() {
+      // checkbox API compatibility
+      toggleState();
+   }
+
+   public method toggleSelectionAction() {
+      // checkbox API compatibility
+      toggleStateAction();
+   }
+
+   public method setEnableDelta(boolean _bDelta) {
+      b_delta = _bDelta;
+   }
+
+   public method getEnableDelta() : boolean {
+      return b_delta;
+   }
+
+   public method setEnableLabelButton(boolean _bEnable) {
+      b_label_button = _bEnable;
+
+      if(_bEnable)
+         setEnableBackgroundKeepAlpha(true);
+
+      setDefaultInnerPadding();
+   }
+
+   public method setEnableLabelButtonHiDPI() {
+      setEnableLabelButton(UI.font_scaling >= 1.2);
+   }
+
+   public method setForegroundColorLabelMix(float _mix) {
+      if(1.0 == _mix)
+         setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG));
+      else if(0.0 == _mix)
+         setForegroundColor(lnf_colors.get(LookAndFeel.COLOR_TEXT_EDIT_FG));
+      else
+      {
+         int c32a = lnf_colors.get(LookAndFeel.COLOR_TEXT_EDIT_FG);
+         int c32b = lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG);
+         int c32 = sdvg_MixARGBf(c32a, c32b, _mix);
+         setForegroundColor(c32);
+      }
+   }
+
+   public method setEnableMouseOverTint(boolean _bEnable) {
+      b_disable_mouseover_tint2 = !_bEnable;
+   }
+
+   public method getEnableMouseOverTint() : boolean {
+      return !b_disable_mouseover_tint2;
+   }
+
+   public method setMouseOverTint(int _c32) {
+      mouseover_tint2b = _c32;
+   }
+
+   public method getMouseOverTint() : int {
+      return mouseover_tint2b;
+   }
+
+   public method setIconPressed(Icon _icon) {
+      explain "Set the pressed Icon for this button";
+
+      icon_pressed <= (_icon instanceof Icon) ? _icon : null;
+
+      if(icon_scalex < 0.1)
+      {
+         /* workaround for old code that constructs e.g. buttons w/o calling the appropriate init/beginXFMTag method */
+         icon_scalex = 1.0;
+      }
+
+      if(icon_scaley < 0.1)
+      {
+         /* workaround for old code that constructs e.g. buttons w/o calling the appropriate init/beginXFMTag method */
+         icon_scaley = 1.0;
+      }
+
+      invalidateSizeCache();
+   }
+
+   public method getIconPressed() : Icon {
+      return icon_pressed;
+   }
+
+   public method onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(b_ignore_mouse_events) return false;
+      return maybe;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      if(b_editable)
+      {
+         redraw();  // (note) may update outer_border_panel tint
+         if(null != outer_border_panel)
+            button_chained_redraws_left = 1;
+      }
+      return Layer::onMouseEnter(_ev);
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      if(b_editable)
+      {
+         if(b_delta && b_pressed)
+         {
+            if(b_rmb)
+            {
+               if(b_provide_right_click)
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_RIGHT_RELEASE), this));
+            }
+            else
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_RELEASE), this));
+            }
+         }
+
+         b_pressed     = false;
+         b_rmb         = false;
+         b_hold_click  = false;
+
+         if(null != ta_repeat)
+            ta_repeat.cancel();
+
+         redraw();
+         if(null != outer_border_panel)
+            button_chained_redraws_left = 1;
+      }
+      return Layer::onMouseLeave(_ev);
+   }
+
+   public method handleBeginPress(boolean _bRMB) {
+      // (note) usually called internally
+      if(null != ta_repeat)
+         ta_repeat.scheduleTicks(repeat_delay);
+
+      b_hold_click  = false;
+      b_pressed     = true;
+      b_rmb         = _bRMB;
+
+      if(b_delta)
+      {
+         if(b_rmb)
+         {
+            if(b_provide_right_click)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_RIGHT_PRESS), this));
+         }
+         else
+         {
+            provideAction(Action.New(getProvidedActionAlias(ACTION_PRESS), this));
+         }
+      }
+   }
+
+   public method handleEndPress() {
+      // (note) usually called internally
+      if(null != ta_repeat)
+         ta_repeat.cancel();
+
+      b_pressed = false;
+      // (note) don't reset b_rmb
+
+      if( b_delta && (!b_rmb || b_provide_right_click) )
+         provideAction(Action.New(getProvidedActionAlias(b_rmb ? ACTION_RIGHT_RELEASE : ACTION_RELEASE), this));
+   }
+
+   public method handleButtonClick(MouseEvent _ev/*or null*/) {
+      if(b_editable)
+      {
+         hideToolTip();
+
+         boolean bRMB = (null != _ev) ? _ev.isRightButton() : b_rmb;
+
+         if(b_provide_middle_click)
+         {
+            if( (null != _ev) && _ev.isMiddleButton() )
+            {
+               provideAction(Action.New(getProvidedActionAlias(ACTION_MIDDLE_CLICK), this));
+               return;
+            }
+         }
+
+         if(!bRMB && b_toggle)
+            toggleState();
+         else
+            loseMouseFocus();
+
+         if(!b_no_lctrl_hold_modifier && (VMOD_LCTRL == UI.GetKeyMod()))
+         {
+            if(b_hold)
+            {
+               if(bRMB && b_provide_right_click)
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_RIGHT_HOLD_CLICK), this));
+               else
+                  provideAction(Action.New(getProvidedActionAlias(ACTION_HOLD_CLICK), this));
+            }
+         }
+         else if(bRMB)
+         {
+            if(b_provide_right_click)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_RIGHT_CLICK), this));
+         }
+         else
+            provideAction(Action.New(getProvidedActionAlias(ACTION_CLICK), this));
+      }
+   }
+
+   public method handleButtonHoldClick(MouseEvent _ev/*or null*/) {
+      if(b_editable)
+      {
+         hideToolTip();
+         loseMouseFocus();
+         provideAction(Action.New(getProvidedActionAlias(b_rmb ? ACTION_RIGHT_HOLD_CLICK : ACTION_HOLD_CLICK), this));
+      }
+   }
+
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(b_ignore_mouse_events) return false;
+
+      if(_ev.isLeftButton() || (b_provide_right_click && _ev.isRightButton()))
+      {
+         if(b_skip_mouse_buttons)  // used in rare cases where the Button is mainly a label and only sends WHEEL_UP/DOWN
+            return false;
+
+         b_pressed     = false;
+         b_rmb         = _ev.isRightButton();
+         b_hold_click  = false;
+
+         if(null != ta_repeat)
+            ta_repeat.cancel();
+
+         redraw();
+         if(null != outer_border_panel)
+            button_chained_redraws_left = 1;
+
+         handleButtonClick(_ev);
+
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(b_ignore_mouse_events) return false;
+
+      if(b_editable)
+      {
+         if(!b_skip_mouse_buttons)
+         {
+            if(_ev.changed_state & MOUSE_LBUTTON)
+            {
+               hideToolTip();
+
+               if(!(_ev.current_state & MOUSE_LBUTTON))
+               {
+                  if(b_pressed && !b_rmb)
+                  {
+                     handleEndPress();
+                     redraw();  // (note) may update outer_border_panel tint
+
+                     if(b_hold_click)
+                        handleButtonHoldClick(_ev);
+                     else
+                        handleButtonClick(_ev);
+
+                     // Note: The button instance may have been deleted by now!
+                  }
+               }
+               else
+               {
+                  handleBeginPress(false/*bRMB*/);
+
+                  if(!b_dont_set_kbdfocus_on_mouse)
+                  {
+                     UI.SetKeyboardFocus(this);
+                  }
+                  redraw();  // (note) may update outer_border_panel tint
+               }
+
+               return true;
+            }
+            else if(b_provide_right_click && (_ev.changed_state & MOUSE_RBUTTON))
+            {
+               hideToolTip();
+               redraw();
+
+               if(!(_ev.current_state & MOUSE_RBUTTON))
+               {
+                  // // trace "xxx Button: RMB release b_pressed="+b_pressed+" b_rmb="+b_rmb;
+                  if(b_pressed && b_rmb)
+                  {
+                     handleEndPress();
+
+                     if(b_hold_click)
+                        handleButtonHoldClick(_ev);
+                     else
+                        handleButtonClick(_ev);
+
+                     // Note: The button instance may have been deleted by now!
+                  }
+               }
+               else
+               {
+                  handleBeginPress(true/*bRMB*/);
+
+                  if(!b_dont_set_kbdfocus_on_mouse)
+                  {
+                     UI.SetKeyboardFocus(this);
+                  }
+               }
+
+               return true;
+            }
+            else if(b_provide_middle_click && (_ev.changed_state & MOUSE_MBUTTON))
+            {
+               hideToolTip();
+               redraw();
+
+               if(!(_ev.current_state & MOUSE_MBUTTON))
+               {
+                  handleButtonClick(_ev);
+                  // Note: The button instance may have been deleted by now!
+                  return true;
+               }
+            }
+         }
+
+         if(b_provide_wheel_action)
+         {
+            if(_ev.wheelUp())
+            {
+               hideToolTip();
+               provideAction(Action.New(getProvidedActionAlias(ACTION_WHEEL_UP), this));
+               return true;
+            }
+            else if(_ev.wheelDown())
+            {
+               hideToolTip();
+               provideAction(Action.New(getProvidedActionAlias(ACTION_WHEEL_DOWN), this));
+               return true;
+            }
+         }
+      }
+
+      return Layer::onMouse(_ev);  // start tool tip timer
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(b_ignore_mouse_events) return false;
+
+      return b_pressed;
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public virtual onTabFocus() {
+      b_pressed    = false;
+      b_rmb        = false;
+      b_hold_click = false;
+      redraw();
+   }
+
+   public virtual onKeyboardFocus() {
+      redraw();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      b_pressed    = false;
+      b_rmb        = false;
+      b_hold_click = false;
+
+      if(null != ta_repeat)
+         ta_repeat.cancel();
+
+      if(!_bQuiet)
+         redraw();
+   }
+
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      return IsTabCycleKey(_k);
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      if(b_no_space_key && VKEY_SPACE == _k.code)
+         return false;
+
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_SPACE:
+            case VKEY_RETURN:
+               if(!b_pressed && b_editable)
+               {
+                  handleBeginPress(false/*bRMB*/);
+                  redraw();
+               }
+               return true;
+
+            case VKEY_UP:
+            case VKEY_DOWN:
+            case VKEY_LEFT:
+            case VKEY_RIGHT:
+               if(b_provide_cursor_key_action)
+               {
+                  provideAction(KeyAction.New(getProvidedActionAlias(ACTION_KEY), this, _k));
+                  return true;
+               }
+               break;
+         }
+
+         switch(_k.released)
+         {
+            case VKEY_SPACE:
+            case VKEY_RETURN:
+               if(b_pressed && b_editable)
+               {
+                  handleEndPress();
+                  redraw();
+                  handleButtonClick(null);
+                  // Don't add code below this time because the button instance may have already been deleted!
+               }
+               return true;
+         }
+      }
+
+      return Layer::onKey(_k);
+   }
+
+   protected method drawFlatDisabledShade() {
+      if(!lnf.b_button_bevel_border || (LookAndFeel.STYLE_FLAT == layer_style))
+      {
+         if(!isEditable())
+         {
+            int c32 = lnf_colors.get(LookAndFeel.COLOR_BUTTON_FLAT_DISABLED);
+            if(0 != c32)
+            {
+               UIRenderer.EnableBlendingKeepAlpha();
+               UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), c32);
+               UIRenderer.DisableBlending();
+            }
+         }
+      }
+   }
+
+   protected method drawKeyboardFocus(float _fillX, float _fillY, float _fillW, float _fillH) {
+      if(hasKeyboardFocus())
+      {
+         UIRenderer.DrawRectangle(_fillX, _fillY, _fillW, _fillH, 1,
+                                  lnf_colors.get(lnf.b_button_bevel_border ? LookAndFeel.COLOR_TABFOCUS_BORDER : LookAndFeel.COLOR_TABFOCUS_TEXT_BORDER)
+                                  );
+         if(lnf.b_button_bevel_border)
+            UIRenderer.DrawTabFocusTextBorder(_fillX+3, _fillY+3, _fillX+_fillW-4, _fillY+_fillH-4);
+      }
+   }
+
+   protected method calcButtonTint2ForOuterPanel() : int {
+      // same as onDraw() but don't draw anything, just calc the current background tint (=> outer border panel will use it to redraw the background)
+      int c32Ret = 0;
+      boolean bDrawPressed = !b_dont_draw_pressed && ( (!b_toggle && b_pressed) || (b_toggle_state && b_toggle_draw_pressed) );
+
+      if(b_label_button)
+      {
+         int origC32Bg = c32_bg;
+
+         if(b_toggle_state)
+         {
+            int origC32Fg = c32_fg;
+            if(0 == toggle_tint)
+               c32_bg = sdvg_TintARGB(origC32Fg, 0xD0000000|(lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG)&0xFFFFFF)); // Invert colors
+            else
+               c32_bg = sdvg_TintARGB(c32_bg, toggle_tint);
+            c32Ret = c32_bg;
+         }
+
+         if(!b_disable_mouseover_tint2)
+         {
+            if(isMouseOver() && !b_dont_draw_mouseover)
+            {
+               if(bDrawPressed)
+                  c32Ret = lnf_colors.get(LookAndFeel.COLOR_BUTTON_MOUSEOVER_PRESSED_TINT);
+               else
+                  c32Ret = lnf_colors.get(LookAndFeel.COLOR_BUTTON_MOUSEOVER_TINT);
+
+               if(0 != mouseover_tint2b)
+                  c32Ret = sdvg_TintARGB(c32Ret, mouseover_tint2b);
+            }
+            else
+            {
+               c32Ret = #00000000;
+            }
+         }
+
+         if(b_fill_bg)
+         {
+            // (note) must fill with opaque color to avoid traces of previous focus outline
+            c32Ret = sdvg_TintARGB(sdvg_TintARGB(sdvg_TintARGB(c32_bg, bg32_tint), c32_tint2), c32_tint3) | #ff000000;
+         }
+
+         // Restore inverted colors
+         c32_bg = origC32Bg;
+         // // c32_fg = origC32Fg;
+
+         return c32Ret;
+      }
+
+      c32Ret = sdvg_TintARGB(bg32_tint, c32_tint3);
+      if(!isEditable())
+      {
+         c32Ret = sdvg_TintARGB(c32Ret, lnf_colors.get(LookAndFeel.COLOR_BUTTON_NON_EDITABLE_TINT));
+      }
+
+      if(LookAndFeel.STYLE_BEVEL == layer_style)
+      {
+      }
+      else if(b_toggle || b_toggle_state)
+      {
+         c32Ret = sdvg_TintARGB(sdvg_TintARGB(sdvg_TintARGB(c32_bg, c32Ret), c32_tint2),
+                                 lnf_colors.get(b_toggle_state
+                                                ? LookAndFeel.COLOR_BUTTON_FLAT_TOGGLE_ON_BG_TINT
+                                                : LookAndFeel.COLOR_BUTTON_FLAT_TOGGLE_OFF_BG_TINT
+                                                )
+                                 );
+      }
+      else
+      {
+         c32Ret = sdvg_TintARGB(c32_bg, c32Ret);
+      }
+
+      return c32Ret;
+   }
+
+   public virtual redraw() {
+      if(null != outer_border_panel)
+      {
+         c32_tint_outer_panel = calcButtonTint2ForOuterPanel();
+         // trace "xxx Button::redraw: b_label_button="+b_label_button+" c32_tint_outer_panel="+UI.GetColorString(c32_tint_outer_panel)+" alpha="+outer_border_panel.getPanelAlpha()+" tint="+UI.GetColorString(outer_border_panel.getPanelTint())+" panel_bg_shape="+outer_border_panel.getPanelBackgroundShape()+" panel_bg_style="+outer_border_panel.getPanelBackgroundStyle();
+            //+" outer_border_panel.b_fill_bg="+outer_border_panel.b_fill_bg;
+         // c32_tint_outer_panel = #7fff0000;
+      }
+      Label::redraw();
+   }
+
+   public virtual onDraw() {
+
+      // trace "xxx Button::onDraw: caption=\""+caption+"\" b_label_button="+b_label_button+" sy="+getSizeY()+" padding="+getPaddingString();
+      // trace "xxx Button::onDraw: caption=\""+caption+"\" innerPadding="+getInnerPaddingString();
+      // trace "xxx Button::onDraw: caption=\""+caption+"\" pos="+getPositionString()+" minSize="+getMinimumSizeString()+" size="+getSizeString();
+
+      // if(b_toggle)
+      //    trace "xxx Button::onDraw: b_toggle_state="+b_toggle_state+" b_toggle_draw_pressed="+b_toggle_draw_pressed;
+
+      boolean bDrawPressed = !b_dont_draw_pressed && ( (!b_toggle && b_pressed) || (b_toggle_state && b_toggle_draw_pressed) );
+      b_ghosted = !b_editable;
+
+      float baselineY = getBaselineY();  // update bgfill_shrink_* (lazy-call layoutContent())
+      boolean bAllowFill = (bgfill_shrink_x < 0.01f) && (bgfill_shrink_y < 0.01f) && 1;
+      // // trace "xxx Button::onDraw: this="+getDebugString()+" bgfill_shrink_x="+bgfill_shrink_x+" => bAllowFill="+bAllowFill;
+      float fillX = 0 + bgfill_shrink_x;
+      float fillY = 0 + bgfill_shrink_y;
+      float fillW = getSizeX() - 2*bgfill_shrink_x;
+      float fillH = getSizeY() - 2*bgfill_shrink_y;
+
+      if(b_label_button)
+      {
+         int origC32Bg = c32_bg;
+         int origC32Fg = c32_fg;
+
+         // // if(caption == "Pha:")
+         // //    trace "xxx Button::onDraw: Pha text_placement="+text_placement+" padL="+pad_left+" padR="+pad_right+" ipad_l="+ipad_l+" ipad_r="+ipad_r;
+
+         int bg32Tint = bg32_tint;
+
+         if(b_toggle_state)
+         {
+            if(0 == toggle_tint)
+            {
+               // Invert colors
+               c32_bg = sdvg_TintARGB(origC32Fg, 0xD0000000|(lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG)&0xFFFFFF));
+               c32_fg = sdvg_TintARGB(c32_fg, 0x30000000|(origC32Bg&0xFFFFFF));
+            }
+            else
+            {
+               // // c32_bg = sdvg_TintARGB(c32_bg, toggle_tint);
+               bg32Tint = toggle_tint;
+            }
+         }
+
+         if(!b_disable_mouseover_tint2)
+         {
+            if(isMouseOver() && !b_dont_draw_mouseover)
+            {
+               int c32MouseOver;
+               if(bDrawPressed)
+                  c32MouseOver = lnf_colors.get(LookAndFeel.COLOR_BUTTON_MOUSEOVER_PRESSED_TINT);
+               else
+                  c32MouseOver = lnf_colors.get(LookAndFeel.COLOR_BUTTON_MOUSEOVER_TINT);
+
+               if(0 != mouseover_tint2b)
+               {
+                  c32MouseOver = sdvg_TintARGB(c32MouseOver, mouseover_tint2b);
+               }
+
+               setTint2(c32MouseOver);
+            }
+            else
+            {
+               setTint2(#00000000);
+            }
+         }
+
+         // // trace "xxx b_fill_bg="+b_fill_bg+" bAllowFill="+bAllowFill+" c32_bg="+UI.GetColorString(c32_bg)+" bg32_tint="+UI.GetColorString(bg32_tint)+" c32_tint2="+UI.GetColorString(c32_tint2)+" c32_tint3="+UI.GetColorString(c32_tint3);
+
+         if(b_fill_bg && bAllowFill)
+         {
+            UIRenderer.EnableBlendingKeepAlpha(); // (todo) why enable blending ? alpha=255
+            // (note) must fill with opaque color to avoid traces of previous focus outline
+            // // Integer io = c32_bg;
+            // // trace "xxx draw Button bg="+io.printf("#%08x");
+            UIRenderer.DrawFilledRectangle(fillX, fillY, fillW, fillH,
+                                           sdvg_TintARGB(sdvg_TintARGB(sdvg_TintARGB(c32_bg, bg32Tint), c32_tint2), c32_tint3) | #ff000000
+                                           );
+            UIRenderer.DisableBlending();
+         }
+
+         if(bDrawPressed)
+         {
+            if(null != icon_pressed)
+            {
+               Icon iconNormal <= deref icon;
+               icon <= icon_pressed;
+               Label::drawTransparentCached(0, 0);
+               icon <= deref iconNormal;
+            }
+            else
+            {
+               Label::drawTransparentCached(1, 1);
+            }
+         }
+         else
+         {
+            Label::drawTransparentCached(0, 0);
+         }
+
+         if(!b_dont_draw_kbdfocus)
+            drawKeyboardFocus(fillX, fillY, fillW, fillH);
+
+         drawFlatDisabledShade();
+
+         // Restore inverted colors
+         c32_bg = origC32Bg;
+         c32_fg = origC32Fg;
+
+         if(button_chained_redraws_left > 0)
+         {
+            button_chained_redraws_left--;
+            redraw();
+         }
+
+         return;
+      }
+
+      // // trace "xxx button onDraw caption=\""+caption+"\" toggle="+b_toggle+" layer_style="+layer_style+" lnf.b_button_bevel_border="+lnf.b_button_bevel_border;
+
+      float bx, by, bw, bh;
+
+      if(hasKeyboardFocus())
+      {
+         // Button gets a black outline so we need to shrink the bevel box
+         bx = fillX + 1;
+         by = fillY + 1;
+         bw = fillW - 2;
+         bh = fillH - 2;
+      }
+      else
+      {
+         bx = fillX;
+         by = fillX;
+         bw = fillW;
+         bh = fillH;
+      }
+
+      int c32BgTint = sdvg_TintARGB(bg32_tint, c32_tint3);
+      if(!isEditable())
+      {
+         c32BgTint = sdvg_TintARGB(c32BgTint, lnf_colors.get(LookAndFeel.COLOR_BUTTON_NON_EDITABLE_TINT));
+      }
+
+      if(LookAndFeel.STYLE_BEVEL == layer_style)
+      {
+         if(bAllowFill)
+            UIRenderer.DrawButtonBackground(bx, by, bw, bh,
+                                            layer_alpha, c32BgTint,
+                                            lnf.b_button_bevel_border/*bDrawBorder*/,
+                                            isMouseOver(),
+                                            bDrawPressed,
+                                            b_bg_keepalpha
+                                            );
+      }
+      else if(b_toggle || b_toggle_state)
+      {
+         if(bAllowFill)
+         {
+            int c32BgFlatToggle = sdvg_TintARGB(sdvg_TintARGB(sdvg_TintARGB(c32_bg, c32BgTint), c32_tint2),
+                                                 lnf_colors.get(b_toggle_state
+                                                                ? LookAndFeel.COLOR_BUTTON_FLAT_TOGGLE_ON_BG_TINT
+                                                                : LookAndFeel.COLOR_BUTTON_FLAT_TOGGLE_OFF_BG_TINT
+                                                                )
+                                                 );
+            if(b_bg_keepalpha)
+               UIRenderer.EnableBlendingKeepAlpha();
+            UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), c32BgFlatToggle);
+            UIRenderer.DrawRectangle(0, 0, getSizeX(), getSizeY(), 1,
+                                     sdvg_TintARGB(sdvg_TintARGB(sdvg_TintARGB(c32_bg, c32BgTint), c32_tint2),
+                                                    lnf_colors.get(b_toggle_state
+                                                                   ? LookAndFeel.COLOR_BUTTON_FLAT_TOGGLE_ON_BORDER_TINT
+                                                                   : LookAndFeel.COLOR_BUTTON_FLAT_TOGGLE_OFF_BORDER_TINT
+                                                                   )
+                                                    )
+                                     );
+         if(b_bg_keepalpha)
+            UIRenderer.DisableBlending();
+         }
+      }
+      else
+      {
+         if(bAllowFill)
+            UIRenderer.DrawButtonBackground(bx, by, bw, bh, layer_alpha,
+                                            sdvg_TintARGB(c32_bg, c32BgTint),
+                                            false/*bDrawBorder*/, isMouseOver(), bDrawPressed, b_bg_keepalpha
+                                            );
+      }
+
+      if(!b_dont_draw_kbdfocus)
+         drawKeyboardFocus(fillX, fillY, fillW, fillH);
+
+      if(bDrawPressed)
+      {
+         Label::drawTransparentCached(1, 1);
+      }
+      else
+      {
+         Label::drawTransparentCached(0, 0);
+      }
+
+      if(b_hold && b_hold_dot)
+      {
+         UIRenderer.EnableBlendingKeepAlpha();
+         UIRenderer.DrawRoundDot(getSizeX()-7, getSizeY()-9, 8, #1f000000);
+         UIRenderer.DisableBlending();
+      }
+
+      drawFlatDisabledShade();
+
+      if(button_chained_redraws_left > 0)
+      {
+         button_chained_redraws_left--;
+         redraw();
+      }
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      if(@(ap) == @(this))
+      {
+         if(TA_REPEAT == acName)
+         {
+            if(isEditable())
+            {
+               if(b_hold)
+               {
+                  b_hold_click = true;
+               }
+               else
+               {
+                  // Repeat
+                  ta_repeat.scheduleTicks(repeat_interval);
+                  handleButtonClick(null);
+               }
+            }
+            return true;
+         }
+      }
+
+      return Label::consumeAction(_action);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initButtonOnly();
+
+      if(Label::beginXFMTag(_form, _attributes))
+      {
+         initButtonPre();
+
+         String *atname, *atval;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            String atnamelc;
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "debug":
+                  setBackgroundColor(#6fff0000);
+                  break;
+
+               case "actionalias":
+                  atsplit <= atval.splitChar('=');
+                  setProvidedActionAlias(atsplit.get(0), atsplit.get(1));
+                  break;
+
+               case "editable":
+                  setEditable(int(atval));
+                  break;
+
+               case "repeat":
+                  setEnableRepeat(int(atval));
+                  break;
+
+               case "repeatdelay":
+                  repeat_delay = int(atval);
+                  break;
+
+               case "repeatinterval":
+                  repeat_interval = int(atval);
+                  break;
+
+               case "hold":
+                  setEnableHold(int(atval));
+                  break;
+
+               case "toggle":
+                  setEnableToggle(int(atval));
+                  break;
+
+               case "togglestate":
+               case "selected":
+                  setToggleState(int(atval));
+                  break;
+
+               case "toggletint":
+                  setToggleTint(int(atval));
+                  break;
+
+               case "toggledrawpressed":
+                  b_toggle_draw_pressed = int(atval);
+                  break;
+
+               case "delta":
+                  setEnableDelta(int(atval));
+                  break;
+
+               case "labelbutton":
+                  if("hidpi" == atval)
+                     setEnableLabelButtonHiDPI();
+                  else
+                     setEnableLabelButton(int(atval));
+                  break;
+
+               case "fgcolorlabelmix":
+                  setForegroundColorLabelMix(float(atval));
+                  break;
+
+               case "iconpressed":
+                  setIconPressed(UI.GetIcon(atval));
+                  break;
+
+               case "providecursorkeyaction":
+                  b_provide_cursor_key_action = int(atval);
+                  break;
+
+               case "onclick":
+                  _form.addHandledAction(ACTION_CLICK, Action, atval);
+                  break;
+
+               case "providewheelaction":
+                  b_provide_wheel_action = int(atval);
+                  break;
+
+               case "mouseovertint":
+                  setEnableMouseOverTint(int(atval));
+                  break;
+
+               case "drawpressed":
+                  setEnableDrawPressed(int(atval));
+                  break;
+
+               case "drawmouseover":
+                  setEnableDrawMouseOver(int(atval));
+                  break;
+
+               case "drawkbdfocus":
+                  setEnableDrawKeyboardFocus(int(atval));
+                  break;
+
+               case "providerightclick":
+                  setEnableProvideRightClick(int(atval));
+                  break;
+
+               case "providemiddleclick":
+                  setEnableProvideMiddleClick(int(atval));
+                  break;
+
+               case "allowdeltaclick":
+                  setEnableAllowDeltaClick(int(atval));
+                  break;
+
+               case "captiondim":
+                  // (note) initButtonPre() overwrote Label XFM setting, set it again
+                  setEnableCaptionDim(int(atval));
+                  break;
+
+               case "mousebuttons":
+                  setEnableMouseButtons(int(atval));
+                  break;
+            }
+         }
+
+         initButtonPost();
+
+      } // if Label::beginXFMTag()
+
+      return true;
+   }
+
+}

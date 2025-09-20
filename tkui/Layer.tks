@@ -1,0 +1,5774 @@
+// ----
+// ---- file   : Layer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 03Apr2005
+// ---- changed: 19Apr2005, 20Apr2005, 28May2005, 07Jun2005, 09Jun2005, 10Jun2005, 18Jun2005
+// ----          23Jun2005, 24Jun2005, 02Jul2005, 17Jul2005, 31Jul2005, 11Aug2005, 12Aug2005
+// ----          14Aug2005, 20Aug2005, 21Aug2005, 17Jun2006, 12Aug2006, 30Apr2007, 05May2007
+// ----          08May2007, 09May2007, 15May2007, 11Nov2007, 29Jan2008, 14Apr2008, 02Feb2009
+// ----          31May2009, 21Sep2009, 23Sep2009, 22Apr2010, 23Apr2010, 24Apr2010, 28May2010
+// ----          04Jun2010, 17Jun2010, 29Jun2010, 26Sep2010, 22Jan2011, 24Feb2011, 25Feb2011
+// ----          13Mar2011, 17Mar2011, 20Mar2011, 20Dec2011, 27Dec2011, 03Jan2012, 04Jan2012
+// ----          09Jan2012, 08Feb2012, 09Apr2013, 15May2013, 17Jun2013, 08Mar2014, 15Aug2014
+// ----          04Sep2014, 20Sep2014, 28Sep2014, 29Sep2014, 03Feb2015, 07Feb2015, 23Feb2015
+// ----          26Feb2015, 14Mar2015, 15Mar2015, 17Mar2015, 20Mar2015, 28Mar2015, 27Apr2015
+// ----          04May2015, 07Sep2015, 13Apr2016, 22Jan2017, 27Jan2017, 28Jan2017, 09Feb2017
+// ----          13Feb2017, 14Mar2017, 07Apr2017, 13Apr2017, 05Jun2017, 21Dec2017, 12Feb2018
+// ----          16Feb2018, 20May2018, 27May2018, 16Oct2018, 13Nov2018, 30Nov2018, 02Dec2018
+// ----          20Jul2019, 10Sep2019, 22Sep2019, 02Oct2019, 01Nov2019, 03Nov2019, 09Jul2020
+// ----          11Jul2020, 08Aug2020, 27Jan2021, 10Feb2021, 27Jun2021, 17Jul2022, 11Oct2022
+// ----          22Oct2022, 23Oct2022, 26Oct2022, 01Dec2022, 12Feb2023, 04Mar2023, 07Apr2023
+// ----          23Jun2023, 09Sep2023, 10Sep2023, 12Sep2023, 04Oct2023, 08Oct2023, 20Oct2023
+// ----          21Oct2023, 22Oct2023, 27Oct2023, 29Oct2023, 30Oct2023, 31Oct2023, 09Nov2023
+// ----          10Nov2023, 02Mar2024, 04Mar2024, 10Mar2024, 12Mar2024, 14Mar2024, 15Mar2024
+// ----          16Mar2024, 17Mar2024, 18Mar2024, 19Mar2024, 20Mar2024, 21Mar2024, 22Mar2024
+// ----          27Mar2024, 28Mar2024, 29Mar2024, 03Apr2024, 03Aug2024, 19Sep2024, 08Oct2024
+// ----          09Oct2024, 13Dec2024, 23Jan2025, 01Feb2025, 20Feb2025, 21Feb2025, 22Feb2025
+// ----          10Sep2025, 12Sep2025, 14Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MLayer;
+
+namespace ui;
+
+// (todo) remove? see plugins.tks
+use tkopengl;
+use tksdl;
+use tkfreetype2;
+use tkmath;
+use tkui;
+
+
+abstract class Layer extends XFMObject, ActionConsumer, UserDataContainer {
+   explain "Widget base class";
+
+   static boolean b_debug_layout = false;  // when Layer debug is enabled
+
+   define int DEFAULT_PREFERRED_SIZE_X = 16383;
+   define int DEFAULT_PREFERRED_SIZE_Y = 16383;
+
+   define int DEFAULT_MINIMUM_SIZE_X = 1;
+   define int DEFAULT_MINIMUM_SIZE_Y = 1;
+
+   protected List action_consumers;
+
+   protected boolean b_editable;
+
+
+   // ----
+   // ----
+   // ---- The parent,next,first_child fields are used to
+   // ---- set up a tree hierarchy of layers.
+   // ----
+   public Layer *parent, *next, *first_child;
+   public String layer_id;
+   public String layer_name; // Human readable name (or translation id..). Should be short.
+
+
+   // ----
+   // ---- Layer geometry
+   // ----
+   public float position_x, position_y;
+   public float size_x, size_y;
+   public boolean b_force_position_x;  // [01Feb2025] experimental
+   public boolean b_force_position_y;
+   public boolean b_force_size_x;  // 1=don't invalidate size. may still be overridden by setSizeX()
+   public boolean b_force_size_y;
+   public boolean b_force_min_size_x;
+   public boolean b_force_min_size_y;
+   public boolean b_lock_size_x;   // 1=don't allow size_x changes  [01Feb2025] experimental GraphForm abs positioning/sizes
+   public boolean b_lock_size_y;   // 1=don't allow size_y changes
+
+   define float ABS_INVALID = -999999;
+   public float abs_position_x, abs_position_y;
+
+   public float tmp_distance; // used for kbdfocus_selection mode
+
+   public boolean b_layer_group;  // true=layer group starts with this layer (flattenHierarchy() recursion stops at this layer)
+   public boolean b_decorative;    // true=layer can't be found by layerAt2f() / does not gain mousefocus (e.g. a flattened Panel)
+   public boolean b_invoke_parent_ondrawchildpost;  // true=call parent.onDrawChildPost(Layer l/*this*/) after this layer has been drawn. Used by GraphWidget.
+
+   public Layer *linked_redraw;  // when != null, also redraw 'linked_redraw' when this layer is scheduled to be redrawn
+
+
+
+   // ----
+   // ---- The layout field store a reference to a class which interprets
+   // ---- the layout_hints (or grid_* fields) of the child-tree and updates the position and size
+   // ---- of the respective child-layers.
+   // ----
+   protected Layout *layout;
+
+
+   // ----
+   // ---- The preferred and minimum size fields are used in conjunction
+   // ---- with layout managers.
+   // ----
+   // ---- If *_size.x==0 then the respective field needs to be calculated.
+   // ----
+   // ---- Widgets should implement the calcPreferredSize*() resp. calcMinimumSize*() methods
+   // ---- since the size fields may be invalidated, f.e. when resizeToMinimum() is called
+   // ---- (unless setRequiredSize*() has been used in which case the sizes are enforced).
+   // ----
+   // ---- The default size calculation checks whether a manual preferred size has been set.
+   // ---- If that is the case, these sizes are used as is. Otherwise the layout manager (if present)
+   // ---- is used to calculate the sizes.
+   // ----
+   // ---- It is recommended for an application to NOT set manual preferred sizes but instead let
+   // ---- the widgets calculate these fields.
+   // ----
+   // ----
+   protected float preferred_size_x, preferred_size_y;
+   protected float manual_preferred_size_x, manual_preferred_size_y; // only if layer has no children
+   public    float tmp_preferred_size_x, tmp_preferred_size_y; // temporarily used by layouter
+   protected float minimum_size_x, minimum_size_y;
+   public    float layout_weight_x, layout_weight_y; // used to calculate preferred size relative to parent container size
+   protected boolean b_collapse_layer; // true=shrink layer size to 0 by default. false=expand to max size (getDefaultPreferredSize*())
+
+
+   // ----
+   // ---- The layout_hints field stores a layout-dependent bitset that is interpreted
+   // ---- by classes implementing the AbstractLayout class (the SuperBorderLayout).
+   // ----
+   public int layout_hints;
+
+   // ----
+   // ---- Hints for the GridLayout
+   // ----
+   public int   layout_grid_x;
+   public int   layout_grid_y;
+   public int   layout_grid_w;  // col span width (>1: layer starts col span)
+   public int   layout_grid_h;  // row span height (>1: layer starts row span)
+   public float layout_grid_slant_factor;
+
+   namespace float   layout_grid_orig_span_sx;
+   namespace float   layout_grid_orig_span_sy;
+   namespace float   layout_grid_avail_span_sx;
+   namespace float   layout_grid_avail_span_sy;
+
+
+   // ----
+   // ---- The alignment fields stores a set of flags to hint the layout manager
+   // ---- how to arrange this Layer when a layout cell has more space avaiable than
+   // ---- required by this layer.
+   // ----
+   public int alignment;
+
+   // -1=invalid. see getBaselineY() / calcBaselineY(). invalidated by invalidateSizeCache()
+   //   (note) recalculated when font / icon / text-/icon placement / caption / inner padding / .. has changed
+   protected float cached_baseline_y;
+   namespace float cached_composite_effective_baseline_y;  // updated in SuperBorderLayout.layoutChildLayersOf()
+
+   namespace boolean b_baseline_content_shift;  // true=shift content instead of layer position when aligning to common baseline
+   namespace float   baseline_content_shift_y;
+
+
+   // ----
+   // ---- Reference to size group or null
+   // ----
+   public SizeGroup *size_group;
+
+
+   // ----
+   // ---- "Padding" is used to instruct layout managers to put some space around a Layer.
+   // ---- The resulting borders are located *outside* of the actual Layer region.
+   // ----
+   public float pad_top, pad_left, pad_right, pad_bottom;
+   public boolean b_xfm_padding;  // true when padding was overriden via "padLeft", .. XFM attribs.
+
+
+
+   // ----
+   // ---- Revert cursor if the current cursor matches the cursor last set by this layer
+   // ----
+   protected String last_cursor_name;
+
+
+   // ----
+   // ----
+   // ---- Tooltips
+   // ----
+   // ----
+   protected String *      tooltip_caption;
+   protected TimerAction * toolTipTimerAction;
+   protected ToolTip *     tooltip;
+   protected static int    last_tooltip_hide_time;
+   protected static Layer *last_tooltip_layer; // Never really access this object! Just used to compare pointers
+   protected Font *        tooltip_font_override;  // null==default font
+
+
+   // ----
+   // ----
+   // ---- Tab cycling
+   // ----
+   // ----
+   public PointerArray *tab_cycle_list;
+
+   protected boolean b_disable_cursor_key_tab_cycling;
+   namespace boolean b_disable_tab_cycle;  // true=don't report as tab-cycle member (composite widgets)
+   protected boolean b_force_tab_cycle_overrides;  // e.g. TabSwitch. see forceTabCycleOverrides XFM attribute
+
+
+   // ----
+   // ---- Rendering
+   // ----
+   public int paint_flag; // UI.PAINT_NONE, UI.PAINT_DIRTY
+   protected byte layer_alpha;  // 0..255
+   protected boolean b_bg_keepalpha;  // true=don't overwrite fb alpha (hint, e.g. for Label/Button/TitledPanel/..)
+
+   protected boolean b_redraw_parent; // true=redraw parent if layer is redrawn (e.g. transparent checkbox icons)
+
+
+   public boolean b_skip_kbdfocus; // true for checkboxes or floatparams/textfields within tables
+
+   protected boolean b_dont_set_kbdfocus_on_mouse;
+
+   Object *graph_data;  // ui::GraphForm. see setGraphData(), getGraphData()
+
+   namespace boolean b_layer_relayout_queued;
+
+   Layer *[] *overlays;
+
+   static boolean b_trace_hierarchy; // debug
+   boolean b_layer_debug;
+
+   public    IntArray    *lnf_colors_def;
+   public    IntArray    *lnf_colors;
+   public    LookAndFeel *lnf;
+   protected boolean      b_force_lnf;
+
+   protected int     layer_style;  // LookAndFeel.STYLE_BEVEL|FLAT
+   protected boolean b_flat_high_contrast;  // true by default except for ScrollPane and TableView sliders/scrollers
+
+   protected int     c32_bg;
+   protected int     c32_fg;
+   protected String *cname_bg;
+   protected String *cname_fg;
+   protected boolean b_custom_bg;
+   protected boolean b_custom_fg;
+   protected boolean b_fill_bg;// = true; // Fill background [before painting the caption in Label class]
+   protected int     bg32_tint;  // background tint (user-defined)
+   protected int     fg32_tint;
+
+
+   public method initLayer() {
+      lnf_colors_def         <= UI.lnf_colors;
+      lnf_colors             <= lnf_colors_def;
+      lnf                    <= UI.lnf;
+      b_flat_high_contrast     = true;
+      layer_alpha              = 255;
+      cached_baseline_y        = -1;
+      baseline_content_shift_y = 0;
+   }
+
+   public method freeLayer() {
+      // e.g. close platform resource handle (GL VBO)
+   }
+
+   public method recursiveFreeLayer() {
+      freeLayer();
+      local Layer l <= first_child;
+      while(null != l)
+      {
+         l.recursiveFreeLayer();
+         l <= l.next;
+      }
+   }
+
+   public isModal() : boolean {
+      explain "This is used to implement dialog windows that make all other floating layers
+ become unresponsive until a specific action has been taken in the (frontmost)
+ dialog window. Note: Only \"top-level\" windows (\"floating layers\") may be modal!";
+      return false;
+   }
+
+   public wantShadeModal() : boolean {
+      return isModal();
+   }
+
+   public isPopup() : boolean {
+      explain "Return true if the floating layer should be closed when the user clicks outside the layer area (handleNonChildMouseOver)";
+      return false;
+   }
+
+   public hide() {
+      explain "Hide layer. Only used for dialogs/windows/popups.";
+   }
+
+
+
+   // ----
+   // ---- Graph - data
+   // ----  (note) used by ui::GraphForm to store Node / Port refs
+   // ----
+   public method setGraphData(Object _data) {
+      graph_data <= deref _data;
+   }
+
+   public method getGraphData() : Object {
+      return graph_data;
+   }
+
+
+   // ----
+   // ---- layer - arrangement
+   // ----
+
+
+   // ----
+   // ---- Return the first child of this layer.
+   // ---- This may be overwritten by viewpane-like containers.
+   // ----
+   public method getLayoutFirstChild() : Layer {
+      return first_child;
+   }
+
+   // ----
+   // ---- Return the last child of this layer.
+   // ----
+   public method getLastChild() : Layer {
+      Layer c <= first_child;
+      while(null != c)
+      {
+         if(null == c.next)
+            return c;
+         c <= c.next;
+      }
+      return null;
+   }
+
+   // ----
+   // ---- Add a child layer and set its layout hints (for SuperBorderLayout)
+   // ----
+   public method addLayer(Layer _l, int _layoutHints) {
+      if(_l instanceof Layer)
+      {
+         _l.layout_hints = _layoutHints;
+         addChildLayer(deref _l);
+      }
+   }
+
+   // ----
+   // ---- Add a child layer and set its grid position and extents (for GridLayout)
+   // ----
+   public method addGridLayer(Layer _l, int _gridX, int _gridY, int _gridW, int _gridH) {
+      if(_l instanceof Layer)
+      {
+         _l.layout_grid_x = _gridX;
+         _l.layout_grid_y = _gridY;
+         _l.layout_grid_w = _gridW;
+         _l.layout_grid_h = _gridH;
+         addChildLayer(deref _l);
+      }
+   }
+
+   // ----
+   // ---- Add new child layer which will become either
+   // ---- the first_child or the last in the "next" list
+   // ---- of the current first_child.
+   // ----
+   public method addChildLayer(Layer _l) {
+      if(_l instanceof Layer)
+      {
+         if(null == first_child)
+         {
+            // ---- add first child
+            first_child <= deref _l;
+         }
+         else
+         {
+            // ---- append to list of current first_child
+            Layer l <= first_child;
+            while(null != l.next)
+               l <= l.next;
+            l.next <= deref _l;
+         }
+         // ---- set parent of added Layer
+         _l.parent <= this;
+         _l.next   <= null;
+
+         // TODO: Invalidate size caches for composite objects (Panel etc.)
+         _l.redraw();
+      }
+   }
+
+   public method unlinkNext() : Layer {
+      return deref next;
+   }
+
+   public method unlinkFirstChild() : Layer {
+      return deref first_child;
+   }
+
+   public method unlinkChildLayer(Layer _l) : Layer {
+      Layer *c <= first_child;
+      Layer *p <= null;
+      while(null != c)
+      {
+         if(@(c) == @(_l))
+         {
+            if(null == p)
+               return deref first_child;
+            else
+               return p.unlinkNext();
+         }
+         p <= c;
+         c <= c.next;
+      }
+   }
+
+   // ---- Delete the given (direct) child layer ----
+   public method removeChildLayer(Layer _l) {
+      local Layer *c <= first_child;
+      local Layer *l;
+      while(null != c)
+      {
+         if(@(c) == @(_l))
+         {
+            Layer n <= c.unlinkNext();
+            ////trace "xxx removeChildLayer this="+#(this)+" _l="+#(_l)+" l="+#(l)+" c="+#(c)+" n="+#(n);
+            c.recursiveFreeLayer();
+            c.recursiveHideToolTips();
+            c.next <= null;
+            c.parent <= null;
+            if(null == l)
+               first_child <= deref n;
+            else
+               l.next <= deref n;
+            return;
+         }
+         l <= c;
+         c <= c.next;
+      }
+      // TODO: Invalidate (just min?) size caches for composite objects (Panel etc.)
+      redraw();
+   }
+
+   public method findChildLayerById(local String _id) : Layer {
+      local Layer *c <= first_child;
+      while(null != c)
+      {
+         if(c.layer_id == _id)
+            return c;
+
+         if(null != c.first_child)
+         {
+            Layer r <= c.findChildLayerById(_id);
+            if(null != r)
+               return r;
+         }
+
+         c <= c.next;
+      }
+   }
+
+   public method findChildLayerByName(local String _name) : Layer {
+      local Layer *c <= first_child;
+      while(null != c)
+      {
+         if(c.layer_name == _name)
+            return c;
+
+         if(null != c.first_child)
+         {
+            Layer r <= c.findChildLayerByName(_name);
+            if(null != r)
+               return r;
+         }
+
+         c <= c.next;
+      }
+   }
+
+   public method findNextLayerByIdx(int _idx) : Layer {
+      Layer c <= this;
+      loop(_idx)
+      {
+         c <= c.next;
+         if(null == c)
+            return null;
+      }
+      return c;
+   }
+
+   public method findChildLayerByClass(local Class _c) : Layer {
+      local Layer *c <= first_child;
+      while(null != c)
+      {
+         if(c instanceof _c)
+            return c;
+
+         if(null != c.first_child)
+         {
+            Layer r <= c.findChildLayerByClass(_c);
+            if(null != r)
+               return r;
+         }
+
+         c <= c.next;
+      }
+      return null;
+   }
+
+   public method isPanel() : boolean {
+      return ("Panel" == yacMetaClassName());
+   }
+
+   public method findFirstNonPanelChildLayer() : Layer {
+      local Layer *c <= first_child;
+      while(null != c)
+      {
+         trace "xxx c.yacMetaClassName()="+c.yacMetaClassName();
+         if(!c.isPanel())
+            return c;
+
+         if(null != c.first_child)
+         {
+            Layer r <= c.findFirstNonPanelChildLayer();
+            if(null != r)
+               return r;
+         }
+
+         c <= c.next;
+      }
+      return null;
+   }
+
+   public method hasChildLayer(local Layer _l) : boolean {
+      explain "Query whether this layer has the given child layer.";
+
+      // // local Layer c <= first_child;
+      local Layer c <= getLayoutFirstChild();  // [05Apr2025] Timeline scrollpane hierarchyHasKeyboardFocus() fix
+      while(null != c)
+      {
+         if(@(c) == @(_l))
+            return true;
+
+         if(c.hasChildLayer(_l))
+            return true;
+
+         c <= c.next;
+      }
+      return false;
+   }
+
+   public method hasDirectChildLayer(Layer _l) : boolean {
+      explain "Query whether this layer has the given child layer. Do not search recursively.";
+
+      Layer c <= first_child;
+      while(null != c)
+      {
+         if(@(c) == @(_l))
+            return true;
+
+         c <= c.next;
+      }
+      return false;
+   }
+
+   public method getNumChildLayers() : int {
+      int r = 0;
+      Layer l <= first_child;
+      while(null != l)
+      {
+         r++;
+         l <= l.next;
+      }
+      return r;
+   }
+
+   public method getTotalNumChildLayers() : int {
+      // for debugging purposes
+      local int r = 0;
+      local Layer l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         r += 1 + l.getTotalNumChildLayers();
+         l <= l.next;
+      }
+      return r;
+   }
+
+   public method debugPrintChildLayersRecursive(local int _off, local boolean _bRecursive) {
+      local Layer *c <= first_child;////getLayoutFirstChild();
+      local int idx = 0;
+      while(null != c)
+      {
+         loop(_off)
+            stdout " ";
+         // trace "layer["+idx+"] c="+#(c)+" id=\""+layer_id+"\" pos="+c.getPositionString()+" size="+c.getSizeString();
+         trace "layer["+idx+"] c="+#(c)+" id=\""+c.layer_id+"\" pos="+c.getPositionString()+" size="+c.getSizeString();
+         if(_bRecursive)
+            c.debugPrintChildLayersRecursive(_off+1, true);
+         c <= c.next;
+         idx++;
+      }
+   }
+
+   public method debugPrintChildLayers() {
+      debugPrintChildLayersRecursive(0, false/*bRecursive*/);
+   }
+
+   // public method setRequiredSizesFromDebugPrint(String _s) : boolean {
+   //    trace "xxx setRequiredSizesFromDebugPrint: s=\""+_s+"\"";
+   //    Layer first <= first_child;////getLayoutFirstChild();
+   //    if(null == first)
+   //       return false;
+   //    StringArray lines <= _s.splitChar('\n');
+   //    String *line;
+   //    int lastOff = 0;
+   //    PointerArray firstStack; firstStack.empty();
+   //    IntArray childIdxStack; childIdxStack.empty();
+   //    int childIdx = -1;
+   //    Layer *l;
+   //    foreach line in lines
+   //    {
+   //       int idxS = line.indexOf("size=(", 0);
+   //       if(-1 != idxS)
+   //       {
+   //          int idxE = line.indexOfChar(')', idxS+6);
+   //          if(-1 != idxE)
+   //          {
+   //             int idxY = line.indexOfChar(';', idxS+6);
+   //             if(-1 != idxY)
+   //             {
+   //                int off = 0;
+   //                int i = 0;
+   //                while(' ' == line.getc(i++))
+   //                   off++;
+   //                trace "xxx line=\""+line+"\" off="+off+" lastOff="+lastOff;
+   //                if(off > lastOff)
+   //                {
+   //                   lastOff = off;
+   //                   firstStack.add(first);
+   //                   childIdxStack.add(childIdx);
+   //                   l <= first.findNextLayerByIdx(childIdx);
+   //                   if(null == l)
+   //                   {
+   //                      trace "[---] Layer::setRequiredSizesFromDebugPrint: child layer ["+childIdx+"] at off="+off+" does not exist (push)";
+   //                      return false;
+   //                   }
+   //                   childIdx = 0;
+   //                   first <= l.first_child;////getLayoutFirstChild();
+   //                   if(null == first)
+   //                   {
+   //                      trace "[---] Layer::setRequiredSizesFromDebugPrint: layer at off="+off+" does not exist (push)";
+   //                      return false;
+   //                   }
+   //                }
+   //                else if(off < lastOff)
+   //                {
+   //                   lastOff = off;
+   //                   first <= firstStack.get(off);
+   //                   childIdx = childIdxStack.get(off) + 1;
+   //                   l <= first.findNextLayerByIdx(childIdx);
+   //                   if(null == l)
+   //                   {
+   //                      trace "[---] Layer::setRequiredSizesFromDebugPrint: child layer ["+childIdx+"] at off="+off+" does not exist.";
+   //                      return false;
+   //                   }
+   //                }
+   //                else
+   //                {
+   //                   childIdx++;
+   //                }
+
+   //                l <= first.findNextLayerByIdx(childIdx);
+
+   //                if(null != l)
+   //                {
+   //                   float w = line.substring(idxS+6, idxY-idxS-6);
+   //                   float h = line.substring(idxY+1, idxE-idxY-1);
+   //                   trace "xxx id="+l.layer_id+" s=("+w+";"+h+")";
+   //                   l.setRequiredSize2f(w, h);
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] Layer::setRequiredSizesFromDebugPrint: next layer ["+childIdx+"] at off="+off+" does not exist.";
+   //                   return false;
+   //                }
+   //             } // if idxY
+   //          } // if idxE
+   //       } // if idxS
+   //    }  // foreach line
+   //    return true;
+   // }
+
+   // ---- Recursively disintegrate child layer hierarchy
+   public method removeChildHierarchy() {
+      explain "Recursively remove all children";
+
+      // trace "xxx Layer::removeChildHierarchy: this="+#(this)+" first_child="+#(first_child);
+      local Layer c <= first_child;
+      while(null != c)
+      {
+         c.recursiveFreeLayer();
+         c.recursiveHideToolTips();
+         c.parent <= null;
+         c.removeChildHierarchy();
+         UI.RemoveLayer(c);
+         c <= c.next;
+      }
+      first_child <= null;
+   }
+
+   // ---- Remove (direct) children of this layer
+   public method removeChildren() {
+      explain "Remove children of this layer (no recursion)";
+      local Layer c <= first_child;
+      while(null != c)
+      {
+         c.recursiveFreeLayer();
+         c.recursiveHideToolTips();
+         c.parent <= null;
+         UI.RemoveLayer(c);
+         c <= c.next;
+      }
+      first_child <= null;
+   }
+
+   public method removeParentLayerRefs() {
+      // called before relayouting/re-adding GraphForm nodes
+      //  - graph::Node::xfm_layer will not be reallocated but may store refs to deleted (Layer) objects
+      //     (e.g. Label::outer_border_panel)
+   }
+
+   // ---- Move child layer to end of list so that is painted on top of all other child layers
+   public method moveChildLayerToTop(Layer _l) {
+
+      if(null != _l.next)
+      {
+         Layer c <= first_child;
+         Layer *pThis;
+         while(null != c)
+         {
+            if(@(c) == @(_l))
+            {
+               // Find last layer
+               Layer *pLast;
+               while(null != c.next)
+               {
+                  pLast <= c;
+                  c <= c.next;
+               }
+               // Swap (deletable) 'next' pointers
+               Layer *t;
+               ////trace "xxx moveChildLayerToTop: pThis="+#(pThis)+" pLast="+#(pLast)+" _l="+#(_l)+" first_child="+#(first_child);
+               if(@(_l) == @(first_child))
+               {
+                  t <= deref first_child;
+                  first_child <= t.unlinkNext();
+                  t.next <= null;
+                  c.next <= deref t;
+               }
+               else
+               {
+                  t <= pThis.unlinkNext(); // Get deletable _l
+                  pThis.next <= t.unlinkNext();
+                  t.next <= null;
+                  c.next <= deref t;
+               }
+
+               // // debug:
+               // c <= first_child;
+               // while(null != c)
+               // {
+               //    trace "xxx c="+#(c)+" c.position_x="+c.position_x;
+               //    c <= c.next;
+               // }
+               // die "debug";
+
+               return;
+            }
+
+            // Try next layer
+            pThis <= c;
+            c <= c.next;
+         }
+      }
+
+   }
+
+   public method setDebug(boolean _bDebug) {
+      b_layer_debug = _bDebug;
+   }
+
+   public method getDebug() : boolean {
+      return b_layer_debug;
+   }
+
+   public method setLayerId(String _id) {
+      layer_id = _id;
+   }
+
+   public method getLayerId() : String {
+      return layer_id;
+   }
+
+   public method setLayerName(String _name) {
+      layer_name = _name;
+   }
+
+   public method getLayerName() : String {
+      return layer_name;
+   }
+
+   public method getDisplayedText() : String {
+      // implemented by Label/Button/CheckBox, TextField, FloatParam, ComboBox, ComboField, ..
+      return "";
+   }
+
+   public method getParent() : Layer {
+      return parent;
+   }
+
+   public method hasParent(Layer _l) : boolean {
+      explain "Query whether l is a parent of this layer.";
+
+      Layer c <= parent;
+      while(null != c)
+      {
+         if(@(c) == @(_l))
+         {
+            return true;
+         }
+         c <= c.parent;
+      }
+      return false;
+   }
+
+   public method hasParentOrIs(Layer _l) : boolean {
+      if(@(_l) == @(this))
+         return true;
+      return hasParent(_l);
+   }
+
+   public method getRoot() : Layer {
+      Layer r <= this;
+      while(null != r.parent)
+         r <= r.parent;
+      return r;
+   }
+
+   public method getNumParents() : int {
+      int r = 0;
+      Layer l <= this;
+      while(null != l.parent)
+      {
+         l <= l.parent;
+         r++;
+      }
+      return r;
+   }
+
+   public method getParentLayerType(Layer _type) : Layer {
+      // for use with LayerSwitches or TabbedViews
+      Layer l <= this;
+      while(null != l)
+      {
+         ////if((l.parent instanceof LayerSwitch) || (l.parent instanceof TabbedView))
+         if(l.parent instanceof _type)
+            return l.parent;
+
+         l <= l.parent;
+      }
+      return null;
+   }
+
+   public method getSizeGroup() : SizeGroup {
+      return size_group;
+   }
+
+   public method setSizeGroup(SizeGroup _sg) {
+      size_group <= deref _sg;
+      invalidateSizeCache();
+   }
+
+   // ----
+   // ---- Layer geometry
+   // ----
+
+   public method getDebugString() : String {
+      return #(this)+" geo="+getGeometryString()+" align="+alignment+" pref="+getPreferredSizeString()+" pad="+getPaddingString()+" geoPad="+getSizePadString()+" id=\""+layer_id+"\" displayed_text=\""+getDisplayedText()+"\""+(b_decorative?"**DECO**":"")+(b_invoke_parent_ondrawchildpost?" !POST!":"");
+   }
+
+   public method getFirstLabelDebugString() : String {
+      Label lb <= findChildLayerByClass(Label);
+      if(null != lb)
+         return lb.getDebugString();
+      else
+         return getDebugString();
+   }
+
+   public method appendHierarchyString(String _r, local int _cx) {
+      ////trace "AHS: this="+#(this)+" cx="+_cx;
+      loop(_cx)
+         _r.append(" ");
+      _r.append(getDebugString()+"\n");
+      local Layer l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         l.appendHierarchyString(_r, _cx+1);
+         l <= l.next;
+      }
+   }
+
+   public method printHierarchy() {
+      String s;
+      s.empty();
+      appendHierarchyString(s, 0);
+      trace s;
+   }
+
+   public method allowSubPixelPosition() : boolean {
+      explain "Query whether layer allows sub-pixel placement. Allowing this can cause text rendering artefacts for example so the default is not to allow it.";
+      return false;
+   }
+
+   public method allowSubPixelSize() : boolean {
+      explain "Query whether layer allows sub-pixel size.";
+      return false;
+   }
+
+   public method setPosition2f(float _x, float _y) {
+      ////trace "xxx Layer::setPosition2f("+_x+"; "+_y+") this="+#(this);
+      // (note) use moveToPosition2f() when layer has children
+      if(allowSubPixelPosition())
+      {
+         if(!b_force_position_x)
+            position_x = _x;
+
+         if(!b_force_position_y)
+            position_y = _y;
+      }
+      else
+      {
+         if(!b_force_position_x)
+            position_x = int(_x); // [30Nov2018] avoid occasional 1pixel offsets by discarding fractional part
+
+         if(!b_force_position_y)
+            position_y = int(_y);
+      }
+
+      if(!b_force_position_x)
+         abs_position_x = ABS_INVALID;
+
+      if(!b_force_position_y)
+         abs_position_y = ABS_INVALID;
+   }
+
+   public method moveToPosition2f(float _x, float _y) {
+      setPosition2f(_x, _y);
+      invalidateAbsolutePositions();
+   }
+
+   public method setPosition2fScaled(float _x, float _y) {
+      setPosition2f(_x * UI.font_scaling, _y * UI.font_scaling);
+   }
+
+   public method setEnableLockSizeX(boolean _bLock) {
+      b_lock_size_x = _bLock;
+   }
+
+   public method setEnableLockSizeY(boolean _bLock) {
+      b_lock_size_y = _bLock;
+   }
+
+   public method setEnableLockSize(boolean _bLock) {
+      b_lock_size_x = _bLock;
+      b_lock_size_y = _bLock;
+   }
+
+   public method setRequiredPosition2f(float _x, float _y) {
+      // (note) [01Feb2025] experimental (graph absolute positioning)
+      b_force_position_x = true;
+      b_force_position_y = true;
+
+      if(allowSubPixelPosition())
+      {
+         position_x = _x;
+         position_y = _y;
+      }
+      else
+      {
+         position_x = int(_x); // [30Nov2018] avoid occasional 1pixel offsets by discarding fractional part
+         position_y = int(_y);
+      }
+      abs_position_x = ABS_INVALID;
+      abs_position_y = ABS_INVALID;
+   }
+
+   public method setRequiredPosition2fScaled(float _x, float _y) {
+      setRequiredPosition2f(_x * UI.font_scaling, _y * UI.font_scaling);
+   }
+
+   public method setPositionX(float _x) {
+      if(!b_force_position_x)
+      {
+         if(allowSubPixelPosition())
+            position_x = _x;
+         else
+            position_x = int(_x); // [30Nov2018] avoid occasional 1pixel x-offsets by discarding fractional part
+         abs_position_x = ABS_INVALID;
+      }
+   }
+
+   public method setPositionXScaled(float _x) {
+      setPositionX(_x * UI.font_scaling);
+   }
+
+   public method setPositionY(float _y) {
+      if(!b_force_position_x)
+      {
+         if(allowSubPixelPosition())
+            position_y = _y;
+         else
+            position_y = int(_y); // [30Nov2018] avoid occasional 1pixel y-offsets by discarding fractional part
+
+         abs_position_y = ABS_INVALID;
+      }
+   }
+
+   public method setPositionYScaled(float _y) {
+      setPositionY(_y * UI.font_scaling);
+   }
+
+   public method getPositionX() : float {
+      return position_x;
+   }
+
+   public method getPositionXScaled() : float {
+      return position_x / UI.font_scaling;
+   }
+
+   public method getPositionY() : float {
+      return position_y;
+   }
+
+   public method getPositionYScaled() : float {
+      return position_y / UI.font_scaling;
+   }
+
+   public method getPositionString() : String {
+      return "("+position_x+";"+position_y+")";
+   }
+
+   public method getSizeString() : String {
+      return "("+size_x+";"+size_y+")";
+   }
+
+   public method getSizePadString() : String {
+      return "("+(size_x+pad_left+pad_right)+";"+(size_y+pad_top+pad_bottom)+")";
+   }
+
+   public method getMinimumSizeString() : String {
+      return "("+minimum_size_x+";"+minimum_size_y+")";
+   }
+
+   public method getPreferredSizeString() : String {
+      return "("+preferred_size_x+";"+preferred_size_y+")";
+   }
+
+   public method getRequiredSizeString() : String {
+      return "("+size_x+"/"+(b_force_size_x?minimum_size_x:-1)+";"+size_y+"/"+(b_force_size_y?minimum_size_y:-1)+")";
+   }
+
+   public method getGeometryString() : String {
+      return "("+position_x+";"+position_y+";"+size_x+";"+size_y+")";
+   }
+
+   public method getAbsolutePositionString() : String {
+      return "("+abs_position_x+";"+abs_position_y+")";
+   }
+
+   public method setGeometry(float _px, _py, _sx, _sy) {
+      setPosition2f(_px, _py);
+      setSize2f(_sx, _sy);
+   }
+
+   public method setGeometry4f(Geometry4f _geo) {
+      setPosition2f(_geo.px, _geo.py);
+      setSize2f(_geo.sx, _geo.sy);
+   }
+
+   public method getGeometry4f() : Geometry4f {
+      return [position_x, position_y, size_x, size_y];
+   }
+
+   public method restorePositionIfValid(Point2f _pos) : boolean {
+      if(_pos.x >= 0)
+      {
+         setPosition2f(_pos.x, _pos.y);
+         return true;
+      }
+      return false;
+   }
+
+   public method restoreGeometryIfValid(Geometry4f _geo) : boolean {
+      if(_geo.sx > 0)
+      {
+         setGeometry4f(_geo);
+         return true;
+      }
+      return false;
+   }
+
+   public method invalidateAbsolutePositions() {
+      if(!b_layout_minsweep)
+      {
+         abs_position_x = ABS_INVALID;
+         abs_position_y = ABS_INVALID;
+         local Layer c <= first_child;
+         while(c instanceof Layer)
+         {
+            c.invalidateAbsolutePositions();
+            c <= c.next;
+         }
+      }
+   }
+
+   public method getAbsolutePositionX() : float {
+      Point2f p;
+      calcAbsolutePosition(p);
+      return p.x;
+   }
+
+   public method getAbsolutePositionY() : float {
+      Point2f p;
+      calcAbsolutePosition(p);
+      return p.y;
+   }
+
+   public method calcAbsolutePosition(Point2f _vOrNull) {
+      float vx, vy;
+      Layer *c;
+      ViewPane *avp;
+
+      // trace "xxx calcAbsolutePosition: abs_position_x="+abs_position_x;
+
+      if(ABS_INVALID == abs_position_x)
+      {
+         if(ABS_INVALID == abs_position_y)
+         {
+            boolean bDebug = 0 && (this instanceof ComboBox);
+
+            if(bDebug)
+               trace "xxx Layer::calcAbsolutePosition: this="+#(this)+" abs=("+abs_position_x+";"+abs_position_y+")";
+
+            // Absolute x and y position components need to be updated
+            vx   = 0;
+            vy   = 0;
+            c   <= this;
+            avp <= null;
+            if(bDebug)
+               trace "xxx calcAbsolutePosition: this="+#(this)+" c="+#(c)+" c.pos="+c.getPositionString();
+            vx  += c.getPositionX();
+            vy  += c.getPositionY();
+            c   <= c.parent;
+            while(null != c)
+            {
+               if(bDebug)
+                  trace "xxx calcAbsolutePosition: this="+#(this)+" c="+#(c)+" c.pos="+c.getPositionString()+" c.parent="+#(c.parent);
+               if(c instanceof ViewPane)
+               {
+                  avp <= c;
+                  vx  -= avp.getViewOffsetX();
+                  vy  -= avp.getViewOffsetY();
+               }
+               vx += c.getPositionX();
+               vy += c.getPositionY();
+               c  <= c.parent;
+            }
+            abs_position_x = vx;
+            abs_position_y = vy;
+            if(bDebug)
+               trace "xxx calcAbsolutePosition: ret="+getAbsolutePositionString();
+         }
+         else
+         {
+            // Only the x position component needs to be updated
+            vx   = 0;
+            c   <= this;
+            avp <= null;
+            vx  += c.getPositionX();
+            c   <= c.parent;
+            while(null != c)
+            {
+               if(c instanceof ViewPane)
+               {
+                  avp <= c;
+                  vx  -= avp.getViewOffsetX();
+               }
+               vx += c.getPositionX();
+               c  <= c.parent;
+            }
+            abs_position_x = vx;
+         }
+      }
+      else if(ABS_INVALID == abs_position_y)
+      {
+         // Only the y position component needs to be updated
+         vy   = 0;
+         c   <= this;
+         avp <= null;
+         vy  += c.getPositionY();
+         c   <= c.parent;
+         while(null != c)
+         {
+            if(c instanceof ViewPane)
+            {
+               avp <= c;
+               vy -= avp.getViewOffsetY();
+            }
+            vy += c.getPositionY();
+            c <= c.parent;
+         }
+         abs_position_y = vy;
+      }
+      if(null != _vOrNull)
+         _vOrNull.init(abs_position_x, abs_position_y);
+   }
+
+   public method calcAbsolutePositionFBO(Point2f _v) {
+      // Used for drawing into (unscaled) FBO
+      calcAbsolutePosition(_v);
+      if(UI.b_fbo)
+      {
+         Layer r <= getRoot();
+         _v.x -= r.position_x;
+         _v.y -= r.position_y;
+      }
+   }
+
+   public method calcPositionWithin(Layer _root, Point2f _p) {
+      Layer l <= this;
+      _p.x = 0;
+      _p.y = 0;
+      while( (null != l) && (@(l) != @(_root)) )
+      {
+         _p.x += l.position_x;
+         _p.y += l.position_y;
+         l <= l.parent;
+      }
+   }
+
+   public method calcDropFilesPosition(Point2f _p) {
+      calcAbsolutePosition(_p);
+      _p.x = UI.ondropfiles_x - _p.x;
+      _p.y = UI.ondropfiles_y - _p.y;
+   }
+
+   public method containsAbsoluteXY(float x,y) : boolean {
+      // ----
+      // ----
+      explain "Check whether this layer contains the given absolute coordinate.";
+      // ----
+      // ----
+      Point2f p; calcAbsolutePosition(p);
+      if(x >= abs_position_x)
+         if(x <= (abs_position_x+size_x))
+            if(y >= abs_position_y)
+               return (y <= (abs_position_y+size_y));
+      return false;
+   }
+
+   public method getParentPositionX() : float {
+      Point2f p;
+      calcParentPosition(p);
+      return p.x;
+   }
+
+   public method getParentPositionY() : float {
+      Point2f p;
+      calcParentPosition(p);
+      return p.y;
+   }
+
+   public method calcParentPosition(Point2f _v) {
+      explain "Calc position relative to logical parent (root or ViewPane)";
+
+      float vx, vy;
+      Layer *c;
+
+      vx   = 0;
+      vy   = 0;
+      c   <= this;
+      vx  += c.getPositionX();
+      vy  += c.getPositionY();
+      c   <= c.parent;
+      while(null != c)
+      {
+         if(c instanceof ViewPane)
+         {
+            break;
+         }
+         vx += c.getPositionX();
+         vy += c.getPositionY();
+         c  <= c.parent;
+      }
+      _v.init(vx, vy);
+   }
+
+   public method setSizeX(float _w) {
+      // trace "xxx setSizeX("+_w+") this="+#(this);
+
+      // if("OH" == getDisplayedText())
+      // {
+      //    trace "[trc] Layer::setSizeX: minimum_size_x="+minimum_size_x+" size_x="+_w+" b_force_min_size_x="+b_force_min_size_x;
+      //    UI.Backtrace();
+      // }
+
+      if(!b_lock_size_x)
+      {
+         if(allowSubPixelSize())
+            size_x = _w;
+         else
+            size_x = int(_w + 0.5);
+
+         if( (b_force_size_x && (size_x != minimum_size_x)) ||
+             (b_force_min_size_x && (size_x < minimum_size_x))
+             )
+         {
+            if(Configuration.debugLevel > 2)
+               trace "[~~~] Layer::setSize2f: overriding forced_size_x="+minimum_size_x+" with w="+size_x;
+            // UI.Backtrace();
+         }
+      }
+
+   }
+
+   public method getSizeX() : float {
+      return size_x;
+   }
+
+   public method setSizeY(float _h) {
+      // trace "xxx setSizeY("+_h+") this="+#(this);
+
+      // if(layout instanceof FlowLayout)
+      // {
+      //    trace "xxx setSizeY("+_h+") FlowLayout this="+#(this);
+      //    UI.Backtrace();
+      // }
+
+      // if(getDebug())
+      // {
+      //    trace "xxx this="+#(this)+" setSizeY("+_h+")";
+      //    UI.Backtrace();
+      // }
+
+      if(!b_lock_size_y)
+      {
+
+         // if(this instanceof GraphForm)
+         // {
+         //    if(147 == _h)
+         //    {
+         //       trace "xxx GraphForm::setSizeY: this="+#(this)+" h="+_h;
+         //       UI.Backtrace();
+         //    }
+         // }
+
+         if(allowSubPixelSize())
+            size_y = _h;
+         else
+            size_y = int(_h + 0.5);
+
+         if(b_force_size_y && (size_y != minimum_size_y))
+         {
+            if(Configuration.debugLevel > 2)
+               trace "[~~~] Layer::setSize2f: overriding forced_size_y="+minimum_size_y+" with h="+size_y;
+            // UI.Backtrace();
+         }
+      }
+   }
+
+   public method getSizeY() : float {
+      return size_y;
+   }
+
+   public method setSizePadX(float _wPad) {
+      float padX = getPadX();
+      setSizeX(_wPad - padX);
+   }
+
+   public method setSizePadY(float _hPad) {
+      float padY = getPadY();
+      setSizeY(_hPad - padY);
+   }
+
+   public method setSize2f(float _w, float _h) {
+      setSizeX(_w);
+      setSizeY(_h);
+   }
+
+   public method setSize2fScaled(float _w, float _h) {
+      setSize2f(_w * UI.font_scaling,
+                _h * UI.font_scaling
+                );
+   }
+
+   public method setSizeXScaled(float _w) {
+      setSizeX(_w * UI.font_scaling);
+   }
+
+   public method setSizeYScaled(float _h) {
+      setSizeY(_h * UI.font_scaling);
+   }
+
+   public method getSize(Size2f _retSz) {
+      _retSz.x = getSizeX();
+      _retSz.y = getSizeY();
+   }
+
+   // ---- This may be overwritten by viewpane-like containers
+   public method getLayoutSizeX() : float {
+      return getSizeX();
+   }
+
+   public method getLayoutSizeY() : float {
+      return getSizeY();
+   }
+
+
+   // ----
+   // ---- layout - hints
+   // ----
+
+   public method setLayoutHints(int _hints) {
+      layout_hints = _hints;
+   }
+
+   public method getLayoutHints() : int {
+      return layout_hints;
+   }
+
+   public method setAlignment(int _alignment) {
+      alignment = _alignment;
+   }
+
+   public method getAlignment() : int {
+      return alignment;
+   }
+
+   public method getLayout() {
+      // ----
+      // ----
+      explain "Return the layout of this layer.";
+      // ----
+      // ----
+      return layout;
+   }
+
+   public method setLayout(Layout _l) {
+      // ----
+      // ----
+      explain "Set a Layout for this Layer.";
+      // ----
+      // ----
+      if(_l instanceof Layout)
+      {
+         if(@(layout) != @(_l)) // ?? (superfluous?)
+         {
+            layout <= deref _l; // grab new objects
+         }
+      }
+   }
+
+   // Note: never set the preferred_size field manually since this will break the BorderLayout (layout_weights)
+   //       instead, implement the calcPreferredSize*() methods
+   //       In order to update the layout please call layoutHierarchy()
+
+   public method invalidateSizeCache() {
+      explain "Helper method to invalidate the current preferred/minimum size ";
+
+      // trace "xxx invalidateSizeCache: this="+#(this)+" parent="+#(parent)+" b_force_size_x="+b_force_size_x+" b_force_min_size_x="+b_force_min_size_x;
+
+      invalidateContentLayout();
+
+      if(!b_force_size_x)
+      {
+         preferred_size_x = 0; // Force recalc!
+         if(!b_force_min_size_x)
+            minimum_size_x = 0;
+      }
+
+      if(!b_force_size_y)
+      {
+         preferred_size_y = 0;
+         if(!b_force_min_size_y)
+            minimum_size_y = 0;
+      }
+
+   }
+
+   public method invalidateSizeCaches() {
+      explain "Recursively invalidate preferred and minimum size fields so that they are recalculated the next time they are accessed.";
+
+      invalidateSizeCache();
+      local Layer c <= getLayoutFirstChild();
+      while(c instanceof Layer)
+      {
+         c.invalidateSizeCaches();
+         c <= c.next;
+      }
+   }
+
+   public method invalidateMinSizeCache() {
+      explain "Helper method to invalidate the current minimum size ";
+
+      if(!b_force_size_x && !b_force_min_size_x)
+         minimum_size_x = 0;
+
+      if(!b_force_size_y && !b_force_min_size_y)
+         minimum_size_y = 0;
+   }
+
+   public method invalidateChildContainerMinSizeCaches() {
+      explain "Recursively invalidate minimum size caches of all container-like child layers.";
+
+      local Layer l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         l.invalidateMinSizeCache();
+         l.invalidateChildContainerMinSizeCaches();
+         l <= l.next;
+      }
+   }
+
+   public method invalidateSizeGroupMemberSizes() {
+   }
+
+   public method invalidateContentLayout() {
+      // implemented by derived classes
+      //  - e.g. invalidate cached_icon_x/y, cached_text_x/y, ..
+      cached_baseline_y = -1;
+      cached_composite_effective_baseline_y = 0;
+      baseline_content_shift_y = 0;
+   }
+
+   public method recursiveInvalidateSizeGroupMemberSizes() {
+      invalidateSizeGroupMemberSizes();
+      local Layer l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         l.recursiveInvalidateSizeGroupMemberSizes();
+         l <= l.next;
+      }
+   }
+
+   public method setEnableBaselineContentShift(boolean _bEnable) {
+      // when enable, shift layer content instead of position
+      //  (note) requires that there is indeed enough (vertical) space
+      //  (note) used by Eureka ModGrid lane buttons
+      //  (note) implemented by e.g. Label/Button/ComboBox/TextField/FloatParam
+      b_baseline_content_shift = _bEnable;
+   }
+
+   public method setBaselineContentShiftY(float _y) {
+      baseline_content_shift_y = _y;
+   }
+
+   public method getBaselineY() : float {
+      // called in final pass (e.g. SuperBorderLayout)
+      //   - see alignment / Layout.BASELINEY
+      //   - a return value of 0 indicates that this layer has no known baseline
+      //      and its position will not be adjusted in final layout pass
+      if(cached_baseline_y < 0)
+         layoutContent();
+      return cached_baseline_y + baseline_content_shift_y;
+   }
+
+   public method layoutFindChildEffectiveBaselineY() : float {
+      // called by Panel
+      local float maxBaselineY = 0.0f;
+      local Layer c <= first_child;
+      while(null != c)
+      {
+         if(c.alignment & Layout.BASELINEY)
+         {
+            float baselineY = c.layoutFindEffectiveBaselineY();
+            if(baselineY > 0.0f)
+            {
+               if(baselineY > maxBaselineY)
+                  maxBaselineY = baselineY;
+            }
+         }
+         c <= c.next;
+      }
+      return maxBaselineY;
+   }
+
+   public method layoutFindEffectiveBaselineY() : float {
+      float baselineY = getBaselineY();
+      if(baselineY > 0.0f)
+         return baselineY + position_y;
+      return 0.0f;
+   }
+
+   protected method layoutContent() {
+      // implemented by derived classes
+      //   - layout inner content of layer
+      //   - update 'cached_baseline_y'
+      //   - update any other, layer-class dependend cached positions/sizes (e.g. icons / text captions)
+      cached_baseline_y = 0;
+   }
+
+   public method isLayoutMinSweepPass() : boolean {
+      explain "Can be used by widgets implemented outside the ui namespace to test whether the current layout pass tries to determine the minimum size (of a Â§Window). If this returns true, certain widgets (like Â§SplitPane) do not clip certain states (like the split position in case of the SplitPane)";
+      return b_layout_minsweep;
+   }
+
+   public method layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      explain "Layout child layers. Assumes that this layer is already layouted.";
+
+      // trace "xxx Layer::layoutHierarchy: this="+#(this)+"="+getDebugString()+" layout="+#(layout);
+
+      b_layer_relayout_queued = false; // [22Oct2023]
+
+      // if(_bLayoutFinal)
+      // {
+      //    trace "xxx layoutHierarchy this="+#(this)+" id=\""+layer_id+"\" layout="+#(layout);
+      //    if(this instanceof PagePipeMap)
+      //       UI.Backtrace();
+      // }
+
+      if(null != layout)
+      {
+         layout.layoutChildLayersOf(this, _bInvalidateSizeCaches, _bLayoutFinal);
+      }
+      else
+      {
+         local Layer ch <= getLayoutFirstChild();
+         local float thisW = getSizeX(), thisH = getSizeY();
+         while(null != ch)
+         {
+            if( !b_force_size_x && (0 == ch.getSizeX()) )
+            {
+               // ---- assign the parent size if the child has no size
+               ch.setPosition2f(0f, 0f);
+               ch.setSize2f(thisW, thisH);
+               ch.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+            }
+            ch <= ch.next;
+         }
+      }
+
+      if(_bLayoutFinal)
+         invalidateAbsolutePositions();
+   }
+
+   public method layoutApplyCommonBaselineAdjustments(float _maxBaselineY, float _sizeAvail) {
+
+      boolean bDebug = getDebug();
+
+      if(alignment & Layout.BASELINEY)
+      {
+         // // int baselineY = layoutFindEffectiveBaselineY();
+         int baselineY = getBaselineY();
+         if(baselineY > 0)
+         {
+            int py = getPositionY();
+            int sy = getSizeY();
+            int shiftY = _maxBaselineY - (baselineY + py);
+
+            if(bDebug)////"Info:" == getDisplayedText())
+               trace "xxx shift apply c="+#(this)+" c.id="+layer_id+" c.caption=\""+getDisplayedText()+"\" maxBaselineY="+_maxBaselineY+" baselineY="+baselineY+" shiftY="+shiftY+" py="+py+" sy="+sy+" availSy="+_sizeAvail+" => new py="+(py + shiftY);
+
+            if(b_baseline_content_shift)
+            {
+               // Shift content instead of layer position
+               setBaselineContentShiftY(shiftY);
+            }
+            else
+            {
+               int pyShifted = py + shiftY;
+               if(pyShifted < 0)
+               {
+                  pyShifted = 0;
+                  setPositionY(pyShifted);
+               }
+               else if(pyShifted + sy > int(_sizeAvail))
+               {
+                  // Not enough vertical space, shift content in addition to layer position
+                  setPositionY(int(_sizeAvail) - sy);
+                  setBaselineContentShiftY(pyShifted - getPositionY());
+                  if(bDebug)
+                     trace "[~~~] force shiftY this="+#(this)+" caption=\""+getDisplayedText()+"\" sizeAvail="+_sizeAvail+" sy="+sy+" py="+py+" pyShifted="+pyShifted+" maxBaselineY="+_maxBaselineY+" => blcShiftY="+baseline_content_shift_y+" newPy="+getPositionY();
+               }
+               else
+               {
+                  setPositionY(pyShifted);
+               }
+            }
+         }
+      }
+   }
+
+   public method layoutApplyCompositeBaselineAdjustments_BorderLayout() {
+      local Layer c <= first_child;
+      // // local float maxBaselineY = 0.0f;////cached_composite_effective_baseline_y;
+      local float maxBaselineY = cached_composite_effective_baseline_y;  // [24Sep2024] fix ModMatrixEntryForm
+      float baselineY;
+
+      local boolean bDebug = getDebug() && b_debug_layout;
+
+      if(bDebug)
+         trace "xxx layoutApplyCompositeBaselineAdjustments_BorderLayout: this="+#(this)+" id="+getLayerId()+" .............";
+
+      // Recursively find lowest baseline (and move child composites)
+      while(null != c)
+      {
+         // if(c instanceof Label)
+         //    trace "xxx  shift layoutApplyCompositeBaselineAdjustments: iterate lb="+#(c)+" caption=\""+c.getDisplayedText()+"\"";
+         if(bDebug) trace "xxx layoutApplyCompositeBaselineAdjustments: c="+#(c)+" c.id="+c.getLayerId()+" c.alignment="+c.alignment;
+         if(c.alignment & Layout.BASELINEY)
+         {
+            if(bDebug) trace "xxx  shift layoutApplyCompositeBaselineAdjustments: iterate BASELINEY c="+#(c);
+
+            // (note) direct composite child layers have already been adjusted to common baseline in BorderLayout
+            if(c instanceof Composite)
+            {
+               // trace "xxx  shift layoutApplyCompositeBaselineAdjustments: recurse into c="+#(c);
+               c.layoutApplyCompositeBaselineAdjustments();
+
+               baselineY = c.cached_composite_effective_baseline_y;
+
+               if(baselineY > 0.0f)
+               {
+                  baselineY += c.getPositionY();
+
+                  if(bDebug || c.getDebug())
+                     trace "xxx  shift layoutApplyCompositeBaselineAdjustments: this="+#(this)+" c="+#(c)+" c.py="+c.getPositionY()+" baselineY="+baselineY;
+
+                  // // baselineY += c.getPositionY();
+                  if(baselineY > maxBaselineY)
+                     maxBaselineY = baselineY;
+               }
+            }
+            // else
+            //    maxBaselineY = mathMaxf(c.getBaselineY(), maxBaselineY); // [24Sep2024]
+         }
+         c <= c.next;
+      }
+
+      float shiftY;
+
+      if(bDebug)
+         trace "xxx this="+#(this)+" maxBaselineY="+maxBaselineY+" cached_composite_effective_baseline_y="+cached_composite_effective_baseline_y;
+
+      if(maxBaselineY > cached_composite_effective_baseline_y)
+      {
+         // Move non-composite child layers to new baseline
+         shiftY = maxBaselineY - cached_composite_effective_baseline_y;
+         if(bDebug)
+            trace "xxx Layer: this="+#(this)+" maxBaselineY="+maxBaselineY+" cached_composite_effective_baseline_y="+cached_composite_effective_baseline_y+" => child shiftY="+shiftY;
+         c <= first_child;
+         while(null != c)
+         {
+            if(!(c instanceof Composite))
+            {
+               if(c.alignment & Layout.BASELINEY)
+               // // if( (c.alignment & Layout.BASELINEY) && (c.getBaselineY() > 0) )
+               {
+                  if(bDebug)
+                     trace "xxx Layer: apply child shiftY="+shiftY+" this="+#(this)+" maxBaselineY="+maxBaselineY+" c="+#(c)+" c.caption=\""+c.getDisplayedText()+"\" c.py="+c.getPositionY();
+                  c.setPositionY(c.getPositionY() + shiftY);
+               }
+            }
+
+            c <= c.next;
+         }
+
+         cached_composite_effective_baseline_y = maxBaselineY;
+      }
+
+      if(maxBaselineY > 0.0f)
+      {
+         if(getDebug())
+            trace "xxx  shift layoutApplyCompositeBaselineAdjustments: this="+#(this)+" maxBaselineY="+maxBaselineY+" this.cached_composite_effective_baseline_y="+cached_composite_effective_baseline_y;
+
+         c <= first_child;
+         while(null != c)
+         {
+            if(c instanceof Composite)
+            {
+               if(c.alignment & Layout.BASELINEY)
+               {
+                  baselineY = c.cached_composite_effective_baseline_y;
+                  if(bDebug) trace "xxx  layoutApplyCompositeBaselineAdjustments: c="+#(c)+" effCompositeBaselineY="+baselineY;
+                  if(baselineY > 0.0f)
+                  {
+                     float py = c.getPositionY();
+                     baselineY += py;
+                     shiftY = maxBaselineY - baselineY;
+                     if(bDebug || c.getDebug())
+                        trace "xxx  shift layoutApplyCompositeBaselineAdjustments:  this="+#(this)+" maxBaselineY="+maxBaselineY+" c="+#(c)+" c.eff_baselineY="+baselineY+" c.py="+py+" shiftY="+shiftY+" => new c.py="+(py + shiftY);
+                     c.setPositionY(py + shiftY);
+                     // // c.cached_composite_effective_baseline_y += shiftY;  // not needed anymore
+                  }
+               }
+            }
+            c <= c.next;
+         }
+
+         cached_composite_effective_baseline_y = maxBaselineY;
+         if(bDebug)
+            trace "xxx  shift layoutApplyCompositeBaselineAdjustments: this="+#(this)+" updated effective baseline y to "+maxBaselineY;
+      }
+   }
+
+   protected method layoutApplyCompositeBaselineAdjustments_GridLayout() {
+      GridLayout gridLayout <= layout;
+      // local int gridW = gridLayout.findGridSxOf(this);
+      local int gridH = gridLayout.findGridSyOf(this);
+      local Layer *c;
+
+      local float maxBaselineY = 0.0f;////cached_composite_effective_baseline_y;
+      float baselineY;
+
+      local boolean bDebug = getDebug();
+
+      local int gridY = 0;
+      loop(gridH)
+      {
+         if(bDebug) trace "xxx<GridLayout> ~~~~~~~~~~~~~~~~~~~~~~~ layoutApplyCompositeBaselineAdjustments: gridY="+gridY;
+
+         // Recursively find lowest baseline (and move child composites)
+         c <= first_child;
+         while(null != c)
+         {
+            if(c.layout_grid_y == gridY)
+            {
+               // if(c instanceof Label)
+               //    trace "xxx  shift layoutApplyCompositeBaselineAdjustments: iterate lb="+#(c)+" caption=\""+c.getDisplayedText()+"\"";
+               if(bDebug) trace "xxx GridLayout: layoutApplyCompositeBaselineAdjustments: c="+#(c)+" c.alignment="+c.alignment;
+               if(c.alignment & Layout.BASELINEY)
+               {
+                  // trace "xxx  shift layoutApplyCompositeBaselineAdjustments: iterate BASELINEY c="+#(c);
+
+                  // (note) direct composite child layers have already been adjusted to common baseline
+                  if(c instanceof Composite)
+                  {
+                     // trace "xxx  shift layoutApplyCompositeBaselineAdjustments: recurse into c="+#(c);
+                     c.layoutApplyCompositeBaselineAdjustments();
+
+                     baselineY = c.cached_composite_effective_baseline_y;
+
+                     if(baselineY > 0.0f)
+                     {
+                        baselineY += c.getPositionY();
+
+                        if(bDebug || c.getDebug())
+                           trace "xxx<GridLayout>  shift layoutApplyCompositeBaselineAdjustments: this="+#(this)+" c="+#(c)+" c.py="+c.getPositionY()+" baselineY="+baselineY;
+
+                        // // baselineY += c.getPositionY();
+                        if(baselineY > maxBaselineY)
+                           maxBaselineY = baselineY;
+                     }
+                  }
+               }
+            }
+            c <= c.next;
+         }
+
+
+         float shiftY;
+
+         if(maxBaselineY > cached_composite_effective_baseline_y)
+         {
+            // Move non-composite child layers to new baseline
+            shiftY = maxBaselineY - cached_composite_effective_baseline_y;
+            if(bDebug)
+               trace "xxx Layer<GridLayout>:  this="+#(this)+" maxBaselineY="+maxBaselineY+" cached_composite_effective_baseline_y="+cached_composite_effective_baseline_y+" => child shiftY="+shiftY;
+
+            c <= first_child;
+            while(null != c)
+            {
+               if(c.layout_grid_y == gridY)
+               {
+                  if(!(c instanceof Composite))
+                  {
+                     if(c.alignment & Layout.BASELINEY)
+                        // // if( (c.alignment & Layout.BASELINEY) && (c.getBaselineY() > 0) )
+                     {
+                        if(bDebug)
+                           trace "xxx Layer<GridLayout>: apply child shiftY="+shiftY+" this="+#(this)+" maxBaselineY="+maxBaselineY+" c="+#(c)+" c.caption=\""+c.getDisplayedText()+"\" c.py="+c.getPositionY();
+                        c.setPositionY(c.getPositionY() + shiftY);
+                     }
+                  }
+               }
+
+               c <= c.next;
+            }
+            cached_composite_effective_baseline_y = maxBaselineY;
+         }
+
+         if(maxBaselineY > 0.0f)
+         {
+            if(bDebug)
+               trace "xxx  shift layoutApplyCompositeBaselineAdjustments: this="+#(this)+" maxBaselineY="+maxBaselineY+" this.cached_composite_effective_baseline_y="+cached_composite_effective_baseline_y;
+
+            c <= first_child;
+            while(null != c)
+            {
+               if(c.layout_grid_y == gridY)
+               {
+                  if(c instanceof Composite)
+                  {
+                     if(c.alignment & Layout.BASELINEY)
+                     {
+                        baselineY = c.cached_composite_effective_baseline_y;
+                        if(bDebug) trace "xxx  layoutApplyCompositeBaselineAdjustments: c="+#(c)+" effCompositeBaselineY="+baselineY;
+                        if(baselineY > 0.0f)
+                        {
+                           float py = c.getPositionY();
+                           baselineY += py;
+                           shiftY = maxBaselineY - baselineY;
+                           if(bDebug || c.getDebug())
+                              trace "xxx  shift layoutApplyCompositeBaselineAdjustments:  this="+#(this)+" maxBaselineY="+maxBaselineY+" c="+#(c)+" c.eff_baselineY="+baselineY+" c.py="+py+" shiftY="+shiftY+" => new c.py="+(py + shiftY);
+                           c.setPositionY(py + shiftY);
+                           // // c.cached_composite_effective_baseline_y += shiftY;  // not needed anymore
+                        }
+                     }
+                  }
+               }
+
+               c <= c.next;
+            }
+
+            cached_composite_effective_baseline_y = maxBaselineY;
+            if(bDebug)
+               trace "xxx  shift layoutApplyCompositeBaselineAdjustments: this="+#(this)+" updated effective baseline y to "+maxBaselineY;
+         }
+
+         gridY++;
+      } //  loop gridH
+   }
+
+   public method layoutApplyCompositeBaselineAdjustments() {
+      // (note) aligns composites / panels to common baseline
+      if(layout instanceof GridLayout)
+         layoutApplyCompositeBaselineAdjustments_GridLayout();
+      else
+         layoutApplyCompositeBaselineAdjustments_BorderLayout();
+   }
+
+   public method relayout() {
+      layoutHierarchy(true/*bInvalidateSizeCaches*/, false/*bLayoutFinal*/);
+      layoutHierarchy(false, true);
+   }
+
+   public method queueRelayout() {
+      b_layer_relayout_queued = true;
+   }
+
+   public method onDropFiles(StringArray _fileNames) : boolean {
+      explain "Called when one or many files have been dropped on this layer";
+   }
+
+   public method resizeToMinimum() {
+      invalidateAbsolutePositions();
+
+      float sx = getMinimumSizeX();
+      float sy = getMinimumSizeY();
+      setSize2f(sx, sy);
+      layoutHierarchy(true, false);
+   }
+
+   public method resizeToMinimumX() {
+      invalidateAbsolutePositions();
+
+      float sx = getMinimumSizeX();
+      float sy = getSizeY();
+      setSize2f(sx, sy);
+      layoutHierarchy(true, false);
+   }
+
+   public method resizeToMinimumY() {
+      invalidateAbsolutePositions();
+
+      float sx = getSizeX();
+      float sy = getMinimumSizeY();
+      setSize2f(sx, sy);
+      layoutHierarchy(true, false);
+   }
+
+   public method handleResize() {
+      // called by UI.LayoutRootLayer();
+      recursiveBeginResize();
+      recursiveInvalidateSizeGroupMemberSizes(); // xxx test 04Jan2012
+      invalidateSizeCaches(); // xxx test 03Jan2012
+      layoutHierarchy(true, false);
+      // // root_layer.invalidateSizeCaches(); // xxx test 03Jan2012
+      layoutHierarchy(true, false); // xxx 04Jan2012: re-layout because of sizegroups
+      recursiveOnResize();
+      redraw();
+   }
+
+   public method onResize() {
+      explain "Called when the layer has been resized to its final size.";
+   }
+
+   public method recursiveBeginResize() {
+      // called by UI.LayoutRootLayer() via UI.SetRootLayer() and UI.RootLayerResized()
+      //  - called after pos/size have been updated but before layoutHierarchy()
+      local Layer l <= getLayoutFirstChild();
+      // // trace "xxx Layer::recursiveBeginResize: this="+#(this)+" layoutFirstChild="+#(l);
+      while(null != l)
+      {
+         l.recursiveBeginResize();
+         l <= l.next;
+      }
+   }
+
+   public method recursiveOnResize() {
+      explain "Recursively inform all child layers that their final sizes have been set. Do not call directly! Called by UI.RootLayerResize() and Window.onMouse().";
+      local Layer l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         l.recursiveOnResize();
+         l <= l.next;
+      }
+      onResize();
+   }
+
+   public method findSizeGroupMembers(SizeGroup _sg, PointerArray _ret) {
+      // Recursively find all members of the given size group
+      local Layer l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         if(@(l.size_group) == @(_sg))
+            _ret.add(l);
+
+         l.findSizeGroupMembers(_sg, _ret);
+         l <= l.next;
+      }
+   }
+
+   // ----
+   // ---- Recursively invoke onOpen() callback
+   // ----
+   public method recursiveOnOpen() {
+      local Layer ch <= getLayoutFirstChild();
+      while(null != ch)
+      {
+         // trace "xxx Layer::recursiveOnOpen: ch="+#(ch);
+         ch.recursiveOnOpen();
+         ch <= ch.next;
+      }
+      onOpen();
+   }
+
+   public method setEnableCollapse(boolean _bEnable) {
+      b_collapse_layer = _bEnable;
+   }
+
+   public method getDefaultPreferredSizeX() : float {
+      // (note) derived classes can return 0 to prefer collapse instead of expand
+      return b_collapse_layer ? 0 : DEFAULT_PREFERRED_SIZE_X;
+   }
+
+   // ---- Return the preferred width of this layer.
+   public method getPreferredSizeX() : float {
+      if(b_lock_size_x)
+         return size_x;
+      if(preferred_size_x <= 0.00001f)
+      {
+         calcPreferredSizeX();
+
+         if(preferred_size_x <= 0.00001f)
+            preferred_size_x = getDefaultPreferredSizeX();
+      }
+
+      if(preferred_size_x < minimum_size_x)
+         preferred_size_x = minimum_size_x;
+
+      // trace "xxx getPreferredSizeX="+preferred_size_x+" this="+getDebugString();
+
+      return preferred_size_x;
+   }
+
+   public method getDefaultPreferredSizeY() : float {
+      // (note) derived classes can return 0 to prefer collapse instead of expand
+      return b_collapse_layer ? 0 : DEFAULT_PREFERRED_SIZE_Y;
+   }
+
+   // ---- Return the preferred height of this layer.
+   public method getPreferredSizeY() : float {
+      if(b_lock_size_y)
+         return size_y;
+      if(preferred_size_y <= 0.00001f)
+      {
+         calcPreferredSizeY();
+
+         if(preferred_size_y <= 0.00001f)
+            preferred_size_y = getDefaultPreferredSizeY();
+      }
+
+      if(preferred_size_y < minimum_size_y)
+         preferred_size_y = minimum_size_y;
+
+      return preferred_size_y;
+   }
+
+   // ---- Return the preferred width of this layer (including left/right padding).
+   public method getPreferredSizePadX() : float {
+      return getPreferredSizeX() + pad_left + pad_right;
+   }
+
+   // ---- Return the preferred height of this layer (including top/bottom padding).
+   public method getPreferredSizePadY() : float {
+      return getPreferredSizeY() + pad_top + pad_bottom;
+   }
+
+   // ----
+   // ---- Set the preferred size of this layer
+   // ----
+   public method setPreferredSize2f(float _w, _h) {
+      preferred_size_x = _w;
+      preferred_size_y = _h;
+   }
+
+   public method setPreferredSizeX(float _w) {
+      preferred_size_x = _w;
+   }
+
+   public method setPreferredSizeY(float _h) {
+      preferred_size_y = _h;
+   }
+
+   public method setPreferredSizePadX(float _wPad) {
+      float padX = getPadX();
+      setPreferredSizeX(_wPad - padX);
+   }
+
+   public method setPreferredSizePadY(float _hPad) {
+      float padY = getPadY();
+      setPreferredSizeY(_hPad - padY);
+   }
+
+   // ----
+   // ---- Set (forced) preferred size of this layer
+   // ----
+   public method setManualPreferredSize2f(float _w, _h) {
+      preferred_size_x = _w;
+      preferred_size_y = _h;
+      manual_preferred_size_x = _w;
+      manual_preferred_size_y = _h;
+   }
+
+   public method setManualPreferredSizeX(float _w) {
+      preferred_size_x = _w;
+      manual_preferred_size_x = _w;
+   }
+
+   public method setManualPreferredSizeY(float _h) {
+      preferred_size_y = _h;
+      manual_preferred_size_y = _h;
+   }
+
+   // ---- Set the layout weights of this layer
+   public method setLayoutWeight2f(float _x, _y) {
+      ////trace "xxx setLayoutWeight2f: this="+#(this)+" x="+_x+" y="+_y;
+      layout_weight_x = _x;
+      layout_weight_y = _y;
+   }
+
+   public method setLayoutWeightX(float _wx) {
+      // trace "xxx setLayoutWeightX("+_wx+")";
+      layout_weight_x = _wx;
+   }
+
+   public method setLayoutWeightY(float _wy) {
+      // trace "xxx setLayoutWeightY("+_wy+")";
+      layout_weight_y = _wy;
+   }
+
+   public method getLayoutWeightX() : float {
+      return layout_weight_x;
+   }
+
+   public method getLayoutWeightY() : float {
+      return layout_weight_y;
+   }
+
+   // ----
+   // ---- Return the minimum width of this layer
+   // ----
+   public method getMinimumSizeX() : float {
+      if(b_lock_size_x)
+         return size_x;
+      // if("a" == getDisplayedText())
+      //    trace "xxx getMinimumSizeX: this.getDisplayedText=\""+getDisplayedText()+"\" minimum_size_x="+minimum_size_x;
+      if(minimum_size_x <= 0.00001)
+      {
+         if(!b_force_min_size_x)
+            calcMinimumSizeX();
+
+         if(minimum_size_x <= 0.00001)
+            minimum_size_x = DEFAULT_MINIMUM_SIZE_X;
+      }
+      return minimum_size_x;
+   }
+
+   // ----
+   // ---- Calculate the minimum_size.x field.
+   // ---- Called by getMinimumSizeX().
+   // ---- This should be overwritten by derived classes.
+   // ----
+   protected method calcMinimumSizeX() {
+      if(null != layout)
+      {
+         if(!b_force_min_size_x)
+            layout.calcMinimumSizeXOf(this);
+      }
+      else
+      {
+         if(!b_force_min_size_x)
+            minimum_size_x = calcSizeX();
+      }
+   }
+
+   // ----
+   // ---- Return the minimum height of this layer
+   // ----
+   public method getMinimumSizeY() : float {
+      if(b_lock_size_y)
+         return size_y;
+      if(minimum_size_y <= 0.00001)
+      {
+         if(!b_force_min_size_y)
+            calcMinimumSizeY();
+
+         if(minimum_size_y <= 0.00001)
+            minimum_size_y = DEFAULT_MINIMUM_SIZE_Y;
+      }
+      return minimum_size_y;
+   }
+
+   // ----
+   // ---- Calculate the minimum_size.y field.
+   // ---- Called by getMinimumSizeY().
+   // ---- This should be overwritten by derived classes.
+   // ----
+   protected method calcMinimumSizeY() {
+      if(null != layout) // (TODO) could not this check be done by re-implementing this method in the Composite class?
+      {
+         if(!b_force_min_size_y)
+            layout.calcMinimumSizeYOf(this);
+      }
+      else
+      {
+         if(!b_force_min_size_y)
+            minimum_size_y = calcSizeY();
+      }
+   }
+
+   public method getSizePadX() : float {
+      return getSizeX() + pad_left + pad_right;
+   }
+
+   public method getSizePadY() : float {
+      return getSizeY() + pad_top + pad_bottom;
+   }
+
+   // ---- Return the minimum width (including left/right padding) of this layer
+   public method getMinimumSizePadX() : float {
+      return getMinimumSizeX() + pad_left + pad_right;
+   }
+
+   // ---- Return the minimum height (including top/bottom padding) of this layer
+   public method getMinimumSizePadY() : float {
+      return getMinimumSizeY() + pad_top + pad_bottom;
+   }
+
+   public method setEnableForceMinimumSize(boolean _bX, boolean _bY) {
+      b_force_min_size_x = _bX;
+      b_force_min_size_y = _bY;
+   }
+
+   public method setEnableForceMinimumSizeX(boolean _bX) {
+      b_force_min_size_x = _bX;
+   }
+
+   public method setEnableForceMinimumSizeY(boolean _bY) {
+      b_force_min_size_y = _bY;
+   }
+
+   // ----
+   // ---- Set the minimum size of this layer
+   // ----
+   public method setMinimumSize2f(float _w, _h) {
+      // if("OH" == getDisplayedText())
+         // trace "xxx setMinimumSize2f("+_w+";"+_h+")  old="+getMinimumSizeString();
+      minimum_size_x = _w;
+      minimum_size_y = _h;
+   }
+
+   public method setMinimumSize2fScaled(float _w, float _h) {
+      setMinimumSize2f(_w * UI.font_scaling,
+                       _h * UI.font_scaling
+                       );
+   }
+
+   public method setMinimumSizeX(float _x) {
+      minimum_size_x = _x;
+   }
+
+   public method setMinimumSizeXScaled(float _x) {
+      minimum_size_x = UI.font_scaling * _x;
+   }
+
+   public method setMinimumSizeY(float _y) {
+      minimum_size_y = _y;
+   }
+
+   public method setMinimumSizeYScaled(float _y) {
+      minimum_size_y = UI.font_scaling * _y;
+   }
+
+   // ----
+   // ---- Set the required, i.e. the minimum and preferred size of this layer
+   // ----
+   public method setRequiredSize2f(float _w, float _h) {
+      explain "Force layer size to (_w; _h) ";
+      b_force_size_x   = (_w >= 0.00001f);
+      b_force_size_y   = (_h >= 0.00001f);
+      preferred_size_x = _w;
+      preferred_size_y = _h;
+      minimum_size_x   = _w;
+      minimum_size_y   = _h;
+      size_x           = _w;
+      size_y           = _h;
+   }
+
+   public method setRequiredSize2fScaled(float _w, float _h) {
+      setRequiredSize2f(int(_w * UI.font_scaling), int(_h * UI.font_scaling));
+   }
+
+   public method setRequiredSizeX(float _w) {
+      // if(int(_w+0.5)==1 && (this instanceof Label)) //"a" == getDisplayedText())
+      //    die "setMinimumSize w="+_w;
+      // trace "xxx setRequiredSizeX: this="+getDebugString()+" w="+_w;
+      // if(this instanceof GraphWidget)
+      //    trace "GraphWidget.setRequiredSizeX("+_w+") cur size_x="+size_x;  // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      preferred_size_x = _w;
+      minimum_size_x   = _w;
+      size_x           = _w;
+      b_force_size_x   = (_w >= 0.00001f);
+   }
+
+   public method getRequiredSizeX() : float {
+      // [20Mar2024]
+      return b_force_size_x ? size_x : 0;
+   }
+
+   public method getRequiredSizeY() : float {
+      // [20Mar2024]
+      return b_force_size_y ? size_y : 0;
+   }
+
+   public method setRequiredSizePadX(float _wPad) {
+      float padX = getPadX();
+      setRequiredSizeX(_wPad - padX);
+   }
+
+   public method setRequiredSizePadY(float _hPad) {
+      float padY = getPadY();
+      setRequiredSizeY(_hPad - padY);
+   }
+
+   public method setRequiredSizeXScaled(float _w) {
+      setRequiredSizeX(int(_w * UI.font_scaling));
+   }
+
+   public method setRequiredSizeY(float _h) {
+      preferred_size_y = _h;
+      minimum_size_y   = _h;
+      size_y           = _h;
+      b_force_size_y   = (_h >= 0.00001f);
+   }
+
+   public method setRequiredSizeYScaled(float _h) {
+      setRequiredSizeY(int(_h * UI.font_scaling));
+   }
+
+   public method invalidatePreferredSizes() {
+      explain "Recursively invalidate preferred_size_x and preferred_size_y so that they are recalculated the next time they are accessed. This method should be used with care since it overrides the preferences set in e.g. an .xfm document.";
+
+      if(!b_force_size_x)
+         preferred_size_x = 0;
+
+      if(!b_force_size_y)
+         preferred_size_y = 0;
+
+      local Layer c <= first_child;
+      while(c instanceof Layer)
+      {
+         c.invalidatePreferredSizes();
+         c <= c.next;
+      }
+   }
+
+   public method invalidateMinimumSizes() {
+      explain "Recursively invalidate minimum_size_x and minimum_size_y so that they are recalculated the next time they are accessed. This method should be used with care since it overrides the preferences set in e.g. an .xfm document.";
+
+      if( !b_force_size_x && !b_force_min_size_x )
+         minimum_size_x = 0;
+
+      if( !b_force_size_y && !b_force_min_size_y )
+         minimum_size_y = 0;
+
+      local Layer c <= first_child;
+      while(c instanceof Layer)
+      {
+         c.invalidateMinimumSizes();
+         c <= c.next;
+      }
+   }
+
+   protected method calcSizeX() : float {
+      // Default fallback to calculate preferred/minimum width
+      return 0;
+   }
+
+   protected method calcSizeY() : float {
+      // Default fallback to calculate preferred/minimum height
+      return 0;
+   }
+
+   // ----
+   // ---- Calculate the preferred_size.x field.
+   // ---- Called by getPreferredSizeX().
+   // ---- This should be overwritten by derived classes.
+   // ----
+   protected method calcPreferredSizeX() {
+      if(manual_preferred_size_x > 0)
+         preferred_size_x = manual_preferred_size_x;
+      else if(null != layout)
+         return layout.calcPreferredSizeXOf(this);
+      else if( (null != parent) && (layout_weight_x > 0) )
+         preferred_size_x = parent.getSizeX() * layout_weight_x;
+      else
+         preferred_size_x = calcSizeX();
+   }
+
+   // ----
+   // ---- Calculate the preferred_size.y field.
+   // ---- Called by getPreferredSizeY().
+   // ---- This should be overwritten by derived classes.
+   // ----
+   protected method calcPreferredSizeY() {
+      if(manual_preferred_size_y > 0)
+         preferred_size_y = manual_preferred_size_y;
+      else if(null != layout)
+         layout.calcPreferredSizeYOf(this);
+      else if( (null != parent) && (layout_weight_y > 0) )
+         preferred_size_y = parent.getSizeY() * layout_weight_y;
+      else
+         preferred_size_y = calcSizeY();
+   }
+
+   // ----
+   // ---- Calculate the preferred_size field.
+   // ---- Called by getPreferredSize().
+   // ---- This should be overwritten by derived classes.
+   // ---- This may also update the minimum_size field.
+   // ----
+   protected method calcPreferredSize() {
+      if(null != layout)
+      {
+         layout.calcPreferredSizeOf(this);
+      }
+      else
+      {
+         calcPreferredSizeX();
+         calcPreferredSizeY();
+      }
+   }
+
+
+   // ----
+   // ---- "Padding" is used to hint layout managers to put some space around a Layer.
+   // ---- The resulting borders are located *outside* of the actual Layer region.
+   // ----
+
+   // ---- Initialize the border inset sizes
+   public method setPadding4f(float _top, float _left, float _bottom, float _right) {
+      pad_top    = UI.pad_scaling * _top;
+      pad_left   = UI.pad_scaling * _left;
+      pad_bottom = UI.pad_scaling * _bottom;
+      pad_right  = UI.pad_scaling * _right;
+   }
+
+   public method setPadding4fUnscaled(float _top, float _left, float _bottom, float _right) {
+      pad_top    = _top;
+      pad_left   = _left;
+      pad_bottom = _bottom;
+      pad_right  = _right;
+   }
+
+   public method setPadTop(float _top) {
+      pad_top = UI.pad_scaling * _top;
+   }
+
+   public method setPadTopUnscaled(float _top) {
+      pad_top = _top;
+   }
+
+   public method setPadLeft(float _left) {
+      pad_left = UI.pad_scaling * _left;
+   }
+
+   public method setPadLeftUnscaled(float _left) {
+      pad_left = _left;
+   }
+
+   public method setPadBottom(float _bottom) {
+      pad_bottom = UI.pad_scaling * _bottom;
+   }
+
+   public method setPadBottomUnscaled(float _bottom) {
+      pad_bottom = _bottom;
+   }
+
+   public method setPadRight(float _right) {
+      pad_right = UI.pad_scaling * _right;
+   }
+
+   public method setPadRightUnscaled(float _right) {
+      pad_right = _right;
+   }
+
+   public method getPadTop() : float {
+      return pad_top;
+   }
+
+   public method getPadLeft() : float {
+      return pad_left;
+   }
+
+   public method getPadBottom() : float {
+      return pad_bottom;
+   }
+
+   public method getPadRight() : float {
+      return pad_right;
+   }
+
+   public method getPadX() : float {
+      return pad_left + pad_right;
+   }
+
+   public method getPadY() : float {
+      return pad_top + pad_bottom;
+   }
+
+   public method getPaddingString() : String {
+      return "("+pad_top+";"+pad_left+";"+pad_bottom+";"+pad_right+")";
+   }
+
+   public method setDefaultInnerPadding() {
+      // implemented by Button, CheckBox, ComboBox, FloatParam, Label, TextField
+   }
+
+   // ----
+   // ---- Rendering
+   // ----
+
+   public method setEnableFillBackground(boolean _bEnabled) {
+      explain "Fill background before painting the caption when bEnabled==true.";
+      b_fill_bg = _bEnabled;
+   }
+
+   public method getEnableFillBackground() : boolean {
+      explain "Query whether to fill background before painting the caption.";
+      return b_fill_bg;
+   }
+
+   public method setBackgroundColor(int _c32bg) {
+      explain "Set color of label background";
+
+      // if(this instanceof Panel)
+      // {
+      //    Panel p <= this;
+      //    trace "xxx setBackgroundColor: this="+#(this)+" c32bg="+UI.GetColorString(_c32bg)+" p.panel_border_width="+p.getPanelBorderWidth();
+      //    if(5 == p.getPanelBorderWidth())
+      //       UI.Backtrace();
+      // }
+
+      if(0 != _c32bg)
+      {
+         c32_bg      = _c32bg;
+         b_custom_bg = true;
+      }
+      else
+      {
+         c32_bg      = 0;
+         b_custom_bg = false;
+      }
+      cname_bg <= null;
+   }
+
+   public method getBackgroundColor() : int {
+      return c32_bg;
+   }
+
+   public method calcEffectiveBg32() : int {
+      // see ComboBox, LayerSwitch
+      return 0;
+   }
+
+   public method setBackgroundColorFromString(String _s) {
+      if(_s.checkConversions() <= 2)
+      {
+         setBackgroundColor(int(_s));  // #aarrggb
+      }
+      else
+      {
+         c32_bg = parseColorString(_s);
+         cname_bg <= Object(_s);
+         b_custom_bg = true;
+      }
+   }
+
+   public method hasCustomBackgroundColor() : boolean {
+      return b_custom_bg;
+   }
+
+   public method makeBackgroundColorSolid() {
+      c32_bg = (255<<24) | (c32_bg & 0x00FFFFFF);
+      b_custom_bg = true;
+   }
+
+   public method setBackgroundTint(int _tint32) {
+      bg32_tint = _tint32;
+   }
+
+   public method getBackgroundTint() : int {
+      return bg32_tint;
+   }
+
+   public method setBackgroundTintAndRedraw(int _tint32) {
+      if(bg32_tint != _tint32)
+      {
+         bg32_tint = _tint32;
+         redraw();
+      }
+   }
+
+   public method findParentBackgroundColor() : int {
+      Layer lParent <= parent;
+      while(null != lParent)
+      {
+         // trace "xxx findParentBackgroundColor: lParent="+#(lParent);
+         int c32 = lParent.calcEffectiveBg32();
+         if(0 != c32)
+            return c32;
+         // trace "xxx findParentBackgroundColor: lParent.parent="+#(lParent.parent);
+         lParent <= lParent.parent;
+      }
+      return 0;
+   }
+
+   // // public method setTint(int _tint32) {
+   // //    // **DEPRECATED**
+   // //    setBackgroundTint(_tint32);
+   // // }
+
+   // // public method getTint() : int {
+   // //    // **DEPRECATED**
+   // //    return getBackgroundTint();
+   // // }
+
+   // // public method setTintAndRedraw(int _tint32) {
+   // //    // **DEPRECATED**
+   // //    setBackgroundTintAndRedraw(_tint32);
+   // // }
+
+   public method setForegroundColor(int _c32fg) {
+      explain "Set color of label caption";
+
+      c32_fg = _c32fg | 0xFF000000;
+      b_custom_fg = true;
+      cname_fg <= null;
+   }
+
+   public method getForegroundColor() : int {
+      return c32_fg;
+   }
+
+   public method setForegroundColorFromString(String _s) {
+      if(_s.checkConversions() <= 2)
+      {
+         setForegroundColor(int(_s));  // #aarrggb
+      }
+      else
+      {
+         c32_fg = parseColorString(_s);
+         cname_fg <= Object(_s);
+         b_custom_fg = true;
+      }
+   }
+
+   public method setForegroundTint(int _tint32) {
+      fg32_tint = _tint32;
+   }
+
+   public method getForegroundTint() : int {
+      return fg32_tint;
+   }
+
+   public method setAlpha(int _a) {
+      layer_alpha = _a;
+   }
+
+   public method getAlpha() : int {
+      return layer_alpha;
+   }
+
+   public method setEnableBackgroundKeepAlpha(boolean _bEnable) {
+      b_bg_keepalpha = _bEnable;
+   }
+
+   public method getEnableBackgroundKeepAlpha() : boolean {
+      return b_bg_keepalpha;
+   }
+
+   public method isTranslucent() : boolean {
+      return false;
+   }
+
+   public method onUIActivate() {
+      explain "Called when this layer has the keyboard focus and the application window re-gains the focus. This is mainly used to close the popupmenu when alt-tabbing through windows (alt opens the popupmenu and this is probably not the desired behaviour when alt-tab is used!). See PopupMenuBarButton.";
+   }
+
+   public method onUIDeactivate() {
+      explain "Called when this layer has the keyboard focus and the application window looses the focus. This is mainly used to close the popupmenu when alt-tabbing through windows (alt opens the popupmenu and this is probably not the desired behaviour when alt-tab is used!). See PopupMenuBarButton.";
+   }
+
+   public method onDraw() {
+      // ----
+      // ----
+      explain "The onDraw() method is called when the layer region needs to be repainted.";
+      // ----
+      // ----
+   }
+
+   public method onDrawPost() {
+      explain "Called after child hierarchy has been rendered";
+      // (note) used by panel to draw raised border
+   }
+
+   public method onDrawChildPost(Layer _childLayer) {
+      explain "Called after rendering the given child layer";
+   }
+
+   public method addOverlay(Layer _l) {
+      if(null == overlays)
+         overlays <= new PointerArray;
+
+      if(!overlays.containsPointer(_l))
+         overlays.add(_l);
+   }
+
+   public method removeOverlay(Layer _l) {
+      // // trace "xxx removeOverlay: this="+#(this)+" l="+#(_l)+" overlays="+#(overlays);
+      if(null != overlays)
+         overlays.remove(_l);
+   }
+
+   public method removeAllOverlays() {
+      if(null != overlays)
+         overlays.free();
+   }
+
+   public method pushParentViewPaneScissors() {
+      Layer p <= parent;
+      while(null != p)
+      {
+         if(p instanceof ViewPane)
+         {
+            local Point2f abspos;
+            p.calcAbsolutePosition(abspos);
+            // // UI.PushScissors(abspos.x+0.5, abspos.y+0.5, p.size_x+0.5, p.size_y+0.5);
+            sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, p.size_x+0.5, p.size_y+0.5);
+            sdvg_EnableScissor();
+         }
+         p <= p.parent;
+      }
+   }
+
+   public method popParentViewPaneScissors() {
+      Layer p <= parent;
+      while(null != p)
+      {
+         if(p instanceof ViewPane)
+         {
+            sdvg_PopScissor();
+            sdvg_DisableScissor();
+         }
+         p <= p.parent;
+      }
+   }
+
+   public method onDrawOverlays() {
+      explain "Called when FBO compositing is enabled.";
+   }
+
+   public method handleDrawOverlays() {
+      if(null != overlays)
+      {
+         UIRenderer.DisableBlending();  // only enabled when FloatingLayers have overlays
+
+         Layer *l;
+         foreach l in overlays
+         {
+            Point2f p;
+            l.calcAbsolutePosition(p);
+
+            UIRenderer.ModelTranslate2f(p.x, p.y);
+
+            l.pushParentViewPaneScissors();
+            UIRenderer.lnf_colors <= l.lnf_colors;
+            l.onDrawOverlays();
+            l.popParentViewPaneScissors();
+
+            UIRenderer.ModelTranslate2f(-p.x, -p.y);
+         }
+      }
+   }
+
+   public method setLinkedRedraw(Layer _l) {
+      // trace "xxx setLinkedRedraw: this="+getDebugString()+" l="+#(_l);
+      linked_redraw <= _l;
+   }
+
+   public method getLinkedRedraw() : Layer {
+      return linked_redraw;
+   }
+
+   public method redraw() {
+      // ----
+      // ----
+      explain "Redraw this layer";
+      // ----
+      // ----
+
+      if(UI.b_lock_redraw)
+         return;
+
+      if(b_redraw_parent)
+      {
+         if(null != parent)
+            parent.redraw();
+      }
+      else
+      {
+         if(1)//if(paint_flag != UI.PAINT_DIRTY) // hack to make splitpane marked_region work :/
+         {
+            paint_flag = UI.PAINT_DIRTY;
+            UI.RedrawDirty(this);
+         }
+      }
+
+      if(null != linked_redraw)
+      {
+         // trace "xxx this="+getDebugString()+" linked_redraw="+linked_redraw.getDebugString();
+         linked_redraw.redraw();
+      }
+
+   }
+
+   public method redrawAll() {
+      // ----
+      // ----
+      explain "Redraw all layers. Also see Â§UI.RedrawAll";
+      // ----
+      // ----
+
+      if(UI.b_lock_redraw)
+         return;
+
+      paint_flag = UI.PAINT_DIRTY;
+      UI.RedrawAll();
+   }
+
+   public method compositeAll() {
+      // ----
+      // ----
+      explain "Composite all layers. Also see Â§UI.CompositeAll";
+      // ----
+      // ----
+
+      if(UI.b_lock_redraw)
+         return;
+
+      UI.CompositeAll();
+   }
+
+   public method getScreenRegion() : Rectangle2f {
+      // ----
+      // ----
+      explain "Return the rectangular screen region occupied by this layer";
+      // ----
+      // ----
+      Point2f p;
+      calcAbsolutePosition(p); // (todo) optimize/cache
+      Rectangle2f r;
+      r.qx = abs_position_x;
+      r.qy = abs_position_y;
+      r.px = abs_position_x + size_x;
+      r.py = abs_position_y + size_y;
+      //xxx TODO: this calculation does not consider viewpanes
+      return r;
+   }
+
+   protected method drawChildHierarchy(local boolean _bForceRedraw, local boolean _bCheckIntersect,
+                                       local int _viewShiftX, local int _viewShiftY,
+                                       local int _viewSizeX, local int _viewSizeY
+                                       ) {
+      if(null != first_child)
+      {
+         first_child.drawHierarchy(_bForceRedraw, _bCheckIntersect,
+                                   _viewShiftX, _viewShiftY,
+                                   _viewSizeX, _viewSizeY
+                                   );
+      }
+   }
+
+   // ---- Push render state, draw self (onDraw), draw children hierarchies, pop render state and then render all following layers (in a loop)
+   public method drawHierarchy(local boolean _bForceRedraw, local boolean _bCheckIntersect,
+                               local int _viewShiftX, local int _viewShiftY,
+                               local int _viewSizeX, local int _viewSizeY
+                               ) { // called by UI.OnDraw()
+
+      // (note) viewShiftX/Y are used for culling layers that have become invisible due to ViewPane offsets
+
+      if(b_trace_hierarchy)
+      {
+         trace "xxx ui::Layer::drawHierarchy: depth="+getNumParents()+" this="+#(this)+" parent="+#(getParent())+" forced="+_bForceRedraw+" lnf_colors="+@(lnf_colors);
+         // if(paint_flag==UI.PAINT_DIRTY)
+         //    trace "xxx ui::Layer::drawHierarchy: pos="+getPositionString()+" size="+getSizeString()+" this="+#(this);
+      }
+
+      local Layer c <= this, *ch;
+
+      local boolean bFBORoot = UI.b_fbo && (null == parent);
+
+      do
+      {
+         if(c.b_layer_relayout_queued)
+         {
+            c.b_layer_relayout_queued = false;
+            c.relayout();
+         }
+
+         local boolean bRedraw = _bForceRedraw;
+         if(!bRedraw)
+            bRedraw = (UI.PAINT_DIRTY == c.paint_flag);
+
+         if(!UI.b_fbo)
+         {
+            // Check for overlapping layers
+            Rectangle2f *lr;
+            if(!bRedraw)
+            {
+               if(_bCheckIntersect)
+               {
+                  // Check if there is any intersection with a dirty region
+                  lr <= c.getScreenRegion();
+                  Rectangle2f dr;
+                  foreach dr in UI.dirty_regions
+                  {
+                     if(lr.rectangleIntersectionTest(dr))
+                     {
+                        bRedraw = true;
+                        // trace "xxx drawHierarchy: bRedraw="+bRedraw+" lr="+lr.getString()+" dr="+dr.getString();
+                        break;
+                     }
+                  }
+                  if(bRedraw)
+                  {
+                     if(UI.PAINT_ALL != UI.current_paint_flag)
+                     {
+                        // Add this layer to the dirty_regions list
+                        // trace "xxx intersect add dirty lr="+lr.getString()+" c="+#(c);
+                        _= UI.dirty_regions.add(lr);
+                     }
+                  }
+               }
+            }
+            else if(UI.PAINT_ALL != UI.current_paint_flag)
+            {
+               // Add this layer to the dirty_regions list
+               lr <= c.getScreenRegion();
+               UI.dirty_regions.add(lr);
+            }
+         }
+
+         if(c.is3d())
+         {
+            if( bRedraw )
+            {
+               c.paint_flag = UI.PAINT_NONE;
+
+               if(UIRenderer.b_gl_attrib_stack)
+                  glPushAttrib(GL_ALL_ATTRIBS_BITS);  // b_gl_attrib_stack
+
+               local Point2f abspos;
+               c.calcAbsolutePositionFBO(abspos);
+
+               UIRenderer.PushProjMatrix();
+               UIRenderer.ProjInitIdentity();
+               UIRenderer.PushModelMatrix();
+               UIRenderer.ModelInitIdentity();
+
+               UIRenderer.PushViewport(abspos.x, abspos.y, c.size_x, c.size_y);
+
+               sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, c.size_x+0.5, c.size_y+0.5);
+               sdvg_EnableScissor();
+
+               if(!UI.b_sweep_dirty)  // (todo) [16Oct2018] b_sweep_dirty is always false
+               {
+                  UIRenderer.lnf_colors <= c.lnf_colors;  // (hack) move Draw*() function to Layer class ?
+                  c.onDraw();
+               }
+
+               if(UI.b_fbo)
+               {
+                  FBO curFBO <= UI.current_fbo;
+                  curFBO.beginPaint();
+               }
+
+               sdvg_PopScissor();
+               sdvg_DisableScissor();
+
+               UIRenderer.PopViewport();
+
+               UIRenderer.PopModelMatrix();
+               UIRenderer.PopProjMatrix();
+
+               glDisable(GL_DEPTH_TEST);
+               glDisable(GL_STENCIL_TEST);
+               glDisable(GL_BLEND);
+               glDisable(GL_CULL_FACE);
+
+               int tuIdx = 0;
+               loop(8)
+               {
+                  glActiveTexture(GL_TEXTURE0+tuIdx);
+                  glBindTexture(GL_TEXTURE_2D, 0);
+               }
+               glActiveTexture(GL_TEXTURE0);
+
+               int attribIdx = 0;
+               loop(16)
+                  glDisableVertexAttribArray(attribIdx++);
+
+               sdvg_ReturnToGL();
+
+               if(!UIRenderer.b_glcore)
+               {
+                  glDisable(GL_ALPHA_TEST);
+                  glDisable(GL_TEXTURE_2D);
+                  glDisable(GL_TEXTURE_2D_ARRAY);
+                  glDisable(GL_TEXTURE_3D);
+                  glDisable(GL_TEXTURE_CUBE_MAP);
+               }
+
+               if(UIRenderer.b_gl_attrib_stack)
+                  glPopAttrib();  // b_gl_attrib_stack
+            }
+         }
+         else
+         {
+            if(UI.b_sweep_dirty)  // (todo) [16Oct2018] b_sweep_dirty is always false
+            {
+               c.drawChildHierarchy(bRedraw, _bCheckIntersect,
+                                    _viewShiftX, _viewShiftY,
+                                    _viewSizeX, _viewSizeY
+                                    );
+            }
+            else
+            {
+               local float tlx,tly;
+
+               boolean bCull = false;
+
+               // // if(@(c) != @(this))
+               {
+                  float cpxShift = c.position_x + _viewShiftX;
+                  float cpyShift = c.position_y + _viewShiftY;
+
+                  bCull =
+                     ((cpxShift + c.size_x) < 0) ||
+                     (cpxShift > _viewSizeX)  ||
+                     ((cpyShift + c.size_y) < 0) ||
+                     (cpyShift > _viewSizeY)  ;
+
+                  // if(bCull)
+                  // {
+                  //    trace "xxx bCull="+bCull+" this="+#(this)+" cpxShift="+cpxShift+" cpyShift="+cpyShift+" size="+getSizeString()+" viewSize=("+_viewSizeX+";"+_viewSizeY+")";
+                  // }
+               }
+
+               if(!bCull)
+               {
+                  if(!bFBORoot)
+                  {
+                     tlx = c.position_x;
+                     tly = c.position_y;
+                     UIRenderer.ProjTranslate2f(tlx, tly);
+                  }
+
+                  local boolean bRestoreAttribs = (c instanceof ViewPane);
+
+                  if(bRestoreAttribs)
+                  {
+                     if(UIRenderer.b_gl_attrib_stack)
+                        glPushAttrib(GL_ALL_ATTRIBS_BITS);  // b_gl_attrib_stack
+                  }
+
+                  if( bRedraw )
+                  {
+                     // // glLoadIdentity();
+                     UIRenderer.ModelInitIdentity();
+                     c.paint_flag = UI.PAINT_NONE;
+                     if(!UI.b_sweep_dirty)  // (todo) [16Oct2018] b_sweep_dirty is always false
+                     {
+                        if(null != c.lnf_colors)
+                        {
+                           UIRenderer.lnf_colors <= c.lnf_colors;  // (hack) move Draw*() function to Layer class ?
+                           c.onDraw();
+                        }
+                        else
+                        {
+                           trace "[!!!] ui::Layer::drawHierarchy: error: lnf_colors is null !!! c="+#(c);
+                           UI.Backtrace();
+                           b_trace_hierarchy = true;
+                        }
+                     }
+                  }
+                  else
+                  {
+                     //trace "xxx skip draw="+#(c);
+                  }
+
+                  c.drawChildHierarchy(bRedraw, _bCheckIntersect,
+                                       _viewShiftX + c.position_x, _viewShiftY + c.position_y,
+                                       _viewSizeX, _viewSizeY
+                                       );
+                  UIRenderer.lnf_colors <= c.lnf_colors;
+                  c.onDrawPost();
+
+                  if(bRestoreAttribs)
+                  {
+                     if(UIRenderer.b_gl_attrib_stack)
+                        glPopAttrib();  // b_gl_attrib_stack
+                  }
+
+                  if(!bFBORoot)
+                  {
+                     UIRenderer.ProjTranslate2f(-tlx, -tly);
+                  }
+               } // if !bCull
+
+            }
+         } // else if 3d
+
+         if(bRedraw && c.b_invoke_parent_ondrawchildpost && null != parent)
+            parent.onDrawChildPost(c);
+
+         c <= c.next;
+
+      } while(null != c);
+   }
+
+   public method drawHierarchySimple() {
+      // - called by TableViewData when drawing Panel within table column
+      // - no 3d / custom transforms
+      local Layer c <= first_child;
+      while(null != c)
+      {
+         local int px = int(c.position_x);
+         local int py = int(c.position_y);
+         // trace "xxx     drawHierarchySimple: translate px="+px+" py="+py;
+         UIRenderer.ModelTranslate2f(px, py);
+         c.onDraw();
+         UIRenderer.ModelTranslate2f(-px, -py);
+         c <= c.next;
+      }
+   }
+
+   public method onOpen() {
+      explain
+"The onOpen() method is called when the layer needs to update
+(re-)initialize its Textures, DisplayLists and vertex/color/index/.. OpenGL arrays.
+";
+   }
+
+   public method onAcceleratorKey(AcceleratorKey _k) {
+      explain "Called if the given accelerator key has been pressed.";
+   }
+
+   protected method allowCursorKeysForTabCycling() : boolean {
+      explain "Query whether the layer wants to use the cursor keys to cycle between widgets. Please overwrite this method and return false in order to let the keyboard event propagate to the parent layer.";
+      if(b_disable_cursor_key_tab_cycling)
+         return false;
+
+      return (isTabCycleMember() && !isTabCycleRoot());//// || (null != findTabCycleOverrides());  correct but breaks PageStart..
+   }
+
+   public method recursiveSetEnableCursorKeyTabCycling(boolean _bEnabled) {
+      local Layer *l <= getLayoutFirstChild();
+      while(null != l)
+      {
+         l.recursiveSetEnableCursorKeyTabCycling(_bEnabled);
+         l <= l.next;
+      }
+      b_disable_cursor_key_tab_cycling = !_bEnabled;
+   }
+
+   public method setEnableCursorKeyTabCycling(boolean _bEnabled) {
+      b_disable_cursor_key_tab_cycling = !_bEnabled;
+   }
+
+   public method wantTriadKeyMode() : boolean {
+      explain "Return true if layer supports lctrl-x escape sequence.";
+      return true;
+   }
+
+   public method onBeginTriadKeyMode() : boolean {
+      explain "Called to inform the keyboard focus layer that the user has entered the 'magic' escape sequence (lctrl-x).";
+      return false;
+   }
+
+   public method onEndTriadKeyMode(Key _k) : boolean {
+      explain "Called to inform the keyboard focus layer that the 'magic' escape sequence (lctrl-x) - ? has finished.";
+      return false;
+   }
+
+   public method onTriadKey(Key _k) : boolean {
+      explain "Called after key has been entered after lctrl-x escape sequence.";
+      return false;
+   }
+
+   public method wantTriadKeyRepeat(Key _k) : boolean {
+      explain "Check whether the given key shall be repeat (first non-repeat key exits mode)";
+      return false;
+   }
+
+   public method onTriadKeyTimeout() : boolean {
+      explain "Called when third key in lctrl-x ? sequence has not been pressed in time (e.g. show help dialog in that case)";
+      return false;
+   }
+
+   public method onMouseKey(Key _k) : boolean {
+      // allow layer under mouse to handle the key, even if it does not the keyboard focus (e.g. Dial LSHIFT modifier press/release)
+      //  (note) does not auto-propagate to parent
+      return false;
+   }
+
+   public method onKey(Key _k) : boolean {
+      explain "The onKey() method is called when a keyboard input event has been received from the HAL(SDL) subsystem. Returns true/false depending on whether the event was handled or not.";
+
+      // trace "xxx Layer::onKey: _k.code="+_k.code+" _k.pressed="+_k.pressed+" _k.mod="+_k.mod+" this="+#(this);
+      // trace "xxx Layer::onKey: this="+#(this)+" findTabCycleOverrides()="+#(findTabCycleOverrides())+" b_disable_cursor_key_tab_cycling="+b_disable_cursor_key_tab_cycling;
+
+      switch(_k.pressed)
+      {
+         case VKEY_TAB:
+            if(!_k.modCtrl())
+            {
+               // trace "\n\nxxx Layer::onKey<TAB>: this="+#(this)+" isTabCycleMember="+isTabCycleMember();
+               if(isTabCycleMember() || (null != findTabCycleOverrides()))
+               {
+                  // (note) will call onKeyboardFocusLost() for previous focus widget which (e.g. TextField) in turn may
+                  //         emit an event/action that (when handled) may delete the widget hierarchy
+                  //         (e.g. close and delete dialog when value was entered and then TAB is pressed)
+                  //         use "notabprovide" XFM attribute (Control) to prevent this
+                  //          (an example for this is the "NT_TickDurationDialog" in stÂ³)
+                  if(_k.modShift())
+                  {
+                     focusPreviousTabCycleMember(false);
+                     return true;
+                  }
+                  else if(0 == _k.mod)
+                  {
+                     focusNextTabCycleMember(false/*bLocal*/);
+                     return true;
+                  }
+               }
+            }
+            return false;
+
+            case VKEY_LEFT:
+            case VKEY_UP:
+               if(_k.modNone())
+               {
+                  if(allowCursorKeysForTabCycling())
+                  {
+                     // // focusPreviousTabCycleMember(true/*bLocal*/);
+                     focusPreviousTabCycleMember((null == findTabCycleOverrides())/*bLocal*/);
+                     return true;
+                  }
+               }
+               return false;
+
+            case VKEY_DOWN:
+            case VKEY_RIGHT:
+               if(_k.modNone())
+               {
+                  if(allowCursorKeysForTabCycling())
+                  {
+                     focusNextTabCycleMember((null == findTabCycleOverrides())/*bLocal*/);
+                     return true;
+                  }
+                  // // else
+                  // //    trace "xxx ui::Layer::VKEY_RIGHT: allowCursorKeysForTabCycling=0";
+               }
+               return false;
+      }
+
+      return false;
+   }
+
+   public method setEnableKbdFocusOnMouse(boolean _bEnable) {
+      b_dont_set_kbdfocus_on_mouse = !_bEnable;
+   }
+
+   public method onKeyboardFocusLost(boolean _bQuiet) {
+      explain "The onKeyboardFocusLost() method is called when this layer has lost the keyboard focus; probably because another layer grabbed it."
+         "\nIf bQuiet is true, simply stop editing and do NOT provide actions or refocus";
+      if(!_bQuiet)
+      {
+         redraw();
+      }
+   }
+
+   public method getDefaultKeyboardFocusLayer() : Layer {
+      return null;
+   }
+
+   public method onKeyboardFocus() {
+      explain "The onKeyboardFocus() method is called when this layer has gained the keyboard focus. This method is usually called if a new keyboard focus has been set by @UI.SetKeyboardFocus.";
+   }
+
+   public method onTabFocus() {
+      explain "Called if the keyboard focus was gained by cycling through the layers using tab/cursor keys. Also used by some dialog classes to set the default button. This event is very similar to onKeyboardFocus() although the layer can implement a slightly different behaviour (e.g. a textfield might want to select all text) ";
+      redraw();
+   }
+
+// //    public onTabFocusLost() {
+// //       explain "Called if the keyboard focus was lost because the next tab cycle member has been focused.";
+// //       // xxx REMOVE THIS METHOD
+// //    }
+
+   public static IsTabCycleKey(Key _k) : boolean {
+      if(_k.code == VKEY_TAB)
+         return true;
+      if(_k.code == VKEY_UP)
+         return true;
+      if(_k.code == VKEY_DOWN)
+         return true;
+      if(_k.code == VKEY_LEFT)
+         return true;
+      if(_k.code == VKEY_RIGHT)
+         return true;
+      return false;
+   }
+
+   // ----
+   // ---- This is called to query whether the current keyboard focus layer wants
+   // ---- to receive key repeats for the given key.
+   // ----
+   public method wantKeyRepeat(Key _k) : boolean {
+      return true;
+   }
+
+   public method wantKeyboardFocus() : boolean {
+      return isEditable();
+   }
+
+   public method grabKeyboardFocus() {
+      explain "Helper method to delegate key input to this layer.
+ Only one layer at a time may have the keyboard focus.";
+
+      UI.SetKeyboardFocus(this);
+   }
+
+   public method loseKeyboardFocus() {
+      explain "Lose keyboard focus (if this layer has it), do not generate onKeyboardFocusLost() event!";
+      ////trace "xxx loseKeyboardFocus: keyboard_layer="+#(UI.keyboard_layer)+" this="+#(this);
+      if(@(UI.keyboard_layer) == @(this))
+      {
+         UI.LoseKeyboardFocus();
+      }
+   }
+
+   public method hasKeyboardFocus() : boolean {
+      explain "Query whether this layer currently has the keyboard focus";
+
+      return @(UI.keyboard_layer) == @(this);
+   }
+
+   public method hierarchyHasKeyboardFocus() : boolean {
+      if(@(UI.keyboard_layer) == @(this))
+         return true;
+      else
+         return hasChildLayer(UI.keyboard_layer);
+   }
+
+   public method loseMouseFocus() {
+      explain "Lose mouse focus (if this layer has it), do not generate onMouseLeave() event!";
+
+      if(@(UI.mouse_layer) == @(this))
+         UI.mouse_layer <= null;
+
+      if(@(UI.mousefocus_layer) == @(this))
+         UI.mousefocus_layer <= null;
+   }
+
+   public method hasMouseFocus() : boolean {
+      explain "Query whether this layer currently has the mouse focus";
+
+      return @(UI.mousefocus_layer) == @(this);
+   }
+
+   public method isMouseDragLayer() : boolean {
+      return @(UI.drag_layer) == @(this);
+   }
+
+   public method isMouseFocusWithin() : boolean {
+      if(hasMouseFocus())
+         return true;
+      if(hasChildLayer(UI.mousefocus_layer))
+         return true;
+      return false;
+   }
+
+   // ----
+   // ---- Returns whether the mouse pointer is currently within the bounding box of this layer
+   // ----
+   public method isMouseOver() : boolean {
+      return @(UI.mouse_layer) == @(this);
+   }
+
+   public method isMouseOverWithin() : boolean {
+      if(isMouseOver())
+         return true;
+      if(hasChildLayer(UI.mouse_layer))
+         return true;
+      return false;
+   }
+
+   public method warpTo(float _relX, float _relY) {
+      calcAbsolutePosition(null);
+      Mouse.warpTo((abs_position_x + _relX) * UI.zoom_x,
+                   (abs_position_y + _relY) * UI.zoom_y
+                   );
+   }
+
+   public method warpToX(float _relX) {
+      // (note) should not be called when mouse is grabbed (Mouse.y = temporary grab-position)
+      calcAbsolutePosition(null);
+      Mouse.warpTo((abs_position_x + _relX) * UI.zoom_x,
+                   Mouse.y
+                   );
+   }
+
+   public method warpToY(float _relY) {
+      // (note) should not be called when mouse is grabbed (Mouse.x = temporary grab-position)
+      calcAbsolutePosition(null);
+      Mouse.warpTo(Mouse.x,
+                   (abs_position_y + _relY) * UI.zoom_y
+                   );
+   }
+
+
+   // ----
+   // ---- The onMouseEnter() method is called when the mouse pointer
+   // ---- enters this layer. The _ev argument stores the current
+   // ---- mouse coordinate and current+changed button states.
+   // ---- Returns true/false depending on whether the event was handled or not.
+   // ----
+   public method onMouseEnter(MouseEvent _ev) : boolean {
+      // // trace "xxx Layer:onMouseEnter: this="+#(this)+" tooltip="+#(tooltip);
+      if(null == tooltip)
+      {
+         scheduleToolTipTimer();
+      }
+      return true;
+   }
+
+   public method onChildMouseEnter(MouseEvent _ev) {
+      explain "Called if a child gains the mouse focus. Used for submenus to disable the auto-hide timeout if a submenu child is re-focused.";
+   }
+
+   // ----
+   // ---- The onMouseLeave() method is called when the mouse pointer
+   // ---- leaves this layer. The _ev argument stores the current
+   // ---- mouse coordinate (may be outside of this region) and current+
+   // ---- changed button states.
+   // ---- Returns true/false depending on whether the event was handled or not.
+   // ----
+   public method onMouseLeave(MouseEvent _ev) : boolean {
+      hideToolTip();
+      last_tooltip_layer <= null;
+      return true;
+   }
+
+   // ----
+   // ---- The onMouseFocus() method is called when the user presses
+   // ---- the left mouse button for the first time (since the focus has been lost).
+   // ----
+   public method onMouseFocus() {
+   }
+
+   // ----
+   // ---- The onMouseUnfocus() method is called when the user presses
+   // ---- the left mouse button for the first time in another layer than this once.
+   // ----
+   public method onMouseUnfocus() {
+   }
+
+   // ----
+   // ---- The onMouseClick() method is called when the user
+   // ---- presses and releases a mouse button above the layer
+   // ---- which currently has the mouse focus.
+   // ----
+   public method onMouseClick(MouseEvent _ev) : boolean {
+   }
+
+   // ----
+   // ---- The onMouseDoubleClick() method is called when the user
+   // ---- clicks and then presses the mouse button over the layer
+   // ---- which currently has the mouse focus. The click and buttonDown
+   // ---- have to be done within a number of ticks (msec) specified
+   // ---- by UIConstants.MOUSE_DOUBLE_CLICK_TIMEOUT.
+   // ----
+   public method onMouseDoubleClick(MouseEvent _ev) : boolean {
+   }
+
+   // ----
+   // ---- The onMouse() method is called when the mouse pointer is
+   // ---- moved around in this layer or the state of the mouse buttons
+   // ---- has been changed (buttons 4 and 5 are usually the mousewheel
+   // ---- buttons).
+   // ---- The _ev argument stores the current mouse coordinate and
+   // ---- button states.
+   // ---- Returns true/false depending on whether the event was handled or not.
+   // ----
+   // ----  (note) It is crucial that onMouse() implementations only handle mouse movements,
+   // ----          otherwise onMouseClick/Hold/DoubleClick/Drag() may stop working
+   // ----          Some widgets (e.g. TextField, Dial) need to be updated in this regard [10Sep2019].
+   // ----          See also: wantOnMouseClickAfterOnMouseWasHandled()
+   // ----
+   public method onMouse(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButtonDown() || _ev.isRightButtonDown())
+      {
+         hideToolTip();
+      }
+      return false;
+   }
+
+   // false=always consume event when layer has mouse focus
+   //  (note) called by some widgets (e.g. TextField, BezierEdit)
+   public method handleMouseEventByDefault() : boolean {
+      return isMouseFocusLocked() || !UI.KeyModAltOnly();
+   }
+
+   // ----
+   // ---- Query this layer whether it allows to release the mouse focus.
+   // ----
+   public method isMouseFocusLocked() : boolean {
+      return false;
+   }
+
+   // ----
+   // ---- Called when the left mouse button is clicked, held down and the mouse has
+   // ---- moved drag_dist_threshold pixels.
+   // ----
+   public method onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      return false;
+   }
+
+   // ----
+   // ---- Layers that implement their own mouse-drag (using onMouse()) should return true here
+   // ----
+   public method blockMouseDrag(MouseEvent _ev) : boolean {
+      return false;////isMouseFocusLocked();
+   }
+
+   public method wantMouseDragButtonOnlyEvents() : boolean {
+      // false=skip button only events. useful for widgets that check key modifiers in onMouseDrag() (e.g. lctrl=enable snap)
+      return true;
+   }
+
+   public method onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      // ----
+      // ----
+      explain "Called when onMouseBeginDrag() returned true, the left mouse button is held down and the mouse has moved at least Â§UIConstants.MOUSE_DRAG_THRESHOLD pixels.";
+      // ----
+      // ----
+      return false;
+   }
+
+   // ----
+   // ---- Called when the left mouse button is released during a mouse drag
+   // ----
+   public method onMouseEndDrag(MouseEvent _ev) {
+   }
+
+   // ----
+   // ---- Called when a mouse button other than the one used to start the mouse drag is pressed
+   // ----
+   public method onMouseCancelDrag(MouseEvent _ev) {
+      onMouseEndDrag(_ev);
+   }
+
+   // ----
+   // ---- Called to query whether object can be dropped onto layer
+   // ----
+   public method canDropObject(Object _o, MouseEvent _ev) : boolean {
+      return false;
+   }
+
+   // ----
+   // ---- Called when dropping object over other widget
+   // ----
+   public method onDropObject(Object _o, MouseEvent _ev) : boolean {
+   }
+
+   public method onMouseHold(MouseEvent _ev) : boolean {
+      // ----
+      // ----
+      explain "Called when a mouse button is pressed and held down for Â§UIConstants.MOUSE_HOLD_DELAY milliseconds without moving the mouse pointer.";
+      // ----
+      // ----
+      return false;
+   }
+
+   public method onMouseHoldEnd(MouseEvent _ev) : boolean {
+      explain "Called when mouse button is released after hold";
+      return false;
+   }
+
+
+   // ----
+   // ---- Revert cursor if the current cursor matches the cursor last set by this layer
+   // ----
+   public method revertCursor(String _name) {
+      UI.ShowCursorIf(last_cursor_name, _name);
+      last_cursor_name.empty();
+   }
+
+   public method showCursor(String _name) {
+      last_cursor_name = _name;
+      UI.ShowCursor(_name);
+   }
+
+   public method layerAt2f(float _x, _y) : Layer {
+      // ---- (_x, _y) in parent layer relative coords
+      // ---- first translate the point into the local coordinate system
+      // ---- (which is the parent for the children)
+      local Layer c <= this;
+      local float px = _x, py = _y;
+      // trace "xxx l2f: this="+#(c)+" _x="+_x+" _y="+_y+" px="+px+" py="+py;
+
+      while(null != c)
+      {
+         local float x = px;
+         local float y = py;
+         x -= c.position_x;
+         y -= c.position_y;
+         // ---- is the point located within the bounding box of this layer?
+         // trace "xxx l2f: check c="+#(c)+" pos=("+x+";"+y+") c.pos=("+c.position_x+";"+c.position_y+") c.sz=("+c.size_x+";"+c.size_y+")";
+         if(x >= 0.0f && y >= 0.0f & x < c.size_x & y < c.size_y)
+         {
+            if(c instanceof ViewPane)
+            {
+               local ViewPane avp <= c;
+               local Layer vl <= avp.getInnerLayer();
+               if(vl instanceof Layer)
+               {
+                  return vl.layerAt2f(x+avp.getViewOffsetX(), y+avp.getViewOffsetY());
+               }
+            }
+            else
+            {
+               if(c.first_child instanceof Layer)
+               {
+                  local Layer cc <= c.first_child;
+                  cc <= cc.layerAt2f(x, y);
+                  if(cc instanceof Layer)
+                  {
+                     if(!cc.b_decorative)
+                        return cc;
+                  }
+                  // // return cc.layerAt2f(x, y);
+               }
+            }
+            if(!c.b_decorative)
+               return c;
+         }
+
+         c <= c.next;
+      }
+      return null;
+   }
+
+
+   // ----
+   // ----
+   // ---- tooltips
+   // ----
+   // ----
+
+   public method setToolTipCaption(String _tooltipCaption) {
+      if(null != _tooltipCaption)
+      {
+         tooltip_caption <= String.New(_tooltipCaption);
+
+         if(null == toolTipTimerAction)
+         {
+            toolTipTimerAction <= new TimerAction;
+            toolTipTimerAction.setActionConsumer(this);
+         }
+      }
+      else
+      {
+         tooltip_caption <= null;
+      }
+   }
+
+   public method getToolTipCaption() : String {
+      return tooltip_caption;
+   }
+
+   public method setToolTipFontOverride(Font _font) {
+      tooltip_font_override <= deref _font;
+   }
+
+   protected method restartToolTipTimer() {
+      hideToolTip();
+      last_tooltip_layer <= null;
+      scheduleToolTipTimer();
+   }
+
+   protected method scheduleToolTipTimer2(int _forcedDelay) {
+      // trace "xxx scheduleToolTipTimer this="+#(this)+" toolTipTimerAction="+#(toolTipTimerAction)+" tooltip="+#(tooltip)+" toolTipCaption=\""+getToolTipCaption()+"\" last_tooltip_layer="+#(last_tooltip_layer);
+      if(null == tooltip)
+      {
+         if(null != toolTipTimerAction)
+         {
+            if(@(last_tooltip_layer) != @(this))
+            {
+               UI.CancelSchedule(toolTipTimerAction);
+               int delay;
+               if(-1 != _forcedDelay)
+               {
+                  delay = _forcedDelay;
+               }
+               else if( (last_tooltip_hide_time + UI.tooltip_fast_open_timeout) > SDL.ticks )  // UIConstants.TOOLTIP_FAST_OPEN_TIMEOUT
+               {
+                  // Fast open tooltip, shorten timeout
+                  delay = UI.tooltip_fast_open_delay;
+               }
+               else
+               {
+                  delay = UI.tooltip_show_delay;
+               }
+               toolTipTimerAction.setActionName("onToolTipShowTimer");
+               toolTipTimerAction.setTicks(delay);
+               UI.Schedule(toolTipTimerAction);
+               // trace "xxx Layer::scheduleToolTipTimer: this="+#(this)+" ok, tooltipCaption=\""+tooltip_caption+"\"";
+            }
+         }
+      }
+   }
+
+   protected method scheduleToolTipTimer() {
+      scheduleToolTipTimer2(-1/*forcedDelay*/);
+   }
+
+   protected method cancelToolTipTimer() {
+      // trace "xxx cancelToolTipTimer";
+      if(null != toolTipTimerAction)
+      {
+         UI.CancelSchedule(toolTipTimerAction);
+      }
+   }
+
+   public method hideToolTip() {
+      cancelToolTipTimer();
+      if(null != tooltip)
+      {
+         tooltip.hide();
+         tooltip <= null;
+         last_tooltip_hide_time = SDL.ticks;
+      }
+   }
+
+   public method recursiveHideToolTips() {
+      hideToolTip();
+      local Layer l <= first_child;
+      while(null != l)
+      {
+         l.recursiveHideToolTips();
+         l <= l.next;
+      }
+   }
+
+   protected method newToolTip() : ToolTip {
+      explain "Instantiate and return new ToolTip object. The ToolTip instance is deleted when the tooltip is hidden.";
+      // trace "xxx Layer::newToolTip: tooltip_font_override="+#(tooltip_font_override);
+      // trace "xxx Layer::newToolTip: tooltip_caption="+getToolTipCaption();
+      String sCaption <= getToolTipCaption();
+      if(null != sCaption)
+      {
+         int idxLF = sCaption.indexOfChar('\n', 0);
+         if(-1 != idxLF)
+            sCaption <= sCaption.substring(0, idxLF);  // show first tooltip text line
+         ToolTip t <= ToolTip.New(this, deref sCaption, tooltip_font_override);
+         return deref t;
+      }
+      return null;
+   }
+
+   protected method newToolTipStage2() : ToolTip {
+      String sCaption <= getToolTipCaption();
+      if(sCaption & "\n")
+      {
+         // Show entire tooltip text
+         ToolTip t <= ToolTip.New(this, deref sCaption, tooltip_font_override);
+         return deref t;
+      }
+      else
+      {
+         return null;
+      }
+   }
+
+   protected method wantToolTipNearMouse() : boolean {
+      return false;
+   }
+
+   public method wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      // (note) RMB-click in some widgets like TableViewData stops working if
+      //         onMouseClick() is skipped after the widget already handled the corresponding mouse down event
+      //         => returning true here calls onMouseClick() anyway (see UI::HandleMouseEvent())
+      return false;
+   }
+
+   protected method getToolTipOffsetX() : float {
+      return 0;
+   }
+
+   protected method getToolTipStage2Delay() : int {
+      return UI.tooltip_stage2_delay;
+   }
+
+   protected method getToolTipHideDelay() : int {
+      return UIConstants.TOOLTIP_HIDE_DELAY;
+   }
+
+   protected method showToolTip(boolean _bStage2) {
+      // trace "xxx showToolTip";
+      if(!Mouse.buttons)
+      {
+         showToolTip2(_bStage2);
+      }
+   }
+
+   protected method showToolTip2(boolean _bStage2) {
+      ToolTip tt <= _bStage2 ? newToolTipStage2() : newToolTip();
+      // trace "xxx showToolTip2 bStage2="+_bStage2+" tt="+#(tt);
+      if(null != tt)
+      {
+         boolean bWantNearMouse = wantToolTipNearMouse();
+
+         if(null == tooltip)
+         {
+            // Show Stage1 tooltip
+            toolTipTimerAction.setActionName("onToolTipStage2Timer");
+            toolTipTimerAction.setTicks(getToolTipStage2Delay());
+            UI.Schedule(toolTipTimerAction);
+         }
+         else
+         {
+            // Hide Stage1 tooltip
+            tooltip.hide();
+
+            toolTipTimerAction.setActionName("onToolTipHideTimer");
+            toolTipTimerAction.setTicks(getToolTipHideDelay());
+            UI.Schedule(toolTipTimerAction);
+         }
+
+         tooltip <= deref tt;
+
+         // trace "xxx showNearMouse this="+#(this)+" wantToolTipNearMouse()="+bWantNearMouse+" UI.b_touch_mode="+UI.b_touch_mode;
+         if(!bWantNearMouse && UI.b_force_window_corner_tooltips)
+         {
+            tooltip.showToolTipNearWindowCorner(this);
+         }
+         else
+         {
+            if(bWantNearMouse && !UI.b_touch_mode)
+            {
+               tooltip.showNearMouse(getToolTipOffsetX(), FloatingLayer.TOOLTIP_OFFSET_Y);
+            }
+            else
+            {
+               tooltip.showToolTipNearLayer(this, bWantNearMouse);
+            }
+         }
+         tooltip.redraw();
+
+         last_tooltip_layer <= this;
+      }
+      else if(null != tooltip)
+      {
+         // no stage2 tooltip available, keep on showing stage1 tooltip
+         toolTipTimerAction.setActionName("onToolTipHideTimer");
+         toolTipTimerAction.setTicks(getToolTipHideDelay());
+         UI.Schedule(toolTipTimerAction);
+      }
+   }
+
+   public method isToolTipVisible() : boolean {
+      return (null != tooltip);
+   }
+
+   public method updateToolTipIfVisible() {
+      if(isToolTipVisible())
+      {
+         hideToolTip();
+         showToolTip2(false/*bStage2*/);
+      }
+   }
+
+
+   // ----
+   // ----
+   // ---- Look and feel
+   // ----
+   // ----
+
+   namespace method setLookAndFeelRef(LookAndFeel _lnf, boolean _bForce) {
+      // For widgets which are currently unliked from layer hierarchy
+      lnf_colors <= _lnf.colors;
+      lnf_colors_def <= lnf_colors;
+      lnf <= _lnf;
+      b_force_lnf = _bForce;
+   }
+
+   public method setLookAndFeel(String _name) {
+      switch(_name.toLower())
+      {
+         case "def":
+         case "default":
+            // (todo) remove ?
+            break;
+
+         case "light":
+            setLookAndFeelRef(UI.lnf_preset_light, true/*bForce*/);
+            onLookAndFeelChanged();
+            break;
+
+         case "dark":
+            setLookAndFeelRef(UI.lnf_preset_dark, true/*bForce*/);
+            onLookAndFeelChanged();
+            break;
+
+         case "mono":
+            setLookAndFeelRef(UI.lnf_preset_mono, true/*bForce*/);
+            onLookAndFeelChanged();
+            break;
+      }
+   }
+
+   public method isLookAndFeelLight() : boolean {
+      return (@(lnf) == @(UI.lnf_preset_light));
+   }
+
+   public method setLookAndFeelLight() {
+      setLookAndFeel(LookAndFeel.LIGHT);
+   }
+
+   public method setLookAndFeelDark() {
+      setLookAndFeel(LookAndFeel.DARK);
+   }
+
+   public method setLookAndFeelMono() {
+      setLookAndFeel(LookAndFeel.MONO);
+   }
+
+   public method recursiveSetLookAndFeel(String _name) {
+      // Build from inner to outer
+      // trace "xxx Layer::recursiveSetLookAndFeel: this="+#(this)+" name="+_name;
+      local Layer c <= getLayoutFirstChild();
+      while(null != c)
+      {
+         c.recursiveSetLookAndFeel(_name);
+         c <= c.next;
+      }
+      setLookAndFeel(_name);
+   }
+
+   public method onLookAndFeelChanged() {
+      explain "Called by @UI.SetLookAndFeel() if the look and feel class has changed. Layers that store color information in member variables have to re-read these fields for example (e.g. @Label or @TransparentPanel).";
+
+      if(UI.b_debug_lnf_changed_reset_custom_color_flags)
+      {
+         if(!b_force_lnf)
+            lnf <= UI.lnf;
+         // trace "xxx Layer::onLookAndFeelChanged: this="+#(this)+" lnf="+lnf.getName();
+         lnf_colors     <= lnf.colors;
+         lnf_colors_def <= lnf.colors;
+      }
+
+      if(null != cname_bg)
+         c32_bg = parseColorString(cname_bg);
+
+      if(null != cname_fg)
+         c32_fg = parseColorString(cname_fg);
+   }
+
+   public method recursiveOnLookAndFeelChanged() {
+      explain "Do not call directly. This is called by @UI.SetLookAndFeel().";
+
+      // Build from inner to outer
+      local Layer c <= this;
+      do
+      {
+         // if(c.getDebug())
+         //    trace "xxx ---------................................................. c="+#(this)+" c.id="+c.getLayerId();
+         // if(c instanceof SplitPane)
+         //    trace "xxx recursiveOnLookAndFeelChanged: c="+#(c)+" c.id="+c.getLayerId()+" layoutFirst="+#(c.getLayoutFirstChild())+" c.first_child="+#(c.first_child);
+
+         // trace "xxx Layer::recursiveOnLookAndFeelChanged: c="+#(c)+" c.id="+c.getLayerId();
+         Layer ch <= c.getLayoutFirstChild();
+         if(null != ch)
+            ch.recursiveOnLookAndFeelChanged();
+         c.onLookAndFeelChanged();
+         c <= c.next;
+      } while(null != c);
+   }
+
+   public method cloneLookAndFeelColors() : IntArray {
+      IntArray colors <= new IntArray;
+      colors = lnf_colors;
+      lnf_colors <= deref colors;
+      return lnf_colors;
+   }
+
+   public method onCycleAppLookAndFeel() {
+      // Called for root layer (when sysbrk key is pressed)
+   }
+
+   public method onScreenShot() {
+      // Called for root layer (when sysbrk key is pressed)
+   }
+
+   public method parseLayerStyle(String _s) : int {
+      switch(_s)
+      {
+         default:
+         case "bevel":
+            return LookAndFeel.STYLE_BEVEL;
+
+         case "flat":
+            return LookAndFeel.STYLE_FLAT;
+
+         case "hidpi?flat":
+            return UI.IsHiDPI() ? LookAndFeel.STYLE_FLAT : LookAndFeel.STYLE_BEVEL;
+      }
+   }
+
+   public method setLayerStyle(int _style) {
+      layer_style = _style;
+   }
+
+   public static ParseAlignmentFlagsFromArray(StringArray _atsplit) : int {
+      int retAlignment = 0;
+      String *atsplitv;
+      foreach atsplitv in _atsplit
+      {
+         int addalign = 0;
+         switch(atsplitv)
+         {
+            default:
+               trace "[---] Layer::beginXFMTag(): invalid alignment \""+atsplitv+"\".";
+               return false;
+
+            case "top":
+               addalign = Layout.TOP;
+               break;
+
+            case "bottom":
+               addalign = Layout.BOTTOM;
+               break;
+
+            case "left":
+               addalign = Layout.LEFT;
+               break;
+
+            case "right":
+               addalign = Layout.RIGHT;
+               break;
+
+            case "center":
+            case "all":  // for Panel.border_dir
+               addalign = Layout.CENTER;
+               break;
+
+            case "centerx":
+               addalign = Layout.CENTERX;
+               break;
+
+            case "centery":
+               addalign = Layout.CENTERY;
+               break;
+
+            case "expand":
+               addalign = Layout.EXPAND;
+               break;
+
+            case "expandx":
+               addalign = Layout.EXPANDX;
+               break;
+
+            case "expandy":
+               addalign = Layout.EXPANDY;
+               break;
+
+            case "baseliney":
+               addalign = Layout.BASELINEY;
+               break;
+
+            case "baseline":
+               addalign = Layout.CENTERY | Layout.BASELINEY;
+               break;
+         } // switch atsplitv
+
+         retAlignment |= addalign;
+      } // foreach atsplit
+
+      return retAlignment;
+   }
+
+   public method setEnableFlatHighContrast(boolean _bEnable) {
+      b_flat_high_contrast = _bEnable;
+   }
+
+   public method getEnableFlatHighContrast() : boolean {
+      return b_flat_high_contrast;
+   }
+
+   public method lnfGetColorAlpha(int _lnfIdx, int _alpha) : int {
+      int c32 = lnf_colors.get(_lnfIdx);
+      return (c32&0x00ffffff) | ((_alpha&255)<<24);
+   }
+
+   public method lnfGetTintedColor(int _lnfIdx, int _tint32) : int {
+      int c32 = lnf_colors.get(_lnfIdx);
+      if(_tint32) // Colorize ?
+      {
+         c32 = sdvg_MixARGBf(c32, 0xff000000 | (_tint32&0x00FFFFFF), ((_tint32>>24)&255)/255.0);
+      }
+      return c32;
+   }
+
+   public method lnfGetTintedColorAlpha(int _lnfIdx, int _tint32, int _alpha) : int {
+      int c32 = lnfGetTintedColor(_lnfIdx, _tint32);
+      return (c32&0x00FFFFFF) | ((_alpha&255)<<24);
+   }
+
+
+
+   // ----
+   // ----
+   // ---- tab focus cycle
+   // ----
+   // ----
+
+   public method isTabCycleMember() : boolean {
+      explain "Query whether this layer supports tab-cycling. A special case are tabcycleroots which cannot be focused themselves but still are cycle memberes and thus should have a tab cycle order assigned.";
+      return false;
+   }
+
+   protected int tab_cycle_order = 2346; // -1
+
+   public method getTabCycleOrder() : int {
+      explain "Returns sorting order in tabcycleroot list. Should return -1 if this layer is not focusable.";
+      return tab_cycle_order;
+   }
+
+   public method setTabCycleOrder(int _order) {
+      if(isTabCycleMember())
+      {
+         tab_cycle_order = _order;
+      }
+   }
+
+   public method isTabCycleRoot() : boolean {
+      explain "Query whether this layer manages a focus cycle list for its child layers.";
+
+      return false;
+   }
+
+   public method isTabCycleProxy() : boolean {
+      explain "Query whether the layer is cycleroot and active cyclemember at the same time, e.g. a TabbedView.";
+      return false;
+   }
+
+   protected method addTabCycleMembersToList(local PointerArray _list) {
+      local Layer c <= this;
+      while(null != c)
+      {
+         if(c.isTabCycleMember())
+         {
+            if(c.isTabCycleRoot())
+            {
+               // Only add tabcycleroot layer if it has any members or is a tabcycle proxy
+               if( (null != c.tab_cycle_list) || c.isTabCycleProxy() )
+               {
+                  _list.add(c);
+               }
+            }
+            else
+            {
+               // Add regular widget
+               _list.add(c);
+            }
+         }
+         if(!c.isTabCycleRoot())
+         {
+            Layer ch <= c.getLayoutFirstChild();
+            if(null != ch)
+               ch.addTabCycleMembersToList(_list);
+         }
+         c <= c.next;
+      }
+   }
+
+   public method buildTabCycleList() {
+      explain "Scan child layers and build tab cycle list. Usually implemented by container-like layers (e.g. Panels).";
+
+      if(isTabCycleRoot())
+      {
+         tab_cycle_list <= new PointerArray;
+         ////trace "xxx buildTabCycleList first_child="+#(first_child);
+         if(null != first_child)
+         {
+            ////trace "xxx buildTabCycleList first_child="+#(first_child)+" child.tcl="+#(first_child.tab_cycle_list);
+            // Recursively add child layers to tab cycle list
+            first_child.addTabCycleMembersToList(tab_cycle_list);
+
+            // Sort tab cycle list
+            int l = tab_cycle_list.numElements;
+            if(l > 1) // Need at least two elements to sort..
+            {
+               // BubbleSort tab cycle members
+               do
+               {
+                  boolean bSwapped = false;
+
+                  Layer *t <= tab_cycle_list[0];
+                  int pto = t.getTabCycleOrder();
+                  for(int i = 1; i < l; i++)
+                  {
+                     t <= tab_cycle_list[i];
+                     int nto = t.getTabCycleOrder();
+                     if(nto < pto)
+                     {
+                        tab_cycle_list.swap(i-1, i);
+                        bSwapped = true;
+                     }
+                     else
+                     {
+                        pto = nto;
+                     }
+                  }
+               } while(bSwapped);
+            }
+
+            ////trace "xxx Layer::buildTabCycleList: this="+#(this)+" list has "+tab_cycle_list.numElements+" members.";
+
+            // Delete tab cycle list if it has no entries
+            if(tab_cycle_list.numElements == 0)
+            {
+               tab_cycle_list <= null;
+            }
+            else
+            {
+               // debugPrintTabCycleList();
+            }
+
+         }
+      }
+   }
+
+   public method debugPrintTabCycleList() {
+      if(null != tab_cycle_list)
+      {
+         // Debug: dump cycle list
+         trace "xxx debugPrintTabCycleList: this="+#(this)+" :";
+         for(int k = 0; k < tab_cycle_list.numElements; k++)
+         {
+            Layer t <= tab_cycle_list[k];
+            ////trace "xxx tcl: at "+k+" order="+t.getTabCycleOrder()+" t="+#(t);
+            trace "xxx tcl: at "+k+" t="+#(t);
+         }
+      }
+   }
+
+   public method recursiveBuildTabCycleLists() {
+      explain "Utility method that is used to recursively build tabcycle lists for all children. Usually this is automatically done when using XMLForms but if the layer hierarchy is built programmatically this method might be handy.";
+
+      // Build from inner to outer
+      local Layer *c <= this;
+      do
+      {
+         Layer *ch <= c.getLayoutFirstChild();
+         if(ch != null)
+            ch.recursiveBuildTabCycleLists();
+         c.buildTabCycleList(); // Actually only done for cycle roots but this is checked within the called method
+         c <= c.next;
+      } while(null != c);
+   }
+
+   protected method findTabCycleRoot() : Layer {
+      explain "Find parent layer that is a a tab cycle root.";
+
+      Layer c <= parent;
+      ////trace "xxx Layer::findTabCycleRoot: this="+#(this)+" parent="+#(c);
+      while(null != c)
+      {
+         ////trace "xxx Layer::findTabCycleRoot: c="+#(c)+" c.parent="+#(c.parent);
+         if(c.isTabCycleRoot())
+         {
+//             // xxx debug print cyclelist
+// //             if(c.tab_cycle_list != null)
+// //             {
+// //                Layer t;
+// //                foreach t in c.tab_cycle_list
+// //                   {
+// //                      trace "   t="+#(t);
+// //                   }
+// //             }
+            return c;
+         }
+         c <= c.parent;
+      }
+      return null;
+   }
+
+   protected method handleNewTabCycleFocus(local Layer _n) {
+      //trace "xxx Layer::handleNewTabCycleFocus: this="+#(this)+" n="+#(_n);
+      if(_n instanceof Layer)
+      {
+         if(@(_n) != @(this))
+         {
+            UI.SetKeyboardFocus(_n);
+            _n.onTabFocus();
+         }
+      }
+      // trace "xxx handleNewTabCycleFocus: EXIT";
+   }
+
+   public static FindFirstNonRootTabCycleMember(Layer _n, int _dir) : Layer {
+
+      // trace "xxx Layer::FindFirstNonRootTabCycleMember: n="+#(_n);
+
+      ////trace "xxx FindFirstNonRootTabCycleMember n="+#(_n)+" dir="+_dir;
+      boolean bEmptyProxy = _n.isTabCycleProxy();
+      if(bEmptyProxy)
+      {
+         if(_dir < 0)
+         {
+            if(null != _n.tab_cycle_list)
+            {
+               bEmptyProxy = (0 == _n.tab_cycle_list.numElements);
+            }
+            else
+            {
+               bEmptyProxy = false;
+            }
+         }
+      }
+
+      while(_n.isTabCycleRoot() && !bEmptyProxy && ((_dir < 0) || !(_n.isTabCycleProxy() && _n.isTabCycleMember())))
+      ////while(_n.isTabCycleRoot() && !bEmptyProxy)
+      {
+         //trace "xxx ui: FindFirstNonRootTabCycleMember n="+#(_n);
+         if(null != _n.tab_cycle_list)
+         {
+            if(_n.tab_cycle_list.numElements > 0)
+            {
+               if(_dir > 0)
+                  _n <= _n.tab_cycle_list[0];
+               else
+                  _n <= _n.tab_cycle_list[_n.tab_cycle_list.numElements -1];
+            }
+            else
+            {
+               if(_n.isTabCycleProxy())
+                  return _n;
+
+               return null;
+            }
+         }
+         else
+         {
+            if(_n.isTabCycleProxy())
+               return _n;
+
+            return null;
+         }
+
+         // trace "xxx n="+#(_n);
+      }
+
+      return _n;
+   }
+
+   public method focusFirstTabCycleMember() {
+      explain "Set keyboard focus to first non-root tab cycle member.";
+
+      if(null != tab_cycle_list)
+      {
+         // Set focus to first (non-root) cyclemember
+         Layer n <= FindFirstNonRootTabCycleMember(this, 1);
+         if(n instanceof Layer)
+         {
+            // // trace "xxx Layer::focusFirstTabCycleMember: n="+#(n);
+            handleNewTabCycleFocus(n);
+            return true;
+         }
+      }
+   }
+
+   protected method recursiveFocusTabCycleMember(Layer _active, int _dir, local boolean _local) : boolean {
+
+      // TODO: is the case where this widget is the only tab cycle member handled correctly..??
+      local Layer thiz <= findTabCycleHeader();
+      // trace "xxx recursiveFocusTabCycleMember: this="+#(this)+" thiz="+#(thiz)+" dir="+_dir+" local="+_local;
+
+      local Layer tcr <= findTabCycleRoot();
+      // trace "xxx ui:recursiveFocusTabCycleMember: thiz="+#(thiz)+" tcr="+#(tcr);
+      if(null != tcr)
+      {
+         if(_dir < 0)
+         {
+            if(tcr.isTabCycleProxy())//// && tcr.isEditable())
+            {
+               // trace "xxx ui:tabfocus: tcr="+#(tcr) +" isTabCycleProxy";
+               _active.handleNewTabCycleFocus(tcr);
+               return true;
+            }
+         }
+         local PointerArray tcl <= tcr.tab_cycle_list;
+         //trace "xxx ui:tabfocus: tcr = "+#(tcr)+" tcl="+#(tcl);
+         if(null != tcl)
+         {
+            local Layer *n;
+            ////trace "xxx tcl="+#(tcl);
+            if(tcl.numElements > 1)
+            {
+               // Find self in tab cycle list
+               local int idx = tcl.indexOfPointer(thiz, 0);
+               if(-1 != idx)
+               {
+                  // trace "xxx Layer::recursiveFocusTabCycleMember: current index="+idx;
+                  boolean bNoWrap;
+                  if(_dir > 0)
+                     bNoWrap = (idx < (tcl.numElements-1));
+                  else
+                     bNoWrap = (idx > 0);
+
+                  // trace "xxx ui:tabfocus: recursiveFocusTabCycleMember: bNoWrap="+bNoWrap;
+                  if(bNoWrap)
+                  {
+                     // Focus next cycle list member
+                     ////tcr.debugPrintTabCycleList();
+                     n <= tcl[idx + _dir];
+                     // trace "xxx ui:tabfocus: n="+#(n);
+                     // If new tabfocus layer is cycle root select first/last cyclelist item depending on direction
+                     n <= FindFirstNonRootTabCycleMember(n, _dir);
+                     // trace "xxx ui:tabfocus: n.FirstNonRootTabCycleMember="+#(n);
+                     _active.handleNewTabCycleFocus(n);
+                     return true;
+                  }
+                  else
+                  {
+                     // Wrap around resp. continue with next member of parent tab root
+                     if(!_local)
+                     {
+                        // trace "xxx ui:tabfocus: find next cycle root of "+#(tcr);
+                        // Find next cycle root of "tcr"
+                        if(tcr.recursiveFocusTabCycleMember(_active, _dir, false))
+                        {
+                           // trace "xxx ui:tabfocus:  --> found";
+                           return true;
+                        }
+                        else
+                        {
+                           // No more parent cycle roots, wrap around in current cycle list
+                           // trace "xxx ui:tabfocus:  --> NOT found";
+                           _local = true;
+                        }
+                     }
+                     if(_local)
+                     {
+                        if(_dir > 0)
+                           n <= tcl[0];
+                        else
+                           n <= tcl[tcl.numElements-1];
+
+                        // If new tabfocus layer is cycle root select first/last cyclelist item depending on direction
+                        n <= FindFirstNonRootTabCycleMember(n, _dir);
+                        _active.handleNewTabCycleFocus(n);
+                        return true;
+                     }
+                  }
+               }
+               else
+               {
+                  trace "[~~~] Layer::recursiveFocusTabCycleMember: cannot find self in tab cycle list.";
+               }
+            }
+            else
+            {
+               if(_local)
+               {
+                  // Stay in local cycle list
+                  return true;
+               }
+               // oh my.. this special case handling is a bit messy but it's already so late and i'm so tired :/
+               n <= tcl.get(0);
+               if(null == n)
+                  return false;
+               //trace "xxx ui:tabfocus: tab cycle list has only one entry n="+#(n);
+
+               boolean bContRecurse = (@(n) == @(_active)) || (@(n) == @(_active.parent));
+
+               if(!bContRecurse)
+               {
+                  if(_active.hasParent(n))
+                  {
+                     if(_dir > 0)
+                     {
+                        bContRecurse = true;
+                     }
+                     else
+                     {
+                        // trace "xxx ui:tabfocus: active="+#(_active)+" has parent n="+#(n);
+                        if(n.isTabCycleRoot() && !n.isTabCycleProxy())
+                        {
+                           // trace "xxx n is tabcycleroot && !proxy";
+                           if(null != n.tab_cycle_list)
+                           {
+                              // trace "xxx n cyclelist has "+(n.tab_cycle_list.numElements)+" elements";
+                              bContRecurse = (n.tab_cycle_list.numElements <= 1);
+                              if(!bContRecurse)
+                              {
+                                 if(_dir > 0)
+                                    bContRecurse = _active.hasParent(n.tab_cycle_list[n.tab_cycle_list.numElements-1]);
+                                 else
+                                    bContRecurse = _active.hasParent(n.tab_cycle_list[0]);
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+
+               // trace "xxx ui:tabfocus: bContRecurse="+bContRecurse;
+               if(bContRecurse)
+                  return tcr.recursiveFocusTabCycleMember(_active, _dir, _local);
+
+               n <= FindFirstNonRootTabCycleMember(n, _dir);
+               _active.handleNewTabCycleFocus(n);
+               return true;
+            }
+         }
+         else
+         {
+            trace "[~~~] Layer::recursiveFocusCycleMember: isTabCycleRoot but has no tabcyclelist.";
+         }
+      }
+      return false; // Not handled
+   }
+
+   public method focusPreviousTabCycleMember(boolean _local) {
+      explain "Determine previous tab cycle member and set the keyboard focus. This method does not generate a onKeyboardFocusLost() event for the current tab focus layer; yet it will generate an onTabFocusLost() event for the current layer and an onTabFocus() event for the new tab focus layer. If the local argument is true, this will only cycle within the list of the tab cycle root that references this layer in its cycle list.";
+
+      // Try overrides first
+      PointerArray tabCycleOverrides <= findTabCycleOverrides();
+      if(null != tabCycleOverrides)
+      {
+         // trace "xxx Layer::focusPreviousTabCycleMember: overrides="+#(tabCycleOverrides);
+         Layer l <= FindPreviousTabCycleOverrideMember(tabCycleOverrides, this);
+         // trace "xxx Layer::focusPreviousTabCycleMember:    new l="+#(l);
+         if(null != l)
+         {
+            handleNewTabCycleFocus(l);
+            return;
+         }
+      }
+
+      //trace "xxx --------------------------------------------------";
+      recursiveFocusTabCycleMember(this, -1, _local);
+   }
+
+
+   public method focusNextTabCycleMember(boolean _local) {
+      explain "Determine next tab cycle member and set the keyboard focus. This method does not generate a onKeyboardFocusLost() event for the current tab focus layer; yet it will generate an onTabFocusLost() event for the current layer and an onTabFocus() event for the new tab focus layer. If the local argument is true, this will only cycle within the list of the tab cycle root that references this layer in its cycle list.";
+      // trace "xxx Layer::focusNextTabCycleMember: local="+_local;
+
+      // Try overrides first
+      PointerArray tabCycleOverrides <= findTabCycleOverrides();
+      // trace "xxx Layer::focusNextTabCycleMember: overrides="+#(tabCycleOverrides);
+      if(null != tabCycleOverrides)
+      {
+         Layer l <= FindNextTabCycleOverrideMember(tabCycleOverrides, this);
+         // trace "xxx Layer::focusNextTabCycleMember:    new l="+#(l);
+         if(null != l)
+         {
+            // trace "xxx focus: l="+#(l)+" l.isEditable="+l.isEditable();
+            handleNewTabCycleFocus(l);
+            // trace "xxx Layer::focusNextTabCycleMember: EXIT   new l="+#(l);
+            return;
+         }
+      }
+
+      // trace "xxx --------------------------------------------------";
+      // trace "xxx focusNextTabCycleMember 1 this="+#(this)+" keyboard_layer="+#(UI.keyboard_layer);
+
+      recursiveFocusTabCycleMember(this, 1, _local);
+
+      // trace "xxx focusNextTabCycleMember 2 this="+#(this)+" keyboard_layer="+#(UI.keyboard_layer);
+   }
+
+   //
+   // Tab cycle override [09Feb2017]
+   //
+   public method addTabCycleOverrides(PointerArray _retLayers) {
+   }
+
+   // recursively add tab cycle overrides until first layer actually added something to the list
+   protected method recursiveAddTabCycleOverrides(PointerArray _retLayers) {
+      local int numLayers = _retLayers.numElements;
+      addTabCycleOverrides(_retLayers);
+      if(_retLayers.numElements > numLayers)
+         return;
+      local Layer c <= getLayoutFirstChild();
+      while(null != c)
+      {
+         c.recursiveAddTabCycleOverrides(_retLayers);
+         if(_retLayers.numElements > numLayers)
+            break;
+         c <= c.next;
+      }
+   }
+
+   public method getTabCycleOverrides() : PointerArray {
+      explain "Get override list of tab cycle members. Should only be implemented by one layer.";
+      return null;
+   }
+
+   protected method getTabCycleOverridesDef() : PointerArray {
+      // Utility function
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      if(layers.isEmpty())
+         return null;
+      return layers;
+   }
+
+   public method findTabCycleOverrides() : PointerArray {
+
+      // trace "xxx ~~~~ findTabCycleOverrides";
+
+      Layer c <= this;
+      PointerArray ret <= null;
+
+      int maxSearch = 1000;
+
+      for(;;)
+      {
+         ret <= c.getTabCycleOverrides();
+
+         // trace "xxx findTabCycleOverrides: c="+#(c)+" ret="+#(ret);
+
+         if(null != ret)
+         {
+            return ret;
+         }
+         else if(null != c.getParent())
+         {
+            c <= c.getParent();
+
+            // Paranoia
+            if(--maxSearch < 0)
+            {
+               trace "[---] UI::Layer::findTabCycleOverrides: detected cyclic reference, FIX THE APP!!";
+               return null;
+            }
+         }
+         else
+         {
+            break;
+         }
+      }
+
+      return ret;
+   }
+
+   protected method findTabCycleHeader() : Layer {
+      // e.g. for TableView which is a composite and sets the keyboard focus to the TableViewData child layer
+      //  OR when current focus layer is not a cycle member (find a parent that is)
+      Layer c <= this;
+
+      for(;;)
+      {
+         if(c.isTabCycleMember())
+            return c;
+
+         c <= c.getParent();
+
+         if(null == c)
+            return null;
+      }
+
+      return null;
+   }
+
+   public static FindNextTabCycleOverrideMember(PointerArray _layers, Layer _c) {
+      // trace "xxx FindNextTabCycleOverrideMember: c="+#(_c);
+
+      _c <= _c.findTabCycleHeader();
+
+      // trace "xxx FindNextTabCycleOverrideMember: <after findTabCycleHeader> c="+#(_c);
+
+      if(null != _c)
+      {
+         int idx = _layers.indexOfPointer(_c, 0);
+
+         // trace "xxx FindNextTabCycleOverrideMember: idx="+idx;
+
+         if(-1 != idx)
+         {
+            loop(_layers.numElements)
+            {
+               idx = (idx + 1) % _layers.numElements;
+               Layer l <= _layers.get(idx);
+               // trace "xxx try l="+#(l)+" l.isEditable()="+l.isEditable();
+
+               if(l.isEditable())
+               {
+                  return l;
+               }
+            }
+         }
+      }
+
+      // trace "xxx FindNextTabCycleOverrideMember: fallback to first";
+      return _layers.get(0);
+   }
+
+   public static FindPreviousTabCycleOverrideMember(PointerArray _layers, Layer _c) {
+      // trace "xxx FindPreviousTabCycleOverrideMember: c="+#(_c);
+
+      _c <= _c.findTabCycleHeader();
+
+      // trace "xxx FindPreviousTabCycleOverrideMember: <after findTabCycleMember> c="+#(_c);
+
+      if(null != _c)
+      {
+         int idx = _layers.indexOfPointer(_c, 0);
+
+         if(-1 != idx)
+         {
+            loop(_layers.numElements)
+            {
+               if(--idx < 0)
+                  idx += _layers.numElements;
+               Layer l <= _layers.get(idx);
+               if(l.isEditable())
+                  return l;
+            }
+         }
+      }
+
+      return _layers.get(0);
+   }
+
+
+
+   // ----
+   // ----
+   // ---- event handling (action provider/consumer)
+   // ----
+   // ----
+
+   public method addActionConsumer(ActionConsumer _consumer) {
+      ListNode l <= action_consumers.findPointer(_consumer);
+
+      if(null == l)
+         action_consumers.addLast(#(deref _consumer));
+   }
+
+   public method removeActionConsumer(ActionConsumer _consumer) {
+      ListNode l <= action_consumers.findPointer(_consumer);
+
+      if(null != l)
+         action_consumers.remove(l);
+   }
+
+   public method provideAction(Action _providedAction) : boolean {
+      // (note) this may also be used to delegate actions (e.g. PopupMenu->action_consumer)
+
+      // trace "xxx Layer::provideAction _providedAction="+#(_providedAction)+" name=\""+_providedAction.getActionName()+"\" this="+#(this);
+      local boolean bHandled = delegate _providedAction.getActionName()(_providedAction);
+      ////trace "xxx Layer::provideAction: handled by delegate = "+bHandled;
+      if(!bHandled)
+      {
+         local ActionConsumer *t;
+         local Layer c <= this;
+         local ActionConsumer *acc;
+         do
+         {
+            ////trace "xxx provideAction: c="+#(c);
+            local ListNode l <= c.action_consumers.head;
+
+            while(null != l)
+            {
+               t <= l.objectValue;
+
+               if(t instanceof ActionConsumer)
+               {
+                  // trace "xxx Layer::provideAction: try consumer t="+#(t);
+                  bHandled |= t.consumeAction(_providedAction);
+               }
+               l <= l.next;
+            }
+            c <= c.parent;
+            if(c instanceof ActionConsumer)
+            {
+               t <= c;
+               // trace "xxx Layer::provideAction: try parent consumer t="+#(t);
+               bHandled |= t.consumeAction(_providedAction);
+            }
+            ////trace "xxx provideAction: \""+_providedAction.getActionName()+"\" bHandled="+bHandled+" newc="+#(c);
+         } while(!bHandled && (null != c));
+      }
+
+      return bHandled;
+   }
+
+   public method consumeAction(Action _ac) : boolean {
+      // trace "xxx Layer::consumeAction this="+#(this)+" name="+_ac.getActionName();
+
+      String acName <= _ac.getActionName();
+
+      if("onToolTipShowTimer" == acName)
+      {
+         /// (note) schedules stage2 or hide timer
+         showToolTip(false/*bStage2*/);
+         return true;
+      }
+      else if("onToolTipStage2Timer" == acName)
+      {
+         // trace "xxx Layer: onToolTipStage2Timer expired";
+         /// (note) schedules hide timer
+         showToolTip(true/*bStage2*/);
+         return true;
+      }
+      else if("onToolTipHideTimer" == acName)
+      {
+         hideToolTip();
+         return true;
+      }
+      else
+      {
+         // ---- Delegate Action to plugged-in method (if available)
+         return delegate _ac.getActionName()(_ac);
+      }
+   }
+
+   protected method parseLayout(HashTable _attributes) {
+      // For classes that override the layout after initPanel() / beginXFMTag() has been called
+      //  (e.g. Panel)
+      if(_attributes.exists("layout"))
+      {
+         String layoutcl = _attributes["layout"];
+         if(layoutcl.compareIgnoreCase("none"))
+         {
+            layout <= null;
+         }
+         else
+         {
+            Layout lo <= UI.NewObjectByFQName(layoutcl);
+            if(lo instanceof Layout)
+            {
+               layout <= deref lo; // replace previous layout manager
+            }
+            else
+            {
+               trace "[---] Layer::parseLayout(): failed to resolve Layout manager \""+_attributes["layout"]+"\".";
+            }
+         }
+      }
+   }
+
+   // ----
+   // ---- XFM - Support
+   // ----
+
+   public static AllowXFMAttribDPI(String _atval) : boolean {
+      // **DEPRECATED**
+      //   won't work when trying to set same attribute with different hidpi? and lodpi? values
+      //    => must change syntax to "attrib?hidpi=xyz" and "attrib?lodpi=xyz"
+      // trace "xxx AllowXFMAttribDPI: _atval=\""+_atval+"\"";
+      if(_atval <= "hidpi?")
+      {
+         if(!UI.IsHiDPI())
+            return false;
+         _atval.replace("hidpi?", "");
+      }
+      else if(_atval <= "lodpi?")
+      {
+         if(UI.IsHiDPI())
+            return false;
+         _atval.replace("lodpi?", "");
+      }
+      return true;
+   }
+
+   // ---- Initialize layer from given attribute set.
+   // ---- Return whether initialization was successful (true) or a semantic error occured
+   public method beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      // trace "xxx Layer::beginXFMTag: this="+#(this)+" attr="+#(_attributes);
+      String *atname, atnamelc, atsplitv, atvalpc;
+      StringArray *atsplit;
+      float atfloatvalpc;
+      // ---- First try to determine layout manager
+      if(_attributes.exists("layout"))
+      {
+         String layoutcl = _attributes["layout"];
+         if(!layoutcl.compareIgnoreCase("none"))
+         {
+            Layout lo <= UI.NewObjectByFQName(layoutcl);
+            if(lo instanceof Layout)
+            {
+               layout <= deref lo; // replace previous layout manager
+            }
+            else
+            {
+               trace "[---] Layer::beginXFMTag(): failed to resolve Layout manager \""+_attributes["layout"]+"\".";
+               return false;
+            }
+         }
+         else
+         {
+            layout <= null;
+         }
+      }
+      else
+      {
+         if(this instanceof Panel)
+            layout <= SuperBorderLayout;
+      }
+
+      layout_hints = 0xdeadbeef;
+
+      if(isTabCycleMember())
+      {
+         setTabCycleOrder(2346); // Assign default tab cycle order
+      }
+
+      boolean bHaveAlign = false;
+      foreach atname in _attributes
+      {
+         String *atval <= _attributes[atname], atvaluc;
+         atname.toLower() => atnamelc;
+
+         switch(atnamelc)
+         {
+            default:
+               break;
+
+            case "debug":
+               setDebug(int(atval));
+               break;
+
+            case "lnf":
+            case "lookandfeel":
+               // trace "xxx Layer: found lnf XFM attrib value=\""+atval.toLower()+"\"";
+               setLookAndFeel(atval.toLower());
+               break;
+
+            case "style":
+               setLayerStyle(parseLayerStyle(atval.toLower()));
+               break;
+
+            case "name":
+               layer_name = atval;
+               break;
+
+            case "autoresolve":
+               b_noautoresolve = !int(atval);
+               break;
+
+            case "alpha":
+               // ---- Layer transparency, 255=opaque, 0=invisible
+               setAlpha(atval);
+               break;
+
+            case "bgkeepalpha":
+               setEnableBackgroundKeepAlpha(int(atval));
+               break;
+
+            case "editable":
+               setEditable( (0 != atval) ? true : false );
+               break;
+
+            case "taborder":
+            case "tabcycleorder":
+               setTabCycleOrder(atval);
+               break;
+
+            case "tooltipcaption":
+               setToolTipCaption(atval);
+               break;
+
+            case "layout":
+               // ---- already parsed..
+               break;
+
+            case "prefsize":
+               if( ! atval.compareIgnoreCase("fill"))
+               {
+                  // ---- "<x>;<y>"
+                  atsplit <= atval.replaceChar(',',';').splitChar(';');
+                  if(atsplit.numElements > 1)
+                  {
+                     if(atsplit[0].compareIgnoreCase("fillx"))
+                     {
+                        if(atsplit[1].compareIgnoreCase("filly"))
+                        {
+                           setManualPreferredSize2f(Layout.FILLX, Layout.FILLY);
+                        }
+                        else
+                        {
+                           setManualPreferredSize2f(Layout.FILLX, atsplit[1]);
+                        }
+                     }
+                     else
+                     {
+                        if(atsplit[1].compareIgnoreCase("filly"))
+                        {
+                           setManualPreferredSize2f(atsplit[0], Layout.FILLY);
+                        }
+                        else
+                        {
+                           setManualPreferredSize2f(atsplit[0], atsplit[1]);
+                        }
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                     return false;
+                  }
+               }
+               else
+               {
+                  setManualPreferredSize2f(Layout.FILLX, Layout.FILLY);
+               }
+               break;
+
+            case "collapse":
+               setEnableCollapse(int(atval));
+               break;
+
+            case "prefsizex":
+               if(atval.compareIgnoreCase("fillx"))
+               {
+                  // ** DEPRECATED ** (use sizeX=100% instead)
+                  setManualPreferredSizeX(Layout.FILLX);
+               }
+               else
+               {
+                  // trace "[~~~] Layer: ** DEPRECATED ** prefsizex="+atval;
+                  setManualPreferredSizeX(atval);
+               }
+               break;
+
+            case "prefsizey":
+               if(atval.compareIgnoreCase("filly"))
+               {
+                  // ** DEPRECATED ** (use sizeY=100% instead)
+                  setManualPreferredSizeY(Layout.FILLY);
+               }
+               else
+               {
+                  // ** DEPRECATED **
+                  // trace "[~~~] Layer: ** DEPRECATED ** prefsizey="+atval;
+                  setManualPreferredSizeY(atval);
+               }
+               break;
+
+            case "reqsize":
+               // ---- "<x>;<y>"
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setRequiredSize2f(atsplit[0],
+                                    (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                    );
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "reqsizex":
+               setRequiredSizeX(atval);
+               break;
+
+            case "reqsizey":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setRequiredSizeY(atval);
+               break;
+
+            case "reqsizescaled":
+               // ---- "<x>;<y>"
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setRequiredSize2fScaled(atsplit[0],
+                                          (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                          );
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "reqsizexscaled":
+               setRequiredSizeXScaled(atval);
+               break;
+
+            case "reqsizeyscaled":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setRequiredSizeYScaled(atval);
+               break;
+
+            case "minsize":
+               // ---- "<x>;<y>"
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setMinimumSize2f(atsplit[0],
+                                   (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                   );
+                  setEnableForceMinimumSize(true, true);
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "minsizescaled":
+               // ---- "<x>;<y>"
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setMinimumSize2fScaled(atsplit[0],
+                                         (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                         );
+                  setEnableForceMinimumSize(true, true);
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "minsizex":
+               setMinimumSizeX(atval);
+               setEnableForceMinimumSizeX(true);
+               break;
+
+            case "minsizexscaled":
+               setMinimumSizeXScaled(atval);
+               setEnableForceMinimumSizeX(true);
+               break;
+
+            case "minsizey":
+               setMinimumSizeY(atval);
+               setEnableForceMinimumSizeY(true);
+               break;
+
+            case "minsizeyscaled":
+               setMinimumSizeYScaled(atval);
+               setEnableForceMinimumSizeY(true);
+               break;
+
+            case "pos":
+               // ---- "<x>;<y>"
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setPosition2f(atsplit[0],
+                                (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                );
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "posx":
+               setPositionX(atval);
+               break;
+
+            case "posy":
+               setPositionY(atval);
+               break;
+
+            case "size":
+               if(atval.indexOfChar('%', 0) != -1 )
+               {
+                  if(atval.indexOfChar(';', 0) != -1 )
+                  {
+                     atsplit <= atval.replaceChar(',',';').splitChar(';');
+                     atvalpc = atsplit[0]; atvalpc.replaceChar('%',0);
+                     setLayoutWeightX(float(atvalpc)*0.01f);
+                     atvalpc = atsplit[1]; atvalpc.replaceChar('%',0);
+                     setLayoutWeightY(float(atvalpc)*0.01f);
+                  }
+                  else
+                  {
+                     // // atvalpc = atval; atvalpc.replaceChar('%',0);
+                     atval.replaceChar('%',0) => atvalpc;
+                     atfloatvalpc = float(atvalpc)*0.01f;
+                     setLayoutWeight2f(atfloatvalpc, atfloatvalpc);
+                  }
+               }
+               else
+               {
+                  // ---- "<x>;<y>"  ** DEPRECATED **
+                  atsplit <= atval.replaceChar(',',';').splitChar(';');
+                  if(atsplit.numElements >= 1)
+                  {
+                     setSize2f(atsplit[0],
+                               (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                               );
+                  }
+                  else
+                  {
+                     trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                     return false;
+                  }
+               }
+               break;
+
+            case "sizescaled":
+               // ---- "<x>;<y>"  ** DEPRECATED **
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setSize2fScaled(atsplit[0],
+                                  (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last
+                                  );
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==2, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "sizex":
+               if(-1 != atval.indexOfChar('%', 0))
+               {
+                  // // atvalpc=atval; atvalpc.replaceChar('%',0);
+                  atval.replaceChar('%',0) => atvalpc;
+                  setLayoutWeightX( float(atvalpc)*0.01f );
+               }
+               else
+               {
+                  // ** DEPRECATED **
+                  setSizeX(atval);
+               }
+               break;
+
+            case "sizexscaled":
+               setSizeXScaled(atval);
+               break;
+
+            case "sizey":
+               if(-1 != atval.indexOfChar('%', 0))
+               {
+                  atval.replaceChar('%',0) => atvalpc;
+                  setLayoutWeightY( float(atvalpc)*0.01f );
+               }
+               else
+               {
+                  // ** DEPRECATED **
+                  setSizeY(atval);
+               }
+               break;
+
+            case "sizeyscaled":
+               // ** DEPRECATED **
+               setSizeYScaled(atval);
+               break;
+
+            case "pad_t":
+            case "padtop":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadTop(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "padtopunscaled":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadTopUnscaled(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "pad_l":
+            case "padleft":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadLeft(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "padleftunscaled":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadLeftUnscaled(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "pad_b":
+            case "padbottom":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadBottom(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "padbottomunscaled":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadBottomUnscaled(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "pad_r":
+            case "padright":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadRight(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "padrightunscaled":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               setPadRightUnscaled(float(atval));
+               b_xfm_padding = true;
+               break;
+
+            case "pad":
+            case "padding":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setPadding4f(atsplit[0],
+                               (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last,
+                               (atsplit.numElements >= 3) ? atsplit[2] : atsplit.last,
+                               (atsplit.numElements >= 4) ? atsplit[3] : atsplit.last
+                               );
+                  b_xfm_padding = true;
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==4, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "paddingunscaled":
+               if(!AllowXFMAttribDPI(atval))
+                  break;
+               atsplit <= atval.replaceChar(',',';').splitChar(';');
+               if(atsplit.numElements >= 1)
+               {
+                  setPadding4fUnscaled(atsplit[0],
+                                       (atsplit.numElements >= 2) ? atsplit[1] : atsplit.last,
+                                       (atsplit.numElements >= 3) ? atsplit[2] : atsplit.last,
+                                       (atsplit.numElements >= 4) ? atsplit[3] : atsplit.last
+                                       );
+                  b_xfm_padding = true;
+               }
+               else
+               {
+                  trace "[---] Layer::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list length==4, got "+atsplit.numElements+").";
+                  return false;
+               }
+               break;
+
+            case "dir":
+               atval.toUpper() => atvaluc;
+               switch(atvaluc)
+               {
+                  default:
+                     trace "[---] Layer::beginXFMTag(): unknown layoutHint \""+atval+"\".";
+                     return false;
+
+                  case "TOP":
+                     setLayoutHints( Layout.TOP );
+                     break;
+
+                  case "BOTTOM":
+                     setLayoutHints( Layout.BOTTOM );
+                     break;
+
+                  case "LEFT":
+                     setLayoutHints( Layout.LEFT );
+                     break;
+
+                  case "RIGHT":
+                     setLayoutHints( Layout.RIGHT );
+                     break;
+
+                  case "CENTER":
+                     setLayoutHints( Layout.CENTER );
+                     break;
+               }
+               break;
+
+            case "redrawparent":
+               b_redraw_parent = int(atval);
+               break;
+
+            case "align":
+               bHaveAlign = true;
+               atval.toLower() => atvaluc;
+               atsplit <= atvaluc.replaceChar(',',';').splitChar(';');
+               alignment = ParseAlignmentFlagsFromArray(atsplit);
+               break;
+
+            case "baselinecontentshift":
+               setEnableBaselineContentShift(int(atval));
+               break;
+
+            case "cursorkeytabcycling":
+               setEnableCursorKeyTabCycling(int(atval));
+               break;
+
+            case "setkbdfocusonmouse":
+               setEnableKbdFocusOnMouse(0 != int(atval));
+               break;
+
+            case "forcetabcycleoverrides":
+               b_force_tab_cycle_overrides = (0 != int(atval));
+               break;
+
+            case "redrawparent":
+               if(0 != int(atval))
+               {
+                  setLinkedRedraw(parent);
+               }
+               break;
+
+            case "bgcolor":
+               setBackgroundColorFromString(atval);
+               break;
+
+            case "fgcolor":
+               setForegroundColorFromString(atval);
+               break;
+
+            case "fillbg":
+            case "bgfill":
+               setEnableFillBackground(atval);
+               break;
+
+            case "transparent":
+               // for compatibility with CheckBox class
+               setEnableFillBackground(!int(atval));
+               break;
+
+            case "tint":
+            case "bgtint":
+               setBackgroundTint(int(atval));
+               break;
+
+            case "fgtint":
+               setForegroundTint(int(atval));
+               break;
+
+         }
+
+         if(0xdeadbeef == layout_hints)
+            layout_hints = Layout.CENTER;
+      }
+      return true;
+   }
+
+   public method endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+      if(isTabCycleRoot())
+         buildTabCycleList();
+   }
+
+   // ----
+   // ---- Add a "logic" child of this layer
+   // ---- Custom controls like e.g. "ViewPane" and "ScrollPane" may overwrite this method
+   // ---- if the child is managed elsewhere.
+   // ----
+   public method addXFMChild(Layer _c) {
+      ////trace "xxx Layer::addXFMChild(this="+#(this)+" c="+#(_c)+")";
+      addChildLayer(deref _c);
+   }
+
+   // ----
+   // ----
+   // ----
+   // ----
+   public method addXFMObject(XFMObject _o) {
+   }
+
+   public method setEditable(boolean _bEditable) {
+      b_editable = _bEditable;
+      redraw();
+   }
+
+   public method recursiveSetEditable(boolean _bEditable) {
+      explain "Recursively invalidate preferred and minimum size fields so that they are recalculated the next time they are accessed.";
+
+      setEditable(_bEditable);
+
+      local Layer c <= getLayoutFirstChild();
+      while(c instanceof Layer)
+      {
+         c.recursiveSetEditable(_bEditable);
+         c <= c.next;
+      }
+   }
+
+   public method isEditable() : boolean {
+      return b_editable;
+   }
+
+   public method isEditing() : boolean {
+      return false;
+   }
+
+   // ---- Query whether layer uses a different projection matrix (viewport update)
+   public method is3d() : boolean {
+      return false;
+   }
+
+   public method onRootLayerMoved(int _x, int _y) {
+      // called when desktop window is moved
+      // trace "xxx Layer::onRootLayerMoved("+_x+";"+_y+")";
+   }
+
+   public method onRootLayerActivated() {
+      // called when desktop window is activated (usually when clicked into)
+      //  (note) see UI.CallOnUIActivate(), SDL.onApplicationActive
+   }
+
+   public method onDrainEventQueue() {
+      // called for root_layer by UI.onDrainEventQueue() via SDL.drainEventQueue()
+      //  (note) implementation may want to reset pending/queued event state
+   }
+
+   protected method parseColorString(String _s) : int {
+      if(_s.checkConversions() <= 2)
+         return int(_s); // #aarrggb
+      // (note) 's' must be lower-case string
+      switch(_s)
+      {
+         case "window_bg":
+            return lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG);
+
+         case "control_bg":
+            return lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG);
+
+         case "titledpanel_noborder_bg":
+            // see TitledPanel::onDraw()
+            if(UI.IsDarkOrMono())
+               return sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG), #05ffffff);
+            else
+               return sdvg_TintARGB(lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG), #1cffffff);
+
+         case "text_fg":
+            return lnf_colors.get(LookAndFeel.COLOR_TEXT_FG);
+
+         case "label_caption_fg":
+            return lnf_colors.get(LookAndFeel.COLOR_LABEL_CAPTION_FG);
+
+         case "button_caption_fg":
+            return lnf_colors.get(LookAndFeel.COLOR_BUTTON_CAPTION_FG);
+      }
+      return 0;
+   }
+
+   public method calcDirFlagsRelativeTo(Layer _o, Point2f _pThis, Point2f _pO) : int {
+      // returns position of 'o' relative to this  (e.g. 'o'=edge head and 'this'=edge tail in GraphWidget)
+      int r = 0;
+
+      if(_pO.x >= (_pThis.x + size_x))
+      {
+         // 'o' is on the right side of this
+         r = Layout.RIGHT;
+      }
+      else if( (_pO.x + _o.size_x) <= _pThis.x )
+      {
+         // 'o' is on the left side of this
+         r = Layout.LEFT;
+      }
+      else
+      {
+         // 'o' is below the bottom edge or above the top edge of this
+         r = 0;
+      }
+
+      if(_pO.y >= (_pThis.y + size_y))
+      {
+         // 'o' is below this
+         r |= Layout.BOTTOM;
+      }
+      else if( (_pO.y + _o.size_y) <= _pThis.y )
+      {
+         // 'o' is above this
+         r |= Layout.TOP;
+      }
+      else
+      {
+         // 'o' is on the left or right side of this
+         r |= 0;
+      }
+
+      return r;
+   }
+
+   public method setEnableDecorative(boolean _bEnable) {
+      b_decorative = _bEnable;
+   }
+
+   public method isDecorative() : boolean {
+      return b_decorative;
+   }
+
+   public method setEnableLayerGroup(boolean _bEnable) {
+      b_layer_group = _bEnable;
+   }
+
+   public method getEnableLayerGroup() : boolean {
+      return b_layer_group;
+   }
+
+   public method setEnableInvokeParentOnDrawChildPost(boolean _bEnable) {
+      b_invoke_parent_ondrawchildpost = _bEnable;
+   }
+
+   protected method recursiveFlattenHierarchy(local Layer _parent, local float _tx, local float _ty, local PointerArray _retLayers, local boolean _bIgnoreLayerGroups) {
+      local Layer c <= first_child;
+      while(null != c)
+      {
+         c.position_x += _tx;
+         c.position_y += _ty;
+         local boolean bPanel = (this instanceof Panel);
+         if(bPanel)
+            _retLayers.add(#(unlinkChildLayer(c)));
+         if(!c.b_layer_group || _bIgnoreLayerGroups)
+         {
+            c.recursiveFlattenHierarchy(_parent, c.position_x, c.position_y, _retLayers, _bIgnoreLayerGroups);
+            c.setLayout(null);
+         }
+         if(!bPanel)
+            _retLayers.add(#(unlinkChildLayer(c)));
+         c <= c.next;
+      }
+      first_child <= null;
+   }
+
+   public method flattenHierarchy(boolean _bIgnoreLayerGroups) {
+      local Layer *[] layers;
+      recursiveFlattenHierarchy(this, 0, 0, layers, _bIgnoreLayerGroups);
+      Layer *c;
+      first_child <= null;
+      Layer p <= null;
+      int idx = 0;
+      foreach c in layers
+      {
+         c <= layers.getDeref(idx++);
+         if(null == first_child)
+            first_child <= deref c;
+         else
+            p.next <= deref c;
+         c.parent <= this;
+         p <= c;
+      }
+      if(null != p)
+         p.next <= null;
+
+      setLayout(null);
+
+      UI.Debug("Layer::flattenHierarchy: flattened "+layers.numElements+" layer(s)");
+   }
+
+   public method exportPNG(String _pathName) {
+      if(_pathName >= ".png")
+      {
+         local Point2f p;
+         calcAbsolutePosition(p);
+         if(UI.SaveScreenShotPNG(_pathName, p.x, p.y, getSizeX(), getSizeY()))
+         // // if(UI.SaveScreenShotPNG(_pathName, 0,0,0,0))
+         {
+            trace "[...] exportPNG: wrote \""+_pathName+"\"";
+         }
+         else
+         {
+            trace "[---] exportPNG: failed to write \""+_pathName+"\"";
+         }
+      }
+   }
+
+}

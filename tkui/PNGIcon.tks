@@ -1,0 +1,267 @@
+// ----
+// ---- file   : PNGIcon.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----          Todo: Add a more sophisticated texture manager which does not allocate a texture for
+// ----                each and every icon.
+// ----
+// ---- created: 17Jul2005
+// ---- changed: 14Aug2005, 01May2007, 08Mar2014, 12Aug2014, 20Sep2014, 27Jan2015, 13Mar2017
+// ----          27Mar2018, 18Jul2018, 27Nov2018, 07Jul2020, 13Jul2020, 29Jul2023, 21Oct2023
+// ----          31Oct2023, 11Sep2025, 12Sep2025, 13Sep2025
+// ----
+// ----
+// ----
+
+module MPNGIcon;
+
+namespace ui;
+
+
+class PNGIcon extends Icon {
+
+   define int TEX_PRESCALE_FACTOR = 1;
+
+   protected Texture   *icon_texture;
+   protected String     png_path;
+   protected IconCache *icon_cache;
+   protected float      u1, v1, u2, v2;
+   protected float      icon_sizex, icon_sizey;
+   protected float      texture_prescale; // (todo) remove this
+   protected float      view_x;
+   protected float      view_y;
+   protected float      view_w;
+   protected float      view_h;
+
+   protected boolean b_own_texture;
+
+   public boolean b_flip_y;
+
+
+   public static New(String _name, String _path) {
+      local PNGIcon icon;
+      icon.icon_name=_name;
+      icon.png_path =_path;
+      return deref icon;
+   }
+
+   public static NewMono(String _name, String _path) {
+      local PNGIcon icon;
+      icon.icon_name=_name;
+      icon.png_path =_path;
+      icon.b_mono = true;
+      return deref icon;
+   }
+
+   public virtual getIconWidth() : float {
+      if(view_w > 0)
+      {
+         return view_w;
+      }
+      else
+      {
+         return icon_sizex;
+      }
+   }
+
+   public virtual getIconHeight() : float {
+      if(view_h > 0)
+      {
+         return view_h;
+      }
+      else
+      {
+         return icon_sizey;
+      }
+   }
+
+   protected method handleIconTextureChanged() {
+      icon_sizex = icon_texture.sx;
+      icon_sizey = icon_texture.sy;
+
+      texture_prescale = 1f;
+
+      if(b_own_texture)
+         icon_texture.expand2n(); // OpenGL (1.x) requires 2^n size textures!
+
+      if(0 == view_w)
+      {
+         setView(0, 0, icon_sizex, icon_sizey);
+      }
+      updateView();
+      // trace "icow="+icon_sizex+" icoh="+icon_sizey+" texw="+icon_texture.sx+" texh="+icon_texture.sy+" u2="+u2+" v2="+v2;
+
+      if(b_own_texture)
+      {
+         if(Configuration.debugLevel > 1)
+         {
+            UI.Debug("PNGIcon::loadIcon(): \""+png_path+"\" loaded. size=("+icon_sizex+", "+icon_sizey+")");
+         }
+
+         // // if(png_path.indexOf("test", 0) != -1)
+         // // {
+         // //    icon_texture.saveImage("test_save.png");
+         // // }
+
+         icon_texture.flags = TEX_MODULATE | TEX_ALPHA | TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR; // Note: not passing MODULATE flag causes FBO compositing to break (!?!!)
+      }
+   }
+
+   public virtual loadIcon() : boolean {
+      if(null == icon_texture)
+      {
+         icon_texture <= new Texture();
+         b_own_texture = true;
+         ///print  "pngicon::loadIcon: name="+getIconName()+" path="+png_path;
+         if(icon_texture.loadImage(png_path, 0,0,4))
+         {
+            handleIconTextureChanged();
+            return true;
+         }
+         else
+         {
+            trace "[---] PNGIcon::loadIcon(): failed to loadImage(\""+png_path+"\")";
+         }
+      }
+      else
+      {
+         return true; // already loaded
+      }
+      return false;
+   }
+
+   public method visitIconTexture(Texture _tex) {
+      icon_texture <= _tex;
+      b_own_texture = false;
+      view_w = 0; // => force view reset
+      handleIconTextureChanged();
+   }
+
+   public method setView(int _x, int _y, int _w, int _h) {
+      view_x = _x;
+      view_y = _y;
+      view_w = _w;
+      view_h = _h;
+
+      if(null != icon_texture)
+         updateView();
+   }
+
+   public method setEnableFlipY(boolean _bEnable) {
+      b_flip_y = _bEnable;
+   }
+
+   protected method updateView() {
+      u1 = (view_x * texture_prescale) / icon_texture.sx;
+      v1 = (view_y * texture_prescale) / icon_texture.sy;
+      u2 = ((view_x + view_w) * texture_prescale) / icon_texture.sx;
+      v2 = ((view_y + view_h) * texture_prescale) / icon_texture.sy;
+
+      if(b_flip_y)
+      {
+         v1 = 1.0 - v1;
+         v2 = 1.0 - v2;
+      }
+   }
+
+   public virtual onOpen() {
+      if(b_own_texture)
+         icon_texture <= null;
+   }
+
+   public virtual drawIconScaledC32(int _x, _y, float _sx, float _sy, int _c32) {
+
+      // (todo) add (optional) Shader argument (e.g. color inversion of monochromatic icons)
+
+      if(null == icon_texture)
+         loadIcon();
+
+      if!(icon_texture instanceof Texture)
+         return;
+
+      // int icow=getIconWidth(), icoh=getIconHeight();
+      int icow = view_w * _sx;
+      int icoh = view_h * _sy;
+      icon_texture.bind();
+
+      Shader *shader;
+
+      switch(shader_type)
+      {
+         default:
+         case SHADER_NONE:
+            shader <= null;
+            break;
+
+         case SHADER_INVERTCOLOR:
+            shader <= UI.GetShader(Shader_InvertColor);
+            shader.bind();
+            break;
+      }
+
+      UIRenderer.EnableTexture2D();
+
+      switch(blend_mode)
+      {
+         default:
+         case BLEND_SRC_OVER_KEEP_ALPHA:
+            UIRenderer.EnableBlendingKeepAlpha();
+            break;
+
+         case BLEND_SRC_OVER_REPLACE_ALPHA:
+            UIRenderer.EnableBlendingReplaceAlpha();
+            break;
+
+         case BLEND_ADD_KEEP_ALPHA:
+            UIRenderer.EnableBlendingAdditiveKeepAlpha();
+            break;
+
+         case BLEND_ADD_REPLACE_ALPHA:
+            UIRenderer.EnableBlendingAdditiveReplaceAlpha();
+            break;
+
+         case BLEND_SRC:
+            // blending off
+            UIRenderer.EnableBlendingSrc();
+            break;
+      }
+
+      UIRenderer.SetColorARGB(_c32);
+
+      if(UIRenderer.BeginTexturedTriangleFanEx(4, (null == shader)/*bBuiltinShader*/))
+      {
+         UIRenderer.TexCoord2f(u1, v1);
+         UIRenderer.Vertex2f(_x, _y);
+
+         UIRenderer.TexCoord2f(u2, v1);
+         UIRenderer.Vertex2f(_x+icow, _y);
+
+         UIRenderer.TexCoord2f(u2, v2);
+         UIRenderer.Vertex2f(_x+icow, _y+icoh);
+
+         UIRenderer.TexCoord2f(u1, v2);
+         UIRenderer.Vertex2f(_x, _y+icoh);
+
+         UIRenderer.End();
+      }
+
+      UIRenderer.DisableTexture2D();
+      UIRenderer.DisableBlending();
+
+      if(null != shader)
+         shader.unbind();
+   }
+
+   public virtual drawIconScaled(int _x, _y, float _scaleX, float _scaleY) {
+      drawIconScaledC32(_x, _y, _scaleX, _scaleY, #ffffffff);
+   }
+
+   public virtual drawIcon(int _x, _y) {
+      drawIconScaled(_x, _y, 1.0, 1.0);
+   }
+
+}

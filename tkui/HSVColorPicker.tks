@@ -1,0 +1,212 @@
+// ----
+// ---- file   : HSVColorPicker.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 24Feb2012
+// ---- changed: 27Nov2018, 22Oct2022, 14Mar2025, 10Sep2025, 14Sep2025
+// ----
+// ----
+// ----
+
+
+module MHSVColorPicker;
+
+use namespace ui;
+
+
+class HSVColorPicker : Control {
+   define int DEF_W = 256;
+   define int DEF_H =  64;
+
+   define String ACTION_CLICK = "onClick";
+
+   protected Texture *tex_hsv;
+   protected static Texture *tex_hsv_def;  // (todo) sx/sy hashtable
+   protected byte alpha8;
+
+   protected int tex_sx;
+   protected int tex_sy;
+
+   public method initPre() {
+      tex_sx = DEF_W;
+      tex_sy = DEF_H;
+
+      alpha8 = 255;
+   }
+
+   public method init() {
+
+      genTexHSV();
+
+      setPadding4f(2, 0, 0, 0);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_CLICK];
+   }
+
+   public method setAlpha8(byte _a8) {
+      alpha8 = _a8;
+      redraw();
+   }
+
+   protected static GenTexHSVEx(Texture tex, int _w, int _h) {
+      if(Configuration.debugLevel >= 2)
+         trace "[trc] HSVColorPicker::GenTexHSVEx: geo=("+_w+";"+_h+")";
+
+      tex.unload();
+      tex.alloc(_w, _h, 3);
+      tex.flags = TEX_MODULATE;// | TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR;
+
+      // (note) hue on x-axis, saturation/value on y-axis 
+      int y = 0;
+      float sv = 0;
+      float svStep = (1.0 / tex.sy);
+      loop(tex.sy)
+      {
+         float hue = 0.0f;
+         float hueStep = (360.0 / tex.sx);
+         int x = 0;
+         loop(tex.sx)
+         {
+            float s;
+            float v;
+            if(sv >= 0.5)
+            {
+               // (float(x)/tex.sx) *
+               s = 1.0;
+               v =  (1.0f - ((sv-0.5)*2));
+            }
+            else
+            {
+               s = (sv * 2);
+               v = 1.0;
+            }
+            int c32 = sdvg_HSVAToARGB(hue, s, v, 255);
+            
+            tex.setXY32(x, y, c32);
+
+            x++;
+            hue += hueStep;
+         }
+         
+         y++;
+         sv += svStep;
+      }
+   }
+
+   protected method genTexHSV() {
+
+      if(DEF_W == tex_sx && DEF_H == tex_sy)
+      {
+         // cache default HSV texture
+         if(null == tex_hsv_def)
+         {
+            tex_hsv_def <= new Texture;
+            GenTexHSVEx(tex_hsv_def, tex_sx, tex_sy);
+         }
+         tex_hsv <= tex_hsv_def;
+      }
+      else
+      {
+         tex_hsv <= new Texture;
+         GenTexHSVEx(tex_hsv, tex_sx, tex_sy);
+      }
+   }
+
+   public method getC32AtXY(int _x, _y) : int {
+      if(null == tex_hsv)
+         return 0;
+
+      int c32 = tex_hsv.getXY32( (_x * tex_hsv.sx) / size_x,
+                                 ((size_y - _y) * tex_hsv.sy) / size_y
+                                 );
+
+      c32 = (c32&0x00FFFFFF) | (alpha8<<24);
+
+      return c32;
+   }
+
+   public virtual onOpen() {
+      genTexHSV();
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButtonDown())
+      {
+         provideAction(IntAction.New(getProvidedActionAlias(ACTION_CLICK), this, getC32AtXY(_ev.mouse_rel_x, _ev.mouse_rel_y)));
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onDraw() {
+
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(), lnfGetColorAlpha(LookAndFeel.COLOR_WINDOW_BG, 255));
+
+      UIRenderer.EnableTexture2D();
+      tex_hsv.bind();
+
+      UIRenderer.EnableBlending();
+      UIRenderer.SetColorARGB(argb(alpha8, 255, 255, 255));
+
+      sdvg_AlphaWrite(false);
+
+      if(UIRenderer.BeginTexturedTriangleFan(4))
+      {
+         UIRenderer.TexCoord2f(0, 1);
+         UIRenderer.Vertex2f(0, 0);
+
+         UIRenderer.TexCoord2f(1, 1);
+         UIRenderer.Vertex2f(size_x, 0);
+
+         UIRenderer.TexCoord2f(1, 0);
+         UIRenderer.Vertex2f(size_x, size_y);
+
+         UIRenderer.TexCoord2f(0, 0);
+         UIRenderer.Vertex2f(0, size_y);
+
+         UIRenderer.End();
+      }
+
+      sdvg_AlphaWrite(true);
+
+      UIRenderer.DisableBlending();
+      UIRenderer.DisableTexture2D();
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         initPre();
+
+         String *atname, *atval;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atname.toLower();
+            atval <= _attributes[atname];
+            switch(atname)
+            {
+               case "texsx":
+                  tex_sx = int(atval);
+                  break;
+
+               case "texsy":
+                  tex_sy = int(atval);
+                  break;
+            }
+         }
+
+         init();
+         return true;
+      }
+      return false;
+   }
+
+}

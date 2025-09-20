@@ -1,0 +1,744 @@
+// ----
+// ---- file   : FloatParamEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 14Jun2009
+// ---- changed: 15Jun2009, 16Jun2009, 19Sep2009, 02Jan2010, 03Jan2010, 05Jan2010, 07Jan2010
+// ----          21Feb2010, 22Feb2010, 24Apr2010, 26Sep2010, 13Mar2011, 20Mar2011, 09Jan2012
+// ----          01Feb2012, 02Feb2012, 20Feb2012, 21Aug2014, 06Nov2015, 28Jan2017, 13Feb2017
+// ----          11Feb2018, 16Feb2018, 02Oct2019, 27Dec2020, 03Jun2021, 10Jul2021, 01Apr2022
+// ----          10Oct2022, 06Nov2022, 03Oct2023, 09Oct2023, 30Oct2023, 28Nov2023, 26Apr2024
+// ----          09Oct2024, 14Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MFloatParamEditor;
+
+namespace ui;
+
+
+class FloatParamEditor extends FloatingLayer, ActionProvider {
+   FloatParam *param; // when null, FloatParamEditor works in "standalone" mode
+
+   Panel      *inner_layer;
+   Dial       *di_value;
+   Button     *bt_reset;
+   FloatField *ff_value;
+   TextField  *tf_min;
+   TextField  *tf_max;
+
+   float min_value;
+   float max_value;
+   float reset_value;
+
+   define int MIN_SIZE_X = 100;
+   define int MIN_SIZE_Y = 40;
+
+   // For standalone mode:
+   define String ACTION_VALUECHANGING  = "onValueChanging";
+   define String ACTION_VALUECHANGED   = "onValueChanged";
+   define String ACTION_VALUEUNCHANGED = "onValueUnchanged";
+
+   float undo_val;     // escape key
+   float undo_min_val;
+   float undo_max_val;
+
+   Layer *old_keyboard_focus;
+
+   int display_type; // copied from param, see DISPLAY_xxx constants below
+   boolean b_fraction;
+
+   boolean b_edited; // used to determine whether to provide VALUECHANGED action/update parent widget when dialog closes
+
+   protected boolean b_range_min_editable;
+   protected boolean b_range_max_editable;
+
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED, ACTION_VALUEUNCHANGED];
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public method initEditor() {
+      initLayer();
+
+      setLayout(SuperBorderLayout);
+
+      bt_reset <= new Button;
+      bt_reset.initButton();
+      bt_reset.setCaption("Reset");
+      bt_reset.setAlignment(Layout.CENTER | Layout.BASELINEY);
+      bt_reset.setRequiredSizeYScaled(18);
+      bt_reset.setPadRight(2);
+      // // if(UI.IsHiDPI())
+      // //    bt_reset.setPadRight(6);
+      // // else
+      // //    bt_reset.setPadBottom(4);
+      bt_reset.setTabCycleOrder(4);
+      if(UI.IsHiDPI())
+         bt_reset.setLayerStyle(LookAndFeel.STYLE_FLAT);
+
+      ff_value <= new FloatField;
+      ff_value.setAlignment(Layout.CENTER | Layout.BASELINEY);
+      ff_value.setTabCycleOrder(0);
+      ff_value.setVisibleTextLength(8);
+      TextField tfFF <= ff_value.tf_float;
+      tfFF.b_skip_space = true;
+
+      tf_min <= new TextField;
+      tf_min.initTextField();
+      tf_min.setCharFilter(UI.char_filter_float);
+      tf_min.setVisibleTextLength(5);
+      tf_min.setTabCycleOrder(2);
+      tf_min.setPadLeft(10);
+      tf_min.setToolTipCaption("Minimum value");
+      tf_min.setAlignment(Layout.CENTERY | Layout.BASELINEY);
+      tf_min.setPadRight(2);
+
+      tf_max <= new TextField;
+      tf_max.initTextField();
+      tf_max.setCharFilter(UI.char_filter_float);
+      tf_max.setVisibleTextLength(5);
+      tf_max.setTabCycleOrder(3);
+      tf_max.setToolTipCaption("Maximum value");
+      tf_max.setAlignment(Layout.CENTERY | Layout.BASELINEY);
+      tf_max.setPadRight(2);
+
+      di_value <= new Dial;
+      di_value.setRequiredSize2fScaled(36, 36);
+      di_value.setAlignment(Layout.CENTER);
+      di_value.setPadding4f(2,2,2,2);
+      di_value.setTabCycleOrder(1);
+      di_value.setEnableDetailEdit(false);
+      di_value.setEnableForceFineEdit(true);
+
+      configureAsControlPanel();
+
+      param <= null;
+   }
+
+   protected method layoutEditor(boolean _bAlignLeft) {
+      removeChildren();
+
+      configureAsControlPanel();
+
+      inner_layer <= new Panel;
+      inner_layer.initPanel();
+      inner_layer.setLayout(SuperBorderLayout);
+      inner_layer.setPadding4f(0,0,0,0);
+      inner_layer.setAlignment(Layout.EXPAND);
+      inner_layer.configureAsControlPanel();
+
+      Panel pr <= new Panel;
+      pr.initPanel();
+      pr.setLayout(SuperBorderLayout);
+      pr.setAlignment(Layout.LEFT | Layout.TOP);
+      pr.configureAsControlPanel();
+
+      // Right top
+      Panel p <= new Panel;
+      p.initPanel();
+      p.setLayout(SuperBorderLayout);
+      p.setAlignment(Layout.LEFT | Layout.CENTERY);
+      p.configureAsControlPanel();
+
+      if(_bAlignLeft)
+      {
+         bt_reset.setAlignment(Layout.CENTERY);
+         p.addLayer(bt_reset, Layout.LEFT);
+      }
+
+      p.addLayer(ff_value, Layout.LEFT);
+
+      if(!_bAlignLeft)
+      {
+         p.addLayer(bt_reset, Layout.LEFT);
+      }
+
+      pr.addLayer(deref p, Layout.TOP);
+
+      // Right bottom
+      p <= new Panel;
+      p.initPanel();
+      p.setLayout(SuperBorderLayout);
+      p.setAlignment(Layout.RIGHT | Layout.BOTTOM);
+      p.configureAsControlPanel();
+
+      p.addLayer(tf_min, Layout.RIGHT);
+
+      // // Label *lb <= new Label;
+      // // lb.initLabel();
+      // // lb.setCaption("..");
+      // // lb.setEnableFillBackground(false);
+      // // p.addLayer(deref lb, Layout.RIGHT);
+
+      p.addLayer(tf_max, Layout.RIGHT);
+
+      pr.addLayer(deref p, Layout.BOTTOM);
+
+      inner_layer.addLayer(deref pr, Layout.RIGHT);
+
+      inner_layer.addLayer(di_value, _bAlignLeft ? Layout.LEFT : Layout.RIGHT);
+
+      // // inner_layer.setAlignment(_bAlignLeft ? Layout.LEFT : Layout.EXPAND);
+      inner_layer.setAlignment(Layout.EXPAND);
+      // inner_layer.setDebug(true);
+      addLayer(inner_layer, Layout.CENTER);
+
+      setMinimumSize2f(MIN_SIZE_X, MIN_SIZE_Y);
+   }
+
+   public method showEditorFromParent(FloatParam _parent) {
+      param <= _parent;
+
+      display_type = param.display_type;
+      // //b_fraction = param.b_fraction;
+      b_fraction = false;
+      ff_value.setDisplayType(display_type);
+
+      showEditor(param.min_value, param.max_value, param.cur_value,
+                 param.step_fine, param.step_coarse,
+                 param.precision,
+                 param.b_range_min_editable,
+                 param.b_range_max_editable
+                 );
+
+      di_value.setResetValue(_parent.getResetValue());
+   }
+
+   public method updateEditor(float _minVal, _maxVal, _curVal, _stepFine, _stepCoarse,
+                              int _precision,
+                              boolean _bRangeMinEditable,
+                              boolean _bRangeMaxEditable
+                              ) {
+
+      b_edited = false;
+
+      b_range_min_editable = _bRangeMinEditable;
+      b_range_max_editable = _bRangeMaxEditable;
+
+      reset_value = _curVal;
+
+      if(b_range_min_editable)
+      {
+         if(_curVal < _minVal)
+            _minVal = _curVal;
+      }
+
+      if(b_range_max_editable)
+      {
+         if(_curVal > _maxVal)
+            _maxVal = _curVal;
+      }
+
+      undo_val     = _curVal;
+      undo_min_val = _minVal;
+      undo_max_val = _maxVal;
+
+      // trace "xxx updateEditor: _curVal="+_curVal+" min="+_minVal+" max="+_maxVal+" stepCoarse="+_stepCoarse;
+      min_value = _minVal;
+      max_value = _maxVal;
+
+      di_value.initDial(_minVal, _maxVal, _curVal);
+      di_value.setStep(_stepCoarse / (max_value - min_value));
+      if(0 == _precision)
+         di_value.setEnableForceFineEdit(false);  // [14Jan2025]
+
+      ff_value.initFloatField(_precision, _minVal, _maxVal, _stepCoarse, _stepFine, _curVal);
+      ff_value.setEnableRangeMinEditable(_bRangeMinEditable);
+      ff_value.setEnableRangeMaxEditable(_bRangeMaxEditable);
+      ff_value.setDisplayType(display_type);
+      ff_value.updateText();
+
+      bt_reset.setToolTipCaption("Reset to "+reset_value);
+
+      String t;
+      FloatParam.ValueToString(_minVal,
+                               0,
+                               display_type,
+                               b_fraction,
+                               0/*floatDisplayBias*/,
+                               t,
+                               param,
+                               _minVal/*usrTblMin*/,
+                               false/*b0AsBlank*/,
+                               null/*unitOrNull*/
+                               );
+      tf_min.setText(t);
+      tf_min.setEditable(_bRangeMinEditable);
+
+      FloatParam.ValueToString(_maxVal,
+                               0,
+                               display_type,
+                               b_fraction,
+                               0/*floatDisplayBias*/,
+                               t,
+                               param,
+                               _minVal/*usrTblMin*/,
+                               false/*b0AsBlank*/,
+                               null/*unitOrNull*/
+                               );
+      tf_max.setText(t);
+      tf_max.setEditable(_bRangeMaxEditable);
+   }
+
+   protected method layoutAndShowEditor(int mx, my) {
+
+      int ex = mx - 21;
+      int ey = my - 26;
+
+      boolean bAlignLeft = ((ex+MIN_SIZE_X) < UI.viewport_width) ? true : false;
+
+      if(!bAlignLeft)
+      {
+         if(mx < (ex + MIN_SIZE_X - 57))
+         {
+            ex = mx - 57 - MIN_SIZE_X;
+         }
+      }
+      if(ex < 0)
+      {
+         ex = 0;
+      }
+      if(ey < 0)
+      {
+         ey = 0;
+      }
+      TextField tf <= ff_value.getTextField();
+      tf.setEnableRightAlign(!bAlignLeft);
+
+      layoutEditor(bAlignLeft);
+
+      recursiveOnLookAndFeelChanged();
+
+      showAtXY(ex, ey);
+   }
+
+   public method showEditor(float _minVal, _maxVal, _curVal, _stepFine, _stepCoarse,
+                            int _precision,
+                            boolean _bMinEditable,
+                            boolean _bMaxEditable
+                            ) {
+      //Point2f p;
+      //param.calcAbsolutePosition(p);
+
+      // Save keyboard focus
+      old_keyboard_focus <= UI.GetKeyboardFocus();
+      ////trace "xxx FloatParamEditor::old_keyboard_focus="+#(old_keyboard_focus);
+
+      updateEditor(_minVal, _maxVal, _curVal, _stepFine, _stepCoarse, _precision, _bMinEditable, _bMaxEditable);
+
+      layoutAndShowEditor(Mouse.x / UI.zoom_x, Mouse.y / UI.zoom_y);
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+//    public virtual handleNonChildMouseOver(MouseEvent _ev, Layer _l):boolean {
+//       trace "xxx FloatParamEditor: handleNonChildMouseOver";
+//       if(_ev.isLeftButtonDown() || _ev.rightButtonDown())
+//       {
+//          hide();
+//       }
+//       return true;
+//    }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(di_value);
+      layers.add(ff_value.tf_float);
+      layers.add(bt_reset);
+      layers.add(tf_min);
+      layers.add(tf_max);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   protected method tryExtendValueRange() {
+      // Called when ff_value has changed
+      float f = ff_value.getValue();
+      min_value = ff_value.getMinValue();
+      max_value = ff_value.getMaxValue();
+      ////trace "xxx FloatParamEditor::tryExtendValueRange: f="+f+" min="+min_value+" max="+max_value;
+
+      String t;
+      if(b_range_min_editable)
+      {
+         if(f < min_value)
+         {
+            min_value = f;
+            FloatParam.ValueToString(min_value,
+                                     0,
+                                     display_type,
+                                     b_fraction,
+                                     0/*floatDisplayBias*/,
+                                     t,
+                                     param,
+                                     min_value/*usrTblMin*/,
+                                     false/*b0AsBlank*/,
+                                     null/*unitOrNull*/
+                                     );
+            tf_min.setText(t);
+         }
+      }
+
+      if(b_range_max_editable)
+      {
+         if(f > max_value)
+         {
+            max_value = f;
+            FloatParam.ValueToString(max_value,
+                                     0,
+                                     display_type,
+                                     b_fraction,
+                                     0/*floatDisplayBias*/,
+                                     t,
+                                     param,
+                                     min_value/*usrTblMin*/,
+                                     false/*b0AsBlank*/,
+                                     null/*unitOrNull*/
+                                     );
+            tf_max.setText(t);
+         }
+      }
+   }
+
+   protected method handleValueChanging() {
+      b_edited = true;
+
+      tryExtendValueRange();
+
+      // trace "xxx FloatParamEditor::handleValueChanging: param="+#(param);
+      if(null != param)
+      {
+         if(param.b_provide_changing)
+         {
+            ////trace "xxxx FloatParamEditor: copyToParam";
+            copyToParam();
+            param.handleValueChanging();
+         }
+      }
+      else
+      {
+         // Standalone: emit event
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGING), this, ff_value.getValue()));
+      }
+   }
+
+   public method undoAndHide() {
+      ////trace "xxx FloatParam: undo_val="+undo_val;
+      ////trace "xxx undoAndHide: b_edited="+b_edited;
+      if(b_edited)
+      {
+         ff_value.setMinValue(undo_min_val);
+         ff_value.setMaxValue(undo_max_val);
+         ff_value.setValue(undo_val);
+         if(null != param)
+         {
+            copyToParam();
+            param.handleTextChanged();
+         }
+      }
+
+      ////trace "xxx FloatParam: preHide: ff_value.getValue="+ff_value.getValue();
+      hide();
+      ////trace "xxx FloatParam: postHide: ff_value.getValue="+ff_value.getValue();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      if((VKEY_ESCAPE == _k.pressed) ||
+         (('f' == _k.pressed) && _k.modCtrl()) ||
+         (_k.modCtrl() && ('z'  == _k.pressed) || ('y'  == _k.pressed))
+         )
+      {
+         // Make textfields stop editing and do not send event since these might mess up the undo value(s)
+         ff_value.stopEditing(false, false, true);
+         tf_min.stopEditing(false, false, true);
+         tf_max.stopEditing(false, false, true);
+
+         undoAndHide();
+         return true;
+      }
+      else if( (VKEY_RETURN == _k.pressed) ||
+               (VKEY_SPACE  == _k.pressed)
+               )
+      {
+         hide();
+         return true;
+      }
+      else
+      {
+         Layer kbdFocus <= UI.GetKeyboardFocus();
+         if(-1 == ([tf_min, tf_max, ff_value.tf_float].indexOfPointer(kbdFocus, 0)))
+         {
+            if(_k.modNone())
+            {
+               switch(_k.pressed)
+               {
+                  case '0':
+                  case '1':
+                  case '2':
+                  case '3':
+                  case '4':
+                  case '5':
+                  case '6':
+                  case '7':
+                  case '8':
+                  case '9':
+                  case '.':
+                  case 'a':
+                  case 'b':
+                  case 'c':
+                  case 'd':
+                  case 'e':
+                  case 'f':
+                     // trace "xxx FloatParamEditor: change kbdfocus to ff_value";
+                     UI.SetKeyboardFocus(ff_value.tf_float);
+                     ff_value.tf_float.onTabFocus();
+                     ff_value.tf_float.onKey(_k);
+                     return true;
+               }
+            }
+         }
+
+         return FloatingLayer::onKey(_k);
+      }
+   }
+
+
+   protected virtual preShow() {
+      float w, h;
+
+      w = mathMaxf(MIN_SIZE_X, inner_layer.getMinimumSizePadX());
+      h = mathMaxf(MIN_SIZE_Y, inner_layer.getMinimumSizePadY());
+
+      ////trace "xxx PopupMenu: inner_layer size = ("+w+";"+h+")";
+
+      setSize2f(w+UIConstants.DEFAULT_BORDER_SIZE*4, h+UIConstants.DEFAULT_BORDER_SIZE*4);
+
+      invalidateAbsolutePositions();
+      layoutHierarchy(true, false);
+      recursiveBuildTabCycleLists();
+   }
+
+   protected virtual postShow() {
+      FloatingLayer::postShow(); // create FBO
+      focusFirstTabCycleMember();
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if(_ev.isLeftButtonDown())
+      {
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _ev) : boolean {
+      moveToPosition2f(getPositionX()+(_ev.mouse_abs_x-_lastEv.mouse_abs_x),
+                       getPositionY()+(_ev.mouse_abs_y-_lastEv.mouse_abs_y));
+
+      UI.CompositeAll();
+
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.rightButtonUp())
+      {
+         hide();
+         return true;
+      }
+      return false;
+   }
+
+   public method copyToParam() {
+      if(null != param)
+      {
+         ff_value.stopEditing(true, true, false);
+         param.setMinValue(ff_value.getMinValue());
+         param.setMaxValue(ff_value.getMaxValue());
+         param.setValue(ff_value.getValue());
+      }
+   }
+
+   public method getValue() : float {
+      return ff_value.getValue();
+   }
+
+   public virtual hide() {
+      ////trace "xxx FloatParamEditor::hide";
+      FloatingLayer::hide();
+
+      // Restore keyboard focus
+      // trace "xxx FloatParamEditor: restore old_keyboard_focus="+#(old_keyboard_focus);
+      UI.SetKeyboardFocus(old_keyboard_focus);
+
+      ////trace "xxx FloatParamEditor::hide: ff_value.getValue()="+ff_value.getValue()+" b_edited="+b_edited;
+
+      if(b_edited)
+      {
+         handleValueChanging();
+
+         if(null != param)
+         {
+            copyToParam();
+            param.handleTextChangedFromEditor();
+         }
+         ////trace "xxx FloatParamEditor: end hide: ff_value.getValue()="+ff_value.getValue();
+         else
+         {
+            // Standalone: emit event
+            provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, ff_value.getValue()));
+         }
+      }
+      else
+      {
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUEUNCHANGED), this, ff_value.getValue()));
+      }
+   }
+
+   public virtual onDrawPost() {
+      UIRenderer.DrawRectangle(0, 0, getSizeX(), getSizeY(), 1.0f,
+                               lnf.getColor(LookAndFeel.COLOR_FLOATPARAMEDITOR_BORDER)
+                               );
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      local String acName <= _ac.getActionName();
+      // trace "xxx FloatParamEditor::consumeAction: acName="+acName;
+      String t;
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(ff_value):
+            switch(acName)
+            {
+               case FloatField.ACTION_VALUEEDITED:
+                  b_edited = true;
+                  return true;
+
+               case FloatField.ACTION_VALUECHANGED:
+                  b_edited = true;
+                  di_value.setValue(ff_value.getValue());
+                  handleValueChanging();
+                  return true;
+
+               case FloatField.ACTION_VALUEENTERED:
+                  b_edited = true;
+                  handleValueChanging();
+                  hide();
+                  return true;
+
+               default:
+                  // tab
+                  di_value.setValue(ff_value.getValue());
+                  handleValueChanging();
+                  return true;
+            }
+            return false;
+
+         case @(di_value):
+            ff_value.setValue(di_value.getValue()); // FloatField adjusts min/max range if it is editable
+            handleValueChanging();
+            return true;
+
+         case @(bt_reset):
+            ff_value.setValue(reset_value);
+            di_value.setValue(reset_value);
+            handleValueChanging();
+            return true;
+
+         case @(tf_min):
+            switch(_ac.getActionName())
+            {
+               case TextField.ACTION_TEXTENTERED:
+               case TextField.ACTION_TEXTCHANGED:
+                  float minVal = FloatParam.StringToValue(tf_min.getText(),
+                                                          display_type,
+                                                          b_fraction,
+                                                          0/*floatDisplayBias*/,
+                                                          param,
+                                                          -1/*idxHint*/,
+                                                          min_value/*usrTblMin*/,
+                                                          null/*unitOrNull*/
+                                                          );
+                  FloatParam.ValueToString(minVal,
+                                           0,
+                                           display_type,
+                                           b_fraction,
+                                           0/*floatDisplayBias*/,
+                                           t,
+                                           param,
+                                           min_value/*usrTblMin*/,
+                                           false/*b0AsBlank*/,
+                                           null/*unitOrNull*/
+                                           );
+                  tf_min.setText(t);
+                  di_value.setMinValue(minVal);
+                  ff_value.setMinValue(minVal);
+                  ////b_edited |= ff_value.validateValues();
+                  b_edited = true;
+                  di_value.redraw();
+                  ff_value.redraw();
+                  return true;
+            }
+            return false;
+
+         case @(tf_max):
+            switch(_ac.getActionName())
+            {
+               case TextField.ACTION_TEXTENTERED:
+               case TextField.ACTION_TEXTCHANGED:
+                  float maxVal = FloatParam.StringToValue(tf_max.getText(),
+                                                          display_type,
+                                                          b_fraction,
+                                                          0/*floatDisplayBias*/,
+                                                          param,
+                                                          -1/*idxHint*/,
+                                                          min_value/*usrTblMin*/,
+                                                          null/*unitOrNull*/
+                                                          );
+                  FloatParam.ValueToString(maxVal,
+                                           0,
+                                           display_type,
+                                           b_fraction,
+                                           0/*floatDisplayBias*/,
+                                           t,
+                                           param,
+                                           min_value/*usrTblMin*/,
+                                           false/*b0AsBlank*/,
+                                           null/*unitOrNull*/
+                                           );
+                  tf_max.setText(t);
+                  di_value.setMaxValue(maxVal);
+                  ff_value.setMaxValue(maxVal);
+                  ////b_edited |= ff_value.validateValues();
+                  b_edited = true;
+                  di_value.redraw();
+                  ff_value.redraw();
+                  return true;
+            }
+            return false;
+
+      }
+      return false;
+   }
+
+
+}

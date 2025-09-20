@@ -1,0 +1,566 @@
+// ----
+// ---- file   : SplitPane.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 27Aug2006, 06May2007, 29Apr2010, 25Feb2011, 08Jul2011, 04Jan2012, 09Jan2012
+// ----          13May2012, 16Feb2018, 29Nov2018, 22Sep2019, 26Jun2020, 22May2021, 08Apr2022
+// ----          25Apr2024, 24Jan2025
+// ----
+// ----
+// ----
+
+module MSplitPane;
+
+namespace ui;
+
+
+class SplitPane extends Layer {
+
+   define int KNOB_W = 2;
+   define int KNOB_H = 3;
+
+   protected Layer   *left;                   // left/top Layer
+   protected Layer   *right;                  // Right/bottom layer
+   protected boolean  b_vertical;
+   protected float    split_position = 0.5f;  // 0..1 (may be adjusted during layouting)
+   protected float    split_position_orig = 0.5f;
+   protected boolean  b_move;
+   protected float    min_split, max_split;
+
+
+   public static New() : SplitPane {
+      local SplitPane sp;
+      sp.initSplitPane();
+      return deref sp;
+   }
+
+   public method initSplitPane() {
+      initLayer();
+   }
+
+   public virtual isTabCycleRoot() : boolean {
+      return true;
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   public method setEnableVertical(boolean _bVertical) {
+      b_vertical = _bVertical;
+   }
+
+   public virtual recursiveOnLookAndFeelChanged() {
+      Layer::recursiveOnLookAndFeelChanged();
+
+      if(null != left)
+         left.recursiveOnLookAndFeelChanged();
+
+      if(null != right)
+         right.recursiveOnLookAndFeelChanged();
+   }
+
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+
+      layoutHierarchy2(_bInvalidateSizeCaches, _bLayoutFinal);
+
+      if(_bLayoutFinal)
+      {
+         layoutHierarchy2(false, true);
+      }
+   }
+
+   protected method layoutHierarchy2(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      boolean bOldKbdFocusLock = UI.SetEnableLockKeyboardFocus(true);
+      removeChildren();
+      UI.SetEnableLockKeyboardFocus(bOldKbdFocusLock);
+
+      float sp;
+
+      if(null != left)
+      {
+         if(null != right)
+         {
+            // Left + right
+            if(b_vertical)
+            {
+               // // trace "xxx SplitPane::layoutHierarchy: up.minSizePadY="+left.getMinimumSizePadY();
+               // // trace "xxx SplitPane::layoutHierarchy: down.minSizePadY="+right.getMinimumSizePadY();
+               // // trace "xxx SplitPane::layoutHierarchy: this.sizeY="+getSizeY();
+
+               min_split = left.getMinimumSizePadY();
+               max_split = (getSizeY() - KNOB_H) - right.getMinimumSizePadY();
+               sp = (size_y-KNOB_H)*split_position_orig;
+               split_position = sp/(size_y-KNOB_H);
+
+               if(!b_layout_minsweep)
+               {
+                  if(sp < min_split)
+                  {
+                     sp = min_split;
+                     split_position = sp/(size_y-KNOB_H);
+                  }
+                  if(sp > max_split)
+                  {
+                     sp = max_split;
+                     split_position = sp/(size_y-KNOB_H);
+                  }
+               }
+
+               left.setGeometry(left.pad_left, left.pad_top,
+                                size_x - left.pad_left - left.pad_right, sp - left.pad_top - left.pad_bottom);
+
+               right.setGeometry(right.pad_left, sp+KNOB_H + right.pad_top,
+                                 size_x - right.pad_left - right.pad_right, size_y-sp-KNOB_H - right.pad_top - right.pad_bottom);
+            }
+            else
+            {
+               min_split = left.getMinimumSizePadX();
+               max_split = (size_x - KNOB_W) - right.getMinimumSizePadX();
+               sp = (size_x-KNOB_W)*split_position_orig;
+
+               if(!b_layout_minsweep)
+               {
+                  if(sp < min_split)
+                  {
+                     sp = min_split;
+                     split_position = sp/(size_x-KNOB_W);
+                  }
+                  if(sp > max_split)
+                  {
+                     sp = max_split;
+                     split_position = sp/(size_x-KNOB_W);
+                  }
+               }
+
+               left.setGeometry(left.pad_left, left.pad_top,
+                                sp - left.pad_right - left.pad_left, size_y - left.pad_top - left.pad_bottom);
+
+               right.setGeometry(right.pad_left + sp + KNOB_W, right.pad_top,
+                                 size_x-sp-KNOB_W - right.pad_left - right.pad_right, size_y - right.pad_top - right.pad_bottom);
+            }
+
+            right.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+
+            addChildLayer(right);
+         }
+         else
+         {
+            // Only left layer is used
+            left.setGeometry(0,0,size_x,size_y);
+         }
+
+         left.layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+
+         addChildLayer(left);
+      }
+
+      if(_bLayoutFinal)
+      {
+         buildTabCycleList();
+      }
+   }
+
+   public virtual calcMinimumSizeX() {
+      if(null != left && null != right)
+      {
+         if(b_vertical)
+         {
+            minimum_size_x = left.getMinimumSizePadX()<right.getMinimumSizePadX() ? right.getMinimumSizePadX() : left.getMinimumSizePadX();
+         }
+         else
+         {
+            minimum_size_x = left.getMinimumSizePadX() + right.getMinimumSizePadX();
+         }
+      }
+      else
+      {
+         minimum_size_x = 0.0f;
+      }
+
+      if(!b_vertical)
+         minimum_size_x += KNOB_W * UI.font_scaling;
+   }
+
+   public virtual calcMinimumSizeY() {
+      if(null != left && null != right)
+      {
+         if(b_vertical)
+         {
+            minimum_size_y = left.getMinimumSizePadY() + right.getMinimumSizePadY();
+         }
+         else
+         {
+            minimum_size_y = left.getMinimumSizePadY()<right.getMinimumSizePadY() ? right.getMinimumSizePadY() : left.getMinimumSizePadY();
+         }
+      }
+      else
+      {
+         minimum_size_y = 0.0f;
+      }
+
+      if(b_vertical)
+         minimum_size_y += KNOB_H * UI.font_scaling;
+   }
+
+   public virtual calcPreferredSizeX() {
+      if( (left!=null) && (right!=null) )
+      {
+         if(b_vertical)
+         {
+            preferred_size_x = left.getPreferredSizePadX()<right.getPreferredSizePadX() ? right.getPreferredSizePadX() : left.getPreferredSizePadX();
+         }
+         else
+         {
+            preferred_size_x = left.getPreferredSizePadX() + right.getPreferredSizePadX();
+         }
+      }
+      else
+      {
+         preferred_size_x = 0.0f;
+      }
+
+      preferred_size_x += KNOB_W;
+   }
+
+   public virtual calcPreferredSizeY() {
+      if( (left!=null) && (right!=null) )
+      {
+         if(b_vertical)
+         {
+            preferred_size_y = left.getPreferredSizePadY() + right.getPreferredSizePadY();
+         }
+         else
+         {
+            preferred_size_y = left.getPreferredSizePadY()<right.getPreferredSizePadY() ? right.getPreferredSizePadY() : left.getPreferredSizePadY();
+         }
+      }
+      else
+      {
+         preferred_size_y = 0.0f;
+      }
+
+      preferred_size_y += KNOB_H;
+   }
+
+   public method setLeft(Layer _l) {
+      left <= deref _l;
+   }
+
+   public method setRight(Layer _l) {
+      right <= deref _l;
+   }
+
+   public method getLeft() : Layer {
+      return left;
+   }
+
+   public method getRight() : Layer {
+      return right;
+   }
+
+   public method swapLayers() {
+      Layer l <= deref left;
+      left <= deref right;
+      right <= deref l;
+      setSplit(1.0f - split_position);
+
+      Layer root <= getRoot();
+      if(null != root)
+         root.relayout();
+   }
+
+   public method setSplit(float _s) {
+      if(_s < 0)
+         _s = 0;
+      else if(_s > 1)
+         _s = 1;
+      split_position = _s;
+      split_position_orig = split_position;
+   }
+
+   public method getSplit() : float {
+      return split_position;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return b_move;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      if(b_vertical)
+         UI.ShowCursor(UIConstants.CURSOR_SPLITY);
+      else
+         UI.ShowCursor(UIConstants.CURSOR_SPLITX);
+      return true;
+   }
+
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      float sp;
+      Rectangle2f r;
+      Layer *rootLayer;
+
+      if(!hasMouseFocus())
+         return false;
+
+      if( (left != null) && (right!= null) )
+      {
+         if(_ev.rightButtonDown())
+         {
+            // hold LMB + press RMB
+            trace "[dbg] SplitPane: call swapLayers()";
+            swapLayers();
+            UI.RedrawAll();
+            return true;
+         }
+
+         if(b_vertical)
+         {
+            float mry = _ev.getMouseRelY();
+
+            if(b_move)
+            {
+               r = getScreenRegion();
+               if(mry<0)
+               {
+                  sp = 0;
+               }
+               else if(mry > (size_y-KNOB_H))
+               {
+                 sp = (size_y-KNOB_H);
+               }
+               else
+               {
+                  sp = mry;
+               }
+
+               if(sp < min_split)
+                  sp = min_split;
+               if(sp > max_split)
+                  sp = max_split;
+
+               r.qy += sp;
+               r.py = r.qy + KNOB_H;
+
+               // trace "xxx sp="+sp+" min_split="+min_split+" max_split="+max_split;
+
+               // trace "xxx up minsize="+left.getMinimumSizeString()+" ptop="+left.pad_top+" pbottom="+left.pad_bottom;
+               // trace "xxx down minsize="+right.getMinimumSizeString()+" ptop="+right.pad_top+" pbottom="+right.pad_bottom;
+
+               if(_ev.leftButtonUp())
+               {
+                  split_position = sp / (size_y-KNOB_H);
+                  split_position_orig = split_position;
+                  b_move = false;
+                  UI.EndMarkRegion();
+
+                  layoutHierarchy(true, false);
+
+                  // // trace "xxx right.sy="+right.getSizeY();
+                  // // trace "xxx right.psy="+right.getPreferredSizeY();
+
+                  rootLayer <= getRoot(); // (todo) not so nice but needed to get rid of gfx artefacts if parent layer/panel is transparent
+                  rootLayer.redraw();
+                  rootLayer.recursiveOnResize();
+               }
+               else
+               {
+                  UI.UpdateMarkedRegion(r);
+                  UI.CompositeAll();
+               }
+               return true;
+            }
+            else
+            {
+               sp = (size_y-KNOB_H)*split_position;
+
+               // // trace "xxx SplitPane: b_move="+b_move+" lmbDown="+_ev.isLeftButtonDown()+" mry="+mry+" sp="+sp;
+
+               if(mry >= sp)
+               {
+                  if(mry <= (sp+KNOB_H) )
+                  {
+                     if(_ev.isLeftButtonDown())
+                     {
+                        // Begin grab
+                        b_move = true;
+                        r = getScreenRegion();
+                        r.qy += sp;
+                        r.py = r.qy + KNOB_H;
+                        UI.BeginMarkRegion(r, 1);
+                        UI.CompositeAll();
+                        return true;
+                     }
+                  }
+               }
+            }
+         }
+         else
+         {
+            // Horizontal splitter
+            float mrx = _ev.getMouseRelX();
+            if(b_move)
+            {
+               r = getScreenRegion();
+
+               if(mrx < 0)
+               {
+                  sp = 0;
+               }
+               else if(mrx > (size_x-KNOB_W))
+               {
+                 sp = (size_x-KNOB_W);
+               }
+               else
+               {
+                  sp = mrx;
+               }
+
+               if(sp < min_split)
+                  sp = min_split;
+               if(sp > max_split)
+                  sp = max_split;
+
+               r.qx += sp;
+               r.px = r.qx + KNOB_W;
+
+               if(_ev.leftButtonUp())
+               {
+                  split_position = sp / (size_x-KNOB_W);
+                  split_position_orig = split_position;
+                  b_move = false;
+                  UI.EndMarkRegion();
+                  rootLayer <= getRoot();
+                  rootLayer.layoutHierarchy(true, false);
+                  rootLayer.redraw();
+                  rootLayer.recursiveOnResize();
+               }
+               else
+               {
+                  UI.UpdateMarkedRegion(r);
+                  UI.CompositeAll();
+               }
+               return true;
+            }
+            else
+            {
+               sp = (size_x-KNOB_W)*split_position;
+               if(mrx >= sp)
+               {
+                  if(mrx <= (sp+KNOB_W) )
+                  {
+                     if(_ev.isLeftButtonDown())
+                     {
+                        // Begin grab
+                        b_move = true;
+                        r = getScreenRegion();
+                        r.qx += sp;
+                        r.px = r.qx + KNOB_W;
+                        UI.BeginMarkRegion(r, 3);
+                        UI.CompositeAll();
+                        return true;
+                     }
+                  }
+               }
+            }
+         }
+      }
+      return false;
+   }
+
+   public virtual recursiveOnOpen() {
+      onOpen();
+
+      if(null != left)
+         left.recursiveOnOpen();
+
+      if(null != right)
+         right.recursiveOnOpen();
+   }
+
+   public virtual onDraw() {
+
+      // // trace "xxx split="+split_position+" orig="+split_position_orig;
+
+      if(left != null)
+      {
+         if(right != null)
+         {
+            float sp;
+            int fg32 = lnf_colors.get(LookAndFeel.COLOR_SPLITPANE_HANDLE_FG);
+
+            if(b_vertical)
+            {
+               sp = (size_y-KNOB_H)*split_position;
+               UIRenderer.DrawDefaultRaisedBorderTint(0, sp, size_x, KNOB_H, fg32);
+            }
+            else
+            {
+               sp = (size_x-KNOB_W)*split_position;
+               UIRenderer.DrawDefaultRaisedBorderTint(sp, 0, KNOB_W, size_y, fg32);
+            }
+         }
+      }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initSplitPane();
+
+      if(Layer::beginXFMTag(_form, _attributes))
+      {
+         String atname, atval;
+         StringArray atsplit;
+         setLayout(SuperBorderLayout);
+         foreach atname in _attributes
+         {
+            atval<=_attributes[atname];
+            switch(atname)
+            {
+               case "split":
+                  setSplit(atval);
+                  break;
+
+               case "vertical":
+                  switch(atval)
+                  {
+                     case "true":
+                     case "1":
+                        b_vertical = true;
+                        break;
+                     default:
+                        b_vertical = false;
+                        break;
+                  }
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+      Layer::endXFMTag(_form, _attributes);
+   }
+
+   public virtual addXFMChild(Layer _c) {
+      if(left == null)
+         left <= deref _c;
+      else if(right == null)
+         right <= deref _c;
+   }
+
+   public virtual addXFMObject(XFMObject _o) {
+   }
+
+}

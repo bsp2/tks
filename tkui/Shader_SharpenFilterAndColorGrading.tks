@@ -1,0 +1,100 @@
+// ----
+// ---- file   : Shader_SharpenFilterAndColorGrading.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 26Sep2023
+// ---- changed: 28Mar2024, 23Jan2025, 10Sep2025, 13Sep2025
+// ----
+// ----
+// ----
+
+module MShader_SharpenFilterAndColorGrading;
+
+namespace ui;
+
+
+class Shader_SharpenFilterAndColorGrading : Shader {
+
+   // Inputs:
+   //   tex[0] : Image (GL_TEXTURE_2D)
+   //   tex[1] : Gradient texture (GL_TEXTURE_2D)
+
+   // - modulates UV coordinates to put more weight on the texel centers
+
+   static String vs_src =
+      "uniform mat4 u_transform; \n"
+      "uniform vec2 u_tex_size; \n"
+      " \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
+      "ATTRIBUTE vec2 a_uv; \n"
+      " \n"
+      "VARYING_OUT vec2 v_uv; \n"
+      " \n"
+      "void main(void) { \n"
+      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
+      "  v_uv = a_uv * u_tex_size; \n"
+      "}"
+      ;
+
+   static String fs_src =
+      "uniform sampler2D u_tex_screen; \n"
+      "uniform sampler3D u_tex_gradient; \n"
+      "uniform float u_amount; \n"
+      "uniform vec2 u_ob_tex_size; \n"
+      " \n"
+      "VARYING_IN vec2 v_uv; \n"
+      "\n"
+      // (todo) approximate pow ? (floatBitsToInt is available since GLSL 3.30)
+      "void bias(inout float _t) { \n"
+      "  float i = floor(_t); \n"
+      "  float r = _t - i; \n"
+      "  if(r > 0.5) {\n"
+      "    r = (r - 0.5) * 2.0; \n"
+      // "    r = r * r; \n"
+      "    r = pow(r, 1.57); \n"
+      "    r = (r * 0.5) + 0.5; \n"
+      "  } \n"
+      "  else { \n"
+      "    r = (0.5 - r) * 2.0; \n"
+      "    r = pow(r, 1.57); \n"
+      // "    r = r * r; \n"
+      "    r = 0.5 - (r * 0.5); \n"
+      "  } \n"
+      "  _t = i + r; \n"
+      "} \n"
+      "\n"
+      "void main(void) { \n"
+      "  vec2 uv = v_uv; \n"
+      "  bias(uv.x); \n"
+      "  bias(uv.y); \n"
+      "  vec4 cIn = TEXTURE2D(u_tex_screen, uv * u_ob_tex_size); \n"
+      "  vec4 cOut = vec4(TEXTURE2D(u_tex_gradient, cIn.rgb).rgb, cIn.a); \n"
+      "  cOut = clamp(mix(cIn, cOut, u_amount), vec4(0,0,0,0), vec4(1,1,1,1)); \n"
+      "  FRAGCOLOR = cOut; \n"
+      "}"
+      ;
+
+   public virtual create() : boolean {
+      if(createFromStrings(vs_src, fs_src))
+      {
+         sdvg_BindShader(sdvg_shader_idx);
+         glUniform1i("u_tex_screen",   0);
+         glUniform1i("u_tex_gradient", 1);
+         sdvg_BindShader(0);
+         if(Configuration.debugLevel >= 2)
+            trace "[dbg] ui::Shader_SharpenFilterAndColorGrading::create: OK.";
+         return true;
+      }
+      else
+      {
+         trace "[!!!] ui::Shader_SharpenFilterAndColorGrading::create: failed";
+      }
+      return false;
+   }
+
+}

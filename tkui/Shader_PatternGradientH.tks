@@ -1,0 +1,117 @@
+// ----
+// ---- file   : Shader_PatternGradientH.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 23Mar2024
+// ---- changed: 28Mar2024, 13Sep2025, 14Sep2025
+// ----
+// ----
+// ----
+
+module MShader_PatternGradientH;
+
+namespace ui;
+
+
+class Shader_PatternGradientH : Shader_PatternFill {
+   protected Texture *tex_gradient;
+
+   // Inputs:
+   //   tex[0] : Pattern Texture (GL_TEXTURE_2D)
+   //   tex[1] : Gradient Texture (GL_TEXTURE_2D)
+
+   static String vs_src_pgh =
+      "uniform mat4 u_transform; \n"
+      " \n"
+      "ATTRIBUTE vec2 a_vertex; \n"
+      " \n"
+      "void main(void) { \n"
+      "  gl_Position = u_transform * vec4(a_vertex,0,1); \n"
+      "}"
+      ;
+
+   static String fs_src_pgh =
+      "uniform sampler2D u_tex; \n"
+      "uniform vec4      u_color_fill; \n"
+      "uniform vec2      u_scale; \n"
+      "uniform float     u_intensity; \n"
+      "\n"
+      "uniform sampler2D u_tex_gradient; \n"
+      "uniform float     u_abs_l; \n"
+      "uniform float     u_abs_r; \n"
+      "uniform float     u_abs_s; \n"  // 1.0f / (r - l)
+      "\n"
+      "void main(void) { \n"
+      "  float u = 1.0 - (gl_FragCoord.x - u_abs_l) * u_abs_s; \n"
+      "  vec4  c = TEXTURE2D(u_tex_gradient, vec2(u, 0)); \n"
+      "  c = vec4(mix(u_color_fill.rgb, c.rgb, c.a), u_color_fill.a); \n"
+      "\n"
+      "  vec2 uv = gl_FragCoord.xy * u_scale; \n"
+      "  float a = (1.0 - TEXTURE2D(u_tex, uv).TEX_ALPHA * u_intensity); \n"
+      "  c = vec4(c.rgb * a, c.a); \n"
+      "  FRAGCOLOR = c; \n"
+      // "  FRAGCOLOR = vec4(1,0,0,1); \n" // xxxxxxxxxxxxxxxxxx
+      "}"
+      ;
+
+   public virtual create() : boolean {
+      // trace "xxx PatternGradientH::create: call createFromStrings()";
+      if(createFromStrings(vs_src_pgh, fs_src_pgh))
+      {
+         // trace "xxx PatternGradientH::create: createFromStrings() returned";
+         sdvg_BindShader(sdvg_shader_idx);
+         sdvg_Uniform1i("u_tex",          0);
+         sdvg_Uniform1i("u_tex_gradient", 1);
+         sdvg_BindShader(0);
+         if(Configuration.debugLevel >= 2)
+            trace "[dbg] ui::Shader_PatternGradientH::create: OK.";
+         return true;
+      }
+      else
+      {
+         trace "[!!!] ui::Shader_PatternGradientH::create: failed";
+      }
+      return false;
+   }
+
+   public method bindPatternGradientH(int _patternIdx, float _sclX, float _sclY, float _intensity,
+                                      Texture _texGradient, float _absL, float _absR
+                                      ) {
+      tex_gradient <= _texGradient;
+      glActiveTexture(GL_TEXTURE0);
+      bindPatternFill(_patternIdx, _sclX, _sclY, _intensity);
+      glActiveTexture(GL_TEXTURE1);
+      tex_gradient.bind();
+      tex_gradient.enable();
+      glActiveTexture(GL_TEXTURE0);
+      float absS = 1.0f / (_absR - _absL);
+      sdvg_Uniform1f("u_abs_l", _absL);
+      sdvg_Uniform1f("u_abs_r", _absR);
+      sdvg_Uniform1f("u_abs_s",  absS);
+      // trace "xxx Shader_PatternGradientH: texSz=("+tex.sx+";"+tex.sy+") UI.buffer=("+UI.buffer_width+";"+UI.buffer_height+") absL="+_absL+" absR="+_absR+" absS="+absS;
+   }
+
+   public virtual unbind() {
+      glActiveTexture(GL_TEXTURE0);
+      Shader_PatternFill::unbind();
+      if(null != tex_gradient)
+      {
+         glActiveTexture(GL_TEXTURE1);
+         tex_gradient.disable();
+         tex_gradient.unbind();
+         glActiveTexture(GL_TEXTURE0);
+      }
+   }
+
+   public virtual onOpen() {
+      Shader_PatternFill::onOpen();
+      if(null != tex_gradient)
+         tex_gradient.unload();
+   }
+
+}

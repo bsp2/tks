@@ -1,0 +1,180 @@
+// ----
+// ----    file: FT2FontResource.tks
+// ----  author: Copyright (c) 2005-2025 by Bastian Spiegel <bs@tkscript.de>
+// ----
+// ---- license: Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ----    info:
+// ----
+// ---- created: 25Apr2005
+// ---- changed: 27Apr2005, 30Apr2005, 06May2005, 12Jun2005, 25Jun2005, 31Jul2005, 23Sep2009
+// ----          14Apr2013, 08Mar2014, 11Aug2014, 13Aug2014, 28Dec2015, 27Nov2018, 14Jun2019
+// ----          21Oct2023, 22Oct2023, 05Nov2023, 16Nov2023, 24Mar2024, 27Jun2024, 20Sep2025
+// ----
+// ----
+// ----
+
+module MFT2FontResource;
+
+namespace ui;
+
+
+class FT2FontResource extends FontResource {
+   explain "An implementation of the §FontResource class that uses the FreeType2 library to load TrueType fonts.";
+
+   protected FT2Face ft2_face;
+
+
+   // ---- Called by constructor-helper function
+   module method _init(String _file, String _name, int _styleFlags, float _fontSize, float _fontScaling) {
+      file_name   = _file;
+      font_name   = _name;
+      style_flags = _styleFlags;
+      font_size   = _fontSize;
+      ft2_face.setEnableMonochrome(!UI.b_font_smoothing);
+      font_scaling = _fontScaling;
+   }
+
+   // ----
+   // ---- if b_loaded is false then actually load the font from the given resource.
+   // ---- Return whether loading succeeded.
+   // ----
+   public virtual loadFont() : boolean {
+      if(!b_loaded)
+      {
+         // trace "xxx FT2FontResource::loadFont: file_name=\""+file_name+"\" font_size="+font_size+" font_scaling="+font_scaling;
+         if(ft2_face.openPakFile(file_name, font_size * font_scaling, 0, FT2Face.DEFAULT_TEXTURE_SIZE))
+         {
+            if( (font_size * font_scaling) < FT2Face.FILTER_SIZE_THRESHOLD) // disable antialiasing for small fonts
+               ft2_face.setEnableTextureFilter(false);
+            b_loaded = true;
+         }
+         else
+         {
+            trace "[---] FT2FontResource::loadFont: loading face[\""+font_name+"\"]."+font_size+" from file \""+file_name+"\" failed.";
+         }
+      }
+      return b_loaded;
+   }
+
+   public method getFT2Face() : FT2Face {
+      return ft2_face;
+   }
+
+   public virtual stringWidth(String _s) : float {
+      return ft2_face.stringWidth(_s);
+   }
+
+   public virtual stringHeight(String _s.notnull) : float {
+      if(!_s.isBlank())
+      {
+         int numNewLines = 1 + _s.numIndicesOf("\n");
+         return ft2_face.getHeight() * numNewLines;
+      }
+      else
+      {
+         return 0f;
+      }
+   }
+
+   public virtual stringHeightMinY(String _s.notnull, Float _retMinY) : float {
+      // returns glyph bounding box height (max-min)
+      // 'retMinY' returns top of bounding box
+      _retMinY = 0;
+      if(!_s.isBlank())
+      {
+         int numNewLines = 1 + _s.numIndicesOf("\n");
+         if(numNewLines > 1)
+            return ft2_face.getHeight() * numNewLines;
+         else
+         {
+            // Calc actual glyph bounds
+            local Float maxY;
+            ft2_face.calcStringMinMaxY(_s, _retMinY, maxY);
+            return maxY - _retMinY;
+         }
+      }
+      else
+      {
+         return 0f;
+      }
+   }
+
+   public virtual stringIndexAtPixelX(String _s, float _x) : int {
+      return ft2_face.stringIndexAtPixelX(_s, _x);
+   }
+
+   public virtual renderString(String _s, float _x, float _y, int _fgColor32, int _ulColor32) {
+      ft2_face.writeGL(_s, _x, _y, _fgColor32, _ulColor32);
+   }
+
+   public virtual renderClippedString(String _s, float _x, float _y, float _clipLeft, _clipTop, _clipRight, _clipBottom, int _fgColor32, int _ulColor32) {
+
+      // trace "xxx renderClippedString: x="+_x+" y="+_y+" clip l="+_clipLeft+" t="+_clipTop+" r="+_clipRight+" b="+_clipBottom;
+
+      ft2_face.writeGLClipped(_s, _x, _y, _clipLeft, _clipTop, _clipRight, _clipBottom, _fgColor32, _ulColor32);
+   }
+
+   public virtual renderUnderlines(String _s, float _x, float _y) {
+      ft2_face.writeGLUnderlines(_s, _x, _y);
+   }
+
+   public virtual onOpen() {
+      // // trace "xxx FT2FontResource::onOpen: this="+#(this)+" ft2_face="+#(ft2_face);
+      ft2_face.uploadTextures();
+   }
+
+   public virtual setEnableMonochrome(boolean _bEnabled) {
+      ft2_face.setEnableMonochrome(_bEnabled);
+   }
+
+   public virtual getAscender() : float {
+      return ft2_face.getAscender();
+   }
+
+   public virtual getDescender() : float {
+      return ft2_face.getDescender();
+   }
+
+}
+
+// ----
+// ----
+// ----
+class FT2PakFileFontResource extends FT2FontResource {
+
+   public function New(String _file, String _name, int _styleFlags, float _fontSize) : FT2PakFileFontResource {
+      local FT2PakFileFontResource fr;
+      // trace "xxx FT2PakFileFontResource.New: name=\""+_name+"\" size=\""+_fontSize+"\" UI.font_scaling="+UI.font_scaling;
+      fr._init(_file, _name, _styleFlags, _fontSize, UI.font_scaling);
+      return deref fr;
+   }
+
+   public function NewUnscaled(String _file, String _name, int _styleFlags, float _fontSize) : FT2PakFileFontResource {
+      local FT2PakFileFontResource fr;
+      fr._init(_file, _name, _styleFlags, _fontSize, 1.0/*font_scaling*/);
+      return deref fr;
+   }
+
+   protected method loadFT2Face() : boolean {
+      return ft2_face.openPakFile(file_name, font_size * font_scaling, 0, FT2Face.DEFAULT_TEXTURE_SIZE);
+   }
+}
+
+// ----
+// ----
+// ----
+class FT2LocalFileFontResource extends FT2FontResource {
+
+   public function New(String _file, String _name, int _styleFlags, float _fontSize) : FT2LocalFileFontResource {
+       local FT2LocalFileFontResource fr;
+       fr._init(_file, _name, _styleFlags, _fontSize, UI.font_scaling);
+       return deref fr;
+    }
+
+   protected method loadFT2Face() : boolean {
+      return ft2_face.openLocalFile(file_name, font_size * font_scaling, 0, FT2Face.DEFAULT_TEXTURE_SIZE);
+   }
+
+}

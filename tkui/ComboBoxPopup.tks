@@ -1,0 +1,488 @@
+// ----
+// ---- file   : ComboBoxPopup.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 24Oct2007
+// ---- changed: 29Oct2007, 06Nov2007, 11Nov2007, 14Apr2008, 02Aug2008, 03Sep2008, 01Feb2009
+// ----          16Jun2009, 09Jan2010, 22Apr2010, 18Jul2010, 09Oct2010, 12Feb2011, 20Mar2011
+// ----          29Mar2011, 06Jan2012, 09Jan2012, 08Jan2013, 23Mar2013, 17Jun2013, 27Aug2013
+// ----          02Feb2014, 12Aug2014, 21Aug2014, 05Sep2014, 06Sep2014, 14Sep2014, 20Sep2014
+// ----          22Sep2014, 17Oct2014, 03Feb2015, 04Feb2015, 07Feb2015, 11Feb2015, 22Feb2015
+// ----          17Mar2015, 22Mar2015, 19Mar2016, 16Feb2017, 21Feb2017, 23Feb2017, 24Feb2017
+// ----          12Mar2017, 24Mar2017, 01Jul2017, 14Jul2017, 18Aug2017, 01Sep2017, 01Dec2017
+// ----          10Feb2018, 16Feb2018, 23Feb2018, 24Feb2018, 25Feb2018, 17Mar2018, 31May2018
+// ----          01Jun2018, 17Nov2018, 27Nov2018, 01Dec2018, 05Jan2019, 28Jan2019, 02Mar2019
+// ----          12May2019, 29Jul2019, 08Sep2019, 21Sep2019, 22Sep2019, 03Apr2021, 25Jun2021
+// ----          11Dec2021, 17Jul2022, 26Oct2022, 18Mar2023, 06Oct2023, 21Oct2023, 25Jan2025
+// ----          31Jan2025
+// ----
+// ----
+// ----
+
+module MComboBoxPopup;
+
+namespace ui;
+
+
+class ComboBoxPopup extends FloatingLayer, ActionProvider {
+
+   define String ACTION_OPTIONSELECTED;
+   define String ACTION_OPTIONPREVIEW;
+   define String ACTION_CANCEL_OPTION_SELECTION;
+
+   define int MAX_POPUP_HEIGHT = 440; // If the options total height exceeds this value, a scrollbar is added
+
+   namespace ComboBoxTM *model;
+   namespace TableView *table;
+
+   protected LayerSwitch *ls_find;
+   protected TextField   *tf_find;
+   protected int find_next_idx;  // when repeatedly pressing return
+   protected int tmp_num_found;
+
+   namespace ActionConsumer *trigger;  // usually a ComboBox
+
+   protected boolean b_wheel_used;
+
+   protected int popup_cancel_key;
+
+
+   public static NewComboBoxPopup(ActionConsumer _trigger,
+                                  Font           _fontOrNull,
+                                  StringArray    _options,
+                                  StringArray    _optionsLongOrNull,
+                                  int            _selectedOption,
+                                  int            _prefSizeX,
+                                  StringArray    _tooltipCaptions,
+                                  IntArray       _optionBGColors,
+                                  IntArray       _optionFGTints
+                                  ) {
+      local ComboBoxPopup p;
+      p.initComboBoxPopup(_trigger,
+                          deref _fontOrNull,
+                          deref _options,
+                          deref _optionsLongOrNull,
+                          _selectedOption,
+                          _prefSizeX,
+                          deref _tooltipCaptions,
+                          deref _optionBGColors,
+                          deref _optionFGTints
+                          );
+      return deref p;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public virtual isModal() : boolean {
+      return true; // xxx actually needed ?
+   }
+
+   public virtual isPopup() : boolean {
+      explain "Overwrites Layer::isPopup.";
+      return true;
+   }
+
+   // (note) warning: option arrays must be valid as long as the ComboBoxPopup exists
+   public method initComboBoxPopup(ActionConsumer _trigger,
+                                   Font           _fontOrNull,
+                                   StringArray    _options,
+                                   StringArray    _optionsLongOrNull,
+                                   int            _selectedOption, 
+                                   int            _prefSizeX,
+                                   StringArray    _tooltipCaptions,
+                                   IntArray       _optionBGColors,
+                                   IntArray       _optionFGTints
+                                   ) {
+
+      initFloatingLayer();
+
+      trigger <= _trigger;
+
+      ComboBox *triggerCM;
+
+      if(trigger instanceof ComboBox)
+         triggerCM <= trigger;
+      else
+         triggerCM <= null;
+
+      setLayout(SuperBorderLayout);
+
+      if(_selectedOption < 0)
+      {
+         // Filter invalid option
+         _selectedOption = 0;
+      }
+
+      model <= new ComboBoxTM();
+      // // model.initTableModel();
+
+      if(null != _fontOrNull)
+         model.font <= deref _fontOrNull;
+
+      if(null != _optionsLongOrNull)
+         model.options <= deref _optionsLongOrNull;
+      else
+         model.options <= deref _options;
+
+      model.tooltip_captions <= deref _tooltipCaptions;
+      model.option_bgcolors  <= deref _optionBGColors;
+      model.option_fgtints   <= deref _optionFGTints;
+      model.initTableModel();
+      model.tableModelChanged();
+      model.setCursorIndex(_selectedOption);
+
+      table <= new TableView();
+      table.initTableView(false); // No header
+      table.setTableModel(model);
+      // table.setPadding4f(1, 1, 1, 1);
+      table.setPadding4f(0, 0, 0, 0);
+      table.setAllowMouseOverSelection(true);
+      table.moveCursorToRow(model.getCursorIndex());
+      table.setEnableDrawBorder(true);
+      table.setAlignment(Layout.EXPAND);
+      table.tableModelChanged();
+
+      if(null != triggerCM)
+         table.setScrollerYSx(triggerCM.arrow_width);
+
+      table.setLeadSelection(_selectedOption);
+
+      addLayer(table, Layout.CENTER);
+
+      ls_find <= new LayerSwitch;
+      ls_find.initLayerSwitch();
+      ls_find.setAlignment(Layout.EXPANDX);
+      ls_find.setEnableCalcSizeOnlyCurrent(true);
+      ls_find.setEnableKeepParent(true);
+
+      // Switch layer 0: Empty
+      Panel emptyPanel <= new Panel;
+      emptyPanel.initPanel();
+      emptyPanel.setEnableCollapse(true);
+      ls_find.addSwitchLayer(deref emptyPanel);
+
+      // Switch layer 1: TextField
+      tf_find <= TextField.New("");
+      tf_find.setMaxTextLength(32);
+      // // tf.setVisibleTextLength(_visCols);
+      tf_find.setAlignment(Layout.EXPANDX);
+      tf_find.b_skip_esc = true;
+      ls_find.addSwitchLayer(deref tf_find);
+      ls_find.handleFinishAddSwitchLayers();
+      addLayer(ls_find, Layout.BOTTOM);
+
+      int th = model.getTotalHeight() + 1 + 1; // +1 +1 because of top/bottom padding
+      if(th > MAX_POPUP_HEIGHT*UI.font_scaling)
+         th = MAX_POPUP_HEIGHT*UI.font_scaling;
+
+      // Extend width if necessary
+      float minSx  = 0;
+      Font optFont <= model.tableModelGetTmpLabelFont();  /// model.font;
+      // // trace "xxx optFont="+#(optFont)+" options="+#(_options);
+      if(null != optFont)
+      {
+         String *optName;
+         foreach optName in _options
+         {
+            minSx = mathMaxf(minSx, optFont.stringWidth(optName));
+            // // trace "xxx optName=\""+optName+"\" w="+optFont.stringWidth(optName)+" => minSx="+minSx;
+         }
+         _prefSizeX = mathMaxf(_prefSizeX, minSx);
+      }
+
+      table.setRequiredSize2f(_prefSizeX, th);
+
+      table.setLayerStyle(lnf.combobox_popup_table_style);
+      table.setEnableFlatHighContrast(lnf.combobox_poup_table_flathighcontrast);
+      // // table.setLayerStyle(LookAndFeel.STYLE_BEVEL);
+      table.setEnableBlendReplaceAlpha(true);
+      
+      setGeometry(0, 0, _prefSizeX, th);
+      invalidateAbsolutePositions();
+
+      resizeToMinimum();
+      recursiveBuildTabCycleLists();
+
+      // // trace "xxx ComboBoxPopup: getSizeX()="+getSizeX();
+      // // trace "xxx initComboBoxPopup: table sx="+table.getSizeX()+" minSx="+table.getMinimumSizeX()+" prefSx="+table.getPreferredSizeX();
+      // // trace "xxx initComboBoxPopup: this sx="+getSizeX();
+   }
+
+   public method setEnableMouseOverPreview(boolean _bEnable) {
+      // true=provide ROWPREVIEW action when hovering over table rows or selecting them with cursor keys
+      //       (used by FileNameDialog)
+      table.setEnableMouseOverPreview(_bEnable);
+   }
+
+   public method setEnableHideOnFirstEntryUp(boolean _bEnable) {
+      if(_bEnable)
+         table.cancel_on_first_entry_up_listener <= this;
+      else
+         table.cancel_on_first_entry_up_listener <= null;
+   }
+
+   public method setEnableSelectOnKeyRelease(boolean _bEnable) {
+      table.setEnableSelectOnKeyRelease(_bEnable);
+   }
+
+   public method setPopupCancelKey(int _k) {
+      popup_cancel_key = _k;
+   }
+
+   public method setPageSize(int _sz) {
+      table.setPageSize(_sz);
+   }
+
+   protected virtual postShow() {
+      FloatingLayer::postShow();
+
+      b_wheel_used = false;
+   }
+
+   public method centerRow() {
+      table.centerRow();
+   }
+
+   public virtual onDraw() {
+      // // UIRenderer.DrawRectangle(0, 0, getSizeX(), getSizeY(), 1, 0x000000);  // [21Mar2024] removed
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      if( (_k.modCtrl() && _k.pressed) ||
+          (popup_cancel_key > 0 && _k.pressed == popup_cancel_key)  // e.g. 'g' in NodeArranger clip selection popup
+          )
+      {
+         // when popup was shown via lctrl shortcut
+         //  (note) e.g. lctrl-d in FileNameDialog
+         handleSelection(-1, false/*bPreview*/); // cancel
+         return true;
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            // trace "xxx VKEY_ESCAPE: ls_find.getCurrentChildNr()="+ls_find.getCurrentChildNr();
+            if(1 != ls_find.getCurrentChildNr())
+            {
+               handleSelection(-1, false/*bPreview*/); // cancel
+               return true;
+            }
+            // run into next case
+
+         case VKEY_UP:
+            if(1 == ls_find.getCurrentChildNr())
+            {
+               ls_find.switchToLayerNr(0); // hide TextField
+               model.current_filter_string <= null;
+               resizeToMinimum();
+               UI.SetKeyboardFocus(table);
+               redraw();
+            }
+            return true;
+
+         default:
+            if(' ' <= _k.unicode <= 'z')
+            {
+               if(9 != _k.unicode) // tab
+               {
+                  if(0 == ls_find.getCurrentChildNr())
+                  {
+                     ls_find.switchToLayerNr(1);  // show TextField
+                     tf_find.setText("");
+                     resizeToMinimum();
+                     // relayout();
+                     UI.SetKeyboardFocus(tf_find);
+                     tf_find.onKey(_k);
+                     model.current_filter_string <= tf_find.getText().toLower();
+                     redraw();
+                     moveToClippedPosition2f(getPositionX(), getPositionY());
+                  }
+               }
+               else
+                  return false;
+            }
+            return true;
+      }
+      return false;
+   }
+
+   protected method selectOptionBySubString(String _patterns) : boolean {
+      _patterns.trim();
+      _patterns.toLower();
+      StringArray patterns <= _patterns.splitChar(' ');
+      if(null != patterns)
+      {
+         if(patterns.numElements)
+         {
+            StringArray lcOptions = model.options;
+
+            String *opt;
+            int optIdx = 0;
+            boolean bFound = false;
+            int foundOptIdx = -1;
+            int findIdx = 0;
+            foreach opt in lcOptions
+            {
+               opt.toLower();
+               bFound = true;
+               String *pattern;
+               foreach pattern in patterns
+               {
+                  bFound = bFound && (opt & pattern);
+               }
+
+               if(bFound)
+               {
+                  if(findIdx == find_next_idx)
+                  {
+                     foundOptIdx = optIdx;
+                  }
+
+                  findIdx++;
+               }
+
+               optIdx++;
+            }
+
+            tmp_num_found = findIdx;
+
+            // trace "xxx tmp_num_found="+tmp_num_found+" foundOptIdx="+foundOptIdx;
+
+            if(-1 != foundOptIdx)
+            {
+               table.moveCursorToRow(foundOptIdx);
+               table.centerRow();
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      // trace "xxx ComboBoxPopup::consumeAction: name="+_ac.getActionName();
+
+      if(@(_ac.getActionProvider()) == @(tf_find))
+      {
+         if(TextField.ACTION_TEXTENTERED == _ac.getActionName())
+         {
+            find_next_idx++;
+            if(!selectOptionBySubString(tf_find.getText()))
+            {
+               find_next_idx = 0;
+               selectOptionBySubString(tf_find.getText());
+               model.current_filter_string <= tf_find.getText().toLower();
+            }
+            if(1 == tmp_num_found)
+            {
+               ls_find.switchToLayerNr(0); // hide TextField
+               model.current_filter_string <= null;
+               resizeToMinimum();
+               UI.SetKeyboardFocus(table);
+            }
+            else
+            {
+               UI.SetKeyboardFocus(tf_find);
+            }
+         }
+         else
+         {
+            // trace "xxx tf_find text=\""+tf_find.getText()+"\"";
+            find_next_idx = 0;
+            selectOptionBySubString(tf_find.getText());
+            model.current_filter_string <= tf_find.getText().toLower();
+            if(model.current_filter_string.isBlank())
+               model.current_filter_string <= null;
+            redraw();
+         }
+         return true;
+      }
+
+      switch(_ac.getActionName())
+      {
+         case TableView.ACTION_ROWSELECTED:
+         case TableView.ACTION_ROWCLICKED: // return key
+            handleSelection(model.getCursorIndex(), false/*bPreview*/);
+            return true;
+
+         case TableView.ACTION_ROWPREVIEW:
+            handleSelection(model.getCursorIndex(), true/*bPreview*/);
+            return true;
+
+         case TableView.ACTION_CANCEL_FIRST_UP:
+            handleSelection(-1, false/*bPreview*/);
+            return true;
+      }
+      return false;
+   }
+
+   namespace method handleSelection(int _nr, boolean _bPreview) {
+      // trace "xxx ComboBoxPopup::handleSelection: nr="+_nr+" trigger="+#(trigger)+" bPreview="+_bPreview;
+
+      if(trigger instanceof ComboBox)
+      {
+         ComboBox triggerCM <= trigger;
+         triggerCM.handlePopupSelection(_nr, _bPreview); // xxx insert actual selected row nr
+         // Do not add code below
+      }
+      else
+      {
+         if(!_bPreview)
+            hide();
+
+         if(-1 != _nr)
+         {
+            if(_bPreview)
+               trigger.consumeAction(IntAction.New(ACTION_OPTIONPREVIEW, this, _nr));
+            else
+               trigger.consumeAction(IntAction.New(ACTION_OPTIONSELECTED, this, _nr));
+         }
+         else
+         {
+            trigger.consumeAction(IntAction.New(ACTION_CANCEL_OPTION_SELECTION, this, _nr));
+         }
+         // Do not add code below
+      }
+   }
+
+   public virtual handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer) : boolean {
+      // // trace "xxx ComboBoxPopup::handleNonChildMouseOver: newMouseLayer="+#(_newMouseLayer);
+
+      if(_ev.leftButtonDown())
+      {
+         if(b_wheel_used)
+         {
+            handleSelection(model.getCursorIndex(), false/*bPreview*/); // return current selection (mouse wheel!)
+         }
+         else
+         {
+            // Don't change selection, just hide the popup
+            handleSelection(-1, false/*bPreview*/);
+         }
+         return true;
+      }
+
+      if(_ev.current_state&MOUSE_WHEELDOWN)
+      {
+         b_wheel_used = true;
+         table.moveCursorToNextRow();
+         return true;
+      }
+      else if(_ev.current_state&MOUSE_WHEELUP)
+      {
+         b_wheel_used = true;
+         table.moveCursorToPreviousRow();
+         return true;
+      }
+   
+      return true;
+   }
+}

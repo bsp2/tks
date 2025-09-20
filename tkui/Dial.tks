@@ -1,0 +1,1213 @@
+// ----
+// ---- file   : Dial.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 14Jun2009
+// ---- changed: 15Jun2009, 12Sep2009, 02Jan2010, 03Jan2010, 22Apr2010, 19Oct2010, 20Mar2011
+// ----          11Feb2018, 16Feb2018, 24Feb2018, 03Dec2018, 12May2019, 10Sep2019, 22Sep2019
+// ----          27Mar2021, 30Mar2021, 31Mar2021, 16Apr2021, 18Apr2021, 21Feb2022, 10Feb2023
+// ----          08Mar2023, 09Oct2023, 27Oct2023, 31Oct2023, 09Nov2023, 11Nov2023, 04Apr2024
+// ----          26Apr2024, 13Sep2024, 09Oct2024, 10Oct2024, 11Oct2024, 13Oct2024, 02Nov2024
+// ----          03Nov2024, 28Dec2024, 28Jan2025, 31Jan2025, 22Mar2025, 25Apr2025, 10Sep2025
+// ----          11Sep2025, 12Sep2025
+// ----
+// ----
+// ----
+
+module MDial;
+
+namespace ui;
+
+
+class Dial extends Control {
+
+   define String ACTION_VALUECHANGING = "onValueChanging";
+   define String ACTION_VALUECHANGED  = "onValueChanged";
+   define String ACTION_MODVALUECHANGING;  // when b_mod_mode is enabled (setEnableModMode())
+   define String ACTION_MODVALUECHANGED;   // when b_mod_mode is enabled (setEnableModMode())
+
+   define int YDIST_THRESHOLD = 5;
+
+   define int LOCK_X_THRESHOLD_X = 7;
+   define int LOCK_X_THRESHOLD_Y = 3;
+
+   // // define boolean USE_MOUSEGRAB = true;
+
+   protected float   min_value;
+   protected float   max_value;
+   protected float   cur_value;
+   protected float   pixel_range;
+   protected int     precision;  // 0=int, 1=0.1, 2=0.12, 3=0.123,..
+   protected boolean b_allow_quant;  // 1=quantize value when LCTRL modifier is pressed
+
+   protected boolean b_mod_mode;     // display/edit outer ring value
+   protected float   cur_mod_value;  // outer ring value (bipolar, e.g. "modulation depth"). -1..1
+
+   protected int     num_seg;
+   protected boolean b_grabbed;
+   protected boolean b_lock_x;
+   protected boolean b_check_ydist;
+   protected float   grab_start_value;
+   protected float   grab_undo_value;
+   protected float   grab_start_x;
+   protected float   grab_start_y;
+   protected float   grab_last_x;
+   protected float   grab_last_y;
+   protected boolean b_grab_mod;
+
+   protected float       reset_value;
+   protected boolean     b_have_reset_value;
+   protected FloatArray *cycle_reset_values;
+
+   protected ComboBoxPopup *preset_popup;
+   protected FloatArray    *preset_values;
+   protected StringArray   *preset_names;
+   protected StringArray   *preset_options;        // allocated when ComboBoxPopup is shown
+   protected boolean        b_show_preset_values;  // 1=show preset values in preset selector  0=show names only
+   protected boolean        b_allow_preset_popup;  // temporary. 0 after first value change via LMB mouse-drag. resets to 1 in endGrab()
+
+   protected int     c32_bg;
+   protected boolean b_custom_bg;
+   protected boolean b_draw_tab_focus;
+   protected boolean b_bipolar;         // 1=centered arc
+
+   protected float   step_fine;
+   protected float   step_fine_shift;
+   protected float   step_coarse;  // relative to value range
+
+   protected boolean b_force_fine_edit;       // e.g. in FloatParamEditor (same as continously holding LSHIFT)
+
+   protected boolean b_alt;  // while holding LALT/RALT modifier key
+
+   protected boolean b_no_detail_edit;
+   static FloatParamDialog *dlg_floatparam;
+
+   protected boolean b_toggle;  // 1=mouse click toggles Dial toggle button state (getValue() returns toggle_min_value instead of cur_value)
+   protected boolean b_toggle_state;
+   protected float   toggle_min_value;   // def=-1.0
+   protected float   toggle_threshold;   // def=0.0
+
+   protected float   pot_display_max;  // 0=off, 256=display 0..1 as exponential power-of-two 0..256 value (e.g. note durations)
+
+
+   public static New(float _min, _max, _current) {
+      local Dial d;
+      d.initDial(_min, _max, _current);
+      return deref d;
+   }
+
+   public method initDial(float _min, _max, _current) {
+      initLayer();
+
+      min_value        = _min;
+      max_value        = _max;
+      cur_value        = _current;
+      num_seg          = UI.IsHiDPI() ? 128 : 64;
+      pixel_range      = 128.0;
+      b_grabbed        = false;
+      b_lock_x         = maybe;
+      b_custom_bg      = false;
+      b_editable       = true;
+      c32_bg           = lnf_colors.get(LookAndFeel.COLOR_LABEL_BG);
+      b_draw_tab_focus = true;
+      b_fill_bg        = true;
+
+      step_coarse      = 0.02;
+      step_fine        = 0.005;
+      step_fine_shift  = 0.001;
+
+      precision        = 5;     // always applied
+      b_allow_quant    = true;  // 1=quantize to int while LCTRL is pressed
+
+      b_allow_preset_popup = true;
+
+      b_toggle         = false;
+      b_toggle_state   = false;
+      toggle_min_value = -1.0f;
+      toggle_threshold =  0.0f;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED, ACTION_MODVALUECHANGING, ACTION_MODVALUECHANGED];
+   }
+
+   public virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      if(!b_custom_bg)
+         c32_bg = lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG)|0xFF000000;
+   }
+
+   public method setBackgroundColor(int _c32bg) {
+      explain "Set color of dial background";
+
+      if(0 != _c32bg)
+      {
+         c32_bg = _c32bg;
+         b_custom_bg = true;
+      }
+      else
+      {
+         c32_bg = lnf_colors.get(LookAndFeel.COLOR_CONTROL_BG)|0xFF000000;
+         b_custom_bg = false;
+      }
+   }
+
+   public virtual isTabCycleMember() : boolean {
+      return !b_disable_tab_cycle;
+   }
+
+   protected method handleValueChanging() {
+      hideToolTip();
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGING), this, cur_value));
+   }
+
+   protected method handleValueChanged() {
+      hideToolTip();
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, cur_value));
+   }
+
+   protected method handleModValueChanging() {
+      hideToolTip();
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_MODVALUECHANGING), this, cur_mod_value));
+   }
+
+   protected method handleModValueChanged() {
+      hideToolTip();
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_MODVALUECHANGED), this, cur_mod_value));
+   }
+
+   public method setEnableForceFineEdit(boolean _bEnable) {
+      b_force_fine_edit = _bEnable;
+   }
+
+   public method setEnableDrawTabFocus(boolean _bEnable) {
+      b_draw_tab_focus = _bEnable;
+   }
+
+   public method setEnableModMode(boolean _bEnable) {
+      b_mod_mode = _bEnable;
+   }
+
+   protected method quantizeValue(float _value) : float {
+      if(b_allow_quant)
+      {
+         float frange = (max_value - min_value);
+         if(frange >= 10)
+         {
+            _value = round(_value);
+         }
+         else
+         {
+            // e.g. 0..1 percentage range
+            _value = round(_value * 100) / 100.0;
+         }
+      }
+      return _value;
+   }
+
+   public method setValue(float _f) {
+      _f = FloatParam.ApplyPrecision(_f, precision);
+      _f = mathClampf(_f, min_value, max_value);
+      cur_value = _f;
+      redraw();
+   }
+
+   public method getValue() : float {
+      if(b_toggle)
+      {
+         if(b_toggle_state)
+            return cur_value;
+         return toggle_min_value;
+      }
+      return cur_value;
+   }
+
+   public method setMinValue(float _min) {
+      min_value = _min;
+   }
+
+   public method getMinValue() : float {
+      return min_value;
+   }
+
+   public method setMaxValue(float _max) {
+      max_value = _max;
+   }
+
+   public method getMaxValue() : float {
+      return max_value;
+   }
+
+   public method setResetValue(float _f) {
+      reset_value = _f;
+      b_have_reset_value = (min_value <= reset_value <= max_value);
+   }
+
+   public method setResetValues(FloatArray _fa) {
+      if(null != _fa)
+      {
+         cycle_reset_values <= new FloatArray;
+         cycle_reset_values  = _fa;
+      }
+      else
+      {
+         cycle_reset_values <= null;
+      }
+   }
+
+   public method setStep(float _s) {
+      // (note) relative to range
+      step_coarse = _s;
+   }
+
+   public method setPrecision(int _prec) {
+      precision = _prec;
+   }
+
+   public method getPrecision() : int {
+      return precision;
+   }
+
+   public method setModValue(float _f) {
+      cur_mod_value = mathClampf(_f, -1.0f, 1.0f);
+      redraw();
+   }
+
+   public method getModValue() : float {
+      return cur_mod_value;
+   }
+
+   public method setEnableAllowQuantization(boolean _bEnable) {
+      b_allow_quant = _bEnable;
+   }
+
+   public method getEnableAllowQuantization() : boolean {
+      return b_allow_quant;
+   }
+
+   public method setEnableToggle(boolean _bEnabled) {
+      if(b_toggle ^ _bEnabled)
+         redraw();
+      b_toggle = _bEnabled;
+      if(!b_toggle)
+         setToggleState(false);
+   }
+
+   public method setToggleState(boolean _bEnabled) {
+      if(_bEnabled ^ b_toggle_state)
+      {
+         b_toggle_state = _bEnabled;
+         if(b_toggle_state && cur_value < toggle_threshold)
+            cur_value = toggle_threshold;
+         redraw();
+      }
+   }
+
+   public method getToggleState() : boolean {
+      return b_toggle && b_toggle_state;
+   }
+
+   public method setToggleThreshold(float _f) {
+      toggle_threshold = _f;
+   }
+
+   public method getToggleThreshold() : float {
+      return toggle_threshold;
+   }
+
+   public method setToggleMinValue(float _f) {
+      toggle_min_value = _f;
+   }
+
+   public method getToggleMinValue() : float {
+      return toggle_min_value;
+   }
+
+   protected method updateToggleStateFromValue() {
+      if(b_toggle)
+      {
+         if(cur_value < toggle_min_value)
+            cur_value = toggle_min_value;
+         b_toggle_state = (cur_value >= toggle_threshold);
+      }
+   }
+
+   public method setPowerOfTwoDisplayMax(float _f) {
+      pot_display_max = _f;
+   }
+
+   public method getPowerOfTwoDisplayMax() : float {
+      return pot_display_max;
+   }
+
+   protected method handleResetValue() {
+      if(b_mod_mode && b_alt)
+      {
+         cur_mod_value = 0.0f;
+         handleModValueChanged();
+         redraw();
+      }
+      else
+      {
+         if(null != cycle_reset_values)
+         {
+            int bestMatchIdx = -1;
+            float bestMatchDist = 999999;
+            int idx = 0;
+            loop(cycle_reset_values.numElements)
+            {
+               float d = abs(cycle_reset_values[idx] - cur_value);
+               if(d < bestMatchDist)
+               {
+                  bestMatchDist = d;
+                  bestMatchIdx = idx;
+               }
+               idx++;
+            }
+            if(bestMatchDist < 0.01)
+            {
+               bestMatchIdx = (bestMatchIdx + 1) % cycle_reset_values.numElements;
+               setValue(cycle_reset_values.get(bestMatchIdx));
+            }
+            else
+               setValue(cycle_reset_values.get(0));
+         }
+         else
+         {
+            float c;
+            if(b_have_reset_value)
+               c = reset_value;
+            else
+               c = min_value + (max_value - min_value) * 0.5;
+            setValue(c);
+         }
+         updateToggleStateFromValue();
+         handleValueChanged();
+      }
+   }
+
+   public method getFloatName() : String {
+      float f = getValue();
+      if(null != preset_names && null != preset_values)
+      {
+         float r = max_value - min_value;
+         if(precision > 0)
+            r = (r * 0.5f);
+         else
+            r = 0;
+         int idx = preset_values.findNearestIdx1d(f, 0/*off*/, 1/*stride*/, r/*maxDist*/);
+         if(-1 != idx)
+         {
+            float fDist = f - preset_values.get(idx);
+            local Float fo = fDist;
+            if(0.0001f < fDist < 0.5f)
+               return f + "("+preset_names.get(idx)+"+"+fo.printf("%3.3f")+")";
+            else if(-0.5f < fDist < -0.0001f)
+               return f + "("+preset_names.get(idx)+fo.printf("%3.3f")+")";
+            else
+               return f + "("+preset_names.get(idx)+")";
+         }
+      }
+      return String(f);
+   }
+
+   protected method beginGrab(MouseEvent _ev) {
+      // trace "xxx Dial::beginGrab";
+      b_grabbed = true;
+      b_alt = UI.KeyModAlt();
+      b_grab_mod = b_alt && b_mod_mode;
+      grab_start_value = b_grab_mod ? cur_mod_value : cur_value;
+      grab_undo_value  = b_grab_mod ? cur_mod_value : cur_value;
+      grab_start_x = _ev.mouse_rel_x;
+      grab_start_y = _ev.mouse_rel_y;
+      grab_last_x = grab_start_x;
+      grab_last_y = grab_start_y;
+      b_check_ydist = true;
+      b_lock_x = maybe;
+      b_allow_preset_popup = true;
+
+      if(!b_dont_set_kbdfocus_on_mouse)
+         grabKeyboardFocus();
+
+      redraw();
+      UI.GrabMouse();
+   }
+
+   protected method continueGrabAtNewMousePosition() {
+      // when toggling between fine+coarse edit mode via LSHIFT/RSHIFT
+      grab_start_x = grab_last_x;
+      grab_start_y = grab_last_y;
+      grab_start_value = b_grab_mod ? cur_mod_value : cur_value;
+      // // trace "xxx continueGrabAtNewMousePosition: mstart=("+grab_start_x+","+grab_start_y+") new grab_start_value="+grab_start_value;
+      b_allow_preset_popup = false;
+   }
+
+   protected method endGrab() {
+      // // trace "xxx Dial: ungrab: val="+cur_value+" min="+min_value+" max="+max_value;
+      if(b_grabbed)
+      {
+         // trace "xxx Dial::endGrab";
+         b_grabbed = false;
+         b_allow_preset_popup = true;
+         redraw();
+         UI.UngrabMouse();
+      }
+   }
+
+   protected method calcXRange() : float {
+      float r = (max_value - min_value);
+      return ((2.0/-pixel_range)*r) - ((1.0/-pixel_range)*r);
+   }
+
+   protected method calcXRangeMod() : float {
+      float r = 2.0f;
+      return ((2.0/-pixel_range)*r) - ((1.0/-pixel_range)*r);
+   }
+
+   protected method endGrabMiniUndo() {
+      if(b_grab_mod)
+      {
+         setModValue(grab_undo_value);
+         endGrab();
+         handleModValueChanged();
+      }
+      else
+      {
+         setValue(grab_undo_value);
+         updateToggleStateFromValue();
+         endGrab();
+         handleValueChanged();
+      }
+   }
+
+   public method showDetailEdit() {
+      if(!b_editable)
+         return;
+
+      String *sTitle;
+      if(user_data instanceof String)
+         sTitle <= user_data;
+      else if(!layer_name.isBlank())
+         sTitle <= layer_name;
+      else
+         sTitle <= "Dial Detail-Edit";
+
+      dlg_floatparam <= FloatParamDialog.New(sTitle,
+                                             ""/*message*/,
+                                             null/*iconName*/,
+                                             "Ok",
+                                             "Cancel",
+                                             getValue(),
+                                             getMinValue(),
+                                             getMaxValue(),
+                                             5/*cols*/,
+                                             5/*precision*/,
+                                             (getMaxValue() - getMinValue())/200.0/*step*/,
+                                             this/*recipient*/
+                                             );
+
+      dlg_floatparam.setEnableProvideChanging(true);
+      dlg_floatparam.showNearMouse(-30,-30);
+   }
+
+   public method showPresetPopup() {
+      // // trace "[dbg] Dial::showPresetPopup: preset_values="+#(preset_values);
+      if(!(b_editable && b_allow_preset_popup))
+         return;
+
+      if(null != preset_values)
+      {
+         if(b_grabbed)
+            endGrab();
+
+         int prefSx = getSizeX();
+         preset_options <= new StringArray;
+         float f;
+         int presetIdx = 0;
+         int selOption = -1;
+         float curValue = getValue();
+         foreach f in preset_values
+         {
+            if(f == curValue)
+               selOption = presetIdx;
+            if(null != preset_names)
+               preset_options.add(preset_names.get(presetIdx)+(b_show_preset_values ? ("\t"+String(f)) : ""));
+            else
+            {
+               preset_options.add(String(f));
+            }
+            presetIdx++;
+         }
+         local Font font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_TEXTFIELD);
+         String *s;
+         foreach s in preset_options
+         {
+            // // trace "xxx showPresetPopup: prefSx="+prefSx+" s=\""+s+"\"";
+            prefSx = mathMaxi(prefSx, font.stringWidth(s));
+         }
+         preset_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                        font,
+                                                        preset_options,
+                                                        null/*options_long*/,
+                                                        selOption/*selected_option*/,
+                                                        prefSx,
+                                                        null/*tooltip_captions*/,
+                                                        null/*option_bgcolors*/,
+                                                        null/*option_fgtints*/
+                                                        );
+         preset_popup.showNearComboBox(this);
+         preset_popup.focusFirstTabCycleMember();
+      }
+   }
+
+   public method setPresetOptions(FloatArray  _presetValues,
+                                  StringArray _presetNamesOrNull
+                                  ) {
+      // Store array copies
+      preset_values <= new FloatArray;
+      preset_values  = _presetValues;
+      preset_names  <= (null != _presetNamesOrNull) ? Object(_presetNamesOrNull) : null;
+   }
+
+   public method setEnableShowPresetValues(boolean _bEnable) {
+      b_show_preset_values = _bEnable;
+   }
+
+   protected method handleIncDec(int _dir, boolean _bFine, boolean _bAllowForceFineEdit) {
+      boolean bShift = UI.KeyModShift();
+      boolean bFine = (_bFine || bShift) || (_bAllowForceFineEdit && b_force_fine_edit);
+      float step = _dir * (_bFine ? (bShift ? step_fine_shift : step_fine) : (bFine ? step_coarse*0.1 : step_coarse));
+      if(b_mod_mode && b_alt)
+      {
+         cur_mod_value = mathClampf(cur_mod_value + step, -1.0f, 1.0f);
+         redraw();
+         handleModValueChanged();
+      }
+      else
+      {
+         addRel(step);  // calls handleValueChanged()
+      }
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return b_grabbed;
+   }
+
+   public virtual onMouseEnter(MouseEvent _ev) : boolean {
+      if(b_mod_mode)
+         grabKeyboardFocus();
+      return Control::onMouseEnter(_ev);
+   }
+
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(b_editable)
+      {
+         handleResetValue();
+      }
+      return true;
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      return true; // want onMouseHoldEnd()
+   }
+
+   public virtual onMouseHoldEnd(MouseEvent _ev) : boolean {
+      // trace "xxx Dial::onMouseHoldEnd: UI.KeyModNone()="+UI.KeyModNone();
+      // trace "xxx Dial::onMouseHoldEnd: _ev.isRightButton()="+_ev.isRightButton();
+      if(!_ev.isRightButton())
+      {
+         redraw();
+
+         boolean bAllowPresetPopup = b_allow_preset_popup;
+
+         if(b_grabbed)
+         {
+            endGrab();
+            updateToggleStateFromValue();
+            handleValueChanged();
+         }
+
+         if(bAllowPresetPopup)
+         {
+            if(UI.KeyModNone())
+            {
+               showPresetPopup();
+            }
+         }
+      }
+
+      return true;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         if(b_grabbed)
+         {
+            endGrabMiniUndo();
+         }
+         else if(!b_no_detail_edit)
+         {
+            showDetailEdit();
+         }
+      }
+      else if(_ev.isLeftButton())
+      {
+         if(UI.KeyModCtrl())
+         {
+            endGrab(); // lazy-end-grab
+            handleResetValue();
+            redraw();
+         }
+         else
+         {
+            if(b_toggle)
+               setToggleState(!b_toggle_state);
+            // (note) always send value changed (e.g. to see which value it currently is set to)
+            handleValueChanged();
+         }
+      }
+      endGrab(); // lazy-end-grab
+      redraw();
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(!b_editable)
+         return Control::onMouse(_ev);
+
+      if(_ev.isLeftButtonDown())
+      {
+         if(!b_grabbed)
+         {
+            beginGrab(_ev);
+         }
+         else
+         {
+            // trace "xxx Dial::onMouse: grabbed, Mouse.x="+Mouse.x+" Mouse.y="+Mouse.y;
+            grab_last_x = _ev.mouse_rel_x;
+            grab_last_y = _ev.mouse_rel_y;
+         }
+
+         if(_ev.rightButtonDown())
+         {
+            // mini-undo handled in onMouseClick()
+            return true;
+         }
+         else
+         {
+            float ry = _ev.mouse_rel_y - grab_start_y;
+            if(b_check_ydist)
+            {
+               if(abs(ry) < YDIST_THRESHOLD)
+               {
+                  ry = 0;
+               }
+               else
+               {
+                  if(ry<0)
+                     ry += YDIST_THRESHOLD;
+                  else
+                     ry -= YDIST_THRESHOLD;
+                  b_check_ydist = false;
+                  grab_start_y = _ev.mouse_rel_y;
+               }
+            }
+            float rx = _ev.mouse_rel_x - grab_start_x;
+            // trace "xxx Dial: b_lock_x="+b_lock_x+" mouse_rel_x="+_ev.mouse_rel_x+" grab_start_x="+grab_start_x+" rx="+rx+" ry="+ry;
+
+            if(maybe == b_lock_x)
+            {
+               if(abs(ry) > LOCK_X_THRESHOLD_Y)
+                  b_lock_x = false;
+               else if(abs(rx) > LOCK_X_THRESHOLD_X)
+                  b_lock_x = true;
+            }
+
+            float r = b_grab_mod ? 2.0f : (max_value - min_value);
+            float xrange = b_grab_mod ? calcXRangeMod() : calcXRange();
+            // trace "xxx Dial: min="+min_value+" max="+max_value+" r="+r+" ry="+ry+" rx="+rx+" xrange="+xrange+" b_force_fine_edit="+b_force_fine_edit;
+
+            float oldValue = b_grab_mod ? cur_mod_value : cur_value;
+            float newValue;
+            boolean bFine = b_force_fine_edit || UI.KeyModShift();
+
+            if(true == b_lock_x)
+            {
+               if(bFine)
+                  newValue = grab_start_value + (rx/(-pixel_range*0.75))*xrange*0.1;
+               else
+                  newValue = grab_start_value + (rx/(-pixel_range*0.75))*xrange;
+               // // trace "xxx b_lock_x=1, grab_start_value="+grab_start_value+" newValue="+newValue;
+            }
+            else
+            {
+               if(bFine)
+                  newValue = grab_start_value + (ry/-pixel_range)*r*0.1;
+               else
+                  newValue = grab_start_value + (ry/-pixel_range)*r + (rx/(-pixel_range*0.75))*xrange;
+            }
+
+            if(b_grab_mod)
+            {
+               setModValue(newValue);
+
+               if(cur_mod_value != oldValue)
+               {
+                  b_allow_preset_popup = false;
+                  handleModValueChanging();
+               }
+            }
+            else
+            {
+               if(UI.KeyModCtrl())
+                  newValue = quantizeValue(newValue);
+
+               setValue(newValue);
+
+               if(cur_value != oldValue)
+               {
+                  b_allow_preset_popup = false;
+                  updateToggleStateFromValue();
+                  handleValueChanging();
+               }
+            }
+         }
+         return true;
+      }
+      else if(_ev.current_state & MOUSE_WHEELUP)
+      {
+         handleIncDec(1/*dir*/, false/*bFine*/, false/*bAllowForceFineEdit*/);
+         return true;
+      }
+      else if(_ev.current_state & MOUSE_WHEELDOWN)
+      {
+         handleIncDec(-1/*dir*/, false/*bFine*/, false/*bAllowForceFineEdit*/);
+         return true;
+      }
+      else if(b_grabbed)
+      {
+         endGrab();
+         updateToggleStateFromValue();
+         handleValueChanged();
+         redraw();
+         return true;
+      }
+      return Control::onMouse(_ev);
+   }
+
+   public method addRel(float _a) {
+      float r = _a + ((cur_value - min_value) / (max_value - min_value));
+      // // trace "xxx Dial::addRel: a="+_a+" r="+r+"    min="+min_value+" max="+max_value;
+      float f = min_value + (max_value - min_value) * r;
+      if(UI.KeyModCtrl())
+         f = quantizeValue(f);
+      setValue(f);
+      updateToggleStateFromValue();
+      handleValueChanged();
+   }
+
+   public method setEnableDetailEdit(boolean _bEnable) {
+      b_no_detail_edit = !_bEnable;
+   }
+
+   public virtual onMouseKey(Key _k) : boolean {
+      // // trace "xxx Dial::onMouseKey: k.name="+_k.name+" k.pressed="+_k.pressed+" _k.released="+_k.released;
+
+      switch(_k.pressed)
+      {
+         case VKEY_LSHIFT:
+         case VKEY_RSHIFT:
+            if(b_grabbed)
+            {
+               // begin fine edit
+               continueGrabAtNewMousePosition();
+               return true;
+            }
+            break;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_LSHIFT:
+         case VKEY_RSHIFT:
+            if(b_grabbed)
+            {
+               // back to coarse edit
+               continueGrabAtNewMousePosition();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      if(b_grabbed)
+      {
+         b_grabbed = false;
+         if(!_bQuiet)
+            redraw();
+      }
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx Dial::onKey: k.name="+_k.name+" k.pressed="+_k.pressed+" _k.released="+_k.released;
+      switch(_k.released)
+      {
+         case VKEY_LALT:
+         case VKEY_RALT:
+            b_alt = false;
+            // // trace "xxx Dial: ALT end";
+            redraw();
+            return true;
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_LALT:
+         case VKEY_RALT:
+            b_alt = true;
+            // // trace "xxx Dial: ALT begin";
+            redraw();
+            return true;
+
+         case VKEY_UP:
+            handleIncDec(1/*dir*/, false/*bFine*/, false/*bAllowForceFineEdit*/);
+            return true;
+
+         case VKEY_DOWN:
+            handleIncDec(-1/*dir*/, false/*bFine*/, false/*bAllowForceFineEdit*/);
+            return true;
+
+         case VKEY_RIGHT:
+            handleIncDec(1/*dir*/, true/*bFine*/, false/*bAllowForceFineEdit*/);
+            return true;
+
+         case VKEY_LEFT:
+            handleIncDec(-1/*dir*/, true/*bFine*/, false/*bAllowForceFineEdit*/);
+            return true;
+      }
+
+      return Layer::onKey(_k);
+   }
+
+   public virtual onDraw() {
+
+      float sx = getSizeX();
+      float sy = getSizeY();
+
+      if(b_fill_bg)
+      {
+         UIRenderer.DisableBlending();
+         int c32Bg = sdvg_TintARGB(c32_bg, bg32_tint);
+         // Integer ioxxx = c32_bg; trace "xxx Dial: c32_bg="+ioxxx.printf("#%08x");
+         // ioxxx = bg32_tint; trace "xxx Dial: bg32_tint="+ioxxx.printf("#%08x");
+         // ioxxx = c32Bg; trace "xxx Dial: c32Bg="+ioxxx.printf("#%08x");
+         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, c32Bg);
+
+         if(b_draw_tab_focus && hasKeyboardFocus())
+            UIRenderer.DrawTabFocusTextBorderFaded(1, 0, sx, sy-1);
+      }
+
+      int toggleTint = (b_toggle && !b_toggle_state) ? (#c0000000 | (lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG) & 0x00FFFFFF)) : 0;
+
+      // // if(b_toggle)
+      // //    trace "xxx Dial::onDraw: <toggle> b_toggle_state="+b_toggle_state+" cur_value="+cur_value+" getValue()="+getValue();
+
+      float r = mathMinf(sx, sy) * (b_mod_mode ? 0.4 : 0.49);
+      float rOuter = mathMinf(sx, sy) * 0.49;
+      int c32 = b_grabbed ? lnf_colors.get(LookAndFeel.COLOR_DIAL_BG_GRABBED) : lnf_colors.get(LookAndFeel.COLOR_DIAL_BG);
+      if(bg32_tint)
+         c32 = sdvg_TintARGB(c32, bg32_tint);
+      if(toggleTint)
+         c32 = sdvg_TintARGB(c32, toggleTint);
+
+      boolean bDrawGL = UIRenderer.b_draw_gl;
+
+      // // UIRenderer.EnableBlendingAdditiveKeepAlpha();
+      UIRenderer.EnableBlendingKeepAlpha();
+
+      if(bDrawGL)
+      {
+         glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST);  // b_draw_gl
+         // // // glEnable(GL_POLYGON_SMOOTH);  // causes transparency glitches in dialogs/windows
+         // // // glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_FALSE);
+         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);  // b_draw_gl
+      }
+
+      UIRenderer.DrawFilledEllipse(sx*0.5, sy*0.5, r, r, 64, c32);
+
+      if(b_mod_mode)
+      {
+         int c32ArcOuter = (b_grabbed || 1) ? #ff00bfbf : #ff007f7f;
+         int c32ArcOuter2 = (b_grabbed || 1) ? #ff007f7f : #ff004f4f;
+         // int c32ArcOuter = b_grabbed ? lnf_colors.get(LookAndFeel.COLOR_DIAL_OUTER_GRABBED) : lnf_colors.get(LookAndFeel.COLOR_OUTER);
+         float aNormOuter = (cur_mod_value + 1.0) * 0.5;  // -1..1 => 0..1
+         float rOuter2 = r + (rOuter - r) * 0.8;
+         float rOuter3 = r + (rOuter - r) * 0.2;
+         if(aNormOuter < 0.5)
+         {
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, rOuter, rOuter, r, r, 64, c32ArcOuter2,
+                                                PI*(1.5-1.5*(0.5-aNormOuter))/*aStart*/, PI*1.5/*aEnd*/
+                                                );
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, rOuter2, rOuter2, r, r, 64, c32ArcOuter,
+                                                PI*(1.5-1.5*(0.5-aNormOuter))/*aStart*/, PI*1.5/*aEnd*/
+                                                );
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, rOuter3, rOuter3, r, r, 64, c32ArcOuter2,
+                                                PI*(1.5-1.5*(0.5-aNormOuter))/*aStart*/, PI*1.5/*aEnd*/
+                                                );
+         }
+         else
+         {
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, rOuter, rOuter, r, r, 64, c32ArcOuter2,
+                                                PI*1.5/*aStart*/, PI*(0.75+1.5*aNormOuter)/*aEnd*/
+                                                );
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, rOuter2, rOuter2, r, r, 64, c32ArcOuter,
+                                                PI*1.5/*aStart*/, PI*(0.75+1.5*aNormOuter)/*aEnd*/
+                                                );
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, rOuter3, rOuter3, r, r, 64, c32ArcOuter,
+                                                PI*1.5/*aStart*/, PI*(0.75+1.5*aNormOuter)/*aEnd*/
+                                                );
+         }
+      }
+
+      // trace "xxx Dial::onDraw: cur_value="+cur_value;
+      float aNorm = (cur_value - min_value) / (max_value - min_value);
+      if(pot_display_max > 0.0f)
+      {
+         if(aNorm > 0.0f)
+            aNorm = log(aNorm * pot_display_max) / log(pot_display_max);
+      }
+      float aSel = PI*(0.75 + 0.75*2*aNorm);
+
+      int c32Arc = sdvg_MixARGBf(c32,
+                                 lnf.getTintedColor(LookAndFeel.COLOR_DIAL_MARKER, bg32_tint),
+                                 0.125f
+                                 );
+
+      if(toggleTint)
+         c32Arc = sdvg_TintARGB(c32Arc, toggleTint);
+
+      if(b_bipolar)
+      {
+         if(aNorm < 0.5)
+         {
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, r, r, r*0.4, r*0.4, 64, c32Arc,
+                                                PI*(1.5-1.5*(0.5-aNorm))/*aStart*/, PI*1.5/*aEnd*/
+                                                );
+         }
+         else
+         {
+            UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, r, r, r*0.4, r*0.4, 64, c32Arc,
+                                                PI*1.5/*aStart*/, PI*(0.75+1.5*aNorm)/*aEnd*/
+                                                );
+         }
+      }
+      else
+      {
+         UIRenderer.DrawFilledEllipsePartial(sx*0.5, sy*0.5, r, r, r*0.4, r*0.4, 64, c32Arc, PI*0.75/*aStart*/, aSel/*aEnd*/);
+      }
+
+      int c32Outline = lnf.getTintedColor(LookAndFeel.COLOR_DIAL_OUTLINE, bg32_tint);
+      if(toggleTint)
+         c32Outline = sdvg_TintARGB(c32Outline, toggleTint);
+
+      if(bDrawGL)
+      {
+         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+         UIRenderer.DrawFilledEllipse(sx*0.5, sy*0.5, r, r, 64, c32Outline);
+         glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+      }
+      else
+      {
+         UIRenderer.DrawEllipse(sx*0.5, sy*0.5, r, r, 64, c32Outline);
+      }
+
+      // Draw current value marker
+      float x1 = cos(aSel)*r + sx*0.5;
+      float y1 = sin(aSel)*r + sy*0.5;
+      float x2 = cos(aSel)*r*0.4 + sx*0.5;
+      float y2 = sin(aSel)*r*0.4 + sy*0.5;
+
+      if(lnf.b_dial_linesmooth)
+      {
+         UIRenderer.SetLineWidth(2.0*UI.font_scaling);
+         if(bDrawGL)
+         {
+            glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);  // b_draw_gl
+            glEnable(GL_LINE_SMOOTH);  // b_draw_gl
+         }
+      }
+      else
+      {
+         UIRenderer.SetLineWidth(1.0f);
+      }
+
+      int c32Marker = sdvg_TintARGB(lnf.getTintedColor(LookAndFeel.COLOR_DIAL_MARKER, bg32_tint), fg32_tint);
+      if(toggleTint)
+         c32Marker = sdvg_TintARGB(c32Marker, toggleTint);
+      if(!b_editable)
+         c32Marker = sdvg_TintARGB(c32Marker, lnf.getColor(LookAndFeel.COLOR_DIAL_MARKER_NOTEDITABLE));
+
+      UIRenderer.DrawLine(x1, y1, x2, y2, c32Marker);
+
+      if(bDrawGL)
+         glDisable(GL_LINE_SMOOTH);  // b_draw_gl
+
+      UIRenderer.SetLineWidth(1.0f);
+
+      UIRenderer.DisableBlending();
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+      // // trace "xxx Dial::beginXFMTag: attributes="+#(_attributes);
+
+      initDial(0, 1, 0.5);
+
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         String *atname;
+         foreach atname in _attributes
+         {
+            String atval <= _attributes[atname];
+            local StringArray *atsplit;
+            String *atsplitval;
+            String atnamelc;
+            atname.toLower() => atnamelc;
+            switch(atnamelc)
+            {
+               case "mod":
+                  b_mod_mode = (0 != int(atval));
+                  break;
+
+               case "min":
+                  min_value = atval;
+                  break;
+
+               case "max":
+                  max_value = atval;
+                  break;
+
+               case "value":
+                  cur_value = atval;
+                  break;
+
+               case "reset":
+                  if(atval & ";")
+                  {
+                     // multiple reset values (cycle list)
+                     atsplit <= atval.splitChar(';');
+                     cycle_reset_values <= new FloatArray;
+                     foreach atsplitval in atsplit
+                        cycle_reset_values.add(atsplitval);
+                  }
+                  else
+                  {
+                     cycle_reset_values <= null;
+                     reset_value = atval;
+                     b_have_reset_value = true;
+                  }
+                  break;
+
+               case "stepcoarse":
+                  step_coarse = atval;
+                  break;
+
+               case "step":
+                  step_coarse = atval;
+                  // step_fine = step_coarse;
+                  break;
+
+               case "precision":
+                  precision = atval;
+                  break;
+
+               case "quant":
+                  setEnableAllowQuantization(atval);
+                  break;
+
+               case "detailedit":
+                  b_no_detail_edit = (0 == int(atval));
+                  break;
+
+               case "drawtabfocus":
+                  b_draw_tab_focus = (0 != int(atval));
+                  break;
+
+               case "bipolar":
+                  b_bipolar = (0 != int(atval));
+                  break;
+
+               case "presets":
+                  if(atval & ";")
+                  {
+                     // multiple reset values (cycle list)
+                     atsplit <= atval.splitChar(';');
+                     FloatArray presetValues <= new FloatArray;
+                     foreach atsplitval in atsplit
+                        presetValues.add(atsplitval);
+                     setPresetOptions(deref presetValues, null/*presetNamesOrNull*/);
+                  }
+                  else
+                  {
+                     trace "[---] Dial::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list).";
+                     return false;
+                  }
+                  break;
+
+               case "showpresetvalues":
+                  setEnableShowPresetValues(int(atval));
+                  break;
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName <= _ac.getActionName();
+
+      switch(@(ap))
+      {
+         case @(dlg_floatparam):
+            boolean bChanging = (FloatParamDialog.ACTION_FLOATPARAMVALUECHANGING == acName);
+            if(FloatParamDialog.ACTION_FLOATPARAMDIALOGCANCELED != acName)
+            {
+               setValue(dlg_floatparam.getValue());
+               handleValueChanged();
+            }
+            if(!bChanging)
+               UI.SetKeyboardFocus(this);
+            return true;
+
+         case @(preset_popup)
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               IntAction iac <= _ac;
+               setValue(preset_values.get(iac.getIntValue()));
+               updateToggleStateFromValue();
+               handleValueChanged();
+               redraw();
+            }
+            UI.SetKeyboardFocus(this);
+            return true;
+      }
+
+      return Control::consumeAction(_ac);
+   }
+
+}

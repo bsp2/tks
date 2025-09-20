@@ -1,0 +1,312 @@
+// ----
+// ---- file   : XYPad.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- created: 29Oct2022
+// ---- changed: 10Nov2022, 03Oct2023, 22Mar2024, 10Sep2025, 11Sep2025, 12Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+module MXYPad;
+
+namespace ui;
+
+
+class XYPad extends Control {
+
+   define String ACTION_VALUECHANGING = "onValueChanging";
+   define String ACTION_VALUECHANGED  = "onValueChanged";
+
+   protected boolean b_pressed;
+
+   protected float cur_x;
+   protected float cur_y;
+
+   protected float reset_x;
+   protected float reset_y;
+
+   protected float orig_drag_x;
+   protected float orig_drag_y;
+
+
+   public function New(float _x, float _y) : XYPad {
+      local XYPad xy;
+      xy.initXYPad(_x, _y);
+      return deref xy;
+   }
+
+   public method initXYPad(float _x, float _y) {
+      initLayer();
+
+      b_editable = true;
+
+      cur_x = mathClampf(_x, 0.0f, 1.0f);
+      cur_y = mathClampf(_y, 0.0f, 1.0f);
+
+      reset_x = 0.5f;
+      reset_y = 0.5f;
+   }
+
+   public virtual onTabFocus() {
+      redraw();
+   }
+
+   public virtual onKeyboardFocusLost(boolean _bQuiet) {
+      if(!_bQuiet)
+         redraw();
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_BACKSPACE:
+               handleResetValue();
+               redraw();
+               return true;
+         }
+      }
+      return Control::onKey(_k);
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_VALUECHANGING, ACTION_VALUECHANGED];
+   }
+
+   protected method handleValueChanging() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_VALUECHANGING), this));
+   }
+
+   protected method handleValueChanged() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_VALUECHANGED), this));
+   }
+
+   protected method handleResetValue() {
+      setValueX(reset_x);
+      setValueY(reset_y);
+      handleValueChanged();
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      orig_drag_x = cur_x;
+      orig_drag_y = cur_y;
+      b_pressed = true;
+      return true;
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      // trace "xxx XYPad::onMouseDrag currentEv.mouse_rel_y="+_currentEv.mouse_rel_y;
+      onMouse(_currentEv);
+      return true;
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      onMouse(_ev);
+      handleValueChanged();
+      b_pressed = false;
+      redraw();
+   }
+
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      b_pressed = false;
+
+      setValueX(orig_drag_x);
+      setValueY(orig_drag_y);
+      handleValueChanged();
+      redraw();
+   }
+
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      // // return b_pressed;
+      // Not actually used but prevents parent from consuming the event
+      //  (e.g. RMB-hold-click is used to go to previous page in Eureka)
+      return true;
+   }
+
+   // // public virtual onMouseEnter(MouseEvent _ev) : boolean {
+   // //    b_pressed     = false;
+   // //    b_knob_grabbed = false;
+   // //    redraw();
+   // //    return Control::onMouseEnter(_ev);
+   // // }
+
+   // // public virtual onMouseLeave(MouseEvent _ev) : boolean {
+   // //    b_pressed     = false;
+   // //    b_knob_grabbed = false;
+   // //    cancelSliderTimer();
+   // //    redraw();
+   // //    return Control::onMouseLeave(_ev);
+   // // }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return b_pressed;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      return onMouse(_ev);
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      handleResetValue();
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      float w = getSizeX();
+      float h = getSizeY();
+
+      if(_ev.isLeftButtonDown())
+      {
+         UI.SetKeyboardFocus(this);
+         cur_x = (_ev.mouse_rel_x -3) / (w - 2*3);
+         cur_y = (_ev.mouse_rel_y -3) / (h - 2*3);
+         cur_x = mathClampf(cur_x, 0.0f, 1.0f);
+         cur_y = mathClampf(cur_y, 0.0f, 1.0f);
+         // trace "xxx XYPad::onMouse: cur=("+cur_x+";"+cur_y+")";
+         hideToolTip();
+         handleValueChanging();
+         redraw();
+         return true;
+      }
+
+      return Control::onMouse(_ev);  // start tool tip timer
+   }
+
+   public method setResetX(float _resetX) {
+      reset_x = _resetX;
+   }
+
+   public method setResetY(float _resetY) {
+      reset_y = _resetY;
+   }
+
+   public method getValueX() : float {
+      return cur_x;
+   }
+
+   public method getValueY() : float {
+      return cur_y;
+   }
+
+   public method setValueX(float _x) {
+      cur_x = _x;
+      redraw();
+   }
+
+   public method setValueY(float _y) {
+      cur_y = _y;
+      redraw();
+   }
+
+   public method setValues(float _x, float _y) {
+      setValueX(_x);
+      setValueY(_y);
+   }
+
+   public method getValueString() : String {
+      return "("+cur_x+";"+cur_y+")";
+   }
+
+   public virtual onDraw() {
+
+      float w = getSizeX();
+      float h = getSizeY();
+
+      int c32;
+
+      c32 = lnf.getTintedColor(LookAndFeel.COLOR_BORDER_MEDIUM, bg32_tint);
+      UIRenderer.DrawFilledRectangle(0, 0, w, h, c32);
+
+      local Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      sdvg_PushScissor(abspos.x+0.5+3, abspos.y+0.5+3, w+0.5-2*3, h+0.5-2*3);
+      sdvg_EnableScissor();
+
+      float px = 3 + (cur_x * (w-2*3));
+      float py = 3 + (cur_y * (h-2*3));
+
+      c32 = b_pressed ? #ffffffff : isLookAndFeelLight() ? #ff000000 : #ff999999;
+      if(fg32_tint)
+         c32 = sdvg_TintARGB(c32, fg32_tint);
+      UIRenderer.EnableBlendingKeepAlpha();
+      UIRenderer.SetPointSize(b_pressed ? 10.0 : 6.0);
+      UIRenderer.SetColorARGB(c32);
+      if(UIRenderer.BeginPointsRoundAA(1))
+      {
+         UIRenderer.Vertex2f(px, py);
+         UIRenderer.End();
+      }
+      UIRenderer.SetPointSize(1);
+      UIRenderer.DisableBlending();
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      UIRenderer.DrawDefaultSunkenBorderTint(0, 0, w, h, bg32_tint);
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initXYPad(0, 0);
+
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         // // trace "XYPad::beginXFMTag";
+         String *atname, *atval;
+         StringArray *atsplit;
+
+         reset_x = 0.5f;
+         reset_y = 0.5f;
+
+         b_editable = true;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "resetx":
+                  setResetX(float(atval));
+                  break;
+
+               case "resety":
+                  setResetY(float(atval));
+                  break;
+
+               case "valuex":
+                  setValueX(float(atval));
+                  break;
+
+               case "valuey":
+                  setValueY(float(atval));
+                  break;
+
+               case ACTION_VALUECHANGED:
+               case ACTION_VALUECHANGING:
+                  _form.addHandledAction(atname, FloatAction, atval);
+                  break;
+            }
+         }
+
+         setLayerStyle(layer_style);
+      }
+      return true;
+   }
+
+   // // public virtual consumeAction(Action _ac) : boolean {
+   // //    return Control::consumeAction(_ac);
+   // // }
+
+}

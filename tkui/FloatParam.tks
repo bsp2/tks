@@ -1,0 +1,2498 @@
+// ----
+// ---- file   : FloatParam.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2009-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 14Jun2009
+// ---- changed: 15Jun2009, 16Jun2009, 19Sep2009, 02Jan2010, 03Jan2010, 05Jan2010, 07Jan2010
+// ----          21Feb2010, 22Feb2010, 24Apr2010, 27May2010, 09Sep2010, 19Oct2010, 24Feb2011
+// ----          13Mar2011, 17Mar2011, 20Mar2011, 22Apr2011, 01Feb2012, 02Feb2012, 24Feb2012
+// ----          01Jul2012, 08Jan2013, 27May2013, 21Aug2014, 22Aug2014, 14Sep2014, 27Sep2014
+// ----          01Feb2015, 05Feb2015, 19Feb2015, 02Mar2015, 01Nov2015, 14Nov2015, 17Nov2015
+// ----          10Apr2016, 13Apr2016, 09Jul2016, 22Jul2016, 09Sep2016, 02Oct2016, 13Feb2017
+// ----          16Feb2017, 17Feb2017, 04Mar2017, 11Mar2017, 12Mar2017, 11Feb2018, 27Nov2018
+// ----          02Oct2019, 04Oct2019, 06Oct2019, 26Feb2020, 15Apr2020, 22May2020, 25May2020
+// ----          19Jun2020, 20Jul2020, 26Jul2020, 13Aug2020, 20Aug2020, 27Oct2020, 08Nov2020
+// ----          20May2021, 03Jun2021, 10Jul2021, 16Jul2021, 20Jul2021, 01Apr2022, 29Sep2022
+// ----          30Sep2022, 02Oct2022, 09Oct2022, 10Oct2022, 11Oct2022, 06Nov2022, 10Nov2022
+// ----          12Nov2022, 22Dec2022, 10Feb2023, 30Mar2023, 11Aug2023, 16Aug2023, 23Aug2023
+// ----          12Sep2023, 13Sep2023, 18Sep2023, 03Oct2023, 20Oct2023, 27Oct2023, 01Nov2023
+// ----          10Nov2023, 28Nov2023, 30Nov2023, 01Dec2023, 23Dec2023, 07Jan2024, 21Mar2024
+// ----          22Mar2024, 29Mar2024, 14Sep2024, 01Oct2024, 04Oct2024, 07Oct2024, 09Oct2024
+// ----          10Oct2024, 13Oct2024, 26Dec2024, 30Dec2024, 14Jan2025, 15Jan2025, 31Jan2025
+// ----          02Apr2025, 20May2025, 10Sep2025
+// ----
+// ----
+// ----
+
+module MFloatParam;
+
+namespace ui;
+
+
+class FloatParam extends TextField {
+
+   define String ACTION_VALUECHANGING  = "onValueChanging";
+   define String ACTION_VALUEEDITED    = "onValueEdited";    // while typing chars, b_provide_edited must be true
+   define String ACTION_VALUECHANGED   = "onValueChanged";   // tab, return
+   define String ACTION_VALUEENTERED   = "onValueEntered";   // when b_provide_entered=1 (return key, _not_ tab)
+   define String ACTION_VALUEUNCHANGED = "onValueUnchanged"; // when TextField::b_provide_unchanged=1 (def=0)
+   define String ACTION_TOGGLEHEX      = "onToggleHex";
+   define String ACTION_CANCELEDITING;                       // when b_provide_cancel=1
+
+   define int DISPLAY_FLOAT     = 0;
+   define int DISPLAY_HEX       = 1;  // 0xFF
+   define int DISPLAY_HEX_SHORT = 2;  // FF
+   define int DISPLAY_PERCENT   = 3;
+   define int DISPLAY_USER      = 4;
+   define int DISPLAY_BINARY255 = 5;
+   define int DISPLAY_POW2      = 6;
+   define int DISPLAY_UFIX16    = 7;  // 255:255
+
+   define int DEAD_ZONE_X = 21;
+   define int DEAD_ZONE_Y = 7;
+
+   define float NO_LIMIT = 9999999;
+
+   protected Object  *user_tbl;
+   protected boolean  b_user_tbl_start_0;  // true=user table starts at 0. false=user table starts at min_value.
+
+   protected Function *user_stringtovalue_fxn;
+   protected Function *user_valuetostring_fxn;
+
+   namespace float       min_value;
+   namespace float       max_value;
+   protected float       min_value_limit;
+   protected float       max_value_limit;
+   protected float       nominal_min_value;
+   protected float       nominal_max_value;       // NO_LIMIT = use min_value/max_value
+   namespace float       cur_value;
+   protected float       reset_value;             // dblclick
+   protected FloatArray *cycle_reset_values;
+   protected float       center_value;
+   protected boolean     b_cyclic;                // true=enable cyclic mode (wrap around in min..max range, e.g. for -360Â°..360Â° angles)
+   namespace float       step_fine;
+   namespace float       step_coarse;
+   namespace int         precision;               // number of decimal places
+   protected int         mouse_precision;         // number of decimal places (mouse drag). -1=same as 'precision'
+   protected int         mouse_precision_ctrl;    // number of decimal places (LCTRL + mouse drag). def=-1 (auto: 2 in PERCENT mode, 0 otherwise)
+   protected float       mouse_precision_muldiv;  // != 0:   int(value*muldiv)/float(muldiv)
+   protected boolean     b_skip_mouse_precision;  // true=use precision instead of mouse_precision ('m' key)
+   protected float       float_display_bias;      // added when converting to string, subtracted when converting to float. e.g. for displaying 0..127 as -64..63
+   protected boolean     b_force_fine_edit;       // same as (continuously) holding LSHIFT
+
+   public int last_dir; // [04Oct2024] written but never read. remove?
+
+   namespace boolean b_range_min_editable;
+   namespace boolean b_range_max_editable;
+
+   static FloatParamEditor *editor;
+
+   namespace int display_type; // see DISPLAY_xxx
+   protected int pre_toggle_hexdec_display_type;  // for toggling between hex/dec/percentage when display_type was PERCENT
+
+   define float DRAG_PIXEL_RANGE_X = 64;
+   define float DRAG_PIXEL_RANGE_Y = 192;
+
+   protected float drag_start_value;
+   protected float drag_undo_value;
+   protected float drag_undo_min_value;
+   protected float drag_undo_max_value;
+   protected float drag_r;
+   protected float drag_xrange;
+   protected float drag_start_x;
+   protected float drag_start_y;
+   protected float drag_last_x;
+   protected float drag_last_y;
+   protected boolean b_drag_lock_x;
+   protected boolean b_no_drag_value_changed;  // 1=provide VALUE_CHANGING instead of VALUE_CHANGED at end of mouse drag (TextEdit dlg_number)
+   protected int drag_rate_limiter_ms;  // limits mouse drag events to given interval. 0=off (report each change)
+   protected int t_drag_last_ev;
+
+   protected float rx_center_dead_l;  // during mouse drag, center value dead zone left/right
+   protected float rx_center_dead_r;
+   protected float ry_center_dead_u;  // during mouse drag, center value dead zone up/down
+   protected float ry_center_dead_d;
+   protected float v_center_dead_l;
+   protected float v_center_dead_r;
+   protected float v_center_dead_u;
+   protected float v_center_dead_d;
+
+   protected String *non_editable_text;
+   protected String *negative_text;       // e.g. -0.01 = "-"
+   protected float   negative_threshold;  // show negative_text when value is < negative_threshold (def=0.0)
+   protected String *zero_text;           // e.g. 0 = "<auto>"
+
+   protected boolean b_provide_edited;
+   protected boolean b_provide_cancel;
+   namespace boolean b_provide_changing; // 1=continously send events. 0=only send event after all editing is done
+
+   protected boolean b_table_mode;  // LMB-drag to edit values, no dialog allowed, no text editing
+
+   protected boolean b_progress;      // indicate cur value relative to min/max range via background color
+   protected boolean b_progress_log;  // use logarithmic progress curve (e.g. step res)
+
+   namespace boolean b_fraction;  // show values <1 as "1/x"
+
+   protected ComboBoxPopup *preset_popup;
+   protected FloatArray    *preset_values;
+   protected StringArray   *preset_names;
+   protected StringArray   *preset_options;   // allocated when ComboBoxPopup is shown
+   protected boolean        b_show_preset_values;  // 1=show preset values in preset selector  0=show names only
+
+   protected boolean b_outline;
+   protected boolean b_display_0_as_blank;
+
+   int progress_tint;
+
+   protected String *unit;
+
+   protected boolean b_wheel_discard_frac;
+
+   protected boolean b_provide_entered;
+
+   boolean b_flip_mouse_x;
+   boolean b_flip_x;
+
+
+   public static New() : FloatParam {
+      local FloatParam fp;
+      fp.initFloatParam();
+      return deref fp;
+   }
+
+   public method initFloatParam() {
+      initTextField();
+
+      min_value = 0.0f;
+      max_value = 1.0f;
+      cur_value = 0.5f;
+
+      step_fine   = 0.01f;
+      step_coarse = 0.1f;
+
+      precision            =  3;
+      mouse_precision      = -1;
+      mouse_precision_ctrl = -1;
+
+      b_range_min_editable  = false;
+      b_range_max_editable  = false;
+
+      min_value_limit = NO_LIMIT;
+      max_value_limit = NO_LIMIT;
+
+      nominal_min_value = NO_LIMIT;
+      nominal_max_value = NO_LIMIT;
+
+      b_provide_changing = true;
+
+      setPadTop(1);
+      setPadRight(1);
+
+      setDisplayType(DISPLAY_FLOAT);
+      setVisibleTextLength(6);
+      pre_toggle_hexdec_display_type = -1;
+
+      b_progress = true;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [
+         ACTION_TEXTCHANGED,   ACTION_TEXTENTERED,  ACTION_TEXTEDITED,     ACTION_TEXTUNCHANGED,
+         ACTION_VALUECHANGING, ACTION_VALUECHANGED, ACTION_VALUEUNCHANGED, ACTION_VALUEENTERED,
+         ACTION_VALUEEDITED,   ACTION_TOGGLEHEX,    ACTION_STARTEDITING,   ACTION_STOPEDITING,
+         ACTION_CANCELEDITING,
+         ACTION_TABAUTOCOMPLETE
+      ];
+   }
+
+   public method setEnableForceFineEdit(boolean _bEnable) {
+      b_force_fine_edit = _bEnable;
+   }
+
+   public method setEnableTableMode(boolean _bEnable) {
+      b_table_mode = _bEnable;
+   }
+
+   public method setEnableProgress(boolean _bEnable, boolean _bLog) {
+      b_progress     = _bEnable;
+      b_progress_log = _bLog;
+   }
+
+   public method setEnableOutline(boolean _bEnable) {
+      b_outline = _bEnable;
+   }
+
+   public method setEnableDisplayZeroAsBlank(boolean _bEnable) {
+      b_display_0_as_blank = _bEnable;
+   }
+
+   public method setProgressTint(int _tint) {
+      progress_tint = _tint;
+   }
+
+   public method setEnableProvideEdited(boolean _bEnable) {  // char typed
+      b_provide_edited = _bEnable;
+   }
+
+   public method setEnableProvideEntered(boolean _bEnable) {
+      b_provide_entered = _bEnable;
+   }
+
+   public method setEnableProvideCancel(boolean _bEnable) {
+      b_provide_cancel = _bEnable;
+   }
+
+   public method setEnableProvideDrag(boolean _bEnable) {
+      setEnableProvideStart (_bEnable);
+      setEnableProvideStop  (_bEnable);
+      setEnableProvideCancel(_bEnable);
+   }
+
+   public method getEnableProvideDrag() : boolean {
+      return b_provide_start && b_provide_stop && b_provide_cancel;
+   }
+
+   public method setEnableProvideDragValueChanged(boolean _bEnable) {
+      // e.g. TextEdit dlg_number (=> don't close dialog after mouse drag)
+      b_no_drag_value_changed = !_bEnable;
+   }
+
+   public method setDragRateLimit(int _ms) {
+      drag_rate_limiter_ms = mathMaxi(0, _ms);
+   }
+
+   public method showEditor() {
+      if(null == editor)
+      {
+         editor <= new FloatParamEditor;
+         editor.initEditor();
+      }
+      if(editor.isFloatingLayerVisible())
+      {
+         // Close editor
+         editor.hide();
+         // // editor.handleSelection(true, true/*bHold*/);
+         UI.SetKeyboardFocus(this);
+      }
+      else
+      {
+         editor.showEditorFromParent(this);
+         // // trace "xxx FloatParam::showEditor: this.lnf.getName()="+lnf.getName();
+         // // if(0) editor.recursiveSetLookAndFeel(lnf.getName());
+      }
+   }
+
+   public method moveEditorToPosition2f(float x, y) {
+      if(null != editor)
+      {
+         editor.moveToPosition2f(x, y);
+      }
+   }
+
+   public virtual stopEditing(boolean _bProvideAction, boolean _bReturnKey, boolean _bQuiet) {
+      TextField::stopEditing(_bProvideAction, _bReturnKey, _bQuiet);
+
+      // // trace "xxx FloatParam::stopEditing: text=\""+getText()+"\"";
+
+      if(_bReturnKey)
+      {
+         float f = getFloatValue();
+         if(b_range_min_editable)
+         {
+            if(f < min_value)
+               setMinValue(f);
+         }
+
+         if(b_range_max_editable)
+         {
+            if(f > max_value)
+               setMaxValue(f);
+         }
+      }
+   }
+
+   public method setMinValue(float _v) {
+      if((NO_LIMIT != min_value_limit) && (_v < min_value_limit))
+      {
+         _v = min_value_limit;
+      }
+      min_value = _v;
+   }
+
+   public method getMinValue() : float {
+      return min_value;
+   }
+
+   public method setMaxValue(float _v) {
+      if((NO_LIMIT != max_value_limit) && (_v > max_value_limit))
+      {
+         _v = max_value_limit;
+      }
+      max_value = _v;
+   }
+
+   public method getMaxValue() : float {
+      return max_value;
+   }
+
+   public method setMinMaxValues(float _min, float _max) {
+      setMinValue(_min);
+      setMaxValue(_max);
+   }
+
+   public method setMinValueLimit(float _v) {
+      min_value_limit = _v;
+   }
+
+   public method getMinValueLimit() : float {
+      return min_value_limit;
+   }
+
+   public method setMaxValueLimit(float _v) {
+      max_value_limit = _v;
+   }
+
+   public method getMaxValueLimit() : float {
+      return max_value_limit;
+   }
+
+   public method setMinMaxLimits(float _min, float _max) {
+      min_value_limit = _min;
+      max_value_limit = _max;
+   }
+
+   public method setNominalValues(float _min, float _max) {
+      // Use NO_LIMIT to disable nominal value
+      nominal_min_value = _min;
+      nominal_max_value = _max;
+   }
+
+   public method setNominalMin(float _min) {
+      // Use NO_LIMIT to disable nominal value
+      nominal_min_value = _min;
+   }
+
+   public method setNominalMax(float _max) {
+      // Use NO_LIMIT to disable nominal value
+      nominal_max_value = _max;
+   }
+
+   public method setResetValue(float _f) {
+      reset_value = _f;
+   }
+
+   public method getResetValue() : float {
+      return reset_value;
+   }
+
+   public method setResetValues(FloatArray _fa) {
+      if(null != _fa)
+      {
+         cycle_reset_values <= new FloatArray;
+         cycle_reset_values  = _fa;
+      }
+      else
+      {
+         cycle_reset_values <= null;
+      }
+   }
+
+   public method setCenterValue(float _center) {
+      center_value = _center;
+   }
+
+   public method getCenterValue() : float {
+      return center_value;
+   }
+
+   public method setFloatDisplayBias(float _bias) {
+      float_display_bias = _bias;
+   }
+
+   public method getFloatDisplayBias() : float {
+      return float_display_bias;
+   }
+
+   public method setEnableCyclic(boolean _bEnable) {
+      b_cyclic = _bEnable;
+   }
+
+   public method getEnableCyclic() : boolean {
+      return b_cyclic;
+   }
+
+   public method setPrecision(int _prec) {
+      precision = _prec;
+   }
+
+   public method getPrecision() : int {
+      return precision;
+   }
+
+
+   public method clipStepToPrecision() {
+      float fprec = 1.0 / mathPowerf(10, precision);
+      if(step_fine < fprec)
+         step_fine = fprec;
+      if(step_coarse < fprec)
+         step_coarse = fprec;
+      // trace "xxx clipStepToPrecision: fprec="+fprec+" stepFine="+step_fine+" stepCoarse="+step_coarse;
+   }
+
+   public method setMousePrecision(int _prec) {
+      mouse_precision = _prec;
+   }
+
+   public method getMousePrecision() : int {
+      return mouse_precision;
+   }
+
+   public method setMousePrecisionCtrl(int _prec) {
+      mouse_precision_ctrl = _prec;
+   }
+
+   public method getMousePrecisionCtrl() : int {
+      return mouse_precision_ctrl;
+   }
+
+   public method setMousePrecisionMulDiv(float _prec) {
+      mouse_precision_muldiv = _prec;
+   }
+
+   public method getMousePrecisionMulDiv() : float {
+      return mouse_precision_muldiv;
+   }
+
+   public method setStepFine(float _a) {
+      step_fine = _a;
+   }
+
+   public method getStepFine() : float {
+      return step_fine;
+   }
+
+   public method setStepCoarse(float _a) {
+      step_coarse = _a;
+   }
+
+   public method getStepCoarse() : float {
+      return step_coarse;
+   }
+
+   public method setStep(float _a) {
+      step_fine = _a;
+      step_coarse = _a;
+   }
+
+   public static StringToValue(String     _text,
+                               int        _displayType,
+                               boolean    _bFraction,
+                               float      _floatDisplayBias,
+                               FloatParam _parentOrNull,
+                               int        _idxHint,
+                               int        _usrTblMin,
+                               String     _unitOrNull
+                               ) : float {
+      // // trace "xxx FloatParam::StringToValue text=\""+_text+"\"";
+      float f;
+      String t;
+
+      if((null != _parentOrNull) && (null != _parentOrNull.negative_text) && (_text == _parentOrNull.negative_text))
+         return _parentOrNull.min_value;
+
+      if((null != _parentOrNull) && (null != _parentOrNull.zero_text) && (_text == _parentOrNull.zero_text))
+         return 0.0;
+
+      if(DISPLAY_PERCENT == _displayType)
+      {
+         f = float(_text.replace("%", ""));
+         f = f * 0.01f;
+      }
+      else if(DISPLAY_USER == _displayType)
+      {
+         if(null != _parentOrNull)
+         {
+            Object usrTbl <= _parentOrNull.user_tbl;
+            String txTrim <= _text.trim();
+            int usrTblIdx = 0;
+
+            if(usrTbl instanceof StringArray)
+            {
+               StringArray usrTblStr <= usrTbl;
+               String *usrTblEn;
+               // // trace "xxx FloatParam::StringToValue: text=\""+_text+"\" idxHint="+_idxHint+" usrTblMin="+_usrTblMin;
+               if(-1 != _idxHint)
+               {
+                  _idxHint += _floatDisplayBias;
+                  // when user table contains duplicate entries (like "H1;H1;H1")
+                  usrTblEn <= usrTblStr.get(_idxHint);
+                  if(null != usrTblEn)
+                  {
+                     if(usrTblEn.compareIgnoreCase(txTrim))
+                        return _idxHint - _floatDisplayBias;
+                  }
+               }
+
+               foreach usrTblEn in usrTblStr
+               {
+                  if(usrTblEn.compareIgnoreCase(txTrim))
+                  {
+                     return usrTblIdx + _usrTblMin - _floatDisplayBias;
+                  }
+                  usrTblIdx++;
+               }
+            }
+            else if(null != usrTbl)
+            {
+               if(-1 != _idxHint)
+               {
+                  _idxHint += _floatDisplayBias;
+                  var arrEn = usrTbl.yacArrayGet(_idxHint);
+                  if(YAC_TYPE_VOID != typeid(arrEn))
+                  {
+                     if(arrEn == txTrim)
+                        return _idxHint - _floatDisplayBias;
+                  }
+               }
+
+               loop(usrTbl.yacArrayGetNumElements())
+               {
+                  if(usrTbl.yacArrayGet(usrTblIdx) == txTrim)
+                  {
+                     return usrTblIdx + _usrTblMin - _floatDisplayBias;
+                  }
+                  usrTblIdx++;
+               }
+            }
+         }
+      }
+      else if(DISPLAY_BINARY255 == _displayType)
+      {
+         t = _text;
+         if!(t <= "0b")
+            t.insert(0, "0b");
+         f = t;
+      }
+      else if(DISPLAY_POW2 == _displayType)
+      {
+         f = _text;
+         f = log(f) / log(2);
+      }
+      else if(DISPLAY_UFIX16 == _displayType)
+      {
+         int idxDot = _text.indexOfChar(':', 0);
+         if(-1 != idxDot)
+            f = (int(_text.substring(0,idxDot)) * 256) + (int(_text.substring(idxDot+1, 99)) & 255);
+         else
+            f = (int(_text.substring(0,idxDot)) * 256);
+      }
+      else
+      {
+         // (note) String->float conversion can handle hex strings
+         t = _text.replaceChar(',', '.');
+
+         if(null != _unitOrNull)
+            if(t >= _unitOrNull)
+               t.replace(_unitOrNull, "");
+
+         // // trace "xxx StringToValue: t=\""+t+"\" bFraction="+_bFraction;
+
+         if(_bFraction)
+         {
+            if(-1 != _text.indexOfChar('/', 0))
+            {
+               f = ParseExpression(t);
+            }
+            else
+            {
+               f = float(t);
+            }
+         }
+         else
+         {
+            if((DISPLAY_HEX_SHORT == _displayType) || ((DISPLAY_HEX == _displayType) && !(t.startsWith("0x") || t.startsWith("$") || t.startsWith("#"))))
+            {
+               t = "$"+t;
+            }
+            f = float(t) - _floatDisplayBias;
+         }
+      }
+      return f;
+   }
+
+   public static ValueToString(float      _v,
+                               float      _maxV,
+                               int        _displayType,
+                               boolean    _bFraction,
+                               float      _floatDisplayBias,
+                               String     _r,
+                               FloatParam _parentOrNull,
+                               int        _usrTblMin,
+                               boolean    _b0AsBlank,
+                               String     _unitOrNull
+                               ) {
+
+      _r.empty();
+
+      // // trace "xxx ValueToString: displayType="+_displayType+" v="+_v;
+
+      if((null != _parentOrNull) && (null != _parentOrNull.negative_text) && (_v < _parentOrNull.negative_threshold))
+      {
+         _r = _parentOrNull.negative_text;
+         return;
+      }
+
+      if((null != _parentOrNull) && (null != _parentOrNull.zero_text) && (_v == 0.0))
+      {
+         _r = _parentOrNull.zero_text;
+         return;
+      }
+
+      Integer io;
+
+      switch(_displayType)
+      {
+         default:
+         case DISPLAY_FLOAT:
+            if(0 == _v)
+            {
+               if(_b0AsBlank && (0 == _v))
+                  _r = "";
+               else
+               {
+                  _r = String(_floatDisplayBias);
+                  if(null != _unitOrNull)
+                     _r.append(_unitOrNull);
+               }
+            }
+            else if((_v < 1.0) && _bFraction)
+            {
+               // // trace "xxx _v="+_v+" (_v < 1.0)="+(_v < 1.0);
+               _r = "1/"+(String(int(0.5 + (1.0/_v))));
+            }
+            else
+            {
+               _r = String(_v + _floatDisplayBias);
+               if(null != _unitOrNull)
+                  _r.append(_unitOrNull);
+            }
+            break;
+
+         case DISPLAY_HEX:
+            io = _v;
+            if(_maxV == 0)
+            {
+               io.printf("0x%x") => _r;
+            }
+            else if(_maxV <= 0xF)
+            {
+               io.printf("0x%1x") => _r;
+            }
+            else if(_maxV <= 0xFF)
+            {
+               io.printf("0x%02x") => _r;
+            }
+            else if(_maxV <= 0xFFFF)
+            {
+               io.printf("0x%04x") => _r;
+            }
+            else if(_maxV <= 0xFFFFFF)
+            {
+               io.printf("0x%06x") => _r;
+            }
+            else
+            {
+               io.printf("0x%08x") => _r;
+            }
+            // // trace "xxx _r=\""+_r+"\". io="+io.string;
+            break;
+
+         case DISPLAY_HEX_SHORT:
+            io = _v;
+            if(_b0AsBlank && (0 == _v))
+              _r = "";
+            else
+               io.printf("%X") => _r;
+            break;
+
+         case DISPLAY_PERCENT:
+            _r = (_v * 100);
+            _r.append("%");
+            break;
+
+         case DISPLAY_USER:
+            if(null != _parentOrNull)
+            {
+               if(null != (_parentOrNull.user_tbl))
+               {
+                  _r = _parentOrNull.user_tbl.yacArrayGet(_v - _usrTblMin + _floatDisplayBias);
+               }
+               else
+               {
+                  _r = "<user_tbl>";
+               }
+            }
+            else
+            {
+               _r = "<p.user_tbl>";
+            }
+            break;
+
+         case DISPLAY_BINARY255:
+            _r = UI.IntToBinary255String(_v);
+            break;
+
+         case DISPLAY_POW2:
+            _r = mathPowerf(2, _v);
+            if(null != _unitOrNull)
+               _r.append(_unitOrNull);
+            break;
+
+         case DISPLAY_UFIX16:
+            _r = "";
+            if!(_b0AsBlank && (0 == _v))
+            {
+               io = (_v >> 8) & 255;
+               _r.append(io.printf("%d"));
+               if( (_v & 255) > 0 )
+               {
+                  _r.append(":");
+                  io = (_v & 255);
+                  _r.append(io.printf("%d"));
+               }
+            }
+            break;
+      }
+   }
+
+   public static ApplyPrecision(float _v, int _precision) : float {
+      float fprec = mathPowerf(10, _precision);
+      Long lo;
+      if(_v >= 0)
+         lo = (0.5f + _v * fprec);
+      else
+         lo = (-0.5f + _v * fprec);
+
+      // // _v = (lo / float(fprec));
+
+      Double dv = lo;
+      loop(_precision) // workaround for Apple m2pro (returns 0.999999 for precision=5 otherwise)
+         dv /= 10;
+
+      return float(dv);
+   }
+
+   public method setValue(float _v) {
+      // // trace "xxx FloatParam::setValue: v="+_v;
+
+      last_dir = (_v >= cur_value) ? 1 : -1;
+
+      _v = ApplyPrecision(_v, precision);
+
+      if(b_cyclic)
+      {
+         float cyclicRange = (max_value - min_value);
+         _v -= min_value;
+         _v = _v % cyclicRange;
+         _v += min_value;
+      }
+
+      // Clip
+      if(_v < min_value)
+      {
+         if(b_range_min_editable)
+         {
+            setMinValue(_v);
+            _v = min_value;
+         }
+         else
+         {
+            _v = min_value;
+         }
+      }
+      else if(_v > max_value)
+      {
+         if(b_range_max_editable)
+         {
+            setMaxValue(_v);
+            _v = max_value;
+         }
+         else
+         {
+            _v = max_value;
+         }
+      }
+
+      String t;
+      if(null != user_valuetostring_fxn)
+      {
+         user_valuetostring_fxn.eval([_v, t]);
+      }
+      else
+      {
+         ValueToString(_v,
+                       max_value,
+                       display_type,
+                       b_fraction,
+                       float_display_bias,
+                       t,
+                       this,
+                       b_user_tbl_start_0 ? 0 : min_value/*usrTblMin*/,
+                       b_display_0_as_blank,
+                       unit
+                       );
+      }
+      setText(t);
+
+      // // trace "xxx FloatParam::setValue: v="+_v+" min="+min_value+" max="+max_value+" t="+t;
+
+      cur_value = _v;
+
+      b_update_inner_layout = true;
+   }
+
+   public method setValueAndEnable(float _v) {
+      setEditable(true);
+      setValue(_v);
+   }
+
+   public method setValueAndDisable(float _v) {
+      setEditable(false);
+      setValue(_v);
+   }
+
+   public method setValueAction(float _v) {
+      setValue(_v);
+      handleValueChanging();
+   }
+
+   public method setNonEditableText(String _text) {
+      non_editable_text <= (null != _text) ? Object(_text) : null;
+      b_update_inner_layout = true;
+   }
+
+   public method setNegativeText(String _text) {
+      negative_text <= (null != _text) ? Object(_text) : null;
+      b_update_inner_layout = true;
+   }
+
+   public method setNegativeThreshold(float _val) {
+      negative_threshold = _val;
+      b_update_inner_layout = true;
+   }
+
+   public method setZeroText(String _text) {
+      zero_text <= (null != _text) ? Object(_text) : null;
+      b_update_inner_layout = true;
+   }
+
+   public method setValueAndClip(float _v) {
+      // // trace "xxx FloatParam::setValueAndClip: v="+_v;
+
+      float fprec = mathPowerf(10, precision);
+      Long lo;
+      if(_v >= 0)
+         lo = (0.5f + _v * fprec);
+      else
+         lo = (-0.5f + _v * fprec);
+
+      _v = (lo / float(fprec));
+
+      // Clip to min/max
+      _v = mathClampf(_v, min_value, max_value);
+
+      String t;
+      if(null != user_valuetostring_fxn)
+      {
+         user_valuetostring_fxn.eval([_v, t]);
+      }
+      else
+      {
+         ValueToString(_v,
+                       max_value,
+                       display_type,
+                       b_fraction,
+                       float_display_bias,
+                       t,
+                       this,
+                       b_user_tbl_start_0 ? 0 : min_value/*usrTblMin*/,
+                       b_display_0_as_blank,
+                       unit
+                       );
+      }
+      setText(t);
+
+      // // trace "xxx FloatParam::setValueAndClip: v="+_v+" min="+min_value+" max="+max_value+" t="+t;
+
+      cur_value = _v;
+
+      b_update_inner_layout = true;
+   }
+
+   public virtual getDisplayedText() : String {
+      if(!isEditable() && (null != non_editable_text))
+      {
+         return non_editable_text;
+      }
+      else
+      {
+         return text;
+      }
+   }
+
+   public method setDisplayType(int _type) {
+      display_type = _type;
+
+      switch(display_type)
+      {
+         default:
+         case DISPLAY_FLOAT:
+            setCharFilter(UI.char_filter_float_expr);
+            break;
+
+         case DISPLAY_HEX:
+            setCharFilter(UI.char_filter_hex_expr);
+            break;
+
+         case DISPLAY_HEX_SHORT:
+            setCharFilter(UI.char_filter_hex_short_expr);
+            break;
+
+         case DISPLAY_PERCENT:
+            setCharFilter(UI.char_filter_float_expr);
+            break;
+
+         case DISPLAY_USER:
+            setCharFilter(null);
+            break;
+
+         case DISPLAY_BINARY255:
+            setCharFilter(UI.char_filter_binary255_expr);
+            break;
+
+         case DISPLAY_POW2:
+            setCharFilter(UI.char_filter_float_expr);
+            break;
+
+         case DISPLAY_UFIX16:
+            setCharFilter(UI.char_filter_ufix16);
+            break;
+      }
+   }
+
+   public method getDisplayType() : int {
+      return display_type;
+   }
+
+   public method updateValue() {
+      setValue(getValue());
+   }
+
+   public method setUserTable(Object _userTbl) {
+      user_tbl <= deref _userTbl;
+   }
+
+   public method setEnableUserTableStart0(boolean _bEnable) {
+      b_user_tbl_start_0 = _bEnable;
+   }
+
+   public method getUserTable() : Object {
+      return user_tbl;
+   }
+
+   public method setUserStringToValueFxn(Function _fxn) {
+      // (note) display_type must be set to DISPLAY_USER
+      user_stringtovalue_fxn <= deref _fxn;
+   }
+
+   public method setUserValueToStringFxn(Function _fxn) {
+      // (note) display_type must be set to DISPLAY_USER
+      user_valuetostring_fxn <= deref _fxn;
+   }
+
+   public method setUnit(String _unit) {
+      unit <= Object(_unit);
+   }
+
+   public method setEnableWheelDiscardFrac(boolean _bEnable) {
+      b_wheel_discard_frac = _bEnable;
+   }
+
+   public method setEnableMinEditable(boolean _bEditable) {
+      b_range_min_editable = _bEditable;
+   }
+
+   public method setEnableMaxEditable(boolean _bEditable) {
+      b_range_max_editable = _bEditable;
+   }
+
+   public method setEnableMinMaxEditable(boolean _bEditable) {
+      b_range_min_editable = _bEditable;
+      b_range_max_editable = _bEditable;
+   }
+
+   public method getValue() : float {
+      return cur_value;
+   }
+
+   public virtual getFloatValue() : float {
+      // // trace "xxx FloatParam::getFloatValue: getText=\""+getText()+"\" user_stringtovalue_fxn="+#(user_stringtovalue_fxn);
+      if(null != user_stringtovalue_fxn)
+      {
+         return user_stringtovalue_fxn.eval([getText()]);
+      }
+      else
+      {
+         return StringToValue(text,
+                              display_type,
+                              b_fraction,
+                              float_display_bias,
+                              this,
+                              cur_value/*idxHint*/,
+                              min_value/*usrTblMin*/,
+                              unit
+                              );
+      }
+   }
+
+   public virtual getFloatName() : String {
+      float f = getFloatValue();
+      if(null != preset_names && null != preset_values)
+      {
+         float r = max_value - min_value;
+         if(precision > 0)
+            r = (r * 0.5f);
+         else
+            r = 0;
+         int idx = preset_values.findNearestIdx1d(f, 0/*off*/, 1/*stride*/, r/*maxDist*/);
+         if(-1 != idx)
+         {
+            float fDist = f - preset_values.get(idx);
+            local Float fo = fDist;
+            if(0.0001f < fDist < 0.5f)
+               return f + "("+preset_names.get(idx)+"+"+fo.printf("%3.3f")+")";
+            else if(-0.5f < fDist < -0.0001f)
+               return f + "("+preset_names.get(idx)+fo.printf("%3.3f")+")";
+            else
+               return f + "("+preset_names.get(idx)+")";
+         }
+      }
+      return String(f);
+   }
+
+   public method validateValues() {
+
+      float curValue = getFloatValue();
+
+      // // trace "xxx FloatParam::validateValues: curValue="+curValue+" min="+min_value+" max="+max_value+" rangeEditable="+b_range_editable;
+
+      if(min_value > max_value)
+      {
+         float t = min_value;
+         min_value = max_value;
+         max_value = t;
+      }
+
+      if(curValue < min_value)
+      {
+         if(b_range_min_editable)
+         {
+            setMinValue(curValue);
+            curValue = min_value;
+         }
+         else
+         {
+            setValue(min_value);
+         }
+      }
+      else if(curValue > max_value)
+      {
+         if(b_range_max_editable)
+         {
+            setMaxValue(curValue);
+            curValue = max_value;
+         }
+         else
+         {
+            setValue(max_value);
+         }
+      }
+   }
+
+   public static method ParseExpression(String t) {
+      // minimal expression parser (+, -, *, /, &)
+      // returns <void> if no expression was found
+
+      t.replace("%", "");
+      t.replaceChar(',', '.');
+
+      if(-1 != t.charsetIndexOf('eE', 0))
+      {
+         // Do not interprete 1.21551e+006 style floating point numbers
+         //  (TODO) *really* fix the expr. parser to handle this case
+         return;
+      }
+
+      boolean bNeg;
+      if(t.getc(0) == '-')
+      {
+         bNeg = true;
+         t = t.substring(1, t.length);
+      }
+      else
+      {
+         bNeg = false;
+      }
+      int opIdx = t.charsetIndexOf("+-*/&", 0);
+      if(-1 != opIdx)
+      {
+         StringArray a;
+         String ta, tb;
+         float fa, fb;
+         t.substring(0, opIdx) => ta;
+         fa = ta;
+         t.substring(opIdx+1, 999999) => tb;
+         fb = tb;
+         if(bNeg)
+            fa = -fa;
+         // // trace "xxx FloatParam::parseExpression: fa="+fa+" fb="+fb+" op="+tcchar(t.getc(opIdx));
+         switch(t.getc(opIdx))
+         {
+            case '+':
+               return fa + fb;
+
+            case '-':
+               return fa - fb;
+
+            case '*':
+               return fa * fb;
+
+            case '/':
+               return fa / fb;
+
+            case '&':
+               return fa & fb;
+         }
+      }
+
+   }
+
+   protected method parseExpression() {
+      var f = ParseExpression(getText().trim());
+      // // trace "xxx FloatParam::parseExpression: text=\""+getText()+"\" f="+#(f);
+      if(typeid(f) == YAC_TYPE_FLOAT)
+      {
+         setValue(f);
+         validateValues();
+      }
+   }
+
+   public method setValueAndValidate(float _f) {
+      explain "Set value, adjust precision and clamp to min/max";
+
+      setValue(_f);
+      validateValues();
+   }
+
+   public method randomize() {
+      setValue(rand(getMaxValue() - getMinValue()) + getMinValue());
+   }
+
+   public method parseExpressionOrMapUser() {
+      if(DISPLAY_USER != display_type)
+      {
+         parseExpression();
+
+         // // setValueAndExtend(getFloatValue());
+         setValue(getFloatValue());
+      }
+      else
+      {
+         if(null != user_stringtovalue_fxn)
+         {
+            float userVal = user_stringtovalue_fxn.eval([getText()]);
+            // // trace "xxx FloatParam::parseExpressionOrMapUser: userVal="+userVal;
+            setValue(userVal);
+         }
+         else
+         {
+            setValue(StringToValue(text,
+                                   DISPLAY_USER,
+                                   b_fraction,
+                                   float_display_bias,
+                                   this,
+                                   cur_value/*idxHint*/,
+                                   min_value/*usrTblMin*/,
+                                   unit
+                                   )
+                     );
+         }
+      }
+   }
+
+   protected virtual handleTextEdited() {
+      if(b_provide_edited)
+      {
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUEEDITED), this, getFloatValue()));
+      }
+   }
+
+   protected virtual handleTextEntered() {
+
+      // // trace "xxx FloatParam::handleTextEntered: string="+getText();
+      parseExpressionOrMapUser();
+
+      // // // setValueAndExtend(getFloatValue());
+      setValue(getFloatValue());
+      if(b_provide_entered)
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUEENTERED), this, cur_value));
+      else
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, cur_value));
+      hideToolTip();
+   }
+
+   public virtual handleTextChanged() { // tab
+      // Called when the FloatParamEditor dialog is closed
+
+      parseExpressionOrMapUser();
+
+      provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, cur_value));
+      hideToolTip();
+   }
+
+   namespace method handleTextChangedFromEditor() { // SPACE/return in FloatParamEditor
+      handleTextChanged();
+      UI.SetKeyboardFocus(this);
+   }
+
+   public virtual handleTextUnchanged() {
+      // // trace "xxx FloatParam::emit VALUEUNCHANGED cur_value="+cur_value;
+      provideAction(Action.New(getProvidedActionAlias(ACTION_VALUEUNCHANGED), this));
+   }
+
+   public method handleValueChanging() {
+      if(b_provide_changing)
+      {
+         // // trace "xxx FloatParam::emit VALUECHANGING cur_value="+cur_value;
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGING), this, cur_value));
+         hideToolTip();
+      }
+   }
+
+   public method incCoarse() {
+      if(isEditable())
+      {
+         parseExpressionOrMapUser();  // update value from text
+
+         float newVal;
+
+         if(b_wheel_discard_frac)
+            cur_value = int(cur_value);
+
+         if(b_fraction)
+         {
+            if(cur_value < 1.0)
+            {
+               if(0 == cur_value)
+               {
+                  newVal = 1;
+               }
+               else
+               {
+                  int obx = int(0.5 + (1.0 / cur_value));
+                  obx--;
+                  if(obx < 0)
+                  {
+                     newVal = 1;
+                  }
+                  else
+                  {
+                     newVal = (1.0 / obx);
+                  }
+               }
+            }
+            else
+            {
+               newVal = cur_value + step_coarse;
+            }
+         }
+         else
+         {
+            // // trace "xxx incCoarse: cur_value="+cur_value+" step_coarse="+step_coarse+" newVal="+(cur_value + step_coarse);
+            newVal = cur_value + step_coarse;
+         }
+
+         setValueAndValidate(newVal);
+         handleValueChanging();
+         // // provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, cur_value));  // causes kbdfocus issue (refocusDefault())
+         last_dir = 1;
+         hideToolTip();
+         cancelToolTipTimer();
+      }
+   }
+
+   public method decCoarse() {
+      if(isEditable())
+      {
+         parseExpressionOrMapUser();  // update value from text
+
+         float newVal;
+
+         if(b_wheel_discard_frac)
+         {
+            if(frac(cur_value) > 0.001)
+               newVal = int(cur_value);
+            else
+               newVal = cur_value - step_coarse;
+         }
+         else if(b_fraction)
+         {
+            if(cur_value < 1.0)
+            {
+               int obx = int(0.5 + (1.0 / cur_value));
+               if(obx >= 32)
+               {
+                  newVal = 0;
+               }
+               else
+               {
+                  obx++;
+                  if(obx < 0)
+                     obx = 0;
+                  newVal = (1.0 / obx);
+               }
+            }
+            else if(1 == cur_value)
+            {
+               newVal = 1.0/2;
+            }
+            else
+            {
+               newVal = cur_value - step_coarse;
+            }
+         }
+         else
+         {
+            newVal = cur_value - step_coarse;
+         }
+
+         setValueAndValidate(newVal);
+         handleValueChanging();
+         last_dir = -1;
+         hideToolTip();
+         cancelToolTipTimer();
+      }
+   }
+
+   public method incFine() {
+      if(isEditable())
+      {
+         parseExpressionOrMapUser();  // update value from text
+
+         hideToolTip();
+         cancelToolTipTimer();
+         setValueAndValidate(cur_value + step_fine);
+         handleValueChanging();
+      }
+   }
+
+   public method decFine() {
+      if(isEditable())
+      {
+         parseExpressionOrMapUser();  // update value from text
+
+         hideToolTip();
+         cancelToolTipTimer();
+         setValueAndValidate(cur_value - step_fine);
+         handleValueChanging();
+      }
+   }
+
+   protected method toggleHexDec(boolean _bProvide) {
+      int newType = display_type;
+      if(display_type == DISPLAY_FLOAT)
+      {
+         newType = DISPLAY_HEX;
+      }
+      else if(display_type == DISPLAY_PERCENT)
+      {
+         newType = DISPLAY_FLOAT;
+      }
+      else if(display_type == DISPLAY_HEX)
+      {
+         if(null != user_tbl)
+            newType = DISPLAY_USER;
+         else if(DISPLAY_PERCENT == pre_toggle_hexdec_display_type)
+            newType = DISPLAY_PERCENT;
+         else
+            newType = DISPLAY_FLOAT;
+      }
+      else if(display_type == DISPLAY_USER)
+      {
+         newType = DISPLAY_FLOAT;
+      }
+      // // trace "xxx toggleHexDec: display_type="+display_type+" newType="+newType;
+      setDisplayType(newType);
+      updateValue();
+      if(_bProvide)
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_TOGGLEHEX), this, getFloatValue()));
+   }
+
+   public method toggleHex() {
+      toggleHexDec(false/*bProvide*/);
+   }
+
+   public method toggleHexAction() {
+      toggleHexDec(true/*bProvide*/);
+   }
+
+   public method toggleMousePrecision() : boolean {
+      b_skip_mouse_precision = !b_skip_mouse_precision;
+      return !b_skip_mouse_precision;
+   }
+
+   public method setEnableMousePrecision(boolean _bEnable) {
+      b_skip_mouse_precision = !_bEnable;
+   }
+
+   public method getEnableMousePrecision() : boolean {
+      return !b_skip_mouse_precision;
+   }
+
+   public method setEnableFlipX(boolean _bEnable) {
+      // see MMCurveFloatParam (flip graphics)
+      b_flip_x = _bEnable;
+   }
+
+   public method setEnableFlipMouseX(boolean _bEnable) {
+      b_flip_mouse_x = _bEnable;
+   }
+
+   public method showPresetPopup() {
+      // // trace "[dbg] FloatParam::showPresetPopup: preset_values="+#(preset_values);
+      if(null != preset_values)
+      {
+         int prefSx = getSizeX();
+         preset_options <= new StringArray;
+         float f;
+         int presetIdx = 0;
+         int selOption = -1;
+         float curValue = getFloatValue();
+         foreach f in preset_values
+         {
+            if(f == curValue)
+               selOption = presetIdx;
+            if(null != preset_names)
+               preset_options.add(preset_names.get(presetIdx)+(b_show_preset_values ? ("\t"+String(f)) : ""));
+            else
+            {
+               if(DISPLAY_PERCENT == display_type)
+                  preset_options.add(String(int(f*100))+"%");
+               else
+                  preset_options.add(String(f));
+            }
+            presetIdx++;
+         }
+         String *s;
+         float sliderKnobW = Slider.GetMinWidth() + 16*UI.font_scaling/*spacing between left and right column*/;
+         foreach s in preset_options
+         {
+            // // trace "xxx showPresetPopup: prefSx="+prefSx+" s=\""+s+"\"";
+            prefSx = mathMaxi(prefSx, font.stringWidth(s) + sliderKnobW);
+         }
+         preset_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                        font,
+                                                        preset_options,
+                                                        null/*options_long*/,
+                                                        selOption/*selected_option*/,
+                                                        prefSx,
+                                                        null/*tooltip_captions*/,
+                                                        null/*option_bgcolors*/,
+                                                        null/*option_fgtints*/
+                                                        );
+         preset_popup.showNearComboBox(this);
+         preset_popup.focusFirstTabCycleMember();
+      }
+   }
+
+   public method setPresetOptions(FloatArray  _presetValues,
+                                  StringArray _presetNamesOrNull
+                                  ) {
+      // Store array copies
+      //  (note) 'presetValues' may be a ValueArray (or any other array-like object)
+      if(null != _presetValues)
+      {
+         preset_values <= new FloatArray;
+         preset_values  = _presetValues;
+         if(!preset_values.isEmpty())
+         {
+            preset_names  <= (null != _presetNamesOrNull) ? Object(_presetNamesOrNull) : null;
+         }
+         else
+         {
+            preset_values <= null;
+            preset_names  <= null;
+         }
+      }
+      else
+      {
+         preset_values <= null;
+         preset_names  <= null;
+      }
+   }
+
+   public method setEnableShowPresetValues(boolean _bEnable) {
+      b_show_preset_values = _bEnable;
+   }
+
+   protected method calcMouseDragRange(boolean _bFine) {
+      drag_r = (max_value - min_value);
+      // // trace "xxx    min="+min_value+" max="+max_value+" drag_r="+drag_r;
+      if(_bFine)
+         drag_r /= 10.0f;
+      drag_xrange = ((2.0/-DRAG_PIXEL_RANGE_X)*drag_r) - ((1.0/-DRAG_PIXEL_RANGE_X)*drag_r);
+   }
+
+   protected method calcDeadZone() {
+      rx_center_dead_l = calcRxForValue(center_value) - DEAD_ZONE_X;
+      rx_center_dead_r = calcRxForValue(center_value) + DEAD_ZONE_X;
+      v_center_dead_l = calcValueAtDragPos(rx_center_dead_l, 0);
+      v_center_dead_r = calcValueAtDragPos(rx_center_dead_r, 0);
+
+      ry_center_dead_d = calcRyForValue(center_value) - DEAD_ZONE_Y;
+      ry_center_dead_u = calcRyForValue(center_value) + DEAD_ZONE_Y;
+      v_center_dead_d = calcValueAtDragPos(0, ry_center_dead_d);
+      v_center_dead_u = calcValueAtDragPos(0, ry_center_dead_u);
+
+      // // trace "xxx    rx_center_dead=("+rx_center_dead_l+";"+rx_center_dead_r+")";
+      // // trace "xxx     v_center_dead=("+v_center_dead_l+";"+v_center_dead_r+")";
+      // // trace "xxx    ry_center_dead=("+ry_center_dead_d+";"+ry_center_dead_u+")";
+      // // trace "xxx     v_center_dead=("+v_center_dead_d+";"+v_center_dead_u+")";
+   }
+
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      // // trace "xxx FloatParam::onMouseBeginDrag";
+      if(isEditable())
+      {
+         if(_ev.isRightButtonDown() || (_ev.isLeftButtonDown() && b_table_mode))
+         {
+            if(UI.b_floatparam_mouse_grab)
+               UI.GrabMouse(/*_dragStart*/);
+
+            if(b_provide_start)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_STARTEDITING), this));
+
+            t_drag_last_ev = 0;
+
+            // trace "----------------------------------------";
+            drag_start_value = cur_value;
+            drag_undo_value  = cur_value;
+            drag_undo_min_value = min_value;
+            drag_undo_max_value = max_value;
+            drag_start_x = _ev.mouse_rel_x;
+            drag_start_y = _ev.mouse_rel_y;
+            drag_last_x  = _ev.mouse_rel_x;
+            drag_last_y  = _ev.mouse_rel_y;
+            b_drag_lock_x = maybe;
+            // // trace "xxx FloatParam::onMouseBeginDrag: drag_start=("+drag_start_x+";"+drag_start_y+") value="+drag_start_value;
+
+            calcMouseDragRange(UI.KeyModShift());
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   protected method continueMouseDragAtNewMousePosition() {
+      // when toggling between fine+coarse edit mode via LSHIFT/RSHIFT
+      drag_start_x = drag_last_x;
+      drag_start_y = drag_last_y;
+      drag_start_value = cur_value;
+      // // trace "xxx FloatParam::continueMouseDragAtNewMousePosition: mstart=("+drag_start_x+","+drag_start_y+") new drag_start_value="+drag_start_value+" bFine="+UI.KeyModShift();
+      calcMouseDragRange(b_force_fine_edit || UI.KeyModShift()/*bFine*/);
+      calcDeadZone();
+   }
+
+   protected method calcValueAtDragPos(float rx, float ry) : float {
+      // (note) dead-zone is applied later
+
+      float v = drag_start_value;
+      if(true == b_drag_lock_x)
+      {
+         v += (rx/(-DRAG_PIXEL_RANGE_X*0.75)) * drag_xrange;
+      }
+      else
+      {
+         v += (ry/ DRAG_PIXEL_RANGE_Y)*drag_r + (rx/(-DRAG_PIXEL_RANGE_X*0.75))*drag_xrange;
+      }
+
+      return v;
+   }
+
+   protected method calcRxForValue(float _v) : float {
+      return ((_v - drag_start_value) / drag_xrange) * (-DRAG_PIXEL_RANGE_X*0.75);
+   }
+
+   protected method calcRyForValue(float _v) : float {
+      return ((_v - drag_start_value) / drag_r) * DRAG_PIXEL_RANGE_Y;
+   }
+
+   public method loadResetValue() {
+      if(b_editable)
+      {
+         if(nominal_min_value != nominal_max_value)
+         {
+            if(b_range_min_editable)
+            {
+               if(NO_LIMIT != nominal_min_value)
+                  min_value = nominal_min_value;
+            }
+            if(b_range_max_editable)
+            {
+               if(NO_LIMIT != nominal_max_value)
+                  max_value = nominal_max_value;
+            }
+         }
+
+         if(null != cycle_reset_values)
+         {
+            int bestMatchIdx = -1;
+            float bestMatchDist = 999999;
+            int idx = 0;
+            loop(cycle_reset_values.numElements)
+            {
+               float d = abs(cycle_reset_values[idx] - cur_value);
+               if(d < bestMatchDist)
+               {
+                  bestMatchDist = d;
+                  bestMatchIdx = idx;
+               }
+               idx++;
+            }
+            if(bestMatchDist < 0.01)
+            {
+               bestMatchIdx = (bestMatchIdx + 1) % cycle_reset_values.numElements;
+               setValue(cycle_reset_values.get(bestMatchIdx));
+            }
+            else
+               setValue(cycle_reset_values.get(0));
+         }
+         else
+            setValue(reset_value);
+
+         provideAction(FloatAction.New(getProvidedActionAlias(ACTION_VALUECHANGED), this, cur_value));
+         return true;
+      }
+   }
+
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+
+      drag_last_x = _currentEv.mouse_rel_x;
+      drag_last_y = _currentEv.mouse_rel_y;
+
+      float rx = _currentEv.mouse_rel_x - drag_start_x;
+      if(b_flip_mouse_x)
+         rx = -rx;
+      float ry = drag_start_y - _currentEv.mouse_rel_y;
+
+      // trace "xxx FloatParam::onMouseDrag: drag_start_y="+drag_start_y+" mrx="+_currentEv.mouse_rel_x+" mry="+_currentEv.mouse_rel_y+" rx="+rx+" ry="+ry+" b_drag_lock_x="+b_drag_lock_x;
+
+      if(maybe == b_drag_lock_x)
+      {
+         if(abs(ry) > Dial.LOCK_X_THRESHOLD_Y)
+         {
+            b_drag_lock_x = false;
+         }
+         else if(abs(rx) > Dial.LOCK_X_THRESHOLD_X)
+         {
+            b_drag_lock_x = true;
+         }
+         if(maybe != b_drag_lock_x)
+         {
+            drag_start_x += rx;
+            drag_start_y -= ry;
+            drag_last_x = drag_start_x;
+            drag_last_y = drag_start_y;
+            rx = 0;
+            ry = 0;
+            // // trace "xxx FloatParam::onMouseDrag: b_drag_lock_x="+b_drag_lock_x+", fix drag_start to ("+drag_start_x+";"+drag_start_y+")";
+            calcDeadZone();
+         }
+         else
+         {
+            // Wait until x-axis lock has been determined
+            return true;
+         }
+      }
+
+      float v = calcValueAtDragPos(rx, ry);
+      // // trace "xxx FloatParam::onMouseDrag: r=("+rx+";"+ry+") v="+v+" drag_xrange="+drag_xrange;
+
+      if(true == b_drag_lock_x)
+      {
+         // x-lock
+         if(rx_center_dead_l <= rx <= rx_center_dead_r)
+            v = center_value;
+         else if(rx < rx_center_dead_l)
+         {
+            // // trace "xxx left of: v="+v+" v_center_dead_l="+v_center_dead_l+" center_value="+center_value+" drag_start_value="+drag_start_value;
+            if(v_center_dead_l <= drag_start_value)
+            {
+               // dead zone left border is left of drag start
+               v += center_value - v_center_dead_l;
+            }
+            else
+            {
+               // dead zone left border is right of drag start, rescale
+               v = calcValueAtDragPos(rx * ( (center_value-drag_start_value) / (v_center_dead_l-drag_start_value) ), 0/*ry*/);
+            }
+         }
+         else if(rx > rx_center_dead_r)
+         {
+            // // trace "xxx right of: v="+v+" v_center_dead_r="+v_center_dead_r+" center_value="+center_value+" drag_start_value="+drag_start_value;
+            if(v_center_dead_r >= drag_start_value)
+            {
+               // dead zone right border is right of drag start
+               v += center_value - v_center_dead_r;
+            }
+            else
+            {
+               // dead zone right border is left of drag start, rescale
+               v = drag_start_value - (drag_start_value - v) * (calcRxForValue(center_value) / rx_center_dead_r);
+            }
+         }
+      }
+      else
+      {
+         // y-lock
+         if(ry_center_dead_d <= ry <= ry_center_dead_u)
+            v = center_value;
+         else if(ry < ry_center_dead_d)
+         {
+            // // trace "xxx below: v="+v+" v_center_dead_d="+v_center_dead_d+" center_value="+center_value+" drag_start_value="+drag_start_value;
+            if(v_center_dead_d <= drag_start_value)
+            {
+               // dead zone bottom border is below drag start
+               v += center_value - v_center_dead_d;
+            }
+            else
+            {
+               // dead zone bottom border is above drag start, rescale
+               v = calcValueAtDragPos(0/*rx*/, ry * ( (center_value-drag_start_value) / (v_center_dead_d-drag_start_value) ));
+            }
+         }
+         else if(ry > ry_center_dead_u)
+         {
+            // // trace "xxx above: v="+v+" v_center_dead_u="+v_center_dead_u+" center_value="+center_value+" drag_start_value="+drag_start_value;
+            if(v_center_dead_u >= drag_start_value)
+            {
+               // dead zone top border is above drag start
+               v += center_value - v_center_dead_u;
+            }
+            else
+            {
+               // dead zone top border is below of drag start, rescale
+               v = drag_start_value - (drag_start_value - v) * (calcRyForValue(center_value) / ry_center_dead_u);
+            }
+         }
+      }
+
+      if(0.0 != mouse_precision_muldiv)
+      {
+         // e.g. quantize to multiples of 0.25 when muldiv is 4
+         // ..or quantize to multiples of 4 when muldiv is 0.25
+         v = int(v * mouse_precision_muldiv) / float(mouse_precision_muldiv);
+      }
+
+      float mprec = b_skip_mouse_precision ? precision : mouse_precision;
+      if(UI.KeyModCtrl())
+      {
+         mprec =
+            (-1 == mouse_precision_ctrl)
+            ? (DISPLAY_PERCENT == display_type) ? 2 : 0
+            : mouse_precision_ctrl
+            ;
+      }
+      if(-1 != mprec)
+         v = ApplyPrecision(v, mprec);
+
+      float prevValue = cur_value;
+      setValue(v);
+
+      if(cur_value != prevValue)
+      {
+         if(0 != drag_rate_limiter_ms)
+         {
+            int tNow = milliSeconds();
+            int tDelta = tNow - t_drag_last_ev;
+            if(tDelta >= drag_rate_limiter_ms)
+            {
+               t_drag_last_ev = tNow;
+               handleValueChanging();
+            }
+         }
+         else
+         {
+            // unlimited
+            handleValueChanging();
+         }
+      }
+
+      return true;
+   }
+
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      // Cancel
+      min_value = drag_undo_min_value;
+      max_value = drag_undo_max_value;
+      setValue(drag_undo_value);
+
+      if(b_no_drag_value_changed)
+      {
+         handleValueChanging();
+      }
+      else
+      {
+         // Provides VALUE_CHANGED action
+         handleTextEntered();
+      }
+
+      if(UI.b_floatparam_mouse_grab)
+         UI.UngrabMouse();
+
+      if(b_provide_cancel)
+         provideAction(Action.New(getProvidedActionAlias(ACTION_CANCELEDITING), this));
+   }
+
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+
+      if(UI.b_floatparam_mouse_grab)
+         UI.UngrabMouse();
+
+      if(b_no_drag_value_changed)
+      {
+         handleValueChanging();
+      }
+      else
+      {
+         // provides VALUE_CHANGED action
+         handleTextEntered();
+      }
+
+      if(b_provide_stop)
+         provideAction(Action.New(getProvidedActionAlias(TextField.ACTION_STOPEDITING), this));
+
+      return TextField::onMouseEndDrag(_ev);
+   }
+
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return false;
+   }
+
+   public virtual isMouseFocusLocked() : boolean {
+      return UI.b_mouse_grab;
+   }
+
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(b_table_mode)
+         return true;
+
+      if(b_editable)
+      {
+         if(UI.KeyModCtrl())
+         {
+            loadResetValue();
+            return true;
+         }
+         else if(_ev.rightButtonUp() && !_ev.isLeftButton())
+         {
+            UI.SetKeyboardFocus(this);
+            showEditor();
+            return true;
+         }
+      }
+      return TextField::onMouseClick(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      // (note) TextField base class uses this for selectAll() instead
+      loadResetValue();
+      return true;
+   }
+
+   public virtual onMouseHold(MouseEvent _startEv) : boolean {
+      if(UI.KeyModNone())
+         showPresetPopup();
+      return true;
+   }
+
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(b_editable)
+      {
+         if(_ev.isRightButtonDown() || (b_table_mode && _ev.isLeftButtonDown()))
+         {
+            return false;
+         }
+         else if(_ev.current_state & MOUSE_WHEELUP)
+         {
+            if(b_force_fine_edit || UI.KeyModShift())
+            {
+               incFine();
+            }
+            else
+            {
+               incCoarse();
+            }
+            return true;
+         }
+         else if(_ev.current_state & MOUSE_WHEELDOWN)
+         {
+            if(b_force_fine_edit || UI.KeyModShift())
+            {
+               decFine();
+            }
+            else
+            {
+               decCoarse();
+            }
+            return true;
+         }
+      }
+
+      if(b_table_mode)
+         return true;
+
+      return TextField::onMouse(_ev);
+   }
+
+   public virtual onMouseKey(Key _k) : boolean {
+      // // trace "xxx FloatParam::onMouseKey: k.name="+_k.name+" k.pressed="+_k.pressed+" _k.released="+_k.released;
+
+      switch(_k.pressed)
+      {
+         case VKEY_LSHIFT:
+         case VKEY_RSHIFT:
+            if(isMouseDragLayer())
+            {
+               // begin fine edit
+               continueMouseDragAtNewMousePosition();
+               return true;
+            }
+            break;
+      }
+
+      switch(_k.released)
+      {
+         case VKEY_LSHIFT:
+         case VKEY_RSHIFT:
+            if(isMouseDragLayer())
+            {
+               // back to coarse edit
+               continueMouseDragAtNewMousePosition();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx FloatParam::onKey: _k="+_k.code+" _k.mode="+_k.mod;
+      if(_k.modShiftOnly())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_UP:
+               incFine();
+               return true;
+
+            case VKEY_DOWN:
+               decFine();
+               return true;
+         }
+      }
+      else if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_UP:
+               incCoarse();
+               return true;
+
+            case VKEY_DOWN:
+               decCoarse();
+               return true;
+
+            case VKEY_SPACE:
+               showEditor();
+               return true;
+
+         }
+      }
+
+      if(isEditable())
+      {
+         if(haveSelection())
+         {
+            // Make minicalc keys not replace current selection
+            if(['+', '*', '/'].contains(_k.unicode))
+            {
+               lazyStartEditing();
+               selectNone();
+               moveCursorEnd();
+            }
+         }
+
+         if(_k.modNone())
+         {
+            switch(_k.unicode)
+            {
+               case 't':
+                  setValue(getValue() * 1.5);
+                  redraw();
+                  return true;
+
+               case 'n':
+                  setValue(-getValue());
+                  redraw();
+                  return true;
+
+               case 'r':
+                  setValue(getValue() / 1.5);
+                  redraw();
+                  return true;
+
+               case 'i':
+                  setValue(getValue() * 2.0);
+                  redraw();
+                  return true;
+
+               case 'u':
+                  setValue(getValue() / 2.0);
+                  redraw();
+                  return true;
+
+               case 'h':
+                  if(-1 == pre_toggle_hexdec_display_type)
+                     pre_toggle_hexdec_display_type = display_type;
+                  toggleHexAction();
+                  return true;
+
+               case 'm':
+                  toggleMousePrecision();
+                  return true;
+
+               case 'p':
+                  showPresetPopup();
+                  return true;
+            }
+         }  // if _k.modNone()
+      }
+
+      return TextField::onKey(_k);
+   }
+
+   public static ParseDisplayAttribute(String atval) : int {
+      local String atvallc <= atval.toLower();
+      switch(atvallc)
+      {
+         default:
+         case "float":
+            return DISPLAY_FLOAT;
+
+         case "hex":
+            return DISPLAY_HEX;
+
+         case "hex_short":
+            return DISPLAY_HEX_SHORT;
+
+         case "percent":
+            return DISPLAY_PERCENT;
+
+         case "user":
+            return DISPLAY_USER;
+
+         case "binary255":
+            return DISPLAY_BINARY255;
+
+         case "pow2":
+            return DISPLAY_POW2;
+
+         case "ufix16":
+            return DISPLAY_UFIX16;
+      }
+   }
+
+   protected virtual drawTextFieldBackground() {
+
+      if(b_progress && b_editable)
+      {
+         float sx = getSizeX(), sy = getSizeY();
+         int bg32;
+         float rel;
+
+         float bw = (!b_no_borders && lnf.b_textfield_bevel_border) ? 2 : 0;
+
+         if(NO_LIMIT == nominal_max_value)
+         {
+            rel = (cur_value - min_value) / (max_value - min_value);
+         }
+         else
+         {
+            rel = (cur_value - nominal_min_value) / (nominal_max_value - nominal_min_value);
+         }
+
+         if(b_progress_log)
+         {
+            rel = log2(1 + rel*4) / 2.0;
+         }
+
+         float relN = mathClampf(rel, 0.0f, 1.0f);
+         rel = (sx - 2*bw) * relN;
+
+         if(b_editing)
+            bg32 = lnfGetTintedColor(LookAndFeel.COLOR_TEXT_EDITING_BG, bg32_tint);
+         else if(b_editable)
+            bg32 = lnfGetTintedColor(LookAndFeel.COLOR_TEXT_EDIT_BG, bg32_tint);
+         else
+            bg32 = lnfGetTintedColor(LookAndFeel.COLOR_CONTROL_INACTIVE_LT_BG, bg32_tint);
+
+         int bg32Progress = lnfGetTintedColor(b_editing
+                                              ? LookAndFeel.COLOR_FLOATPARAM_PROGRESS_EDITING_BG
+                                              : LookAndFeel.COLOR_FLOATPARAM_PROGRESS_BG,
+                                              sdvg_TintARGB(bg32_tint, progress_tint)
+                                              );
+
+         if(b_editing)
+         {
+            // try rounded corners
+            int c32Parent = findParentBackgroundColor();
+            if(0 != c32Parent)
+            {
+               UIRenderer.DrawFilledRectangle(0, 0, sx, sy, c32Parent);
+               UIRenderer.DrawFilledRoundedRectangle(0, 0, sx, sy, 6, 6, bg32);
+               UIRenderer.DrawFilledRectangle(bw+3, bw+2, (relN * (sx - 2*bw - 2*3)), sy-2*bw-2*2, bg32Progress);
+            }
+            else
+            {
+               UIRenderer.DrawFilledRectangle(0, 0, sx, sy, bg32);
+               UIRenderer.DrawFilledRectangle(bw, bw, rel, sy-2*bw, bg32Progress);
+            }
+         }
+
+         if(!b_editing)
+         {
+            UIRenderer.DrawFilledRectangle(bw, bw, rel, sy-2*bw, bg32Progress);
+
+            UIRenderer.DrawFilledRectangle(bw + rel, bw, (sx - 2*bw) - rel, sy-2*bw, bg32);
+         }
+      }
+      else
+      {
+         TextField::drawTextFieldBackground();
+      }
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initFloatParam();
+
+      if(TextField::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval, atvallc;
+         local StringArray *atsplit;
+         String *atsplitval;
+
+         if(!_attributes.exists("cols"))
+         {
+            setVisibleTextLength(6);
+         }
+
+         reset_value = -999999;
+
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "min":
+                  min_value     = atval;
+                  break;
+
+               case "max":
+                  max_value     = atval;
+                  break;
+
+               case "value":
+                  cur_value     = atval;
+                  break;
+
+               case "resetvalue": // **deprecated**
+               case "reset":
+                  if(atval & ";")
+                  {
+                     // multiple reset values (cycle list)
+                     atsplit <= atval.splitChar(';');
+                     cycle_reset_values <= new FloatArray;
+                     foreach atsplitval in atsplit
+                        cycle_reset_values.add(atsplitval);
+                  }
+                  else
+                  {
+                     cycle_reset_values <= null;
+                     reset_value = atval;
+                  }
+                  break;
+
+               case "presets":
+                  if(atval & ";")
+                  {
+                     // multiple reset values (cycle list)
+                     atsplit <= atval.splitChar(';');
+                     FloatArray presetValues <= new FloatArray;
+                     foreach atsplitval in atsplit
+                        presetValues.add(atsplitval);
+                     setPresetOptions(deref presetValues, null/*presetNamesOrNull*/);
+                  }
+                  else
+                  {
+                     trace "[---] FloatParam::beginXFMTag(): error parsing attribute \""+atname+"\" (expected CSV list).";
+                     return false;
+                  }
+                  break;
+
+               case "showpresetvalues":
+                  setEnableShowPresetValues(int(atval));
+                  break;
+
+               case "center":
+                  center_value  = atval;
+                  break;
+
+               case "stepfine":
+                  step_fine     = atval;
+                  break;
+
+               case "stepcoarse":
+                  step_coarse   = atval;
+                  break;
+
+               case "step":
+                  step_coarse   = atval;
+                  step_fine = step_coarse;
+                  break;
+
+               case "precision":
+                  precision     = atval;
+                  break;
+
+               case "mouseprecision":
+                  mouse_precision = atval;
+                  break;
+
+               case "mouseprecisionctrl":
+                  mouse_precision_ctrl = atval;
+                  break;
+
+               case "mouseprecisionmuldiv":
+                  mouse_precision_muldiv = atval;
+                  break;
+
+               case "rangeeditable":
+                  b_range_min_editable = atval;
+                  b_range_max_editable = b_range_min_editable;
+                  break;
+
+               case "rangemineditable":
+               case "mineditable":
+                  b_range_min_editable = atval;
+                  break;
+
+               case "rangemaxeditable":
+               case "maxeditable":
+                  b_range_max_editable = atval;
+                  break;
+
+               case "minlimit":
+                  min_value_limit = atval;
+                  break;
+
+               case "maxlimit":
+                  max_value_limit = atval;
+                  break;
+
+               case "display":
+                  setDisplayType(ParseDisplayAttribute(atval));
+                  break;
+
+               case "noneditabletext":
+                  setNonEditableText(atval);
+                  break;
+
+               case "negativetext":
+                  setNegativeText(atval);
+                  break;
+
+               case "negativethreshold":
+                  setNegativeThreshold(atval);
+                  break;
+
+               case "zerotext":
+                  setZeroText(atval);
+                  break;
+
+               case "provideedited":
+                  b_provide_edited = atval;
+                  break;
+
+               case "tablemode":
+                  setEnableTableMode(int(atval));
+                  break;
+
+               case "progress":
+                  setEnableProgress(int(atval), b_progress_log);
+                  break;
+
+               case "progresslog":
+                  setEnableProgress(b_progress, int(atval));
+                  break;
+
+               case "nominal":
+                  // For progress display
+                  nominal_min_value = 0;
+                  nominal_max_value = atval;
+                  break;
+
+               case "nominalmin":
+                  // For progress display
+                  nominal_min_value = atval;
+                  break;
+
+               case "nominalmax":
+                  // For progress display
+                  nominal_max_value = atval;
+                  break;
+
+               case "fraction":
+                  b_fraction = atval;
+                  break;
+
+               case "usertbl":
+                  StringArray userTbl <= atval.splitChar(';');
+                  setUserTable(deref userTbl);
+                  break;
+
+               case "usertblstart0":
+                  setEnableUserTableStart0(int(atval));
+                  break;
+
+               case "cyclic":
+                  setEnableCyclic(int(atval));
+                  break;
+
+               case "outline":
+                  b_outline = int(atval);
+                  break;
+
+               case "display0asblank":
+                  setEnableDisplayZeroAsBlank(int(atval));
+                  break;
+
+               case "progresstint":
+                  setProgressTint(int(atval));
+                  break;
+
+               case "unit":
+                  setUnit(atval);
+                  break;
+
+               case "wheeldiscardfrac":
+                  setEnableWheelDiscardFrac(int(atval));
+                  break;
+
+               case "provideentered":
+                  setEnableProvideEntered(int(atval));
+                  break;
+
+               case "providecancel":
+                  setEnableProvideCancel(int(atval));
+                  break;
+
+               case "providedrag":
+                  setEnableProvideDrag(int(atval));
+                  break;
+
+               case "dragratelimit":
+                  setDragRateLimit(atval);
+                  break;
+
+               default:
+                  switch(atname)
+                  {
+                     case ACTION_VALUECHANGED:
+                     case ACTION_VALUECHANGING:
+                     case ACTION_VALUEEDITED:
+                        _form.addHandledAction(atname, FloatAction, atval);
+                        break;
+
+                     case ACTION_VALUEUNCHANGED:
+                        _form.addHandledAction(atname, Action, atval);
+                        break;
+                  }
+                  break;
+            }
+         }
+
+         if(reset_value <= -999999)
+            reset_value = cur_value;
+
+         setValue(cur_value);
+
+      }
+      return true;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      TextField::onDraw();
+
+      if(b_outline)
+         UIRenderer.DrawDefaultFlatBorderTint(0, 0, getSizeX(), getSizeY(), sdvg_TintARGB(bg32_tint, #60000000));
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+      // // trace "xxx FloatParam: acName="+acName+" ap="+#(ap);
+
+      switch(@(ap))
+      {
+         case @(preset_popup)
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               IntAction iac <= _ac;
+               setValue(preset_values.get(iac.getIntValue()));
+               handleTextChanged();
+               redraw();
+            }
+            UI.SetKeyboardFocus(this);
+            return true;
+      }
+
+      return TextField::consumeAction(_ac);
+   }
+
+}
