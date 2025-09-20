@@ -1,0 +1,659 @@
+// ----
+// ---- file   : test.tks
+// ---- author : bsp
+// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ----
+// ---- info   : "minnie" binary loader + OpenGL viewer
+// ---- note   :
+// ----
+// ----
+// ----
+
+//    UP : select next test case
+//  DOWN : select previous test case
+//     g : toggle OpenGL rendering
+//     l : toggle FPS limiter (60 / unlimited)
+//     o : toggle Minnie per-frame .mib stream processing
+//     p : save screenshot to "screenshots/minnievg/minnie_<testnr>.png"
+//     e : toggle edgeAA
+//     f : toggle FBO
+//     s : toggle line strips
+//     t : toggle FBO filter
+//     u : toggle uniform colors
+//     h : toggle force-concave-to-holes (SGI tesselator)
+// SPACE : toggle rotation
+
+module Main;
+
+use tksdl;
+use tkopengl;
+use tkminnie;
+use tkmath;
+
+namespace sdvgcapi;
+namespace default;
+use namespace sdvgcapi;
+
+boolean b_glcore = 1;
+if(b_glcore) putenv("TKSDL_GLCORE=1");   // select 4.1 core profile on macOS
+
+putenv("TKSDL_GLERROR=1");
+
+trace "####################################################################################";
+trace "#                                                                                  #";
+trace "#                                                                                  #";
+trace "#                                  minnie test                                     #";
+trace "#                                                                                  #";
+trace "#                                                                                  #";
+trace "####################################################################################";
+
+float vp_scale = 1;
+
+boolean b_buf_file_export = 0;  // 1=export vertex and draw list buffers to files 'vb.dat' and 'dl.dat'
+boolean b_draw_gl         = 1;  // 'g'
+boolean b_gl_buf_once     = 1;  // 0=update Drawable each frame  'o'
+boolean b_vsync           = 1;  // 'v'
+boolean b_fbo             = 0;  // 'f'
+boolean b_fbo_filter      = 1;  // 't'
+boolean b_rotate          = 1;  // SPACE  (RETURN resets rot_angle)
+boolean b_msaa            = 0;  // 'm'  1=use MSAA
+
+
+// ---------------------------------------------------------------------------- tests
+String MIB_PATH = "../../tools/mib/mib/";
+// String MIB_PATH = "mib/";
+
+StringArray tests = [
+   MIB_PATH + "test000_rect.mib",
+   MIB_PATH + "test001_lines.mib",
+   MIB_PATH + "test002_fill.mib",
+   MIB_PATH + "test003_concave.mib",
+   MIB_PATH + "test004_fill.mib",
+   MIB_PATH + "test005_concave.mib",
+   MIB_PATH + "test006_cubic.mib",
+   MIB_PATH + "test007_svg.mib",
+   MIB_PATH + "test008_ellipse.mib",
+   MIB_PATH + "test009_cake.mib",
+   MIB_PATH + "test010_d2d.mib",
+   MIB_PATH + "test011_cursor.mib",
+   MIB_PATH + "test012_stars.mib",
+   MIB_PATH + "test013_reverse.mib",
+   MIB_PATH + "test014_mask.mib",
+   MIB_PATH + "test015_minnie.mib",
+   MIB_PATH + "test016_aa.mib",
+   MIB_PATH + "test017_minnie_aa.mib",
+   MIB_PATH + "test018_cake_aa.mib",
+   MIB_PATH + "test019_3d_aa.mib",
+   MIB_PATH + "test020_clip2d.mib",                // clip pre-tesselate polyline
+   MIB_PATH + "test021_clip2d.mib",                // clip post-tesselate polyline
+   MIB_PATH + "test022_clip2d.mib",                // clip thin line
+   MIB_PATH + "test023_clip2d.mib",                // clip concave pre-tesselate
+   MIB_PATH + "test024_clip2d.mib",                // clip concave post-tesselate
+   MIB_PATH + "test025_clip2d.mib",                // clip concave post-tesselate ("minnie")
+   MIB_PATH + "test026_clip2d.mib",                // transform2d + clip concave post-tesselate
+   MIB_PATH + "test027_clip2dfb.mib",              // clip against fb
+   MIB_PATH + "test028_3d.mib",                    // fill convex transform3d clip3d
+   MIB_PATH + "test029_3d.mib",                    // extrude polyline transform3d clip3d
+   MIB_PATH + "test030_minnie_3d.mib",             // concave transform3d clip3d
+   MIB_PATH + "test031_tf2dclip.mib",
+   MIB_PATH + "test032_subpath.mib",
+   MIB_PATH + "test033_valentines.mib",            // SGI/VG tesselator
+   MIB_PATH + "test034_ducky.mib",
+   MIB_PATH + "test035_bicycle.mib",               // SGI/VG tesselator
+   MIB_PATH + "test036_crab.mib",                  // SGI/VG tesselator
+   MIB_PATH + "test037_logo.mib",
+   MIB_PATH + "test038_logo_noaa.mib",
+   MIB_PATH + "test039_wildboar.mib",              // SGI/VG tesselator
+   MIB_PATH + "test040_tiger.mib",                 // SGI/VG tesselator
+   MIB_PATH + "test041_rabbit.mib",                // SGI/VG tesselator
+   MIB_PATH + "test042_oil_lamp.mib",              // SGI/VG tesselator
+   MIB_PATH + "test043_elefant.mib",               // SGI/VG tesselator
+   MIB_PATH + "test044_linejoin_miterlimit.mib",   // SGI/VG tesselator
+   MIB_PATH + "test045_linejoin.mib",              // SGI/VG tesselator
+   MIB_PATH + "test046_evenodd.mib",               // SGI/VG tesselator
+   MIB_PATH + "test047_shapes.mib",                // SGI/VG tesselator
+   MIB_PATH + "test048_nano.mib",                  // SGI/VG tesselator
+   MIB_PATH + "test049_debug.mib",                 // SGI/VG tesselator
+   MIB_PATH + "test050_world.mib",                 // huge. >100mb sysRAM. SGI/VG tesselator
+   MIB_PATH + "test051_rect.mib",                  // SVG-exported rects
+   MIB_PATH + "test052_ellipse.mib",               // SVG-exported ellipses
+   MIB_PATH + "test053_elephant.mib",              // SVG-exported rects, ellipses, polylines, polygons
+   MIB_PATH + "test054_365845.mib",                // SGI/VG tesselator
+   MIB_PATH + "test055_dragon_986054.mib",         // SGI/VG tesselator
+   MIB_PATH + "test056_satellite.mib",             // SGI/VG tesselator. ~18mb sysRAM, ~0.8mb vidRAM
+   MIB_PATH + "test057_lightbulb.mib",             // SGI/VG tesselator
+   MIB_PATH + "test058_motorbike.mib",             // SGI/VG tesselator
+   MIB_PATH + "test059_abstractbike.mib",          // SGI/VG tesselator
+   MIB_PATH + "test060_watermelon.mib",            // nok (stray polygons)
+   MIB_PATH + "test061_man.mib",                   //
+   MIB_PATH + "test062_gorilla.mib",               // nok (stray polygons)
+   MIB_PATH + "test063_quill.mib",                 //
+   MIB_PATH + "test064_fairy.mib",                 //
+   MIB_PATH + "test065_fish.mib",                  //
+   MIB_PATH + "test066_cat.mib",                   // nok (broken mesh when path_seg > 20)
+   MIB_PATH + "test067_reaper.mib",                //
+   MIB_PATH + "test068_pidgeon.mib",               // (SVG) <style> classes
+   MIB_PATH + "test069_bluejay.mib",               // (SVG) <style> classes
+   MIB_PATH + "test070_fox1.mib",                  // (SVG) <style> classes
+   MIB_PATH + "test071_fox2.mib",                  // (SVG) <style> classes
+   MIB_PATH + "test072_fox3.mib",                  // (SVG) <style> classes
+   MIB_PATH + "test073_cookie.mib",                // nok (minor tesselation errors?) (SVG) <style> classes
+   MIB_PATH + "test074_roundrect.mib",             // rounded rectangles (op 0xA4)
+   MIB_PATH + "test075_roundrect_svg.mib",         // rounded rectangles (exported from SVG)
+   MIB_PATH + "test076_hamster.mib",               //
+   MIB_PATH + "test077_giraffe.mib",               //
+   MIB_PATH + "test078_butterfly.mib",             //
+   MIB_PATH + "test079_minimal.mib",               //
+   MIB_PATH + "test080_debug_l1.mib",              //
+   MIB_PATH + "test081_debug_l2.mib",              //
+   MIB_PATH + "test082_circle.mib",                //
+   MIB_PATH + "test083_ellipse_fill.mib",          //
+   MIB_PATH + "test084_ellipse_stroke.mib",        //
+   MIB_PATH + "test085_ellipse_fill_stroke.mib",   //
+   MIB_PATH + "test086_rect_fill.mib",             //
+   MIB_PATH + "test087_rect_fill_stroke.mib",      //
+   MIB_PATH + "test088_rect_stroke.mib",           //
+   MIB_PATH + "test089_roundrect_fill_stroke.mib", //
+   MIB_PATH + "test090_roundrect_fill.mib",        //
+   MIB_PATH + "test091_roundrect_stroke.mib",      //
+                     ];
+
+int test_idx = -1;
+
+
+// ---------------------------------------------------------------------------- vars
+int num_frames_rendered = 0;
+
+boolean b_reopen;
+
+MinnieDrawable drawable;
+drawable.init();
+drawable.alloc(6*1024*1024/*maxGLBufSize*/,
+                   32*1024/*maxDrawBufSize*/
+               );
+
+// // trace #(drawable);
+// // trace "yacClassName: "+drawable.yacClassName();
+// // yac::MinnieDrawable nativeDrawable;
+// // trace #(nativeDrawable);
+// // trace "yacClassName: "+nativeDrawable.yacClassName();
+// // exit(0);
+
+String sVertexBufferExportPathName = "vb.dat";  // VideoRAM buffer
+String sDrawListExportPathName     = "dl.dat";  // SysRAM drawlist buffer (references offsets into vb.dat)
+
+String s_glsl_version       = b_glcore ? "#version 410 core\n" : "#version 120\n";
+String s_glsl_attribute     = b_glcore ? "in"                      : "attribute";
+String s_glsl_varying_out   = b_glcore ? "out"                     : "varying";
+String s_glsl_varying_in    = b_glcore ? "in"                      : "varying";
+String s_glsl_fragcolor_def = b_glcore ? "out vec4 o_FragColor;\n" : "";
+String s_glsl_fragcolor     = b_glcore ? "o_FragColor"             : "gl_FragColor";
+String s_glsl_texture2d     = b_glcore ? "texture"                 : "texture2D";
+
+
+int gl_copyfb_prog_id;
+int gl_copyfb_vert_id;
+int gl_copyfb_frag_id;
+
+// int u_copyfb_transform;
+int u_copyfb_sampler;
+
+int a_copyfb_vertex;
+int a_copyfb_uv;
+
+Buffer buf_copyfb; buf_copyfb.size = (2*4*4)+(2*4*4);
+buf_copyfb.f32 = -1.0f;   buf_copyfb.f32 = -1.0f;  // LB
+buf_copyfb.f32 =  0.0f;   buf_copyfb.f32 =  0.0f;
+buf_copyfb.f32 = -1.0f;   buf_copyfb.f32 =  1.0f;  // LT
+buf_copyfb.f32 =  0.0f;   buf_copyfb.f32 =  1.0f;
+buf_copyfb.f32 =  1.0f;   buf_copyfb.f32 =  1.0f;  // RT
+buf_copyfb.f32 =  1.0f;   buf_copyfb.f32 =  1.0f;
+buf_copyfb.f32 =  1.0f;   buf_copyfb.f32 = -1.0f;  // RB
+buf_copyfb.f32 =  1.0f;   buf_copyfb.f32 =  0.0f;
+int gl_buf_copyfb_id = -1;
+
+
+int fbo_w = 800+16;
+int fbo_h = 600+12;
+if(0)
+{
+   fbo_w = 800+64;
+   fbo_h = 600+48;
+}
+else
+{
+   fbo_w = 1000;
+   fbo_h =  750;
+}
+int fbo_idx;
+
+float rot_ang;
+
+boolean b_queued_screenshot;
+
+float stroke_scale = 1.0f;  // LEFT/RIGHT
+
+
+// ---------------------------------------------------------------------------- LoadFileBuf
+String pathNameIn;
+Buffer fileBuf;
+
+function LoadFileBuf() {
+   fileBuf.free();
+   File f;
+   if(f.openLocal(pathNameIn, IOS_IN))
+   {
+      f.readBuffer(fileBuf, 0, f.size, true/*bResize*/);
+      f.close();
+      trace "[dbg] LoadFileBuf: read "+fileBuf.size+" bytes from \""+pathNameIn+"\"";
+      Viewport.caption = pathNameIn;
+      drawable.reset();
+      rot_ang = 0;
+      num_frames_rendered = 0;
+   }
+   else
+   {
+      die "[---] LoadFileBuf: failed to open \""+pathNameIn+"\" for reading";
+   }
+}
+
+// ---------------------------------------------------------------------------- copyfb shaders
+String copyfb_vert_src = s_glsl_version+"
+//uniform mat4  u_transform;
+
+"+s_glsl_attribute+" vec2 a_vertex;
+"+s_glsl_attribute+" vec2 a_uv;
+
+"+s_glsl_varying_out+" vec2 v_uv;
+
+void main() {
+   //gl_Position = u_transform * vec4(a_vertex,0,1);
+   gl_Position = vec4(a_vertex,0,1);
+   v_uv = a_uv;
+}
+";
+
+String copyfb_frag_src = s_glsl_version+"
+uniform sampler2D u_sampler;
+""/*flat*/ "+s_glsl_varying_in+" vec2 v_uv; \n"
++s_glsl_fragcolor_def+
+" \n"
+"void main() { \n"
+"  "+s_glsl_fragcolor+" = "+s_glsl_texture2d+"(u_sampler, v_uv); \n"
+"} \n"
+;
+
+// ---------------------------------------------------------------------------- onDraw
+function onDraw() {
+   // trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw";
+
+   float dt = FPS.precision;
+
+   int vgFbW;
+   int vgFbH;
+
+   if(b_fbo)
+   {
+      // Render to texture
+      sdvg_BindFBO(fbo_idx);
+      vgFbW = fbo_w;
+      vgFbH = fbo_h;
+   }
+   else
+   {
+      vgFbW = Viewport.width;
+      vgFbH = Viewport.height;
+   }
+
+   if(!b_gl_buf_once || !drawable.isComplete())
+   {
+      MinnieVG.SetStrokeScale(stroke_scale);
+
+      if(MinnieVG.SetupDrawableFromBuffer(drawable, fileBuf))
+      {
+         if(b_buf_file_export)
+         {
+            b_buf_file_export = false;
+
+            MinnieVG.DebugExportGLBuffer(drawable, sVertexBufferExportPathName);
+            MinnieVG.DebugExportDrawListBuffer(drawable, sDrawListExportPathName);
+         }
+
+         // trace "xxx drawable.sz=("+drawable.size_x+","+drawable.size_y+")";
+      }
+   }
+
+   sdvg_SetFramebufferSize(vgFbW, vgFbH);
+
+   MinnieVG.BeginFrame();
+
+   sdvg_SetViewport(0, 0, vgFbW, vgFbH);
+
+   // sdvg_ClearARGB(#00ffffff);
+   // sdvg_ClearARGB(#00e1cdb7);
+   // clear color+stencil  (#00e1cdb7)
+   sdvg_ClearARGB( drawable.getBackgroundColor() );
+
+   if(b_draw_gl)
+   {
+      if(1)
+         MinnieVG.SetProjection2D(drawable.getSizeX(), drawable.getSizeY());
+      else
+         MinnieVG.SetProjection2D(vgFbW, vgFbH);
+      drawable.setScale2f(1.0f, 1.0f);
+      drawable.setRotation(rot_ang);
+      drawable.setTranslate2f(0.0f, 0.0f);
+      MinnieVG.SetTransformForDrawable(drawable);
+
+      drawable.setEnableDebug( (0 == (num_frames_rendered & 255)) );
+
+      drawable.draw();
+   }
+
+   MinnieVG.EndFrame();
+
+   if(b_fbo)
+   {
+      // Blit texture to back buffer
+      sdvg_UnbindFBO();
+      sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
+      sdvg_SetViewport(0, 0, Viewport.width, Viewport.height);
+
+      sdvg_BindFBOTexture(fbo_idx, false/*bRepeat*/, b_fbo_filter);
+
+      if(1)
+      {
+         glUseProgram(gl_copyfb_prog_id);
+         glBindBuffer(GL_ARRAY_BUFFER, gl_buf_copyfb_id);
+         zglVertexAttribOffset(a_copyfb_vertex/*index*/, 2/*size*/, GL_FLOAT, GL_FALSE/*normalized*/, (4*4)/*stride*/, 0/*offVtx*/);
+         zglVertexAttribOffset(a_copyfb_uv/*index*/,     2/*size*/, GL_FLOAT, GL_FALSE/*normalized*/, (4*4)/*stride*/, 2*4/*offUV*/);
+         glBindBuffer(GL_ARRAY_BUFFER, 0);
+         glUniform1i(u_copyfb_sampler, 0);
+         glEnableVertexAttribArray(a_copyfb_vertex/*index*/);
+         glEnableVertexAttribArray(a_copyfb_uv/*index*/);
+         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+         glDisableVertexAttribArray(a_copyfb_vertex/*index*/);
+         glDisableVertexAttribArray(a_copyfb_uv/*index*/);
+         glUseProgram(0);
+      }
+
+      sdvg_UnbindTexture2D();
+   }
+
+   if(b_glcore)
+      glBindVertexArray(0);
+
+   if(b_queued_screenshot)
+   {
+      b_queued_screenshot = false;
+      Integer ioTestIdx = test_idx;
+      MinnieVG.SaveScreenShotPNG("screenshots/minnievg/minnievg_"+ioTestIdx.printf("%03d")+".png");
+   }
+
+   if(0 == (num_frames_rendered & 255))
+   {
+      MinnieVG.DebugPrintMinnieAndDrawableStats(drawable);
+      trace "[...] FPS.real="+FPS.real;
+   }
+
+   num_frames_rendered++;
+
+   if(b_rotate)
+   {
+      rot_ang += dt * 0.0001023;
+      wrap rot_ang 0 2PI;
+   }
+}
+
+// ---------------------------------------------------------------------------- SelectNextTest
+function SelectNextTest() {
+   test_idx = mathWrapi(test_idx + 1, 0, tests.numElements);
+   pathNameIn = tests.get(test_idx);
+   LoadFileBuf();
+   trace "[...] test_idx is "+test_idx+" (\""+pathNameIn+"\")";
+}
+
+// ---------------------------------------------------------------------------- SelectPreviousTest
+function SelectPreviousTest() {
+   test_idx = mathWrapi(test_idx - 1, 0, tests.numElements);
+   pathNameIn = tests.get(test_idx);
+   LoadFileBuf();
+   trace "[...] test_idx is "+test_idx+" (\""+pathNameIn+"\")";
+}
+
+// ---------------------------------------------------------------------------- InitFBO
+function InitFBO() {
+
+   // Create vertex buffer
+   gl_buf_copyfb_id = zglGenBuffer();
+   glBindBuffer(GL_ARRAY_BUFFER, gl_buf_copyfb_id);
+   zglBufferData(GL_ARRAY_BUFFER, buf_copyfb.size, buf_copyfb, GL_STATIC_DRAW);
+   glBindBuffer(GL_ARRAY_BUFFER, 0); // remove binding
+
+   // Create framebuffer
+   fbo_idx = sdvg_CreateFBO(fbo_w, fbo_h);
+
+   // Create 'copyfb' program
+   String log;
+   gl_copyfb_prog_id = glCreateProgram();
+
+   gl_copyfb_vert_id = glCreateShader(GL_VERTEX_SHADER);
+   zglShaderSource(gl_copyfb_vert_id, copyfb_vert_src);
+   glCompileShader(gl_copyfb_vert_id);
+   glGetShaderInfoLog(gl_copyfb_vert_id, log);
+   trace "[...] copyfb vertex shader log=\""+log+"\".";
+   glAttachShader(gl_copyfb_prog_id, gl_copyfb_vert_id);
+
+   gl_copyfb_frag_id = glCreateShader(GL_FRAGMENT_SHADER);
+   zglShaderSource(gl_copyfb_frag_id, copyfb_frag_src);
+   glCompileShader(gl_copyfb_frag_id);
+   glGetShaderInfoLog(gl_copyfb_frag_id, log);
+   trace "[...] copyfb fragment shader log=\""+log+"\".";
+   glAttachShader(gl_copyfb_prog_id, gl_copyfb_frag_id);
+
+   glLinkProgram(gl_copyfb_prog_id);
+
+   glGetProgramInfoLog(gl_copyfb_prog_id, log);
+   trace "[...] copyfb program log=\""+log+"\".";
+
+   glUseProgram(gl_copyfb_prog_id);
+
+   // u_copyfb_transform = glGetUniformLocation(gl_copyfb_prog_id, "u_transform");
+   u_copyfb_sampler = glGetUniformLocation(gl_copyfb_prog_id, "u_sampler");
+
+   a_copyfb_vertex = glGetAttribLocation(gl_copyfb_prog_id, "a_vertex");
+   a_copyfb_uv     = glGetAttribLocation(gl_copyfb_prog_id, "a_uv");
+
+   if(-1 == a_copyfb_vertex) die "failed to resolve a_vertex";
+   if(-1 == a_copyfb_uv)  die "failed to resolve a_uv";
+
+}
+
+// ---------------------------------------------------------------------------- onOpen
+function onOpen() {
+   trace "[trc] onOpen ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
+
+   if(!MinnieVG.OnOpen())
+   {
+      die "MinnieVG.OnOpen() failed";
+   }
+
+   sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
+
+   drawable.onOpen();
+
+   InitFBO();
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   if(_cbs & (MOUSE_WHEELDOWN | MOUSE_WHEELUP))
+   {
+      if(_nbs & MOUSE_WHEELDOWN)
+      {
+         SelectPreviousTest();
+      }
+      else
+      {
+         SelectNextTest();
+      }
+   }
+}
+
+// ---------------------------------------------------------------------------- onKeyboard
+function onKeyboard(Key _k) {
+
+   // trace "xxxx onKeyboard k.name="+_k.name+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
+
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      default:
+         if(MinnieVG.HandleDebugKey(_k))  // 'a', 'd', 'e', 'h', 'i', 's', 'u', '1', '2', '3', '4', ..
+         {
+            drawable.reset();
+            num_frames_rendered = 0;
+            return;
+         }
+         break;
+
+      case VKEY_SPACE:
+         b_rotate = !b_rotate;
+         trace "[...] b_rotate is "+b_rotate;
+         break;
+
+      case VKEY_RETURN:
+         rot_ang = 0;
+         trace "[...] reset rotation";
+         break;
+
+      case 'f':
+         b_fbo = !b_fbo;
+         trace "[...] b_fbo is "+b_fbo;
+         break;
+
+      case 'g':
+         b_draw_gl = !b_draw_gl;
+         trace "[...] b_draw_gl is "+b_draw_gl;
+         break;
+
+      case 'm':
+         b_msaa = !b_msaa;
+         trace "[...] b_msaa is "+b_msaa;
+         b_reopen = true;
+         drawable.reset();
+         SDL.exitEventLoop();
+         break;
+
+      case 'o':
+         b_gl_buf_once = !b_gl_buf_once;
+         trace "[...] b_gl_buf_once is "+b_gl_buf_once;
+         break;
+
+      case 'p':
+         b_queued_screenshot = true;
+         trace "[...] queue screenshot";
+         break;
+
+      case 't':
+         b_fbo_filter = !b_fbo_filter;
+         trace "[...] b_fbo_filter is "+b_fbo_filter;
+         break;
+
+      case 'v':
+         // FPS.limit = (FPS.limit < 60.0) ? 60.0 : 0.0f;
+         // trace "[...] FPS.limit is "+FPS.limit;
+         b_vsync = !b_vsync;
+         trace "[...] b_vsync is "+b_vsync;
+         Viewport.swapInterval(b_vsync);
+         break;
+
+      case VKEY_UP:
+         SelectNextTest();
+         break;
+
+      case VKEY_DOWN:
+         SelectPreviousTest();
+         break;
+
+      case VKEY_RIGHT:
+         stroke_scale = mathMinf(stroke_scale + 0.125f, 16.0f);
+         trace "[...] stroke_scale is "+stroke_scale;
+         drawable.reset();
+         num_frames_rendered = 0;
+         break;
+
+      case VKEY_LEFT:
+         stroke_scale = mathMaxf(stroke_scale - 0.125f, 0.125f);
+         trace "[...] stroke_scale is "+stroke_scale;
+         drawable.reset();
+         num_frames_rendered = 0;
+         break;
+   }
+
+}
+
+// ---------------------------------------------------------------------------- main
+function main() {
+   if(Arguments.numElements >= 1)
+   {
+      pathNameIn = Arguments[0];
+      if(pathNameIn.numChars <= 3)
+      {
+         test_idx = mathClampi(pathNameIn, 0, tests.numElements);
+         pathNameIn = tests.get(test_idx);
+      }
+      else
+      {
+         test_idx = tests.indexOfObject(pathNameIn, 0);
+      }
+   }
+   else
+   {
+      pathNameIn = tests.get(0);
+      test_idx = 0;
+   }
+
+   if(!pathNameIn.isBlank())
+   {
+      MinnieVG.Init(b_glcore);
+
+      LoadFileBuf();
+
+      use callbacks;
+      FPS.tickInterval = 1000.0f / 60;
+      FPS.limit = 0.0;
+      SDL.enableKeyRepeat(100/*delay*/, 20/*rate*/);
+      SDL.eventPolling = true;
+      if(b_msaa)
+      {
+         Viewport.multisampleSamples = 4;
+         Viewport.multisampleBuffers = 1;
+      }
+      Viewport.stencilBits = 8;
+      Viewport.openWindow(800*vp_scale, 600*vp_scale);
+      Viewport.swapInterval(b_vsync);
+
+      for(;;)
+      {
+         SDL.eventLoop();
+
+         if(b_reopen)
+         {
+            Viewport.close();
+            b_reopen = false;
+            Viewport.multisampleSamples = b_msaa ? 4 : 0;
+            Viewport.multisampleBuffers = b_msaa ? 1 : 0;
+            Viewport.openWindow(800*vp_scale, 600*vp_scale);
+         }
+         else
+            break;
+      }
+   }
+
+   drawable.free();
+   MinnieVG.Exit();
+   trace "cu";
+}

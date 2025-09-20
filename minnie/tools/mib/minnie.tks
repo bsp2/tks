@@ -1,0 +1,5526 @@
+// ----
+// ---- file   : minnie.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Copyright 2020-2025 by Bastian Spiegel.
+// ----
+// ----           This program is free software; you can redistribute it and/or modify
+// ----           it under the terms of the GNU General Public License as published by
+// ----           the Free Software Foundation; either version 2 of the License, or
+// ----           (at your option) any later version.
+// ----       
+// ----           This program is distributed in the hope that it will be useful,
+// ----           but WITHOUT ANY WARRANTY; without even the implied warranty of
+// ----           MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// ----           GNU General Public License for more details.
+// ----       
+// ----           You should have received a copy of the GNU General Public License
+// ----           along with this program; if not, write to the Free Software
+// ----           Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// ----
+// ---- info   : "minnie" script to binary compiler
+// ---- note   :
+// ----
+// ----
+// ----
+
+module MMinnie;
+
+use tkmath;
+
+namespace minnie;
+
+boolean b_big_endian   = 0;
+boolean b_pal_24bit    = -1;  // 0=12bit  1=24bit  -1=auto-detect
+
+// 1=check winding and reverse path (CCW=>CW). supports lines+cubic/cubicmirror splines.
+//  (note) e.g. test033_valentines, test034_ducky need this
+boolean b_path_reverse = 1;
+
+boolean b_verbose       = 1;
+boolean b_debug_parse   = 0;
+boolean b_debug_pal     = 0;
+boolean b_debug_line    = 0;
+boolean b_debug_cubic   = 0;
+boolean b_debug_arc     = 0;
+boolean b_debug_svg     = 1;  // 2=trace cmds
+boolean b_debug_paths   = 2;  // 1=main path only  2=all paths
+boolean b_debug_reverse = 0;
+boolean b_debug_mat     = 0;
+boolean b_debug_aa      = 0;  // 1=debug main path reversal (for coverage AA rasterizer)  2=verbose
+
+// (note) toggle all *_f32 with 'f32 on' / 'f32 off'
+boolean b_force_move_f32  = 0;  // 'm_f32 on'  (wildboar left eye 2nd arc sweep dir fix)
+boolean b_force_arc_f32   = 0;  // 'arc_f32 on' / 'a_f32 on'
+boolean b_force_line_f32  = 0;  // 'l_f32 on'
+boolean b_force_cubic_f32 = 0;  // 'c_f32 on'
+boolean b_force_rect_f32  = 0;  // 'r_f32 on'
+
+
+// <class.png>
+class Utils {
+
+   static HSVTOARGB32(float h, s, v, byte _a) : int {
+      // converts alpha '_a' (0..255) + hue (0..360) + saturation/value (0..1) to ARGB32 int
+
+      if(h >= 360)
+         h -= 360;
+      h /= 60;
+      int i = h;
+      float f = h - i;
+
+      int p = 255 * v * ( 1 - s );
+      int q = 255 * v * ( 1 - s * f );
+      int t = 255 * v * ( 1 - s * ( 1 - f ) );
+
+      v *= 255;
+
+      switch(i)
+      {
+         case 0:
+            return argb(_a, v, t, p);
+         case 1:
+            return argb(_a, q, v, p);
+         case 2:
+            return argb(_a, p, v, t);
+         case 3:
+            return argb(_a, p, q, v);
+         case 4:
+            return argb(_a, t, p, v);
+         default:
+            return argb(_a, v, p, q);
+      }
+   }
+
+   static RGB32TOHSV(int _c32, Float h, s, v) {
+
+      float r = ( (_c32 >> 16) & 255 ) * (1.0f / 255);
+      float g = ( (_c32 >>  8) & 255 ) * (1.0f / 255);
+      float b = ( (_c32      ) & 255 ) * (1.0f / 255);
+
+      v = mathMaxf(r, g);
+      v = mathMaxf(v, b);
+
+      float t = mathMinf(r, g);
+      t = mathMinf(t, b);
+
+      if(0 == v)
+         s = 0;
+      else
+         s = (v - t) / v;
+
+      float cr = (v - r) / (v - t);
+      float cg = (v - g) / (v - t);
+      float cb = (v - b) / (v - t);
+
+      if(r == v)
+         h = cb - cg;
+      else if(g == v)
+         h = 2 + cr - cb;
+      else if(b == v)
+         h = 4 + cg - cr;
+
+      h *= 60;
+
+      if(h < 0)
+         h += 360;
+
+   }
+
+   // <method.png>
+   static ParseBool(String _s) : boolean {
+      switch(_s)
+      {
+         case "1":
+         case "on":
+         case "enable":
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public static ReplaceLiteral(String _value) : String {
+      switch(_value)
+      {
+         case "true":
+            return "1";
+
+         case "false":
+            return "0";
+
+         case "on":
+            return "1";
+
+         case "off":
+            return "0";
+
+         default:
+            if('#' == _value.getc(0))
+            {
+               Integer io = _value;
+               if(4 == _value.numChars) // #abc => #aabbcc
+               {
+                  io =
+                     //  000000
+                     (((io&#f00)<<12) | ((io&#f00)<<8)) |
+                     (((io&#f0) <<8)  | ((io&#f0) <<4)) |
+                     ( (io&15)        | ((io&15)  <<4)) ;
+                  // trace "xxx value="+_value+" => "+io.printf("#%08x");
+                  return io.printf("#%06x");
+               }
+               else
+               {
+                  // #rrggbb
+                  return io.printf("#%06x");
+               }
+            }
+            else
+            {
+               int idxSlash = _value.indexOfChar('/', 0);
+               if(idxSlash > 0)
+               {
+                  // fraction (>>1/3<<)
+                  local String sNom   <= _value.substring(0, idxSlash);
+                  local String sDenom <= _value.substring(idxSlash+1,99);
+                  if(sNom.checkConversions() <= YAC_TYPE_FLOAT && sDenom.checkConversions() <= YAC_TYPE_FLOAT)
+                     return float(sNom) / float(sDenom);
+               }
+            }
+            break;
+      }
+   }
+
+   // <method_get.png>
+   static GetEnableString(local boolean _bEnabled) : String {
+      return (maybe == _bEnabled) ? "enabled(maybe)" : (false != _bEnabled) ? "enabled" : "disabled";
+   }
+
+   // <method_get.png>
+   static GetEnableStringMixed(boolean _bEnabled, String _sFalse, String _sTrue, String _sMixed) : String {
+      return (maybe == _bEnabled) ? _sMixed : (false != _bEnabled) ? _sTrue : _sFalse;
+   }
+
+   // <method.png>
+   static FloatToFx14_2(float _f) : int {
+      int i = _f * 4.0f + ((_f >= 0.0f) ? 0.5f : -0.5f);
+      return i;
+   }
+
+   // <method.png>
+   static Fx14_2ToFloat(int _i) : float {
+      return (_i * 0.25f);
+   }
+
+   // <method.png>
+   static SplitNumbersInString(String _s) : String {
+      // e.g. "a.547.547" => "a .547 .547"
+      local String r;
+      boolean bNumber = false;
+      boolean bDot    = false;
+      boolean bMinus  = false;
+      boolean bE      = false;
+      boolean bELast  = false;
+      int i = 0;
+      loop(_s.numChars)
+      {
+         char c = _s.getc(i++);
+         switch(c)
+         {
+            default:
+               // if( ('A' <= c <= 'Z') ||
+               //     ('a' <= c <= 'z')
+               //     )
+               // {
+                  if(bNumber)
+                     r.append(" ");
+                  bNumber = false;
+                  bDot    = false;
+                  bMinus  = false;
+                  bE      = false;
+               // }
+               r.append(tcchar(c));
+               bELast = false;
+               break;
+
+            case '.':
+               if(!bNumber)
+                  r.append(" ");
+               else if(bDot)
+               {
+                  // 2nd dot in number => start new number
+                  r.append(" ");
+                  bMinus = false;
+                  bE     = false;
+               }
+               r.append(tcchar(c));
+               bNumber = true;
+               bDot    = true;
+               bELast = false;
+               break;
+
+            case '-':
+               if(!bNumber)
+               {
+                  // Start new number
+                  r.append(" -");
+                  bNumber = true;
+                  bMinus  = true;
+                  bDot    = false;
+                  bE      = false;
+               }
+               else if(bELast)
+               {
+                  // 'e-'
+                  r.append("-");
+               }
+               else
+               {
+                  // 2nd minus in number => start new number
+                  r.append(" -");
+                  // bNumber = true;
+                  bMinus  = true;
+                  bDot    = false;
+                  bE      = false;
+               }
+               bELast = false;
+               break;
+
+            case '0':
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5':
+            case '6':
+            case '7':
+            case '8':
+            case '9':
+               if(!bNumber)
+               {
+                  // start new number
+                  r.append(" ");
+                  r.append(tcchar(c));
+                  bNumber = true;
+                  bDot    = false;
+                  bMinus  = false;
+                  bE      = false;
+               }
+               else
+                  r.append(tcchar(c));
+               bELast = false;
+               break;
+
+            case 'e':
+               bELast = false;
+               if(bNumber)
+               {
+                  if(bE)
+                  {
+                     // second 'e' in number => end last number
+                     bNumber = false;
+                     bDot    = false;
+                     bMinus  = false;
+                     bE      = false;
+                     r.append(" ");
+                  }
+                  else
+                  {
+                     bE = true;
+                     bELast = true;
+                  }
+               }
+               r.append("e");
+               break;
+
+            case ' ':
+            case '\n':
+            case '\t':
+               bNumber = false;
+               bDot    = false;
+               bMinus  = false;
+               bE      = false;
+               r.append(tcchar(c));
+               bELast  = false;
+               break;
+         }
+      }
+      return deref r;
+   }
+
+   static Backtrace() {
+      try { throw UncriticalError("debug/backtrace"); } catch(UncriticalError e) { trace e.stackTrace; }
+   }
+
+}
+
+
+// <class.png>
+class StreamWriter4 {
+   Stream *ofs;
+   int cur_byte;
+   int bit_off;
+
+   public method begin(Stream _ofs) {
+      ofs <= _ofs;
+      cur_byte = 0;
+      bit_off = 0;
+   }
+
+   public method push4(byte _v4) {
+      // trace "xxx push4 v4="+_v4;
+      if(8 == bit_off)
+      {
+         ofs.i8 = cur_byte;
+         cur_byte = 0;
+         bit_off = 0;
+      }
+      cur_byte |= (_v4 & 15) << bit_off;
+      bit_off += 4;
+   }
+
+   public method push12(short _v12) {
+      push4(_v12 & 15);
+      push4((_v12 >> 4) & 15);
+      push4((_v12 >> 8) & 15);
+   }
+
+   public method end() {
+      if(0 != bit_off)
+      {
+         ofs.i8 = cur_byte;
+         bit_off = 0;
+      }
+   }
+}
+
+
+// <class.png>
+class TokenReader {
+   StringArray *tokens;
+   int tok_idx;
+
+   public method tokenize(String _s, String _delim) {
+      tokens <= _s.tokenize(_delim);
+      if(b_debug_svg >= 2) trace "[trc] TokenReader::tokenize: tokens="+#(tokens);
+      tok_idx = 0;
+   }
+
+   public method tokenLazySkip(String _tok) {
+      if(_tok == tokens.get(tok_idx))
+         tok_idx++;
+   }
+
+   public method tokenExpect(String _tok) : boolean {
+      String tok <= tokens.get(tok_idx++);
+      // trace "xxx tokenExpect: tok=\""+tok+"\" expect=\""+_tok+"\" bool="+(_tok == tok);
+      return (_tok == tok);
+   }
+
+   public method tokenRead() : String {
+      // trace "xxx tokenRead: \""+tokens.get(tok_idx)+"\"";
+      return tokens.get(tok_idx++);
+   }
+
+   public method tokenHaveNext() : boolean {
+      return (tok_idx < tokens.numElements);
+   }
+
+   public method tokenRewind() {
+      tok_idx--;
+   }
+}
+
+
+// <class.png>
+class ParseContext {
+   String      name;
+   StringArray lines;
+
+   int          cur_line_idx;
+   String      *cur_line;
+   StringArray *cur_words;
+
+   public method initParseContext(String _name, StringArray _lines, int _lineIdx) {
+      name              = _name;
+      lines            <= deref _lines;
+      if(b_debug_parse)
+         trace "[trc] initParseContext: lineIdx="+_lineIdx;
+
+      cur_line_idx  = _lineIdx;
+   }
+
+   public method getSrcLoc() : String {
+      if(!name.isBlank())
+         return name+":"+(cur_line_idx+1);
+      return (cur_line_idx+1);
+   }
+
+   public method beginLine(int _lineOffset) : boolean {
+      cur_line <= lines.get(cur_line_idx + _lineOffset);
+      if(b_debug_parse)
+         trace "[trc] beginLine: cur_line=\""+cur_line+"\"";
+      if(null != cur_line)
+      {
+         local String lineTrim <= cur_line.trim();
+         int idxRem = lineTrim.indexOfChar(';', 0);
+         // // if((idxRem >= 0) && !('=' == lineTrim.getc(idxRem-2) && ('0' <= lineTrim.getc(idxRem+1) <= '9')))
+         if(idxRem >= 0)
+            lineTrim.substring(0, idxRem);
+         if(lineTrim.isBlank())
+            return false;
+         cur_words <= lineTrim.tokenize(" \t=~<>()[]{}*+&|^,;:");
+      }
+      else
+      {
+         cur_words <= null;
+      }
+      if(b_debug_parse)
+         trace "[trc] beginLine: cur_words="+#(cur_words);
+      return (null != cur_words);
+   }
+
+   public method nextLine() {
+      cur_line_idx++;
+      if(b_debug_parse)
+         trace "[trc] nextLine (=> cur_line_idx="+cur_line_idx+" #lines="+lines.numElements+")";
+   }
+
+   public method prevLine() {
+      cur_line_idx--;
+   }
+
+   public method getLineNr() : int {
+      return cur_line_idx + 1;
+   }
+
+   public method done() : boolean {
+      // trace "xxx done: lines="+#(lines);
+      return (cur_line_idx >= lines.numElements);
+   }
+}
+
+
+// <class.png>
+class DrawOp {
+   float cur_x;  // cursor position at start of op (temp, not exported)
+   float cur_y;
+
+   int rev_num_seg;  // -1 = don't change, generate DrawOpNumSeg otherwise (path reversal)
+   RenderState *rs;  // effective renderstate (used for main path reversal / coverage AA mode)
+
+
+   public method emit(Stream ofs, RenderState _cstate) {
+   }
+
+   public method debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("?\n");
+   }
+
+}
+
+
+// <class.png>
+class DrawOpPrim : DrawOp {
+   // base class for all ops that actually render something (and require up-to-date renderstate)
+   //  (line, rect, ellipse, cubic, cubicmirror, blit, drawpath)
+
+   public method getCopy() : DrawOpPrim {
+      return Object(this);
+   }
+}
+
+
+// <class.png>
+class DrawOpColor : DrawOp {
+   byte pal_idx;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("i "+pal_idx+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(pal_idx != _cstate.cur_pal_idx)
+      {
+         _cstate.cur_pal_idx = pal_idx;
+
+         if(pal_idx < 16)
+         {
+            ofs.i8 = 0x10 | pal_idx;
+         }
+         else
+         {
+            ofs.i8 = 0x20;
+            ofs.i8 = pal_idx;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpMiterLimit : DrawOp {
+   float miter_limit;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("ml "+miter_limit+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(miter_limit != _cstate.cur_miter_limit)
+      {
+         _cstate.cur_miter_limit = miter_limit;
+         ofs.i8 = 0x27;
+         ofs.i8 = mathClampi(miter_limit, 1, 255);
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpClip2D : DrawOp {
+   short   path_idx;  // 0=disable 2D/3D clipping
+   boolean b_fb;
+   boolean b_pre;     // 1=pre tesselation
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      if(b_fb)
+         _buf.append("w2fb\n");
+      else if(path_idx > 0)
+         _buf.append("w2 "+path_idx+"\n");
+      else
+         _buf.append("woff\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(b_fb)
+      {
+         // clip tesselated vertices against framebuffer
+         ofs.i8 = 0x51;
+      }
+      else
+      {
+         if(0 == path_idx)
+         {
+            // off
+            ofs.i8 = 0x50;
+         }
+         else if(path_idx > 256)
+         {
+            if(b_pre)
+               ofs.i8 = 0x53;
+            else
+               ofs.i8 = 0x55;
+            ofs.i16 = path_idx - 1;
+         }
+         else
+         {
+            if(b_pre)
+               ofs.i8 = 0x52;
+            else
+               ofs.i8 = 0x54;
+            ofs.i8 = path_idx - 1;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpClip3D : DrawOp {
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("w3fb\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      // clip tesselated vertices against framebuffer (and z>=0.01)
+      ofs.i8 = 0x56;
+   }
+}
+
+
+// <class.png>
+class DrawOpLogicOp : DrawOp {
+   // (todo) remove ?
+   define int MODE_SET = 0;
+   define int MODE_AND = 1;
+   define int MODE_OR  = 2;
+   define int MODE_EOR = 3;
+   byte mode;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      local String *sMode;
+      switch(mode)
+      {
+         case MODE_SET: sMode <= "set"; break;
+         case MODE_AND: sMode <= "and"; break;
+         case MODE_OR:  sMode <= "or";  break;
+         case MODE_EOR: sMode <= "eor"; break;
+         default: sMode <= "?"; break;
+      }
+      _buf.append("g "+sMode+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      ofs.i8 = 0x24 + mode;  // 0x24..0x27
+   }
+}
+
+
+// <class.png>
+class DrawOpTransform2D : DrawOp {
+   int mat_idx;  // index into matrices_2d array
+   Matrix2x3f mat;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("n mat_idx="+mat_idx+"  mat_idx="+mat_idx+" m="+mat+"\n");
+   }
+
+   public method initMatFromFloat16(IntArray _ia) {
+      int matIdx = 0;
+      mat.initIdentity();
+      loop(2*3)
+      {
+         mat[matIdx] = f32_from_f16(_ia.get(matIdx));
+         matIdx++;
+      }
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(mat_idx != _cstate.cur_mat_2d_idx)
+      {
+         _cstate.cur_mat_2d_idx = mat_idx;
+
+         if(mat_idx >= 256)
+         {
+            ofs.i8 = 0x04;
+            ofs.i16 = mat_idx;
+         }
+         else
+         {
+            ofs.i8 = 0x02;
+            ofs.i8 = mat_idx;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpTransform3D : DrawOp {
+   // DrawOpTransform3D
+   int mat_idx;  // index into matrices_3d array
+   Matrix4f mat;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("q mat_idx="+mat_idx+"  m="+mat+"\n");
+   }
+
+   public method initMatFromFloat16(IntArray _ia) {
+      int matIdx = 0;
+      loop(4*4)
+      {
+         mat[matIdx] = f32_from_f16(_ia.get(matIdx));
+         matIdx++;
+      }
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(mat_idx != _cstate.cur_mat_3d_idx)
+      {
+         _cstate.cur_mat_3d_idx = mat_idx;
+
+         if(mat_idx >= 256)
+         {
+            ofs.i8 = 0x05;
+            ofs.i16 = mat_idx;
+         }
+         else
+         {
+            ofs.i8 = 0x03;
+            ofs.i8 = mat_idx;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpJoinCap : DrawOp {
+   byte mode;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      local String *sJoin;
+      switch(mode & 15)
+      {
+         case Path.LINEJOIN_NONE:  sJoin <= "none";  break;
+         case Path.LINEJOIN_MITER: sJoin <= "miter"; break;
+         case Path.LINEJOIN_ROUND: sJoin <= "round"; break;
+         case Path.LINEJOIN_BEVEL: sJoin <= "bevel"; break;
+         default: sJoin <= "?"; break;
+      }
+      local String *sCap;
+      switch((mode >> 4) & 15)
+      {
+         case Path.LINECAP_NONE:   sCap <= "none";   break;
+         case Path.LINECAP_BUTT:   sCap <= "butt";   break;
+         case Path.LINECAP_ROUND:  sCap <= "round";  break;
+         case Path.LINECAP_SQUARE: sCap <= "square"; break;
+         default: sCap <= "?"; break;
+      }
+      _buf.append("h "+sJoin+" "+sCap+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(mode != _cstate.cur_join_cap)
+      {
+         _cstate.cur_join_cap = mode;
+
+         ofs.i8 = 0x0E;
+         ofs.i8 = mode;
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpMoveRel : DrawOp {
+   float dx;
+   float dy;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("m "+dx+" "+dy+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      boolean bDone = false;
+      _cstate.ideal_cur_x += dx;
+      _cstate.ideal_cur_y += dy;
+
+      if(b_force_move_f32)
+      {
+         ofs.i8 = 0x21;
+         ofs.f32 = _cstate.ideal_cur_x - _cstate.quant_cur_x;
+         ofs.f32 = _cstate.ideal_cur_y - _cstate.quant_cur_y;
+         _cstate.quant_cur_x = _cstate.ideal_cur_x;
+         _cstate.quant_cur_y = _cstate.ideal_cur_y;
+      }
+      else
+      {
+         int ix = Utils.FloatToFx14_2(_cstate.ideal_cur_x - _cstate.quant_cur_x);
+         int iy = Utils.FloatToFx14_2(_cstate.ideal_cur_y - _cstate.quant_cur_y);
+
+         // trace "xxx DrawOpMoveRel qlast=("+_cstate.quant_cur_x+";"+_cstate.quant_cur_y+") d=("+dx+";"+dy+") => i=("+(ix*0.25)+";"+(iy*0.25)+")";
+         boolean bFrac = (0 != (ix & 3)) || (0 != (iy & 3));
+         boolean bEven = (0 == (ix & 4))  && (0 == (iy &  4));
+         if(abs(dx) < 32 && abs(dy) < 32)
+         {
+            ofs.i8 = 0x28;   // signed 6.2
+            ofs.i8 = ix;
+            ofs.i8 = iy;
+         }
+         else if(abs(dx) < 128 && abs(dy) < 128)
+         {
+            if(!bFrac)
+            {
+               ofs.i8 = 0x2A;   // signed 8.0
+               ofs.i8 = ix >> 2;
+               ofs.i8 = iy >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+            }
+            else
+            {
+               ofs.i8  = 0x29;  // signed 14.2
+               ofs.i16 = ix;
+               ofs.i16 = iy;
+            }
+         }
+         else if(!bFrac && (-256 <= dx < 0) && (-256 <= dy < 0))
+         {
+            ofs.i8 = 0x95;  // -unsigned 8.0
+            ofs.i8 = (-ix >> 2) - 1;
+            ofs.i8 = (-iy >> 2) - 1;
+         }
+         else if(!bFrac && bEven && (2 <= dx <= 512) && (2 <= dy <= 512))
+         {
+            ofs.i8 = 0x96;  // unsigned 8.0 * 2 (even)
+            ofs.i8 = (ix >> 3) - 1;
+            ofs.i8 = (iy >> 3) - 1;
+         }
+         else if(0 <= dx < 256 && 0 <= dy < 256)
+         {
+            if(!bFrac)
+            {
+               ofs.i8 = 0x2B;  // unsigned 8.0
+               ofs.i8 = ix >> 2;
+               ofs.i8 = iy >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+            }
+            else
+            {
+               ofs.i8  = 0x29;  // signed 14.2
+               ofs.i16 = ix;
+               ofs.i16 = iy;
+            }
+         }
+         else
+         {
+            ofs.i8  = 0x29;  // signed 14.2
+            ofs.i16 = ix;
+            ofs.i16 = iy;
+         }
+         _cstate.quant_cur_x += Utils.Fx14_2ToFloat(ix);
+         _cstate.quant_cur_y += Utils.Fx14_2ToFloat(iy);
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpMoveAbs : DrawOp {
+   float x;
+   float y;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("M "+x+" "+y+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      boolean bDone = false;
+      _cstate.ideal_cur_x = x;
+      _cstate.ideal_cur_y = y;
+
+      if(b_force_move_f32 || (abs(x) > 8191.0) || (abs(y) > 8191.0) )
+      {
+         ofs.i8 = 0x22;
+         ofs.f32 = x;
+         ofs.f32 = y;
+         _cstate.quant_cur_x = x;
+         _cstate.quant_cur_y = y;
+      }
+      else
+      {
+         int ix = Utils.FloatToFx14_2(_cstate.ideal_cur_x);
+         int iy = Utils.FloatToFx14_2(_cstate.ideal_cur_y);
+         boolean bFrac = (0 != (ix & 3))  || (0 != (iy &  3));
+         boolean bEven = (0 == (ix & 4))  && (0 == (iy &  4));
+         boolean bMul4 = (0 == (ix & 12)) && (0 == (iy & 12));
+
+         if(!bFrac)
+         {
+            if(0 <= ix < 256 && 0 <= iy < 256)
+            {
+               ofs.i8 = 0x2C;   // u8.0
+               ofs.i8 = ix >> 2;
+               ofs.i8 = iy >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+               bDone = true;
+            }
+            else if(bMul4)
+            {
+               if(0 <= ix < 1024 && 0 <= iy < 1024)
+               {
+                  ofs.i8 = 0x2E;  // u8.0*4
+                  ofs.i8 = ix >> (2+2);
+                  ofs.i8 = iy >> (2+2);
+                  ix = (ix >> 4) << 4;
+                  iy = (iy >> 4) << 4;
+                  bDone = true;
+               }
+            }
+            else if(bEven)
+            {
+               if(0 <= ix < 512 && 0 <= iy < 512)
+               {
+                  ofs.i8 = 0x2D;  // u8.0*2
+                  ofs.i8 = ix >> (2+1);
+                  ofs.i8 = iy >> (2+1);
+                  ix = (ix >> 3) << 3;
+                  iy = (iy >> 3) << 3;
+                  bDone = true;
+               }
+            }
+         }
+
+         if(!bDone)
+         {
+            ofs.i8  = 0x2F;  // s14.2
+            ofs.i16 = ix;
+            ofs.i16 = iy;
+         }
+
+         _cstate.quant_cur_x = Utils.Fx14_2ToFloat(ix);
+         _cstate.quant_cur_y = Utils.Fx14_2ToFloat(iy);
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpTarget : DrawOp {
+   Framebuffer *fb;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("t "+fb.id+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(fb.fb_idx != _cstate.cur_fb_idx)
+      {
+         _cstate.cur_fb_idx = fb.fb_idx;
+
+         if(fb.fb_idx < 7)
+         {
+            ofs.i8 = 0x30 + fb.fb_idx;
+         }
+         else
+         {
+            ofs.i8 = 0x37;
+            ofs.i8 = fb.fb_idx;
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class DrawOpSource : DrawOp {
+   Framebuffer *fb;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("u "+fb.id+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(fb.fb_idx != _cstate.cur_src_fb_idx)
+      {
+         _cstate.cur_src_fb_idx = fb.fb_idx;
+
+         if(fb.fb_idx < 7)
+         {
+            ofs.i8 = 0x38 + fb.fb_idx;
+         }
+         else
+         {
+            ofs.i8 = 0x3F;
+            ofs.i8 = fb.fb_idx;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpFill : DrawOpPrim {
+   byte    pal_idx;
+   boolean b_coverage_aa;  // prepare coverage-AA rendering (will fb with 0) (generated during main path reversal) (ignore pal_idx)
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      if(b_coverage_aa)
+         _buf.append("f aa\n");
+      else
+         _buf.append("f "+pal_idx+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(b_coverage_aa)
+      {
+         ofs.i8 = 0x4F;
+      }
+      else if(pal_idx < 14)
+      {
+         ofs.i8 = 0x40 | pal_idx;
+      }
+      else
+      {
+         ofs.i8 = 0x4E;
+         ofs.i8 = pal_idx;
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpBlit : DrawOpPrim {
+   float dst_x;
+   float dst_y;
+   int   w;
+   int   h;
+   int   src_x;
+   int   src_y;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("b "+dst_x+" "+dst_y+" "+w+" "+h+" "+src_x+" "+src_y+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(0 == src_x && 0 == src_y && 0 == w && 0 == h)
+      {
+         ofs.i8  = 0x60;
+         ofs.i16 = dst_x;
+         ofs.i16 = dst_y;
+      }
+      else if(src_x < 256 && src_y < 256 && w < 256 && h < 256)
+      {
+         ofs.i8  = 0x61;
+         ofs.i16 = dst_x;
+         ofs.i16 = dst_y;
+         ofs.i8  = w;
+         ofs.i8  = h;
+         ofs.i8  = src_x;
+         ofs.i8  = src_y;
+      }
+      else
+      {
+         ofs.i8  = 0x62;
+         ofs.i16 = dst_x;
+         ofs.i16 = dst_y;
+         ofs.i16 = w;
+         ofs.i16 = h;
+         ofs.i16 = src_x;
+         ofs.i16 = src_y;
+      }
+   }
+}
+
+// <class.png>
+class DrawOpMask : DrawOp {
+   int pal_idx;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("a "+pal_idx+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(pal_idx != _cstate.cur_mask_idx)
+      {
+         _cstate.cur_mask_idx = pal_idx;
+
+         // trace "xxx DrawOpMask: pal_idx="+pal_idx;
+         if(pal_idx < 0)
+         {
+            ofs.i8 = 0x81;  // disable
+         }
+         else if(pal_idx < 16)
+         {
+            ofs.i8 = 0x70 | pal_idx;
+         }
+         else
+         {
+            ofs.i8 = 0x80;
+            ofs.i8 = pal_idx;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpStrokeW : DrawOp {
+   float stroke_w;  // stored as 6.2 byte (2 fractional bits). 0.25 (int 1) = draw (non-extruded) polyline
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("k "+stroke_w+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      // trace "xxx DrawOpStrokeW: cur="+_cstate.cur_stroke_w+" new="+stroke_w;
+      if(stroke_w != _cstate.cur_stroke_w)
+      {
+         _cstate.cur_stroke_w = stroke_w;
+
+         if(stroke_w > 0.0f)
+         {
+            ofs.i8 = 0x82;
+            ofs.i8 = Utils.FloatToFx14_2(stroke_w);
+         }
+         else
+         {
+            ofs.i8 = 0x83;  // disable stroke / enable fill
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class DrawOpLine : DrawOpPrim {
+   float dx;
+   float dy;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("l "+dx+" "+dy+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+
+      _cstate.ideal_cur_x += dx;
+      _cstate.ideal_cur_y += dy;
+
+      if(b_debug_line)
+         trace "[dbg] DrawOpLine::emit: oldQuant=("+_cstate.quant_cur_x+";"+_cstate.quant_cur_y+")  delta=("+dx+";"+dy+") => dst=("+_cstate.ideal_cur_x+";"+_cstate.ideal_cur_y+")";
+
+      if(b_force_line_f32)
+      {
+         ofs.i8 = 0x26;  // l f32
+         ofs.f32 = _cstate.ideal_cur_x - _cstate.quant_cur_x;
+         ofs.f32 = _cstate.ideal_cur_y - _cstate.quant_cur_y;
+         _cstate.quant_cur_x = _cstate.ideal_cur_x;
+         _cstate.quant_cur_y = _cstate.ideal_cur_y;
+      }
+      else
+      {
+         int ix = Utils.FloatToFx14_2(_cstate.ideal_cur_x - _cstate.quant_cur_x);
+         int iy = Utils.FloatToFx14_2(_cstate.ideal_cur_y - _cstate.quant_cur_y);
+         boolean bFrac = (0 != (ix & 3)) || (0 != (iy & 3));
+         boolean bEven = ((0 == (ix & 4)) && (0 == (iy & 4)));
+         // trace "xxx emitLine: bFrac="+bFrac+" d=("+dx+";"+dy+") => ix="+ix+" iy="+iy;
+
+         boolean bDone = false;
+         if(!bFrac)
+         {
+            if(0 <= dx < 256 && 0 <= dy < 256)
+            {
+               ofs.i8 = 0x8A;  // unsigned 8.0 bytes
+               ofs.i8 = ix >> 2;
+               ofs.i8 = iy >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+               bDone = true;
+            }
+         }
+         else
+         {
+            if(0 <= dx < 64 && 0 <= dy < 64)
+            {
+               ofs.i8 = 0x88;  // unsigned 6.2 bytes
+               ofs.i8 = ix;
+               ofs.i8 = iy;
+               bDone = true;
+            }
+            else if(abs(dx) < 32 && abs(dy) < 32)
+            {
+               ofs.i8 = 0x8B;  // signed 6.2 bytes
+               ofs.i8 = ix;
+               ofs.i8 = iy;
+               bDone = true;
+            }
+            else if(dx < 512 && dy < 512)
+            {
+               ofs.i8 = 0x8C;  // signed 10.2 bytes  (24 bit = 3 bytes)
+               StreamWriter4 ofs4; ofs4.begin(ofs);
+               ofs4.push12(ix);
+               ofs4.push12(iy);
+               ofs4.end();
+               bDone = true;
+            }
+         }
+
+         if(!bDone)
+         {
+            ofs.i8  = 0x89;  // signed 14.2 shorts (32 bit = 4 bytes)
+            ofs.i16 = ix;
+            ofs.i16 = iy;
+         }
+
+         _cstate.quant_cur_x += Utils.Fx14_2ToFloat(ix);
+         _cstate.quant_cur_y += Utils.Fx14_2ToFloat(iy);
+      }
+   }
+
+}
+
+// <class.png>
+class DrawOpNumSeg : DrawOp {
+   int num_seg;  // 0=def
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("j "+num_seg+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(num_seg != _cstate.cur_num_seg)
+      {
+         _cstate.cur_num_seg = num_seg;
+
+         if(num_seg < 256)
+         {
+            ofs.i8 = 0x8E;
+            ofs.i8 = num_seg;
+         }
+         else
+         {
+            ofs.i8  = 0x8F;
+            ofs.i16 = num_seg;
+         }
+      }
+   }
+
+}
+
+
+// <class.png>
+class DrawOpCubic : DrawOpPrim {
+   float c1x;  // relative to previous cursor pos
+   float c1y;
+   float c2x;  // relative to new cursor pos
+   float c2y;
+   float dx;
+   float dy;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("c "+c1x+" "+c1y+" "+c2x+" "+c2y+" "+dx+" "+dy+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(b_debug_cubic) trace "[trc] DrawOpCubic::emit: c1=("+c1x+";"+c1y+") c2=("+c2x+";"+c2y+") d=("+dx+";"+dy+")";
+
+      _cstate.ideal_cur_x += dx;
+      _cstate.ideal_cur_y += dy;
+
+      if(b_force_cubic_f32)
+      {
+         ofs.i8 = 0x23;  // c f32
+         ofs.f32 = c1x;
+         ofs.f32 = c1y;
+         ofs.f32 = c2x;
+         ofs.f32 = c2y;
+         ofs.f32 = _cstate.ideal_cur_x - _cstate.quant_cur_x;
+         ofs.f32 = _cstate.ideal_cur_y - _cstate.quant_cur_y;
+         _cstate.quant_cur_x = _cstate.ideal_cur_x;
+         _cstate.quant_cur_y = _cstate.ideal_cur_y;
+      }
+      else
+      {
+         int ic1x = Utils.FloatToFx14_2(c1x);  // (todo) calc distance to cstate.quant_cur_x
+         int ic1y = Utils.FloatToFx14_2(c1y);
+         int ic2x = Utils.FloatToFx14_2(c2x);
+         int ic2y = Utils.FloatToFx14_2(c2y);
+
+         int ix = Utils.FloatToFx14_2(_cstate.ideal_cur_x - _cstate.quant_cur_x);
+         int iy = Utils.FloatToFx14_2(_cstate.ideal_cur_y - _cstate.quant_cur_y);
+
+         boolean bFrac =
+            (0 != (ic1x & 3)) ||
+            (0 != (ic1y & 3)) ||
+            (0 != (ic2x & 3)) ||
+            (0 != (ic2y & 3)) ||
+            (0 != (ix   & 3)) ||
+            (0 != (iy   & 3)) ;
+
+         boolean bDone = false;
+         if(bFrac)
+         {
+            if(abs(c1x) < 32 &&
+               abs(c1y) < 32 &&
+               abs(c2x) < 32 &&
+               abs(c2y) < 32 &&
+               abs(dx)  < 32 &&
+               abs(dy)  < 32
+               )
+            {
+               ofs.i8 = 0x90;  // signed 6.2 bytes
+               ofs.i8 = ic1x;
+               ofs.i8 = ic1y;
+               ofs.i8 = ic2x;
+               ofs.i8 = ic2y;
+               ofs.i8 = ix;
+               ofs.i8 = iy;
+               bDone = true;
+            }
+            else if(abs(c1x) < 511 &&
+                    abs(c1y) < 511 &&
+                    abs(c2x) < 511 &&
+                    abs(c2y) < 511 &&
+                    abs(dx)  < 511 &&
+                    abs(dy)  < 511
+                    )
+            {
+               ofs.i8 = 0x94;  // signed 10.2 packed 12bits
+               StreamWriter4 ofs4; ofs4.begin(ofs);
+               ofs4.push12(ic1x);  // 6*12=72 bits (9 bytes + 1 pad byte = 10 bytes)
+               ofs4.push12(ic1y);
+               ofs4.push12(ic2x);
+               ofs4.push12(ic2y);
+               ofs4.push12(ix);
+               ofs4.push12(iy);
+               ofs4.end();
+               bDone = true;
+            }
+         }
+         else
+         {
+            if(abs(c1x) < 127 &&
+               abs(c1y) < 127 &&
+               abs(c2x) < 127 &&
+               abs(c2y) < 127 &&
+               abs(dx)  < 127 &&
+               abs(dy)  < 127
+               )
+            {
+               ofs.i8 = 0x91;  // signed 8.0 bytes
+               ofs.i8 = ic1x >> 2;
+               ofs.i8 = ic1y >> 2;
+               ofs.i8 = ic2x >> 2;
+               ofs.i8 = ic2y >> 2;
+               ofs.i8 = ix   >> 2;
+               ofs.i8 = iy   >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+               bDone = true;
+            }
+            else if(0 <= c1x < 256 &&
+                    0 <= c1y < 256 &&
+                    0 <= c2x < 256 &&
+                    0 <= c2y < 256 &&
+                    0 <= dx  < 256 &&
+                    0 <= dy  < 256
+                    )
+            {
+               ofs.i8 = 0x92;  // unsigned 8.0 bytes
+               ofs.i8 = ic1x >> 2;
+               ofs.i8 = ic1y >> 2;
+               ofs.i8 = ic2x >> 2;
+               ofs.i8 = ic2y >> 2;
+               ofs.i8 = ix   >> 2;
+               ofs.i8 = iy   >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+               bDone = true;
+            }
+         }
+
+         if(!bDone)
+         {
+            ofs.i8  = 0x93;  // signed 14.2 shorts  (6*16=96 bits / 12 bytes)
+            ofs.i16 = ic1x;
+            ofs.i16 = ic1y;
+            ofs.i16 = ic2x;
+            ofs.i16 = ic2y;
+            ofs.i16 = ix;
+            ofs.i16 = iy;
+         }
+
+         _cstate.quant_cur_x += Utils.Fx14_2ToFloat(ix);
+         _cstate.quant_cur_y += Utils.Fx14_2ToFloat(iy);
+      }
+   }
+
+}
+
+// <class.png>
+class DrawOpCubicMirror : DrawOpPrim {
+   float c2x;
+   float c2y;
+   float dx;
+   float dy;
+
+   float tmp_mirrored_c1x;  // tmp during Path::reverse()
+   float tmp_mirrored_c1y;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("s "+c2x+" "+c2y+" "+dx+" "+dy+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+
+      _cstate.ideal_cur_x += dx;
+      _cstate.ideal_cur_y += dy;
+
+      if(b_force_cubic_f32)
+      {
+         ofs.i8 = 0x25;  // s f32
+         ofs.f32 = c2x;
+         ofs.f32 = c2y;
+         ofs.f32 = _cstate.ideal_cur_x - _cstate.quant_cur_x;
+         ofs.f32 = _cstate.ideal_cur_y - _cstate.quant_cur_y;
+         _cstate.quant_cur_x = _cstate.ideal_cur_x;
+         _cstate.quant_cur_y = _cstate.ideal_cur_y;
+      }
+      else
+      {
+         int ic2x = Utils.FloatToFx14_2(c2x);
+         int ic2y = Utils.FloatToFx14_2(c2y);
+
+         int ix = Utils.FloatToFx14_2(_cstate.ideal_cur_x - _cstate.quant_cur_x);
+         int iy = Utils.FloatToFx14_2(_cstate.ideal_cur_y - _cstate.quant_cur_y);
+         boolean bFrac =
+            (0 != (ic2x & 3)) ||
+            (0 != (ic2y & 3)) ||
+            (0 != (ix   & 3)) ||
+            (0 != (iy   & 3)) ;
+
+         boolean bDone = false;
+         if(bFrac)
+         {
+            if(abs(c2x) < 32 &&
+               abs(c2y) < 32 &&
+               abs(dx)  < 32 &&
+               abs(dy)  < 32
+               )
+            {
+               ofs.i8 = 0x98;  // signed 6.2 bytes
+               ofs.i8 = ic2x;
+               ofs.i8 = ic2y;
+               ofs.i8 = ix;
+               ofs.i8 = iy;
+               bDone = true;
+            }
+            // // else if(abs(c2x) < 512 &&  // => scrapped, no savings (2 pad bytes == 8 bytes, same as 14.2)
+            // //         abs(c2y) < 512 &&
+            // //         abs(dx)  < 512 &&
+            // //         abs(dy)  < 512
+            // //         )
+            // // {
+            // //    ofs.i8 = 0x9C;  // signed 10.2 bytes  (4*12=48 bit = 6 bytes + 2 pad bytes = 8 bytes)
+            // //    StreamWriter4 ofs4; ofs4.begin(ofs);
+            // //    ofs4.push12(ix);
+            // //    ofs4.push12(iy);
+            // //    ofs4.end();
+            // //    bDone = true;
+            // // }
+         }
+         else
+         {
+            if(abs(c2x) < 128 &&
+               abs(c2y) < 128 &&
+               abs(dx)  < 128 &&
+               abs(dy)  < 128
+               )
+            {
+               ofs.i8 = 0x99;  // signed 8.0 bytes
+               ofs.i8 = ic2x >> 2;
+               ofs.i8 = ic2y >> 2;
+               ofs.i8 = ix   >> 2;
+               ofs.i8 = iy   >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+               bDone = true;
+            }
+            else if(0 <= c2x < 256 &&
+                    0 <= c2y < 256 &&
+                    0 <= dx  < 256 &&
+                    0 <= dy  < 256
+                    )
+            {
+               ofs.i8 = 0x9A;  // unsigned 8.0 bytes
+               ofs.i8 = ic2x >> 2;
+               ofs.i8 = ic2y >> 2;
+               ofs.i8 = ix   >> 2;
+               ofs.i8 = iy   >> 2;
+               ix = (ix >> 2) << 2;
+               iy = (iy >> 2) << 2;
+               bDone = true;
+            }
+         }
+
+         if(!bDone)
+         {
+            ofs.i8  = 0x9B;  // signed 14.2 shorts  (4*16 = 64 bit = 8 bytes)
+            ofs.i16 = ic2x;
+            ofs.i16 = ic2y;
+            ofs.i16 = ix;
+            ofs.i16 = iy;
+         }
+
+         _cstate.quant_cur_x += Utils.Fx14_2ToFloat(ix);
+         _cstate.quant_cur_y += Utils.Fx14_2ToFloat(iy);
+      }
+   }
+
+}
+
+
+// <class.png>
+class DrawOpArc : DrawOpPrim {
+   float   rx;
+   float   ry;
+   float   xrot;
+   boolean b_large_arc;
+   boolean b_arc_sweep;
+   float   dx;
+   float   dy;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("arc "+rx+" "+ry+" "+xrot+" "+b_large_arc+" "+b_arc_sweep+" "+dx+" "+dy+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      if(b_debug_arc) trace "[trc] DrawOpArc::emit: cursor=("+_cstate.ideal_cur_x+";"+_cstate.ideal_cur_y+") r=("+rx+";"+ry+") xrot="+xrot+" b_large_arc="+b_large_arc+" b_arc_sweep="+b_arc_sweep+" d=("+dx+";"+dy+")";
+
+      _cstate.ideal_cur_x += dx;
+      _cstate.ideal_cur_y += dy;
+
+      if(rx > 0.0f && ry > 0.0f)
+      {
+         int ix = Utils.FloatToFx14_2(_cstate.ideal_cur_x - _cstate.quant_cur_x);
+         int iy = Utils.FloatToFx14_2(_cstate.ideal_cur_y - _cstate.quant_cur_y);
+
+         float fRot = xrot;
+         if(fRot < 0.0f)
+            fRot += 360.0f;
+         if(fRot >= 360.0f)
+            fRot -= 360.0f;
+         int rotAndFlags = int( (xrot * 512 * 32) / 360.0f ) << 2;
+         if(b_debug_arc >= 2 && fRot != 0.0f)
+            trace "xxx DrawOpArc::emit: fRot="+fRot+" rotAndFlags="+rotAndFlags;
+         rotAndFlags |= (b_large_arc << 0);
+         rotAndFlags |= (b_arc_sweep << 1);
+
+         if(b_force_arc_f32)
+         {
+            ofs.i8 = 0x9F;
+            ofs.f32 = rx;
+            ofs.f32 = ry;
+            ofs.i16 = rotAndFlags;
+            ofs.f32 = (_cstate.ideal_cur_x - _cstate.quant_cur_x);
+            ofs.f32 = (_cstate.ideal_cur_y - _cstate.quant_cur_y);
+            _cstate.quant_cur_x = _cstate.ideal_cur_x;
+            _cstate.quant_cur_y = _cstate.ideal_cur_y;
+         }
+         else
+         {
+            ofs.i8 = 0x9E;
+            ofs.i16 = Utils.FloatToFx14_2(rx);
+            ofs.i16 = Utils.FloatToFx14_2(ry);
+            ofs.i16 = rotAndFlags;
+            ofs.i16 = ix;
+            ofs.i16 = iy;
+            _cstate.quant_cur_x += Utils.Fx14_2ToFloat(ix);
+            _cstate.quant_cur_y += Utils.Fx14_2ToFloat(iy);
+         }
+
+      }
+      else
+      {
+         // invalid radius => straight line
+         if(b_debug_arc) trace "[~~~] DrawOpArc::emit: invalid radius, fallback to line";
+         ofs.i8  = 0x89;  // signed 14.2 shorts (32 bit = 4 bytes)
+         ofs.i16 = ix;
+         ofs.i16 = iy;
+         _cstate.quant_cur_x += Utils.Fx14_2ToFloat(ix);
+         _cstate.quant_cur_y += Utils.Fx14_2ToFloat(iy);
+      }
+
+   }
+}
+
+
+// <class.png>
+class DrawOpRect : DrawOpPrim {
+   float w;
+   float h;
+   float rx;  // corner radius x
+   float ry;  // corner radius y
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("r "+w+" "+h+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      boolean bFrac;
+      boolean bEven;
+
+      int iw = Utils.FloatToFx14_2(w);
+      int ih = Utils.FloatToFx14_2(h);
+
+      if(b_force_rect_f32 || w > 16383 || h > 16383)
+      {
+         ofs.i8 = 0xA4;  // f32
+         ofs.f32 = w;
+         ofs.f32 = h;
+         ofs.f32 = rx;
+         ofs.f32 = ry;
+      }
+      else if(rx > 0.0 || ry > 0.0)
+      {
+         int irx = Utils.FloatToFx14_2(rx);
+         int iry = Utils.FloatToFx14_2(ry);
+         bFrac = (0 != (iw &  3)) || (0 != (ih &  3)) || (0 != (irx & 3)) || (0 != (iry & 3));
+         bEven = (0 == (iw &  4)) && (0 == (ih &  4)) && (0 == (irx &  4)) && (0 == (iry &  4));
+
+         if(!bFrac && bEven)
+         {
+            ofs.i8 = 0xA6;  // u8*2
+            ofs.i8 = int(w)  >> 1;
+            ofs.i8 = int(h)  >> 1;
+            ofs.i8 = int(rx) >> 1;
+            ofs.i8 = int(ry) >> 1;
+         }
+         else
+         {
+            ofs.i8 = 0xA5;  // u14.2
+            ofs.i16 = iw;
+            ofs.i16 = ih;
+            ofs.i16 = irx;
+            ofs.i16 = iry;
+         }
+      }
+      else
+      {
+         bFrac = (0 != (iw &  3)) || (0 != (ih &  3));
+         bEven = (0 == (iw &  4)) && (0 == (ih &  4));
+         boolean bMul4 = (0 == (iw & 12)) && (0 == (ih & 12));
+
+         if(!bFrac)
+         {
+            if(iw < 256 && ih < 256)
+            {
+               ofs.i8 = 0xA2;  // unsigned 8.0 bytes
+               ofs.i8 = iw >> 2;
+               ofs.i8 = ih >> 2;
+            }
+            else if(bEven && (iw < 512 && ih < 512))
+            {
+               ofs.i8 = 0xA3;  // unsigned 8.0 bytes, multiple of 4
+               ofs.i8 = iw >> (2 + 1);
+               ofs.i8 = ih >> (2 + 1);
+            }
+            else
+            {
+               ofs.i8 = 0xA1;  // unsigned 14.2 shorts
+               ofs.i16 = iw;
+               ofs.i16 = ih;
+            }
+         }
+         else
+         {
+            if(iw < 64 && ih < 64)
+            {
+               ofs.i8 = 0xA0;  // unsigned 6.2 bytes
+               ofs.i8 = iw;
+               ofs.i8 = ih;
+            }
+            else
+            {
+               ofs.i8 = 0xA1;  // unsigned 14.2 shorts
+               ofs.i16 = iw;
+               ofs.i16 = ih;
+            }
+         }
+      }
+   }
+}
+
+// <class.png>
+class DrawOpEllipse : DrawOpPrim {
+   float rx;
+   float ry;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("e "+rx+" "+ry+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      int irx = Utils.FloatToFx14_2(rx);
+      int iry = Utils.FloatToFx14_2(ry);
+      boolean bFrac = (0 != (irx &  3)) || (0 != (iry &  3));
+      boolean bEven = (0 == (irx &  4)) && (0 == (iry &  4));
+      boolean bMul4 = (0 == (irx & 12)) && (0 == (iry & 12));
+
+      if(!bFrac)
+      {
+         if(irx < 256 && iry < 256)
+         {
+            ofs.i8 = 0xB2;  // unsigned 8.0 bytes
+            ofs.i8 = irx >> 2;
+            ofs.i8 = iry >> 2;
+         }
+         else if(bEven && (irx < 512 && iry < 512))
+         {
+            ofs.i8 = 0xB3;  // unsigned 8.0 bytes, multiple of 4
+            ofs.i8 = irx >> (2 + 1);
+            ofs.i8 = iry >> (2 + 1);
+         }
+         else
+         {
+            ofs.i8 = 0xB1;  // unsigned 14.2 shorts
+            ofs.i16 = irx;
+            ofs.i16 = iry;
+         }
+      }
+      else
+      {
+         if(irx < 64 && iry < 64)
+         {
+            ofs.i8 = 0xB0;  // unsigned 6.2 bytes
+            ofs.i8 = irx;
+            ofs.i8 = iry;
+         }
+         else
+         {
+            ofs.i8 = 0xB1;  // unsigned 14.2 shorts
+            ofs.i16 = irx;
+            ofs.i16 = iry;
+         }
+      }
+   }
+}
+
+// <class.png>
+class DrawOpCircle : DrawOpPrim {
+   float r;
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("circle "+r+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      int ir = Utils.FloatToFx14_2(r);
+
+      ofs.i8 = 0xB4;  // unsigned 14.2 shorts
+      ofs.i16 = ir;
+   }
+}
+
+// <class.png>
+class DrawOpInsertPath : DrawOp {
+   // (todo) remove ?
+   Path *path;
+   float scale_x;
+   float scale_y;
+   float rot;  // 0..360
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("v "+path.id+" "+scale_x+" "+scale_y+" "+rot+"\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      int iscalex = scale_x * 4096.0f + 0.5f;
+      int iscaley = scale_y * 4096.0f + 0.5f;
+      int irot    = (rot * 16384) / 360.0f;
+      boolean bPathIdxW = (path.path_idx > 255);
+      if(1.0f == scale_x && 1.0f == scale_y && 0.0f == rot)
+      {
+         if(bPathIdxW)
+         {
+            ofs.i8  = 0xC3;
+            ofs.i16 = path.path_idx;
+         }
+         else
+         {
+            ofs.i8 = 0xC2;
+            ofs.i8 = path.path_idx;
+         }
+      }
+      else
+      {
+         if(bPathIdxW)
+         {
+            ofs.i8  = 0xC0;
+            ofs.i8  = path.path_idx;
+         }
+         else
+            ofs.i8  = 0xC1;
+            ofs.i16 = path.path_idx;
+         {
+         }
+         ofs.i16 = iscalex;
+         ofs.i16 = iscaley;
+         ofs.i16 = irot;
+      }
+   }
+}
+
+// <class.png>
+class DrawOpDrawPath : DrawOpPrim {
+   Path *path;
+   int mode;  // 0=no transform, 1=transform 2d, 2=transform 3d
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      switch(mode)
+      {
+         default:
+         case 0:
+            _buf.append("d "+path.id+"\n");
+            break;
+
+         case 1:
+            _buf.append("d2 "+path.id+"\n");
+            break;
+
+         case 2:
+            _buf.append("d3 "+path.id+"\n");
+            break;
+      }
+   }
+
+   public method getCopy() : DrawOpPrim {
+      // implemented by derived classes
+      local DrawOpDrawPath op;
+      op.path <= path;
+      op.mode  = mode;
+      return deref op;
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      boolean bPathIdxW = (path.vis_path_idx > 255);
+      switch(mode)
+      {
+         default:
+         case 0:
+            if(bPathIdxW)
+            {
+               ofs.i8 = 0xD1;
+               ofs.i16 = path.vis_path_idx;
+            }
+            else
+            {
+               ofs.i8 = 0xD0;
+               ofs.i8 = path.vis_path_idx;
+            }
+            break;
+
+         case 1:  // transform 2d
+            if(bPathIdxW)
+            {
+               ofs.i8 = 0xD4;
+               ofs.i16 = path.vis_path_idx;
+            }
+            else
+            {
+               ofs.i8 = 0xD2;
+               ofs.i8 = path.vis_path_idx;
+            }
+            break;
+
+         case 2:  // transform 3d
+            if(bPathIdxW)
+            {
+               ofs.i8 = 0xD5;
+               ofs.i16 = path.vis_path_idx;
+            }
+            else
+            {
+               ofs.i8 = 0xD3;
+               ofs.i8 = path.vis_path_idx;
+            }
+            break;
+      }
+   }
+}
+
+
+// <class.png>
+class DrawOpFreePath : DrawOp {
+   // free last rendered path
+
+   public virtual debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("fp\n");
+   }
+
+   public virtual emit(Stream ofs, RenderState _cstate) {
+      ofs.i8 = 0x5F;
+   }
+}
+
+
+// <class.png>
+class Framebuffer {
+   String id;
+   int    fb_idx;
+   int    w;
+   int    h;
+
+   boolean b_coverage_aa_clear_pending;  // temporary (for coverage AA main path reversal)
+
+   public method init(int _idx, String _id, int _w, int _h) {
+      fb_idx = _idx;
+      id     = _id;
+      w      = _w;
+      h      = _h;
+
+      b_coverage_aa_clear_pending = true;
+   }
+}
+
+
+
+// <class.png>
+class Path {
+   define int TYPE_DRAW      = 0;  // 0x84: no points / no tesselator (main draw list)
+   define int TYPE_CONVEX    = 1;  // 0x84: no tesselator
+   define int TYPE_CONCAVE   = 2;  // 0x85: (simple) ear-clipping tesselator
+   define int TYPE_HOLES     = 3;  // 0x87: SGI/VG tesselator (can add holes with sub-paths)
+   define int TYPE_IMMEDIATE = 4;  // 0x8D: specialized render functions (rect, roundrect, ellipse, circle, ..)
+
+   // https://www.w3.org/TR/SVG11/painting.html#StrokeLinecapProperty
+   define int LINECAP_NONE   = 0;
+   define int LINECAP_BUTT   = 1;
+   define int LINECAP_ROUND  = 2;
+   define int LINECAP_SQUARE = 3;
+
+   define int LINEJOIN_NONE  = 0;
+   define int LINEJOIN_MITER = 1;
+   define int LINEJOIN_ROUND = 2;
+   define int LINEJOIN_BEVEL = 3;
+
+   int        path_idx;
+   int        vis_path_idx;  // updated in emitPaths()
+   String     id;
+   DrawOp *[] draw_ops;
+   boolean    b_closed;
+   byte       type;          // see TYPE_xxx
+   boolean    b_winding_checked;
+   boolean    b_used;
+   Path      *parent_path;   // !=null: is sub path (inherits parent path settings, e.g. 'concave' flag)
+
+   FloatArray points;  // approximation of path (for winding check)
+
+   Path *[] sub_paths;  // see parseSVGPath()
+
+   public method init(int _pathIdx, String _id, byte _type) {
+      path_idx = _pathIdx;
+      id       = _id;
+      type     = _type;
+   }
+
+   public method addSubPath(Path _pSub) {
+      _pSub.parent_path <= this;
+      sub_paths.add(#(deref _pSub));
+   }
+
+   public method addDrawOp(DrawOp _op) {
+      draw_ops.add(#(deref _op));
+   }
+
+   public method removeLastDrawOp() {
+      draw_ops.delete(draw_ops.numElements - 1);
+   }
+
+   public method tryConvertToPT() {
+      // trace "xxx minnie::Path::tryConvertToPT: path_idx="+path_idx+" type="+type;
+      if(Path.TYPE_HOLES == type)
+      {
+         if(null == parent_path)
+         {
+            if(sub_paths.isEmpty())
+            {
+               trace "[dbg] minnie::Path::tryConvertToPT: convert path idx="+path_idx+" from HOLES to CONCAVE";
+               type = Path.TYPE_CONCAVE;
+            }
+         }
+      }
+   }
+
+   public method debugPrint(local int _indent, local String _buf) {
+      _buf.appendRepeat(" ", _indent);
+      _buf.append("path: id=\""+id+"\" #drawOps="+draw_ops.numElements+" type="+TKS.scriptClassConstantToString(#(type), Path, "TYPE_")+" b_closed="+b_closed+"\n");
+      Integer opIdx = 0;
+      DrawOp *op;
+      foreach op in draw_ops
+      {
+         _buf.appendRepeat(" ", _indent+2);
+         _buf.append("drawOp["+opIdx.printf("%3d")+"]: ");
+         op.debugPrint(0, _buf);
+         opIdx++;
+      }
+   }
+
+   public method addPoint(float _x, float _y) {
+      points.add2(_x, _y);
+   }
+
+   public method reverse() : boolean {
+      if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: begin ------------------------------ path_idx="+path_idx;
+      if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: points="+points.string2;
+      if(b_debug_reverse)
+      {
+         stdout "[trc] Path::reverse: draw_ops=";
+         DrawOp *opDebug;
+         foreach opDebug in draw_ops
+            stdout ", "+opDebug.yacMetaClassName();
+         trace "";
+      }
+
+      // Iterate ops and find mirror and num seg
+      int numSeg = -1;
+      DrawOp *op;
+      DrawOpNumSeg *opNumSeg;
+      float mirrorX = 0;
+      float mirrorY = 0;
+      foreach op in draw_ops
+      {
+         if(op instanceof DrawOpNumSeg)
+         {
+            opNumSeg <= op;
+            numSeg = opNumSeg.num_seg;
+         }
+         else if(op instanceof DrawOpRect)
+         {
+            // must be the only op in this path
+            return true;
+         }
+         else if(op instanceof DrawOpEllipse)
+         {
+            // must be the only op in this path
+            return true;
+         }
+         else if(op instanceof DrawOpCircle)
+         {
+            // must be the only op in this path
+            return true;
+         }
+         else if(op instanceof DrawOpLine)
+         {
+            mirrorX = 0;
+            mirrorY = 0;
+         }
+         else if(op instanceof DrawOpCubic)
+         {
+            DrawOpCubic opPreCubic <= op;
+            opPreCubic.rev_num_seg = numSeg;
+            // trace "xxx pre opPreCubic copy numSeg="+numSeg;
+
+            mirrorX = opPreCubic.c2x;
+            mirrorY = opPreCubic.c2y;
+         }
+         else if(op instanceof DrawOpCubicMirror)
+         {
+            DrawOpCubicMirror opPreCubicMirror <= op;
+            opPreCubicMirror.rev_num_seg = numSeg;
+            // trace "xxx pre opPreCubicMirror copy numSeg="+numSeg;
+
+            opPreCubicMirror.tmp_mirrored_c1x = mirrorX;
+            opPreCubicMirror.tmp_mirrored_c1y = mirrorY;
+
+            mirrorX = opPreCubicMirror.c2x;
+            mirrorY = opPreCubicMirror.c2y;
+         }
+         else if(op instanceof DrawOpArc)
+         {
+            DrawOpArc opPreArc <= op;
+            opPreArc.rev_num_seg = numSeg;
+            // trace "xxx pre opPreArc copy numSeg="+numSeg;
+         }
+      }
+
+      PointerArray drawOpsNew <= new PointerArray;
+      boolean bFirst = true;
+      float curX = points.getRev(1);
+      float curY = points.getRev(0);
+      float newX;
+      float newY;
+
+      if!( (draw_ops.last instanceof DrawOpMoveAbs) ||
+           (draw_ops.last instanceof DrawOpMoveRel)
+           )
+      {
+         DrawOpMoveAbs opMoveStart <= new DrawOpMoveAbs;
+         opMoveStart.x = curX;
+         opMoveStart.y = curY;
+         drawOpsNew.add(#(deref opMoveStart));
+      }
+
+      int drawOpIdx = draw_ops.numElements;
+      local FloatArray pointsNew;
+      DrawOpCubic *nCubic;
+      DrawOpNumSeg *oNumSeg;
+      DrawOpNumSeg *nNumSeg;
+      float c1x;
+      float c1y;
+      float c2x;
+      float c2y;
+      numSeg = -1;
+      loop(draw_ops.numElements)
+      {
+         op <= draw_ops.get(--drawOpIdx);
+
+         if(op instanceof DrawOpMoveAbs)
+         {
+            if(0 != drawOpIdx)
+            {
+               DrawOpMoveAbs oMoveAbs <= op;
+               if(b_debug_reverse) trace "[trc] Minnie::Minnie::Path::reverse: DrawOpMoveAbs start=("+oMoveAbs.cur_x+";"+oMoveAbs.cur_y+")";
+               DrawOpMoveAbs nMoveAbs <= new DrawOpMoveAbs;
+               nMoveAbs.cur_x = curX;
+               nMoveAbs.cur_y = curY;
+               newX = oMoveAbs.x;
+               newY = oMoveAbs.y;
+               nMoveAbs.x = newX;
+               nMoveAbs.y = newY;
+               drawOpsNew.add(#(deref nMoveAbs));
+               curX = newX;
+               curY = newY;
+               pointsNew.add2(curX, curY);
+            }
+         }
+         else if(op instanceof DrawOpMoveRel)
+         {
+            if(0 != drawOpIdx)
+            {
+               DrawOpMoveRel oMoveRel <= op;
+               if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: DrawOpMoveRel start=("+oMoveRel.cur_x+";"+oMoveRel.cur_y+")";
+               DrawOpMoveRel nMoveRel <= new DrawOpMoveRel;
+               nMoveRel.cur_x = curX;
+               nMoveRel.cur_y = curY;
+               newX = oMoveRel.cur_x;
+               newY = oMoveRel.cur_y;
+               nMoveRel.dx = newX - curX;
+               nMoveRel.dy = newY - curY;
+               drawOpsNew.add(#(deref nMoveRel));
+               curX = newX;
+               curY = newY;
+               pointsNew.add2(curX, curY);
+            }
+         }
+         else if(op instanceof DrawOpLine)
+         {
+            DrawOpLine oLine <= op;
+            if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: DrawOpLine start=("+oLine.cur_x+";"+oLine.cur_y+")";
+            DrawOpLine nLine <= new DrawOpLine;
+            nLine.cur_x = curX;
+            nLine.cur_y = curY;
+            newX = oLine.cur_x;
+            newY = oLine.cur_y;
+            nLine.dx = newX - curX;
+            nLine.dy = newY - curY;
+            drawOpsNew.add(#(deref nLine));
+            curX = newX;
+            curY = newY;
+            pointsNew.add2(curX, curY);
+         }
+         else if(op instanceof DrawOpCubic)
+         {
+            DrawOpCubic oCubic <= op;
+            if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: DrawOpCubic start=("+oCubic.cur_x+";"+oCubic.cur_y+") numSeg="+oCubic.rev_num_seg;
+
+            // trace "xxx numSeg="+numSeg+" oCubic.rev_num_seg="+oCubic.rev_num_seg;
+            if(oCubic.rev_num_seg != numSeg)
+            {
+               numSeg = oCubic.rev_num_seg;
+               nNumSeg <= new DrawOpNumSeg;
+               nNumSeg.cur_x = curX;
+               nNumSeg.cur_y = curY;
+               nNumSeg.num_seg = numSeg;
+               drawOpsNew.add(#(deref nNumSeg));
+            }
+
+            nCubic <= new DrawOpCubic;
+            nCubic.cur_x = curX;
+            nCubic.cur_y = curY;
+            newX = oCubic.cur_x;
+            newY = oCubic.cur_y;
+            nCubic.dx = newX - curX;
+            nCubic.dy = newY - curY;
+            c1x = oCubic.cur_x + oCubic.c1x;
+            c1y = oCubic.cur_y + oCubic.c1y;
+            c2x = curX - oCubic.c2x;
+            c2y = curY - oCubic.c2y;
+            nCubic.c1x = c2x - curX;  // swap ctl points
+            nCubic.c1y = c2y - curY;
+            nCubic.c2x = newX - c1x;
+            nCubic.c2y = newY - c1y;
+            drawOpsNew.add(#(deref nCubic));
+            curX = newX;
+            curY = newY;
+            pointsNew.add2(curX, curY);
+         }
+         else if(op instanceof DrawOpCubicMirror)
+         {
+            DrawOpCubicMirror oCubicMirror <= op;
+            if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: DrawOpCubicMirror start=("+oCubicMirror.cur_x+";"+oCubicMirror.cur_y+") numSeg="+oCubicMirror.rev_num_seg;
+
+            if(oCubicMirror.rev_num_seg != numSeg)
+            {
+               numSeg = oCubicMirror.rev_num_seg;
+               nNumSeg <= new DrawOpNumSeg;
+               nNumSeg.cur_x = curX;
+               nNumSeg.cur_y = curY;
+               nNumSeg.num_seg = numSeg;
+               drawOpsNew.add(#(deref nNumSeg));
+            }
+
+            nCubic <= new DrawOpCubic;
+            nCubic.cur_x = curX;
+            nCubic.cur_y = curY;
+            newX = oCubicMirror.cur_x;
+            newY = oCubicMirror.cur_y;
+            nCubic.dx = newX - curX;
+            nCubic.dy = newY - curY;
+            c1x = oCubicMirror.cur_x + oCubicMirror.tmp_mirrored_c1x;
+            c1y = oCubicMirror.cur_y + oCubicMirror.tmp_mirrored_c1y;
+            c2x = curX - oCubicMirror.c2x;
+            c2y = curY - oCubicMirror.c2y;
+            nCubic.c1x = c2x - curX;  // swap ctl points
+            nCubic.c1y = c2y - curY;
+            nCubic.c2x = newX - c1x;
+            nCubic.c2y = newY - c1y;
+            drawOpsNew.add(#(deref nCubic));
+            curX = newX;
+            curY = newY;
+            pointsNew.add2(curX, curY);
+         }
+         else if(op instanceof DrawOpArc)
+         {
+            DrawOpArc oArc <= op;
+            if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: DrawOpArc start=("+oArc.cur_x+";"+oArc.cur_y+")";
+
+            if(oArc.rev_num_seg != numSeg)
+            {
+               numSeg = oArc.rev_num_seg;
+               nNumSeg <= new DrawOpNumSeg;
+               nNumSeg.cur_x = curX;
+               nNumSeg.cur_y = curY;
+               nNumSeg.num_seg = numSeg;
+               drawOpsNew.add(#(deref nNumSeg));
+            }
+
+            DrawOpArc nArc <= new DrawOpArc;
+            nArc.cur_x = curX;
+            nArc.cur_y = curY;
+            newX = oArc.cur_x;
+            newY = oArc.cur_y;
+            nArc.rx          = oArc.rx;
+            nArc.ry          = oArc.ry;
+            nArc.xrot        = oArc.xrot;
+            nArc.b_large_arc = oArc.b_large_arc;
+            nArc.b_arc_sweep = !oArc.b_arc_sweep;
+            nArc.dx          = newX - curX;
+            nArc.dy          = newY - curY;
+            drawOpsNew.add(#(deref nArc));
+            curX = newX;
+            curY = newY;
+            pointsNew.add2(curX, curY);
+         }
+         else if(op instanceof DrawOpNumSeg)
+         {
+            // handled by pre_ops
+         }
+         else
+         {
+            trace "[~~~] Minnie::Path::reverse: un-implemented op="+#(op)+", path reversal failed";
+            return false;
+         }
+      }
+      draw_ops <= deref drawOpsNew;
+      points   <= deref pointsNew;
+      if(b_debug_reverse) trace "[trc] Minnie::Path::reverse: end path_idx="+path_idx+" pointsNew="+pointsNew.string2;
+      return true;
+   }
+
+   public method end(boolean _bClosed) {
+      b_closed = _bClosed;
+
+      if(path_idx > 0 && b_closed && !b_winding_checked)
+      {
+         if(b_path_reverse)
+         {
+            b_winding_checked = true;
+
+            int windIdx = 0;
+            float windSum = 0;
+            loop(points.numElements/2 -1)
+            {
+               windSum += (points[windIdx+2+0] - points[windIdx]) * (points[windIdx+2+1] + points[windIdx+1]);
+               windIdx += 2;
+            }
+            if(windSum > 0) // CCW ?
+            {
+               if(b_debug_paths) trace "[~~~] Minnie::Path::end: CCW => reverse. path id=\'"+id+"\' path_idx="+path_idx;
+               reverse();
+            }
+            else
+            {
+               if(b_debug_paths >= 2) trace "[dbg] Minnie::Path::end: CW (ok)";
+            }
+         }
+      }
+
+      if(0 && path_idx > 0)
+      {
+         // debug / test reverse()
+         trace "xxx debug reverse() path_idx="+path_idx;
+         reverse();
+         reverse();
+      }
+   }
+
+   protected method emitDrawOps(Stream ofs, RenderState _cstate) {
+
+      _cstate.quant_cur_x = 0.0f;  // [05Jul2025]
+      _cstate.quant_cur_y = 0.0f;  // [05Jul2025]
+
+      _cstate.ideal_cur_x = 0.0f;  // [05Jul2025]
+      _cstate.ideal_cur_y = 0.0f;  // [05Jul2025]
+
+      DrawOp *op;
+      foreach op in draw_ops
+         op.emit(ofs, _cstate);
+
+      // trace "xxx emitDrawOps: path id='"+id+"' idx="+path_idx;
+      if(null != parent_path || path_idx > 0)
+      {
+         if(b_closed)
+            ofs.i8 = 0xFF;  // 'z' / end of path
+         else
+            ofs.i8 = 0xFE;  // 'y' / end of path
+      }
+   }
+
+   public method emit(Stream ofs, RenderState _cstate) {
+      if(b_debug_paths >= 2) trace "[trc] minnie::Path::emit: path \'"+id+"\' idx="+path_idx+((null != parent_path)?(" (parent_idx="+parent_path.path_idx+")"):"")+" type="+TKS.scriptClassConstantToString(#(type), Path, "TYPE_")+" b_closed="+b_closed+" #ops="+draw_ops.numElements;
+
+      switch(type)
+      {
+         default:
+         case TYPE_DRAW:
+         case TYPE_CONVEX:
+            ofs.i8 = 0x84;
+            break;
+
+         case TYPE_CONCAVE:
+            ofs.i8 = 0x85;
+            break;
+
+         case TYPE_HOLES:
+            ofs.i8 = 0x87;
+            break;
+
+         case TYPE_IMMEDIATE:
+            ofs.i8 = 0x8D;
+            break;
+      }
+
+      emitDrawOps(ofs, _cstate);
+
+      if(!sub_paths.isEmpty())
+      {
+         Path *sp;
+         int spIdx = 0;
+         foreach sp in sub_paths
+         {
+            ofs.i8 = 0x86;
+            if(b_debug_paths >= 2) trace "[trc] minnie::Path::emit: sub-path \'"+sp.id+"\' subIdx="+spIdx+" b_closed="+sp.b_closed+" #ops="+(sp.draw_ops.numElements);
+            sp.emitDrawOps(ofs, _cstate);
+            spIdx++;
+         }
+      }
+
+   }
+
+}
+
+
+// <class.png>
+class RenderState {
+   // used for main path reversal (coverage-AA render mode)
+   byte         cur_fb_idx;
+   byte         cur_src_fb_idx;
+   byte         cur_pal_idx;
+   short        cur_mask_idx;  // -1=none
+   short        cur_mat_2d_idx;
+   short        cur_mat_3d_idx;
+   float        quant_cur_x;  // quantized position (temporary during emitDrawOps())  [05Jul2025]
+   float        quant_cur_y;
+   float        ideal_cur_x;  // unquantized position  [05Jul2025]
+   float        ideal_cur_y;
+   float        cur_stroke_w;
+   byte         cur_join_cap;
+   int          cur_num_seg;
+   float        cur_miter_limit;
+   int          cur_clip2d_path_idx;
+   boolean      b_cur_clip2d_pre;
+   boolean      b_cur_clip2d_fb;
+   // (todo) logic op ?
+
+
+   public method reset() {
+      cur_fb_idx          = 0;
+      cur_src_fb_idx      = 0;
+      cur_pal_idx         = 1;
+      cur_mask_idx        = -1;
+      cur_mat_2d_idx      = -1;
+      cur_mat_3d_idx      = -1;
+      ideal_cur_x         = 0.0f;
+      ideal_cur_y         = 0.0f;
+      quant_cur_x         = 0.0f;
+      quant_cur_y         = 0.0f;
+      cur_stroke_w        = 0;
+      cur_join_cap        = Path.LINEJOIN_BEVEL | (Path.LINECAP_ROUND << 4);
+      cur_num_seg         = 8;
+      cur_miter_limit     = 32.0;
+      cur_clip2d_path_idx = 0;
+      b_cur_clip2d_fb     = false;
+      b_cur_clip2d_pre    = false;
+   }
+
+   public method getCopy() : RenderState {
+      return Object(this);
+   }
+
+}
+
+
+// <class.png>
+class Minnie {
+   float         geo_scale_x;
+   float         geo_scale_y;
+   int           geo_w;
+   int           geo_h;
+   IntArray      palette;
+   boolean       b_rev;
+   boolean       b_force_rev;
+   Framebuffer[] framebuffers;
+   IntArray *[]  matrices_2d;  // float16 matrices
+   IntArray *[]  matrices_3d;  // float16 matrices
+   Path[]        paths;
+
+   ParseContext *[] parse_context_stack;      // context stack
+   ParseContext    *cur_parse_context;        // ref to TOS
+   StringArray     *words;                    // ref to cur_parse_context.words (after beginLine())
+
+   int def_path_seg;
+   float seg_scale;
+
+   float stroke_scale;
+
+   Path *cur_path;             // current (sub-)path
+   Path *cur_svg_parent_path;  // see parseSVGPath()
+   float cur_x;  // for pseudo "abs" commands (e.g. "L") (=> make relative)
+   float cur_y;
+
+   float svg_cur_x;  // while parsing SVG path (debug_svg_path)
+   float svg_cur_y;
+
+   float pre_tx;
+   float pre_ty;
+   float scale_x;
+   float scale_y;
+   float post_tx;
+   float post_ty;
+
+   // // boolean b_svg_path_first;
+   float   svg_path_first_x;      // gxf transformed
+   float   svg_path_first_y;
+   float   svg_path_first_raw_x;  // untransformed
+   float   svg_path_first_raw_y;
+
+   String debug_svg_path;
+   int    debug_svg_num_sub_paths;  // >0: multiple sub-paths detected (print split sub-paths to console)
+   boolean b_svg_subpath_first;
+
+   RenderState cstate;
+
+   define exception MinError                   : Error;
+   define exception MinParseError              : MinError;
+   define exception MinInvalidFb               : MinParseError;
+   define exception MinPathUnderflow           : MinParseError;
+
+   // for renderers that can draw GPU-accelerated CONCAVE paths
+   boolean b_convert_ph_without_subpaths_to_pt;
+
+
+
+   // <method_init.png>
+   public method init() {
+      b_force_rev = maybe;
+      def_path_seg = -1;
+   }
+
+   // <method_set.png>
+   public method setEnableForceRev(boolean _bEnable) {
+      b_force_rev = _bEnable;
+   }
+
+   // <method_set.png>
+   public method setEnableConvertPHWithoutSubPathsToPT(boolean _bEnable) {
+      b_convert_ph_without_subpaths_to_pt = _bEnable;
+   }
+
+   // <method.png>
+   protected method pushParseContext(String _name, boolean _bIncLineIdx, StringArray _lines, int _lineIdx) {
+      if(null != cur_parse_context)
+      {
+         if(_bIncLineIdx)
+            cur_parse_context.cur_line_idx++;
+      }
+      cur_parse_context <= new ParseContext;
+      cur_parse_context.initParseContext(deref _name, deref _lines, _lineIdx);
+      parse_context_stack.add(#(deref cur_parse_context));
+   }
+
+   // <method.png>
+   protected method popParseContext(boolean _bKeepLineIdx) {
+      if(b_debug_parse)
+      {
+         trace "[trc] popParseContext cur="+#(cur_parse_context)+" line_idx="+cur_parse_context.cur_line_idx+" parse_context_stack="+#(parse_context_stack)+" num="+parse_context_stack.numElements;
+      }
+      StringArray oldLines <= cur_parse_context.lines;
+      if(parse_context_stack.numElements > 1)
+      {
+         int lineIdx = cur_parse_context.cur_line_idx;
+         parse_context_stack.numElements--;
+         cur_parse_context <= parse_context_stack.last;
+         words <= cur_parse_context.cur_words;
+         if(b_debug_parse)
+            trace "[trc]       restore words="+#(words);
+         if(_bKeepLineIdx || @(cur_parse_context.lines) == @(oldLines))
+         {
+            cur_parse_context.cur_line_idx = lineIdx;
+            if(b_debug_parse)
+               trace "            continue at line_idx="+cur_parse_context.cur_line_idx;
+         }
+         cur_parse_context.beginLine(0);
+         words <= cur_parse_context.cur_words;
+         return;
+      }
+      cur_parse_context <= null;
+      words             <= null;
+      if(b_debug_parse)
+         trace "[trc]       restore cur_parse_context=<null>";
+   }
+
+   // <method_get.png>
+   public method getSrcLoc() : String {
+      return cur_parse_context.getSrcLoc();
+   }
+
+   // <method.png>
+   public method parsePalBrightness() {
+      float lum = words.get(1);
+
+      int palIdx = 0;
+      loop(palette.numElements)
+      {
+         int c32 = palette[palIdx];
+
+         int palR = (c32 >> 16) & 255;
+         int palG = (c32 >>  8) & 255;
+         int palB = (c32      ) & 255;
+
+         palR *= lum;
+         palG *= lum;
+         palB *= lum;
+         palette[palIdx] = argb(255, palR, palG, palB);
+
+         palIdx++;
+      }
+   }
+
+   // <method.png>
+   public method parsePalContrast() {
+      float con = words.get(1);
+
+      int palIdx = 0;
+      loop(palette.numElements)
+      {
+         int c32 = palette[palIdx];
+
+         int palR = (c32 >> 16) & 255;
+         int palG = (c32 >>  8) & 255;
+         int palB = (c32      ) & 255;
+
+         palR -= 128; palR = mathClampf(palR * con, -128, 127); palR += 128;
+         palG -= 128; palG = mathClampf(palG * con, -128, 127); palG += 128;
+         palB -= 128; palB = mathClampf(palB * con, -128, 127); palB += 128;
+
+         palette[palIdx] = argb(255, palR, palG, palB);
+
+         palIdx++;
+      }
+   }
+
+   // <method.png>
+   public method parsePalHSV() {
+      float dh = words.get(1);
+      float as = words.get(2);
+      float av = words.get(3);
+
+      float lum = words.get(1);
+
+      int palIdx = 0;
+      loop(palette.numElements)
+      {
+         int c32 = palette[palIdx];
+
+         Float h,s,v;
+
+         Utils.RGB32TOHSV(c32, h,s,v);
+
+         h = mathWrapf(h + dh, 0, 360);
+         s = mathClampf(s*as, 0, 1);
+         v = mathClampf(v*av, 0, 1);
+
+         palette[palIdx] = Utils.HSVTOARGB32(h, s, v, 255);
+
+         palIdx++;
+      }
+   }
+
+   // <method_find.png>
+   public method findNearestPalIndex(int c32) {
+      int round4 = 0;
+      int r,g,b;
+
+      r = ((c32 >> 16) & 255);
+      g = ((c32 >>  8) & 255);
+      b = ((c32      ) & 255);
+
+      int bestIdx = 0;
+      float bestDist = 10000.0f;
+      int palIdx = 0;
+      loop(8)
+      {
+         int c888 = palette.get(palIdx);
+
+         int palR = (c888 >> 16) & 255;
+         int palG = (c888 >>  8) & 255;
+         int palB = (c888      ) & 255;
+
+         float dist = (abs(palR -r) + abs(palG -g) + abs(palB -b))*0.33333f;
+         if(dist < bestDist)
+         {
+            bestIdx = palIdx;
+            bestDist = dist;
+         }
+
+         palIdx++;
+      }
+      return bestIdx;
+   }
+
+   // <method.png>
+   public method debugPrintPaths(local int _indent, local String _buf) {
+      Path *p;
+      int pathIdx = 0;
+      // trace "xxx debugPrintPaths: paths="+#(paths)+" paths.num_elements="+paths.numElements;
+      if(b_debug_paths >= 2)
+      {
+         // all paths
+         foreach p in paths
+         {
+            p.debugPrint(3, _buf);
+
+            if(!p.sub_paths.isEmpty())
+            {
+               Path *sp;
+               foreach sp in p.sub_paths
+               {
+                  sp.debugPrint(6, _buf);
+               }
+            }
+
+            pathIdx++;
+         }
+      }
+      else if(b_debug_paths)
+      {
+         // main path only
+         p <= paths[0];
+         p.debugPrint(3, _buf);
+      }
+   }
+
+   // <method_parse.png>
+   public method parsePal() {
+      int wIdx = 1;
+      palette.empty();
+      // trace "xxx parsePal: words="+#(words);
+      loop(words.numElements - wIdx)
+      {
+         if(b_debug_pal) trace "[trc] pal \""+Utils.ReplaceLiteral(words.get(wIdx))+"\"";
+         palette.add(Utils.ReplaceLiteral(words.get(wIdx++)));
+      }
+
+      if(b_debug_pal) trace "[dbg] parsePal: #colors="+palette.numElements;
+   }
+
+   // <method_parse.png>
+   public method newFramebuffer(String _id, int _w, int _h) {
+      local Framebuffer fb;
+      fb.init(framebuffers.numElements, _id, _w, _h);
+      framebuffers.add(#(deref fb));
+   }
+
+   // <method_parse.png>
+   public method parseFramebuffer() {
+      if(null != findFramebufferById(words.get(1)))
+      {
+         newFramebuffer(words.get(1)/*id*/,
+                        float(words.get(2)) * geo_scale_x + 0.5f/*w*/,
+                        float(words.get(3)) * geo_scale_y + 0.5f/*h*/
+                        );
+      }
+      else
+         throw MinParseError getSrcLoc()+": framebuffer '"+words.get(1)+"' already declared";
+   }
+
+   // <method_parse.png>
+   public method parseColor() {
+      DrawOpColor op <= new DrawOpColor;
+      String sColor <= words.get(1);
+      if(sColor <= "#")
+      {
+         int c32 = Utils.ReplaceLiteral(sColor);
+         op.pal_idx = findNearestPalIndex(c32);
+         if(b_debug_parse) trace "[trc] parseColor: cur_path="+#(cur_path)+" c32="+sColor+" => op.pal_idx="+op.pal_idx;
+      }
+      else
+      {
+         op.pal_idx = sColor;
+         if(b_debug_parse) trace "[trc] parseColor: cur_path="+#(cur_path)+" op.pal_idx="+op.pal_idx;
+      }
+      if(0 <= op.pal_idx < palette.numElements)
+      {
+         cur_path.addDrawOp(deref op);
+
+         if(0 == cur_path.path_idx)
+            cstate.cur_pal_idx = op.pal_idx;
+      }
+      else
+         throw MinParseError getSrcLoc()+"::parseColor: palIdx="+op.pal_idx+" exceeds palette range ("+palette.numElements+")";
+   }
+
+   // <method_parse.png>
+   public method parseFreePath() {
+      DrawOpFreePath op <= new DrawOpFreePath;
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public method parseGeoScale() {
+      geo_scale_x = float(words.get(1));
+      geo_scale_y = float(words.get(2));
+
+      if(geo_scale_x < 0.00001)
+         geo_scale_x = geo_scale_x;
+      if(geo_scale_y < 0.00001)
+         geo_scale_y = geo_scale_x;
+   }
+
+   // <method_parse.png>
+   public method parseGeoDiv() {
+      geo_scale_x *= 1.0f / float(words.get(1));
+      geo_scale_y *= 1.0f / float(words.get(2));
+
+      if(geo_scale_x < 0.00001)
+         geo_scale_x = geo_scale_x;
+      if(geo_scale_y < 0.00001)
+         geo_scale_y = geo_scale_x;
+   }
+
+   // <method_parse.png>
+   public method parseGeo() {
+      if(0 == framebuffers.numElements)
+      {
+         geo_w = float(words.get(1)) * geo_scale_x + 0.5f;
+         geo_h = float(words.get(2)) * geo_scale_y + 0.5f;
+         if(b_verbose) trace "[dbg] geo is ("+geo_w+","+geo_h+")  (geo_scale=("+geo_scale_x+";"+geo_scale_y+"))";
+         newFramebuffer("0", geo_w, geo_h);
+      }
+      else
+         throw MinParseError getSrcLoc()+": 'geo' already set";
+   }
+
+   // <method_parse.png>
+   public method parseViewBoxGeoTransform() {
+      float vbx = float(words.get(1));
+      float vby = float(words.get(2));
+      float vbw = float(words.get(3));
+      float vbh = float(words.get(4));
+      if(vbw > 0.0 && vbh > 0.0)
+      {
+         pre_tx  = -vbx;
+         pre_ty  = -vby;
+         scale_x = (geo_w / vbw);
+         scale_y = (geo_h / vbh);
+      }
+      else
+      {
+         throw MinParseError getSrcLoc()+": viewbox w or h is <= 0 (vbw="+vbw+" vbh="+vbh+")";
+      }
+   }
+
+   // <method_parse.png>
+   public method parseGeoTransform() {
+      pre_tx  = float(words.get(1));
+      pre_ty  = float(words.get(2));
+      scale_x = float(words.get(3)) * geo_scale_x;
+      scale_y = float(words.get(4)) * geo_scale_y;
+      post_tx = float(words.get(5)) * geo_scale_x;
+      post_ty = float(words.get(6)) * geo_scale_y;
+
+      if(scale_x < 0.00001)
+         scale_x = geo_scale_x;
+      if(scale_y < 0.00001)
+         scale_y = scale_x;
+   }
+
+   // <method_parse.png>
+   public method parseGeoTransformScale() {
+      pre_tx  = 0;
+      pre_ty  = 0;
+      scale_x = float(words.get(1)) * geo_scale_x;
+      scale_y = float(words.get(2)) * geo_scale_y;
+      post_tx = 0;
+      post_ty = 0;
+
+      if(scale_x < 0.00001)
+         scale_x = geo_scale_x;
+      if(scale_y < 0.00001)
+         scale_y = scale_x;
+   }
+
+   // <method_parse.png>
+   public method parseLogicOp() {
+      DrawOpLogicOp op <= new DrawOpLogicOp;
+      switch(words.get(1))
+      {
+         default:
+         case "set": op.mode = DrawOpLogicOp.MODE_SET; break;
+         case "and": op.mode = DrawOpLogicOp.MODE_AND; break;
+         case "or":  op.mode = DrawOpLogicOp.MODE_OR;  break;
+         case "eor": op.mode = DrawOpLogicOp.MODE_EOR; break;
+      }
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public static ParseMatrix2D(Matrix2x3f mat, StringArray words, int wIdx, String _srcLoc) {
+      if("[" != words.get(wIdx))
+      {
+         // rotate(angDeg)
+         // translate(tx ty)
+         // scale(sx sy)
+         // skewX(angDeg)
+         // skewY(angDeg)
+         Matrix2x3f t;
+         float tx, ty;
+         float sx, sy;
+         while(wIdx < words.numElements)
+         {
+            // trace "xxx parseTransform2D: tok=\""+words.get(wIdx)+"\"";
+            switch(words.get(wIdx++).toLower())
+            {
+               default:
+                  throw MinParseError _srcLoc+":ParseMatrix2D: expected transform function name (got \""+words.get(wIdx-1)+"\" instead)";
+
+               case "rotate":
+               case "rot":
+               case "r":
+                  if("(" == words.get(wIdx++))
+                  {
+                     float ang = words.get(wIdx++);
+                     t.initRotatef( (ang * 2PI) / 360.0f );
+                     if(b_debug_mat) trace "[trc] ParseMatrix2D: rotate("+ang+") t="+t+" old mat="+mat;
+                     mat.mulRev(t);
+                     // trace "xxx rotate new mat="+mat;
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix2D: expected '('";
+                  break;
+
+               case "translate":
+               case "trans":
+               case "t":
+                  if("(" == words.get(wIdx++))
+                  {
+                     tx = words.get(wIdx++);
+                     if(")" != words.get(wIdx))
+                        ty = words.get(wIdx++);
+                     else
+                        ty = 0.0f;
+                     if(b_debug_mat) trace "[trc] ParseMatrix2D: translate("+tx+";"+ty+")";
+                     t.initTranslatef(tx, ty);
+                     mat.mulRev(t);
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix2D: expected '('";
+                  break;
+
+               case "scale":
+               case "scl":
+               case "s":
+                  if("(" == words.get(wIdx++))
+                  {
+                     sx = words.get(wIdx++);
+                     if(")" != words.get(wIdx))
+                        sy = words.get(wIdx++);
+                     else
+                        sy = sx;
+                     t.initScalef(sx, sy);
+                     mat.mulRev(t);
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix2D: expected '('";
+                  break;
+
+               case "skewx":
+               case "skx":
+                  if("(" == words.get(wIdx++))
+                  {
+                     float skX = words.get(wIdx++);
+                     t.initSkewXf( (skX * 2PI) / 360.0f );
+                     mat.mulRev(t);
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix2D: expected '('";
+                  break;
+
+               case "skewy":
+               case "sky":
+                  if("(" == words.get(wIdx++))
+                  {
+                     float skY = words.get(wIdx++);
+                     t.initSkewYf( (skY * 2PI) / 360.0f );
+                     mat.mulRev(t);
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix2D: expected '('";
+                  break;
+            }
+
+            if(")" != words.get(wIdx++))
+               throw MinParseError _srcLoc+":ParseMatrix2D: expected ')'";
+         }
+      }
+      else
+      {
+         // raw 2x3 matrix
+         wIdx++;
+         int matIdx = 0;
+         loop(2*3)
+            mat[matIdx++] = words.get(wIdx++);
+      }
+   }
+
+   // <method_parse.png>
+   public method parseTransform2D() {
+      // (note) SVG transform() uses row major syntax (m11, m12, m13, m21, m22, m23) (xxx ??? no  GL/tkmath/Minnie use column major => mulRev())
+      DrawOpTransform2D op <= new DrawOpTransform2D;
+
+      Matrix2x3f mat <= op.mat;
+      if(words.numElements > 1)
+         ParseMatrix2D(mat, words, 1/*wIdx*/, getSrcLoc());
+
+      local IntArray mat16;
+      int matIdx = 0;
+      loop(2*3)
+         mat16.add(f16_from_f32(mat[matIdx++] * geo_scale_x));
+
+      // Find existing matrix
+      matIdx = 0;
+      loop(matrices_2d.numElements)
+      {
+         if(matrices_2d.get(matIdx) == mat16)
+            break;
+         matIdx++;
+      }
+      if(matIdx == matrices_2d.numElements)
+      {
+         // add new matrix
+         matrices_2d.add(#(Object(mat16)));
+      }
+      op.mat_idx = matIdx;
+      cur_path.addDrawOp(deref op);
+
+      if(0 == cur_path.path_idx)
+         cstate.cur_mat_2d_idx = op.mat_idx;
+   }
+
+   // <method_parse.png>
+   public static ParseMatrix3D(Matrix4f mat, StringArray words, int wIdx, String _srcLoc) {
+      if("[" != words.get(wIdx))
+      {
+         // rotate(angx angy angz)
+         // translate(tx ty tz)
+         // scale(sx sy sz)
+         // skewX(angDeg)
+         // skewY(angDeg)
+         // frustum(left right bottom top znear zfar)
+         Matrix4f t;
+         float angx, angy, angz;
+         float tx, ty, tz;
+         float sx, sy, sz;
+         // trace "xxx ParseMatrix3D: words="+words;
+         while(wIdx < words.numElements)
+         {
+            // trace "xxx parseTransform2D: tok=\""+words.get(wIdx)+"\"";
+            switch(words.get(wIdx++).toLower())
+            {
+               default:
+                  throw MinParseError _srcLoc+":ParseMatrix3D: expected transform function name (got \""+words.get(wIdx-1)+"\" instead)";
+
+               case "rotate":
+               case "rot":
+               case "r":
+                  if("(" == words.get(wIdx++))
+                  {
+                     angx = words.get(wIdx++);
+                     if(")" != words.get(wIdx))
+                     {
+                        angy = words.get(wIdx++);
+                        if(")" != words.get(wIdx))
+                           angz = words.get(wIdx++);
+                        else
+                           angz = 0;
+                     }
+                     else
+                     {
+                        angy = 0;
+                        angz = 0;
+                     }
+                     t.initEulerXYZ((angx * 2PI) / 360.0f,
+                                    (angy * 2PI) / 360.0f,
+                                    (angz * 2PI) / 360.0f
+                                    );
+                     mat.mulRev(t);
+                     if(b_debug_mat) trace "[trc] ParseMatrix3D: 3d rotate t="+t+" mat="+mat;
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix3D: expected '('";
+                  break;
+
+               case "translate":
+               case "trans":
+               case "t":
+                  if("(" == words.get(wIdx++))
+                  {
+                     tx = words.get(wIdx++);
+                     if(")" != words.get(wIdx))
+                     {
+                        ty = words.get(wIdx++);
+                        if(")" != words.get(wIdx))
+                           tz = words.get(wIdx++);
+                        else
+                           tz = 0;
+                     }
+                     else
+                     {
+                        ty = 0;
+                        tz = 0;
+                     }
+                     // trace "xxx initTranslatef("+tx+", "+ty+","+ tz+")";
+                     t.initTranslatef(tx, ty, tz);
+                     mat.mulRev(t);
+                     if(b_debug_mat) trace "[trc] 3d translate t="+t+" mat="+mat;
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix3D: expected '('";
+                  break;
+
+               case "scale":
+               case "scl":
+               case "s":
+                  if("(" == words.get(wIdx++))
+                  {
+                     sx = words.get(wIdx++);
+                     if(")" != words.get(wIdx))
+                     {
+                        sy = words.get(wIdx++);
+                        if(")" != words.get(wIdx))
+                           sz = words.get(wIdx++);
+                        else
+                           sz = sy;
+                     }
+                     else
+                     {
+                        sy = sx;
+                        sz = sx;
+                     }
+                     t.initScalef(sx, sy, sz);
+                     mat.mulRev(t);
+                     if(b_debug_mat) trace "[trc] ParseMatrix3D: 3d scale t="+t+" mat="+mat;
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix3D: expected '('";
+                  break;
+
+               case "skewx":
+               case "skx":
+                  if("(" == words.get(wIdx++))
+                  {
+                     float skX = words.get(wIdx++);
+                     t.initSkewXf( (skX * 2PI) / 360.0f );
+                     mat.mulRev(t);
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix3D: expected '('";
+                  break;
+
+               case "skewy":
+               case "sky":
+                  if("(" == words.get(wIdx++))
+                  {
+                     float skY = words.get(wIdx++);
+                     t.initSkewYf( (skY * 2PI) / 360.0f );
+                     mat.mulRev(t);
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix3D: expected '('";
+                  break;
+
+               case "frustum":
+               case "fr":
+               case "f":
+                  if("(" == words.get(wIdx++))
+                  {
+                     if(")" != words.get(wIdx))
+                     {
+                        float frLeft = words.get(wIdx++);
+                        if(")" != words.get(wIdx))
+                        {
+                           float frRight = words.get(wIdx++);
+                           if(")" != words.get(wIdx))
+                           {
+                              float frBottom = words.get(wIdx++);
+                              if(")" != words.get(wIdx))
+                              {
+                                 float frTop = words.get(wIdx++);
+                                 if(")" != words.get(wIdx))
+                                 {
+                                    float frNear = words.get(wIdx++);
+                                    if(")" != words.get(wIdx))
+                                    {
+                                       float frFar = words.get(wIdx++);
+
+                                       t.initFrustum(frLeft, frRight, frBottom, frTop, frNear, frFar);
+                                       mat.mulRev(t);
+                                       // trace "xxx ParseMatrix3D: frustum t="+t+" mat="+mat;
+                                    }
+                                    else
+                                       throw MinParseError _srcLoc+":ParseMatrix3D: expected frustum <far>";
+                                 }
+                                 else
+                                    throw MinParseError _srcLoc+":ParseMatrix3D: expected frustum <near>";
+                              }
+                              else
+                                 throw MinParseError _srcLoc+":ParseMatrix3D: expected frustum <top>";
+                           }
+                           else
+                              throw MinParseError _srcLoc+":ParseMatrix3D: expected frustum <bottom>";
+                        }
+                        else
+                           throw MinParseError _srcLoc+":ParseMatrix3D: expected frustum <right>";
+                     }
+                     else
+                        throw MinParseError _srcLoc+":ParseMatrix3D: expected frustum <left>";
+                  }
+                  else
+                     throw MinParseError _srcLoc+":ParseMatrix3D: expected '('";
+                  break;
+            }
+
+            if(")" != words.get(wIdx++))
+               throw MinParseError _srcLoc+":ParseMatrix3D: expected ')'";
+         }
+      }
+      else
+      {
+         // raw 4x4 matrix
+         wIdx++;
+         int matIdx = 0;
+         loop(4*4)
+            mat[matIdx++] = words.get(wIdx++);
+      }
+   }
+
+   // <method_parse.png>
+   public method parseTransform3D() {
+      // (note) SVG transform() uses row major syntax (m11, m12, m13, m21, m22, m23) (GL/tkmath/Minnie use column major)
+      DrawOpTransform3D op <= new DrawOpTransform3D;
+
+      Matrix4f mat <= op.mat;
+      if(words.numElements > 1)
+         ParseMatrix3D(mat, words, 1/*wIdx*/, getSrcLoc());
+
+      // // trace "xxx ParseMatrix3D: mat="+mat;
+
+      local IntArray mat16;
+      int matIdx = 0;
+      loop(4*4)
+         mat16.add(f16_from_f32(mat[matIdx++] * geo_scale_x));
+
+      // Find existing matrix
+      matIdx = 0;
+      loop(matrices_3d.numElements)
+      {
+         if(matrices_3d.get(matIdx) == mat16)
+            break;
+         matIdx++;
+      }
+      if(matIdx == matrices_3d.numElements)
+      {
+         // add new matrix
+         matrices_3d.add(#(Object(mat16)));
+      }
+
+      op.mat_idx = matIdx;
+      if(b_debug_mat) trace " 3d op.mat_idx="+op.mat_idx;
+
+      cur_path.addDrawOp(deref op);
+
+      if(0 == cur_path.path_idx)
+         cstate.cur_mat_3d_idx = op.mat_idx;
+   }
+
+   // <method_parse.png>
+   public method parseJoinCap() {
+      DrawOpJoinCap op <= new DrawOpJoinCap;
+      byte mode = (Path.LINECAP_ROUND << 4) | Path.LINEJOIN_BEVEL;
+
+      switch(words.get(1))
+      {
+         default:
+            break;
+
+         case "none":
+         case "n":
+            op.mode &= 0xF0;
+            break;
+
+         case "miter":
+         case "m":
+            op.mode &= 0xF0;
+            op.mode |= Path.LINEJOIN_MITER;
+            break;
+
+         case "round":
+         case "r":
+            op.mode &= 0xF0;
+            op.mode |= Path.LINEJOIN_ROUND;
+            break;
+
+         case "bevel":
+         case "b":
+            op.mode &= 0xF0;
+            op.mode |= Path.LINEJOIN_BEVEL;
+            break;
+      }
+
+      switch(words.get(2))
+      {
+         default:
+            break;
+
+         case "none":
+         case "n":
+            op.mode &= 0x0F;
+            break;
+
+         case "butt":
+         case "b":
+            op.mode &= 0x0F;
+            op.mode |= (Path.LINECAP_BUTT << 4);
+            break;
+
+         case "round":
+         case "r":
+            op.mode &= 0x0F;
+            op.mode |= (Path.LINECAP_ROUND << 4);
+            break;
+
+         case "square":
+         case "s":
+            op.mode &= 0x0F;
+            op.mode |= (Path.LINECAP_SQUARE << 4);
+            break;
+      }
+
+      // trace "xxx parseJoinCap: op.mode="+op.mode;
+
+      cur_path.addDrawOp(deref op);
+
+      if(0 == cur_path.path_idx)
+         cstate.cur_join_cap = op.mode;
+   }
+
+   // <method_parse.png>
+   public method parseMoveAbs() {
+      DrawOpMoveAbs op <= new DrawOpMoveAbs;
+      op.x = (((float(words.get(1)) + pre_tx) * scale_x) + post_tx);
+      op.y = (((float(words.get(2)) + pre_ty) * scale_y) + post_ty);
+      if(op.x < -8192 || op.x > 8191)
+         throw MinParseError getSrcLoc()+"::parseMoveAbs: x exceeds max range (-8192..+8191)";
+      if(op.y < -8192 || op.y > 8191)
+         throw MinParseError getSrcLoc()+"::parseMoveAbs: y exceeds max range (-8192..+8191)";
+      cur_path.addDrawOp(deref op);
+      cur_x = op.x;
+      cur_y = op.y;
+
+      if(0 == cur_path.path_idx)
+      {
+         cstate.ideal_cur_x = cur_x;
+         cstate.ideal_cur_y = cur_y;
+      }
+   }
+
+   // <method_parse.png>
+   public method parseMoveRel() {
+      DrawOpMoveRel op <= new DrawOpMoveRel;
+      op.dx = float(words.get(1)) * scale_x;
+      op.dy = float(words.get(2)) * scale_y;
+      if(0.0f != op.dx || 0.0f != op.dy)
+      {
+         if(op.dx < -8192 || op.dx > 8191)
+            throw MinParseError getSrcLoc()+"::parseMoveRel: x exceeds max range (-8192..+8191)";
+         if(op.dy < -8192 || op.dy > 8191)
+            throw MinParseError getSrcLoc()+"::parseMoveRel: y exceeds max range (-8192..+8191)";
+         cur_path.addDrawOp(deref op);
+         cur_x += op.dx;
+         cur_y += op.dy;
+
+         if(0 == cur_path.path_idx)
+         {
+            cstate.ideal_cur_x = cur_x;
+            cstate.ideal_cur_y = cur_y;
+         }
+      }
+      else
+      {
+         trace "[~~~] "+getSrcLoc()+"::parseMoveRel: skipping no-op delta (0,0)\n";
+      }
+   }
+
+   // <method_find.png>
+   public method findFramebufferById(String _id) : Framebuffer {
+      Framebuffer *fb;
+      foreach fb in framebuffers
+      {
+         if(fb.id == _id)
+            return fb;
+      }
+      return null;
+   }
+
+   // <method_parse.png>
+   public method parseTarget() {
+      DrawOpTarget op <= new DrawOpTarget;
+      local String fbId = words.get(1);
+      Framebuffer fb <= findFramebufferById(fbId);
+      if(null != fb)
+      {
+         op.fb <= fb;
+         cur_path.addDrawOp(deref op);
+
+         if(0 == cur_path.path_idx)
+            cstate.cur_fb_idx = op.fb.fb_idx;
+      }
+      else
+      {
+         throw MinInvalidFb getSrcLoc()+": invalid framebuffer id '"+fbId+"'";
+      }
+   }
+
+   // <method_parse.png>
+   public method parseSource() {
+      DrawOpSource op <= new DrawOpSource;
+      local String fbId = words.get(1);
+      Framebuffer fb <= findFramebufferById(fbId);
+      if(null != fb)
+      {
+         op.fb <= fb;
+         cur_path.addDrawOp(deref op);
+
+         if(0 == cur_path.path_idx)
+            cstate.cur_src_fb_idx = fb.fb_idx;
+      }
+      else
+      {
+         throw MinInvalidFb getSrcLoc()+": invalid source framebuffer id '"+fbId+"'";
+      }
+   }
+
+   // <method_parse.png>
+   public method parseFill() {
+      DrawOpFill op <= new DrawOpFill;
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.pal_idx = words.get(1);
+
+      if(0 <= op.pal_idx < palette.numElements)
+      {
+         cur_path.addDrawOp(deref op);
+      }
+      else
+         throw MinParseError getSrcLoc()+"::parseFill: palIdx="+op.pal_idx+" exceeds palette range ("+palette.numElements+")";
+   }
+
+   // <method_parse.png>
+   public method parseClip2D(boolean _bOff, boolean _bPre, boolean _bFB) {
+      DrawOpClip2D op <= new DrawOpClip2D;
+
+      if(_bOff)
+      {
+         if(0 == cur_path.path_idx)
+         {
+            cstate.cur_clip2d_path_idx = 0;
+            cstate.b_cur_clip2d_pre    = false;
+            cstate.b_cur_clip2d_fb     = false;
+         }
+      }
+      else if(_bFB)
+      {
+         op.b_fb = true;
+
+         if(0 == cur_path.path_idx)
+         {
+            cstate.cur_clip2d_path_idx = 0;
+            cstate.b_cur_clip2d_pre    = false;
+            cstate.b_cur_clip2d_fb     = true;
+         }
+      }
+      else
+      {
+         op.b_pre = _bPre;
+
+         Path p <= findPathById(words.get(1));
+         if(null != p)
+         {
+            op.path_idx = p.path_idx;
+            p.b_used = true;
+
+            if(0 == cur_path.path_idx)
+            {
+               cstate.cur_clip2d_path_idx = op.path_idx;
+               cstate.b_cur_clip2d_pre    = op.b_pre;
+               cstate.b_cur_clip2d_fb     = false;
+            }
+         }
+         else
+            throw MinParseError getSrcLoc()+"::parseClip2D: undeclared path \'"+words.get(1)+"\'";
+      }
+
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public method parseClip3D() {
+      DrawOpClip3D opClip3D <= new DrawOpClip3D;
+      cur_path.addDrawOp(deref opClip3D);
+   }
+
+   // <method_parse.png>
+   public method parseBlit() {
+      DrawOpBlit op <= new DrawOpBlit;
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.dst_x = ((float(words.get(2)) + pre_tx) * scale_x) + post_tx;
+      op.dst_y = ((float(words.get(3)) + pre_ty) * scale_y) + post_ty;
+      op.w     = float(words.get(4)) * scale_x;
+      op.h     = float(words.get(5)) * scale_y;
+      op.src_x = ((float(words.get(6)) + pre_tx) * scale_x) + post_tx;
+      op.src_y = ((float(words.get(7)) + pre_ty) * scale_y) + post_ty;
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public method parseMask() {
+      DrawOpMask op <= new DrawOpMask;
+      if("off" == words.get(1) || "-1" == words.get(1))
+      {
+         op.pal_idx = -1;
+         cur_path.addDrawOp(deref op);
+
+         if(0 == cur_path.path_idx)
+            cstate.cur_mask_idx = -1;
+      }
+      else
+      {
+         op.pal_idx = words.get(1);
+         if(0 <= op.pal_idx < palette.numElements)
+         {
+            cur_path.addDrawOp(deref op);
+
+            if(0 == cur_path.path_idx)
+               cstate.cur_mask_idx = op.pal_idx;
+         }
+         else
+            throw MinParseError getSrcLoc()+"::parseMask: palIdxMask="+op.pal_idx+" exceeds palette range ("+palette.numElements+")";
+      }
+   }
+
+   // <method_parse.png>
+   public method parseStrokeW() {
+      DrawOpStrokeW op <= new DrawOpStrokeW;
+      String sW <= words.get(1);
+      if("line" == sW)
+         op.stroke_w = 0.25f;  // == don't extrude, just draw a thin line
+      else if("fill" == sW)
+         op.stroke_w = 0.0f;  // == fill path
+      else
+      {
+         op.stroke_w = float(sW);
+         if(op.stroke_w > 0.0f)
+            op.stroke_w = mathMaxf(0.25f, float(sW) * scale_x * stroke_scale);
+      }
+      // trace "xxx parseStrokeW: op.stroke_w="+op.stroke_w+" sW=\""+sW+"\" scale_x="+scale_x+" stroke_scale="+stroke_scale;
+      cur_path.addDrawOp(deref op);
+
+      if(0 == cur_path.path_idx)
+         cstate.cur_stroke_w = op.stroke_w;
+   }
+
+   // <method_find.png>
+   public method findPathById(String _id) : Path {
+      Path *p;
+      foreach p in paths
+      {
+         if(p.id == _id)
+            return p;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method newPath(String _id, byte _type) {
+      if(null != findPathById(_id))
+         throw MinParseError getSrcLoc()+": path '"+_id+"' already declared";
+      if(b_debug_paths) trace "[trc] Minnie::newPath: id=\'"+_id+"\' path_idx="+paths.numElements+" type="+_type;
+      cur_path <= new Path;
+      cur_path.init(paths.numElements, _id, _type);
+      paths.add(#(deref cur_path));
+      cur_x = 0;
+      cur_y = 0;
+   }
+
+   // <method.png>
+   public method newSubPath(String _subId) {
+      if(null != cur_svg_parent_path)
+      {
+         if(null != findPathById(_subId))
+            throw MinParseError getSrcLoc()+": sub-path '"+_subId+"' already declared";
+         if(b_debug_paths) trace "[trc] Minnie::newSubPath id=\'"+_subId+"\' parent_path_idx="+cur_svg_parent_path.path_idx;
+         cur_path <= new Path;
+         cur_path.init(-1/*pathIdx*/, _subId, cur_svg_parent_path.type);
+         cur_svg_parent_path.addSubPath(deref cur_path);
+         cur_x = 0;
+         cur_y = 0;
+      }
+      else
+         throw MinParseError getSrcLoc()+": newSubPath: cur_svg_parent_path is null";
+   }
+
+   // <method_parse.png>
+   public method parsePath(boolean _type) {
+      newPath(words.get(1), _type);
+
+      // die "xxx def_path_seg="+def_path_seg;
+
+      if( (Path.TYPE_IMMEDIATE != _type) && (def_path_seg >= 1) )
+      {
+         DrawOpNumSeg op <= new DrawOpNumSeg;
+         op.num_seg = float(def_path_seg) * seg_scale + 0.5f;
+         // trace "xxx op.num_seg="+op.num_seg+" seg_scale="+seg_scale;
+         if(op.num_seg < 0)
+            op.num_seg = 1;
+         cur_path.addDrawOp(deref op);
+      }
+   }
+
+   // <method_parse.png>
+   public method parsePathEnd(boolean _bClosed) {
+      if(null != cur_path)
+      {
+         if(b_convert_ph_without_subpaths_to_pt)
+            cur_path.tryConvertToPT();
+
+         cur_path.end(_bClosed);
+         cur_path <= paths.get(0);
+         cur_x = 0;
+         cur_y = 0;
+      }
+      else
+         throw MinPathUnderflow getSrcLoc()+": '"+(_bClosed?"z":"y")+"': no current path";
+   }
+
+   // <method.png>
+   public method setOpCursor(DrawOp _op) {
+      // Remember cursor at op start for Path::reverse()
+      if(b_debug_reverse) trace "[trc] ............................ Minnie::setOpCursor: op="+#(_op)+" cur=("+cur_x+";"+cur_y+")";
+      _op.cur_x = cur_x;
+      _op.cur_y = cur_y;
+   }
+
+   // <method_parse.png>
+   public method parseLine() {
+      DrawOpLine op <= new DrawOpLine;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.dx = float(words.get(1)) * scale_x;
+      op.dy = float(words.get(2)) * scale_y;
+      cur_x += op.dx;
+      cur_y += op.dy;
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseLineAbs() {
+      DrawOpLine op <= new DrawOpLine;
+      setOpCursor(op);
+      op.dx = ((float(words.get(1)) + pre_tx) * scale_x + post_tx) - cur_x;
+      op.dy = ((float(words.get(2)) + pre_ty) * scale_y + post_ty) - cur_y;
+      cur_x += op.dx;
+      cur_y += op.dy;
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseSegScale() {
+      seg_scale = float(words.get(1));
+      if(seg_scale < 0.00001)
+         seg_scale = 1;
+   }
+
+   // <method_parse.png>
+   public method parseNumSeg() {
+      DrawOpNumSeg op <= new DrawOpNumSeg;
+      op.num_seg = float(words.get(1)) * seg_scale + 0.5f;
+      if(op.num_seg < 0)
+         op.num_seg = 1;
+      cur_path.addDrawOp(deref op);
+
+      if(0 == cur_path.path_idx)
+         cstate.cur_num_seg = op.num_seg;
+   }
+
+   // <method_parse.png>
+   public method parseMiterLimit() {
+      DrawOpMiterLimit op <= new DrawOpMiterLimit;
+      op.miter_limit = mathMaxf(1.0, words.get(1));
+      cur_path.addDrawOp(deref op);
+      if(b_debug_parse) trace "[trc] parseMiterLimit: cur_path="+#(cur_path)+" op.miter_limit="+op.miter_limit;
+   }
+
+   // <method_parse.png>
+   public method parseCubic() {
+      if(b_debug_cubic) trace "[trc] parseCubic: cur=("+cur_x+";"+cur_y+")";
+      DrawOpCubic op <= new DrawOpCubic;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.c1x = float(words.get(1)) * scale_x;
+      op.c1y = float(words.get(2)) * scale_y;
+      op.c2x = float(words.get(3)) * scale_x;
+      op.c2y = float(words.get(4)) * scale_y;
+      op.dx  = float(words.get(5)) * scale_x;
+      op.dy  = float(words.get(6)) * scale_y;
+      if(b_debug_cubic) trace "[trc] parseCubic: op.d=("+op.dx+";"+op.dy+")";
+      cur_x += op.dx;
+      cur_y += op.dy;
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseCubicAbs() {
+      if(b_debug_cubic) trace "[trc] parseCubicAbs: cur=("+cur_x+";"+cur_y+")";
+      DrawOpCubic op <= new DrawOpCubic;
+      setOpCursor(op);
+      op.c1x = (((float(words.get(1)) + pre_tx) * scale_x) + post_tx) - cur_x;
+      op.c1y = (((float(words.get(2)) + pre_ty) * scale_y) + post_ty) - cur_y;
+      op.dx  = (((float(words.get(5)) + pre_tx) * scale_x) + post_tx) - cur_x;
+      op.dy  = (((float(words.get(6)) + pre_ty) * scale_y) + post_ty) - cur_y;
+      if(b_debug_cubic) trace "[trc] parseCubicAbs: op.d=("+op.dx+";"+op.dy+")";
+      cur_x += op.dx;
+      cur_y += op.dy;
+      op.c2x = cur_x - (((float(words.get(3)) + pre_tx) * scale_x) + post_tx);
+      op.c2y = cur_y - (((float(words.get(4)) + pre_ty) * scale_y) + post_ty);
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseCubicMirror() {
+      DrawOpCubicMirror op <= new DrawOpCubicMirror;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.c2x = float(words.get(1)) * scale_x;
+      op.c2y = float(words.get(2)) * scale_y;
+      cur_x += op.dx;
+      cur_y += op.dy;
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseCubicMirrorAbs() {
+      DrawOpCubicMirror op <= new DrawOpCubicMirror;
+      setOpCursor(op);
+      op.dx  = (((float(words.get(3)) + pre_tx) + scale_x) + post_tx) - cur_x;
+      op.dy  = (((float(words.get(4)) + pre_ty) + scale_y) + post_ty) - cur_y;
+      cur_x += op.dx;
+      cur_y += op.dy;
+      op.c2x = cur_x - (((float(words.get(1)) + pre_tx) + scale_x) + post_tx);
+      op.c2y = cur_y - (((float(words.get(2)) + pre_ty) + scale_y) + post_ty);
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseArc() {
+      DrawOpArc op <= new DrawOpArc;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.rx          = float(words.get(1)) * scale_x;
+      op.ry          = float(words.get(2)) * scale_y;
+      if(op.rx < 0)
+         op.rx = -op.rx;
+      if(op.ry < 0)
+         op.ry = -op.ry;
+      op.xrot        = float(words.get(3));
+      op.b_large_arc = int(words.get(4));
+      op.b_arc_sweep = int(words.get(5));
+      op.dx          = float(words.get(6)) * scale_x;
+      op.dy          = float(words.get(7)) * scale_y;
+      cur_x += op.dx;
+      cur_y += op.dy;
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseArcAbs() {
+      DrawOpArc op <= new DrawOpArc;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.rx          = float(words.get(1)) * scale_x;
+      op.ry          = float(words.get(2)) * scale_y;
+      op.xrot        = float(words.get(3));
+      op.b_large_arc = int(words.get(4));
+      op.b_arc_sweep = int(words.get(5));
+      op.dx          = (((float(words.get(6)) + pre_tx) + scale_x) + post_tx) - cur_x;
+      op.dy          = (((float(words.get(7)) + pre_ty) + scale_y) + post_ty) - cur_y;
+      cur_x += op.dx;
+      cur_y += op.dy;
+      cur_path.addDrawOp(deref op);
+      cur_path.addPoint(cur_x, cur_y);
+   }
+
+   // <method_parse.png>
+   public method parseRect() {
+      DrawOpRect op <= new DrawOpRect;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.w = float(words.get(1)) * scale_x;
+      op.h = float(words.get(2)) * scale_y;
+
+      if(words.numElements >= 4)
+      {
+         op.rx = float(words.get(3)) * scale_x;
+         if(op.rx >= ((op.w*0.5)-0.5f))
+            op.rx = (op.w*0.5) - 0.5f;
+
+         if(words.numElements >= 5)
+         {
+            op.ry = float(words.get(4)) * scale_y;
+            if(op.ry >= ((op.h*0.5)-0.5f))
+               op.ry = (op.h*0.5) - 0.5f;
+         }
+      }
+
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public method parseRectCtr() {
+      DrawOpRect op <= new DrawOpRect;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.w = float(words.get(1)) * scale_x * 2.0;
+      op.h = float(words.get(2)) * scale_y * 2.0;
+
+      if(words.numElements >= 4)
+      {
+         op.rx = float(words.get(3)) * scale_x;
+         if(op.rx >= ((op.w*0.5f)-0.5f))
+            op.rx = (op.w*0.5) - 0.5f;
+
+         if(words.numElements >= 5)
+         {
+            op.ry = float(words.get(4)) * scale_y;
+            if(op.ry >= ((op.h*0.5)-0.5f))
+               op.ry = (op.h*0.5) - 0.5f;
+         }
+      }
+
+      op.cur_x -= op.w * 0.5;
+      op.cur_y -= op.h * 0.5;
+
+      DrawOpMoveRel opRel <= new DrawOpMoveRel;
+      opRel.dx = -op.w * 0.5;
+      opRel.dy = -op.h * 0.5;
+      cur_path.addDrawOp(deref opRel);
+
+      cur_path.addDrawOp(deref op);
+
+      // precision/rounding issues (test087_rect_fill_stroke  x 141<=>142)
+      // opRel <= new DrawOpMoveRel;
+      // opRel.dx = op.w * 0.5;
+      // opRel.dy = op.h * 0.5;
+      // cur_path.addDrawOp(deref opRel);
+
+      DrawOpMoveAbs opAbs <= new DrawOpMoveAbs;
+      opAbs.x = cur_x;
+      opAbs.y = cur_y;
+      cur_path.addDrawOp(deref opAbs);
+   }
+
+   // <method_parse.png>
+   public method parseEllipse() {
+      DrawOpEllipse op <= new DrawOpEllipse;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      op.rx = float(words.get(1)) * scale_x;
+      op.ry = float(words.get(2)) * scale_y;
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public method parseCircle() {
+      DrawOpCircle op <= new DrawOpCircle;
+      setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+
+      float r = float(words.get(1));
+
+      if(scale_x == scale_y)
+      {
+         op.r = r * scale_x;
+         cur_path.addDrawOp(deref op);
+      }
+      else
+      {
+         DrawOpEllipse opE <= new DrawOpEllipse;
+         setOpCursor(opE);
+         if(0 == cur_path.path_idx)
+            opE.rs <= cstate.getCopy();
+
+         opE.rx = r * scale_x;
+         opE.ry = r * scale_y;
+         cur_path.addDrawOp(deref opE);
+      }
+   }
+
+   // <method_parse.png>
+   public method parseInsertPath() {
+      // (todo) REMOVE
+      DrawOpInsertPath op <= new DrawOpInsertPath;
+      op.path   <= findPathById(words.get(1));
+      if(null == op.path)
+         throw MinParseError getSrcLoc()+": undeclared path '"+words.get(1)+"'";
+      op.scale_x = words.get(2);
+      op.scale_y = words.get(2);
+      op.rot     = words.get(3);
+
+      if(0.0f == op.scale_x)
+         op.scale_x = 1.0f;
+      if(0.0f == op.scale_y)
+         op.scale_y = 1.0f;
+
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method_parse.png>
+   public method parseDrawPath(int _mode) {
+      Path p <= findPathById(words.get(1));
+      if(null == p)
+         throw MinParseError getSrcLoc()+": undeclared path '"+words.get(1)+"'";
+
+      p.b_used = true;
+      DrawOpDrawPath op <= new DrawOpDrawPath;
+      // // // setOpCursor(op);
+      if(0 == cur_path.path_idx)
+         op.rs <= cstate.getCopy();
+      op.path <= findPathById(words.get(1));
+      op.mode = _mode;
+      cur_path.addDrawOp(deref op);
+   }
+
+   // <method.png>
+   protected method parseSVGPathCmd(TokenReader tr, String _cmd) : boolean {
+      // PathSegment *seg;
+      String *tok;
+      if(b_debug_svg >= 2) trace "[trc] parseSVGPathCmd: cur_path.path_idx="+cur_path.path_idx+" cmd=\""+_cmd+"\" pen=("+cur_x+";"+cur_y+")";
+      boolean bRelative;
+      char cmdC = _cmd.getc(0);
+      float rawX;
+      float rawY;
+      float rawC1X;
+      float rawC1Y;
+      float rawC2X;
+      float rawC2Y;
+      float rawRX;
+      float rawRY;
+      float newX;
+      float newY;
+      float dx;
+      float dy;
+      switch(cmdC)
+      {
+         default:
+            break;
+
+         case 'M':
+         case 'm':
+            bRelative = ('m' == cmdC);
+
+            tr.tokenLazySkip(",");
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+
+            if(bRelative)
+            {
+               if(b_svg_subpath_first)
+               {
+                  // First relative move at start of subpath => turn into absolute position ('M')
+                  trace "\nxxx ############### subpath first: svg_cur=("+svg_cur_x+";"+svg_cur_y+")  cur=("+cur_x+";"+cur_y+")";
+                  DrawOpMoveAbs opMoveAbsSub <= new DrawOpMoveAbs;
+                  setOpCursor(opMoveAbsSub);
+                  cur_path.addDrawOp(deref opMoveAbsSub);
+                  svg_cur_x += rawX;
+                  svg_cur_y += rawY;
+                  opMoveAbsSub.x = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+                  opMoveAbsSub.y = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+                  cur_x = opMoveAbsSub.x;
+                  cur_y = opMoveAbsSub.y;
+                  cur_path.addPoint(cur_x, cur_y);
+               }
+               else
+               {
+                  DrawOpMoveRel opMoveRel <= new DrawOpMoveRel;
+                  setOpCursor(opMoveRel);
+                  cur_path.addDrawOp(deref opMoveRel);
+                  svg_cur_x += rawX;
+                  svg_cur_y += rawY;
+                  newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+                  newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+                  opMoveRel.dx = newX - cur_x;
+                  opMoveRel.dy = newY - cur_y;
+                  cur_x += opMoveRel.dx;
+                  cur_y += opMoveRel.dy;
+                  cur_path.addPoint(cur_x, cur_y);
+               }
+            }
+            else
+            {
+               DrawOpMoveAbs opMoveAbs <= new DrawOpMoveAbs;
+               setOpCursor(opMoveAbs);
+               cur_path.addDrawOp(deref opMoveAbs);
+               opMoveAbs.x = (((rawX + pre_tx) * scale_x) + post_tx);
+               opMoveAbs.y = (((rawY + pre_ty) * scale_y) + post_ty);
+               cur_x = opMoveAbs.x;
+               cur_y = opMoveAbs.y;
+               cur_path.addPoint(cur_x, cur_y);
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+            }
+
+            // // if(b_svg_path_first)
+            {
+               // // b_svg_path_first = false;
+               svg_path_first_x = cur_x;
+               svg_path_first_y = cur_y;
+               svg_path_first_raw_x = svg_cur_x;
+               svg_path_first_raw_y = svg_cur_y;
+            }
+
+            b_svg_subpath_first = false;
+
+            debug_svg_path.append(" M"+svg_cur_x+","+svg_cur_y);
+            break;
+
+         case 'Y':  // extension: finish path w/o closing it
+         case 'y':
+            if(!tr.tokenHaveNext())
+            {
+               debug_svg_path.append(" z");
+
+               parsePathEnd(false/*bClosed*/);
+               cur_path <= cur_svg_parent_path;
+            }
+            else
+            {
+               // Multi-path
+               trace "[dbg] parseSVGPathCmd: multi-path SVG detected";//, please paste split path into .min file and re-run";
+               if(0 == debug_svg_num_sub_paths)
+               {
+                  debug_svg_path.insert(0, "path "+cur_path.id+"_sub0 ");
+               }
+               debug_svg_path.append(" z\nz\n\npath "+cur_path.id+"_sub"+(++debug_svg_num_sub_paths)+" M"+svg_path_first_raw_x+","+svg_path_first_raw_y);  // rewind cursor
+               newSubPath(cur_path.id+"_sub"+debug_svg_num_sub_paths);
+
+               svg_cur_x = svg_path_first_raw_x;
+               svg_cur_y = svg_path_first_raw_y;
+
+               cur_x = svg_path_first_x;
+               cur_y = svg_path_first_y;
+               b_svg_subpath_first = true;  // turn first 'm' into 'M'
+            }
+            break;
+
+         case 'L':
+         case 'l':
+            bRelative = ('l' == cmdC);
+            DrawOpLine opLine <= new DrawOpLine;
+            setOpCursor(opLine);
+            cur_path.addDrawOp(deref opLine);
+            tr.tokenLazySkip(",");
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+            if(bRelative)
+            {
+               svg_cur_x += rawX;
+               svg_cur_y += rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opLine.dx = newX - cur_x;
+               opLine.dy = newY - cur_y;
+            }
+            else
+            {
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opLine.dx = newX - cur_x;
+               opLine.dy = newY - cur_y;
+               // trace "xxx L from cur=("+cur_x+";"+cur_y+") to new=("+newX+";"+newY+")";
+            }
+            cur_x += opLine.dx;
+            cur_y += opLine.dy;
+            cur_path.addPoint(cur_x, cur_y);
+            debug_svg_path.append(" L"+svg_cur_x+","+svg_cur_y);
+            break;
+
+         case 'H':
+         case 'h':
+            bRelative = ('h' == cmdC);
+            DrawOpLine opLineH <= new DrawOpLine;
+            setOpCursor(opLineH);
+            cur_path.addDrawOp(deref opLineH);
+            tr.tokenLazySkip(",");
+            rawX = float(tr.tokenRead());
+            if(bRelative)
+            {
+               svg_cur_x += rawX;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               opLineH.dx = newX - cur_x;
+               opLineH.dy = 0;
+            }
+            else
+            {
+               svg_cur_x = rawX;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               opLineH.dx = newX - cur_x;
+               opLineH.dy = 0;
+            }
+            cur_x += opLineH.dx;
+            cur_path.addPoint(cur_x, cur_y);
+            debug_svg_path.append(" H"+svg_cur_x);
+            break;
+
+         case 'V':
+         case 'v':
+            bRelative = ('v' == cmdC);
+            DrawOpLine opLineV <= new DrawOpLine;
+            setOpCursor(opLineV);
+            cur_path.addDrawOp(deref opLineV);
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+            if(bRelative)
+            {
+               svg_cur_y += rawY;
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opLineV.dx = 0;
+               opLineV.dy = newY - cur_y;
+            }
+            else
+            {
+               svg_cur_y = rawY;
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opLineV.dx = 0;
+               opLineV.dy = newY - cur_y;
+            }
+            cur_y += opLineV.dy;
+            cur_path.addPoint(cur_x, cur_y);
+            debug_svg_path.append(" V"+svg_cur_y);
+            break;
+
+         case 'C':
+         case 'c':
+            bRelative = ('c' == cmdC);
+            DrawOpCubic opCubic <= new DrawOpCubic;
+            setOpCursor(opCubic);
+            cur_path.addDrawOp(deref opCubic);
+
+            tr.tokenLazySkip(",");
+            rawC1X = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawC1Y = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            rawC2X = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawC2Y = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            // trace "xxx c rawC1=("+rawC1X+";"+rawC1Y+") rawC2=("+rawC2X+";"+rawC2Y+") raw=("+rawX+";"+rawY+")";
+
+            if(bRelative)
+            {
+               opCubic.c1x = rawC1X * scale_x;
+               opCubic.c1y = rawC1Y * scale_y;
+
+               opCubic.c2x = rawC2X * scale_x;
+               opCubic.c2y = rawC2Y * scale_y;
+
+               rawC1X += svg_cur_x; // debug_svg_path
+               rawC1Y += svg_cur_y;
+               rawC2X += svg_cur_x;
+               rawC2Y += svg_cur_y;
+
+               svg_cur_x += rawX;
+               svg_cur_y += rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opCubic.dx = newX - cur_x;
+               opCubic.dy = newY - cur_y;
+            }
+            else
+            {
+               opCubic.c1x = (((rawC1X + pre_tx) * scale_x) + post_tx) - cur_x;
+               opCubic.c1y = (((rawC1Y + pre_ty) * scale_y) + post_ty) - cur_y;
+
+               opCubic.c2x = (((rawC2X + pre_tx) * scale_x) + post_tx) - cur_x;
+               opCubic.c2y = (((rawC2Y + pre_ty) * scale_y) + post_ty) - cur_y;
+
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opCubic.dx = newX - cur_x;
+               opCubic.dy = newY - cur_y;
+            }
+
+            opCubic.c2x = (cur_x + opCubic.dx) - (opCubic.c2x + cur_x);  // make relative to dst (instead of cur)
+            opCubic.c2y = (cur_y + opCubic.dy) - (opCubic.c2y + cur_y);
+
+            if(1)//0.0f != opCubic.dx || 0.0f != opCubic.dy)   // (todo) re-allow skip
+            {
+               cur_x += opCubic.dx;
+               cur_y += opCubic.dy;
+               cur_path.addPoint(cur_x, cur_y);
+
+               if(b_debug_svg >= 2) trace "[trc] parseSVGPath: "+tcchar(cmdC)+" c1=("+opCubic.c1x+";"+opCubic.c1y+") c2=("+opCubic.c2x+";"+opCubic.c2y+") delta=("+opCubic.dx+";"+opCubic.dy+") => dst=("+cur_x+";"+cur_y+") dstSVG=("+((svg_cur_x+pre_tx)*scale_x+post_tx)+";"+((svg_cur_y+pre_ty)*scale_y+post_ty)+")";
+
+               debug_svg_path.append(" C"+rawC1X+","+rawC1Y+" "+rawC2X+","+rawC2Y+" "+svg_cur_x+","+svg_cur_y);
+            }
+            else
+            {
+               // delta=(0;0)
+               cur_path.removeLastDrawOp();
+            }
+            break;
+
+         case 'S':
+         case 's':
+            bRelative = ('s' == cmdC);
+            DrawOpCubicMirror opCubicMirror <= new DrawOpCubicMirror;
+            setOpCursor(opCubicMirror);
+            cur_path.addDrawOp(deref opCubicMirror);
+
+            tr.tokenLazySkip(",");
+            rawC2X = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawC2Y = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            // trace "xxx s rawC2=("+rawC2X+";"+rawC2Y+") raw=("+rawX+";"+rawY+")";
+
+            if(bRelative)
+            {
+               opCubicMirror.c2x = rawC2X * scale_x;
+               opCubicMirror.c2y = rawC2Y * scale_y;
+
+               rawC2X += svg_cur_x;  // debug_svg_path
+               rawC2Y += svg_cur_y;
+
+               svg_cur_x += rawX;
+               svg_cur_y += rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opCubicMirror.dx = newX - cur_x;
+               opCubicMirror.dy = newY - cur_y;
+
+            }
+            else
+            {
+               opCubicMirror.c2x = (((rawC2X + pre_tx) * scale_x) + post_tx) - cur_x;
+               opCubicMirror.c2y = (((rawC2Y + pre_ty) * scale_y) + post_ty) - cur_y;
+
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opCubicMirror.dx = newX - cur_x;
+               opCubicMirror.dy = newY - cur_y;
+            }
+
+            opCubicMirror.c2x = (cur_x + opCubicMirror.dx) - (opCubicMirror.c2x + cur_x);  // make relative to dst (instead of cur)
+            opCubicMirror.c2y = (cur_y + opCubicMirror.dy) - (opCubicMirror.c2y + cur_y);
+
+            cur_x += opCubicMirror.dx;
+            cur_y += opCubicMirror.dy;
+            cur_path.addPoint(cur_x, cur_y);
+
+            if(b_debug_svg >= 2) trace "[trc] parseSVGPath: "+tcchar(cmdC)+" c2=("+opCubicMirror.c2x+";"+opCubicMirror.c2y+") delta=("+opCubicMirror.dx+";"+opCubicMirror.dy+") => dst=("+cur_x+";"+cur_y+")";
+
+            debug_svg_path.append(" S"+rawC2X+","+rawC2Y+" "+svg_cur_x+","+svg_cur_y);
+            break;
+
+         case 'Q':
+         case 'q':
+            bRelative = ('q' == cmdC);
+            DrawOpCubic opQuad <= new DrawOpCubic;
+            setOpCursor(opQuad);
+            cur_path.addDrawOp(deref opQuad);
+
+            tr.tokenLazySkip(",");
+            rawC1X = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawC1Y = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+
+            if(bRelative)
+            {
+               opQuad.c1x = rawC1X * scale_x;
+               opQuad.c1y = rawC1Y * scale_y;
+
+               opQuad.c2x = opQuad.c1x;
+               opQuad.c2y = opQuad.c1y;
+
+               rawC1X += svg_cur_x;
+               rawC1Y += svg_cur_y;
+
+               svg_cur_x += rawX;
+               svg_cur_y += rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opQuad.dx = newX - cur_x;
+               opQuad.dy = newY - cur_y;
+            }
+            else
+            {
+               opQuad.c1x = (((rawC1X + pre_tx) * scale_x) + post_tx) - cur_x;
+               opQuad.c1y = (((rawC1Y + pre_ty) * scale_y) + post_ty) - cur_y;
+
+               opQuad.c2x = opQuad.c1x;
+               opQuad.c2y = opQuad.c1x;
+
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opQuad.dx = newX - cur_x;
+               opQuad.dy = newY - cur_y;
+            }
+
+            opQuad.c2x = (cur_x + opQuad.dx) - (opQuad.c2x + cur_x);  // make relative to dst (instead of cur)
+            opQuad.c2y = (cur_y + opQuad.dy) - (opQuad.c2y + cur_y);
+
+            cur_x += opQuad.dx;
+            cur_y += opQuad.dy;
+            cur_path.addPoint(cur_x, cur_y);
+
+            debug_svg_path.append(" Q"+rawC1X+","+rawC1Y+" "+svg_cur_x+","+svg_cur_y);
+            break;
+
+         case 'T':
+         case 't':
+            bRelative = ('t' == cmdC);
+            DrawOpLine opQuadMirror <= new DrawOpLine;
+            setOpCursor(opQuadMirror);
+            cur_path.addDrawOp(deref opQuadMirror);
+
+            tr.tokenLazySkip(",");
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+
+            if(bRelative)
+            {
+               svg_cur_x += rawX;
+               svg_cur_y += rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opQuadMirror.dx = newX - cur_x;
+               opQuadMirror.dy = newY - cur_y;
+            }
+            else
+            {
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opQuadMirror.dx = newX - cur_x;
+               opQuadMirror.dy = newY - cur_y;
+            }
+            cur_x += opQuadMirror.dx;
+            cur_y += opQuadMirror.dy;
+            cur_path.addPoint(cur_x, cur_y);
+
+            debug_svg_path.append(" T"+svg_cur_x+","+svg_cur_y);
+            break;
+
+         case 'A':
+         case 'a':
+            bRelative = ('a' == cmdC);
+            DrawOpArc opArc <= new DrawOpArc;
+            setOpCursor(opArc);
+            cur_path.addDrawOp(deref opArc);
+
+            tr.tokenLazySkip(",");
+            rawRX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawRY = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            opArc.xrot = tr.tokenRead();
+            tr.tokenLazySkip(",");
+            opArc.b_large_arc = tr.tokenRead();
+            tr.tokenLazySkip(",");
+            opArc.b_arc_sweep = tr.tokenRead();
+            tr.tokenLazySkip(",");
+
+            rawX = float(tr.tokenRead());
+            tr.tokenLazySkip(",");
+            rawY = float(tr.tokenRead());
+
+            opArc.rx  = rawRX * scale_x;
+            opArc.ry  = rawRY * scale_y;
+
+            if(b_debug_arc) trace "[trc] Minnie::parseSVGPathCmd: "+tcchar(cmdC)+" (path.id='"+cur_path.id+"') r=("+opArc.rx+";"+opArc.ry+") rot="+opArc.xrot+" bLargeArc="+opArc.b_large_arc+" bArcSweep="+opArc.b_arc_sweep+" d=("+rawX+";"+rawY+")";
+
+            if(b_debug_arc >= 2 && (0.0f != opArc.xrot))
+               trace "~~~~~~~~~~~~~~~~~~~~~~~~~~ have_rot  path.id="+cur_path.id+" opArc.xrot="+opArc.xrot;
+
+            if(bRelative)
+            {
+               svg_cur_x += rawX;
+               svg_cur_y += rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opArc.dx = newX - cur_x;
+               opArc.dy = newY - cur_y;
+            }
+            else
+            {
+               svg_cur_x = rawX;
+               svg_cur_y = rawY;
+               newX = (((svg_cur_x + pre_tx) * scale_x) + post_tx);
+               newY = (((svg_cur_y + pre_ty) * scale_y) + post_ty);
+               opArc.dx = newX - cur_x;
+               opArc.dy = newY - cur_y;
+            }
+            cur_x += opArc.dx;
+            cur_y += opArc.dy;
+            cur_path.addPoint(cur_x, cur_y);
+
+            debug_svg_path.append(" A"+rawRX+","+rawRY+" "+opArc.xrot+" "+opArc.b_large_arc+" "+opArc.b_arc_sweep+" "+svg_cur_x+","+svg_cur_y);
+            break;
+
+         case 'Z':
+         case 'z':
+            if(b_debug_svg) trace "[trc] parseSVGPathCmd: close path.id=\'"+cur_path.id+"\' cur=("+cur_x+";"+cur_y+") first=("+svg_path_first_x+";"+svg_path_first_y+") firstRaw=("+svg_path_first_raw_x+";"+svg_path_first_raw_y+")";
+
+            if(!tr.tokenHaveNext())
+            {
+               if(0)
+               {
+                  if( abs(cur_x - svg_path_first_x) > 0.1 ||
+                      abs(cur_y - svg_path_first_y) > 0.1
+                      )
+                  {
+                     DrawOpLine opLineClose <= new DrawOpLine;
+                     setOpCursor(opLineClose);
+                     cur_path.addDrawOp(deref opLineClose);
+                     opLineClose.dx = (svg_path_first_x - cur_x);
+                     opLineClose.dy = (svg_path_first_y - cur_y);
+                  }
+               }
+
+               debug_svg_path.append(" z");
+
+               parsePathEnd(true/*bClosed*/);
+               cur_path <= cur_svg_parent_path;
+            }
+            else
+            {
+               // Multi-path
+               trace "[dbg] parseSVGPathCmd: multi-path SVG detected";//, please paste split path into .min file and re-run";
+               if(0 == debug_svg_num_sub_paths)
+               {
+                  debug_svg_path.insert(0, "path "+cur_path.id+"_sub0 ");
+               }
+               debug_svg_path.append(" z\nz\n\npath "+cur_svg_parent_path.id+"_sub"+(++debug_svg_num_sub_paths)+" M"+svg_path_first_raw_x+","+svg_path_first_raw_y);  // rewind cursor
+               cur_path.b_closed = true;
+               newSubPath(cur_svg_parent_path.id+"_sub"+debug_svg_num_sub_paths);
+
+               svg_cur_x = svg_path_first_raw_x;
+               svg_cur_y = svg_path_first_raw_y;
+
+               cur_x = svg_path_first_x;
+               cur_y = svg_path_first_y;
+               b_svg_subpath_first = true;  // turn first 'm' into 'M'
+            }
+            break;
+      }
+
+      return true;
+   }
+
+   // <method_parse.png>
+   public method parseSVGPath(String _s) {
+      // (note) 'svg' pseudo op must appear after 'p <id>' path start
+
+      cur_svg_parent_path <= cur_path;
+
+      svg_cur_x = 0;
+      svg_cur_y = 0;
+
+      // e.g. "a.547.547" => "a .547 .547"
+      local String sfix = _s;
+      sfix.replace("e-", "____e_minus____");  // hack to fix e.g. "-3.7e-4"
+      sfix.replace(" -", "-");
+      sfix.replace("-", " -");
+      sfix.replace("____e_minus____", "e-");
+      sfix.replace("-.", "-0.");
+
+      sfix = Utils.SplitNumbersInString(sfix);
+      // trace "xxx sfix=\""+sfix+"\"";
+
+      local TokenReader tr;
+      tr.tokenize(sfix, "MmZzLlHhVvCcSsQqTtAa,");
+
+      // trace "xxx tr.tokens="+tr.tokens;
+      // trace "xxx #tokens="+(tr.tokens.numElements);
+      // exit(10);
+
+      // // b_svg_path_first = true;
+      b_svg_subpath_first = false;
+      svg_path_first_x = 0;
+      svg_path_first_y = 0;
+
+      String lastCmd = "";
+
+      while(tr.tokenHaveNext())
+      {
+         tr.tokenLazySkip(",");
+         String tok <= tr.tokenRead();
+
+         // if(b_debug) trace "xxx parsePath: tok=\""+tok+"\"";
+
+         if(-1 == "MmZzLlHhVvCcSsQqTtAa".indexOfChar(tok[0], 0))
+         {
+            if(lastCmd.isBlank())
+            {
+               trace "[~~~] Minnie::parseSVGPath: invalid path command \""+tok+"\"";
+            }
+            else
+            {
+               tr.tokenRewind();
+               if(!parseSVGPathCmd(tr,
+                                   ("m" == lastCmd) ? "l" : ("M" == lastCmd) ? "L" : lastCmd
+                                   )
+                  )
+                  break;
+            }
+         }
+         else
+         {
+            if(!parseSVGPathCmd(tr, tok))
+               break;
+            lastCmd = tok;
+         }
+      }
+
+      if(b_convert_ph_without_subpaths_to_pt)
+         cur_path.tryConvertToPT();
+
+      cur_svg_parent_path <= null;
+      cur_path <= paths.get(0);
+      cur_x = 0;
+      cur_y = 0;
+   }
+
+   // <method_parse.png>
+   public method parseString(String _buf) {
+
+      try
+      {
+         pushParseContext("", false/*bIncLineIdx*/, _buf.splitChar('\n')/*lines*/, 0/*lineIdx*/);
+         String *line;
+
+         geo_scale_x = 1;
+         geo_scale_y = 1;
+
+         b_rev = (true == b_force_rev);
+
+         seg_scale = 1;
+
+         stroke_scale = 1;
+
+         pre_tx  = 0;
+         pre_ty  = 0;
+         scale_x = 1;
+         scale_y = 1;
+         post_tx = 0;
+         post_ty = 0;
+
+         newPath("0", Path.TYPE_DRAW/*type*/);
+         cur_path.b_used = true;
+
+         cstate.reset();
+
+         boolean bAllowDraw = true;
+
+         while(!cur_parse_context.done())
+         {
+            if(cur_parse_context.beginLine(0))  // false when line is blank or just a comment
+            {
+               words <= cur_parse_context.cur_words;
+               if(b_debug_parse) trace "[trc] line words="+words;
+
+               String sOp <= words.get(0);
+               // trace "xxx parse op=\""+sOp+"\"";
+
+               switch(sOp)
+               {
+                  default:
+                     break;
+
+                  case "geo_scale":
+                  case "gs":
+                     parseGeoScale();
+                     break;
+
+                  case "geo_div":
+                  case "gd":
+                     parseGeoDiv();
+                     break;
+
+                  case "geo":
+                     parseGeo();
+                     break;
+
+                  case "viewbox":
+                  case "vb":
+                     parseViewBoxGeoTransform();
+                     break;
+
+                  case "geo_transform":
+                  case "gxf":
+                     parseGeoTransform();
+                     break;
+
+                  case "gxfs":
+                     parseGeoTransformScale();
+                     break;
+
+                  case "aa":  // **deprected**  (todo) remove 'aa'
+                  case "rev":
+                     if(maybe == b_force_rev)
+                     {
+                        b_rev = Utils.ParseBool(words.get(1));
+                        if(b_verbose) trace "[dbg] REV is "+Utils.GetEnableString(b_rev);
+                     }
+                     break;
+
+                  case "m_f32":
+                     b_force_move_f32 = Utils.ParseBool(words.get(1));
+                     if(b_verbose) trace "[dbg] force-move-f32 is "+Utils.GetEnableString(b_force_move_f32);
+                     break;
+
+                  case "arc_f32":
+                  case "a_f32":
+                     b_force_arc_f32 = Utils.ParseBool(words.get(1));
+                     if(b_verbose) trace "[dbg] force-arc-f32 is "+Utils.GetEnableString(b_force_arc_f32);
+                     break;
+
+                  case "l_f32":
+                     b_force_line_f32 = Utils.ParseBool(words.get(1));
+                     if(b_verbose) trace "[dbg] force-line-f32 is "+Utils.GetEnableString(b_force_line_f32);
+                     break;
+
+                  case "c_f32":
+                     b_force_cubic_f32 = Utils.ParseBool(words.get(1));
+                     if(b_verbose) trace "[dbg] force-cubic-f32 is "+Utils.GetEnableString(b_force_cubic_f32);
+                     break;
+
+                  case "r_f32":
+                     b_force_rect_f32 = Utils.ParseBool(words.get(1));
+                     if(b_verbose) trace "[dbg] force-rect-f32 is "+Utils.GetEnableString(b_force_rect_f32);
+                     break;
+
+                  case "f32":
+                     b_force_move_f32  = Utils.ParseBool(words.get(1));
+                     b_force_arc_f32   = b_force_move_f32;
+                     b_force_line_f32  = b_force_move_f32;
+                     b_force_cubic_f32 = b_force_move_f32;
+                     b_force_rect_f32  = b_force_move_f32;
+                     if(b_verbose) trace "[dbg] force-f32 is "+Utils.GetEnableString(b_force_move_f32);
+                     break;
+
+                  case "pal":
+                  case "palette":
+                     parsePal();
+                     break;
+
+                  case "pal_brightness":
+                     parsePalBrightness();
+                     break;
+
+                  case "pal_contrast":
+                     parsePalContrast();
+                     break;
+
+                  case "pal_hsv":
+                     parsePalHSV();
+                     break;
+
+                  case "fb":
+                     parseFramebuffer();
+                     break;
+
+                  case "i":
+                  case "color":
+                  case "col":
+                     parseColor();
+                     break;
+
+                  case "g":
+                  case "logic_op":
+                     parseLogicOp();
+                     break;
+
+                  case "h":
+                  case "join_cap":
+                  case "line_join_cap":
+                     parseJoinCap();
+                     break;
+
+                  case "ml":
+                  case "miter_limit":
+                     parseMiterLimit();
+                     break;
+
+                  case "n":
+                  case "transform_2d":
+                  case "transform2d":
+                  case "t2d":
+                     parseTransform2D();
+                     break;
+
+                  case "q":
+                  case "transform_3d":
+                  case "transform3d":
+                  case "t3d":
+                     parseTransform3D();
+                     break;
+
+                  case "M":
+                  case "move_abs":
+                     parseMoveAbs();
+                     break;
+
+                  case "m":
+                  case "move_rel":
+                     parseMoveRel();
+                     break;
+
+                  case "t":
+                  case "target":
+                  case "dest":
+                  case "dst":
+                     parseTarget();
+                     break;
+
+                  case "u":
+                  case "source":
+                  case "src":
+                     parseSource();
+                     break;
+
+                  case "f":
+                  case "fill":
+                     parseFill();
+                     break;
+
+                  case "w2":
+                     parseClip2D(false/*bOff*/, false/*bPre*/, false/*bFB*/);
+                     break;
+
+                  case "w2p":
+                     parseClip2D(false/*bOff*/, true/*bPre*/, false/*bFB*/);
+                     break;
+
+                  case "woff":
+                  case "w2off":
+                  case "w3off":
+                     parseClip2D(true/*bOff*/, false/*bPre*/, false/*bFB*/);
+                     break;
+
+                  case "w2fb":
+                     parseClip2D(false/*bOff*/, false/*bPre*/, true/*bFB*/);
+                     break;
+
+                  case "w3fb":
+                     parseClip3D();
+                     break;
+
+                  case "b":
+                  case "blit":
+                     parseBlit();
+                     break;
+
+                  case "a":
+                  case "mask":
+                     parseMask();
+                     break;
+
+                  case "k":
+                  case "stroke":
+                     parseStrokeW();
+                     break;
+
+                  case "p":
+                  case "path":
+                     parsePath(Path.TYPE_CONVEX);
+                     break;
+
+                  case "pt":
+                  case "path_tesselate":
+                     // concave path (no holes)
+                     parsePath(Path.TYPE_CONCAVE);
+                     break;
+
+                  case "ph":
+                  case "path_vgtesselate":
+                     // path with holes (requires SGI/VG tesselator)
+                     parsePath(Path.TYPE_HOLES);
+                     break;
+
+                  case "pi":
+                  case "path_immediate":
+                     // specialized render functions (rect, roundrect, ellipse, circle, ..)
+                     parsePath(Path.TYPE_IMMEDIATE);
+                     cur_path.b_used = true;
+                     break;
+
+                  case "svg":
+                     debug_svg_num_sub_paths = 0;
+                     debug_svg_path.empty();
+                     parseSVGPath(cur_parse_context.cur_line.trim().substring(4,999999));
+                     if(b_debug_svg || debug_svg_num_sub_paths > 0) trace "[trc] svg: "+(debug_svg_num_sub_paths+1)+" multi-paths:\n>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> copy from here\n"+debug_svg_path+"\n<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<\n\n";
+                     break;
+
+                  case "l":
+                  case "line_rel":
+                     parseLine();
+                     break;
+
+                  case "L":
+                  case "line_abs":
+                     parseLineAbs();
+                     break;
+
+                  case "seg_scale":
+                  case "sgs":
+                     parseSegScale();
+                     break;
+
+                  case "stroke_scale":
+                  case "sts":
+                     stroke_scale = mathMaxf(0.25f, words.get(1));
+                     break;
+
+                  case "path_seg":
+                  case "ps":
+                     def_path_seg = words.get(1);
+                     if(def_path_seg < 1)
+                        def_path_seg = -1;
+                     break;
+
+                  case "j":
+                  case "seg":
+                     parseNumSeg();
+                     break;
+
+                  case "fp":
+                  case "free_path":  // free last rendered path
+                     parseFreePath();
+                     break;
+
+                  case "c":
+                  case "cubic":
+                     parseCubic();
+                     break;
+
+                  case "C":
+                  case "cubic_abs":
+                     parseCubicAbs();
+                     break;
+
+                  case "s":
+                  case "cubic_mirror_rel":
+                     parseCubicMirror();
+                     break;
+
+                  case "S":
+                  case "cubic_mirror_abs":
+                     parseCubicMirrorAbs();
+                     break;
+
+                  case "arc":
+                  case "arc_rel":
+                     parseArc();
+                     break;
+
+                  case "ARC":
+                  case "arc_abs":
+                     parseArcAbs();
+                     break;
+
+                  case "r":
+                  case "rect":
+                     parseRect();
+                     break;
+
+                  case "rc":
+                  case "rect_ctr":
+                     parseRectCtr();
+                     break;
+
+                  case "e":
+                  case "ellipse":
+                     parseEllipse();
+                     break;
+
+                  case "ci":
+                  case "circle":
+                     parseCircle();
+                     break;
+
+                     // (todo) remove ?
+                  case "v":
+                  case "insert_path":
+                     parseInsertPath();
+                     break;
+
+                  case "doff":
+                     bAllowDraw = false;
+                     break;
+
+                  case "don":
+                     bAllowDraw = true;
+                     break;
+
+                  case "d":
+                  case "draw_path":
+                     if(bAllowDraw)
+                        parseDrawPath(0/*mode=no transform*/);
+                     break;
+
+                  case "d2":
+                  case "d2d":
+                  case "draw_path_2d":
+                     if(bAllowDraw)
+                        parseDrawPath(1/*mode=transform2D*/);
+                     break;
+
+                  case "d3":
+                  case "d3d":
+                  case "draw_path_3d":
+                     if(bAllowDraw)
+                        parseDrawPath(2/*mode=transform3D*/);
+                     break;
+
+                  case "y":
+                  case "z":
+                     if(null != cur_path)
+                        parsePathEnd("z" == sOp);
+                     break;
+               }
+
+            }
+
+            // Next line
+            if(b_debug_parse)
+               trace "[trc] nextLine srcLoc="+getSrcLoc();
+            cur_parse_context.nextLine();
+
+         } // iterate lines
+
+         popParseContext(false/*bKeepLineIdx*/);
+
+         if(b_debug_paths)
+         {
+            trace "[dbg] paths:";
+            local String sDebug;
+            debugPrintPaths(2, sDebug);
+            trace sDebug;
+         }
+
+         return true;
+      }
+      catch(MinError e)
+      {
+         trace "[---] Minnie::parseString: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+         trace e.stackTrace;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method emitPalette(Stream ofs) {
+      int c32;
+
+      if(-1 == b_pal_24bit)
+      {
+         // Auto-detect palette mode
+         b_pal_24bit = false;
+         foreach c32 in palette
+         {
+            if( (c32&0x00000F) != ((c32&0x0000F0)>>4)  ||
+                (c32&0x000F00) != ((c32&0x00F000)>>4)  ||
+                (c32&0x0F0000) != ((c32&0xF00000)>>4)
+                )
+            {
+               // Integer io = c32;
+               // trace "xxx is 24bit c32=#"+io.printf("%08x");
+               b_pal_24bit = true;
+               break;
+            }
+         }
+      }
+
+      byte r,g,b;
+      if(b_pal_24bit)
+      {
+         ofs.i8 = 0xE5; // pal24
+         ofs.i8 = palette.numElements-1;
+         foreach c32 in palette
+         {
+            r = (c32 >> 16) & 255;
+            g = (c32 >>  8) & 255;
+            b = (c32      ) & 255;
+            ofs.i8 = r;
+            ofs.i8 = g;
+            ofs.i8 = b;
+         }
+      }
+      else
+      {
+         ofs.i8 = 0xE3; // pal12
+         ofs.i8 = palette.numElements-1;
+         local StreamWriter4 ofs4; ofs4.begin(ofs);
+         foreach c32 in palette
+         {
+            // trace "xxx emitPalette: c32="+c32;
+            r = (c32 >> (16+4)) & 15;
+            g = (c32 >> ( 8+4)) & 15;
+            b = (c32 >> (   4)) & 15;
+            ofs4.push4(r);
+            ofs4.push4(g);
+            ofs4.push4(b);
+         }
+         ofs4.end();
+      }
+   }
+
+   // <method.png>
+   public method emitFramebuffers(Stream ofs) {
+      // (additional) framebuffers
+      int numFb = framebuffers.numElements;
+      if(numFb > 1)
+      {
+         ofs.i8 = 0xE7;
+         ofs.i8 = numFb - 1;
+         int fbIdx = 0;
+         Framebuffer *fb;
+         foreach fb in framebuffers
+         {
+            if(fbIdx > 0)
+            {
+               ofs.i8 = fb.w / 8;
+               ofs.i8 = fb.h / 8;
+            }
+            fbIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public method emitMatrices2D(Stream ofs) {
+      int numMat = matrices_2d.numElements;
+      int matIdx = 0;
+      if(numMat > 0)
+      {
+         ofs.i8 = 0xE8;
+         ofs.i16 = numMat - 1;
+         loop(numMat)
+         {
+            IntArray mat16 <= matrices_2d[matIdx++];
+            int idx = 0;
+            loop(2*3)
+               ofs.i16 = mat16[idx++];
+         }
+      }
+   }
+
+   // <method.png>
+   public method emitMatrices3D(Stream ofs) {
+      int numMat = matrices_3d.numElements;
+      int matIdx = 0;
+      if(numMat > 0)
+      {
+         ofs.i8 = 0xE9;
+         ofs.i16 = numMat - 1;
+         loop(numMat)
+         {
+            IntArray mat16 <= matrices_3d[matIdx++];
+            int idx = 0;
+            loop(4*4)
+               ofs.i16 = mat16[idx++];
+         }
+      }
+   }
+
+   // <method.png>
+   public method emitRenderStateDiff(RenderState _c, RenderState _n, PointerArray _drawOpsNew) {
+
+      if(_n.cur_fb_idx != _c.cur_fb_idx)
+      {
+         DrawOpTarget opTarget <= new DrawOpTarget;
+         opTarget.fb <= framebuffers.get(_n.cur_fb_idx);
+         _drawOpsNew.add(#(deref opTarget));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: target new="+(_n.cur_fb_idx);
+      }
+
+      if(_n.cur_src_fb_idx != _c.cur_src_fb_idx)
+      {
+         DrawOpSource opSource <= new DrawOpSource;
+         opSource.fb <= framebuffers.get(_n.cur_src_fb_idx);
+         _drawOpsNew.add(#(deref opSource));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: source new="+(_n.cur_src_fb_idx);
+      }
+
+      if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: _c.cur_pal_idx="+_c.cur_pal_idx+" _n.cur_pal_idx="+_n.cur_pal_idx;
+      if(_n.cur_pal_idx != _c.cur_pal_idx)
+      {
+         DrawOpColor opColor <= new DrawOpColor;
+         opColor.pal_idx = _n.cur_pal_idx;
+         _drawOpsNew.add(#(deref opColor));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: color new="+_n.cur_pal_idx;
+      }
+
+      if(_n.cur_mask_idx != _c.cur_mask_idx)
+      {
+         DrawOpMask opMask <= new DrawOpMask;
+         opMask.pal_idx = _n.cur_mask_idx;
+         _drawOpsNew.add(#(deref opMask));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: mask new="+_n.cur_mask_idx;
+      }
+
+      if(_n.cur_mat_2d_idx != _c.cur_mat_2d_idx)
+      {
+         if(-1 != _n.cur_mat_2d_idx)
+         {
+            DrawOpTransform2D opTransform2D <= new DrawOpTransform2D;
+            opTransform2D.mat_idx = _n.cur_mat_2d_idx;
+            opTransform2D.initMatFromFloat16(matrices_2d.get(_n.cur_mat_2d_idx));
+            _drawOpsNew.add(#(deref opTransform2D));
+            if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: mat2d new="+_n.cur_mat_2d_idx;
+         }
+      }
+
+      if(_n.cur_mat_3d_idx != _c.cur_mat_3d_idx)
+      {
+         if(-1 != _n.cur_mat_3d_idx)
+         {
+            DrawOpTransform3D opTransform3D <= new DrawOpTransform3D;
+            opTransform3D.mat_idx = _n.cur_mat_3d_idx;
+            opTransform3D.initMatFromFloat16(matrices_3d.get(_n.cur_mat_3d_idx));
+            _drawOpsNew.add(#(deref opTransform3D));
+            if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: mat3d new="+_n.cur_mat_3d_idx;
+         }
+      }
+
+      if(_n.ideal_cur_x != _c.ideal_cur_x || _n.ideal_cur_y != _c.ideal_cur_y)
+      {
+         DrawOpMoveAbs opMoveAbs <= new DrawOpMoveAbs;
+         opMoveAbs.x = _n.ideal_cur_x;
+         opMoveAbs.y = _n.ideal_cur_y;
+         _drawOpsNew.add(#(deref opMoveAbs));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: moveabs new=("+_n.ideal_cur_x+";"+_n.ideal_cur_y+")";
+      }
+
+      if(_n.cur_stroke_w != _c.cur_stroke_w)
+      {
+         DrawOpStrokeW opStrokeW <= new DrawOpStrokeW;
+         opStrokeW.stroke_w = _n.cur_stroke_w;
+         _drawOpsNew.add(#(deref opStrokeW));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: strokeW new="+_n.cur_stroke_w;
+      }
+
+      if(_n.cur_join_cap != _c.cur_join_cap)
+      {
+         DrawOpJoinCap opJoinCap <= new DrawOpJoinCap;
+         opJoinCap.mode = _n.cur_join_cap;
+         _drawOpsNew.add(#(deref opJoinCap));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: joincap new="+_n.cur_join_cap;
+      }
+
+      if(_n.cur_num_seg != _c.cur_num_seg)
+      {
+         DrawOpNumSeg opNumSeg <= new DrawOpNumSeg;
+         opNumSeg.num_seg = _n.cur_num_seg;
+         _drawOpsNew.add(#(deref opNumSeg));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: numSeg new="+_n.cur_num_seg;
+      }
+
+      if(_n.cur_miter_limit != _c.cur_miter_limit)
+      {
+         DrawOpMiterLimit opMiterLimit <= new DrawOpMiterLimit;
+         opMiterLimit.miter_limit = _n.cur_miter_limit;
+         _drawOpsNew.add(#(deref opMiterLimit));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: miterLimit new="+_n.cur_miter_limit;
+      }
+
+      if(_n.cur_clip2d_path_idx != _c.cur_clip2d_path_idx ||
+         _n.b_cur_clip2d_pre    != _c.b_cur_clip2d_pre    ||
+         _n.b_cur_clip2d_fb     != _c.b_cur_clip2d_fb
+         )
+      {
+         DrawOpClip2D opClip2D <= new DrawOpClip2D;
+         opClip2D.path_idx = _n.cur_clip2d_path_idx;
+         opClip2D.b_pre    = _n.b_cur_clip2d_pre;
+         opClip2D.b_fb     = _n.b_cur_clip2d_fb;
+         _drawOpsNew.add(#(deref opClip2D));
+         if(b_debug_aa >= 2) trace "[trc] emitRenderStateDiff: clip2D new pathIdx="+opClip2D.path_idx+" bPre="+opClip2D.b_pre+" bFB="+opClip2D.b_fb;
+      }
+
+      // if(_n.mode != _c.mode)
+      // DrawOpLogicOp opLogicOp <= new DrawOpLogicOp;
+
+      // // DrawOpMoveRel opMoveRel <= new DrawOpMoveRel;
+   }
+
+   // <method.png>
+   public method prepareMainPathForCoverageAA() {
+      Path p <= paths.get(0);
+
+      RenderState activeRS;
+      activeRS.reset();
+
+      PointerArray drawOpsSingle;
+      local PointerArray drawOpsNew;
+      PointerArray drawOpsOld <= p.draw_ops;
+
+      DrawOp *op;
+      int opIdx = drawOpsOld.numElements;
+
+      loop(drawOpsOld.numElements)
+      {
+         op <= drawOpsOld[--opIdx];
+
+         if( (op instanceof DrawOpColor)       ||
+             (op instanceof DrawOpLogicOp)     ||
+             (op instanceof DrawOpTransform2D) ||
+             (op instanceof DrawOpTransform3D) ||
+             (op instanceof DrawOpJoinCap)     ||
+             (op instanceof DrawOpJoinCap)     ||
+             (op instanceof DrawOpMoveRel)     ||
+             (op instanceof DrawOpMoveAbs)     ||
+             (op instanceof DrawOpTarget)      ||
+             (op instanceof DrawOpSource)      ||
+             (op instanceof DrawOpMask)        ||
+             (op instanceof DrawOpStrokeW)     ||
+             (op instanceof DrawOpNumSeg)      ||
+             (op instanceof DrawOpMiterLimit)  ||
+             (op instanceof DrawOpClip2D)
+             )
+         {
+            // skip, will be emitted when next DrawOpPrim occurs
+            if(b_debug_aa >= 2) trace "[trc] prepareMainPathForCoverageAA: skip op="+#(op);
+         }
+         else if(op instanceof DrawOpPrim)
+         // // else if( (op instanceof DrawOpFill)         ||  // (todo) (op instanceof DrawOpPrim)
+         // //          (op instanceof DrawOpBlit)         ||
+         // //          (op instanceof DrawOpLine)         ||
+         // //          (op instanceof DrawOpCubic)        ||
+         // //          (op instanceof DrawOpCubicMirror)  ||
+         // //          (op instanceof DrawOpRect)         ||
+         // //          (op instanceof DrawOpEllipse)      ||
+         // //          (op instanceof DrawOpCircle)       ||
+         // //          (op instanceof DrawOpDrawPath)
+         // //          )
+         {
+            DrawOpPrim opPrim <= op;
+            if(b_debug_aa >= 2) trace "[trc] prepareMainPathForCoverageAA: PRIM op="+#(opPrim);
+            drawOpsSingle.free();
+
+            emitRenderStateDiff(activeRS, opPrim.rs, drawOpsSingle);
+            activeRS = opPrim.rs;
+
+            Framebuffer fb <= framebuffers.get(activeRS.cur_fb_idx);
+            if(fb.b_coverage_aa_clear_pending)
+            {
+               // First prim in this fb, fill coverage AA buffer with 0
+               DrawOpFill opFillAA <= new DrawOpFill;
+               opFillAA.b_coverage_aa = true;
+               drawOpsSingle.add(#(deref opFillAA));
+               fb.b_coverage_aa_clear_pending = false;
+            }
+
+            drawOpsSingle.add(#(opPrim.getCopy()));
+            drawOpsNew.joinDD(drawOpsNew, drawOpsSingle);
+         }
+         else
+         {
+            // keep any other ops in sequence
+            if(b_debug_aa >= 2) trace "[trc] prepareMainPathForCoverageAA: keep op="+#(op);
+            drawOpsNew.insert(0, #(drawOpsOld.getDeref(opIdx)));
+         }
+
+         // Previous op
+      }
+
+      p.draw_ops <= deref drawOpsNew;
+
+      if(b_debug_aa)
+      {
+         trace "[trc] prepareMainPathForCoverageAA: new main path:";
+         local String buf;
+         p.debugPrint(3, buf);
+         trace buf;
+      }
+   }
+
+   // <method.png>
+   public method emitPaths(Stream ofs) {
+      // (note) emit in reverse order (main path 0 references other paths)
+
+      int numConvex = 0;
+      int numConcave = 0;
+      int numHoles = 0;
+      int numSub = 0;
+      int numImmediate = 0;
+
+      Path *p;
+      int pathIdx;
+
+      int visPathIdx = 0;
+      pathIdx = 0;
+      loop(paths.numElements)
+      {
+         p <= paths.get(pathIdx++);
+         p.vis_path_idx = p.b_used ? visPathIdx++ : -1;
+
+         if(b_debug_paths)
+         {
+            numSub += p.sub_paths.numElements;
+            if(Path.TYPE_HOLES == p.type)
+               numHoles += 1 + p.sub_paths.numElements;
+            else if(Path.TYPE_CONCAVE == p.type)
+               numConcave += 1 + p.sub_paths.numElements;
+            else if(Path.TYPE_IMMEDIATE == p.type)
+               numImmediate++;
+            else
+               numConvex += 1 + p.sub_paths.numElements;
+         }
+      }
+
+      pathIdx = paths.numElements;
+      loop(paths.numElements)
+      {
+         p <= paths.get(--pathIdx);
+         // trace "xxx emitPaths: p.type="+p.type+" p.b_used="+p.b_used;
+         if(p.b_used)
+         {
+            cstate.reset();
+            p.emit(ofs, cstate);
+         }
+      }
+
+      if(b_debug_paths) trace "[dbg] Minnie::emitPaths: emit "+paths.numElements+"+"+numSub+"="+(paths.numElements+numSub)+" paths ("+numConvex+" convex, "+numConcave+" concave, "+numHoles+" holes, "+numImmediate+" immediate)";
+   }
+
+   // <method_parse.png>
+   public method emitStream(Stream ofs) : boolean {
+      try
+      {
+         ofs.byteOrder = b_big_endian ? YAC_BIG_ENDIAN : YAC_LITTLE_ENDIAN;
+
+         // Flags (version, endianness, AA)
+         byte flags = 0x01;  // lower 6 bits
+         if(b_big_endian)
+            flags |= 0x80;   // bit 7: big endian
+         if(b_rev)
+            flags |= 0x40;   // bit 6: AA (=> reverse path drawlist for coverage renderer)
+         ofs.i8 = flags;
+
+         // geo
+         if(geo_w >= 2040 || (0 != (geo_w&7)) ||
+            geo_h >= 2040 || (0 != (geo_h&7))
+            )
+         {
+            ofs.i8 = 0xE1;
+            ofs.i16 = geo_w;
+            ofs.i16 = geo_h;
+         }
+         else
+         {
+            ofs.i8 = 0xE2;
+            ofs.i8 = geo_w / 8;
+            ofs.i8 = geo_h / 8;
+         }
+
+         // palette
+         emitPalette(ofs);
+
+         // framebuffers
+         emitFramebuffers(ofs);
+
+         // transform 2D matrices
+         emitMatrices2D(ofs);
+
+         // transform 3D matrices
+         emitMatrices3D(ofs);
+
+         if(b_rev)
+         {
+            prepareMainPathForCoverageAA();
+         }
+
+         // paths
+         emitPaths(ofs);
+
+         // EOF
+         ofs.i8 = 0xE0;
+
+         return true;
+      }
+      catch(MinError e)
+      {
+         trace "[---] Minnie::emitStream: caught exception e.name=\""+e.name+"\" e.msg=\""+e.message+"\"";
+         trace e.stackTrace;
+      }
+      return false;
+   }
+
+   // <method_parse.png>
+   public method emitFile(String _pathname) : boolean {
+      if(_pathname >= ".mib")
+      {
+         local File f;
+         if(f.openLocal(_pathname, IOS_OUT))
+         {
+            if(emitStream(f))
+            {
+               if(b_verbose) trace "[...] Minnie::emitFile: wrote \""+_pathname+"\" sz="+f.offset;
+               return true;
+            }
+         }
+         else
+         {
+            trace "[---] Minnie::emitFile: failed to open \""+_pathname+"\" for writing";
+         }
+      }
+      else
+      {
+         trace "[---] Minnie::emitFile: output file must have \".mib\" suffix (have=\""+_pathname+"\")";
+      }
+      return false;
+   }
+
+   // <method_parse.png>
+   public method parseFile(String _pathname) : boolean {
+      local String buf;
+      if(buf.loadLocal(_pathname, true/*bRemoveCR*/))
+      {
+         if(parseString(buf))
+         {
+            if(b_verbose) trace "[...] Minnie: parsed file \""+_pathname+"\"";
+            return true;
+         }
+      }
+      else
+      {
+         trace "[---] Minnie::parseFile: failed to open \""+_pathname+"\" for reading";
+      }
+      return false;
+   }
+
+}

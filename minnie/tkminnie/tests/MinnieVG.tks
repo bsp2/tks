@@ -1,0 +1,392 @@
+// ----
+// ---- file   : MinnieVG.tks
+// ---- author : bsp
+// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ----
+// ---- info   : "minnie" utilities API
+// ---- note   :
+// ----
+// ----
+// ----
+
+module MMinnieVG;
+
+namespace sdvgcapi;
+namespace default;
+use namespace sdvgcapi;
+
+
+class MinnieVG {
+
+   static Buffer minnie_scratch;
+
+   static boolean b_profile = 1;
+
+   static boolean b_gl_aa               = 1;
+   static boolean b_gl_aa_stroke_offset = 0;
+
+   static Matrix4f proj_matrix;  // ortho
+
+
+   public static Init(boolean _bGLCore) {
+      InitShaderVG(_bGLCore);
+      InitMinnie();
+      InitMinnieScratchBuffers();
+   }
+
+   public static Exit() {
+      sdvg_Exit();
+   }
+
+   protected static InitShaderVG(boolean _bGLCore) {
+      sdvg_SetScratchBufferSize(64*1024);
+      sdvg_SetGLSLVersion(_bGLCore/*bV3*/, false/*bGLES*/, null/*sVersionStringOrNull*/);
+      sdvg_Init(_bGLCore);
+   }
+
+   public static SetStrokeScale(float _s) {
+      minSetStrokeScale(_s);
+   }
+
+   protected static InitMinnie() {
+      minSetEnableDraw(true);
+      minSetEnableDrawSW(false);
+      minSetEnableRenderFillConcave(1);     // '1'
+      minSetEnableRenderFillEvenOdd(1);     // '2'
+      minSetEnableRenderStrokes(1);     // '3'
+      minSetEnableRenderJoinCap(1);     // '4'
+      minSetEnableEdgeAA(0);     // 'e'
+      minSetStrokeWLineStripThreshold(0.0f);  // 's'
+      minSetStrokeWLineJoinThreshold(0.0f);
+      minSetEnableUniformColors(0);     // 'u'
+
+      if(0)
+      {
+         minSetEnableForceConcaveEvenOdd(0);       // 'h'  (note) concave tesselator does not handle all paths (=> force SGI tesselator)
+         minSetEnableTesselateConcave(0);       // 'i'  0=GPU tesselation  1=CPU tesselation
+         minSetSwTesselateSizeThreshold(128*8*8);  // 0=disable   >0: force concave path if concave or evenodd-without-subpaths bbox is <= sizeThreshold, else force evenodd path (SW tesselate)
+      }
+      else if(0)
+      {
+         // use SW tesselator for all path types
+         minSetEnableForceConcaveEvenOdd(1);
+         minSetEnableTesselateConcave(1);
+         minSetSwTesselateSizeThreshold(0);
+      }
+      else
+      {
+         // use GPU tesselator for all path types
+         minSetEnableForceConcaveEvenOdd(0);
+         minSetEnableTesselateConcave(0);
+         minSetSwTesselateSizeThreshold(0);
+      }
+   }
+
+   protected static InitScratchBuffers_int() : int {
+      if(0)
+         return minInitScratchBuffers(minnie_scratch,
+                                      4* 256/*defPointsPerPath*/,
+                                      4*1024/*maxPointsPerPath*/,
+                                      4*1536/*maxClippedPointsPerPath*/,
+                                      4*3072/*maxExtrudedVerticesPerPath*/,
+                                      4*4096/*maxClippedTrisPerPath*/
+                                      );
+      else if(0)  // tiger
+         return minInitScratchBuffers(minnie_scratch,
+                                      1*  32/*defPointsPerPath*/,
+                                      4* 256/*maxPointsPerPath*/,
+                                      0* 256/*maxClippedPointsPerPath*/,
+                                      16* 256/*maxExtrudedVerticesPerPath*/,
+                                      0* 256/*maxClippedTrisPerPath*/
+                                      );
+      else if(0)  // map2
+         return minInitScratchBuffers(minnie_scratch,
+                                      1*  32/*defPointsPerPath*/,
+                                      850/*maxPointsPerPath*/,
+                                      0* 256/*maxClippedPointsPerPath*/,
+                                      4*1024/*maxExtrudedVerticesPerPath*/,
+                                      0* 256/*maxClippedTrisPerPath*/
+                                      );
+      else if(0)
+         return minInitScratchBuffers(minnie_scratch,
+                                      4* 256/*defPointsPerPath*/,
+                                      20*1024/*maxPointsPerPath*/,
+                                      8*1024/*maxClippedPointsPerPath*/,
+                                      8*3072/*maxExtrudedVerticesPerPath*/,
+                                      8*4096/*maxClippedTrisPerPath*/
+                                      );
+      else if(1)
+         return minInitScratchBuffers(minnie_scratch,
+                                      2* 256/*defPointsPerPath*/,
+                                      38*1024/*maxPointsPerPath*/,
+                                      38*1536/*maxClippedPointsPerPath*/,
+                                      38*3072/*maxExtrudedVerticesPerPath*/,
+                                      38*4096/*maxClippedTrisPerPath*/
+                                      );
+
+      // world.svg / test050_world.mib
+      //   [...] total #points=95376 #lines=0 #tris=91936 buf_gl.offset=8274240 FPS.current=58.8235
+      //   [...] minnie_alloc_debug_print_stats: #alloc=6404 #free=1533 live=4871 max=183752.55k cur=183738.77k
+      return minInitScratchBuffers(minnie_scratch,
+                                   4* 256/*defPointsPerPath*/,
+                                   4*4096/*maxPointsPerPath*/,
+                                   4*2048/*maxClippedPointsPerPath*/,
+                                   4*2048/*maxExtrudedVerticesPerPath*/,
+                                   4*2048/*maxClippedTrisPerPath*/
+                                   );
+   }
+
+   protected static InitMinnieScratchBuffers() : boolean {
+      // (todo) add defPointsPerPath / maxPointsPerPath / maxClippedTrisPerPath / maxExtrudedVerticesPerPath / maxClippedTrisPerPath args
+      minnie_scratch.size = 32*1024;
+
+      int reqSz = InitScratchBuffers_int();
+      if(minnie_scratch.size < reqSz)
+      {
+         trace "[...] MinnieVG::InitMinnieScratchBuffers: adjusting scratch.size="+minnie_scratch.size+" to reqSz="+reqSz;
+         minnie_scratch.size = reqSz;
+      }
+      reqSz = InitScratchBuffers_int();
+
+      if(minnie_scratch.size >= reqSz)
+      {
+         // Succeeded
+         trace "[...] MinnieVG::InitMinnieScratchBuffers: using "+reqSz+"/"+minnie_scratch.size+" scratch bytes";
+
+         return true;
+      }
+      else
+      {
+         trace "[---] MinnieVG::InitMinnieScratchBuffers: insufficient scratch size. have="+minnie_scratch.size+" need="+reqSz;
+      }
+
+      return false;
+   }
+
+   public static BeginDrawable(MinnieDrawable _drawable) {
+      minFreeDynamic();
+      // minDebugPrintAllocStats();
+      minResetAllocStats();
+
+      _drawable.reset();
+
+      minSetVertexBufferExportOFS(_drawable.getGLBuffer());
+      minSetDrawListExportOFS(_drawable.getDrawBuffer());
+
+      minBegin();
+   }
+
+   public static EndDrawable(MinnieDrawable _drawable) {
+
+      minEnd();
+
+      _drawable.setSize2f(minGetWidth(), minGetHeight());
+      _drawable.setBackgroundColor(minGetColorByIndex(0));
+      _drawable.queueGLBufUpdate();
+   }
+
+   public static SetupDrawableFromBuffer(MinnieDrawable _drawable, Buffer _mib) : boolean {
+
+      int tStart = milliSeconds();
+
+      BeginDrawable(_drawable);
+
+      _mib.offset = 0;
+      if(minParseBuffer(_mib))
+      {
+         // trace "xxx 2 parse";
+         int tDelta = milliSeconds() - tStart;
+
+         if(b_profile) trace "[...] MinnieVG::SetupDrawableFromBuffer: MIB stream processed in "+tDelta+" ms. total #points="+minGetTotalNumPoints()+" #lines="+minGetTotalNumLines()+" #lineStrips="+minGetTotalNumLineStrips()+" #tris="+minGetTotalNumTris()+" #trisTex="+minGetTotalNumTrisTex()+" #ellipses="+minGetTotalNumEllipses()+" buf_gl.offset="+(_drawable.getGLOffset())+" buf_draw.offset="+(_drawable.getDrawOffset());
+
+         EndDrawable(_drawable);
+
+         // Succeeded
+         return true;
+      }
+
+      return false;
+   }
+
+   public static DebugPrintMinnieAndDrawableStats(MinnieDrawable _drawable) {
+      if(b_profile)
+      {
+         trace "[...] MinnieVG::DebugPrintMinnieAndDrawableStats: total #points="+minGetTotalNumPoints()+" #lines="+minGetTotalNumLines()+" #lineStrips="+minGetTotalNumLineStrips()+" #tris="+minGetTotalNumTris()+" #trisTex="+minGetTotalNumTrisTex()+" #rects="+minGetTotalNumRects()+" #ellipses="+minGetTotalNumEllipses()+" buf_gl.offset="+_drawable.getGLOffset()+"("+(int((100.0*_drawable.getGLOffset())/(1024.0*1024.0))/100.0)+" MB) buf_draw.offset="+_drawable.getDrawOffset();
+      }
+      minDebugPrintAllocStats();
+      minDebugPrintPathStats();
+   }
+
+   public static BeginFrame() {
+      sdvg_SetEnableAA(b_gl_aa);
+      sdvg_BeginFrame();
+   }
+
+   public static GetTransformRef() : Matrix4f {
+      Matrix4f mvpMatrix <= sdvg_GetTransformRef();
+      return mvpMatrix;
+   }
+
+   public static SetTransform(Object _m) {
+      // 'm': Matrix4f, Matrix3f, Matrix2x3f, Matrix2f, FloatArray, or generic array object
+      Matrix4f mvpMatrix <= GetTransformRef();
+      mvpMatrix = _m;
+   }
+
+   public static SetProjection2D(float _w, float _h) {
+      proj_matrix.initOrtho(0.0f/*left*/,     _w/*right*/,
+                            _h/*bottom*/,   0.0f/*top*/,
+                            -10.0f/*znear*/, 10.0f/*zfar*/
+                            );
+   }
+
+   public static CalcModelTransform(MinnieDrawable _d, Matrix4f _mat) {
+      _mat.initIdentity();
+      _mat.translatef(_d.getSizeX()*0.5f + _d.getTranslateX(), _d.getSizeY()*0.5f + _d.getTranslateY(), 0.0f);
+      _mat.rotatef(0, 0, _d.getRotation());
+      _mat.scalef(_d.getScaleX(), _d.getScaleY(), 1.0f);
+      _mat.translatef(-_d.getSizeX()*0.5f, -_d.getSizeY()*0.5f, 0.0f);
+   }
+
+   public static SetTransformForDrawable(MinnieDrawable _d) {
+      Matrix4f mvpMatrix <= GetTransformRef();
+      Matrix4f modelMatrix; CalcModelTransform(_d, modelMatrix);
+      proj_matrix.mul(modelMatrix) => mvpMatrix;
+   }
+
+   public static SaveScreenShotPNG(String _pathName) : boolean {
+      // (todo)
+      // return ShaderVG.SaveScreenShotPNG(_pathName);
+      boolean ret = false;
+      if(_pathName >= ".png")
+      {
+         // (note) must be called in onDraw()
+         local Texture tex;
+         if(tex.alloc(Viewport.width, Viewport.height, 4))
+         {
+            glReadBuffer(GL_BACK);
+            int off = 0;
+            int y = Viewport.height - 1;
+            loop(Viewport.height)
+            {
+               zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+               y--;
+               off += Viewport.width;
+            }
+            tex.clearAlpha(255);
+            ret = tex.saveImage(_pathName);
+         }
+      }
+      return ret;
+   }
+
+   public static EndFrame() {
+      sdvg_EndFrame();
+   }
+
+   public static OnOpen() : boolean {
+
+      zglLoadExtensions();
+
+      if(sdvg_OnOpen())
+      {
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] MinnieVG::OnOpen: sdvg_OnOpen() failed";
+      }
+
+      return false;
+   }
+
+   public static HandleDebugKey(Key _k) : boolean {
+      // trace "xxxx MinnieVG::HandleDebugKey k.name="+_k.name+" k.mod="+_k.mod+" k.pressed="+_k.pressed;
+      switch(_k.pressed)
+      {
+         case '1':
+            minSetEnableRenderFillConcave(!minGetEnableRenderFillConcave());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderFillConcave is "+minGetEnableRenderFillConcave();
+            return true;
+
+         case '2':
+            minSetEnableRenderFillEvenOdd(!minGetEnableRenderFillEvenOdd());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderFillEvenOdd is "+minGetEnableRenderFillEvenOdd();
+            return true;
+
+         case '3':
+            minSetEnableRenderStrokes(!minGetEnableRenderStrokes());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderStrokes is "+minGetEnableRenderStrokes();
+            return true;
+
+         case '4':
+            minSetEnableRenderJoinCap(!minGetEnableRenderJoinCap());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableRenderJoinCap is "+minGetEnableRenderJoinCap();
+            return true;
+
+         case 'a':
+            b_gl_aa = !b_gl_aa;
+            trace "[...] MinnieVG::handleDebugKey: b_gl_aa is "+b_gl_aa;
+            break;
+
+         case 'd':
+            sdvg_SetEnableDebug(!sdvg_GetEnableDebug());
+            trace "[...] MinnieVG::handleDebugKey: sdvg_GetEnableDebug() is "+sdvg_GetEnableDebug();
+            return true;
+
+         case 'e':
+            minSetEnableEdgeAA(!minGetEnableEdgeAA());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableEdgeAA is "+minGetEnableEdgeAA();
+            return true;
+
+         case 'h':
+            minSetEnableForceConcaveEvenOdd(!minGetEnableForceConcaveEvenOdd());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableForceConcaveEvenOdd is "+minGetEnableForceConcaveEvenOdd();
+            return true;
+
+         case 'i':
+            minSetEnableTesselateConcave(!minGetEnableTesselateConcave());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableTesselateConcave is "+minGetEnableTesselateConcave();
+            return true;
+
+         case 's':
+            if(minGetStrokeWLineStripThreshold() < 0.1f)
+               minSetStrokeWLineStripThreshold(99.0f);
+            else
+               minSetStrokeWLineStripThreshold(0.0f);
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.strokeWLineStripThreshold is "+minGetStrokeWLineStripThreshold();
+            return true;
+
+         case 'u':
+            minSetEnableUniformColors(!minGetEnableUniformColors());
+            trace "[...] MinnieVG::handleDebugKey: minnie_setup.enableUniformColors is "+minGetEnableUniformColors();
+            return true;
+      }
+      return false;
+   }
+
+   static protected DebugExportBuffer(Buffer _b, String _sPathName) {
+      local File f;
+      if(_sPathName >= ".dat")
+      {
+         if(f.openLocal(_sPathName, IOS_OUT))
+         {
+            f.writeBuffer(_b, 0, _b.offset);
+            trace "[+++] wrote \""+_sPathName+"\". f.offset="+f.offset;
+            f.close();
+         }
+      }
+   }
+
+   public static DebugExportGLBuffer(MinnieDrawable _d, String _sPathName) {
+      // VideoRAM vertex buffer
+      DebugExportBuffer(_d.getGLBuffer(), _sPathName);
+   }
+
+   public static DebugExportDrawListBuffer(MinnieDrawable _d, String _sPathName) {
+      // SystemRAM draw list buffer
+      DebugExportBuffer(_d.getDrawBuffer(), _sPathName);
+   }
+
+}

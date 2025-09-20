@@ -1,0 +1,679 @@
+27May2024, 28May2024, 29May2024, 30May2024, 31May2024, 01Jun2024, 02Jun2024,
+03Jun2024, 04Jun2024, 05Jun2024, 07Jun2024, 08Jun2024, 09Jun2024, 10Jun2024,
+02Aug2025, 03Aug2025
+
+- header / general
+   first byte:
+      ver <ver> (LSB6, 1..63), endianness (bit7=big endian), AA (bit6)
+        ! (note) in AA mode, the main path drawops are reversed (for the coverage AA renderer)
+   + 0xE0: end of file (EOF)
+   + 0xE1: geo w h (u16)
+   + 0xE2: geo w h (u8*8)
+      ! set canvas size (/8, e.g. 40x25 => 320x200, 240x150 => 1920x1200)
+   + 0xE3: pal12 [idx:]#rgb
+      ! set 12bit palette (and #colors)
+      ! (numColors-1) byte followed by tightly packed 12bit color array (word-aligned at the end)
+   - 0xE4: RESVD  pal16 [idx:]#rrggbb
+      ! set 16bit (RGB565) palette (and #colors)
+   + 0xE5: pal24 [idx:]#rrggb
+      ! set 24bit palette (and #colors)
+      ! (numColors-1) byte followed by (R,G,B) 8bit tuples
+   - 0xE6: RESVD
+   + 0xE7: <num_draw_bufs> 
+      - in .min script:  "fb <w> <h>"
+      ! additional draw buf decls
+      ! num_draw_bufs unsigned byte follows
+      ! w h byte pairs follow (/8, 0=use canvas geo)
+   + 0xE8: matrices_2d
+      ! u16 <num_matrices_2d> - 1
+      ! float16 2x3 matrices follow
+   o 0xE9: <num_matrices_3d>
+      ! u16 <num_matrices_3d> - 1
+      ! float16 4x4 matrices follow
+      ! (note) bottom row is for perspective projection (frustum())
+   - 0xEA: num_consts <n>
+      ! total number of constants used in program(s)
+         ! const values follow (signed 16bit words)
+   - 0xEB: num_vars <n>
+      ! total number of variables used in program(s)
+   - 0xEC: stack <size>
+      ! set data stack size (def=128)
+   - 0xED: call_stack <size>
+      ! set call stack size (def=32)
+   - 0xEE: max_ops <n>
+      ! abort VM after <n>*1024 ops (def=64 => 64k ops)
+      ! (note) detect infinite loops
+
+- static draw ops
+   ! (note) coordinate precision: 14.2  (signed (two's complement), two fractional bits)
+   - 0x01: x <program>
+      ! execute program
+   + 0x02: n <mat2x3>
+      ! transform 2D (affects following vector prims)
+      ! u8 mat_idx follows
+      ! column major (sequential row values)
+         2x3 2d:
+           t[0] = m[0]*v[0] + m[1]*v[1] + m[2]
+           t[1] = m[3]*v[0] + m[4]*v[1] + m[5]
+   + 0x03: q <mat3x4>
+      ! transform 2D to 3D and divide by z (affects following vector prims)
+      ! u8 mat_idx follows
+      ! column major (sequential row values)
+         3x3 3d:
+           r[0] = m[0]*v[0] + m[1]*v[1] + m[2]*v[2]
+           r[1] = m[3]*v[0] + m[4]*v[1] + m[5]*v[2]
+           r[2] = m[6]*v[0] + m[7]*v[1] + m[8]*v[2]
+         3x3 2d:
+           t[0] = m[0]*v[0] + m[1]*v[1] + m[2]
+           t[1] = m[3]*v[0] + m[4]*v[1] + m[5]
+           t[2] = m[6]*v[0] + m[7]*v[1] + m[8]
+           r[0] = t[0] / t[2]
+           r[1] = t[1] / t[2]
+      ! store as 3x4 for qpush/qpop (todo)
+   + 0x04: n <mat2x3>
+      ! transform 2D
+      ! u16 mat_idx follows
+   + 0x05: q <mat3x3>
+      ! transform 3D
+      ! u16 mat_idx follows
+   + 0x0E: h <join> <cap>
+      ! unsigned byte follows (LSB4=join MSB4=cap)
+         0=LINECAP_BUTT [def]  0=LINEJOIN_MITER
+         1=LINECAP_ROUND       1=LINEJOIN_ROUND
+         2=LINECAP_SQUARE      2=LINEJOIN_BEVEL [def]
+   + 0x10: i <palIdx>
+      ! for palIdx < 16 (0x10..0x1F)
+   + 0x20: i <palIdx>
+      ! for palIdx >= 16 (palIdx byte follows)
+   + 0x21: m move cursor relative
+      ! 32 bit float dx/dy
+   + 0x22: M move cursor absolute
+      ! 32 bit float x/y
+   + 0x23: c c1x c1y c2x c2y dx dy  (f32)
+      ! cubic spline
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   o 0x24: g set(0)|and(1)|or(2)|eor(3)
+      ! set logic-op 0..3 (0x24..0x27)
+      ! e.g. for pseudo-transparency effects
+      ! issue: how to implement this on GPUs (with RGB framebuffers)
+      ? remove ? or keep for SW rendering ?
+   + 0x25: s c2x c2y dx dy  (f32)
+      ! cubic spline mirror c1x/c1y
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x26: l dx dy  (f32)
+      ! line to (float)
+   + 0x27: ml <miter_limit> (u8)
+   + 0x28: m move cursor relative
+      ! delta x/y < abs(32)
+      ! signed 6.2 bytes
+   + 0x29: m move cursor relative
+      ! delta x/y >= abs(32)
+      ! signed 14.2 bytes
+   + 0x2A: m move cursor relative
+      ! delta x/y < abs(128)   frac(x,y) == 0
+      ! signed bytes
+   + 0x2B: m move cursor relative (unsigned)
+      ! 0 <= delta x/y < 256  frac(x,y) == 0
+      ! unsigned bytes
+   + 0x2C: M move cursor absolute
+      ! x/y < 256    frac(x,y) == 0
+      ! unsigned bytes
+   + 0x2D: M move cursor absolute
+      ! x/y < 512    frac(x,y) == 0
+      ! x/y &1 == 0
+      ! unsigned bytes
+   + 0x2E: M move cursor absolute
+      ! x/y < 1024    frac(x,y) == 0
+      ! x/y &3 == 0
+      ! unsigned bytes
+   + 0x2F: M move cursor absolute
+      ! signed 14.2 words
+   + 0x30: t <bufName>
+      ! 0x30..0x36: select drawbuffer 0..6
+      ! 0x37: select drawbuffer <n> (fb idx byte follows)
+      ! empty str (or missing arg): select default (back-)buffer
+   + 0x38: u <bufName>
+      ! 0x38..0x3E: select framebuffer 0..6 as blit source
+      ! 0x3F: select framebuffer <n> (fb idx byte followes)
+      ! empty str (or missing arg): select default (back-)buffer
+   + 0x40: f <palIdx>
+      ! fill/clear buffer (no logic ops)
+      ! for palette indices < 14 (0x40..0x4D)
+      | 0x4E : palette index byte follows
+      | 0x4F : clear coverage alpha buffer (AA)
+   + 0x50: w2off / w3off / woff
+      ! disable 2D/3D clip paths (default)
+   + 0x51: w2fb
+      ! set 2D clip to framebuffer (clip tesselated vertices)
+   + 0x52: w2p <pathIdx> (u8)
+      ! set 2D clip to path (clip pre-tesselated vertices)
+      ! pathIdx-1 unsigned byte follows
+   + 0x53: w2p <pathIdx> (u16)
+      ! set 2D clip to path (clip pre-tesselated vertices)
+      ! pathIdx-1 unsigned short follows
+   + 0x54: w2 <pathIdx> (u8)
+      ! set 2D clip to path (clip tesselated vertices)
+      ! pathIdx-1 unsigned byte follows
+   + 0x55: w2 <pathIdx> (u16)
+      ! set 2D clip to path (clip tesselated vertices)
+      ! pathIdx-1 unsigned short follows
+   + 0x56: w3fb
+      ! set 3D clip viewport to framebuffer (znear=0.01)
+   - 0x5E: RESVD free path <idx>
+      ! unsigned short <pathIdx> follows
+   - 0x5F: RESVD free last used path
+        ! w2/w2p pushes clip path on LRU stack
+        ! d* pushes path on LRU stack
+   - 0x60: RESVD b dstX dstY
+      ! blit rectangular region (entire srcBuf)
+      ! signed 14.2 short (dst*)
+   - 0x61: RESVD b dstX dstY w h srcX srcY 
+      ! blit rectangular region
+      ! unsigned byte (src*/w/h) / signed 14.2 short (dst*)
+   - 0x62: RESVD b dstX dstY w h srcX srcY 
+      ! blit rectangular region
+      ! unsigned short (src*/w/h) / signed 14.2 short (dst*) => 6*2 = 12 bytes
+   - 0x63: RESVD b dstX dstY w h srcX srcY 
+      ! blit rectangular region
+      ! unsigned 12 bit shorts (src*/w/h) / signed 10.2 shorts (dst*) => 6*12=72bit = 9 bytes + 1 pad byte = 10 bytes
+      ! (todo)
+   ? 0x64: RESVD b dstX dstY w h srcX srcY 
+      ! blit rectangular region
+      ! unsigned byte (src*/w/h) * 4 / signed 14.2 short (dst*)
+   + 0x70: a <palIdx>
+      ! 0x70..0x7F: enable mask palIdx=0..15
+      ! 0x80: enable mask (palIdx byte follows)
+      ! 0x81: disable mask ("a off")
+      ! (note) uses stencil buffer on GPU
+   + 0x82: k <stroke_w>
+      ! <stroke_w>  6.2 byte (2 fractional bits). 0.25 (int 1) = draw (non-extruded) polyline (pseudo w "line")
+      ! this is the *radius* (effective line width = 2*stroke_w)
+   + 0x83: k 0
+      ! disable stroke / enable fill
+   + 0x84: p <name>     ;[<path_buf_sz_in_kb_hint>]
+      ! begin convex or stroked path definition
+      ; xxx unsigned byte (pathIdx) follows  (=> implicit sequential idx)
+   + 0x85: pt <name>
+      ! begin concave path definition (will be tesselated)
+      ; xxx unsigned short (pathIdx) follows  (=> implicit sequential idx)
+   + 0x86: psub 
+      ! begin sub-path definition
+      ; xxx unsigned short (parentPathIdx) follows (=> implicit: last main path)
+      ; xxx unsigned short (subPathIdx) follows (=> implicit: last main path idx + subIdx)
+   + 0x87: ph <name>
+      ; begin SGI-tesselator path (potentially with holes)
+   + 0x88: l dx dy
+      ! line
+      ! unsigned 6.2 bytes
+   + 0x89: l dx dy
+      ! line
+      ! signed 14.2 shorts
+   + 0x8A: l dx dy
+      ! line
+      ! unsigned 8.0 bytes
+   + 0x8B: l dx dy
+      ! line
+      ! signed 6.2 bytes
+   + 0x8C: l dx dy
+      ! line
+      ! signed 10.2 packed 12bits (must sign extend during decoding)
+   - 0x8D: - (RSVD)
+   + 0x8E: j <num_seg>
+      ! set num segments for following spline / arc / ellipse ops (def=8)
+      ! unsigned byte
+   + 0x8F: j <num_seg>
+      ! unsigned short
+   + 0x90: c c1x c1y c2x c2y x y
+      ! cubic spline
+      ! delta < abs(32)  (signed 6.2 bytes)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x91: c c1x c1y c2x c2y x y
+      ! cubic spline
+      ! delta < abs(128)  (signed 8.0 bytes)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x92: c c1x c1y c2x c2y x y
+      ! cubic spline
+      ! 0 <= delta < 256  (unsigned 8.0 bytes)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x93: c c1x c1y c2x c2y x y
+      ! cubic spline
+      ! delta >= abs(32) (signed 14.2 words)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x94: c c1x c1y c2x c2y x y
+      ! cubic spline
+      ! delta >= abs(512) (signed 10.2 12bits) (must sign extend during decode)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x98: s c2x c2y x y
+      ! cubic spline mirror c1x/c1y
+      ! delta < abs(32)  (signed 6.2 bytes)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x99: s c2x c2y x y
+      ! cubic spline mirror c1x/c1y
+      ! delta < abs(128)  (signed 8.0 bytes)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x9A: s c2x c2y x y
+      ! cubic spline mirror c1x/c1y
+      ! 0 <= delta < 256  (unsigned 8.0 bytes)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x9B: s c2x c2y x y
+      ! cubic spline mirror c2x/c2y
+      ! delta >= abs(32)  (signed 14.2 words)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   x 0x9C: s c2x c2y x y    // => scrapped, no savings (2 pad bytes == 8 bytes, same as 14.2)
+      ! cubic spline mirror c2x/c2y
+      ! delta < abs(512)  (signed 10.2 12bit)
+      ! (note) c2 is relative to dst (c2Abs = dstAbs - c2)
+   + 0x9E: arc rx ry xrot flags dx dy (s14.2)
+      ! s14.2 rx
+      ! s14.2 ry
+      ! u9.5:1:1 xrot
+         bits 15..7: 0..512 => 0..360 degrees
+         bits  6..2: angle fractional bits (0..32 => 0..1)
+          bit     1: arc_sweep flag
+          bit     0: large_arc flag
+      ! s14.2 dx
+      ! s14.2 dy
+   + 0x9F: arc rx ry xrot flags dx dy (f32)
+      ! f32 rx
+      ! f32 ry
+      ! u9.5:1:1 xrot
+         bits 15..7: 0..512 => 0..360 degrees
+         bits  6..2: angle fractional bits (0..32 => 0..1)
+          bit     1: arc_sweep flag
+          bit     0: large_arc flag
+      ! f32 dx
+      ! f32 dy
+   + 0xA0: r w h
+      ! rectangle
+      ! unsigned 6.2 bytes
+   + 0xA1: r w h
+      ! rectangle
+      ! unsigned 14.2 shorts
+   + 0xA2: r w h
+      ! rectangle
+      ! unsigned 8.0 bytes
+   + 0xA3: r w h
+      ! rectangle
+      ! even w/h
+      ! unsigned 8.0 bytes
+   - 0xA8: procedural path ext
+       ? 0x01: star
+                u8  numSeg
+                f16 outerW
+                f16 innerW
+       ? 0x02: rounded box
+                u14.2 w
+                u14.2 h
+                u14.2 rx
+                u14.2 ry
+       ? 0x03: arc / ellipse with start/end ang
+                u14.2 rx
+                u14.2 ry
+                u14.2 angStart
+                u14.2 angEnd
+       ? 0x04: gear
+                u8  numSeg
+                f16 outerW
+                f16 innerW
+       ? 0x05: ring
+                u8  numSeg
+                f16 outerW
+                f16 innerW
+ 
+       ? metablob
+       ? volume around point cloud ?
+   + 0xB0: e rx ry    ;[numseg]
+      ! ellipse
+      ! unsigned 6.2 bytes
+   + 0xB1: e rx ry    ;[numseg]
+      ! ellipse
+      ! unsigned 14.2 shorts
+   + 0xB2: e rx ry    ;[numseg]
+      ! ellipse
+      ! unsigned 8.0 bytes
+   + 0xB3: e rx ry    ;[numseg]
+      ! ellipse
+      ! even rx/ry
+      ! unsigned 8.0 bytes
+   ? 0xC0: RESVD v <pathId> [sx [sy] [ang]]
+      ! (todo) **REMOVE**
+      ! insert scaled/rotated path
+      ! unsigned byte (pathIdx)
+      ! sx/sy are in range +-0..7.999  (signed short 4.12)
+      ! angle is in range 0..16383 (0..2PI) (unsigned 14.0 short)
+   ? 0xC1: RESVD v <pathId> [sx [sy] [ang]]
+      ! (todo) **REMOVE**
+      ! insert scaled/rotated path
+      ! unsigned short (pathIdx)
+      ! sx/sy are in range +-0..7.999  (signed short 4.12)
+      ! angle is in range 0..16383 (0..2PI) (unsigned 14.0 short)
+   ? 0xC2: RESVD v <pathId>
+      ! (todo) **REMOVE**
+      ! insert scaled/rotated path (no scaling or rotation)       
+      ! unsigned byte (pathIdx) follows
+   ? 0xC3: RESVD v <pathId>
+      ! (todo) **REMOVE**
+      ! insert scaled/rotated path (no scaling or rotation)       
+      ! unsigned short (pathIdx) follows
+   + 0xD0: d <name>
+      ! draw path at cursor pos (no transformation)
+      ! unsigned byte (pathIdx)
+   + 0xD1: d <name>
+      ! draw path at cursor pos (no transformation)
+      ! unsigned short (pathIdx)
+   + 0xD2: d2d <name>
+      ! draw path at cursor pos and apply current transform_2d matrix
+      ! unsigned byte (pathIdx)
+   o 0xD3: d3d <name>
+      ! draw path at cursor pos and apply current transform_3d matrix
+      ! unsigned byte (pathIdx)
+   + 0xD4: d2d <name>
+      ! draw path at cursor pos and apply current transform_2d matrix
+      ! unsigned short (pathIdx)
+   o 0xD5: d3d <name>
+      ! draw path at cursor pos and apply current transform_3d matrix
+      ! unsigned short (pathIdx)
+   + 0xFE: y end path definition (open). reset cursor to (0;0).
+   + 0xFF: z end path definition (closed). reset cursor to (0;0).
+
+- VM ops
+   - mylabel:
+      ! declare label
+   - MY_CONST=value
+      ! declare named const (must be uppercase)
+   - var <name>
+      ! declare (16bit) variable (must contain lowercase characters)
+   - 0x00: vend
+      ! end of program (hlt)
+   - 0x10: vset <varname> <value> or <varnameSrc>
+      - 0x10: set variable to <value>
+      - 0x11: set variable to <varnameSrc>
+   - 0x20: vld <varname> or <value>
+      - 0x20: vldc <value>   : set last output value to value
+      - 0x21: vldv <varname> : set last output value to var
+   - 0x30: vst <varname>
+      ! store last output value in var
+      - vstv <varname>   (same thing)
+   - 0x40: vpush [<varname> or <value>]
+      - 0x40:            vpush: push last output value onto stack
+      - 0x41: vpushv <varname>: load var and push onto stack
+      - 0x42:   vpushc <value>: push constant value onto stack
+   - 0x43: vpop [<varname>]
+      ! 0x41:  vpop: pop value from stack and set last output value
+      ! 0x42: vpopv: pop value from stack and store in varname (does not set last output value)
+   - 0x50..0x5F: v_[imMtfbmowklcsrevdz]
+      ! call draw op (pop args from stack)
+   - 0x60: vadd <valueInc> or <varnameInc> [<varname>]
+      ! 0x60:  vaddc: add value to last output value
+      ! 0x61:  vaddv: add var to last output value
+      ! 0x62: vaddcv: add value to varname
+      ! 0x63: vaddvv: add var to varname
+   - 0x64: vsub <valueInc> or <varnameInc> [<varname>]
+      ! 0x64:  vsubc: subtract value from last output value
+      ! 0x65:  vsubv: subtract var from last output value
+      ! 0x66: vsubcv: subtract value from varname
+      ! 0x67: vsubvv: subtract var from varname
+   - 0x68: vmul <valueFac> or <varnameFac> [<varname>]
+      ! 0x68:  vmulc: multiply last output value by valueFac
+      ! 0x69:  vmulv: multiply last output value by varnameFac
+      ! 0x6A: vmulcv: multiply varname by valueFac
+      ! 0x6B: vmulvv: multiply varname by varnameFac
+   - 0x70: vmulx <valueFac> or <varnameFac> [<varname>]
+      ! 0x70:  vmulxc: multiply last output value by valueFac and arithmetic shift right by 16 bits
+      ! 0x71:  vmulxv: multiply last output value by varnameFac and arithmetic shift right by 16 bits
+      ! 0x72: vmulxcv: multiply varname by valueFac and arithmetic shift right by 16 bits
+      ! 0x73: vmulxvv: multiply varname by varnameFac and arithmetic shift right by 16 bits
+   - 0x80: vlt <label> <valueCmp> or <varnameCmp> [<varname>]
+      - 0x80: vltc <label> <valueCmp>              : compare last output value to valueCmp and branch to label when less
+      - 0x81: vltv <label> <varnameCmp>            : compare last output value to varnameCmp var and branch to label when less
+      - 0x82: vltcv <label> <valueCmp> <varname>   : compare varname to valueCmp and branch to label when less
+      - 0x83: vltvv <label> <varnameCmp> <varname> : compare varname to varnameCmp and branch to label when less
+   - 0x84: vle <label> <valueCmp> or <varnameCmp> [<varname>]
+      - 0x84: vlec <label> <valueCmp>              : compare last output value to valueCmp and branch to label when less or equal
+      - 0x85: vlev <label> <varnameCmp>            : compare last output value to varnameCmp var and branch to label when less or equal
+      - 0x86: vlecv <label> <valueCmp> <varname>   : compare varname to valueCmp and branch to label when less or equal
+      - 0x87: vlevv <label> <varnameCmp> <varname> : compare varname to varnameCmp and branch to label when less or equal
+   - 0x88: veq <label> <valueCmp> or <varnameCmp> [<varname>]
+      - 0x88: veqc <label> <valueCmp>              : compare last output value to valueCmp and branch to label when equal
+      - 0x89: veqv <label> <varnameCmp>            : compare last output value to varnameCmp var and branch to label when equal
+      - 0x8A: veqcv <label> <valueCmp> <varname>   : compare varname to valueCmp and branch to label when equal
+      - 0x8B: veqvv <label> <varnameCmp> <varname> : compare varname to varnameCmp and branch to label when equal
+   - 0x8C: vne <label> <valueCmp> or <varnameCmp> [<varname>]
+      - 0x8C: vnec <label> <valueCmp>              : compare last output value to valueCmp and branch to label when not equal
+      - 0x8D: vnev <label> <varnameCmp>            : compare last output value to varnameCmp var and branch to label when not equal
+      - 0x8E: vnecv <label> <valueCmp> <varname>   : compare varname to valueCmp and branch to label when not equal
+      - 0x8F: vnevv <label> <varnameCmp> <varname> : compare varname to varnameCmp and branch to label when not equal
+   - 0x90: vge <label> <valueCmp> or <varnameCmp> [<varname>]
+      - 0x90: vgec <label> <valueCmp>              : compare last output value to valueCmp and branch to label when greater or equal
+      - 0x91: vgev <label> <varnameCmp>            : compare last output value to varnameCmp var and branch to label when greater or equal
+      - 0x92: vgecv <label> <valueCmp> <varname>   : compare varname to valueCmp and branch to label when greater or equal
+      - 0x93: vgevv <label> <varnameCmp> <varname> : compare varname to varnameCmp and branch to label when greater or equal
+   - 0x94: vgt <label> <valueCmp> or <varnameCmp> [<varname>]
+      - 0x94: vgtc <label> <valueCmp>              : compare last output value to valueCmp and branch to label when greater
+      - 0x95: vgtv <label> <varnameCmp>            : compare last output value to varnameCmp var and branch to label when greater
+      - 0x96: vgtcv <label> <valueCmp> <varname>   : compare varname to valueCmp and branch to label when greater
+      - 0x97: vgtvv <label> <varnameCmp> <varname> : compare varname to varnameCmp and branch to label when greater
+   - 0xA0: vlfsr <varnameState>
+      ! set last output value to pseudo random number
+      ! (note) set seed by storing value in <varnameState>
+   - 0xA1: vsin
+      ! set last output value to sin(last_output_value)
+      ! range is 0..16384 (0..2PI)
+   - 0xA2: vcos
+      ! set last output value to cos(last_output_value)
+      ! range is 0..16384 (0..2PI)
+   - 0xA3: vdiv
+      ! 0xA3: vdivc <value>   : set last output value to last_output_value / value
+      ! 0xA4: vdivv <varname> : set last output value to last_output_value / varname
+      ! divisor range is 1..511
+   - 0xB0: vbsr <label>
+      ! push PC onto return stack and branch to subroutine
+   - 0xB1: vret
+      ! pop PC from return stack and return from subroutine
+   - 0xC0: (todo) interpolate (ease in/out)
+
+- editor
+   - stack size
+   - AA on/off
+   - palette editor
+   - drawbuffer list
+   - path list
+      - static path editor
+         - SVG import
+            - decompose inconvex paths into convex paths
+   - program list
+      - debug: constant list
+      - debug: var list
+      - debug: label list
+   - main draw list
+
+(done) "svg" pseudo op (add (sp)lines from SVG path)
+(done) ellipse
+(done) use ShapePolyline code from tkui (ExtrudePolyline() is buggy (CCW vertices) and uses overdraws for round joints/caps)
+(done) implement ShapePolyline round caps (+butt(done), square)
+(done) ui::ShapePolyline: round line caps
+(done) add pseudo-ops for framebuffer/geo scaling (geo_scale,gs,geo_div,gd)
+(done) add pseudo-ops for pre-translate + scale + post-translate (geo_transform,gxf)
+(done) add pseudo-op for num_seg scaling (seg_scale,sgs)
+(done) 8.4 (12bit) coordinate encoding (saves e.g. 3 bytes per cubic segment)
+(note) cake.svg: 4189 bytes   cake.mib: 593 bytes  (factor=7.065)
+          obj    SVG  ILBM  ILBM.rnc BE3.rnc  MIB  MIB.rnc
+         *cake   2358 6884  2819     1923     593  432
+(note) (640x240) cake.ilbm: 6884 bytes  cake.ilbm.rnc: 2819 bytes  (factor 11.609 / 4.754)
+(done) concave polygon tesselator (Path::tesselateConcave())
+(todo) svg_loader: export .min (approximate arcs with splines?)
+        - remember original SVG path
+(test) standalone "libminnie" "C" lib (fixed point math) (tkminnie)
+(done) draw scaled + rotated
+(done) matrix mulRev()  (as if matrices were row major like in SVG) (avoid t.mul(mat); mat=t; / keep order of transformations)
+(test) tkmath: Matrix2f/2d/3f/3d/4f/4d mulRev()
+(done) matrix array, select transform matrix by index (reuse, e.g. "test010_d2d.min". save 96-4=92 bytes => filesz 168 instead of 260) => 126 bytes
+(done) save matrices as float16
+(idea) scale,translate,scale+translate matrix optimization (filesize + transform performance)
+(done) OR: offset path by current pen pos (M / m)  (most common case ?)
+(done) masks (note: non-AA only)
+(todo) blits
+(done) transform2D
+(done) transform3D
+(idea) VM
+(done) pseudo-op: "i #rrggbb" or "i #rgb"  => select closest matching palette index
+(done) check/estimate closed path winding and reverse path if winding=CCW (+line, +cubic +cubicmirror)
+(dont) gxf 2d/3d transform (translate() scale() rotate() frustum()) (Matrix4f) (==> need separate scale_x/y info)
+(todo) pm_load (translate() scale() rotate() frustum()) (Matrix4f)
+        - apply to (sp)line paths (host-side)
+(idea) .min: ptransform matrix stack (pm_push/pm_pop) (e.g. for constructing hierarchical geometries)
+(idea) 'n' matrix stack (host-side matrix setup, single matrix runtime transform) (n, npush, npop)
+(idea) rep <n> (host-side: repeat nested lines)
+(dont) svg_split pseudo-op: split path into sub-paths (create path1_1, path1_2, ..)  OR: debug print split path to console (for copy'n'paste)
+(done) sub-path op (0x86) + auto-split svg paths (e.g. test032_subpath)
+(todo) morphable bounding rectangles (sprites on Amiga?)
+(idea) path mirroring (horizontal, vertical or both.)
+(done) AA mode (coverage renderer)
+        + iterate main path and build reverse draw list 
+           + track effective render state
+              ! color 
+              ! mask
+              ! dst fb
+              ! src fb
+              ! transform 2d mat index
+              ! transform 3d mat index
+              ! cursor
+              ! stroke_w
+              ! line join+cap
+              ! num_seg (round line joints / caps)
+              ! clip path
+(done) w2 <pathId>: set clip 2d path (https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm)
+       w2 fb        set clip 2d path to framebuffer edges
+       woff         disable clip path (2d/3d)  (alt: w2off)
+(dont) w3 <pathId> <znear> <zfar>: set clip 3d path  (2d path + znear/far)
+(done) w3fb [<znear> <zfar>]
+        + or skip znear/zfar and just clip against znear=0.01 ?
+       w3off
+(idea) pw2 <pathId> <pathSrcIdx>    define 2d-clipped convex path (host-side preprocess)  (==> would only work with lines/rect/ellipse)
+       ptw2 <pathId> <pathSrcIdx>   define 2d-clipped concave path (host-side preprocess)
+(done) discard unused (not drawn) paths (b_used flag)
+(idea) preprocessor vars  MYMAT=scale(2) translate(320 240)    n $MYMAT   or  n $(MYMAT)
+(idea) support pre-tesselated paths (triangle arrays) ("dpre <pathidx>")
+(todo) palette editor (reuse HSVColorPicker widget)
+(done) encode endianness in version header (bit7: big endian)
+(done) encode AA mode in version header (bit6: AA on)
+(idea) fill patterns (built-in ?)
+(idea) add num_points to path decl (allocation hint)
+        ? store /32  (8192 points max)
+(idea) interleave path decls + draw ops
+        ! declare path on first use
+(idea) unref/free last used path op
+        ! w2 pushes path on LRU stack
+        ! d* pushes path on LRU stack
+(idea) unref/free path <idx> op
+        ! pop from LRU stack
+(idea) 3d from 2d paths
+        - extrude z
+        - body of rotation (rotationskörper)
+        ! ==> would need lighting (at least flat shading)
+(note) voronoi vertices: at equal distance to (three) neighbouring sites (seeds)
+        ! https://youtu.be/Y5X1TvN9TpM?list=PL1o3-0jbsuTNcIOeBp1_gXrzJhmIHECYn (algorithms)
+           ! halfspace intersection
+              ! perpendicular bisector between neighbouring (3) seeds
+              ! (3) voronoi vertices at edge intersections 
+           ! Fortune's algorithm
+(done) 'gxfs' pseudo-op (set geometry scaling for following paths)
+(done) pseudo ops 'doff' 'don'
+(done) pseudo op "path_seg"  (set default num_seg for following path decls (auto-add DrawOpNumSeg). def=-1)
+(done) path::reverse(): track+place "num_seg" op before other path elements
+(done) add arc op (there are just too many SVG paths that use them. might be difficult/slow on 68k)
+(done) 'z' closed polyline: remove last (tesselated) point when it's equal to first point (or use 'y' instead of 'z')
+        ! e.g. 'L' and 'O_ctr' in lego.svg (test037_logo.min)
+(dont) separate stroke x/y widths (=> does not seem to work well, at least not in all cases)
+(done) add optional SGI tesselator (MINNIE_SGI_TESS) for tesselation of paths with holes ('ph')
+(done) emit fill / color deltas only (pass RenderState to emit())
+(actv) add opLineAA draw fxn that honors coverage (and skips pixels) (e.g. tiger.svg)
+        - TKSTexture
+        + tkminnie
+(todo) tesselateHoles: support 2d/3d transformed + clipped sub-paths
+(todo) add draw-op replacement macros (e.g. for Opengl)
+(todo) add begin-path / end-path macros (e.g. for capturing prims/triangles)
+(todo) split framebuffer draw ops (cannot be reversed)
+(note) arc-to-bezier https://github.com/colinmeinke/svg-arc-to-cubic-bezier#readme
+(note) SVG vs MIB file sizes
+          4189 cake.svg          674 test018_cake_aa.mib     1:6
+         31681 wild-boar.svg    5284 test039_wildboar.mib    1:6
+          6828 valentines.svg   1610 test033_valentines.mib  1:4
+          1478 bicycle.svg       396 test035_bicycle.mib     1:4
+         42352 crab.svg         6587 test036_crab.mib        1:6
+         96719 tiger.svg       17116 test040_tiger.mib       1:6
+         20743 elefant.svg      1875 test043_elefant.mib     1:11
+(done) test040_tiger tooth outlines are filled instead of stroked
+        ! 'k 0.25' is not emitted in .mib (=> truncated to 0, then optimized away since fill (k 0) is already active)
+        + clip stroke width to 0.25 if the unscaled version is >0.0
+(dont) add new op 0x8D for fine stroke widths (<8.0)
+        ! ==> coords still have just 2 subpixel bits => scale entire scene, then scale back when rendering
+(done) test040_tiger path108 does not exactly fit neighbouring paths 
+        ! but close. precision issue with bezier ctl points ?
+        x 's' mirrored cubic spline is parsed incorrectly ??! (version w/o it looks ok)
+        + 's' mirrored cubic spline is reversed incorrectly (Path::reverse())
+           + tmp_mirrored_c1x/y typo (!!)
+(done) postpone coord quantization to emit stage ??? (remove QuantFloat() / return orig float)
+(done) implicit lineto if path contains consecutive moveto commands
+(test) make miter limit configurable
+        ! currently hardcoded to 32.0
+        + op 0x27  (DrawOpMiterLimit)
+(test) OpenGL(ES2) render backend / buffer export
+        + barycentric coordinate attribute
+           + GLSL 1.00: repeat for each vertex (normalized u8)
+           o GLSL 300 ES: use gl_VertexID and generate procedurally
+        + edge-AA shader
+        + edge flags (vertex attrib)
+        + barycentric scaling factors (vertex attrib)
+        - glVertexAttribDivisor? (color, edgeflags, scaling factors)
+           ! e.g. reduce per-triangle (8+4+4+12)*3=84 bytes to ((8*3)+(4+4+12))=44 bytes
+(test) add hi-res f32 'M' / 'm' ops
+        + fixes wildboar left eye 2nd arc (sweep dir, cfac was 0 with low prec)
+        + 0x21 m f32
+        + 0x22 M f32
+        + in .min: 'm_f32 on'
+        + minnie.h
+(test) add hi-res f32 arc op
+        + 0x9F a f32
+        + in .min: 'arc_f32 on'
+        + minnie.h
+(test) add hi-res f32 cubic op
+        + 0x23 c f32
+        + in .min: 'c_f32 on'
+        + minnie.h
+(test) add hi-res f32 cubic mirror op
+        + 0x25 c f32
+        + in .min: 'c_f32 on'
+        + minnie.h
+(test) add hi-res f32 line op
+        + 0x26 l f32
+        + in .min: 'l_f32 on'
+        + minnie.h
+(done) add 'f32 on' cmd that enables m/a/c/l float precision
+(todo) test039_wildboard SGI tesselator assertion fails, depending on x/y position (!)
+(todo) move path definition right before first draw op
+(test) minnie.h: grow points array. add def_points_per_path (initial capacity). remove max_points_per_path
+(done) add 16bit 'geo' op (0xE1)
+(actv) 'rect' rounded corners (rx/ry corner radius. see https://www.w3schools.com/graphics/svg_rect.asp)
+        + bezier ctl points halfway towards rect corners
+        + max radius x,y = w/2, h/2
+        + 0xA4 (f32)  w,h,rx,ry
+        + xA5 (u14.2)  w,h,rx,ry
+        + test074_roundrect
+        - SVG preview
+        + SVG .min export
+(done) add option to convert "ph" to "pt" paths when path has no sub-paths
+        + Minnie.setEnableTesselateConcave()
+(todo) bind texture API function
+        - GL texture id
+        x width
+        x height
+(todo) unbind texture API function
+(todo) draw uv-textured triangles API function
+        - merge with previous draw-uv-textured-triangles drawlist-op when texture and color has not changed
+        - call 
+(todo) uv-textured quads API function
+        - merge with previous draw-uv-textured-quads drawlist-op when texture and color has not changed
+(todo) aa_range render state
+        + ShaderVG
+        - rect/ellipse/roundrect

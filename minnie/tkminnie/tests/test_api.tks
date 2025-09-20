@@ -1,0 +1,919 @@
+// ----
+// ---- file   : test_api.tks
+// ---- author : bsp
+// ---- legal  : Distributed under terms of the MIT LICENSE.
+// ----
+// ---- info   : "minnie" API test
+// ---- note   :
+// ----
+// ----
+// ----
+
+//          UP : next test
+//        DOWN : previous test
+//       SPACE : toggle animation
+// lctrl-SPACE : toggle slow-motion
+//           l : toggle FPS limiter (60 / unlimited)
+//           p : save screenshot to "screenshots/api/minnie_api_test.png"
+
+module Main;
+
+use tksdl;
+use tkopengl;
+use tkminnie;
+use tkmath;
+
+namespace sdvgcapi;
+namespace default;
+use namespace sdvgcapi;
+
+boolean b_glcore = 1;
+
+putenv("TKSDL_GLERROR=1");
+if(b_glcore) putenv("TKSDL_GLCORE=1");   // select 4.1 core profile on macOS
+
+float vp_scale = 1;
+
+boolean b_draw_gl       = 1;  // 'g'
+boolean b_gl_buf_once   = 0;
+boolean b_vsync         = 1;  // 'v'
+boolean b_rotate        = 1;  // SPACE  (RETURN resets rot_angle)
+boolean b_msaa          = 0;  // 1=use MSAA
+
+boolean b_anim          = 0;  // SPACE
+boolean b_slomo         = 0;  // lctrl-SPACE
+int     fill_mode       = 3;  // 'o'  bit0:fill bit1:stroke
+int     test_idx        = 0;  // UP/DOWN
+
+boolean b_sym_radius    = 1;     // 'l'  (rx=ry)
+float   stroke_scale    = 1.0f;  // LEFT/RIGHT
+boolean b_line_strip    = 0;     // 's'
+boolean b_tex_filter    = 1;     // 't'
+boolean b_copy          = 0;     // 'c'  draw shifted copy (mvp translatef)
+
+String RES_PATH = "res/";
+
+
+MinnieDrawable drawable;
+drawable.init();
+drawable.alloc(6*1024*1024/*maxGLBufSize*/,
+                   32*1024/*maxDrawBufSize*/
+               );
+
+int tex_id;
+Texture tex_data;
+
+boolean b_reopen;  // 1=reopen window after exiting event loop (e.g. toggle MSAA)
+
+
+// ---------------------------------------------------------------------------- vars
+int num_frames_rendered = 0;
+
+int gl_prog_id;
+int gl_vert_id;
+int gl_frag_id;
+
+int u_transform;
+int u_aa;
+
+int a_vertex;
+int a_color;
+int a_edge;
+int a_scale;
+int a_bc;
+
+float anim_1;
+float anim_2;
+float anim_3;  // w
+float anim_4;
+float anim_5;
+float anim_6;  // seg
+
+boolean b_queued_screenshot;
+
+StringArray test_names = ["00: concave path",
+                          "01: sub-path",
+                          "02: textured, flat shaded rectangles",
+                          "03: textured, gouraud shaded rectangles",
+                          "04: sine lines",
+                          "05: round-rect filled+stroked (tesselated)",
+                          "06: round-rect filled+stroked (shadervg)",
+                          "07: round-rect stroked (tesselated)",
+                          "08: round-rect stroked (shadervg)",
+                          "09: round-rect filled (tesselated)",
+                          "10: round-rect filled (shadervg)",
+                          "11: rect filled+stroked (tesselated)",
+                          "12: rect filled+stroked (shadervg)",
+                          "13: rect stroked (tesselated)",
+                          "14: rect stroked (shadervg)",
+                          "15: rect filled (tesselated)",
+                          "16: rect filled (shadervg)",
+                          "17: ellipse filled+stroked (tesselated)",
+                          "18: ellipse filled+stroked (shadervg)",
+                          "19: ellipse stroked (tesselated)",
+                          "20: ellipse stroked (shadervg)",
+                          "21: ellipse filled (tesselated)",
+                          "22: ellipse filled (shadervg)",
+                          ];
+
+
+// ----------------------------------------------------------------------------
+function HSVTOARGB32(float h, float s, float v, byte _a) : int {
+   // converts alpha '_a' (0..255) + hue (0..360) + saturation/value (0..1) to ARGB32 int
+
+   if(h >= 360)
+      h -= 360;
+   h /= 60;
+   int i = h;
+   float f = h - i;
+
+   int p = 255 * v * ( 1 - s );
+   int q = 255 * v * ( 1 - s * f );
+   int t = 255 * v * ( 1 - s * ( 1 - f ) );
+
+   v *= 255;
+
+   switch(i)
+   {
+      case 0:
+         return argb(_a, v, t, p);
+      case 1:
+         return argb(_a, q, v, p);
+      case 2:
+         return argb(_a, p, v, t);
+      case 3:
+         return argb(_a, p, q, v);
+      case 4:
+         return argb(_a, t, p, v);
+      default:
+         return argb(_a, v, p, q);
+   }
+}
+
+// ----------------------------------------------------------------------------
+function Test_00(MinnieDrawable d) {
+   // concave path
+
+   int pid = minBeginPath();
+   minSeg(32);
+
+   float rx = sin(anim_1) * 40;
+   float ry = cos(anim_2) * 30;
+   float sx = sin(anim_4) * 140;
+   float sy = cos(anim_5) * 130;
+
+   minMoveTo(100+rx, 300+ry);
+
+   minCubicTo(300+sx, 100+sy,  // c1
+              500-sy, 100-sx,  // c2
+              700-ry, 300-rx   // dst
+              );
+
+   minCubicTo(500+sx, 300+sy,  // c1
+              250-sy, 500-sx,  // c2
+              100+rx, 300+ry   // dst
+              );
+
+   minEndPath(true/*bClosed*/);
+
+   minFill();
+   minColor(#ff324f75);  // green=6bd2b7
+   minDrawPath(pid);
+
+   minStrokeWidth(sin(anim_3)*2+3);
+   minColor(#ffffffff);
+   minJoinBevel();
+   minDrawPath(pid);
+}
+
+// ----------------------------------------------------------------------------
+function Test_01(MinnieDrawable d) {
+   // sub-path
+
+   int pid = minBeginPath();
+
+   float segAmt = 0.5 + 0.5*sin(anim_6);
+   segAmt *= segAmt;
+   segAmt *= segAmt;
+   minSeg(8 + 120*segAmt);
+
+   float rx = sin(anim_1) * 40;
+   float ry = cos(anim_2) * 30;
+   float sx = sin(anim_4) * 140;
+   float sy = cos(anim_5) * 130;
+
+   // main
+   minMoveTo(100+rx, 300+ry);
+
+   float relx1 = (300+sx) - (100+rx);
+   float rely1 = (100+sy) - (300+ry);
+   minCubicTo(300+sx, 100+sy,
+              500-sy, 100-sx,
+              700-ry, 300-rx
+              );
+
+   float relx2 = (700-ry) - (500-sy);
+   float rely2 = (300-rx) - (100-sx);
+   minCubicTo(700-ry + relx2, 300-rx + rely2,
+              100+rx-relx1, 300+ry-rely1,
+              100+rx, 300+ry
+              );
+
+   // sub 1
+   minBeginSub();
+   minMoveTo(300-ry, 250+rx);
+   minEllipse(150, 150);
+   minEndSubClosed();
+
+   minEndPathClosed();
+
+   if(fill_mode & 1)
+   {
+      minFill();
+      minColor(#ff324f75);  // green=6bd2b7
+      minDrawPath(pid);
+   }
+
+   if(fill_mode & 2)
+   {
+      minStrokeWidth(sin(anim_3)*2+3);
+      minColor(#ffffffff);
+      minJoinBevel();
+      minDrawPath(pid);
+   }
+
+}
+
+// ----------------------------------------------------------------------------
+function Test_02(MinnieDrawable d) {
+   // textured, flat shaded rectangles
+
+   minBindTexture(tex_id, false/*bRepeat*/, b_tex_filter);
+   minColor(#ffffffff);
+
+   // float x = 200 + sin(anim_1) * 200;
+   // float y = 150 + cos(anim_2) * 150;
+   float x = sin(anim_1) * 400 - 400 + 125/4;
+   float y = cos(anim_2) * 300 - 300 + 100/4;
+   // trace "xxx t=("+x+";"+y+")";
+   float ty = y;
+   float ang5 = anim_5;
+   loop(16)
+   {
+      float tx = x;
+      float ang4 = anim_4;
+      loop(16)
+      {
+         float nx = abs((tx - 400.0) / 400.0);
+         float ny = abs((ty - 300.0) / 300.0);
+         nx = 1.0 - nx;
+         ny = 1.0 - ny;
+         nx = 2.0 * nx - 1.0;
+         ny = 2.0 * ny - 1.0;
+
+         ang4 = PI*0.5;
+         ang5 = 0;
+         float w = 125/2 + (sin(ang4) *  75/2)*nx;
+         float h = 100/2 + (cos(ang5) *  50/2)*ny;
+
+         minRectTexUVFlat(tx - w*0.5, ty - h*0.5, w, h,
+                          0, 0,
+                          1, 1
+                          );
+         tx += 200.0/2;
+         ang4 += 0.9323;
+      }
+      ty += 150.0/2;
+      ang5 += 0.715;
+   }
+}
+
+// ----------------------------------------------------------------------------
+function Test_03_calc_c32_at(float x, float y) {
+   float nx = abs((x - 400.0) / 400.0);  // => -1..1
+   float ny = abs((y - 300.0) / 300.0);
+   nx = mathMaxf(0.0f, cos(nx * PI * 0.5));
+   ny = mathMaxf(0.0f, cos(ny * PI * 0.5));
+   float a = mathClampf(nx * ny, 0,1);
+   return argb(a*255, 255, 255, 255);
+}
+
+function Test_03(MinnieDrawable d) {
+   // textured, gouraud shaded rectangles
+
+   minBindTexture(tex_id, false/*bRepeat*/, b_tex_filter);
+   minColor(#ffffffff);
+
+   float x = sin(anim_1) * 400 - 400 + 125/4;
+   float y = cos(anim_2) * 300 - 300 + 100/4;
+   float ty = y;
+   float ang5 = anim_5;
+   loop(16)
+   {
+      float tx = x;
+      float ang4 = anim_4;
+      loop(16)
+      {
+         float nx = abs((tx - 400.0) / 400.0);
+         float ny = abs((ty - 300.0) / 300.0);
+         nx = 1.0 - nx;
+         ny = 1.0 - ny;
+         nx = 2.0 * nx - 1.0;
+         ny = 2.0 * ny - 1.0;
+
+         ang4 = PI*0.5;
+         ang5 = 0;
+         float w = 125/2 + (sin(ang4) *  75/2)*nx;
+         float h = 100/2 + (cos(ang5) *  50/2)*ny;
+
+         minRectTexUVGouraud(tx - w*0.5, ty - h*0.5, w, h,
+                             0, 0,
+                             1, 1,
+                             Test_03_calc_c32_at(tx - w*0.5, ty - h*0.5),  // lt
+                             Test_03_calc_c32_at(tx + w*0.5, ty - h*0.5),  // rt
+                             Test_03_calc_c32_at(tx + w*0.5, ty + h*0.5),  // rb
+                             Test_03_calc_c32_at(tx - w*0.5, ty + h*0.5)   // lb
+                             );
+         tx += 200.0/2;
+         ang4 += 0.9323;
+      }
+      ty += 150.0/2;
+      ang5 += 0.715;
+   }
+}
+
+// ----------------------------------------------------------------------------
+function Test_04(MinnieDrawable d) {
+   // sine lines
+
+   int pid = minBeginPath();
+
+   int numSeg = 64;
+   int numPoints = numSeg + 1;
+   float w = (2PI / numSeg);
+   float a = anim_1;
+   float x = 100.0;
+   float xStep = 600.0 / numSeg;
+   int segIdx = 0;
+   loop(numPoints)
+   {
+      float y = sin(a) * 150.0 + 300.0;
+      if(0 == segIdx++)
+         minMoveTo(x, y);
+      else
+         minLineTo(x, y);
+      a += w;
+      x += xStep;
+   }
+
+   minEndPathOpen();
+
+   minColor(#ffffffff);
+   minStrokeWidth(4.0);
+   minJoinBevel();
+   // minJoinNone();
+   minCapNone();
+   minDrawPath(pid);
+}
+
+// ----------------------------------------------------------------------------
+function Test_05(MinnieDrawable d, boolean _bFill, boolean _bStroke) {
+   // round-rect filled+stroked (tesselated)
+
+   float rx = 4+40 + sin(anim_1) * 40;
+   float ry = 4+30 + cos(anim_2) * 30;
+   float sx = 320 + sin(anim_4*0.25) * 200;
+   float sy = 240 + cos(anim_5*0.25) * 150;
+
+   if(b_sym_radius)
+   {
+      rx = mathMinf(rx, ry);
+      ry = rx;
+   }
+
+   if(rx > (sx*0.495))
+      rx = (sx*0.495);
+   if(ry > (sy*0.495))
+      ry = (sy*0.495);
+
+   int pid = minBeginPath();
+   minSeg(8);
+   minMoveTo(400-sx*0.5, 300-sy*0.5);
+   minRoundRect(sx, sy, rx, ry);
+   minEndPath(true/*bClosed*/);
+
+   if(_bFill)
+   {
+      minColor(#ff324f75);  // green=6bd2b7
+      minFill();
+      minDrawPath(pid);
+   }
+
+   if(_bStroke)
+   {
+      minColor(#ffffffff);
+      minStrokeWidth(sin(anim_3)*2+3);
+      minJoinMiter();
+      minDrawPath(pid);
+   }
+}
+
+// ----------------------------------------------------------------------------
+function Test_06(MinnieDrawable d, boolean _bFill, boolean _bStroke) {
+   // round-rect filled+stroked (shadervg)
+
+   float rx = 4+40 + sin(anim_1) * 40;
+   float ry = 4+30 + cos(anim_2) * 30;
+   float sx = 320 + sin(anim_4*0.25) * 200;
+   float sy = 240 + cos(anim_5*0.25) * 150;
+
+   if(b_sym_radius)
+   {
+      rx = mathMinf(rx, ry);
+      ry = rx;
+   }
+
+   if(rx > (sx*0.495))
+      rx = (sx*0.495);
+   if(ry > (sy*0.495))
+      ry = (sy*0.495);
+
+   // // int pid = minBeginPathImmediate();
+   int pid = minBeginImmediate();
+   minMoveTo(400-sx*0.5, 300-sy*0.5);
+
+   if(_bFill)
+   {
+      minColor(#ff324f75);  // green=6bd2b7
+      minFill();
+      minRoundRect(sx, sy, rx, ry);
+   }
+
+   if(_bStroke)
+   {
+      minColor(#ffffffff);
+      minStrokeWidth(sin(anim_3)*2+3);
+      minRoundRect(sx, sy, rx, ry);
+   }
+
+   // // minEndPath(true/*bClosed*/);
+   minEndImmediate();
+}
+
+// ----------------------------------------------------------------------------
+function Test_11(MinnieDrawable d, boolean _bFill, boolean _bStroke) {
+   // rect filled+stroked (tesselated)
+
+   float rx = 4+40 + sin(anim_1) * 40;
+   float ry = 4+30 + cos(anim_2) * 30;
+   float sx = 320 + sin(anim_4*0.25) * 200;
+   float sy = 240 + cos(anim_5*0.25) * 150;
+
+   if(b_sym_radius)
+   {
+      rx = mathMinf(rx, ry);
+      ry = rx;
+   }
+
+   if(rx > (sx*0.495))
+      rx = (sx*0.495);
+   if(ry > (sy*0.495))
+      ry = (sy*0.495);
+
+   int pid = minBeginPath();
+   minSeg(8);
+   minMoveTo(400-sx*0.5, 300-sy*0.5);
+   minRect(sx, sy);
+   minEndPath(true/*bClosed*/);
+
+   if(_bFill)
+   {
+      minColor(#ff324f75);  // green=6bd2b7
+      minFill();
+      minDrawPath(pid);
+   }
+
+   if(_bStroke)
+   {
+      minColor(#ffffffff);
+      minStrokeWidth(sin(anim_3)*2+3);
+      // minJoinBevel();
+      minJoinMiter();
+      minDrawPath(pid);
+   }
+}
+
+// ----------------------------------------------------------------------------
+function Test_12(MinnieDrawable d, boolean _bFill, boolean _bStroke) {
+   // rect filled+stroked (shadervg)
+
+   float rx = 4+40 + sin(anim_1) * 40;
+   float ry = 4+30 + cos(anim_2) * 30;
+   float sx = 320 + sin(anim_4*0.25) * 200;
+   float sy = 240 + cos(anim_5*0.25) * 150;
+
+   if(b_sym_radius)
+   {
+      rx = mathMinf(rx, ry);
+      ry = rx;
+   }
+
+   if(rx > (sx*0.495))
+      rx = (sx*0.495);
+   if(ry > (sy*0.495))
+      ry = (sy*0.495);
+
+   // // int pid = minBeginPathImmediate();
+   int pid = minBeginImmediate();
+   minMoveTo(400-sx*0.5, 300-sy*0.5);
+
+   if(_bFill)
+   {
+      minColor(#ff324f75);  // green=6bd2b7
+      minFill();
+      minRect(sx, sy);
+   }
+
+   if(_bStroke)
+   {
+      minColor(#ffffffff);
+      minStrokeWidth(sin(anim_3)*2+3);
+      minRect(sx, sy);
+   }
+
+   // // minEndPath(true/*bClosed*/);
+   minEndImmediate();
+}
+
+// ----------------------------------------------------------------------------
+function Test_17(MinnieDrawable d, boolean _bFill, boolean _bStroke) {
+   // ellipse filled+stroked (tesselated)
+
+   float rx = 4+40 + sin(anim_1) * 40;
+   float ry = 4+30 + cos(anim_2) * 30;
+   float sx = 320 + sin(anim_4*0.25) * 200;
+   float sy = 240 + cos(anim_5*0.25) * 150;
+
+   if(b_sym_radius)
+   {
+      rx = mathMinf(rx, ry);
+      ry = rx;
+
+      sx = mathMinf(sx, sy);
+      sy = sx;
+   }
+
+   if(rx > (sx*0.495))
+      rx = (sx*0.495);
+   if(ry > (sy*0.495))
+      ry = (sy*0.495);
+
+   int pid = minBeginPath();
+   minSeg(64);
+   minMoveTo(400, 300);
+   minEllipse(sx*0.5, sy*0.5);
+   minEndPath(true/*bClosed*/);
+
+   if(_bFill)
+   {
+      minColor(#ff324f75);  // green=6bd2b7
+      minFill();
+      minDrawPath(pid);
+   }
+
+   if(_bStroke)
+   {
+      minColor(#ffffffff);
+      minStrokeWidth(sin(anim_3)*2+3);
+      minJoinBevel();
+      minDrawPath(pid);
+   }
+}
+
+// ----------------------------------------------------------------------------
+function Test_18(MinnieDrawable d, boolean _bFill, boolean _bStroke) {
+   // ellipse filled+stroked (shadervg)
+
+   float rx = 4+40 + sin(anim_1) * 40;
+   float ry = 4+30 + cos(anim_2) * 30;
+   float sx = 320 + sin(anim_4*0.25) * 200;
+   float sy = 240 + cos(anim_5*0.25) * 150;
+
+   if(b_sym_radius)
+   {
+      rx = mathMinf(rx, ry);
+      ry = rx;
+
+      sx = mathMinf(sx, sy);
+      sy = sx;
+   }
+
+   if(rx > (sx*0.495))
+      rx = (sx*0.495);
+   if(ry > (sy*0.495))
+      ry = (sy*0.495);
+
+   // // int pid = minBeginPathImmediate();
+   int pid = minBeginImmediate();
+   minMoveTo(400, 300);
+
+   if(_bFill)
+   {
+      minColor(#ff324f75);  // green=6bd2b7
+      minFill();
+      minEllipse(sx*0.5, sy*0.5);
+   }
+
+   if(_bStroke)
+   {
+      minColor(#ffffffff);
+      minStrokeWidth(sin(anim_3)*2+3);
+      minEllipse(sx*0.5, sy*0.5);
+   }
+
+   // // minEndPath(true/*bClosed*/);
+   minEndImmediate();
+}
+
+
+// ---------------------------------------------------------------------------- SelectTest
+function SelectTest(int _idx) {
+   test_idx = _idx;
+   trace "[...] test_idx is "+test_idx+" \""+test_names.get(test_idx)+"\"";
+   Viewport.caption = test_names.get(test_idx);
+   num_frames_rendered = 0;
+}
+
+// ---------------------------------------------------------------------------- onDraw
+function onDraw() {
+   // trace "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ onDraw";
+
+   float dt = FPS.precision;
+
+   int t = milliSeconds();
+
+   int vgFbW = Viewport.width;
+   int vgFbH = Viewport.height;
+
+   sdvg_SetFramebufferSize(vgFbW, vgFbH);
+
+   MinnieVG.BeginFrame();
+   sdvg_SetViewport(0, 0, vgFbW, vgFbH);
+   // sdvg_ClearARGB(#00ffffff);
+   // sdvg_ClearARGB(#00e1cdb7);
+   sdvg_ClearARGB( drawable.getBackgroundColor() );  // clear color+stencil
+
+   if(!b_gl_buf_once || !drawable.isComplete())
+   {
+      minSetSwTesselateSizeThreshold(1*99999999);  // bounding box size
+      minSetStrokeWLineStripThreshold(b_line_strip*99);  // 0=tesselate to triangles
+      minSetStrokeWLineJoinThreshold(1.0f);  // disable bevel+round line joins below this threshold
+      minSetStrokeScale(stroke_scale);
+
+      // (todo) minBeginDrawable() ?
+      MinnieVG.BeginDrawable(drawable);
+
+      switch(test_idx)
+      {
+         case  0: Test_00(drawable); break;  // concave path
+         case  1: Test_01(drawable); break;  // sub-path
+         case  2: Test_02(drawable); break;  // textured, flat shaded rectangles
+         case  3: Test_03(drawable); break;  // textured, gouraud shaded rectangles
+         case  4: Test_04(drawable); break;  // sine lines
+         case  5: Test_05(drawable, 1/*bFill*/, 1/*bStroke*/); break;  // round-rect filled+stroked (tesselated)
+         case  6: Test_06(drawable, 1/*bFill*/, 1/*bStroke*/); break;  // round-rect filled+stroked (shadervg)
+         case  7: Test_05(drawable, 0/*bFill*/, 1/*bStroke*/); break;  // round-rect stroked (tesselated)
+         case  8: Test_06(drawable, 0/*bFill*/, 1/*bStroke*/); break;  // round-rect stroked (shadervg)
+         case  9: Test_05(drawable, 1/*bFill*/, 0/*bStroke*/); break;  // round-rect filled (tesselated)
+         case 10: Test_06(drawable, 1/*bFill*/, 0/*bStroke*/); break;  // round-rect filled (shadervg)
+         case 11: Test_11(drawable, 1/*bFill*/, 1/*bStroke*/); break;  // rect filled+stroked (tesselated)
+         case 12: Test_12(drawable, 1/*bFill*/, 1/*bStroke*/); break;  // rect filled+stroked (shadervg)
+         case 13: Test_11(drawable, 0/*bFill*/, 1/*bStroke*/); break;  // rect stroked (tesselated)
+         case 14: Test_12(drawable, 0/*bFill*/, 1/*bStroke*/); break;  // rect stroked (shadervg)
+         case 15: Test_11(drawable, 1/*bFill*/, 0/*bStroke*/); break;  // rect filled (tesselated)
+         case 16: Test_12(drawable, 1/*bFill*/, 0/*bStroke*/); break;  // rect filled (shadervg)
+         case 17: Test_17(drawable, 1/*bFill*/, 1/*bStroke*/); break;  // ellipse filled+stroked (tesselated)
+         case 18: Test_18(drawable, 1/*bFill*/, 1/*bStroke*/); break;  // ellipse filled+stroked (shadervg)
+         case 19: Test_17(drawable, 0/*bFill*/, 1/*bStroke*/); break;  // ellipse stroked (tesselated)
+         case 20: Test_18(drawable, 0/*bFill*/, 1/*bStroke*/); break;  // ellipse stroked (shadervg)
+         case 21: Test_17(drawable, 1/*bFill*/, 0/*bStroke*/); break;  // ellipse filled (tesselated)
+         case 22: Test_18(drawable, 1/*bFill*/, 0/*bStroke*/); break;  // ellipse filled (shadervg)
+      }
+
+      MinnieVG.EndDrawable(drawable);
+
+      if(0 == (num_frames_rendered & 255))
+      {
+         MinnieVG.DebugPrintMinnieAndDrawableStats(drawable);
+      }
+
+      drawable.setSize2f(800, 600);
+   }
+
+   if(b_draw_gl)
+   {
+      MinnieVG.SetProjection2D(drawable.getSizeX(), drawable.getSizeY());
+      drawable.setScale2f(1.0f, 1.0f);
+      drawable.setRotation(0.0f);
+      drawable.setTranslate2f(0.0f, 0.0f);
+      MinnieVG.SetTransformForDrawable(drawable);
+
+      drawable.setEnableDebug( (0 == (num_frames_rendered & 255)) );
+
+      sdvg_SetGlobalAlpha(1.0f);
+      drawable.draw();
+
+      if(b_copy)
+      {
+         Matrix4f mvp <= MinnieVG.GetTransformRef();
+         mvp.translatef(6,6,0);
+         sdvg_SetGlobalAlpha(0.33f);
+         drawable.draw();
+         // mvp.translatef(-6,-6,0);
+      }
+   }
+
+   MinnieVG.EndFrame();
+
+   if(b_glcore) glBindVertexArray(0);
+
+   if(b_queued_screenshot)
+   {
+      b_queued_screenshot = false;
+      MinnieVG.SaveScreenShotPNG("screenshots/api/minnie_api_test.png");
+   }
+
+   num_frames_rendered++;
+   if(b_anim)
+   {
+      float spd = b_slomo ? 0.1 : 0.7;
+      anim_1 = mathWrapf(anim_1 + spd * 0.23*0.1,   0, 2PI*4);
+      anim_2 = mathWrapf(anim_2 + spd * 0.23*0.134, 0, 2PI*4);
+      anim_3 = mathWrapf(anim_3 + spd * 0.3*0.173, 0, 2PI*4);
+      anim_4 = mathWrapf(anim_4 + spd * 0.3*0.123, 0, 2PI*4);
+      anim_5 = mathWrapf(anim_5 + spd * 0.3*0.112, 0, 2PI*4);
+      anim_6 = mathWrapf(anim_6 + spd * 0.1*0.1,   0, 2PI*4);
+   }
+}
+
+// ---------------------------------------------------------------------------- onOpen
+function onOpen() {
+   trace "[trc] onOpen ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
+
+   if(!MinnieVG.OnOpen())
+   {
+      die "MinnieVG.OnOpen() failed";
+   }
+
+   sdvg_SetFramebufferSize(Viewport.width, Viewport.height);
+
+   drawable.onOpen();
+
+   tex_id = sdvg_CreateTexture2D(SDVG_TEXFMT_BGRA8888, tex_data.sx, tex_data.sy, tex_data);
+}
+
+// ---------------------------------------------------------------------------- onKeyboard
+function onKeyboard(Key _k) {
+
+   switch(_k.pressed)
+   {
+      default:
+         if(MinnieVG.HandleDebugKey(_k))  // 'a', 'd', 'e', 'h', 'i', 'u', '1', '2', '3', '4', ..
+         {
+            drawable.reset();
+            num_frames_rendered = 0;
+            return;
+         }
+         break;
+
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         if(_k.mod)
+         {
+            b_slomo = !b_slomo;
+            trace "[...] b_slomo is "+b_slomo;
+         }
+         else
+         {
+            b_anim = !b_anim;
+            trace "[...] b_anim is "+b_anim;
+         }
+         break;
+
+      case VKEY_UP:
+         SelectTest(mathWrapi(test_idx + 1, 0, test_names.numElements));
+         break;
+
+      case VKEY_DOWN:
+         SelectTest(mathWrapi(test_idx - 1, 0, test_names.numElements));
+         break;
+
+      case VKEY_RIGHT:
+         stroke_scale = mathMinf(stroke_scale + 0.0625f, 16.0f);
+         trace "[...] stroke_scale is "+stroke_scale;
+         break;
+
+      case VKEY_LEFT:
+         stroke_scale = mathMaxf(stroke_scale - 0.0625f, 0.0625f);
+         trace "[...] stroke_scale is "+stroke_scale;
+         break;
+
+      case 'c':
+         b_copy = !b_copy;
+         trace "[...] b_copy is "+b_copy;
+         break;
+
+      case 'g':
+         b_draw_gl = !b_draw_gl;
+         trace "[...] b_draw_gl is "+b_draw_gl;
+         break;
+
+      case 'l':
+         b_sym_radius = !b_sym_radius;
+         trace "[...] b_sym_radius is "+b_sym_radius;
+         break;
+
+      case 'm':
+         b_msaa = !b_msaa;
+         trace "[...] b_msaa is "+b_msaa;
+         b_reopen = true;
+         SDL.exitEventLoop();
+         break;
+
+      case 'o':
+         fill_mode = mathWrapi(fill_mode +1, 1, 3+1);
+         num_frames_rendered = 0;
+         break;
+
+      case 'p':
+         b_queued_screenshot = true;
+         trace "[...] queue screenshot";
+         break;
+
+      case 's':
+         b_line_strip = !b_line_strip;
+         trace "[...] b_line_strip is "+b_line_strip;
+         break;
+
+      case 't':
+         b_tex_filter = !b_tex_filter;
+         trace "[...] b_tex_filter is "+b_tex_filter;
+         break;
+
+      case 'v':
+         // FPS.limit = (FPS.limit < 60.0) ? 60.0 : 0.0f;
+         // trace "[...] FPS.limit is "+FPS.limit;
+         b_vsync = !b_vsync;
+         trace "[...] b_vsync is "+b_vsync;
+         Viewport.swapInterval(b_vsync);
+         break;
+   }
+
+}
+
+// ---------------------------------------------------------------------------- main
+function main() {
+
+   if(!tex_data.loadLocalImage(RES_PATH+"escher.png", 0,0,4))
+      die "failed to load \"escher.png\"";
+
+   MinnieVG.Init(b_glcore);
+
+   use callbacks;
+   FPS.tickInterval = 1000.0f / 60;
+   FPS.limit = 0.0;
+   SDL.enableKeyRepeat(100/*delay*/, 20/*rate*/);
+   SDL.eventPolling = true;
+   if(b_msaa)
+   {
+      Viewport.multisampleSamples = 4;
+      Viewport.multisampleBuffers = 1;
+   }
+   Viewport.stencilBits = 8;
+   Viewport.openWindow(800*vp_scale, 600*vp_scale);
+   Viewport.swapInterval(b_vsync);
+   SelectTest(test_idx);
+
+   for(;;)
+   {
+      SDL.eventLoop();
+
+      if(b_reopen)
+      {
+         Viewport.close();
+         b_reopen = false;
+         Viewport.multisampleSamples = b_msaa ? 4 : 0;
+         Viewport.multisampleBuffers = b_msaa ? 1 : 0;
+         Viewport.openWindow(800*vp_scale, 600*vp_scale);
+      }
+      else
+         break;
+   }
+
+   drawable.free();
+   MinnieVG.Exit();
+   trace "cu";
+}

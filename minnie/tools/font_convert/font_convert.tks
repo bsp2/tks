@@ -1,0 +1,183 @@
+// ----
+// ---- file   : font_convert.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : Copyright 2020-2025 by Bastian Spiegel.
+// ----
+// ----           This program is free software; you can redistribute it and/or modify
+// ----           it under the terms of the GNU General Public License as published by
+// ----           the Free Software Foundation; either version 2 of the License, or
+// ----           (at your option) any later version.
+// ----       
+// ----           This program is distributed in the hope that it will be useful,
+// ----           but WITHOUT ANY WARRANTY; without even the implied warranty of
+// ----           MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// ----           GNU General Public License for more details.
+// ----       
+// ----           You should have received a copy of the GNU General Public License
+// ----           along with this program; if not, write to the Free Software
+// ----           Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+// ----
+// ---- info   : TTF to pixelfont (.cpp/.png) converter
+// ---- note   : glyphs start at index 32 (' ')
+// ----
+// ----
+// ----
+
+use tkui;
+use namespace ui;
+
+boolean b_debug = 0;
+
+int firstGlyph = 32;
+int numGlyphs  = 128 - firstGlyph;
+
+String outPrefix = "out/";
+
+String fontName = "default_30";
+
+String pngOut = outPrefix+fontName+".png";
+String cppOut = outPrefix+fontName+".cpp";  // glyph c structs
+String binOut = outPrefix+fontName+".bin";  // font_info followed by glyph binary array (c struct formats)
+
+/*
+struct sdvg_font_t {
+   sS16 height;
+   sS16 ascender;
+   sS16 descender;
+   sU16 first_glyph;
+   sU16 num_glyphs;
+};
+
+struct sdvg_glyph_t {
+   sS16 x;
+   sS16 y;
+   sS16 w;
+   sS16 h;
+   sS16 offset_x;
+   sS16 offset_y;
+   sS16 advance_x;
+};
+*/
+
+// UI.ConfigureHiDPI();
+UI.SetEnableFontSmoothing(true);
+UI.Initialize(Arguments);
+
+UI.AddFontResource(FT2PakFileFontResource.New("tkui:fonts/default.ttf", "default", Font.STYLE_NORMAL, 30));
+
+Font font <= UI.GetFontByName("default 30");
+
+FT2FontResource fontRes <= font.getFontResource();
+FT2Face face <= fontRes.getFT2Face();
+
+if(b_debug) trace "[dbg] fontRes="+#(fontRes);
+if(b_debug) trace "[dbg] face="+#(face);
+
+Texture texFace <= face.getTexture(0);
+Texture tex;
+tex.alloc(texFace.sx, texFace.sy, 1);
+
+// (todo) add TKSTexture::scaleFromAlpha()
+int texY = 0;
+loop(texFace.sy)
+{
+   int texX = 0;
+   loop(texFace.sx)
+   {
+      int c32 = texFace.getXY32(texX, texY);
+      int c8 = (c32 >> 24) & 255;
+      c8 = argb(c8, c8, c8, c8);
+      tex.setXY32(texX, texY, c8);
+      texX++;
+   }
+   texY++;
+}
+if(b_debug) trace "[dbg] tex="+#(tex);
+ 
+float height      = face.getHeight();
+float ascender    = face.getAscender();
+float descender   = face.getDescender();
+float ulPosition  = face.getUnderlinePosition();
+float ulThickness = face.getUnderlineThickness();
+
+File fBin;
+if(!fBin.openLocal(binOut, IOS_OUT))
+   die "failed to open \""+binOut+"\" for writing";
+
+String bufFontInfo;
+bufFontInfo.append("static const sdvg_font_info_t font_info_"+fontName+" = {\n");  // 18 bytes
+bufFontInfo.append("  "+int(height)+"/*height*/,\n");
+bufFontInfo.append("  "+int(ascender)+"/*ascender*/,\n");
+bufFontInfo.append("  "+int(descender)+"/*descender*/\n");
+bufFontInfo.append("  "+int(ulPosition * 64)+"/*underline_position*/\n");
+bufFontInfo.append("  "+int(ulThickness * 64)+"/*underline_thickness*/\n");
+bufFontInfo.append("  "+int(firstGlyph)+"u/*first_glyph*/\n");
+bufFontInfo.append("  "+int(numGlyphs)+"u/*num_glyphs*/\n");
+bufFontInfo.append("};\n");
+
+fBin.i16 = int(height);
+fBin.i16 = int(ascender);
+fBin.i16 = int(descender);
+fBin.i16 = int(ulPosition * 64);
+fBin.i16 = int(ulThickness * 64);
+fBin.i16 = int(firstGlyph);
+fBin.i16 = int(numGlyphs);
+
+String bufGlyph;
+bufGlyph.append("static const sdvg_glyph_t glyphs_"+fontName+"["+numGlyphs+"] = {\n");  // 14 bytes
+
+int glyphIdx = firstGlyph;
+loop(numGlyphs)
+{
+   FT2Glyph g <= face.getGlyph(glyphIdx);
+
+   bufGlyph.append(" /* glyph "+glyphIdx+" (\'"+tcchar(glyphIdx)+"\') */\n");
+   bufGlyph.append(" {\n");
+   bufGlyph.append("    "+int(g.bitmapx)+"/*x*/,\n");
+   bufGlyph.append("    "+int(g.bitmapy)+"/*y*/,\n");
+   bufGlyph.append("    "+int(g.width)+"/*width*/,\n");
+   bufGlyph.append("    "+int(g.height)+"/*height*/,\n");
+   bufGlyph.append("    "+int(g.offsetx)+"/*offset_x*/,\n");
+   bufGlyph.append("    "+int(g.offsety)+"/*offset_y*/,\n");
+   bufGlyph.append("    "+int(g.advancex)+"/*advance_x*/\n");
+   bufGlyph.append(" },\n");
+
+   fBin.i16 = int(g.bitmapx);   // +0
+   fBin.i16 = int(g.bitmapy);   // +2
+   fBin.i16 = int(g.width);     // +4
+   fBin.i16 = int(g.height);    // +6
+   fBin.i16 = int(g.offsetx);   // +8
+   fBin.i16 = int(g.offsety);   // +10
+   fBin.i16 = int(g.advancex);  // +12
+
+   glyphIdx++;
+}
+bufGlyph.append("};\n");
+
+String bufFont;
+bufFont.append("sdvg_font_t font_"+fontName+" = {\n");
+bufFont.append("  &font_info_"+fontName+";\n");
+bufFont.append("  &glyphs_"+fontName+";\n");
+bufFont.append("  sUI tex_id;\n");
+bufFont.append("};\n");
+
+if(b_debug) trace "[dbg] bufFontInfo="+bufFontInfo;
+if(b_debug) trace "[dbg] bufGlyph="+bufGlyph;
+if(b_debug) trace "[dbg] bufFont="+bufFont;
+
+tex.saveImage(pngOut);
+trace "[...] wrote \""+pngOut+"\" (w="+tex.sx+" h="+tex.sy+" bpp="+tex.z+")";
+
+String buf;
+buf.append(bufFontInfo);
+buf.append("\n");
+buf.append(bufGlyph);
+buf.append("\n");
+buf.append(bufFont);
+buf.saveLocal(cppOut);
+trace "[...] wrote \""+cppOut+"\"";
+
+fBin.close();
+trace "[...] wrote "+binOut+"\"";
+
+UI.Exit();
