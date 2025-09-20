@@ -1,0 +1,341 @@
+// ----
+// ---- file   : SampleViewAutochopDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2021-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 06Feb2021
+// ---- changed: 22Dec2021, 04Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module MSampleViewAutochopDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleViewAutochopDialog extends Dialog {
+
+   define String ACTION_CLOSE  = "onCloseSampleViewAutochopDialog";
+   define String ACTION_UPDATE = "onUpdateAutochopConfig";
+
+   define String TA_UPDATE;
+   protected TimerAction ta_update;
+
+   protected XMLForm   *xfm;
+
+   protected Button *bt_1;
+   protected Button *bt_2;
+   protected Button *bt_3;
+   protected Button *bt_4;
+   protected Button *bt_5;
+   protected Button *bt_debug;
+   protected Button *bt_close;
+
+   protected Panel *pn_widgets;
+   protected PointerArray pa_floatparams;
+
+   protected SampleView *parent_sample_view;
+   protected SampleViewAutochopConfig *config;
+
+
+   // <ui_init.png>
+   public method init(boolean _bSlewed) : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleViewAutochopDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+      initWidgets(_bSlewed);
+
+      initWindow(xfm,
+                 "Auto-Chop Settings",
+                 100, 100,
+                 640, 240
+                 );
+
+      initTimers();
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_update <= TimerAction.New(TA_UPDATE, this, 100);
+   }
+
+   // <method.png>
+   protected method addParam(String _name, float _min, float _max, float _def) {
+      local Panel p;
+      p.initPanel();
+      p.setAlignment(Layout.EXPANDX);
+      pn_widgets.addLayer(deref p, Layout.BOTTOM);
+
+      FloatParam fp <= new FloatParam;
+      fp.setLayerId(_name);
+      fp.initFloatParam();
+      fp.setStep(0.0001);
+      fp.setMinMaxValues(_min, _max);
+      fp.setResetValue(_def);
+      fp.setValue(_def);
+      fp.setPrecision(5);
+      fp.setAlignment(Layout.CENTERY|Layout.EXPANDX);
+      p.addLayer(deref fp, Layout.CENTER);
+      pa_floatparams.add(fp);
+
+      Label lb <= new Label;
+      lb.initLabel();
+      lb.setCaption(_name+":");
+      lb.setEnableFillBackground(false);
+      lb.setAlignment(Layout.CENTERY);
+      p.addLayer(deref lb, Layout.LEFT);
+   }
+
+   // <ui_init.png>
+   protected method initWidgets(boolean _bSlewed) {
+      local SampleViewAutochopConfig defConfig;
+      defConfig.init();
+
+      if(_bSlewed)
+      {
+         addParam("slewed_hpf",                   0.0,  0.8,   defConfig.slewed_hpf);
+         addParam("slewed_rmsWindowSize",         0.01, 50,    defConfig.slewed_rmsWindowSize);
+         // addParam("slewed_rmsPeakHistorySize",    0.0,  32,    defConfig.slewed_rmsPeakHistorySize);
+         addParam("slewed_timeout",               1.0,  500,   defConfig.slewed_timeout);
+         addParam("slewed_rmsSlew",               0.0,  9,     defConfig.slewed_rmsSlew);
+         addParam("slewed_avgPeakRatioSlew",      0.0,  1,     defConfig.slewed_avgPeakRatioSlew);
+         addParam("slewed_avgPeakRatioThreshold", 1.05, 5.0,   defConfig.slewed_avgPeakRatioThreshold);
+      }
+      else
+      {
+         addParam("startThreshold",               0.001,  0.8,   defConfig.startThreshold);
+         addParam("startMinThreshold",            0.001,  0.12,  defConfig.startMinThreshold);
+         addParam("startMinNumFramesBack",        0,      2048,  defConfig.startMinNumFramesBack);
+         addParam("endThreshold",                 0.0001, 0.01,  defConfig.endThreshold);
+         addParam("endNumFramesThreshold",        64,     4096,  defConfig.endNumFramesThreshold);
+         addParam("restartNumFramesThreshold",    128,    4096,  defConfig.restartNumFramesThreshold);
+         addParam("restartRMSRatioShort",         1.1,    10.0,  defConfig.restartRMSRatioShort);
+         addParam("restartRMSRatioLong",          1.1,    10.0,  defConfig.restartRMSRatioLong);
+         addParam("restartRMSRatioLongNumFrames", 100,    20000, defConfig.restartRMSRatioLongNumFrames);
+         addParam("restartRMSRatioImm",           1.1,    20.0,  defConfig.restartRMSRatioImm);
+         addParam("rmsPeakRatio",                 1.1,    20.0,  defConfig.rmsPeakRatio);
+         addParam("restartThresholdImm",          0.1,    0.8,   defConfig.restartThresholdImm);
+         addParam("restartRewindNumFrames",       0,      512,   defConfig.restartRewindNumFrames);
+         addParam("rmsAvgSlew",                   0.0001, 0.1,   defConfig.rmsAvgSlew);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateParams() {
+      setParam("startThreshold",               config.startThreshold);
+      setParam("startMinThreshold",            config.startMinThreshold);
+      setParam("startMinNumFramesBack",        config.startMinNumFramesBack);
+      setParam("endThreshold",                 config.endThreshold);
+      setParam("endNumFramesThreshold",        config.endNumFramesThreshold);
+      setParam("restartNumFramesThreshold",    config.restartNumFramesThreshold);
+      setParam("restartRMSRatioShort",         config.restartRMSRatioShort);
+      setParam("restartRMSRatioLong",          config.restartRMSRatioLong);
+      setParam("restartRMSRatioLongNumFrames", config.restartRMSRatioLongNumFrames);
+      setParam("restartRMSRatioImm",           config.restartRMSRatioImm);
+      setParam("rmsPeakRatio",                 config.rmsPeakRatio);
+      setParam("restartThresholdImm",          config.restartThresholdImm);
+      setParam("restartRewindNumFrames",       config.restartRewindNumFrames);
+      setParam("rmsAvgSlew",                   config.rmsAvgSlew);
+
+      setParam("slewed_hpf",                    config.slewed_hpf);
+      setParam("slewed_rmsWindowSize",          config.slewed_rmsWindowSize);
+      // setParam("slewed_rmsPeakHistorySize",     config.slewed_rmsPeakHistorySize);
+      setParam("slewed_timeout",                config.slewed_timeout);
+      setParam("slewed_rmsSlew",                config.slewed_rmsSlew);
+      setParam("slewed_avgPeakRatioSlew",       config.slewed_avgPeakRatioSlew);
+      setParam("slewed_avgPeakRatioThreshold",  config.slewed_avgPeakRatioThreshold);
+
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      resizeToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <ui_show.png>
+   public method showAutochopDialog(SampleView _sampleView, SampleViewAutochopConfig _config) {
+      parent_sample_view <= _sampleView;
+      config <= _config;
+      updateParams();
+      showNearMouse(-10, -10);
+   }
+
+   // <ui_update.png>
+   protected method setParam(String _name, float _val) {
+      FloatParam *fp;
+      foreach fp in pa_floatparams
+      {
+         if(fp.getLayerId() == _name)
+            fp.setValue(_val);
+      }
+   }
+
+   // <method.png>
+   protected method provideUpdate() {
+      ta_update.schedule();
+   }
+
+   // <method.png>
+   protected method provideUpdate2() {
+      local Action ac <= Action.New(ACTION_UPDATE, this);
+      parent_sample_view.consumeAction(ac);
+      parent_sample_view.recalcAutoChopRegions();
+      parent_sample_view.redraw();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      Dialog::hide();
+
+      ta_update.cancel();
+
+      local Action acClose <= Action.New(ACTION_CLOSE, this);
+      parent_sample_view.consumeAction(acClose);
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_close);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(pa_floatparams, layers);
+      layers.add(bt_1);
+      layers.add(bt_2);
+      layers.add(bt_3);
+      layers.add(bt_4);
+      layers.add(bt_5);
+      layers.add(bt_debug);
+      layers.add(bt_close);
+      return layers;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxxx AudioRecordDialog::onKey: pressed="+_k.pressed+" name="+_k.name;
+      switch(_k.pressed)
+      {
+         default:
+            break;
+
+         case 'j':
+            // (note) lctrl-lshift-j opens dialog in SampleView
+            hide();
+            return true;
+
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(TA_UPDATE == acName)
+      {
+         provideUpdate2();
+         return true;
+      }
+
+      int idx = pa_floatparams.indexOfPointer(ap, 0);
+      if(-1 != idx)
+      {
+         FloatParam fp <= pa_floatparams[idx];
+         TKS.setFloatPropertyByName(config, fp.getLayerId(), fp.getFloatValue());
+         provideUpdate();
+         Global.Print("Param "+fp.getLayerId()+" is "+fp.getFloatValue());
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_1):
+            config.init1();
+            updateParams();
+            provideUpdate2();
+            return true;
+
+         case @(bt_2):
+            config.init2();
+            updateParams();
+            provideUpdate2();
+            return true;
+
+         case @(bt_3):
+            config.init3();
+            updateParams();
+            provideUpdate2();
+            return true;
+
+         case @(bt_4):
+            config.init4();
+            updateParams();
+            provideUpdate2();
+            return true;
+
+         case @(bt_5):
+            config.init5();
+            updateParams();
+            provideUpdate2();
+            return true;
+
+         case @(bt_debug):
+            config.debugPrint();
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return true;
+   }
+
+}

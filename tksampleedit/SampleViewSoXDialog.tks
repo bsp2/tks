@@ -1,0 +1,1752 @@
+// ----
+// ---- file   : SampleViewSoXDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2023-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 10Aug2023
+// ---- changed: 11Aug2023, 12Aug2023, 13Aug2023, 04Oct2023, 30Oct2023, 02Nov2023, 10Nov2023
+// ----          24Feb2024
+// ----
+// ----
+// ----
+
+module MSampleViewSoXDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class SampleViewSoXDialog extends Dialog {
+   protected SampleView *parent_sampleview;
+
+   protected XMLForm *xfm;
+
+   define int EF_RESAMPLE    =  0;
+   define int EF_TIMESTRETCH =  1;
+   define int EF_PITCH       =  2;
+   define int EF_CONTRAST    =  3;
+   define int EF_OVERDRIVE   =  4;
+   define int EF_NOISERED    =  5;
+   define int EF_DEEMPH      =  6;
+   define int EF_EARWAX      =  7;
+   define int EF_OOPS        =  8;
+   define int EF_RIAA        =  9;
+   define int EF_ECHO        = 10;
+   define int EF_CHORUS      = 11;
+   define int EF_PHASER      = 12;
+   define int EF_FLANGER     = 13;
+   define int EF_REVERB      = 14;
+   define int EF_COMPAND     = 15;
+   define int EF_FILTER      = 16;
+
+   static StringArray effect_types = [
+      "Resample",         //  0  (SoX)
+      "Timestretch",      //  1  (SoX or Rubberband)
+      "Pitch",            //  2  (SoX or Rubberband)
+      "Contrast",         //  3  (SoX)
+      "Overdrive",        //  4  (SoX)
+      "Noise Reduction",  //  5  (SoX)
+      "DeEmph",           //  6  (SoX)
+      "Earwax",           //  7  (SoX)
+      "OOPS",             //  8  (SoX)
+      "RIAA",             //  9  (SoX)
+      "Echo",             // 10  (SoX)
+      "Chorus",           // 11  (SoX)
+      "Phaser",           // 12  (SoX)
+      "Flanger",          // 13  (SoX)
+      "Reverb",           // 14  (SoX)
+      "Compand",          // 15  (SoX)
+      "Filter",           // 16  (SoX)
+                                      ];
+
+   static StringArray effect_type_tooltips = [
+      /*  0 */"Resample: Change the audio sampling rate (i.e. resample the audio)",
+      /*  1 */"Timestretch: Change the audio playback speed but not its pitch",
+      /*  2 */"Pitch: Change the audio pitch (but not tempo)",
+      /*  3 */"Contrast: Comparable with compression, this effect modifies an audio signal to make it sound louder",
+      /*  4 */"Overdrive: Non linear distortion",
+      /*  5 */"Noise Reduction: Reduce noise in the audio signal by profiling and filtering",
+      /*  6 */"DeEmph: Apply Compact Disc (IEC 60908) de-emphasis (a treble attenuation shelving filter)",
+      /*  7 */"Earwax: Makes audio easier to listen to on headphones",
+      /*  8 */"OOPS: Out Of Phase Stereo effect",
+      /*  9 */"RIAA: Apply RIAA vinyl playback equalisation.  The sampling rate must be one of: 44.1, 48, 88.2, 96 kHz",
+      /* 10 */"Echo: Add echoing to the audio",
+      /* 11 */"Chorus: Add a chorus effect to the audio",
+      /* 12 */"Phaser: Add a phasing effect to the audio",
+      /* 13 */"Flanger: Apply a flanging effect to the audio",
+      /* 14 */"Reverb: Add reverberation to the audio using the 'freeverb' algorithm",
+      /* 15 */"Compand: Compand (compress or expand) the dynamic range of the audio",
+      /* 16 */"Filter",
+                                              ];
+
+   protected ComboBox *cm_effect;
+
+   protected LayerSwitch *ls_effect;
+
+   protected FloatParam *fp_resample_rate;  // Hz, 1000 .. 384000
+   protected ComboBox   *cm_resample_quality;
+
+   protected FloatParam  *fp_timestretch_factor;   // 0.25 .. 4
+   protected CheckBox    *cb_timestretch_rubberband;
+   protected LayerSwitch *ls_timestretch;
+   protected ComboBox    *cm_timestretch_preset;   // -, Music, Speech, Linear
+   protected FloatParam  *fp_timestretch_segment;  // def=82ms
+   protected FloatParam  *fp_timestretch_search;   // def=14.68ms
+   protected FloatParam  *fp_timestretch_overlap;  // def=12ms
+   protected CheckBox    *cb_timestretch_rubberband_hq;
+   protected CheckBox    *cb_timestretch_rubberband_formant;
+   protected CheckBox    *cb_timestretch_rubberband_centrefocus;
+   protected ComboBox    *cm_timestretch_rubberband_crispness;
+
+   protected FloatParam *fp_pitch_cents;    // -2400 .. 2400 cents
+   protected CheckBox   *cb_pitch_rubberband;
+   protected LayerSwitch *ls_pitch;
+   // (note) pitch effect has no preset options (for some reason)
+   protected FloatParam *fp_pitch_segment;  // def=82ms
+   protected FloatParam *fp_pitch_search;   // def=14.68ms
+   protected FloatParam *fp_pitch_overlap;  // def=12ms
+   protected CheckBox   *cb_pitch_rubberband_hq;
+   protected CheckBox   *cb_pitch_rubberband_formant;
+   protected CheckBox   *cb_pitch_rubberband_centrefocus;
+   protected ComboBox   *cm_pitch_rubberband_crispness;
+
+   protected FloatParam *fp_contrast_amount;  // 0..100
+
+   protected FloatParam *fp_overdrive_gain;    // 0..20
+   protected FloatParam *fp_overdrive_colour;  // 0..20
+
+   protected Button     *bt_noisered_learn;    //
+   protected FloatParam *fp_noisered_amount;   // 0..1 => 0..100%
+
+   protected FloatParam *fp_echo_gainin;
+   protected FloatParam *fp_echo_gainout;
+   protected FloatParam *fp_echo_delay;
+   protected FloatParam *fp_echo_decay;
+
+   protected FloatParam *fp_chorus_gainin;
+   protected FloatParam *fp_chorus_gainout;
+   protected FloatParam *fp_chorus_delay;
+   protected FloatParam *fp_chorus_decay;
+   protected FloatParam *fp_chorus_speed;
+   protected FloatParam *fp_chorus_depth;
+   protected ComboBox   *cm_chorus_wave;
+
+   protected FloatParam *fp_phaser_gainin;
+   protected FloatParam *fp_phaser_gainout;
+   protected FloatParam *fp_phaser_delay;
+   protected FloatParam *fp_phaser_decay;
+   protected FloatParam *fp_phaser_speed;
+   protected ComboBox   *cm_phaser_wave;
+
+   protected FloatParam *fp_flanger_delay;
+   protected FloatParam *fp_flanger_depth;
+   protected FloatParam *fp_flanger_regen;
+   protected FloatParam *fp_flanger_width;
+   protected FloatParam *fp_flanger_speed;
+   protected ComboBox   *cm_flanger_shape;
+   protected FloatParam *fp_flanger_phase;
+   protected ComboBox   *cm_flanger_interp;
+
+   protected FloatParam *fp_reverb_reverberance;
+   protected FloatParam *fp_reverb_hfdamping;
+   protected FloatParam *fp_reverb_roomscale;
+   protected FloatParam *fp_reverb_stereodepth;
+   protected FloatParam *fp_reverb_predelay;
+   protected FloatParam *fp_reverb_wetgain;
+   protected CheckBox   *cb_reverb_wetonly;
+
+   protected FloatParam *fp_compand_attack;
+   protected FloatParam *fp_compand_decay;
+   protected FloatParam *fp_compand_sk;      // soft knee (dB)
+   protected FloatParam *fp_compand_thresh;  // soft sounds below threshold will remain unchanged
+   protected FloatParam *fp_compand_start;   // sounds in the range <skstart>..0dB will be boosted
+   protected FloatParam *fp_compand_range;   // into <skrange> dB range (ratio = <skstart>/<skrange>)
+   protected FloatParam *fp_compand_gain;    // adjusts overall gain
+   protected FloatParam *fp_compand_initvol; // "an initial level to be assumed for each channel when companding starts" (def=-90dB)
+   protected FloatParam *fp_compand_delay;   // lookahead
+
+   static StringArray filter_types = [
+      "Allpass",      //  0
+      "Band",         //  1
+      "Bandpass",     //  2
+      "Bandreject",   //  3
+      "Lowpass 6",    //  4
+      "Lowpass 12",   //  5
+      "Highpass 6",   //  6
+      "Highpass 12",  //  7
+      "Equalizer",    //  8
+      "Bass",         //  9
+      "Treble",       // 10
+                                      ];
+
+   protected ComboBox   *cm_filter_type;
+   protected FloatParam *fp_filter_freq;    // Hz
+   protected FloatParam *fp_filter_q;       // def=0.6
+   protected FloatParam *fp_filter_slope;   // def=0.5 (bass/treble)
+   protected FloatParam *fp_filter_gain;    // -20..20 (bass/treble)
+   protected CheckBox   *cb_filter_noise;   // "Band" only (on=unpitched audio mode, off=pitch audio mode)
+   protected CheckBox   *cb_filter_cskirt;  // "Bandpass" only (constant skirt gain) (off=constant 0db peak gain)
+
+   protected Button   *bt_exec;
+   protected CheckBox *cb_hide;
+   protected Button   *bt_undo;
+   protected Button   *bt_close;
+   protected Button   *bt_cancel;
+
+   protected boolean b_have_undo;
+
+
+   // <ui_init.png>
+   public method initSampleViewSoXDialog() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("SampleViewSoXDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      cm_effect.setOptions(effect_types);
+      local StringArray opt;
+      String *s;
+      foreach s in effect_type_tooltips
+         opt.add(s.replace(": ", "\t")+" ");
+      cm_effect.setOptionsLong(opt);
+      cm_effect.setToolTipCaptions(effect_type_tooltips);
+
+      Utils.SetFloatParamSampleRatePresetOptions(fp_resample_rate);
+
+      boolean bHaveRB = Utils.CanFileBeRead(Utils.ToNativePathName(STConfig.audiotool_rubberband_pathname));
+      cb_timestretch_rubberband.setSelected(bHaveRB);
+      cb_pitch_rubberband.setSelected(bHaveRB);
+
+      ls_timestretch.switchToLayerNr(1);
+      ls_pitch      .switchToLayerNr(1);
+
+      fp_pitch_cents.setUserStringToValueFxn(SampleViewSoXDialog.UserStringToValue_Pitch);
+      fp_pitch_cents.setUserValueToStringFxn(SampleViewSoXDialog.UserValueToString_Pitch);
+      fp_pitch_cents.setDisplayType(FloatParam.DISPLAY_USER);
+      fp_pitch_cents.setPresetOptions([-4800.0, -3600.0, -2400.0, -1200.0, -700.0, -600.0, -500.0, -400.0, -300.0, -200.0, -100.0,
+                                       100.0, 200.0, 300.0, 400.0, 500.0, 600.0, 700.0, 1200.0, 2400.0, 3600.0
+                                       ],
+                                      ["-4 oct", "-3 oct", "-2 oct", "-1 oct", "-7 semi", "-6 semi", "-5 semi", "-4 semi", "-3 semi", "-2 semi", "-1 semi",
+                                       "+1 semi", "+2 semi", "+3 semi", "+4 semi", "+5 semi", "+6 semi", "+7 semi", "+1 oct", "+2 oct", "+3 oct"]
+                                      );
+
+      cm_filter_type.setOptions(filter_types);
+
+      initWindow(xfm,
+                 "SoX / Rubberband",
+                 140, 140,
+                 420, 310
+                 );
+
+      return true;
+   }
+
+
+   // <method_get.png>
+   protected method getFirstParameterWidget() : Layer {
+      switch(cm_effect.getSelectedOption())
+      {
+         case EF_RESAMPLE:
+            return fp_resample_rate;
+
+         case EF_TIMESTRETCH:
+            return fp_timestretch_factor;
+
+         case EF_PITCH:
+            return fp_pitch_cents;
+
+         case EF_CONTRAST:
+            return fp_contrast_amount;
+
+         case EF_OVERDRIVE:
+            return fp_overdrive_gain;
+
+         case EF_NOISERED:
+            return bt_noisered_learn;
+
+         case EF_ECHO:
+            return fp_echo_gainin;
+
+         case EF_CHORUS:
+            return fp_chorus_gainin;
+
+         case EF_PHASER:
+            return fp_phaser_gainin;
+
+         case EF_FLANGER:
+            return fp_flanger_delay;
+
+         case EF_REVERB:
+            return fp_reverb_reverberance;
+
+         case EF_COMPAND:
+            return fp_compand_attack;
+
+         case EF_FILTER:
+            return fp_filter_freq;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       cm_effect,
+                     ]
+                    );
+
+      int efType = cm_effect.getSelectedOption();
+
+      if(EF_FILTER == efType)
+      {
+         layers.add(cm_filter_type);
+         layers.add(fp_filter_freq);
+         layers.add(fp_filter_q);
+         layers.add(fp_filter_slope);
+         layers.add(fp_filter_gain);
+      }
+      else
+      {
+         Layer l <= getFirstParameterWidget();
+         if(null != l)
+            layers.add(l);
+      }
+
+      if(EF_RESAMPLE == efType)
+      {
+         layers.add(cm_resample_quality);
+      }
+
+      if(EF_TIMESTRETCH == efType)
+      {
+         layers.add(cb_timestretch_rubberband);
+         if(cb_timestretch_rubberband.isSelected())
+         {
+            layers.add(cb_timestretch_rubberband_hq);
+            layers.add(cb_timestretch_rubberband_formant);
+            layers.add(cb_timestretch_rubberband_centrefocus);
+            layers.add(cm_timestretch_rubberband_crispness);
+         }
+         else
+         {
+            layers.add(cm_timestretch_preset);
+            layers.add(fp_timestretch_segment);
+            layers.add(fp_timestretch_search);
+            layers.add(fp_timestretch_overlap);
+         }
+      }
+
+      if(EF_PITCH == efType)
+      {
+         layers.add(cb_pitch_rubberband);
+         if(cb_pitch_rubberband.isSelected())
+         {
+            layers.add(cb_pitch_rubberband_hq);
+            layers.add(cb_pitch_rubberband_formant);
+            layers.add(cb_pitch_rubberband_centrefocus);
+            layers.add(cm_pitch_rubberband_crispness);
+         }
+         else
+         {
+            layers.add(fp_pitch_segment);
+            layers.add(fp_pitch_search);
+            layers.add(fp_pitch_overlap);
+         }
+      }
+
+      if(EF_OVERDRIVE == efType)
+         layers.add(fp_overdrive_colour);
+
+      if(EF_NOISERED == efType)
+         layers.add(fp_noisered_amount);
+
+      if(EF_ECHO == efType)
+      {
+         layers.add(fp_echo_gainout);
+         layers.add(fp_echo_delay);
+         layers.add(fp_echo_decay);
+      }
+
+      if(EF_CHORUS == efType)
+      {
+         layers.add(fp_chorus_gainout);
+         layers.add(fp_chorus_delay);
+         layers.add(fp_chorus_decay);
+         layers.add(fp_chorus_speed);
+         layers.add(fp_chorus_depth);
+         layers.add(cm_chorus_wave);
+      }
+
+      if(EF_PHASER == efType)
+      {
+         layers.add(fp_phaser_gainout);
+         layers.add(fp_phaser_delay);
+         layers.add(fp_phaser_decay);
+         layers.add(fp_phaser_speed);
+         layers.add(cm_phaser_wave);
+      }
+
+      if(EF_FLANGER == efType)
+      {
+         layers.add(fp_flanger_delay);
+         layers.add(fp_flanger_depth);
+         layers.add(fp_flanger_regen);
+         layers.add(fp_flanger_width);
+         layers.add(fp_flanger_speed);
+         layers.add(cm_flanger_shape);
+         layers.add(fp_flanger_phase);
+         layers.add(cm_flanger_interp);
+      }
+
+      if(EF_REVERB == efType)
+      {
+         layers.add(fp_reverb_hfdamping);
+         layers.add(fp_reverb_roomscale);
+         layers.add(fp_reverb_stereodepth);
+         layers.add(fp_reverb_predelay);
+         layers.add(fp_reverb_wetgain);
+         layers.add(cb_reverb_wetonly);
+      }
+
+      if(EF_COMPAND == efType)
+      {
+         layers.add(fp_compand_decay);
+         layers.add(fp_compand_sk);
+         layers.add(fp_compand_thresh);
+         layers.add(fp_compand_start);
+         layers.add(fp_compand_range);
+         layers.add(fp_compand_gain);
+         layers.add(fp_compand_initvol);
+         layers.add(fp_compand_delay);
+      }
+
+      layers.add(bt_exec);
+      layers.add(cb_hide);
+      layers.add(bt_undo);
+      layers.add(bt_close);
+      layers.add(bt_cancel);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <method.png>
+   public method refocusDefault() {
+      Layer l <= getFirstParameterWidget();
+      if(null == l)
+         l <= cm_effect;
+      UI.SetKeyboardFocus(l);
+   }
+
+   // <ui_show.png>
+   public method showSampleViewSoXDialog(SampleView _sampleView, boolean _bNearMouse) {
+      parent_sampleview <= _sampleView;
+
+      resizeToMinimum();
+      validateClippedPosition();
+      onOpen();
+
+      if(_bNearMouse)
+         showNearMouse(-20*UI.font_scaling, -40*UI.font_scaling);
+      else
+      {
+         // showCentered();
+         // showCenteredWithinTopOfLayer(_sampleView);
+         showCenteredWithinTopOfLayerNearMouseX(_sampleView, 0*UI.font_scaling/*offX*/);
+      }
+
+      b_have_undo = false;
+      bt_undo.setEditable(false);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <method.png>
+   public static NoteStringToNote(String _s) : int {
+      _s.toUpper();
+      _s.trim();
+      StringArray baseNoteNames <= MIDI.base_note_names;
+      int idx = baseNoteNames.indexOfObject(_s, 0);
+      if(idx >= 0)
+      {
+         return idx + 5*12;  // C => C-5
+      }
+      StringArray midiNotes <= MIDI.midi_notes;
+      idx = midiNotes.indexOfObject(_s, 0);
+      if(idx >= 0)
+      {
+         return idx;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public static UserStringToValue_Pitch(String _s) : float {
+      // trace "xxx UserStringToValue_Pitch(s=\""+_s+"\")";
+      if(_s & "/")
+      {
+         StringArray a <= _s.splitChar('/');  // G/C, G-5/C-5
+         int n1 = NoteStringToNote(a.get(0));
+         int n2 = NoteStringToNote(a.get(1));
+         if( (n1 >= 0) && (n2 >= 0) )
+         {
+            Global.Debug("SampleViewSoXDialog::UserStringToValue_Pitch: n1="+n1+" n2="+n2);
+            return mathClampi( (n1 - n2) * 100, -4800, 4800 );  // +- 4 octaves;
+         }
+      }
+
+      if(_s.charsetIndexOf("+-*/&", 0) > 0)
+         return FloatParam.ParseExpression(_s);
+
+      return float(_s);
+   }
+
+   // <method.png>
+   public static UserValueToString_Pitch(float _f, String _r) {
+      // trace "xxx UserValueToString_Pitch(f="+_f+")";
+      _r = _f;
+   }
+
+   // <ui_handle.png>
+   protected method handleEffectChanged() {
+      ls_effect.switchToLayerNr(cm_effect.getSelectedOption());
+      resizeToMinimum();
+      validateClippedPosition();
+      UI.RedrawAll();
+      Global.Print("Effect is \""+cm_effect.getSelectedOptionName()+"\"");
+   }
+
+   // <method_get.png>
+   protected method getResampleRate() : float {
+      return fp_resample_rate.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getResampleQualityString() : String {
+      switch(cm_resample_quality.getSelectedOption())
+      {
+         case 0:  // Quick
+            return "-q";
+
+         case 1:  // Low
+            return "-l";
+
+         case 2:  // Medium
+            return "-m";
+
+         case 3:  // High
+            return "-h";
+
+         case 4:  // Very High
+            return "-v";
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateTimestretchPreset() {
+      boolean bCustom = (0 == cm_timestretch_preset.getSelectedOption());
+      fp_timestretch_segment.setEditable(bCustom);
+      fp_timestretch_search .setEditable(bCustom);
+      fp_timestretch_overlap.setEditable(bCustom);
+   }
+
+   // <ui_update.png>
+   protected method updateTimestretchRB() {
+      boolean bRB = cb_timestretch_rubberband.isSelected();
+      if(!bRB || cb_timestretch_rubberband_hq.isSelected())
+      {
+         cm_timestretch_rubberband_crispness.setEditable(false);
+      }
+      else
+      {
+         cm_timestretch_rubberband_crispness.setEditable(true);
+      }
+      ls_timestretch.switchToLayerNr(bRB);
+      resizeToMinimum();
+      validateClippedPosition();
+   }
+
+   // <ui_handle.png>
+   protected method handleTimestretchRBChanged() {
+      Global.Print("Use "+(cb_timestretch_rubberband.isSelected()?"Rubberband":"SoX")+" timestretch engine");
+      updateTimestretchRB();
+   }
+
+   // <ui_handle.png>
+   protected method handleTimestretchHQChanged() {
+      Global.Print("Use "+(cb_timestretch_rubberband_hq.isSelected()?"FINE(HQ)":"FAST")+" Rubberband timestretch mode");
+      updateTimestretchRB();
+   }
+
+   // <method_get.png>
+   protected method getTimestretchFactor() : float {
+      return fp_timestretch_factor.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getTimestretchPresetString() : String {
+      switch(cm_timestretch_preset.getSelectedOption())
+      {
+         default:
+            return null;
+
+         case 1:  // Music
+            return "-m";
+
+         case 2:  // Speech
+            return "-s";
+
+         case 3:  // Linear
+            return "-l";
+      }
+   }
+
+   // <method_get.png>
+   protected method getTimestretchSegment() : float {
+      return fp_timestretch_segment.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getTimestretchSearch() : float {
+      return fp_timestretch_search.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getTimestretchOverlap() : float {
+      return fp_timestretch_overlap.getFloatValue();
+   }
+
+   // <ui_update.png>
+   protected method updatePitchRB() {
+      boolean bRB = cb_pitch_rubberband.isSelected();
+      if(!bRB || cb_pitch_rubberband_hq.isSelected())
+      {
+         cm_pitch_rubberband_crispness.setEditable(false);
+      }
+      else
+      {
+         cm_pitch_rubberband_crispness.setEditable(true);
+      }
+      ls_pitch.switchToLayerNr(bRB);
+      resizeToMinimum();
+      validateClippedPosition();
+   }
+
+   // <ui_handle.png>
+   protected method handlePitchRBChanged() {
+      Global.Print("Use "+(cb_pitch_rubberband.isSelected()?"Rubberband":"SoX")+" pitch engine");
+      updatePitchRB();
+   }
+
+   // <ui_handle.png>
+   protected method handlePitchHQChanged() {
+      Global.Print("Use "+(cb_pitch_rubberband_hq.isSelected()?"FINE(HQ)":"FAST")+" Rubberband pitch mode");
+      updatePitchRB();
+   }
+
+   // <method_get.png>
+   protected method getPitchCents() : float {
+      return fp_pitch_cents.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handlePitchCentsChanged() {
+      Global.PrintFast("Pitch (cents) is "+getPitchCents());
+   }
+
+   // <method_get.png>
+   protected method getPitchSegment() : float {
+      return fp_pitch_segment.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPitchSearch() : float {
+      return fp_pitch_search.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPitchOverlap() : float {
+      return fp_pitch_overlap.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getContrastAmount() : float {
+      return fp_contrast_amount.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handleContrastAmountChanged() {
+      Global.PrintFast("Contrast Amount is "+getContrastAmount());
+   }
+
+   // <method_get.png>
+   protected method getOverdriveGain() : float {
+      return fp_overdrive_gain.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handleOverdriveGainChanged() {
+      Global.PrintFast("Overdrive Gain is "+getOverdriveGain());
+   }
+
+   // <method_get.png>
+   protected method getOverdriveColour() : float {
+      return fp_overdrive_colour.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handleOverdriveColourChanged() {
+      Global.PrintFast("Overdrive Colour is "+getOverdriveColour());
+   }
+
+   // <method_get.png>
+   protected method getNoiseRedAmount() : float {
+      return fp_noisered_amount.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handleNoiseRedAmountChanged() {
+      local Float amt = getNoiseRedAmount() * 100;
+      Global.PrintFast("Noise Reduction Amount is "+amt.printf("%3.2f"));
+   }
+
+   // <method_get.png>
+   protected method getEchoGainIn() : float {
+      return fp_echo_gainin.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getEchoGainOut() : float {
+      return fp_echo_gainout.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getEchoDelay() : float {
+      return fp_echo_delay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getEchoDecay() : float {
+      return fp_echo_decay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusGainIn() : float {
+      return fp_chorus_gainin.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusGainOut() : float {
+      return fp_chorus_gainout.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusDelay() : float {
+      return fp_chorus_delay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusDecay() : float {
+      return fp_chorus_decay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusSpeed() : float {
+      return fp_chorus_speed.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusDepth() : float {
+      return fp_chorus_depth.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getChorusWaveString() : String {
+      return (0 == cm_chorus_wave.getSelectedOption()) ? "-s" : "-t";
+   }
+
+   // <method_get.png>
+   protected method getPhaserGainIn() : float {
+      return fp_phaser_gainin.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPhaserGainOut() : float {
+      return fp_phaser_gainout.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPhaserDelay() : float {
+      return fp_phaser_delay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPhaserDecay() : float {
+      return fp_phaser_decay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPhaserSpeed() : float {
+      return fp_phaser_speed.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getPhaserWaveString() : String {
+      return (0 == cm_phaser_wave.getSelectedOption()) ? "-s" : "-t";
+   }
+
+   // <method_get.png>
+   protected method getFlangerDelay() : float {
+      return fp_flanger_delay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFlangerDepth() : float {
+      return fp_flanger_depth.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFlangerRegen() : float {
+      return fp_flanger_regen.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFlangerWidth() : float {
+      return fp_flanger_width.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFlangerSpeed() : float {
+      return fp_flanger_speed.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFlangerShapeString() : String {
+      return (0 == cm_flanger_shape.getSelectedOption()) ? "sine" : "triangle";
+   }
+
+   // <method_get.png>
+   protected method getFlangerPhase() : float {
+      return fp_flanger_phase.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFlangerInterpString() : String {
+      return (0 == cm_flanger_interp.getSelectedOption()) ? "linear" : "quadratic";
+   }
+
+   // <method_get.png>
+   protected method getReverbReverberance() : float {
+      return fp_reverb_reverberance.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getReverbHFDamping() : float {
+      return fp_reverb_hfdamping.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getReverbRoomScale() : float {
+      return fp_reverb_roomscale.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getReverbStereoDepth() : float {
+      return fp_reverb_stereodepth.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getReverbPreDelay() : float {
+      return fp_reverb_predelay.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getReverbWetGain() : float {
+      return fp_reverb_wetgain.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getReverbWetOnlyString() : String {
+      return cb_reverb_wetonly.isSelected() ? "-w" : "";
+   }
+
+   // <method_get.png>
+   protected method getCompandAttack() : float {
+      return fp_compand_attack.getFloatValue() / 1000.0f;
+   }
+
+   // <method_get.png>
+   protected method getCompandDecay() : float {
+      return fp_compand_decay.getFloatValue() / 1000.0f;
+   }
+
+   // <method_get.png>
+   protected method getCompandSK() : float {
+      return fp_compand_sk.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getCompandThresh() : float {
+      return fp_compand_thresh.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getCompandStart() : float {
+      return fp_compand_start.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getCompandRange() : float {
+      return fp_compand_range.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getCompandRatioString() : String {
+      float s = abs(getCompandStart());
+      float r = abs(getCompandRange());
+      if(s >= r)
+         return (r > 0.0) ? ((s/r)+":1") : "inf";
+      else
+         return (s > 0.0) ? ("1:"+(r/s)) : "inf";
+   }
+
+   // <method_get.png>
+   protected method getCompandGain() : float {
+      return fp_compand_gain.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getCompandInitVol() : float {
+      return fp_compand_initvol.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getCompandDelay() : float {
+      return fp_compand_delay.getFloatValue() / 1000.0f;
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterTypeChanged() {
+      Global.Print("Filter Type is \""+cm_filter_type.getSelectedOptionName()+"\"");
+      fp_filter_q     .setEditable(false);
+      fp_filter_slope .setEditable(false);
+      fp_filter_gain  .setEditable(false);
+      cb_filter_noise .setEditable(false);
+      cb_filter_cskirt.setEditable(false);
+      switch(cm_filter_type.getSelectedOption())
+      {
+         default:
+            break;
+
+         case 0:  // Allpass
+         case 3:  // Bandreject
+         case 5:  // Lowpass 2-Pole
+         case 7:  // Highpass 2-Pole
+            fp_filter_q    .setEditable(true);
+            fp_filter_gain .setEditable(true);  // additional post-filter "gain" command
+            break;
+
+         case 4:  // Lowpass 1-Pole
+         case 6:  // Highpass 1-Pole
+            fp_filter_gain .setEditable(true);  // additional post-filter "gain" command
+            break;
+
+         case 1:  // Band
+            fp_filter_q    .setEditable(true);
+            fp_filter_gain .setEditable(true);  // additional pre-filter "gain" command to compensate "noise" mode +11dB filter gain
+            cb_filter_noise.setEditable(true);
+            break;
+
+         case 2:  // Bandpass
+            fp_filter_q     .setEditable(true);
+            fp_filter_gain  .setEditable(true);  // additional post-filter "gain" command
+            cb_filter_cskirt.setEditable(true);
+            break;
+
+         case 9:   // Bass
+         case 10:  // Treble
+            fp_filter_slope.setEditable(true);
+            fp_filter_gain .setEditable(true);
+            break;
+
+         case 8:   // Equalizer
+            fp_filter_q    .setEditable(true);
+            fp_filter_gain .setEditable(true);
+            break;
+      }
+   }
+
+   // <method_get.png>
+   protected method getFilterFreq() : float {
+      return fp_filter_freq.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFilterQ() : float {
+      return fp_filter_q.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFilterSlope() : float {
+      return fp_filter_slope.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getFilterGain() : float {
+      return fp_filter_gain.getFloatValue();
+   }
+
+   // <method_get.png>
+   protected method getBandNoiseMode() : boolean {
+      return cb_filter_noise.isSelected();
+   }
+
+   // <method_get.png>
+   protected method getFilterGainBand() : float {
+      // for "band" ("noise" mode adds additional +11dB of gain => compensate)
+      float gain = fp_filter_gain.getFloatValue();
+      if(getBandNoiseMode())
+         gain = mathClampf(gain - 11, -20, 20);
+      return gain;
+   }
+
+   // <method_get.png>
+   protected method getBandpassConstSkirtMode() : boolean {
+      return cb_filter_cskirt.isSelected();
+   }
+
+   // <ui_handle.png>
+   protected method handleExec() {
+      if(cb_hide.isSelected())
+         hide();
+      else if(b_have_undo)
+      {
+         parent_sampleview.undo();
+         b_have_undo = false;
+      }
+
+      String *sPreset;
+
+      switch(cm_effect.getSelectedOption())
+      {
+         case EF_RESAMPLE:
+            // // b_have_undo = parent_sampleview.soxResampleSelection2(getResampleRate(), getResampleQualityString());
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("rate "+getResampleQualityString()+" "+getResampleRate());
+            break;
+
+         case EF_TIMESTRETCH:
+            if(cb_timestretch_rubberband.isSelected())
+            {
+               b_have_undo = parent_sampleview.processSelectionWithRubberband(
+                  (cb_timestretch_rubberband_hq.isSelected()?"-3 ":"-2 ")
+                  +(cb_timestretch_rubberband_formant.isSelected()?"-F ":"")
+                  +(cb_timestretch_rubberband_centrefocus.isSelected()?"--centre-focus ":"")
+                  +("-c "+cm_timestretch_rubberband_crispness.getSelectedOption()+" ")
+                  +"--time "
+                  +(1.0/getTimestretchFactor())
+                                                                              );
+            }
+            else
+            {
+               // // b_have_undo = parent_sampleview.soxTimestretchSelection2(getTimestretchFactor());
+               sPreset <= getTimestretchPresetString();
+               if(null != sPreset)
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("tempo "+sPreset+" "+getTimestretchFactor());
+               else
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("tempo "+getTimestretchFactor()+" "+getTimestretchSegment()+" "+getTimestretchSearch()+" "+getTimestretchOverlap());
+            }
+            break;
+
+         case EF_PITCH:
+            if(cb_pitch_rubberband.isSelected())
+            {
+               b_have_undo = parent_sampleview.processSelectionWithRubberband(
+                  (cb_pitch_rubberband_hq.isSelected()?"-3 ":"-2 ")
+                  +(cb_pitch_rubberband_formant.isSelected()?"-F ":"")
+                  +(cb_pitch_rubberband_centrefocus.isSelected()?"--centre-focus ":"")
+                  +("-c "+cm_pitch_rubberband_crispness.getSelectedOption()+" ")
+                  +"--pitch "+(getPitchCents()/100.0)
+                                                                              );
+            }
+            else
+            {
+               // // b_have_undo = parent_sampleview.soxPitchSelection2(getPitchCents());
+               b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("pitch "+getPitchCents()+" "+getPitchSegment()+" "+getPitchSearch()+" "+getPitchOverlap());
+            }
+            break;
+
+         case EF_CONTRAST:
+            b_have_undo = parent_sampleview.soxContrastSelection2(getContrastAmount());
+            break;
+
+         case EF_OVERDRIVE:
+            b_have_undo = parent_sampleview.soxOverdriveSelection2(getOverdriveGain(), getOverdriveColour());
+            break;
+
+         case EF_NOISERED:
+            b_have_undo = parent_sampleview.soxNoiseRedSelection2(getNoiseRedAmount());
+            break;
+
+         case EF_DEEMPH:
+            b_have_undo = parent_sampleview.soxEffect("deemph");
+            break;
+
+         case EF_EARWAX:
+            b_have_undo = parent_sampleview.soxEffect("earwax");
+            break;
+
+         case EF_OOPS:
+            b_have_undo = parent_sampleview.soxEffect("oops");
+            break;
+
+         case EF_RIAA:
+            b_have_undo = parent_sampleview.soxEffect("riaa");
+            break;
+
+         case EF_ECHO:
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("echo "+getEchoGainIn()+" "+getEchoGainOut()+" "+getEchoDelay()+" "+getEchoDecay());
+            break;
+
+         case EF_CHORUS:
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("chorus "+getChorusGainIn()+" "+getChorusGainOut()+" "+getChorusDelay()+" "+getChorusDecay()+" "+getChorusSpeed()+" "+getChorusDepth()+" "+getChorusWaveString());
+            break;
+
+         case EF_PHASER:
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("phaser "+getPhaserGainIn()+" "+getPhaserGainOut()+" "+getPhaserDelay()+" "+getPhaserDecay()+" "+getPhaserSpeed()+" "+getPhaserWaveString());
+            break;
+
+         case EF_FLANGER:
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("flanger "+getFlangerDelay()+" "+getFlangerDepth()+" "+getFlangerRegen()+" "+getFlangerWidth()+" "+getFlangerSpeed()+" "+getFlangerShapeString()+" "+getFlangerPhase()+" "+getFlangerInterpString());
+            break;
+
+         case EF_REVERB:
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("reverb "+getReverbWetOnlyString()+" "+getReverbReverberance()+" "+getReverbHFDamping()+" "+getReverbRoomScale()+" "+getReverbStereoDepth()+" "+getReverbPreDelay()+" "+getReverbWetGain());
+            break;
+
+         case EF_COMPAND:
+            b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("compand "+getCompandAttack()+","+getCompandDecay()+" "+getCompandSK()+":"+getCompandThresh()+","+getCompandStart()+","+getCompandRange()+" "+getCompandGain()+" "+getCompandInitVol()+" "+getCompandDelay());
+            break;
+
+         case EF_FILTER:
+            switch(cm_filter_type.getSelectedOption())
+            {
+               case 0:  // Allpass
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("allpass "+getFilterFreq()+" "+getFilterQ()+"q");
+                  break;
+
+               case 1:  // Band ("-n introduces a power-gain of about 11dB in the filter" => add additional -11dB to filter input gain to compensate)
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("gain "+getFilterGainBand()+" band "+(getBandNoiseMode()?"-n ":"")+getFilterFreq()+" "+getFilterQ()+"q");
+                  break;
+
+               case 2:  // Bandpass
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("bandpass "+(getBandpassConstSkirtMode()?"-c ":"")+getFilterFreq()+" "+getFilterQ()+"q"+" gain "+getFilterGain());
+                  break;
+
+               case 3:  // Bandreject
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("bandreject "+getFilterFreq()+" "+getFilterQ()+"q"+" gain "+getFilterGain());
+                  break;
+
+               case 4:  // Lowpass 1-Pole (6dB/oct)  (no width/q param)
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("lowpass -1 "+getFilterFreq()+" gain "+getFilterGain());
+                  break;
+
+               case 5:  // Lowpass 2-Pole (12dB/oct)
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("lowpass -2 "+getFilterFreq()+" "+getFilterQ()+"q"+" gain "+getFilterGain());
+                  break;
+
+               case 6:  // Highpass 1-Pole (6dB/oct)  (no width/q param)
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("highpass -1 "+getFilterFreq()+" gain "+getFilterGain());
+                  break;
+
+               case 7:  // Highpass 2-Pole (12dB/oct)
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("highpass -2 "+getFilterFreq()+" "+getFilterQ()+"q"+" gain "+getFilterGain());
+                  break;
+
+               case 8:  // Equalizer
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("equalizer "+getFilterFreq()+" "+getFilterQ()+"q "+getFilterGain());
+                  break;
+
+               case 9:  // Bass
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("bass "+getFilterGain()+" "+getFilterFreq()+" "+getFilterSlope()+"s");
+                  break;
+
+               case 10: // Treble
+                  b_have_undo = parent_sampleview.processSelectionWithSoXPostCmd("treble "+getFilterGain()+" "+getFilterFreq()+" "+getFilterSlope()+"s");
+                  break;
+            }
+      }
+
+      bt_undo.setEditable(b_have_undo);
+
+      Global.Print("Exec \""+cm_effect.getSelectedOptionName()+"\" haveUndo="+b_have_undo);
+   }
+
+   // <method.png>
+   protected method handleExecNoiseRedLearn() {
+      hide();
+      parent_sampleview.soxNoiseProf();
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c  :  Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "[>>>] SampleViewSoXDialog::onKey: k.pressed="+_k.pressed;
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'q':
+         case '@':
+            hide();
+            return true;
+
+         case VKEY_RETURN:
+            handleExec();
+            return true;
+
+         case 'e':
+            UI.SetKeyboardFocus(cm_effect);
+            return true;
+
+         case VKEY_PAGEUP:
+            if(_k.modShift())
+            {
+               if(EF_FILTER == cm_effect.getSelectedOption())
+               {
+                  cm_filter_type.selectPreviousOptionAction();
+               }
+            }
+            else
+               cm_effect.selectPreviousOptionAction();
+            refocusDefault();
+            return true;
+
+         case VKEY_PAGEDOWN:
+            if(_k.modShift())
+            {
+               if(EF_FILTER == cm_effect.getSelectedOption())
+               {
+                  cm_filter_type.selectNextOptionAction();
+               }
+            }
+            else
+               cm_effect.selectNextOptionAction();
+            refocusDefault();
+            return true;
+
+      }
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(cm_effect):
+            handleEffectChanged();
+            return true;
+
+         case @(fp_resample_rate):
+            Global.PrintFast("Resample rate is "+getResampleRate()+" Hz");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_resample_quality):
+            Global.Print("Resample Quality is \""+cm_resample_quality.getSelectedOptionName()+"\"");
+            return true;
+
+         case @(fp_timestretch_factor):
+            Global.PrintFast("Timestretch factor is "+getTimestretchFactor());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_timestretch_preset):
+            Global.PrintFast("Timestretch preset is \""+cm_timestretch_preset.getSelectedOptionName()+"\"");
+            updateTimestretchPreset();
+            return true;
+
+         case @(fp_timestretch_segment):
+            Global.PrintFast("Timestretch segment is "+getTimestretchSegment()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_timestretch_search):
+            Global.PrintFast("Timestretch search is "+getTimestretchSearch()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_timestretch_overlap):
+            Global.PrintFast("Timestretch overlap is "+getTimestretchOverlap()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cb_timestretch_rubberband):
+            handleTimestretchRBChanged();
+            return true;
+
+         case @(cb_timestretch_rubberband_hq):
+            handleTimestretchHQChanged();
+            return true;
+
+         case @(cb_timestretch_rubberband_formant):
+            Global.Print("[Rubberband] Preserve Formants is "+Utils.GetEnableString(cb_timestretch_rubberband_formant.isSelected()));
+            return true;
+
+         case @(cb_timestretch_rubberband_centrefocus):
+            Global.Print("[Rubberband] Preserve Centre-Focus is "+Utils.GetEnableString(cb_timestretch_rubberband_centrefocus.isSelected()));
+            return true;
+
+         case @(cm_timestretch_rubberband_crispness):
+            Global.Print("[Rubberband] FAST mode Crispness is "+cm_timestretch_rubberband_crispness.getSelectedOptionName());
+            return true;
+
+         case @(fp_pitch_cents):
+            handlePitchCentsChanged();
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_pitch_segment):
+            Global.PrintFast("Pitch segment is "+getPitchSegment()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_pitch_search):
+            Global.PrintFast("Pitch search is "+getPitchSearch()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_pitch_overlap):
+            Global.PrintFast("Pitch overlap is "+getPitchOverlap()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cb_pitch_rubberband):
+            handlePitchRBChanged();
+            return true;
+
+         case @(cb_pitch_rubberband_hq):
+            handlePitchHQChanged();
+            return true;
+
+         case @(cb_pitch_rubberband_formant):
+            Global.Print("[Rubberband] Preserve Formants is "+Utils.GetEnableString(cb_pitch_rubberband_formant.isSelected()));
+            return true;
+
+         case @(cb_pitch_rubberband_centrefocus):
+            Global.Print("[Rubberband] Preserve Centre-Focus is "+Utils.GetEnableString(cb_pitch_rubberband_centrefocus.isSelected()));
+            return true;
+
+         case @(cm_pitch_rubberband_crispness):
+            Global.Print("[Rubberband] FAST mode Crispness is "+cm_pitch_rubberband_crispness.getSelectedOptionName());
+            return true;
+
+         case @(fp_contrast_amount):
+            handleContrastAmountChanged();
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_overdrive_gain):
+            handleOverdriveGainChanged();
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(fp_overdrive_colour);
+            return true;
+
+         case @(fp_overdrive_colour):
+            handleOverdriveColourChanged();
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(bt_noisered_learn):
+            handleExecNoiseRedLearn();
+            return true;
+
+         case @(fp_noisered_amount):
+            handleNoiseRedAmountChanged();
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_echo_gainin):
+            Global.Print("Echo Input Gain is "+fp_echo_gainin.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_echo_gainout):
+            Global.Print("Echo Output Gain is "+fp_echo_gainout.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_echo_delay):
+            Global.Print("Echo Delay is "+fp_echo_delay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_echo_decay):
+            Global.Print("Echo Decay is "+fp_echo_decay.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_chorus_gainin):
+            Global.Print("Chorus Input Gain is "+fp_chorus_gainin.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_chorus_gainout):
+            Global.Print("Chorus Output Gain is "+fp_chorus_gainout.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_chorus_delay):
+            Global.Print("Chorus Delay is "+fp_chorus_delay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_chorus_decay):
+            Global.Print("Chorus Decay is "+fp_chorus_decay.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_chorus_speed):
+            Global.Print("Chorus Speed is "+fp_chorus_speed.getFloatValue()+" Hz");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_chorus_depth):
+            Global.Print("Chorus Depth is "+fp_chorus_depth.getFloatValue()+" Hz");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_chorus_wave):
+            Global.Print("Chorus LFO Wave is \""+cm_chorus_wave.getSelectedOptionName()+"\"");
+            return true;
+
+         case @(fp_phaser_gainin):
+            Global.Print("Phaser Input Gain is "+fp_phaser_gainin.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_phaser_gainout):
+            Global.Print("Phaser Output Gain is "+fp_phaser_gainout.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_phaser_delay):
+            Global.Print("Phaser Delay is "+fp_phaser_delay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_phaser_decay):
+            Global.Print("Phaser Decay is "+fp_phaser_decay.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_phaser_speed):
+            Global.Print("Phaser Speed is "+fp_phaser_speed.getFloatValue()+" Hz");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_phaser_wave):
+            Global.Print("Phaser LFO Wave is \""+cm_phaser_wave.getSelectedOptionName()+"\"");
+            return true;
+
+         case @(fp_flanger_delay):
+            Global.Print("Flanger Delay is "+fp_flanger_delay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_flanger_depth):
+            Global.Print("Flanger Depth is "+fp_flanger_depth.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_flanger_regen):
+            Global.Print("Flanger Depth is "+fp_flanger_depth.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_flanger_width):
+            Global.Print("Flanger Width is "+fp_flanger_width.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_flanger_speed):
+            Global.Print("Flanger Speed is "+fp_flanger_speed.getFloatValue()+" Hz");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_flanger_shape):
+            Global.Print("Flanger Shape is \""+cm_flanger_shape.getSelectedOptionName()+"\"");
+            return true;
+
+         case @(fp_flanger_phase):
+            Global.Print("Flanger Phase is "+fp_flanger_phase.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_flanger_interp):
+            Global.Print("Flanger Delay Line Interpolation is \""+cm_flanger_interp.getSelectedOptionName()+"\"");
+            return true;
+
+         case @(fp_reverb_reverberance):
+            Global.Print("Reverberance is "+fp_reverb_reverberance.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_reverb_hfdamping):
+            Global.Print("Reverb HF Damping is "+fp_reverb_hfdamping.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_reverb_roomscale):
+            Global.Print("Reverb Room Scale is "+fp_reverb_roomscale.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_reverb_stereodepth):
+            Global.Print("Reverb Stereo Depth is "+fp_reverb_stereodepth.getFloatValue()+"%");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_reverb_predelay):
+            Global.Print("Reverb Pre-Delay is "+fp_reverb_predelay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_reverb_wetgain):
+            Global.Print("Reverb Wet Gain is "+fp_reverb_wetgain.getFloatValue()+" dB");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cb_reverb_wetonly):
+            Global.Print("Reverb Wet-Only is "+Utils.GetEnableString(cb_reverb_wetonly.isSelected()));
+            return true;
+
+         case @(fp_compand_attack):
+            Global.Print("Compand Attack Time is "+fp_compand_attack.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_decay):
+            Global.Print("Compand Decay Time is "+fp_compand_decay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_sk):
+            Global.Print("Compand Soft Knee is "+fp_compand_sk.getFloatValue()+" dB");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_thresh):
+            Global.Print("Compand Threshold Level is "+fp_compand_thresh.getFloatValue()+" dB");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_start):
+            Global.Print("Compand Start Level is "+fp_compand_start.getFloatValue()+" dB (=> ratio="+getCompandRatioString()+")");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_range):
+            Global.Print("Compand Range is "+fp_compand_range.getFloatValue()+" dB (=> ratio="+getCompandRatioString()+")");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_gain):
+            Global.Print("Compand Gain is "+fp_compand_gain.getFloatValue()+" dB");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_initvol):
+            Global.Print("Compand Initial Volume is "+fp_compand_initvol.getFloatValue()+" dB");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_compand_delay):
+            Global.Print("Compand Delay (Lookahead) is "+fp_compand_delay.getFloatValue()+" ms");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cm_filter_type):
+            handleFilterTypeChanged();
+            return true;
+
+         case @(fp_filter_freq):
+            Global.Print("Frequency is "+fp_filter_freq.getFloatValue()+" Hz");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_filter_q):
+            Global.Print("Q is "+fp_filter_q.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_filter_slope):
+            Global.Print("Bass / Treble Slope is "+fp_filter_slope.getFloatValue());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(fp_filter_gain):
+            Global.Print("Bass / Treble / Equalizer Gain is "+fp_filter_gain.getFloatValue()+" dB");
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cb_filter_noise):
+            Global.Print("Band unpitched audio / noise mode is "+cb_filter_noise.isSelected());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(cb_filter_cskirt):
+            Global.Print("Bandpass constant skirt gain mode is "+cb_filter_cskirt.isSelected());
+            if(FloatParam.ACTION_VALUEENTERED == acName)
+               UI.SetKeyboardFocus(bt_exec);
+            return true;
+
+         case @(bt_exec):
+            handleExec();
+            return true;
+
+         case @(cb_hide):
+            Global.Print("Auto-hide dialog is "+Utils.GetEnableString(cb_hide.isSelected()));
+            return true;
+
+         case @(bt_undo):
+            if(b_have_undo)
+            {
+               parent_sampleview.undo();
+               b_have_undo = false;
+               bt_undo.setEditable(false);
+               Global.Print("Undo");
+            }
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+
+         case @(bt_cancel):
+            if(b_have_undo)
+            {
+               parent_sampleview.undo();
+            }
+            hide();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}
