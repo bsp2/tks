@@ -1,0 +1,253 @@
+// w/ gui
+
+use tksidplay2;
+use tksdl;
+
+SidTune st;
+
+String s_title;
+String s_author;
+String s_copyright;
+String s_csong;
+
+PointerArray pa_outbuf;
+int i_outbufid;
+int i_outbufnum;
+int i_outbuflastid;
+int b_soundenabled=true;
+float f_avgoutbufnum;
+int b_noringbuffer=true;
+
+function Init_Output() {
+   pa_outbuf.alloc(128);
+   i_outbufid=64;
+   i_outbuflastid=0;
+   i_outbufnum=0;
+   f_avgoutbufnum=0;
+   int i=0;
+   loop(128)
+      {
+         FloatArray ob<=new FloatArray;
+         ob.alloc(512*2);
+         ob.numElements=ob.maxElements;
+         ob.fill( 0 );
+         pa_outbuf[i++]=deref ob;
+      }
+} Init_Output();
+
+
+function Next_Output() {
+   if(b_soundenabled)
+      if(i_outbufnum<127)
+      {
+         FloatArray ob<=pa_outbuf[i_outbufid];
+         ob.fill( 0 );
+         SidPlay2.play(ob);
+         //if( b_eqenabled ) eq.iir(ob);
+	    
+         i_outbufid=(i_outbufid+1)&127;
+         i_outbufnum++;
+      }
+}
+
+function SidPlay2_Seek(int iseek);
+
+class PlayListEntry {
+   String file;
+   int subsong;
+   int sidmodel;
+}
+
+class PlayList {
+   PlayListEntry entries[];
+   int i_centry;
+   int i_csentry;
+
+   PlayList() {
+      entries.alloc(64);
+      int i_centry=0;
+      int i_csentry=0;
+   }
+
+   add(String _file, int _subsong, int _sidmodel) {
+      PlayListEntry en<=entries.nextFree;
+      if(en)
+      {
+         en.file=_file;
+         en.subsong=_subsong;
+         en.sidmodel=_sidmodel;
+      }
+   }
+
+   previous() {
+      i_centry--;
+      if(i_centry<0)
+         i_centry=entries.numElements-1;
+      selectTrack(i_centry, 0);
+   }
+
+   previousSub() {
+      i_csentry--;
+      if(i_csentry<1)
+      {
+         i_csentry=st.songs;
+         if(st.songs>1)
+            selectTrack(i_centry, i_csentry);
+      }
+      else
+         selectTrack(i_centry, i_csentry);
+   }
+
+   nextSub() {
+      i_csentry++;
+      if(i_csentry>st.songs)
+      {
+         i_csentry=1;
+         if(st.songs>1)
+            selectTrack(i_centry, i_csentry);
+      }
+      else
+         selectTrack(i_centry, i_csentry);
+   }
+
+   next() {
+      i_centry++;
+      if(i_centry>=entries.numElements)
+         i_centry=0;
+      selectTrack(i_centry, 0);
+   }
+
+   selectTrack(int _nr, int _snr) {
+      PlayListEntry en<=entries[_nr];
+      if(en)
+      {
+         int startSong=_snr;
+         PakFile f;
+         //f.openLocal(en.file, IOS_IN);
+         if(!f.open(en.file))
+         {
+            die "[---] failed to load \""+en.file+"\".";
+         }
+	
+         st.loadStream(f); 
+
+         if(!startSong) startSong=en.subsong; 
+         SidPlay2.sidModel=en.sidmodel;
+
+         if(!startSong) startSong=st.startSong;
+         startSong=st.selectSong(startSong); //
+         SidPlay2.load(st);
+         SidPlay2.fastForward(100);
+		
+         StringArray info<=st.infoStrings;
+         s_title=info[0];
+         s_author=info[1];
+         s_copyright=info[2];
+         s_csong=(i_centry+1)+"/"+(entries.numElements)+" ("+startSong+"/"+st.songs+")";
+         trace "----               title : "+s_title;
+         trace "----              author : "+s_author;
+         trace "---- copyright/publisher : "+s_copyright;
+         trace "----        current song : "+s_csong;
+         i_centry=_nr;
+         i_csentry=startSong;
+         return true;
+
+      }
+      else
+      {
+         trace "[---] ill. song#.";
+         return false;
+      }
+   }
+}
+
+PlayList pl;
+//pl.add("tune.sid", 0, SID2_MOS8580);
+pl.add("tune.sid", 1, SID2_MOS6581);
+//pl.add("sids/jeroen tel-Golden_Axe.sid", 0, SID2_MOS8580);
+//pl.add("sids/metal-camel_funk.sid", 0, SID2_MOS8580);
+//pl.add("tune.sid", 6, SID2_MOS6581);
+
+function onAudioPostProcess(FloatArray _fa) {    }
+
+function onAudioBeginBlock( FloatArray _d )
+{
+   if(b_soundenabled)
+	{
+      if(b_noringbuffer)
+		{
+         _d.fill( 0 );
+         SidPlay2.play(_d);
+         //if( b_eqenabled ) eq.iir(_d);
+		}
+      else
+		{
+         int i_reqbuf=(_d.numElements/1024);
+         f_avgoutbufnum+=(i_outbufnum-f_avgoutbufnum)*0.1;
+         if(i_outbufnum>i_reqbuf)
+			{
+            int i=i_outbuflastid;
+            int j=0;
+            loop(i_reqbuf)
+               {
+                  FloatArray ob<=pa_outbuf[i];
+                  _d.copyFrom(ob, 0, 512*2, j);
+                  i=(i+1)&127;
+                  j+=512*2;
+               }
+            i_outbufnum-=i_reqbuf;
+            i_outbuflastid=(i_outbuflastid+i_reqbuf)&127;
+			}
+		}
+	}
+   else
+      _d.fill( 0 );
+
+   AudioDevice.finishBlock();
+}
+
+function SidPlay2_Seek {
+   //    1/50 s
+   if(iseek)
+	{
+      trace "SidPlay2_Seek("+iseek+")";
+      iseek=(44100*iseek)/50;
+      iseek<<=1; // interleaved stereo samples
+      int i=iseek>>9;
+      iseek-=i<<9;
+      float da[512]; da.numElements=da.maxElements;
+      while(i--)
+         SidPlay2.play(da);
+      da.numElements=iseek;
+      SidPlay2.play(da);
+	}
+}
+
+
+function main {	
+   String s;
+
+   use callbacks;
+   int startSong=-1;
+
+   int songnr=0;
+   if(Arguments.numElements)
+      songnr=Arguments[0];
+
+   if(!pl.selectTrack(songnr, 0))
+      exit(5);
+
+   if(!AudioDevice.openDSP(44100, 2048))
+	{
+      trace("[---] cannot open audio device..");		
+      return 0;	
+	}
+   AudioDevice.ppq=24;
+   AudioDevice.bpm=125;	
+   AudioDevice.volume=1.0;
+   AudioDevice.start();
+
+   SDL.eventLoop();
+   AudioDevice.closeDSP();	
+}   
+
