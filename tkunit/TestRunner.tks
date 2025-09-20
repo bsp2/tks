@@ -1,0 +1,184 @@
+// ----
+// ---- file   : TestRunner.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2008 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU GENERAL PUBLIC LICENSE (GPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#GPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "tkunit" package.
+// ----
+// ---- changed: 07Feb2008, 10Feb2008
+// ----          
+// ----          
+// ----
+// ----
+
+module MTestRunner;
+
+
+class TestRunner {
+
+   protected int total_num_tests;
+   protected int total_num_failed;
+   protected int total_num_ignored;
+   protected int total_num_succeeded;
+
+   protected int num_tests;
+   protected int num_failed;
+   protected int num_ignored;
+   protected int num_succeeded;
+
+   protected boolean b_stop_on_first_error = false;
+
+   public method setEnableStopOnFirstError(boolean _bEnable) {
+      b_stop_on_first_error = _bEnable;
+   }
+
+   protected method onBegin() {
+      explain "Called before starting the any tests.";
+   }
+
+   protected method onTestCaseBegin(TestCase _testCase) {
+      explain "Called before the first test in a testcase is started.";
+   }
+
+   protected method onTestBegin(TestCase _testCase, String _methodName) {
+      explain "Called before a single test in a testcase is started.";
+   }
+
+   protected method onTestSucceeded(TestCase _testCase, String _methodName) {
+      explain "Called whenever a test succeeds.";
+   }
+
+   protected method onTestFailed(TestCase _testCase, String _methodName, String _msg) {
+      explain "Called whenever a test fails.";
+   }
+   
+   protected method onTestIgnored(TestCase _testCase, String _methodName, String _reason) {
+      explain "Called whenever a test is ignored.";
+   }
+
+   protected method onTestCaseEnd(TestCase _testCase) {
+      explain "Called whenever all tests in a testcase have finished.";
+   }
+
+   protected method onEnd() {
+      explain "Called after all tests/testcases are run.";
+   }
+
+   protected method runTestCase(TestCase _testCase) {
+
+      // Reset test count
+      num_tests = 0;
+      num_failed = 0;
+      num_ignored = 0;
+      num_succeeded = 0;
+
+      // Instantiate TestCase class
+      TestCase tc <= Object(_testCase);
+
+      // Inform derived class that a new test case is about to start
+      onTestCaseBegin(tc);
+
+      // Set up fixture
+      tc.pre();
+
+      // Query class methods via reflection API
+      StringArray methodNames <= TKS.getMethodNames(tc);
+      String methName;
+
+      // Iterate methods and run all methods whose name starts with "test"
+      foreach methName in methodNames {
+
+         if(methName.startsWith("test"))
+         {
+            // Inform derived class that a new test is about to start
+            onTestBegin(tc, methName);
+
+            try {
+               // Run method
+               Value r;
+               TKS.evalMethodByName(tc, methName, {}, r);
+
+               // No exception -> Success!
+               onTestSucceeded(tc, methName);
+               num_succeeded++;
+            }
+            catch(TKUnitTestIgnoredException e) {
+               // Test is to be ignored
+               onTestIgnored(tc, methName, e.message);
+               num_ignored++;
+            }
+            catch(Error e) {
+               // Test failed. horribly.
+               onTestFailed(tc, methName, e.message);
+               num_failed++;
+               if(b_stop_on_first_error)
+               {
+                  trace "[---] exception message=\""+e.message+"\".";
+                  trace "[---] backtrace:\n"+e.stackTrace+".";
+                  die("Stop on first error is enabled.");
+               }
+            }
+
+            // On to the next test!
+            num_tests++;
+         }
+      }
+
+      // All tests run
+      onTestCaseEnd(tc);
+
+      // Tear down fixture
+      tc.post();
+
+      tc <= null; // Free TestCase instance
+   }
+
+
+   public method run(Object _test) {
+      explain "Called by the test application to run either a single TestCase or a TestSuite.";
+
+      total_num_tests = 0;
+      total_num_failed = 0;
+      total_num_ignored = 0;
+      total_num_succeeded = 0;
+
+      if(_test instanceof TestCase)
+      {
+         // Run single test
+         onBegin();
+
+         runTestCase(_test);
+
+         total_num_tests += num_tests;
+         total_num_failed += num_failed;
+         total_num_ignored += num_ignored;
+         total_num_succeeded += num_succeeded;
+         
+         // Inform derived class that it can now spit out the test report
+         onEnd();
+      }
+      else
+      {
+         // Array of test cases
+         TestCase tc;
+         // Run single test
+         onBegin();
+         foreach tc in _test {
+            if(tc instanceof TestCase)
+            {
+               runTestCase(tc);
+               
+               total_num_tests += num_tests;
+               total_num_failed += num_failed;
+               total_num_ignored += num_ignored;
+               total_num_succeeded += num_succeeded;
+               
+            }
+         }
+         // Inform derived class that it can now spit out the test report
+         onEnd();
+      }
+   } // end run
+}
