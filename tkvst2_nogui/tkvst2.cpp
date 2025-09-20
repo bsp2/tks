@@ -1,0 +1,70 @@
+/// tkvst2.cpp
+///
+/// (c) 2010-2024 Bastian Spiegel <bs@tkscript.de>
+///     - Distributed under terms of the Lesser GNU General Public License (LGPL).
+///       See COPYING and <http://www.gnu.org/licenses/licenses.html#LGPL> for further information.
+///
+///
+/// created: 01Oct2010
+/// changed: 02Oct2010, 06Oct2010, 10Oct2010, 13Oct2010, 26Jan2018, 31Jan2018, 23Feb2018
+///          06Jul2018, 26Aug2019, 14Feb2023, 01Jul2024
+///
+///
+///
+
+#include "tkvst2.h"
+
+#include <yac_host.cpp>
+YAC_Host *yac_host;
+
+#include "VST2Plugin.h"
+#include "VST2PinProperties.h"
+#include "VST2ParameterProperties.h"
+#include "../tkmidipipe/HostMIDIEvents.h"
+#include "../tkmidipipe/ModInputFilter.h"
+
+#include "ying_vst2.cpp"
+#include "ying_vst2_VST2Plugin.cpp"
+#include "ying_vst2_VST2PinProperties.cpp"
+#include "ying_vst2_VST2ParameterProperties.cpp"
+
+sF32 tkvst2_bpm = 125.0f;
+sF32 tkvst2_song_pos_ppq = 0.0f;
+sBool tkvst2_song_playing = YAC_FALSE;
+
+void tkvst2_set_bpm(sF32 _bpm) {
+   tkvst2_bpm = _bpm;
+}
+
+void tkvst2_set_song_pos_ppq(sF32 _songPosPPQ, sBool _bPlaying) {
+   tkvst2_song_pos_ppq = _songPosPPQ;
+   tkvst2_song_playing = _bPlaying;
+}
+
+void YAC_CALL YAC_Init(YAC_Host *_host) {
+	yac_host = _host;
+   
+	if(yac_host->yacGetDebugLevel()) 
+      yac_host->printf("[dbg] tkvst2::YAC_Init called.\n");
+   
+   YAC_Init_vst2(_host);
+
+   for(sUI i = 0u; i < VST2PLUGIN_NUM_SIGNALS; i++)
+   {
+      tkvst2_audio_master_signal_funs[i] = NULL;
+   }
+
+   tkvst2_audio_master_script_context = yac_host->yacContextCreate();
+}
+
+void YAC_CALL YAC_Exit(YAC_Host *_host) {
+
+   YAC_Exit_vst2(_host);
+
+   yac_host->yacContextDestroy(tkvst2_audio_master_script_context);
+   tkvst2_audio_master_script_context = NULL;
+}
+
+sUI YAC_CALL YAC_Version(void) {
+	return 0x00020008;
+}
