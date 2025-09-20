@@ -1,0 +1,318 @@
+use tksdl;
+use tkopengl;
+use tkmath;
+
+boolean b_anim  = 1;
+boolean b_debug = 0;
+
+int numframesrendered = 0;
+
+float g_clip_ang = (-45 * 2PI)/360.0f;
+
+float g_scale = 0.0f;
+float g_tx = 0.5f;
+float g_ty = 0.0f;
+
+int g_rmb_mousey = -9999;
+
+float V = 0.6;
+float C = 1;
+if(0)
+{
+   float t = V;
+   V = C;
+   C = t;
+}
+
+FloatArray points_src;
+points_src.add2(-V,  V);
+points_src.add2( V,  V);
+points_src.add2( V, -V);
+points_src.add2(-V, -V);
+
+function CreateCirclePath(FloatArray va, float cx, float cy, float rx, float ry, int numSeg) {
+   va.empty();
+   float w = (2PI / numSeg);
+   float a = 0;
+   loop(numSeg)
+   {
+      va.add2(cx + sin(a)*rx,
+              cy + cos(a)*ry
+              );
+      a += w;
+   }
+}
+
+FloatArray clip_path_src;
+if(0)
+{
+   // rect
+   clip_path_src.add2(-C,  C);
+   clip_path_src.add2( C,  C);
+   clip_path_src.add2( C, -C);
+   clip_path_src.add2(-C, -C);
+}
+else if(0)
+{
+   // tri
+   clip_path_src.add2(-C,  C);
+   clip_path_src.add2( C,  0);
+   clip_path_src.add2(-C, -C);
+}
+else if(1)
+{
+   // circle
+   CreateCirclePath(clip_path_src, 0, 0, C, C, 7);
+}
+else if(0)
+{
+   // concave (not allowed)
+   clip_path_src.add2(-C,  C);
+   clip_path_src.add2( C,  C*0.5);
+   clip_path_src.add2( C*0.5,  0);
+   clip_path_src.add2( C,  -C*0.5);
+   clip_path_src.add2(-C, -C);
+}
+
+function ScaleAndTranslatePath(FloatArray _vaIn, FloatArray _vaOut, float _sx, float _sy, float _tx, float _ty) {
+   int vaOff = 0;
+   _vaOut.empty();
+   loop(_vaIn.numElements/2)
+   {
+      Vector2f v; v.init(_vaIn.get(vaOff+0), _vaIn.get(vaOff+1));
+      _vaOut.add2(v.x * _sx + _tx, v.y * _sy + _ty);
+      vaOff += 2;
+   }
+}
+
+function RotatePath(FloatArray _vaIn, FloatArray _vaOut, float _ang) {
+   int vaOff = 0;
+   _vaOut.empty();
+   Matrix2f m; m.initRotatef(_ang);
+   loop(_vaIn.numElements/2)
+   {
+      Vector2f v; v.init(_vaIn.get(vaOff+0), _vaIn.get(vaOff+1));
+      m.mulv(v) => v;
+      _vaOut.add2(v.x, v.y);
+      vaOff += 2;
+   }
+}
+
+function Clip(FloatArray _vaIn, FloatArray _clipPath, FloatArray _vaOut) {
+   // <https://en.wikipedia.org/wiki/Sutherland%E2%80%93Hodgman_algorithm>
+   if(b_debug) trace "[dbg] Clip ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~";
+
+   local FloatArray vaIn = _vaIn;
+
+   Vector2f e1; e1.init(_clipPath.get(0), _clipPath.get(1));
+   int clipOff = 2;
+
+   if(b_debug) trace "[dbg] loop "+(_clipPath.numElements/2)+" clip path vertices";
+   loop( (_clipPath.numElements / 2) )
+   {
+      _vaOut.empty();
+
+      Vector2f e2; e2.init(_clipPath.get(clipOff+0), _clipPath.get(clipOff+1));
+
+      Vector2f vN; vN.init( (e2.y - e1.y),
+                            -(e2.x - e1.x)
+                            );
+
+      Vector2f vPrev; vPrev.init(vaIn.get(0), vaIn.get(1));
+      if(b_debug) trace "[dbg] loop "+(vaIn.numElements/2)+" input path vertices  ------- e1="+e1+" e2="+e2+" vN="+vN;
+      int inOff = 2;
+      loop( (vaIn.numElements / 2) )
+      {
+
+         Vector2f vCur; vCur.init(vaIn.get(inOff+0), vaIn.get(inOff+1));
+
+         // e1.init(10, 10);
+         // e2.init(100, 10);
+         // vCur.init(10, 30);
+
+         Vector2f vIS;
+                              
+         float dPrev = vPrev.distanceToPlane(e1, vN);
+         float dCur  = vCur.distanceToPlane(e1, vN);
+         if(b_debug) trace "[dbg] inOff="+inOff+" v1="+vPrev+" v2="+vCur+" e1="+e1+" e2="+e2+" vN="+vN+" dPrev="+dPrev+" dCur="+dCur;
+
+         if(dCur >= 0.0f)
+         {
+            if(dPrev < 0.0f)
+            {
+               vIS.intersect(vPrev, vCur, e1, e2, true/*bExtrapolate*/);
+               _vaOut.add2(vIS.x, vIS.y);
+            }
+            _vaOut.add2(vCur.x, vCur.y);
+         }
+         else
+         {
+            if(dPrev >= 0.0f)
+            {
+               vIS.intersect(vPrev, vCur, e1, e2, true/*bExtrapolate*/);
+               _vaOut.add2(vIS.x, vIS.y);
+            }
+         }
+
+         // Next vertex
+         vPrev = vCur;
+         inOff += 2;
+         if(inOff >= vaIn.numElements)
+            inOff = 0;
+      }
+      
+      // trace "xxx Clip e1="+e1+" e2="+e2;
+
+      // Next clip edge
+      e1 = e2;
+      clipOff += 2;
+      if(clipOff >= _clipPath.numElements)
+         clipOff = 0;
+
+      vaIn = _vaOut;
+   }
+
+   if(b_debug) trace "[dbg] Clip: vaOut="+_vaOut.string2;
+}
+
+function DrawPathLine(FloatArray _va) {
+   if(_va.numElements >= (2*3))
+   {
+      int vtxOff = 0;
+      glBegin(GL_LINE_LOOP);
+      loop(_va.numElements / 2)
+      {
+         float x = _va.get(vtxOff);
+         float y = _va.get(vtxOff+1);
+         glVertex2f(x, y);
+         vtxOff += 2;
+      }
+      glEnd();
+   }
+}
+
+function DrawPathFill(FloatArray _va) {
+   if(_va.numElements >= (2*3))
+   {
+      int vtxOff = 0;
+      glBegin(GL_POLYGON);
+      loop(_va.numElements / 2)
+      {
+         float x = _va.get(vtxOff);
+         float y = _va.get(vtxOff+1);
+         glVertex2f(x, y);
+         vtxOff += 2;
+      }
+      glEnd();
+   }
+}
+
+function onDraw() {
+   float dt = FPS.precision;
+   glClearColor(0,0,0.2,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInitOrtho(2, 2);
+
+   FloatArray points; points.empty();
+   FloatArray clipPathRot; clipPathRot.empty();
+
+   float scl = (g_scale < 0.0f) ? (1.0f / (1.0f - g_scale)) : (1.0f + g_scale);
+   // trace "xxx g_scale="+g_scale+" scl="+scl;
+   ScaleAndTranslatePath(points_src, points, scl, scl, g_tx, g_ty);
+
+   RotatePath(clip_path_src, clipPathRot, g_clip_ang);
+
+   FloatArray clipOut; clipOut.empty();
+   Clip(points, clipPathRot, clipOut);
+
+   // clipOut = points;
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glEnable(GL_BLEND);
+
+   zglColorARGB(#4FFF1111);
+   DrawPathFill(clipPathRot);
+
+   zglColorARGB(#3F11AA11);
+   // DrawPathLine(points);
+   DrawPathFill(points);
+
+   zglColorARGB(#7FCCCCCC);
+   // DrawPathLine(clipOut);
+   DrawPathFill(clipOut);
+
+   glDisable(GL_BLEND);
+
+   if(b_anim)
+   {
+      g_clip_ang -= 0.003f * dt;
+      if(g_clip_ang >= 2PI)
+         g_clip_ang -= 2PI;
+   }
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // trace "[...] onMouse: x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   if(_cbs & 1)
+   {
+      g_tx = (4.0f * float(_x - Viewport.width/2)) / Viewport.width;
+      g_ty = (-4.0f * float(_y - Viewport.height/2)) / Viewport.height;
+   }
+   if(_cbs & 2)
+   {
+      if(g_rmb_mousey <= -999)
+         g_rmb_mousey = _y;
+      else
+      {
+         float dy = _y - g_rmb_mousey;
+         g_scale = mathClampf(g_scale - float(dy)*0.01, -3.0, 3.0);
+         g_rmb_mousey = _y;
+      }
+   }
+   else
+   {
+      g_rmb_mousey = -999;
+   }
+}
+
+function onKeyboard(Key _k) {
+   trace "[...] onKeyboard: k.code="+_k.code+" ("+TKS.constantToString(_k.code, "VKEY_")+") mod="+_k.mod+" pressed="+_k.pressed+" released="+_k.released+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         if(_k.mod)
+         {
+            g_clip_ang = 0;
+            g_scale = 0;
+            trace "[...] g_clip_ang = 0";
+         }
+         else
+         {
+            b_anim = !b_anim;
+            trace "[...] b_anim="+b_anim;
+         }
+         break;
+   }
+}
+
+function main() {
+   use callbacks;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   Viewport.openWindow(1024, 1024);
+   Viewport.swapInterval(1);
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(0,0);
+
+   SDL.eventLoop();
+}

@@ -1,0 +1,165 @@
+//  /* -*- mode: c -*-
+//   * $Id: fasta-icc.code,v 1.2 2005/03/21 08:36:35 bfulgham Exp $
+//   * http://shootout.alioth.debian.org/
+//   *
+//   * by Paul Hsieh
+//   */
+
+// this is the first try of porting the benchmark to tkscript
+
+// from the current tgclso homepage: 
+// "Each program should
+// ""
+// "    * encode the expected cumulative probabilities for 2 alphabets"
+// "    * generate DNA sequences, by weighted random selection from the alphabets"
+// "      (using the pseudo-random number generator from the random benchmark)"
+// "    * generate DNA sequences, by copying from a given sequence"
+// "    * write 3 sequences line-by-line in FASTA format"
+// ""
+
+
+// also see 
+//     <http://en.wikipedia.org/wiki/Fasta_format>
+//     <http://shootout.alioth.debian.org/benchmark.php?test=fasta&lang=all&sort=fullcpu>
+
+// results:   perl5.8.0: ~13s
+//          tks0.9.0.60: ~7s
+
+class random {
+   define int IM = 139968;
+   define int IA = 3877;
+   define int IC = 29573;
+  
+   static Long last = 42;
+   static public method gen_random (Double max) {
+      last = (last * IA + IC) % IM;
+      return (max * last) / IM;
+   }
+}
+
+class Aminoacids { char c; Double p; }
+
+
+/* Weighted selection from alphabet */
+
+function makeCumulative (Aminoacids genelist[]) {
+    Double cp = 0.0;
+    Aminoacids a;
+    foreach a in genelist {
+       cp += a.p;
+       a.p = cp;
+    }
+}
+
+Double double_one=1;
+function selectRandom (Aminoacids genelist[]) {
+   Double r = random.gen_random (double_one);
+   if (r < genelist[0].p) 
+      return genelist[0].c;
+   int i, lo=0, hi=genelist.numElements-1;
+   while (hi > (lo+1)) {
+      i = (hi + lo)>>1;
+      if (r < genelist[i].p) hi = i; else lo = i;
+   }
+   return genelist[hi].c;
+}
+
+/* Generate and write FASTA format */
+
+#define LINE_LENGTH 60
+
+function makeRandomFasta (String id, String desc, Aminoacids genelist[], int n) {
+   int todo = n;
+   int i, m;
+   
+   print ">"+id+" "+desc;
+   
+   String pick; pick.alloc(LINE_LENGTH+1);
+   while(todo>0)
+   {
+      m=mathMini(todo, LINE_LENGTH);
+      i=0;
+      loop(m) pick[i++] = selectRandom (genelist);
+      pick[m] = 0;
+      print pick;
+      todo -= LINE_LENGTH;
+   }
+}
+
+ function makeRepeatFasta (String id, String desc, String s, int n) {
+    int k = 0, kn = s.length-1, m;
+    String ss=s, ss2;
+
+    print ">"+id+" "+desc;
+
+    while(n)
+    {
+       int done=mathMini(n, LINE_LENGTH);
+       m=done;
+       while (m >= (kn - k)) {
+          s.substring(k, s.length-k) => ss2;
+          stdout ss2;
+          m -= kn - k;
+          k = 0;
+       }
+       ss[k + m] = 0;
+       ss.substring(k, ss.length-k) => ss2;
+       print ss2;
+       ss[k + m] = s[m+k];
+       k += m;
+       n -= done;
+    }
+ }
+
+/* Main -- define alphabets, make 3 fragments */
+
+function DoubleF   (float _f)  { local Double d=_f; return deref d; }
+function DoubleS   (String _s) { local Double d=_s; return deref d; }
+function Aminoacids(char _c, Double _p) { local Aminoacids a; a.c=_c; a.p=_p; return deref a; }
+
+Aminoacids iub[] = [
+    Aminoacids('a', DoubleF(0.27))
+    Aminoacids('c', DoubleF(0.12))
+    Aminoacids('g', DoubleF(0.12))
+    Aminoacids('t', DoubleF(0.27))
+
+    Aminoacids('B', DoubleF(0.02))
+    Aminoacids('D', DoubleF(0.02))
+    Aminoacids('H', DoubleF(0.02))
+    Aminoacids('K', DoubleF(0.02))
+    Aminoacids('M', DoubleF(0.02))
+    Aminoacids('N', DoubleF(0.02))
+    Aminoacids('R', DoubleF(0.02))
+    Aminoacids('S', DoubleF(0.02))
+    Aminoacids('V', DoubleF(0.02))
+    Aminoacids('W', DoubleF(0.02))
+    Aminoacids('Y', DoubleF(0.02))
+ ];
+
+Aminoacids homosapiens[] = [
+   Aminoacids('a', DoubleS("0.3029549426680"))
+   Aminoacids('c', DoubleS("0.1979883004921"))
+   Aminoacids('g', DoubleS("0.1975473066391"))
+   Aminoacids('t', DoubleS("0.3015094502008"))
+];
+
+
+String alu =
+"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
+"GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA"
+"CCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAAT"
+"ACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCA"
+"GCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGG"
+"AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC"
+"AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA";
+
+function main() {
+   int n=Arguments.numElements?Arguments[0]:1000;
+   
+   makeCumulative (iub);
+   makeCumulative (homosapiens);
+   
+   makeRepeatFasta ("ONE", "Homo sapiens alu", alu, n*2);
+   makeRandomFasta ("TWO", "IUB ambiguity codes", iub, n*3);
+   makeRandomFasta ("THREE", "Homo sapiens frequency", homosapiens, n*5);
+}

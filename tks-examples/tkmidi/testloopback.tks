@@ -1,0 +1,156 @@
+
+// Linux
+//  (note) WIP, currently does not work
+
+use tkmidi;
+
+boolean b_reopen_in  = 0;
+boolean b_reopen_out = 0;
+
+String OUT_DEV_NAME = 0 ? "VirMIDI 2-1"/*portmidi*/ : "Virtual Raw MIDI 0,1"/*alsa*/;
+trace "xxx OUT_DEV_NAME="+OUT_DEV_NAME;
+String IN_DEV_NAME  = OUT_DEV_NAME;
+
+// copied from Synergy:
+class MIDIMapDefs {
+   define int TYPE_NOTE_OFF              =  0;  // 0x8x note-off
+   define int TYPE_NOTE_ON               =  1;  // 0x9x note-on
+   define int TYPE_POLY_PRESSURE         =  2;  // 0xAx polyphonic key pressure
+   define int TYPE_CC                    =  3;  // 0xBx continuous controller (7bit or 14bit) (or channel mode msg (local on/off, poly on/off, ..)
+   define int TYPE_PROGRAM_CHANGE        =  4;  // 0xCx program change
+   define int TYPE_CHANNEL_PRESSURE      =  5;  // 0xDx channel pressure
+   define int TYPE_PITCHBEND             =  6;  // 0xEx pitch bend
+   define int TYPE_SYSEX                 =  7;  // 0xF0 sys ex (see MIDIMapEvent.sysex_buffer)
+   define int TYPE_SYSCOM_TIMECODE       =  8;  // 0xF1 MIDI quarter frame time code
+   define int TYPE_SYSCOM_SONG_POSITION  =  9;  // 0xF2 song position pointer
+   define int TYPE_SYSCOM_SONG_SELECT    = 10;  // 0xF3 song select
+   define int TYPE_SYSCOM_F4             = 11;  // 0xF4 (undefined)
+   define int TYPE_SYSCOM_F5             = 12;  // 0xF5 (undefined)
+   define int TYPE_SYSCOM_TUNE_REQUEST   = 13;  // 0xF6 tune request
+   define int TYPE_SYSRT_TIMING_CLOCK    = 14;  // 0xF8 timing clock (24ppq)
+   define int TYPE_SYSRT_F9              = 15;  // 0xF9 (undefined)
+   define int TYPE_SYSRT_START           = 16;  // 0xFA start
+   define int TYPE_SYSRT_CONTINUE        = 17;  // 0xFB continue
+   define int TYPE_SYSRT_STOP            = 18;  // 0xFC stop
+   define int TYPE_SYSRT_FD              = 19;  // 0xFD (undefined)
+   define int TYPE_SYSRT_ACTIVE_SENSING  = 20;  // 0xFE active sensing
+   define int TYPE_SYSRT_SYSTEM_RESET    = 21;  // 0xFF system reset
+   define int TYPE_RPN                   = 22;  // registered parameter number (7bit or 14bit)
+   define int TYPE_NRPN                  = 23;  // (non-)registered parameter number (7bit or 14bit)
+}
+
+
+int inDevIdx = -1;
+MIDIIn midiin;
+
+// open by name
+if(midiin.openByName(IN_DEV_NAME))
+{
+   inDevIdx = midiin.deviceIdx;
+   trace "ok, MIDI input device \""+midiin.deviceName+"\" opened (deviceIdx="+inDevIdx+")";
+   if(b_reopen_in)
+      midiin.close();
+}
+else
+{
+   trace "failed to open MIDI input device \""+midiin.deviceName+"\"";
+   exit(10);
+}
+// inDevIdx = 1;
+
+if(b_reopen_in)
+{
+   // open by idx
+   trace "xxx open MIDIIn by idx="+inDevIdx;
+   if(midiin.openByIdx(inDevIdx))
+   {
+      trace "ok, MIDI input device idx="+midiin.deviceIdx+" opened (deviceName=\""+midiin.deviceName+"\")";
+   }
+   else
+   {
+      trace "failed to open MIDI input device idx="+inDevIdx;
+      exit(10);
+   }
+}
+
+midiin.start();
+midiin.setDataEntryMode(0, MIDI_DATAENTRYMODE_MSB);
+
+
+int outDevIdx = -1;
+MIDIOut midiout;
+
+// open by name
+if(midiout.openByName(OUT_DEV_NAME))
+{
+   outDevIdx = midiout.deviceIdx;
+   trace "ok, MIDI output device \""+midiout.deviceName+"\" opened (deviceIdx="+outDevIdx+")";
+   if(b_reopen_out)
+      midiout.close();
+}
+else
+{
+   trace "failed to open MIDI output device \""+OUT_DEV_NAME+"\"";
+   exit(10);
+}
+
+if(b_reopen_out)
+{
+   // open by idx
+   if(midiout.openByIdx(outDevIdx))
+   {
+      trace "ok, MIDI output device idx="+midiout.deviceIdx+" opened (deviceName=\""+midiout.deviceName+"\")";
+   }
+   else
+   {
+      trace "failed to open MIDI output device idx="+outDevIdx;
+      exit(10);
+   }
+}
+
+
+
+
+
+// send all notes off
+Buffer b; b.size = 1024;
+
+trace "send all notes off";
+b.offset = 0;
+b.i8 = 0xB0;
+b.i8 = 120;
+b.i8 = 0;
+midiout.sendBuffer(b);
+
+
+// read events
+Integer evIdx = 0;
+for(;;)
+{
+   // trace "xxx call midiin.nextEvent";
+   RecordedMIDIEvent ev <= midiin.nextEvent;
+   // trace "xxx midiin.nextEvent returned ev="+#(ev);
+   if(null != ev)
+   {
+      trace "["+evIdx.printf("%6d")+"] read ev size="+ev.size+" type="+TKS.scriptClassConstantToString(#(ev.midiMapEventType), MIDIMapDefs, "TYPE_")+"("+ev.midiMapEventType+")";
+      evIdx++;
+      if(ev.isLongMessage())
+      {
+         // SysEx
+         b.offset = 0;
+         ev.copyToStream(b);
+         trace "         ev.longMessage sz="+b.offset;
+      }
+      else
+      {
+         // 1..3 byte event
+         Integer io = ev.shortMessage;
+         if(MIDIMapDefs.TYPE_NRPN == ev.midiMapEventType)
+            trace "         nrpn="+ev.nrpnId+" val="+ev.dataEntry;
+         else
+            trace "         ev.shortMessage=0x"+io.printf("%08x");
+      }
+   }
+   else
+      TKS.sleep(1);
+}

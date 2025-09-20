@@ -1,0 +1,252 @@
+use tksdl;
+use tkopengl;
+
+int numframesrendered=0;
+
+int NUM_ROT = 128;
+
+int NUM_SPRITES = NUM_ROT * 3;
+
+boolean b_fog = false;
+int fog_alpha_mode = GL_REPLACE;
+
+boolean b_rotate = true;
+
+float frotg;
+
+FloatArray frot;
+FloatArray frotSpd;
+frot.alloc(3 * (NUM_SPRITES / NUM_ROT));
+frotSpd.alloc(3 * (NUM_SPRITES / NUM_ROT));
+loop(frot.maxElements)
+{
+   frot.add(rnd(2PI));
+   frot.add(rnd(2PI));
+   frot.add(rnd(2PI));
+   float rot = 0.025 + rnd(0.25);
+   frotSpd.add(rot);
+   frotSpd.add(rot + rnd(0.01)-0.005);
+   frotSpd.add(rot + rnd(0.01)-0.005);
+}
+
+FloatArray verts;
+verts.alloc(NUM_SPRITES * 3);
+loop(NUM_SPRITES)
+{
+   float x = rnd(2.0)-1;
+   float y = rnd(2.0)-1;
+   float z = rnd(2.0)-1;
+
+   float d = sqrt(x*x + y*y + z*z);
+   if(d > 1.0f)
+   {
+      d = 1.0f / d;
+      x *= d;
+      y *= d;
+      z *= d;
+   }
+   else if(d < 0.4f)
+   {
+      d = 0.4 / d;
+      x = x*d;
+      y = y*d;
+      z = z*d;
+   }
+
+   verts.add(x);
+   verts.add(y);
+   verts.add(z);
+}
+
+Texture tex;
+
+tex.loadImage("texture.png", 64, 64, 4);
+tex.flags = TEX_MODULATE | TEX_ALPHA | TEX_POINTSPRITE;
+
+function DrawSprites(int _startIdx, int _num) {
+
+}
+
+function onDraw() {
+
+   float dt=FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInitPerspective(1.3, 64.0, 0.1, 10.0);
+   glTranslatef(0,0, -2.0);
+
+   glColor4f(1.0, 1.0, 1.0, 1.0);
+
+   glEnable(GL_BLEND);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+   glEnable(GL_TEXTURE_2D);
+   tex.bind();
+
+   //glEnable(GL_POINT_SMOOTH);
+   ////glDisable(GL_POINT_SMOOTH);
+
+   glEnable(GL_POINT_SPRITE);
+   ////glEnable(0x8642);
+
+   glPointSize(32.0f);
+   glPointParameterf(GL_POINT_SIZE_MIN, 1.0f);
+   glPointParameterf(GL_POINT_SIZE_MAX, 64.0f);
+   glPointParameterf(GL_POINT_FADE_THRESHOLD_SIZE, 32.0f);
+   zglPointParameter3f(GL_POINT_DISTANCE_ATTENUATION,
+                       1.0f,
+                       2.0f,
+                       2.0f
+                       );
+
+   if(b_fog)
+   {
+      zglFogMode(GL_LINEAR);
+      zglFogStart(1.0);
+      zglFogEnd(3.0);
+      glEnable(GL_FOG);
+
+      switch(fog_alpha_mode)
+      {
+         default:
+         case GL_REPLACE:
+            zglFogColor4f(0, 0, 0.2, 1);
+            zglFogAlphaMode(GL_REPLACE);
+            glEnable(GL_DEPTH_TEST);
+            glAlphaFunc(GL_GREATER, 0.0);
+            glEnable(GL_ALPHA_TEST);
+            break;
+
+         case GL_BLEND:
+            zglFogColor4f(1, 1, 1, 0.0);
+            zglFogAlphaMode(GL_BLEND);
+            break;
+
+         case GL_MULT:
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            zglFogColor4f(0, 0, 0, 0.5);
+            zglFogAlphaMode(GL_MULT);
+            break;
+      }
+   }
+
+   zglVertexPointer(verts);
+   glEnableClientState(GL_VERTEX_ARRAY);
+
+   glRotatef(frotg, 0,1,0);
+
+   int startIdx = 0;
+   int rotIdx=0;
+   loop(NUM_SPRITES / NUM_ROT)
+   {
+      glPushMatrix();
+
+      glRotatef(frot[rotIdx+0], 1,0,0);
+      glRotatef(frot[rotIdx+1], 0,1,0);
+      glRotatef(frot[rotIdx+2], 0,0,1);
+
+      glDrawArrays(GL_POINTS, startIdx, NUM_ROT);
+
+      glPopMatrix();
+      rotIdx+=3;
+      startIdx += NUM_ROT;
+   }
+
+   glDisableClientState(GL_VERTEX_ARRAY);
+
+   glDisable(GL_POINT_SPRITE);
+   glDisable(GL_TEXTURE_2D);
+   glDisable(GL_BLEND);
+
+   if(b_fog)
+   {
+      glDisable(GL_ALPHA_TEST);
+      glDisable(GL_DEPTH_TEST);
+      glDisable(GL_FOG);
+   }
+
+   if(b_rotate)
+   {
+      rotIdx = 0;
+      loop(frot.numElements/3)
+      {
+         frot[rotIdx+0] += frotSpd[rotIdx+0] * dt;
+         frot[rotIdx+1] += frotSpd[rotIdx+1] * dt;
+         frot[rotIdx+2] += frotSpd[rotIdx+2] * dt;
+         
+         rotIdx += 3;
+      }
+
+      frotg += 0.85 * dt;
+   }
+
+}
+
+function onOpen() {
+   tex.upload();
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         b_fog = !b_fog;
+         trace "[...] b_fog is now "+b_fog;
+         break;
+
+      case 'r':
+         b_rotate = !b_rotate;
+         trace "[...] b_rotate is now "+b_rotate;
+         break;
+
+      case 'a':
+         switch(fog_alpha_mode)
+         {
+            default:
+            case GL_REPLACE:
+               fog_alpha_mode = GL_BLEND;
+               trace "[...] fog_alpha_mode is now GL_BLEND";
+               break;
+
+            case GL_BLEND:
+               fog_alpha_mode = GL_MULT;
+               trace "[...] fog_alpha_mode is now GL_MULT";
+               break;
+
+            case GL_MULT:
+               fog_alpha_mode = GL_REPLACE;
+               trace "[...] fog_alpha_mode is now GL_REPLACE";
+               break;
+         }
+         break;
+   }
+}
+
+function main() {
+   use callbacks;
+
+   trace "[...] space: toggle fog mode (default=off)";
+   trace "[...]     a: toggle fog alpha mode (default=GL_REPLACE)";
+   trace "[...]     r: toggle rotation (default=on)";
+
+   FPS.tickInterval=1000.0/60;
+   //FPS.limit=30;
+   //FPS.limit=60;
+
+   // Viewport.multisampleSamples = 4;
+   // Viewport.multisampleBuffers = 1;
+
+   Viewport.openWindow(640, 480);
+   Viewport.swapInterval(1);
+
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}

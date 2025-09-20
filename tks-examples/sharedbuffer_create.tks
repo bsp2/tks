@@ -1,0 +1,111 @@
+
+// off 0: .b [config] benchmark flag
+// off 1: .b [config] use lock flag
+// off 2: .i [config] num iterations
+//     6: .b current owner (0=sharedbuffer_create task, 1=sharedbuffer_visit task) (when bLock=true)
+//     7: .i io count (when bLock=false)
+//    11: .s char[64]
+SharedBuffer sh;
+
+boolean bBenchmark = true;
+// boolean bBenchmark = false;
+
+// boolean bLock = true;
+boolean bLock = false;
+
+int numIter = bLock ? 1000000 : 50*1000000;
+
+if(sh.allocSharedMemoryByKey("sharedbuffer_test", 75))
+{
+   trace "shared memory created.";
+   // while(true) { TKS.sleep(1000); print "tick."; }
+
+   sh.fillZero();
+   sh.pokeI8(0, bBenchmark);
+   sh.pokeI8(1, bLock);
+   sh.pokeI32(2, numIter);
+   sh.setString(11, "task1 init");
+   print "string at offset 11 : " + sh.getString(11, 64);
+
+   int t;
+   int dt;
+   if(bBenchmark)
+   {
+      t = milliSeconds();
+      loop(1000000)
+      {
+         sh.lock(100);
+         sh.unlock();
+      }
+      // macOS: dt=602 => 1661129 locks/sec
+      dt = (milliSeconds() - t);
+      int locksPerSec = 1000000.0 * (1000.0 / dt);
+      trace "dt="+dt+" => "+locksPerSec+" locks/sec";
+   }
+
+   int iter = 0;
+   t = milliSeconds();
+   if(bLock)
+   {
+      for(;;)
+      {
+         if(sh.lock(0.1))
+         {
+            if(0 == sh.peekI8(6)) // may r/w ?
+            {
+               if(!bBenchmark)
+               {
+                  trace "["+iter+"] sh.string=\""+sh.getString(11, 64)+"\"";
+                  sh.setString(11, "hello from task1 iter="+iter);
+               }
+               sh.pokeI8(6, 1);
+               iter++;
+            }
+            sh.unlock();
+            if(!bBenchmark)
+               TKS.sleep(rand(20));
+            else if(iter >= numIter)
+               break;
+         }
+      }
+   }
+   else
+   {
+      int lastIOCount = -1;
+      for(;;)
+      {
+         int ioCount = sh.peekI32(7);
+         if(ioCount != lastIOCount) // may r/w ?
+         {
+            lastIOCount = ioCount + 1;
+            if(!bBenchmark)
+            {
+               trace "["+iter+"] sh.string=\""+sh.getString(11, 64)+"\"";
+               sh.setString(11, "hello from task1 ioCount="+ioCount+" iter="+iter);
+            }
+            sh.pokeI32(7, ioCount + 1);
+
+            // Next iteration
+            iter++;
+            if(!bBenchmark)
+               TKS.sleep(rand(20));
+            else if(iter >= numIter)
+               break;
+         }
+      }
+   }
+
+   if(bBenchmark)
+   {
+      dt = (milliSeconds() - t);
+      int iterPerSec = numIter * (1000.0 / dt);
+      trace "dt="+dt+" => "+iterPerSec+" iterations/sec (bLock="+bLock+")";
+      // (note) macOS: dt=2045 =>  488997 iterations/sec (bLock=1)
+      // (note) macOS: dt=8413 => 5943183 iterations/sec (bLock=0)
+   }
+}
+else
+{
+   die "failed to create shared memory.";
+}
+

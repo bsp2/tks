@@ -1,0 +1,217 @@
+
+use tksdl;
+use tkopengl;
+
+//
+// This example is loosely based on this tutorial by Josh A. Beam: <http://www.3ddrome.com/articles/shadowvolumes.php>
+// Also read this Wikipedia entry: <http://en.wikipedia.org/wiki/Shadow_volume>
+// Also see <http://www.gamedev.net/reference/articles/article1873.asp> (Carmack's Reverse)
+//
+
+float frot=0;
+int numframesrendered=0;
+
+float light_x = 0.0;
+float light_y = 3;
+float light_z = 0.0;
+
+float SHADOW_INF = 40.0;
+
+float cam_z = -8;
+
+FloatArray obj_verts = [
+    1, 1, -1,
+   -1, 1, -1,
+   -1, 1,  1
+    //-1, 1,  1
+];
+
+
+FloatArray shadow_verts; shadow_verts.alloc(3*3);
+
+function CalcTriangleShadowVolume(FloatArray verts, FloatArray shVerts, int off) {
+   compile loop(3)
+   {
+      float tx = (verts[off+0] - light_x);
+      float ty = (verts[off+1] - light_y);
+      float tz = (verts[off+2] - light_z);
+      float tl = SHADOW_INF / sqrt(tx*tx + ty*ty + tz*tz);
+      tx *= tl; ty *= tl; tz *= tl;
+      tx += light_x;
+      ty += light_y;
+      tz += light_z;
+      shVerts[off + 0] = tx;
+      shVerts[off + 1] = ty;
+      shVerts[off + 2] = tz;
+      off += 3;
+   }
+}
+
+function DrawShadowVolume(FloatArray verts, FloatArray shVerts, int off) {
+    // Draw back and front cap
+    glBegin(GL_TRIANGLES);
+    glVertex3f(shVerts[off+3*2+0], shVerts[off+3*2+1], shVerts[off+3*2+2]); // back cap
+    glVertex3f(shVerts[off+3*1+0], shVerts[off+3*1+1], shVerts[off+3*1+2]);
+    glVertex3f(shVerts[off+3*0+0], shVerts[off+3*0+1], shVerts[off+3*0+2]);
+
+    glVertex3f(verts[off+3*0+0], verts[off+3*0+1], verts[off+3*0+2]); // front cap
+    glVertex3f(verts[off+3*1+0], verts[off+3*1+1], verts[off+3*1+2]);
+    glVertex3f(verts[off+3*2+0], verts[off+3*2+1], verts[off+3*2+2]);
+    glEnd();
+
+    // Draw sides of shadow frustum
+    glBegin(GL_QUADS);
+    // front
+    glVertex3f(shVerts[off+3*2+0], shVerts[off+3*2+1], shVerts[off+3*2+2]);
+    glVertex3f(verts  [off+3*2+0], verts  [off+3*2+1], verts  [off+3*2+2]);
+    glVertex3f(verts  [off+3*1+0], verts  [off+3*1+1], verts  [off+3*1+2]);
+    glVertex3f(shVerts[off+3*1+0], shVerts[off+3*1+1], shVerts[off+3*1+2]);
+
+    // left
+    glVertex3f(shVerts[off+3*1+0], shVerts[off+3*1+1], shVerts[off+3*1+2]);
+    glVertex3f(verts  [off+3*1+0], verts  [off+3*1+1], verts  [off+3*1+2]);
+    glVertex3f(verts  [off+3*0+0], verts  [off+3*0+1], verts  [off+3*0+2]);
+    glVertex3f(shVerts[off+3*0+0], shVerts[off+3*0+1], shVerts[off+3*0+2]);
+
+    // right
+    glVertex3f(shVerts[off+3*0+0], shVerts[off+3*0+1], shVerts[off+3*0+2]);
+    glVertex3f(verts  [off+3*0+0], verts  [off+3*0+1], verts  [off+3*0+2]);
+    glVertex3f(verts  [off+3*2+0], verts  [off+3*2+1], verts  [off+3*2+2]);
+    glVertex3f(shVerts[off+3*2+0], shVerts[off+3*2+1], shVerts[off+3*2+2]);
+    glEnd();
+}
+
+function LoadCameraMatrix() {
+   zglInitPerspective(float(Viewport.width)/Viewport.height, 90.0, 0.2, 50);
+   glLoadIdentity();
+   glTranslatef(0,-3,cam_z);
+   //glRotatef(frot, 0,1,0);
+}
+
+function onDraw() {
+    float dt=FPS.precision;
+    glClearColor(0,0,0.2,1);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+    glDisable(GL_STENCIL_TEST);
+    glEnable(GL_DEPTH_TEST);
+
+    LoadCameraMatrix();
+
+    // Draw floor
+    glPushMatrix();
+    glRotatef(frot, 0,1,0);
+    glRotatef(30, 1,1,0);
+    glDisable(GL_CULL_FACE);
+    glColor3f(0.4,0.8,0.4);
+    glBegin(GL_QUADS);
+    glVertex3f(-10, -1, -10);
+    glVertex3f( 10, -1, -10);
+    glVertex3f( 10, -1,  10);
+    glVertex3f(-10, -1,  10);
+    glEnd();
+    glPopMatrix();
+
+    // Draw lightsource position and vector
+    glColor3f(1,1,0);
+    glLineWidth(1);
+    glBegin(GL_LINES);
+    glVertex3f(light_x-0.1, light_y-0.1, light_z-0.1);
+    glVertex3f(light_x+0.1, light_y+0.1, light_z+0.1);
+    glVertex3f(light_x+0.1, light_y-0.1, light_z+0.1);
+    glVertex3f(light_x-0.1, light_y+0.1, light_z-0.1);
+    
+    glVertex3f(light_x, light_y, light_z);
+    glVertex3f(-light_x, -light_y, -light_z);
+    glEnd();
+
+    // Draw "object"
+    glColor3f(1, 1, 0);
+    glBegin(GL_TRIANGLES);
+    glVertex3f(obj_verts[3*0+0], obj_verts[3*0+1], obj_verts[3*0+2]);
+    glVertex3f(obj_verts[3*1+0], obj_verts[3*1+1], obj_verts[3*1+2]);
+    glVertex3f(obj_verts[3*2+0], obj_verts[3*2+1], obj_verts[3*2+2]);
+    glEnd();
+
+    // Draw shadow frustum
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_STENCIL_TEST);
+    glEnable(GL_POLYGON_OFFSET_FILL);
+    glPolygonOffset(0.0f, 100.0f);
+    CalcTriangleShadowVolume(obj_verts, shadow_verts, 3*0);
+
+    // --- Shadow PASS 1 ---
+    glCullFace(GL_FRONT);
+    glStencilFunc(GL_ALWAYS, 0x0, 0xff);
+    glStencilOp(GL_KEEP, GL_INCR, GL_KEEP);
+    DrawShadowVolume(obj_verts, shadow_verts, 0);
+
+    // --- Shadow PASS 2 ---
+    glCullFace(GL_BACK);
+    glStencilFunc(GL_ALWAYS, 0x0, 0xff);
+    glStencilOp(GL_KEEP, GL_DECR, GL_KEEP);
+    DrawShadowVolume(obj_verts, shadow_verts, 0);
+
+    // --- Shadow PASS 3: draw actual shadow
+    glDisable(GL_POLYGON_OFFSET_FILL);
+    glDisable(GL_CULL_FACE);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glStencilFunc(GL_NOTEQUAL, 0x0, 0xff);
+    glStencilOp(GL_REPLACE, GL_REPLACE, GL_REPLACE);
+    glDisable(GL_DEPTH_TEST);
+    glColor3f(1,0,0);
+    zglInitOrtho(1,-1);
+    glLoadIdentity();
+    glBegin(GL_QUADS);
+    glVertex2f( 1,-1);
+    glVertex2f(-1,-1);
+    glVertex2f(-1, 1);
+    glVertex2f( 1, 1);
+    glEnd();
+    glDisable(GL_STENCIL_TEST);
+    glEnable(GL_DEPTH_TEST);
+    LoadCameraMatrix();
+
+    // Debug: draw frustum outlines
+    glColor3f(0,1,1);
+    glBegin(GL_LINES);
+    glVertex3f(light_x, light_y, light_z);
+    glVertex3f(shadow_verts[3*0+0], shadow_verts[3*0+1], shadow_verts[3*0+2]);
+    glVertex3f(light_x, light_y, light_z);
+    glVertex3f(shadow_verts[3*1+0], shadow_verts[3*1+1], shadow_verts[3*1+2]);
+    glVertex3f(light_x, light_y, light_z);
+    glVertex3f(shadow_verts[3*2+0], shadow_verts[3*2+1], shadow_verts[3*2+2]);
+    glEnd();
+    
+    frot+=dt;
+    wrap frot 0 360;
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   //print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function main() {
+   Viewport.stencilBits = 8;
+   Viewport.openWindow(640, 480);
+   use callbacks;
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=30;
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}
+

@@ -1,0 +1,166 @@
+// demonstrates how to output a pitch-modulated sinus signal using the audio device
+// the current note is controlled by a shared memory region
+use tksdl;
+
+float curr_pitch;
+float pitch;
+float sine_phase=0;
+// float pitch_phase=0;
+
+float note = 81;
+float amp = 1;
+float curr_amp = 1;
+
+// float base_note=69.0;
+float total_sec=0;
+
+int framenr=0;
+
+#define SHM_KEY "sine_piano__audioslave"
+enum {
+   SHM_UNREAD = 0
+   SHM_NOTEON = 1
+   SHM_NOTE = 2
+};
+
+SharedBuffer sh;
+if(sh.allocSharedMemoryByKey(SHM_KEY, 256))
+{
+   print "shared memory created.";
+   sh.pokeI8(SHM_UNREAD, false);
+   sh.pokeI8(SHM_NOTEON, 0); // 1=noteon, 0=noteoff
+   sh.pokeF32(SHM_NOTE, 0); // new midi note or 0
+}
+else
+{
+   die "failed to create shared memory.";
+}
+
+
+enum {
+   ADSR_ATTACK  = 0
+   ADSR_DECAY   = 1
+   ADSR_SUSTAIN = 2
+   ADSR_RELEASE = 3
+};
+#define ADSR_ATTACK_SPD 1.0
+#define ADSR_DECAY_SPD 0.01
+#define ADSR_SUSTAIN_LVL 0.15
+#define ADSR_RELEASE_SPD 0.001
+int adsr_step = ADSR_RELEASE;
+
+FloatArray lut_interpol_amp;
+lut_interpol_amp.alloc(256); 
+lut_interpol_amp.numElements = lut_interpol_amp.maxElements;
+int off_interpol_amp;
+
+function setAmp(float _amp) {
+   amp = _amp;
+   lut_interpol_amp.fill( ((amp-curr_amp) / 256.0) );
+   off_interpol_amp = 0;
+}
+
+function onAudioFrame() {
+   if(sh.peekI8(SHM_UNREAD))
+   {
+      if(sh.peekI8(SHM_NOTEON))
+      {
+         note = sh.peekF32(SHM_NOTE);
+         setAmp(0);
+         adsr_step = ADSR_ATTACK;
+         /// causes clicks sine_phase = 0;
+
+         float freq=MIDINoteToFrequency(note);//base_note+12*(0.5+0.5*sin(pitch_phase)));
+         total_sec+=(60.0/125.0)/96.0;
+         if( ! ((++framenr)&1023) )
+         {
+            print "time= "+tcint(total_sec/60.0)+"m:"+(tcint(total_sec)%60)+"s.";
+            print "freq="+freq;
+         }
+         pitch= (freq/(44100.0*0.5));
+//          pitch_phase+=0.01;
+//          wrap pitch_phase 0 2PI;
+      }
+      else
+      {
+         if(note==sh.peekF32(SHM_NOTE))
+         {
+            setAmp(ADSR_SUSTAIN_LVL);
+            adsr_step = ADSR_RELEASE;
+         }
+      }
+      sh.pokeI8(SHM_UNREAD, false);
+   }
+   else
+   {
+      switch(adsr_step)
+      {
+         case ADSR_ATTACK:
+            amp += ADSR_ATTACK_SPD;
+            if(amp>=1)
+            {
+               amp = 1;
+               adsr_step = ADSR_DECAY;
+            }
+            setAmp(amp);
+            break;
+         case ADSR_DECAY:
+            amp -= ADSR_DECAY_SPD;
+            if(amp<=ADSR_SUSTAIN_LVL)
+            {
+               amp = ADSR_SUSTAIN_LVL;
+               adsr_step = ADSR_SUSTAIN;
+            }
+            setAmp(amp);
+            break;
+         case ADSR_SUSTAIN:
+            break;
+         case ADSR_RELEASE:
+            amp -= ADSR_RELEASE_SPD;
+            if(amp<0)
+            {
+               amp = 0;
+            }
+            setAmp(amp);
+            break;
+      }
+   }
+
+}
+
+function onAudioBeginBlock(FloatArray _fa) {
+   AudioDevice.processTimeFrames();
+   AudioDevice.finishBlock();
+}
+
+
+function onAudioRender(FloatArray _fa) {
+   int i=0;
+   float cval;
+
+   compile loop(_fa.numElements>>1) {
+      cval=sin(sine_phase) * curr_amp;
+      _fa[i++]=cval;
+      _fa[i++]=cval;
+
+      curr_amp += lut_interpol_amp[off_interpol_amp];
+      lut_interpol_amp[off_interpol_amp] = 0.0;
+      off_interpol_amp = (off_interpol_amp+1) & 255;
+
+      sine_phase+=curr_pitch;
+      ////curr_amp += (amp-curr_amp)*0.01; // interpolate amplification 
+      curr_pitch += (pitch-curr_pitch)*0.08; // interpol pitch
+   }
+   wrap sine_phase 0 2PI;
+}
+
+function main() {
+   use callbacks;
+   AudioDevice.openDSP(44100, 600);
+   AudioDevice.ppq=192;
+   AudioDevice.bpm=125;
+   AudioDevice.volume=0.9;
+   AudioDevice.start();
+   SDL.eventLoop();
+   AudioDevice.stop();
+}

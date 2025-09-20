@@ -1,0 +1,180 @@
+
+// julia attractor - originally from michael wiegers (jet/avena), adapted for c and tks by bastian spiegel (fli)
+// june 2002.
+// may 2003: added fpu optimized loop (quick 10min hack), 140:225fps :)
+// jul 2003: removed asm optimized loop (because the inline assembler was removed)
+
+module Main;
+
+#define RENDERSIZE 128
+
+#define NUMLOOPS 1024
+
+int bforceint=false;
+int bvsync=false;
+int bwaitvblank=false;
+Texture tex_d;
+//  Texture tex_rd;
+float angle_i;
+float angle_j;
+int c8_clamptbl[4096];
+int ti=0;
+loop(256) c8_clamptbl[ti++]=ti;
+loop(c8_clamptbl.maxElements-256) c8_clamptbl[ti++]=255;
+
+// --------------------------------------------------------------------------------
+class JuliaAttractor {
+   //--------variables--------
+   int it_depth;
+   //--------methods--------
+   init() {
+      angle_i=0.0;
+      angle_j=0.26854;
+      it_depth=24;
+   }
+   
+   render(Texture _dtex) {
+      IntArray dtex; 
+      dtex.visitBytes(_dtex, 0, RENDERSIZE*RENDERSIZE*4);
+      int itd=it_depth;
+      compile
+      {
+         local float xx,yy,c1=sin(angle_i+sin(angle_i)*2PI)*0.75, c2=cos(angle_j)*0.7;
+         local float s_xx=1.0/float(RENDERSIZE>>2), s_yy=1.0/float(RENDERSIZE>>2);
+         local float c_yy=-1.8;
+         local int ly=0, iter, di=0;
+         loop(RENDERSIZE)
+         {
+            local float c_xx=-2.0;
+            loop(RENDERSIZE)
+            {
+               local float qxx,qyy,qxxyy;
+               qxx=c_xx*c_xx;
+               qyy=c_yy*c_yy;
+               xx=c_xx;
+               yy=c_yy;
+               qxxyy=qxx+qyy;
+               for(iter=0; (iter<itd) && (qxxyy<=4.0) ; iter++)
+               {
+                  yy=2.0*xx*yy+c2;
+                  xx=qxx-qyy+c1;
+                  qxx=xx*xx;
+                  qyy=yy*yy;
+                  qxxyy=qxx+qyy;
+               }
+               int c8=iter<<3;
+               dtex[di++]=($ff<<24)|(c8<<16)|(c8<<8)|c8_clamptbl[ly+(c8<<1)];
+               c_xx+=s_xx;
+            }
+            c_yy+=s_yy;
+            ly++;
+         }
+      }
+   }
+   
+   incIterationDepth() {
+      if(++it_depth>255) it_depth=255;
+      trace("[inc] iteration depth is now "+it_depth);
+   }
+   
+   decIterationDepth() {
+      if(--it_depth<4)it_depth=4;
+      trace("[dec] iteration depth is now "+it_depth);
+   }
+   
+}
+
+// --------------------------------------------------------------------------------
+JuliaAttractor jattr;
+
+function initTextures() {
+   int x;
+   tex_d.alloc(RENDERSIZE, RENDERSIZE, 4);
+   tex_d.clear(0);
+   tex_d.flags=TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+}
+
+function onDraw {
+   // ---- render texture using the CPU ----
+   jattr.render(tex_d);
+   zglInit2D(RENDERSIZE, RENDERSIZE); // init viewport
+   glEnable(GL_TEXTURE_2D);
+   zglColorARGB(#ffffffff);
+   // ---- scale-blit texture to screen using CPU+GPU ----
+   tex_d.update();
+   tex_d.bind();
+   glBegin(GL_QUADS);
+   glTexCoord2f(0.0, 0.0);
+   glVertex3f(0.0, 0.0, 0.0);
+   glTexCoord2f(1.0, 0.0);
+   glVertex3f(RENDERSIZE, 0.0, 0.0);
+   glTexCoord2f(1.0, 1.0);
+   glVertex3f(RENDERSIZE, RENDERSIZE, 0.0);
+   glTexCoord2f(0.0, 1.0);
+   glVertex3f(0.0, RENDERSIZE, 0.0);
+   glEnd();
+   Debug.Draw();
+
+   if(bwaitvblank) Viewport.waitVBlank();
+   float dt=FPS.precision;
+   angle_i+=0.008*dt;    wrap angle_i 0.0 2PI;
+   angle_j+=0.009485*dt; wrap angle_j 0.0 2PI;
+}
+
+function onOpen {
+   // ---- upload textures ----
+   Debug.Init();
+   initTextures();
+   tex_d.upload();
+}
+
+function onKeyboard(Key _k) {
+   if(_k.pressed) switch(_k.pressed) {
+         case VKEY_UP:    jattr.incIterationDepth(); break;
+         case VKEY_DOWN:  jattr.decIterationDepth(); break;
+         case VKEY_SPACE: bforceint=1-bforceint; configuration.forceInt=bforceint; FPS.reset(); break;
+         case 'v': 
+            bvsync = 1 - bvsync;
+            // Only call waitVBlank() when swap control extension is not available
+            bwaitvblank = ! Viewport.swapInterval(bvsync?1:0); 
+            trace "vsync set to "+bvsync+" , bwaitvblank is "+bwaitvblank;
+            Debug.Init();
+            break;
+         default:         Debug.OnKeyboard(_k); break;
+      }
+}
+
+function main {
+
+   use callbacks; // bind callbacks onKeyboard, onDraw, onOpen..
+
+   jattr.init();
+
+   if(Arguments.numElements)
+   {
+      //--------benchmark mode--------
+      trace("-------- benchmark mode --------");
+      initTextures();
+      int stime;
+      stime=SDL.ticks;
+
+      loop(NUMLOOPS)
+      {
+         jattr.render(tex_d);
+         angle_i+=0.01;
+         angle_j+=0.06485;
+         if(angle_i>2PI) angle_i-=2PI;
+         if(angle_j>2PI) angle_j-=2PI;
+      }
+      stime=SDL.ticks-stime;
+      trace(stime+"ms. "+(stime/float(NUMLOOPS))+"ms/itr. =>"+(1000.0/(stime/float(NUMLOOPS)))+"fps.");
+      exit(0);
+   }
+
+   FPS.tickInterval=1000/50;
+
+   Viewport.openWindow(RENDERSIZE*2, RENDERSIZE*2);
+   Viewport.caption="juliaAttractor | [escape] to exit";
+
+   SDL.eventLoop();
+}

@@ -1,0 +1,144 @@
+///
+/// file   : tcpserver.tks
+/// author : Bastian Spiegel <bastian.spiegel@web.de>
+/// descr. : an example for a simple tcp server
+/// license: do whatcha want but:  NO WARRANTIES OR FITNESS FOR A PARTICULAR PURPOSE..
+/// created: 240402
+/// changed:
+///
+///
+
+module TCPServer;
+
+use tksdl;
+use tksdl_net;
+
+TCPSocket tcpclient;
+class TCPServer  {
+    Buffer    pingbuf; // check alive
+    List      clients;
+    int       max_clients;
+    IPAddress ip;
+    TCPSocket server_socket;
+
+    TCPServer() {
+	pingbuf.setSize(5);
+	pingbuf.setString(0, "HELO");
+    }
+
+    ~TCPServer() {
+	removeAllClients();
+	server_socket.close();
+    }
+
+    start(int _port, int _maxclients) {
+	ip.init(INADDR_ANY, _port);
+	if(server_socket.open(ip))
+	    {
+		trace("[...] TCPServer::start: server socket ready.");
+		Network.allocSocketSet(_maxclients);
+		Network.addTCPSocket(server_socket);
+		max_clients=_maxclients;
+		return true;
+	    }
+	return 0;
+    }
+
+    // add current "tcpclient" client
+    addClient() {
+	int i;
+	if(clients.size!=max_clients)
+	    {
+		clients.addLast(#(deref tcpclient));
+		print "client added to list";
+		Network.addTCPSocket(tcpclient);
+		trace("[...] TCPServer::addClient: client connected.");
+		return 1;
+	    }
+	else
+	    {
+		trace("[---] TCPServer::addClient: maximum number of connections reached ("+max_clients+")");
+		return 0;
+	    }
+    }
+
+    removeAllClients() {
+	ListNode l;
+	TCPSocket s;
+	trace("[...] TCPServer::removeAllClients: removing sockets..");
+	foreach l in clients
+	    {
+		s<=l.objectValue;
+		Network.removeSocket(s);
+		s.close();
+	    }
+	clients.removeAll();
+    }
+
+    removeClient(Object _tcpclient) {
+	ListNode l<=clients.findPointer(_tcpclient);
+	if(l)
+	    {
+		//trace("[...] TCPServer::removeClient.");
+		TCPSocket s<=l.objectValue;
+		Network.removeSocket(s);
+		s.close();
+		clients.remove(l);
+	    }
+	else
+	    die "[---] TCPServer::removeClient: not found.";
+	print "[...] TCPServer::removeClient: exit.";
+    }
+
+    process(Object _xferbuf) {
+	Buffer xferbuf<=_xferbuf;
+	int nr=Network.checkSockets(250); // check every 1/4 second
+	if(nr)
+	    {
+		if(server_socket.socketReady())
+		    {
+			tcpclient<=server_socket.accept();
+			if(tcpclient)
+			    addClient();
+		    }
+		ListNode l;
+		TCPSocket s;
+		foreach l in clients
+		    {
+			s<=l.objectValue;
+			//trace("[...] TCPServer::process: check client");
+			if(s.socketReady())
+			    {
+				//trace("[...] TCPServer::process: client ready");
+				xferbuf.offset=0;
+  				int recvd=s.recv(xferbuf, xferbuf.size);
+				if(recvd>0)
+				    Main.onTCPServerRecv(s, xferbuf);
+			    }
+		    }
+	    }
+    }
+
+
+    keepAlive() {
+	ListNode l;
+	TCPSocket s;
+	l<=clients.head;
+	foreach l in clients
+	    {
+		s<=l.objectValue;
+		pingbuf.offset=0;
+		if(s.send(pingbuf, 4))
+		    {
+			//trace("[...] TCPServer::keepAlive: client keepalive ping OK\n");
+		    }
+		else
+		    {
+			trace("[...] TCPServer::keepAlive: client keepalive ping FAILED. disconnecting..");
+			removeClient(s);
+			return; // list may be corrupted now
+		    }
+	    }
+    }
+
+}

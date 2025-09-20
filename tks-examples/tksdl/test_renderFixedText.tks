@@ -1,0 +1,382 @@
+// ---------------------------------------------------------!!!!!!!!!!!!!!!!!!!!!!!!!!!++++++++++
+module Main;
+
+use tksdl;
+use tkopengl;
+use tkoldmath;
+
+ #define SCREEN_W 512
+ #define SCREEN_H 512
+// #define SCREEN_W 1024
+// #define SCREEN_H 768
+
+class Console {
+
+   protected IntArray stripes; // indexes texture stripes
+   protected IntArray dirty_rows;
+   protected StringArray strings;
+   protected PointerArray attributes;
+   protected PointerArray colors;
+   protected int con_width = SCREEN_W;
+   protected int con_height = SCREEN_H;
+   protected int num_cols;
+   protected int num_rows;
+   protected Texture tex_screen;
+   protected Texture tex_font;
+   protected int char_width = 8;
+   protected int char_height = 16;//11;
+   protected int view_x;
+   protected int view_y;
+   protected int max_cols;
+
+   protected int col_limit = 1024;
+
+   public method init(int _cols, _rows) {
+      num_cols = _cols;
+      num_rows = _rows;
+      tex_screen.alloc2n(con_width, con_height, 4);
+      tex_screen.clear(-1);
+      tex_font.loadImage("fixed.png", 0,0,0);
+      char_height = tex_font.sy;
+      view_x = 0;
+      view_y = 0;
+      dirty_rows.alloc(num_rows);
+      dirty_rows.numElements = num_rows;
+      dirty_rows.fill(0);
+      stripes.alloc(num_rows);
+      stripes.identity(num_rows);
+   }
+
+//    public setView(int _x, _y) {
+      
+//    }
+
+   public method setText(String _text) {
+      strings <= _text.splitChar('\n');
+      int i=0;
+      attributes.alloc(strings.numElements);
+      colors.alloc(strings.numElements);
+      max_cols = 0;
+      loop(strings.numElements)
+      {
+         //trace "strings["+i+"]=\""+strings[i];
+         IntArray attr <= new IntArray;
+         attr.alloc(col_limit);
+         attr.numElements = col_limit;
+         attr.fill(0);
+
+         IntArray cols <= new IntArray;
+         cols.alloc(col_limit);
+         cols.numElements = col_limit;
+         cols.fill(#ff000000);
+
+         attributes[i] = deref attr;
+         colors[i] = deref cols;
+
+         if(i<num_rows)
+         {
+            dirty_rows[i] = true;
+         }
+         if(strings[i].length > max_cols)
+         {
+            max_cols = strings[i].length;
+         }
+         i++;
+      }
+      colorTks();
+      
+   }
+
+   private method setStyleByPattern(IntArray _cols, _attrs, String _s, _pattern, int _col, _attr) {
+      int off;
+      int pl = _pattern.length-1;
+      off = _s.indexOf(_pattern, 0);
+      while(off!=-1) {
+         int i=off;
+         loop(pl)
+         {
+            _cols[i] = _col;
+            _attrs[i] = _attr;
+            i++;
+         }
+         off = _s.indexOf(_pattern, off+1);
+      }
+   }
+
+   public method colorTks() {
+      int linenr=0;
+      loop(strings.numElements)
+      {
+         IntArray col <= colors[linenr];
+         IntArray at <= attributes[linenr];
+         String s <= strings[linenr];
+
+         setStyleByPattern(col, at, s, "class", #ffcc4444, 0);
+         setStyleByPattern(col, at, s, "method", #ffcc4444, 0);
+         setStyleByPattern(col, at, s, "function", #ffcc4444, 0);
+         setStyleByPattern(col, at, s, "public", #ff884488, 0);
+         setStyleByPattern(col, at, s, "private", #ff884488, 0);
+         setStyleByPattern(col, at, s, "protected", #ff884488, 0);
+         setStyleByPattern(col, at, s, "if", #ff884488, 0);
+         setStyleByPattern(col, at, s, "case", #ff884488, 0);
+         setStyleByPattern(col, at, s, "while", #ff884488, 0);
+         setStyleByPattern(col, at, s, "loop", #ff884488, 0);
+         setStyleByPattern(col, at, s, "1024", #ff000000, 1);
+         setStyleByPattern(col, at, s, "int", #ff114422, 0);
+         setStyleByPattern(col, at, s, "Console", #ff111144, 2);
+         setStyleByPattern(col, at, s, "glBegin", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glEnd", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glColor4f", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glEnable", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glDisable", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glClearColor", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glClear", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glVertex2f", #ff080888, 0);
+         setStyleByPattern(col, at, s, "glTexCoord2f", #ff080888, 0);
+
+         linenr++;
+      }
+   }
+
+   public method onOpen() {
+      tex_screen.unload();
+   }
+
+//    public method renderHello() {
+//       IntArray colors <= [ #ffffffff, #ffccffcc, #ffffcccc, #ff77ccff, #ffffffff ];
+//       IntArray attrs <=  [ 0        , 1        , 0        , 0        , 0         ];
+//       String   text <=     "H"        "e"        "l"        "l"        "o"        ;
+//       int x = 0;
+//       int y = 0;
+//       text[0] = 32 + rnd(27);
+//       tex_screen.renderFixedText(tex_font, char_width, text, 0, x, y, colors, attrs);
+//       tex_screen.updateRegion(0,0,40,char_height);
+//    }
+
+   public method render() {
+      int rownr = 0;
+      int linenr = view_y;
+      int x = 0;
+      int num;
+      if(strings.numElements<num_rows)
+      {
+         num = strings.numElements;
+      }
+      else
+      {
+         num = num_rows;
+      }
+      loop(num)
+      {
+         if(dirty_rows[rownr])
+         {
+            IntArray col; col.visit(colors[linenr], view_x, colors[linenr].numElements-view_x);
+            IntArray at; at.visit(attributes[linenr], view_x, attributes[linenr].numElements-view_x);
+            String   text; text.visit(strings[linenr], view_x, strings[linenr].length-view_x);
+            int y = stripes[rownr]*char_height;
+            tex_screen.renderFixedText(tex_font, char_width, text, 0, y, col, at);
+            tex_screen.updateRegion(0, y, num_cols*char_width, char_height);
+            dirty_rows[rownr] = false;
+         }
+         linenr++;
+         rownr++;
+      }
+   }
+
+   public method scrollRight() {
+      if( (view_x+num_cols) < max_cols)
+      {
+         view_x++;
+         redrawAllRows();
+      }
+   }
+
+   public method scrollLeft() {
+      if( (view_x>0) )
+      {
+         view_x--;
+         redrawAllRows();
+      }
+   }
+
+   public method scrollDown() {
+      if( (view_y+num_rows) < strings.numElements)
+      {
+         view_y++;
+         dirty_rows.delete(0);
+         dirty_rows.add(true);
+         ////tex_screen.drawFilledBox(ivector(0,stripes[0]*char_height), ivector(con_width, char_height), #ffffffff);
+         tex_screen.drawFilledBox(0,stripes[0]*char_height, con_width, char_height, #ffffffff);
+         stripes.add(stripes[0]);
+         stripes.delete(0);
+      }
+   }
+
+   public method scrollUp() {
+      if( view_y>0 )
+      {
+         view_y--;
+         dirty_rows.insert(0, true);
+         dirty_rows.delete(num_rows);
+         ////tex_screen.drawFilledBox(ivector(0,stripes[num_rows-1]*char_height), ivector(con_width, char_height), #ffffffff);
+         tex_screen.drawFilledBox(0,stripes[num_rows-1]*char_height, con_width, char_height, #ffffffff);
+         stripes.insert(0, stripes[num_rows-1]);
+         stripes.delete(num_rows);
+      }
+   }
+
+   public method pageDown() {
+      loop(num_rows>>1)
+      {
+         scrollDown();
+      }
+   }
+
+   public method pageUp() {
+      loop(num_rows>>1)
+      {
+         scrollUp();
+      }
+   }
+
+   public method gotoTop() {
+      view_y = 0;
+      redrawAllRows();
+   }
+
+   public method gotoEnd() {
+      view_y = strings.numElements-num_rows;
+      if(view_y<0)
+         view_y=0;
+      redrawAllRows();
+   }
+
+   protected method redrawAllRows() {
+      stripes.identity(num_rows);
+      int rownr = 0;
+      loop(num_rows)
+      {
+         dirty_rows[rownr] = true;
+         rownr++;
+      }
+      tex_screen.clear(-1);
+   }
+
+   public method draw() {
+      render();
+      glEnable(GL_TEXTURE_2D);
+      tex_screen.bind();
+      glColor4f(0,0,1,1);
+      int rownr=0;
+      glBegin(GL_QUADS);
+      int num;
+      if(strings.numElements<num_rows)
+      {
+         num = strings.numElements;
+      }
+      else
+      {
+         num = num_rows;
+      }
+         
+      loop(num)
+      {
+         int dy = rownr*char_height;
+         int y = stripes[rownr]*char_height;
+         float vt = float(y)/tex_screen.sy;
+         float vb = float(y+char_height)/tex_screen.sy;
+         glTexCoord2f( 0, vt);
+         glVertex2f  ( 0, dy);
+         glTexCoord2f( 1, vt);
+         glVertex2f  ( tex_screen.sx,  dy);
+         glTexCoord2f( 1, vb);
+         glVertex2f  ( tex_screen.sx, dy+char_height);
+         glTexCoord2f( 0, vb);
+         glVertex2f  ( 0, dy+char_height);
+         rownr++;
+      }
+      glEnd();
+      glDisable(GL_TEXTURE_2D);
+   }
+   
+}
+
+Console console;
+console.init(SCREEN_W/8, SCREEN_H/16/*11*/);
+String text;
+text.load("test_renderFixedText.tks", true);
+console.setText(text);
+
+function onDraw {
+      // ---- draws the screen (and the render texture)
+   zglInit2D(Viewport.width, Viewport.height);
+   glDisable(GL_BLEND);
+   glDisable(GL_DEPTH_TEST);
+   glClearColor(0.1,0.1,0.1,1);
+   glClear(GL_COLOR_BUFFER_BIT);
+
+   console.draw();
+ 
+}
+
+function onOpen() {
+   console.onOpen();
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   if(_nbs&MOUSE_WHEELDOWN)
+   {
+      console.scrollDown();
+   }
+   else if(_nbs&MOUSE_WHEELUP)
+   {
+      console.scrollUp();
+   }
+   
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+      case VKEY_HOME:
+         console.gotoTop();
+         break;
+      case VKEY_END:
+         console.gotoEnd();
+         break;
+      case VKEY_DOWN:
+         console.scrollDown();
+         break;
+      case VKEY_UP:
+         console.scrollUp();
+         break;
+      case VKEY_PAGEUP:
+         console.pageUp();
+         break;
+      case VKEY_PAGEDOWN:
+         console.pageDown();
+         break;
+      case VKEY_RIGHT:
+         console.scrollRight();
+         break;
+      case VKEY_LEFT:
+         console.scrollLeft();
+         break;
+   }
+}
+
+function main {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/50;   // set timer speed to 50Hz
+   FPS.tickBuffer=0;             // catch up 0 missed "ticks"
+   FPS.limit = 30;
+
+   Viewport.openWindow(SCREEN_W, SCREEN_H);
+   SDL.enableKeyRepeat(200, 10);
+
+   SDL.eventLoop();
+}

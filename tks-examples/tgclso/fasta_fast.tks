@@ -1,0 +1,173 @@
+// ---- 
+// ---- file: fasta_fast.tks
+// ---- 
+// ---- Originally written in the "C" language for the 
+// ---- "Great Computer Language Shootout" (tgclso)
+// ---- <http://shootout.alioth.debian.org/>
+// ---- by Paul Hsieh 
+// ---- TkScript port by Bastian Spiegel <bs@tkscript.de>
+// ---- The fasta_fast.tks version uses a lookup-table to speed up the selectRandom() function;
+// ---- actually this makes some assumptions on the distribution of the aminoacid powers.
+// ---- Also see "fasta.tks" which is 16% slower but uses no "LUT" tricks.
+// ---- 
+// ---- From the current tgclso homepage: 
+// ---- "Each program should
+// ---- ""
+// ---- "    * encode the expected cumulative probabilities for 2 alphabets"
+// ---- "    * generate DNA sequences, by weighted random selection from the alphabets"
+// ---- "      (using the pseudo-random number generator from the random benchmark)"
+// ---- "    * generate DNA sequences, by copying from a given sequence"
+// ---- "    * write 3 sequences line-by-line in FASTA format"
+// ---- ""
+// ---- 
+// ---- Also see:
+// ---- <http://en.wikipedia.org/wiki/Fasta_format>
+// ---- <http://shootout.alioth.debian.org/benchmark.php?test=fasta&lang=all&sort=fullcpu>
+// ---- 
+// ---- Results:   
+// ----           perl5.8.0: ~13s
+// ----         tks0.9.0.60: ~4265ms
+// ----    
+
+class random { // linear congruential random generator 
+   define int IM = 139968;
+   define int IA = 3877;
+   define int IC = 29573;
+  
+   static LongLong last = 42;
+   static public method gen_random (Double max) {
+      last = (last * IA + IC) % IM;
+      return (max * last) / IM;
+   }
+}
+
+class Aminoacids { char c; Double p; }
+
+
+/* Weighted selection from alphabet */
+#define LUT_PREC 62700
+function makeCumulative (Aminoacids genelist[], IntArray lut) {
+    Double cp = 0.0;
+    Aminoacids a;
+    int k=0;
+    int kn=0;
+    int i=0;
+    int num=genelist.numElements;
+    loop(num) {
+       a<=genelist[i];
+       cp += a.p;
+       a.p = cp;
+       kn=cp*LUT_PREC; 
+       compile while(k<kn) lut[k++]=i; // create LUT entry
+       i++;
+    }
+}
+
+Double double_one=1;
+function selectRandom (Aminoacids genelist[], IntArray lut) {
+   return genelist[lut[tcint(tcfloat(random.gen_random(double_one))*LUT_PREC)]].c; // use the LUT, assumes that each individual power is at least 0.01
+}
+
+/* Generate and write FASTA format */
+
+#define LINE_LENGTH 60
+
+function makeRepeatFasta (String id, String desc, String s, int n) {
+   int k = 0, kn = s.length-1, m;
+   print ">"+id+" "+desc;
+   
+   compile while(n) // JIT doubles loop execution speed (if n gets bigger than 200,000)
+   {
+      int done=n<LINE_LENGTH?n:LINE_LENGTH;  //int done=mathMini(n, LINE_LENGTH);
+      m=done; 
+      while (m >= (kn - k)) {
+         StdOutStream.writeString(s, k, kn-k); // write substring [k..kn] of s to standard output
+         m -= kn - k;
+         k = 0;
+      }
+      StdOutStream.writeString(s, k, m);
+      StdOutStream.i8='\n'; 
+      k += m;
+      n -= done;
+   }
+ }
+
+function makeRandomFasta (String id, String desc, Aminoacids genelist[], IntArray lut, int n) {
+   int todo = n;
+   int i, m;
+   
+   print ">"+id+" "+desc;
+   
+   String pick; pick.alloc(LINE_LENGTH+1);
+   compile while(todo>0) 
+   { // the JIT is almost useless for this loop since the loop body is a "hybrid statement"
+      m=mathMini(todo, LINE_LENGTH);
+      i=0; // 90% of the loop execution time is spent in selectRandom()
+      loop(m) pick[i++] = selectRandom (genelist, lut); // the function call itself eats 3% cpu time (38% if the function would just return ' ')
+      pick[m] = 0; // please notice that writing to String chars is not JITed. 
+      print pick; // This could eventually be replaced by  "s.fromArray(pick); print s;" (if pick was a "char pick[LINE_LENGTH+1];") 
+      todo -= LINE_LENGTH;
+   }
+}
+
+/* Main -- define alphabets, make 3 fragments */
+
+function Doublef   (float _f)  { local Double d=_f; return deref d; }
+function DoubleS   (String _s) { local Double d=_s; return deref d; }
+function Aminoacids(char _c, Double _p) { local Aminoacids a; a.c=_c; a.p=_p; return deref a; }
+
+Aminoacids iub[] = [
+    Aminoacids('a', Doublef(0.27))
+    Aminoacids('c', Doublef(0.12))
+    Aminoacids('g', Doublef(0.12))
+    Aminoacids('t', Doublef(0.27))
+
+    Aminoacids('B', Doublef(0.02))
+    Aminoacids('D', Doublef(0.02))
+    Aminoacids('H', Doublef(0.02))
+    Aminoacids('K', Doublef(0.02))
+    Aminoacids('M', Doublef(0.02))
+    Aminoacids('N', Doublef(0.02))
+    Aminoacids('R', Doublef(0.02))
+    Aminoacids('S', Doublef(0.02))
+    Aminoacids('V', Doublef(0.02))
+    Aminoacids('W', Doublef(0.02))
+    Aminoacids('Y', Doublef(0.02))
+ ];
+
+Aminoacids homosapiens[] = [
+   Aminoacids('a', DoubleS("0.3029549426680"))
+   Aminoacids('c', DoubleS("0.1979883004921"))
+   Aminoacids('g', DoubleS("0.1975473066391"))
+   Aminoacids('t', DoubleS("0.3015094502008"))
+];
+
+int lut_iub[LUT_PREC+1];
+int lut_homosapiens[LUT_PREC+1];
+
+
+String alu =
+"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGG"
+"GAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGA"
+"CCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAAT"
+"ACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCA"
+"GCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGG"
+"AGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCC"
+"AGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA";
+
+function main() {
+   int n=Arguments.numElements?Arguments[0]:1000;
+   
+   int t=milliSeconds();
+
+   makeCumulative (iub, lut_iub);
+   makeCumulative (homosapiens, lut_homosapiens);
+   
+   makeRepeatFasta ("ONE", "Homo sapiens alu", alu, n*2);
+   makeRandomFasta ("TWO", "IUB ambiguity codes", iub, lut_iub, n*3);
+   makeRandomFasta ("THREE", "Homo sapiens frequency", homosapiens, lut_homosapiens, n*5);
+
+   selectRandom(iub, lut_iub);
+
+   t=milliSeconds()-t; stderr "t(ms)="+t+"\n";
+}

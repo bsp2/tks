@@ -1,0 +1,356 @@
+///
+/// file      : sinescroller.tks
+/// author    : Bastian Spiegel <fli@tkscript.de>
+/// descr.    : font to texture render demo, sine scroller, png loading, texture mapping, oldskool effect;)
+/// license   : provided "AS IS". no copyright, no liability. use as you want.
+/// changelog :
+///             11Dec2001 <fli> first release
+///             01Aug2002 <fli> added waitVBlank handling for smooth scrolling, fixed badly chosen
+///                               movement parameters
+///             29Dec2002 <fli> improved visuals and speed, added motion blur, vsync is now configurable with "v" key
+///                             "color-cycling" can be toggled with "r".
+///             27072003 <fli> fixed for tksdl plugin
+//
+///
+module Main;
+use "tksdl";
+
+#define GRID_SX 512
+#define TEX_SX  512
+
+Texture       tex_gray;
+function init_gray_texture() {
+   tex_gray.alloc(64,64,4);
+   compile {
+      local int idx=0;
+      loop(64)
+         loop(64)
+         tex_gray[idx++]=#b800001c;
+   }
+   tex_gray.flags=TEX_ALPHA;
+}
+
+Font          font;
+Texture       tex;
+Texture       scroll_tex;
+TexScrollText scroller;
+Object        texp;
+texp<=scroll_tex;
+int           scrcount=0;
+int           sine_numxsteps=GRID_SX;
+int           sine_style=1;
+int           clear_mode=true;
+int           first_frame;
+int           count_down=10;
+float         cia_dir=1.0;
+float         cia_oval;
+float         cia_oadd;
+float         xtable[];
+xtable.alloc(sine_numxsteps+1);
+xtable.setNumElements(sine_numxsteps+1);
+WrappedFloat  ctick;
+WrappedFloat  sinescr_oa;
+WrappedFloat  sinescr_ia;
+WrappedFloat  sinescr_oax;
+WrappedFloat  sinescr_zoomo;
+WrappedFloat  sinescr_zoomi;
+int           waitvblank=false;
+
+function draw_textured_quad compile {
+   glBegin(GL_QUADS);
+   glTexCoord2f(0.0, 0.0);
+   glVertex3f(-1.0, -1.0, 0.0);
+    
+   glTexCoord2f(1.0, 0.0);
+   glVertex3f(1.0, -1.0, 0.0);
+    
+   glTexCoord2f(1.0, 1.0);
+   glVertex3f(1.0, 1.0, 0.0);
+    
+   glTexCoord2f(0.0, 1.0);
+   glVertex3f(-1.0, 1.0, 0.0);
+   glEnd();
+}
+
+function draw_sine_scroller() {
+   compile {
+      zglInitOrtho(1.0, -1.0);
+      glLoadIdentity();
+      glScalef(1.25, 1.9, 1.0);
+      glTranslatef(0.20, -0.43, 0.0);
+//    scroll_tex.update();
+      scroll_tex.bind();
+      sinescr_ia.value=sinescr_oa.value;
+      float x=-1.0;
+      float xstep=2.0/sine_numxsteps;
+      float u=0.0;
+      float ustep=1.0/sine_numxsteps;
+      float y;
+      float ystep=1.0;
+      float xr=x+xstep;
+      float ur=ustep;
+      float ia_add=sinescr_ia.add;
+      float ia_val=sinescr_oa.value;
+      float cia_add=cia_dir*sinescr_ia.add*0.555;
+      float cia_val=cia_oval;
+      float cf;
+      float rcf;
+      glBegin(GL_QUADS);
+      loop sine_numxsteps
+      {
+         //c8=(0.2+abs(tan(cia_val)))*#10;
+         cf=(0.2+abs(tan(cia_val)))/16.0;
+         if(cf > 1.0f) cf = 1.0f;
+         glColor4f(cf,cf,cf,1);
+         //glColorARGB(argb(#ff,c8,c8,c8));
+         y=sin(ia_val)*0.20+0.0005+0.0052*sin(ia_val)*sin(cia_val*16);
+         glTexCoord2f(u, 0.0);
+         glVertex3f(x, y, 0.0);
+         glTexCoord2f(ur, 0.0);
+         glVertex3f(xr, y, 0.0);
+         //rc8=c8*4.0;
+         rcf=cf*4;
+         if(rcf>1)rcf=1;
+         glColor4f(rcf,rcf,rcf,1);
+         glTexCoord2f(ur, 1.0);
+         glVertex3f(xr, y+ystep, 0.0);
+         glTexCoord2f(u, 1.0);
+         glVertex3f(x, y+ystep, 0.0);
+         cia_val+=cia_add;
+         ia_val+=ia_add;
+         x+=xstep;
+         xr+=xstep;
+         u+=ustep;
+         ur+=ustep;
+      }
+      glEnd();
+   }
+}
+
+function draw_sinexy_scroller() {
+   int ctable[];
+   ctable.alloc(sine_numxsteps+1);
+   ctable.setNumElements(sine_numxsteps);
+
+   compile {
+      float zfar=100.0;
+      zglInitPerspective(1.0, 45.0, 0.1, zfar);
+      scroll_tex.bind();
+      glLoadIdentity();
+      glScalef(6.5, -5.0, 1.0);
+      glTranslatef(-0.05, -0.5, -10.5);
+      glBlendFunc(GL_SRC_ALPHA, GL_SRC_ALPHA);
+      sinescr_ia.value=sinescr_oa.value;
+      float x=-1.0;
+      float xstep=2.0/sine_numxsteps;
+      xtable[0]=x;
+      int i=1;
+      float csin;
+      int crg;
+      int cb;
+      sinescr_zoomi.value=sinescr_zoomo.value;
+      float zoomi_val=sinescr_zoomo.value;
+      float zoomi_add=cia_dir*sinescr_zoomi.add;
+      float ia_val=sinescr_ia.value;
+      float ia_add=sinescr_ia.add;
+      loop sine_numxsteps
+      {
+         csin=sin(ia_val);
+         x+=xstep*0.95+(-csin)*0.2*xstep;
+         xtable[i]=x;
+         csin=(csin+1.0)*0.5;
+         crg=$a0*csin+$10;
+         cb=$a0*csin+$10;
+         ctable[i++-1]=rgb(crg, crg, cb);
+         ia_val+=ia_add;
+      }
+
+      ia_val=sinescr_oa.value;
+
+      local float cz;
+      local float czr;
+      local float u=0.0;
+      local float ustep=0.75/sine_numxsteps;
+      local float y;
+      local float yr;
+      local float ystep=1.0;
+      local float xr;
+      local float ur=ustep;
+      cz=sin(zoomi_val)*5.0-5.0;
+      y=sin(ia_val)*0.3;
+      i=0;
+      glBegin(GL_QUADS);
+      loop sine_numxsteps-1
+      {
+         zglColorARGB(ctable[i]);
+         x=xtable[i];
+         xr=xtable[++i];
+         zoomi_val+=zoomi_add;
+         czr=sin(zoomi_val)*5.0-5.0;
+         ia_val+=ia_add;
+         yr=sin(ia_val)*0.3;
+         glTexCoord2f(u, 1.0);
+         glVertex3f(x, y+ystep, cz);
+         glTexCoord2f(u, 0.0);
+         glVertex3f(x, y, cz);
+         zglColorARGB(ctable[i]);
+         glTexCoord2f(ur, 0.0);
+         glVertex3f(xr, yr, czr);
+         glTexCoord2f(ur, 1.0);
+         glVertex3f(xr, yr+ystep, czr);
+         y=yr;
+         cz=czr;
+         u+=ustep;
+         ur+=ustep;
+      }
+      glEnd();
+   }
+}
+
+function onDraw {
+   compile {
+      zglInitOrtho(1.0, 1.0);
+      if count_down
+         if !--count_down
+            cia_dir=-1.0;
+      if first_frame || clear_mode
+                        {
+                           first_frame=0;
+                           glClearColor(0.0625, 0.125, 0.35647, 1);
+                           glClear(GL_COLOR_BUFFER_BIT);
+                        }
+
+      zglColorARGB(#ff000011);
+      glBlendFunc(GL_SRC_ALPHA, GL_SRC_ALPHA);
+      glEnable(GL_BLEND);
+      glEnable(GL_TEXTURE_2D);
+      glDisable(GL_DEPTH_TEST);
+      if(!clear_mode)
+      {
+         // ---- shade background, requires single buffering..  ----
+         tex_gray.bind();
+         draw_textured_quad();
+      }
+      // ---- actually draw something ----
+      if sine_style 
+         draw_sine_scroller();
+      else
+         draw_sinexy_scroller();
+
+      Debug.Draw();
+
+      if waitvblank Viewport.waitVBlank();
+
+      // ---- increase tick counters ----
+      float fprec=FPS.precision;
+      cia_oval+=cia_oadd*fprec;
+      while(cia_oval>=2PI) cia_oval-=2PI;
+      ctick.tickPrecise(fprec);
+      sinescr_oa.tickPrecise(fprec);
+      sinescr_zoomo.tickPrecise(fprec);
+      // ---- render new scrolltext texture and upload it ----
+      scroller.render(scroll_tex, fprec);
+   }
+}
+
+function InitCounters() {
+   if !sine_style
+   {
+      sinescr_oa.init(0.0, 2PI/100, 0.0, 2PI);
+      sinescr_ia.init(0.0, 2PI/200, 0.0, 2PI);
+      sinescr_zoomo.init(0.0, -2PI/150, 0.0, 2PI);
+      sinescr_zoomi.init(0.0, 2PI/150, 0.0, 2PI);
+   }
+   else
+   {
+      sinescr_oa.init(0.0, 2PI/90, 0.0, 2PI);
+      sinescr_ia.init(0.0, -2PI/200, 0.0, 2PI);
+   }
+   cia_oval=0.0;
+   cia_oadd=2PI/140;
+}
+
+function ToggleVSync() {
+   waitvblank=1-waitvblank;
+   FPS.reset();
+   trace "vsync set to "+waitvblank;
+}
+
+function ToggleClearMode() {
+   clear_mode=1-clear_mode;
+   FPS.reset();
+   trace "clear_mode set to "+clear_mode;
+}
+
+function ToggleStyle() {
+   sine_style=1-sine_style; 
+   cia_dir=1-(sine_style*2);
+   InitCounters();
+   trace "style set to "+sine_style;
+}
+
+function ToggleDirection() {
+   cia_dir=-cia_dir;
+   trace "direction="+cia_dir;
+}
+
+function onOpen() {
+   scroll_tex.unload();
+   scroll_tex.alloc(TEX_SX, 64, 1);
+   scroll_tex.clear(0);
+   scroll_tex.flags=TEX_MODULATE|TEX_MAGFILTERLINEAR|TEX_MINFILTERLINEAR;
+   scroll_tex.upload();
+
+   Debug.Init();
+   tex_gray.upload();
+   first_frame=1;
+}
+
+function onKeyboard(Key _k) {
+   if(_k.pressed) switch _k.pressed {
+            case ' ': ToggleStyle(); break;
+            case 'v': ToggleVSync(); break;
+            case 'c': ToggleClearMode(); break;
+            case 'r': ToggleDirection(); break;
+            default: Debug.OnKeyboard(_k); break;
+         }
+}
+
+function main() {
+
+   use callbacks;
+
+   // ---- create texture to render scrolltext into ----
+   // ---- load font ----
+   if(font.loadPixelFont("fonts/arial32"))
+   {
+      trace "PixelFont loaded. Height="+font.height;
+   }
+
+//      font.savePixelFont("testfont");
+//        if font.sioLoadPixelFont(1, "testfont")
+//       trace "local PixelFont loaded. Height="+font.height;
+
+   Object fontp;
+   fontp<=font;
+   scroller.init(fontp, "[press space to toggle scroller styles]                        this example demonstrates how to render a scrolltext into a texture and then distort it using vertex transformations.............................................have a lot of phun :)..................................................still reading?..........................scroller restarts after a few dots..............................................................", 1, TEX_SX-56);
+
+   init_gray_texture();
+
+   ctick.init(0.0, 1.0, 0.0, 360.0);
+
+   InitCounters();
+
+   FPS.tickInterval=1000.0/50.0;
+
+   // ---- init video, open window ----
+   Viewport.setScreenResolution(1024,768,32);
+   //configuration.setScreenResolution(512,384,16);
+//     Viewport.multisampleSamples = 2;
+//     Viewport.multisampleBuffers = 1;
+   Viewport.openWindow(512, 128);
+   waitvblank = ! Viewport.swapInterval(1);
+   Viewport.caption="fonttexture.tks";
+
+   SDL.eventLoop();
+}

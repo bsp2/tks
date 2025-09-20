@@ -1,0 +1,191 @@
+// based on
+//    https://codingatharva.blogspot.com/2018/10/write-program-for-hilberts-curve-in-c.html
+//      by Atharva Satyendra Agrawal October 24, 2018
+
+use tksdl;
+use tkopengl;
+
+boolean USE_GRADIENT   = true;
+boolean USE_SCREENSHOT = false;
+
+int numframesrendered=0;
+
+float lx;
+float ly;
+
+int n = 0;
+int nDir = 1;
+int nCnt = 0;
+
+int num_p;
+int total_num_p;
+float x, y;
+float h;
+Integer screenshotIdx = 0;
+
+function SaveScreenShotPNG(String _pathName) : boolean {
+   local Texture tex;
+   boolean ret = false;
+   if(tex.alloc(Viewport.width, Viewport.height, 4))
+   {
+      glReadBuffer(GL_BACK);
+      int off = 0;
+      int y = Viewport.height - 1;
+      loop(Viewport.height)
+      {
+         zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+         y--;
+         off += Viewport.width;
+      }
+      ret = tex.saveImage(_pathName);
+   }
+   return ret;
+}
+
+
+function move(int j)
+{
+   if(1 == j)
+      y -= h;
+   else if(2 == j)
+      x += h;
+   else if(3 == j)
+      y += h;
+   else if(4 == j)
+      x -= h;
+
+   if(USE_GRADIENT)
+   {
+      float c = (0.8*float(num_p) / total_num_p) + 0.2;
+      glColor4f(c,c,c,1);
+      glBegin(GL_LINES);
+   }
+
+   glVertex2f(lx, ly);
+   glVertex2f(x, y);
+   lx = x;
+   ly = y;
+   num_p++;
+   // trace "p=("+x+";"+y+")";
+
+   if(USE_GRADIENT)
+   {
+      glEnd();
+   }
+}
+
+function hilbert(local int r, local int d, local int l, local int u, local int i)
+{
+   if(i > 0)
+   {
+      i--;
+      hilbert(d, r, u, l, i);
+      move(r);
+      hilbert(r, d, l, u, i);
+      move(d);
+      hilbert(r, d, l, u, i);
+      move(l);
+      hilbert(u, l, d, r, i);
+   }
+}
+
+
+function onDraw() {
+
+   float dt=FPS.precision;
+   glClearColor(0,0,0.2,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInit2D(Viewport.width, Viewport.height);
+
+   float step = Viewport.width / float(1 << n);
+   h = step;
+   x = step * 0.5;
+   y = x;
+   lx = x;
+   ly = y;
+   num_p = 1;
+   total_num_p = (1 << (2*n));
+
+   if(!USE_GRADIENT)
+   {
+      zglColorARGB(#ffffffff);
+      glBegin(GL_LINES);
+   }
+
+   hilbert(2/*r*/, 3/*d*/, 4/*l*/, 1/*u*/, n);
+
+   if(!USE_GRADIENT)
+   {
+      glEnd();
+   }
+
+   trace "n="+n+" num_p="+num_p;  // => 2^(2*n)
+   
+   if(0 == (++nCnt & 31))
+   {
+      n += nDir;
+      if(n > 9)
+      {
+         n = 9-1;
+         nDir = -1;
+      }
+      else if(n < 0)
+      {
+         n = 1;
+         nDir = 1;
+      }
+
+      if(USE_SCREENSHOT)
+      {
+         SaveScreenShotPNG("hilbert_"+screenshotIdx.printf("%02d")+".png");
+         screenshotIdx++;
+      }
+   }
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   trace "xxx onKeyboard: k.code="+_k.code+" mod="+_k.mod+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/60;
+   //FPS.limit=30;
+   FPS.limit=60;
+
+   SDL.eventPolling = false; // tksdl default is "true" (do not block while waiting for an SDL event)
+   SDL.timerInterval = 20;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   // // SDL.dpiAwareness = false;  // assume 96dpi and let OS scale window to actual DPI
+
+   // SDL.touchInput = true;  // enable WM_POINTER* messages
+
+   Viewport.openWindow(512, 512);
+   //Viewport.openScreen(640, 480, 32);
+   //Viewport.swapInterval(1);
+
+   // SDL.enableUNICODE(true);
+
+   // trace "xxx Viewport.dpi="+Viewport.dpi;
+   // trace "xxx entering eventloop";
+
+   SDL.eventLoop();
+}

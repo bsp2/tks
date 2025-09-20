@@ -1,0 +1,164 @@
+// demonstrates how to output a pitch-modulated sinus signal using the audio device
+// the current note is controlled by a shared memory region
+use tksdl;
+
+/*
+                   ; the first layer is the note-layer, layer 2..n can be used to combine parameters (add,sub,mul..)
+                   ; 
+  ST_Layer         ; each layer stores a pattern-order-list
+                   ; 
+
+
+
+
+ST_Song            ; stores play length, ppq, default bpm, restart time, name, author, comment and tracks
+                   ; processes tracks and generators
+                   ; 
+ ST_Track          ; a track thematically groups patterns
+                   ; each track has n channels
+                   ; each track stores a pattern-order-list
+                   ; 
+  ST_Pattern       ; stores length (in ticks) + events/envelopes for n channels
+                   ; stores notes/instr
+                   ; stores effectcmds/envelopes
+                   ; pattern 0 = nop
+                   ; 
+  ST_Channel       ; a track channel
+                   ; parameter/envelope state is maintained through pattern changes
+                   ; calculates standard envelopes (tremolo, vibrato, arpeggios, slides)
+                   ; changes instruments + parameters + arrays
+                   ; triggers voices
+                   ; setting: voice-reset: 0=instrument defaults (all notes off)
+                   ;                       1=always reset last triggered voice (overrides instrument setting)
+                   ;                       2=reset all voices of instrument if instrument is changed (overrides instrument setting)
+                   ; setting: note-on velocity (0..1), 0=instrument defaults
+                   ; setting: note-off velocity (0..1), 0=instrument defaults
+                   ; setting: pan (-1..1), multiplied with instrument pan
+                   ; setting: pan envelope, multiplied with pan
+                   ; setting: amp (0..1), multiplied with instrument amp
+                   ; setting: amp envelope, multiplied with amp
+                   ; stores last triggered voice
+                   ; stores current instrument
+                   ; stores current playoffset
+                   ; 
+    ST_Instrument  ; each instrument is associated with n voices of a generator
+                   ; controls+mixes voices 
+                   ; setting: polyphony(1..n)
+                   ; setting: voice-select mode (channel, fix, oldest, deepest, highest, most quiet)
+                   ; setting: instr-reset: 1=reset all voices of instrument if instrument is changed, 0=all notes off
+                   ; setting: effect of parameter/array changes: 0=all, 1=last allocated, 2=channelnr==voicenr
+                   ; setting: reset active voice when a note off is received (true,false)
+                   ; setting: default note-on velocity (0..1)
+                   ; setting: default note-off velocity (0..1)
+                   ; setting: pan (-1..1), multiplied with voice pan
+                   ; setting: pan envelope, multiplied with pan
+                   ; setting: amp (0..1), multiplied with voice amp
+                   ; setting: amp envelope, multiplied with amp
+                   ; setting: default note-on velocity (0..1)
+                   ; setting: default note-off velocity (0..1)
+                   ; stores active voice (fixed or dynamic)
+                   ; 
+     ST_VOICE      ; a voice renders a single monophone stereobuffer
+                   ; 
+                   ; 
+ST_Generator       ; processes/manages voices (rendering, mixing, allocation)
+                   ; stores amp.gain for all voices, multiplied with voice amps
+                   ; setting: total polyphony(1..n) (sum of all instrument voices that use this generator)
+                   ; voices can be exclusively assigned to instruments or allocated dynamically
+                   ; 
+                   ; 
+*/
+
+class ST_Voice {
+   explain "interface for a Syntracker voice generator class.
+
+ The interface methods are prefixed with \"st\" to avoid a name clash between an internal voice method
+ and a future extension of this interface.
+";
+   
+   // Parameter types: (also see stGetParamType())
+   define int ST_NONE   = 0; // unused parameter
+   define int ST_BOOL   = 1; // either 0 or 1
+   define int ST_SNORM  = 2; // -1..1
+   define int ST_UNORM  = 3; // 0..1
+   define int ST_SBYTE  = 4; // -127..127
+   define int ST_UBYTE  = 5; // 0..255
+   define int ST_SWORD  = 6; // -32767..32767
+   define int ST_UWORD  = 7; // 0..65535
+   define int ST_NOTE   = 8; // midi note (c-0..g-9 (0..127))
+   define int ST_FREQ   = 9; // frequency (0..n Hz)
+
+   // Additional Array types: (also see stGetArrayType())
+   define int ST_STEREO = 10; // left/right stereo sample pairs (-1..1 range)
+
+   // Query whether the voice is currently active
+   public method stIsActive () : boolean { }
+
+   // Set amplification / volume (0..1)
+   public method stSetAmp (float _amp) { }
+
+   // Set midi note (0..127) (does not trigger new note)
+   public method stSetFreq (float _note) { }
+
+   // Set panning (-1..1)
+   public method stSetPan (float _pan) { }
+
+   // Query number of parameters
+   public method stSetNumParams() : int { }
+
+   // Query voice parameter
+   public method stGetParam (int _paramNr) : float { }
+
+   // Query parameter type (one of ST_PT_NONE, ST_PT_BOOL ... ST_PT_FREQ)
+   public method stGetParamType (int _paramNr) : float { }
+
+   // Query parameter name (gui hint)
+   public method stGetParamName (int _paramNr) : String { }
+   
+   // Set generic voice parameter
+   public method stSetParam (int _paramNr, float _value) { }
+
+   // Query number of assignable arrays (0..n)
+   public method stGetNumArrays () : int { }
+
+   // Query the array type (one of ST_xxx)
+   public method stGetArrayType () : int { }
+
+   // Query the array name (gui hint)
+   public method stGetArrayName () : String { }
+
+   // Assign an array; the voice may convert the array to an internal format
+   public method stSetArray (int _arrayNr, FloatArray _array) { } 
+
+   // Trigger note
+   public method stNoteOn (float _note, float _vel) { }
+
+   // Release note
+   public method stNoteOff (float _note, float _vel) { }
+
+   // Cancel all playing notes
+   public method stAllNotesOff () { } 
+
+   // Load voice parameters (e.g. instrument change)
+   public method stLoad (Buffer _source) { } 
+
+   // Store voice parameters
+   public method stSave (Buffer _dest) { } 
+
+   // Initialize voice (called once at startup)
+   public method stInit () { } 
+
+   // Reset to default parameters and cancel all playing notes
+   public method stReset () { } 
+
+   // Clean up allocated resources (called once during shutdown)
+   public method stExit () { } 
+
+   // Render _dst.numElements/2 stereo samples
+   public method stRender (FloatArray _dst) { } 
+
+   // Update state, call freq. depends on ppq/bpm
+   public method stTick () { } 
+}
+
+

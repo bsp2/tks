@@ -1,0 +1,156 @@
+
+use tkportaudio;
+
+int     DEVICE_IDX  = 0;
+
+#define NUM_INPUT_CH   2
+#define NUM_OUTPUT_CH  2
+
+float SUGGESTED_LATENCY = (0);//(4096/44100.0);
+////float   SUGGESTED_LATENCY = 0;
+
+
+// // FloatArray mixer_levels = [
+// //    0.0f, 0.0f, //  0/ 1:  Analog 1&2 [1]
+// //    1.0f, 1.0f, //  2/ 3:  Analog 3&4 [1] Korg Radias
+// //    1.0f, 1.0f, //  4/ 5:  Analog 5&6 [1] Yamaha FS1R
+// //    1.0f, 1.0f, //  6/ 7:  Analog 7&8 [1] Roland MKS 50
+// //    0.0f, 0.0f, //  8/ 9:  SPDIF L/R  [1]
+// //    0.0f, 0.0f, // 10/11:  Mixer L/R  [1]
+// //    1.0f, 1.0f, // 12/13:  Analog 1&2 [2] Roland Juno-G
+// //    0.0f, 0.0f, // 14/15:  Analog 3&4 [2] Yamaha a5000?? 
+// //    1.0f, 1.0f, // 16/17:  Analog 5&6 [2] Waldorf Micro-Q
+// //    1.0f, 1.0f, // 18/19:  Analog 7&8 [2] Roland Alpha Juno 2
+// //    0.0f, 0.0f, // 20/21:  SPDIF L/R  [2]
+// //    0.0f, 0.0f  // 22/23:  Mixer L/R  [2]
+// // ];
+
+
+PaStream stream;
+
+float ang = 0.0f;
+
+float angspd = 0.0f;
+
+
+function ListDevices() {
+   int numDev = PortAudio.GetNumDevices();
+
+   trace "[dbg] ListDevices: numDev="+numDev;
+   int devIdx = 0;
+   loop(numDev)
+   {
+      PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+      trace "[dbg] ListDevices:\n\t devIdx=" + devIdx +" name=\""+devInfo.name+"\" apiName=\""+devInfo.hostApiName + "\"" 
+         "\n\t maxInputCh="+devInfo.maxInputChannels+" maxOutputCh="+devInfo.maxOutputChannels+
+         "\n\t defLowInputLatency="+devInfo.defaultLowInputLatency+" defLowOutputLatency="+devInfo.defaultLowOutputLatency+
+         "\n\t defHighInputLatency="+devInfo.defaultHighInputLatency+" defHighOutputLatency="+devInfo.defaultHighOutputLatency+
+         "\n\t defSampleRate="+devInfo.defaultSampleRate;
+
+      // List input channels:
+      trace "[dbg]\t input channels:";
+      int chIdx = 0;
+      loop(devInfo.maxInputChannels)
+      {
+         trace "[dbg]\t\t #"+chIdx+" : \"" + devInfo.getInputChannelName(chIdx) + "\"";
+         chIdx++;
+      }
+
+      // List output channels:
+      trace "[dbg]\t output channels:";
+      chIdx = 0;
+      loop(devInfo.maxOutputChannels)
+      {
+         trace "[dbg]\t\t #"+chIdx+" : \"" + devInfo.getOutputChannelName(chIdx) + "\"";
+         chIdx++;
+      }
+
+      devIdx++;
+   }
+}
+
+
+function MyCallback(PaStream _stream, FloatArray input, FloatArray output, int numFrames) {
+   ////trace "MyCallback: numFrames="+numFrames+" input.numElements="+input.numElements+" output.numElements="+output.numElements;
+
+   int numOutCh = _stream.numOutputChannels;
+   int numInCh  = _stream.numInputChannels;
+   int ooff = 0;
+   int ioff = 0;
+
+   float w = 0.0323 + sin(angspd)*0.01;
+
+   compile loop(numFrames)
+   {
+      // Write to first (stereo) channel(s)
+
+      // output[ooff + 0] = 0;
+      // output[ooff + 1] = 0;
+
+       output[ooff + 0] = sin(ang);
+       output[ooff + 1] = sin(ang);
+
+//       output[ooff + 0] = input[ioff + 12];
+//       output[ooff + 1] = input[ioff + 13];
+
+//       output[ooff + 0] = input[ioff + 0];
+//       output[ooff + 1] = input[ioff + 1];
+
+      ooff += numOutCh;
+      ioff += numInCh;
+      ang += w;
+   }
+
+   angspd += 0.1f;
+   if(angspd >= 2PI)
+      angspd -= 2PI;
+   if(ang >= 2PI)
+      ang -= 2PI;
+
+//    trace output;
+}
+
+function TestDevice(int _devIdx) {
+   PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(_devIdx);
+   if(null != devInfo)
+   {
+      PaStreamParameters isp, osp;
+
+      isp.deviceIndex      = DEVICE_IDX;
+      isp.channelCount     = NUM_INPUT_CH;
+      isp.sampleFormat     = PA_INT16;
+      isp.suggestedLatency = SUGGESTED_LATENCY;
+
+      osp.deviceIndex      = DEVICE_IDX;
+      osp.channelCount     = NUM_OUTPUT_CH;
+      osp.sampleFormat     = PA_INT16;
+      osp.suggestedLatency = SUGGESTED_LATENCY;
+
+      if(PortAudio.OpenStream(isp, osp, devInfo.defaultSampleRate, 64/*framesPerBuffer*/, MyCallback, stream))
+      {
+         trace "[...] TestDevice: stream opened OK. rate="+devInfo.defaultSampleRate;
+
+         stream.start();
+
+         for(;;)
+            TKS.sleep(250);
+
+         stream.abort();
+         stream.close();
+      }
+      else
+      {
+         trace "[---] TestDevice: FAILED to open stream.\n";
+      }
+   }
+}
+
+
+PortAudio.Initialize();
+
+ListDevices();
+
+TestDevice(0);
+
+PortAudio.Terminate();
+

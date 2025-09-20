@@ -1,0 +1,67 @@
+
+SharedBuffer sh;
+int dataSz = 4*1024*1024;
+
+TKS.sleep(500);  // wait for ring_writer startup
+
+if(sh.visitSharedMemory("sharedbuffer_ring", 32+dataSz))
+{
+   boolean bBenchmark = sh.peekI8(0);
+   int numIter = sh.peekI32(4);
+   int readSz = sh.peekI32(8);
+   print "shared memory visited. bBenchmark="+bBenchmark+" numIter="+numIter+" readSz="+readSz;
+
+   // Initiate connection
+   sh.pokeI8(2/*connIdR*/, sh.peekI8(2/*connIdR*/) + 1);
+   while(sh.peekI8(1/*connIdW*/) != sh.peekI8(2/*connIdR*/))
+      TKS.sleep(1);
+
+   int iter = 0;
+   int readOff = 0;/////sh.peekI32(16);  // init readOff = writeOff
+   trace "xxx init readOff="+readOff;
+   int checksum = 0;
+   for(;;)
+   {
+      int writeOff = sh.peekI32(16);
+      // trace "xxx writeOff="+writeOff+" readOff="+readOff;
+
+      int numAvail = (writeOff - readOff);
+      if(numAvail < 0)
+         numAvail += dataSz;
+
+      // trace "xxx numAvail="+numAvail+" iter="+iter+" writeOff="+writeOff+" readOff="+readOff;
+
+      if(numAvail >= readSz)
+      {
+         // int writeIter = sh.peekI32(16);
+         // if(iter > writeIter)
+         // {
+         //    die "error: iter="+iter+" writeIter="+writeIter;
+         // }
+         loop(readSz)
+         {
+            byte c = sh.peekI8(32 + readOff++);
+            checksum += c;
+            if(readOff >= dataSz)
+               readOff = 0;
+         }
+
+         // Next iteration
+         sh.pokeI32(20, readOff);
+         iter++;
+         // trace "xxx store iter="+iter+" readOff="+readOff;
+         if(!bBenchmark)
+            TKS.sleep(rand(20));
+         else if(iter >= numIter)
+            break;
+      }
+   }
+   trace "checksum="+(checksum&255)+" iter="+iter+" readOff="+readOff;
+
+   /* Terminate connection */
+   sh.pokeI8(2/*connIdR*/, sh.peekI8(2/*connIdR*/) + 1);
+}
+else
+{
+   die "failed to visit shared memory.";
+}

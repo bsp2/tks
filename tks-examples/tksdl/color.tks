@@ -1,0 +1,164 @@
+
+// simple example that demonstrates the Color class.
+// creates screen corner random colors and draws an array of quads.
+// each array quad vertex color is calculated by cubic interpolation of
+// the screen corner colors.
+// the array quad vertex color gammas are set up to create a dark left top corner
+// and a bright right bottom corner.
+//
+// this is also some kind of scripting benchmark
+
+module Main;
+use tksdl;
+use tkopengl;
+use tkoldmath;
+
+int dri=0;
+
+//............................................................................
+class QuadColor {
+    Color c_lt; // left_top color
+    Color c_rt; // right_top color
+    Color c_lb; // left_bottom color
+    Color c_rb; // right_bottom color
+
+    drawQuad() compile {
+	// draw a window size half bright quad
+	c_lt.glColorGamma(0.5);
+	glVertex3f(0,0,0);
+	c_rt.glColorGamma(0.5);
+	glVertex3f(Viewport.width, 0, 0);
+	c_rb.glColorGamma(0.5);
+	glVertex3f(Viewport.width, Viewport.height,0);
+	c_lb.glColorGamma(0.5);
+	glVertex3f(0, Viewport.height, 0);
+    }
+
+    initRNDColor() compile {
+	// select a random color for each quad vertex
+	c_lt.init4f(rnd(1.0), rnd(1.0), rnd(1.0), 1.0);
+	c_rt.init4f(rnd(1.0), rnd(1.0), rnd(1.0), 1.0);
+	c_lb.init4f(rnd(1.0), rnd(1.0), rnd(1.0), 1.0);
+	c_rb.init4f(rnd(1.0), rnd(1.0), rnd(1.0), 1.0);
+    }
+
+    getCubeColor(float _x, float _y, float _g)  {
+	// build color using cubic interpolation, apply gamma
+	Color c;
+	c.init4f(
+		 vector4(c_lt.rf, c_rt.rf, c_rb.rf, c_lb.rf).interpolCubic2D(_x, _y),
+		 vector4(c_lt.gf, c_rt.gf, c_rb.gf, c_lb.gf).interpolCubic2D(_x, _y),
+		 vector4(c_lt.bf, c_rt.bf, c_rb.bf, c_lb.bf).interpolCubic2D(_x, _y),
+		 vector4(c_lt.af, c_rt.af, c_rb.af, c_lb.af).interpolCubic2D(_x, _y)
+		 );
+	c.gamma=_g;
+	return c.colori;
+    }
+
+}
+
+//............................................................................
+QuadColor current_color; // mixture between the two tweening colors
+QuadColor tween_colors[2]; // tween from..to colors
+int tween_color_index=0; // current tween target color index
+float ctick; // color tweening counter
+
+//............................................................................
+function DrawQuads() compile {
+	int xstep=Viewport.width/16;
+	int ystep=Viewport.height/16;
+	int x;
+	int y;
+	
+	// mix tween colors and create current_color
+	QuadColor qca<=tween_colors[(tween_color_index+1)&1];
+	QuadColor qcb<=tween_colors[tween_color_index];
+	float cv=ctick;
+	Color cs;
+	Color cd;
+	cd<=current_color.c_lt;
+	cs<=qca.c_lt;
+	cd.colori=cs.mixf(qcb.c_lt, cv);
+	cd<=current_color.c_rt;
+	cs<=qca.c_rt;
+	cd.colori=cs.mixf(qcb.c_rt, cv);
+	cd<=current_color.c_rb;
+	cs<=qca.c_rb;
+	cd.colori=cs.mixf(qcb.c_rb, cv);
+	cd<=current_color.c_lb;
+	cs<=qca.c_lb;
+	cd.colori=cs.mixf(qcb.c_lb, cv);
+	
+	glBegin(GL_QUADS);
+
+	current_color.drawQuad();
+	
+	for(y=ystep/2; y<Viewport.height; y+=ystep*2)
+	    {
+		for(x=xstep/2; x<Viewport.width; x+=xstep*2)
+		    {
+			float vsx=Viewport.width;
+			float vsy=Viewport.height;
+			int c8_lt=current_color.getCubeColor(x/vsx        , y/vsy, 0.25);
+			int c8_rt=current_color.getCubeColor((x+xstep)/vsx, y/vsy, 1.0);
+			int c8_rb=current_color.getCubeColor((x+xstep)/vsx, (y+ystep)/vsy, 1.5);
+			int c8_lb=current_color.getCubeColor(x/vsx        , (y+ystep)/vsy, 1.0);
+			
+			zglColorARGB(c8_lt);
+			glVertex3f(x ,y, 0);
+			zglColorARGB(c8_rt);
+			glVertex3f(x+xstep, y, 0);
+			zglColorARGB(c8_rb);
+			glVertex3f(x+xstep, y+ystep, 0);
+			zglColorARGB(c8_lb);
+			glVertex3f(x, y+ystep, 0);
+		    }
+	    }
+	glEnd();
+}
+
+//............................................................................
+function onDraw compile {
+    zglInit2D(float(Viewport.width), float(Viewport.height));
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    DrawQuads();
+
+    float dt=FPS.precision;
+    if((++dri&255)==0) trace("fps="+FPS.real);
+
+    ctick+=0.01*dt;
+    if(ctick>1.0)
+	{
+	    // if value was wrapped, selected new tween target color and swap color indices
+	    ctick-=1.0;
+	    tween_color_index=(tween_color_index+1)&1;
+	    Main.tween_colors[tween_color_index].initRNDColor();
+	}
+}
+
+function onKeyboard(Key _k) {
+    switch(_k.pressed)
+	{
+	case VKEY_ESCAPE: SDL.exitEventLoop(); break;
+	case VKEY_SPACE:  trace "rndcolor"; Main.tween_colors[tween_color_index].initRNDColor(); break;
+	}
+}
+
+//............................................................................
+function main compile  {
+    Viewport.openWindow(512, 384);
+    Viewport.caption="video_color | [escape] to exit";
+    FPS.tickInterval=1000.0/60.0;
+    
+    ctick=0.0;
+    Main.tween_colors[0].initRNDColor();
+    Main.tween_colors[1].initRNDColor();
+    Main.tween_color_index=0;
+    
+    use callbacks; // bind event callbacks
+    SDL.eventLoop();
+}
+
+

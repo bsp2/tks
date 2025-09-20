@@ -1,0 +1,236 @@
+
+// 15Apr2023
+//  (debug cubic env)
+
+use tksdl;
+use tkopengl;
+
+class EnvelopeTest {
+
+   define int LINEAR    = 1;
+   define int COSINE    = 2;
+   define int QUADRATIC = 3;
+   define int CUBIC     = 4;
+   define int QUINTIC   = 5;
+
+   private FloatArray data;
+   private int num_samples;
+   private int bg_color32;
+   private int fg_color32;
+
+   init(FloatArray _data, int _fg_color32, int _bg_color32)
+      {
+         num_samples = _data.numElements;
+         fg_color32 = _fg_color32;
+         bg_color32 = _bg_color32;
+         data = _data;
+      }
+
+   draw(float _dt)
+      {
+         float scy=(480f/1)/4;
+         glPushMatrix();
+         glTranslatef(0,scy*2,0);
+
+         zglColorARGB(bg_color32);
+         glBegin(GL_QUADS);
+         glVertex2f(0,-scy);
+         glVertex2f(640,-scy);
+         glVertex2f(640,scy);
+         glVertex2f(0,scy);
+         glEnd();
+
+         glColor3f(1,0,0);
+         glBegin(GL_LINES);
+         glVertex2f(0,0);
+         glVertex2f(640,0);
+         glEnd();
+
+         zglColorARGB(fg_color32);
+         glBegin(GL_LINE_STRIP);
+         float a, x = 0;
+         float index = 0, indexadd=num_samples/640f;
+         loop 640
+         {
+            a = -data.winLinear(index);
+            glVertex2f(x++, a*scy);
+            index += indexadd;
+         }
+         glVertex2f(640f, a*scy);
+         glEnd();
+
+         zglColorARGB(#ffdddddd);
+         glPointSize(2f);
+         // glBegin(GL_POINTS);
+         // //glBegin(GL_LINE_LOOP);
+         // x=0f;
+         // float xa = 640f/num_samples;
+         // int i=0;
+         // loop num_samples
+         // {
+         //    a = -data[i];
+         //    glVertex2f(x, a*scy);
+         //    x += xa;
+         //    i++;
+         // }
+         // glEnd();
+
+         glPopMatrix();
+      }
+
+}
+
+EnvelopeTest et;
+
+function InitEnvelope {
+
+   FloatArray seg;
+   int numCtl;
+   File f;
+   float px;
+   float py;
+   float c1x;
+   float c1y;
+   float c2x;
+   float c2y;
+   if(f.openLocal("bezier_int_debug.dat", IOS_IN))
+   {
+      // v2: bezier control points
+      numCtl = f.u8 + 1;
+      seg.alloc(numCtl * 6);
+      loop(numCtl)
+      {
+         px  = f.u16 / 65535.0f;
+         py  = f.s16 / 16383.0f;
+         c1x = f.s16 / 16383.0f;
+         c1y = f.s16 / 16383.0f;
+         c2x = f.s16 / 16383.0f;
+         c2y = f.s16 / 16383.0f;
+         seg.add(px);
+         seg.add(py);
+         seg.add(c1x);
+         seg.add(c1y);
+         seg.add(c2x);
+         seg.add(c2y);
+         // trace "p=("+px+";"+py+") c1=("+c1x+";"+c1y+") c2=("+c2x+";"+c2y+")";
+      }
+      f.close();
+   }
+   else
+      die "failed to open \"bezier_int_debug.dat\"";
+
+   int dataSz = 1024;
+   FloatArray data;
+   data.allocAndFill(dataSz, -9999);
+
+   int j = 0;
+   loop(numCtl - 1)
+   {
+      float p1x = seg[j+0];
+      float p1y = seg[j+1];
+      c1x       = seg[j+2];
+      c1y       = seg[j+3];
+      c2x       = seg[j+4];
+      c2y       = seg[j+5];
+      float p2x = seg[j+6];
+      float p2y = seg[j+7];
+
+      trace "p1=("+p1x+";"+p1y+") c1=("+c1x+";"+c1y+") c2=("+c2x+";"+c2y+") p2=("+p2x+";"+p2y+")";
+
+      int startIdx = p1x * dataSz;
+      int endIdx = int(p2x * dataSz);
+      trace "   startIdx="+startIdx+" endIdx="+endIdx;
+
+      float x = 0;
+      float xStep = 1.0 / (endIdx - startIdx);
+      int idx = startIdx;
+      while(idx < endIdx)
+      {
+         float p1c1x = p1x + (c1x - p1x) * x;  // l0 : p1..c1
+         float p1c1y = p1y + (c1y - p1y) * x;
+
+         float c1c2x = c1x + (c2x - c1x) * x;  // l1 : c1..c2
+         float c1c2y = c1y + (c2y - c1y) * x;
+
+         float c2p2x = c2x + (p2x - c2x) * x;  // l2 : c2..p2
+         float c2p2y = c2y + (p2y - c2y) * x;
+
+         float q0x = p1c1x + (c1c2x - p1c1x) * x;  // q0 : l0..l1
+         float q0y = p1c1y + (c1c2y - p1c1y) * x;
+
+         float q1x = c1c2x + (c2p2x - c1c2x) * x;  // q1 : l1..l2
+         float q1y = c1c2y + (c2p2y - c1c2y) * x;
+
+         float cx = q0x + (q1x - q0x) * x;  // p: q0..q1
+         float cy = q0y + (q1y - q0y) * x;
+
+         // data[idx] = cy;
+         int xi = int(cx * dataSz);
+         xi = mathClampi(xi, 0, dataSz-1);
+         data[xi] = cy;
+         trace "data["+xi+"] = "+cy+"    x="+x+"   idx="+idx;
+
+         idx++;
+         x += xStep;
+      }
+
+      // Next segment
+      j += 6;
+   }
+
+   // Fill in (potential) gaps
+   idx = 0;
+   float l = 0;
+   loop(dataSz)
+   {
+      if(data[idx] <= -9998)
+      {
+         trace "xxx fill gap idx="+idx+" l="+l;
+         data[idx] = l;
+      }
+      else
+         l = data[idx];
+      idx++;
+   }
+
+   trace data;
+   
+   // trace "data="+#(data);
+
+   et.init(data, #11EE11, #222233);
+}
+
+function onKeyboard(Key _k)
+{
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onDraw {
+   float dt = FPS.precision;
+   glClearColor(0.05,0.05,0.10,1);
+   glClear(GL_COLOR_BUFFER_BIT);
+   zglInit2D(640, 480);
+   et.draw(dt);
+   glTranslatef(0,480/5,0);
+}
+
+function onOpen {
+}
+
+function main {
+   use callbacks;
+
+   InitEnvelope();
+
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=30;
+
+   Viewport.openWindow(640,480);
+
+   SDL.eventLoop();
+}

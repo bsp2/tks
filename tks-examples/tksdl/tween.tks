@@ -1,0 +1,447 @@
+
+// 04-Oct-2009
+//  a rather pointless display hack.
+//   (np: nagz-tellingwhathappened.xm)
+//
+
+use tksdl;
+use tkopengl;
+
+float frot=0;
+float frotlast=0;
+int numframesrendered=0;
+
+int NUM_STEPS = 64;
+int ISCALE = 2;
+
+class AnimVal {
+   float oa;
+   float oa_orig;
+   float oa_last;
+   float ia;
+   float os;
+   float is;
+
+   init(float _oa, _os) {
+      oa = _oa;
+      oa_last = _oa;
+      ia = _oa;
+      os = _os;
+      is = 0;
+   }
+
+   tickOuter(float dt) compile {
+      oa_orig = oa;
+      oa_last = oa;
+      loop(ISCALE)
+      {
+         oa += dt * os;
+         if(oa >= 2PI)
+            oa -= 2PI;
+         else if(oa < 0)
+            oa += 2PI;
+      }
+   }
+
+   tickOuterFinal(float dt) compile {
+      oa = oa_orig;
+      oa += dt * os;
+      if(oa >= 2PI)
+         oa -= 2PI;
+      else if(oa < 0)
+         oa += 2PI;
+   }
+
+   beginInner() compile {
+      if(oa_last < oa)
+      {
+         is = (oa - oa_last) / NUM_STEPS;
+      }
+      else
+      {
+         is = ((2PI - oa_last) + oa) / NUM_STEPS;
+      }
+
+      ia = oa;
+   }
+
+   tickInner(float dt) compile {
+      ia += dt * is;
+      if(ia >= 2PI)
+         ia -= 2PI;
+      else if(ia < 0)
+         ia += 2PI;
+   }
+}
+
+class AnimPoint {
+   AnimVal x;
+   AnimVal y;
+   float rot_x;
+   float rot_y;
+
+   init(float _oxs, _oys) {
+      x.init(0, _oxs);
+      y.init(0, _oys);
+   }
+
+   tickOuter(float dt) {
+      x.tickOuter(dt);
+      y.tickOuter(dt);
+   }
+
+   tickOuterFinal(float dt) {
+      x.tickOuterFinal(dt);
+      y.tickOuterFinal(dt);
+   }
+
+   beginInner() {
+      x.beginInner();
+      y.beginInner();
+   }
+   
+   vertex(float dt, float _ox, _oy, _sx, _sy, float a) {
+      a *= (2PI/360.0);
+      float tx = _ox + _sx * sin(x.ia);
+      float ty = _oy + _sy * sin(y.ia);
+      float as = sin(a);
+      float ac = cos(a);
+      rot_x = tx*ac - ty*as;
+      rot_y = tx*as + ty*ac;
+      glVertex2f(rot_x, rot_y);
+      x.tickInner(dt);
+      y.tickInner(dt);
+   }   
+}
+
+AnimPoint p1; p1.init(0.144*0.5, 0.12319  *0.75);
+AnimPoint p2; p2.init(0.134*0.5, 0.1343319*0.75);
+AnimPoint p3; p3.init(0.123*0.5, 0.1453119*0.75);
+AnimPoint p4; p4.init(0.117*0.5, 0.15654  *0.75);
+
+FloatArray xvals; xvals.alloc(4); xvals.useAll();
+FloatArray yvals; yvals.alloc(4); yvals.useAll();
+IntArray xind; xind.alloc(4); xind.useAll();
+IntArray yind; yind.alloc(4); yind.useAll();
+float ys_last;
+float yl_last;
+float ys_cur;
+float yl_cur;
+float xs_last;
+float xl_last;
+float xs_cur;
+float xl_cur;
+boolean b_area_off = true;
+boolean b_allow_next = false;
+
+StringArray texts = [ "hello", "world.", "what", "a", "pointless", "piece", "of", "code", "this", "is", "..." ];
+int texti = 0;
+
+
+function onDraw() compile {
+   //float dt = FPS.precision * 0.67;
+   float dt = 0.67;
+   glClearColor(0,0,0.5,1);
+   glClearDepth(0.0235);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+   zglInitOrtho(-1,-1);
+
+   frotlast = frot;
+   float frotorig = frot;
+   loop(ISCALE)
+   {
+      frot += dt*5;
+      wrap frot 0 360;
+   }
+
+   p1.tickOuter(dt);
+   p2.tickOuter(dt);
+   p3.tickOuter(dt);
+   p4.tickOuter(dt);
+
+   glEnable(GL_DEPTH_TEST);
+   glDepthFunc(GL_NOTEQUAL);
+
+   float fStep;
+   float f;
+   if(frotlast < frot)
+   {
+      fStep = (frot-frotlast) / NUM_STEPS;
+   }
+   else
+   {
+      fStep = ((360 - frotlast) + frot) / NUM_STEPS;
+   }
+
+   glPolygonMode(GL_FRONT, GL_FILL);
+   float cg = 1.0;
+   float cgStep = (0.5 - cg) / NUM_STEPS;
+   float cb = 1.0;
+   float cbStep = (0.1 - cb) / NUM_STEPS;
+   float N = 0.6;
+   float S = 0.25;
+   p1.beginInner();
+   p2.beginInner();
+   p3.beginInner();
+   p4.beginInner();
+   f = frotlast;
+   glLoadIdentity();
+   loop(NUM_STEPS)
+   {
+      glColor3f(1.0, cg, cb);
+      cg += cgStep;
+      cb += cbStep;
+      //glRotatef(f, 0,0,1);
+      f += fStep;
+      if(f >= 360)
+         f -= 360;
+      glBegin(GL_QUADS);
+      p1.vertex(dt, -N, -N, S, S, f);
+      p2.vertex(dt,  N, -N, S, S, f);
+      p3.vertex(dt,  N,  N, S, S, f);
+      p4.vertex(dt, -N,  N, S, S, f);
+      glEnd();
+   }
+   
+   glDepthFunc(GL_NOTEQUAL);
+   glPolygonMode(GL_FRONT, GL_LINE);
+   glColor3f(0.0, 0.0, 0.0);
+   glLineWidth(64.0);
+   p1.beginInner();
+   p2.beginInner();
+   p3.beginInner();
+   p4.beginInner();
+   S *= 1.11;
+   f = frotlast;
+   glLoadIdentity();
+   loop(NUM_STEPS)
+   {
+//       glScalef(1.02, 1.02, 1.0);
+      //glRotatef(f, 0,0,1);
+      f += fStep;
+      if(f >= 360)
+         f -= 360;
+      glBegin(GL_QUADS);
+      p1.vertex(dt, -N, -N, S, S, f);
+      p2.vertex(dt,  N, -N, S, S, f);
+      p3.vertex(dt,  N,  N, S, S, f);
+      p4.vertex(dt, -N,  N, S, S, f);
+      glEnd();
+   }
+
+   p1.tickOuterFinal(dt);
+   p2.tickOuterFinal(dt);
+   p3.tickOuterFinal(dt);
+   p4.tickOuterFinal(dt);
+
+   frot = frotorig;
+   frot += dt*2;
+   wrap frot 0 360;
+
+//    glDisable(GL_DEPTH_TEST);
+//    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+//    glEnable(GL_BLEND);
+//    glPolygonMode(GL_FRONT, GL_FILL);
+//    glColor4f(0,0,0,0.3535);
+//    glLoadIdentity();
+//    glBegin(GL_QUADS);
+//    glVertex2f(-1.0, -0.75);
+//    glVertex2f( 1.0, -0.75);
+//    glVertex2f( 1.0,  0.75);
+//    glVertex2f(-1.0,  0.75);
+//    glEnd();
+//    glDisable(GL_BLEND);
+
+
+   glDisable(GL_DEPTH_TEST);
+   xvals[0] = p1.rot_x;
+   xvals[1] = p2.rot_x;
+   xvals[2] = p3.rot_x;
+   xvals[3] = p4.rot_x;
+   xind.identity(4);
+   xvals.sortByValue(xind);
+
+   yvals[0] = p1.rot_y;
+   yvals[1] = p2.rot_y;
+   yvals[2] = p3.rot_y;
+   yvals[3] = p4.rot_y;
+   yind.identity(4);
+   yvals.sortByValue(yind);
+
+//    trace "xxx 1: "+xvals[xind[0]]+";"+yvals[yind[0]];
+//    trace "xxx 2: "+xvals[xind[1]]+";"+yvals[yind[1]];
+//    trace "xxx 3: "+xvals[xind[2]]+";"+yvals[yind[2]];
+//    trace "xxx 4: "+xvals[xind[3]]+";"+yvals[yind[3]];
+
+   float vltOldAmount = 0.8664;
+   float vltNewAmount = 0.05; // text movement speed
+   float areaFadeStart = 0.35;
+   float areaFadeEnd   = 0.15;
+   float areaNext      = 0.6;
+
+   float ys = (yvals[yind[1]]*vltNewAmount + ys_cur*(1-vltNewAmount));
+   float yl = (yvals[yind[2]]*vltNewAmount + yl_cur*(1-vltNewAmount));
+
+   float xs = (xvals[xind[1]]*vltNewAmount + xs_cur *(1-vltNewAmount));
+   float xl = (xvals[xind[2]]*vltNewAmount + xl_cur *(1-vltNewAmount));
+
+   float area;
+   if( (xl-xs) < (yl-ys) )
+   {
+      area = (xl - xs);
+   }
+   else
+   {
+      area = (yl - ys);
+   }
+   //trace "area="+area;
+   float alpha;
+   if(area < areaFadeEnd)
+   {
+      if(!b_area_off)
+      {
+         b_area_off = true;
+         b_allow_next = false;
+      }
+   }
+   else
+   {
+      if(area < areaFadeStart)
+      {
+         alpha = (area - areaFadeEnd) / (areaFadeStart - areaFadeEnd);
+      }
+      else
+      {
+         alpha = 1;
+      }
+      if(area > areaNext)
+      {
+         b_allow_next = true;
+      }
+
+      if(b_area_off && b_allow_next)
+      {
+         b_area_off = false;
+         texti = (texti + 1) % texts.numElements;
+         trace "xxx next";
+      }
+   }
+
+   if(!b_area_off)
+   {
+      glDisable(GL_DEPTH_TEST);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+      glPolygonMode(GL_FRONT, GL_FILL);
+      glColor4f(0,0,0, alpha );
+      glScalef(0.8,0.8,1.0);
+
+//       glBegin(GL_QUADS);
+//       glVertex2f(xs, ys_cur);
+//       glVertex2f(xl, ys_cur);
+//       glVertex2f(xl, yl_cur);
+//       glVertex2f(xs, yl_cur);
+//       glEnd();
+
+      DebugText.BindTexture();
+      glEnable(GL_TEXTURE_2D);
+//       DebugText.DrawScaled3f((xs+xl)*0.5, (ys+yl)*0.5, 0, 
+//                              (xl-xs), (yl-ys), 
+//                              "hello, world."
+//                              );
+
+//       DebugText.DrawScaled3f(0.3, 0.3, 0, -(1.0/200), (1.0/100), "hello, scaled debugtext world.");
+      String txt <= texts[texti];
+      float txtL = (1.0/50) * 8 * txt.getLength();
+      DebugText.DrawScaled3f(-(((xl-xs)*0.5)-txtL*0.5), 
+                             ys, 
+                             0, 
+                             -(1.0/100)*area, (1.0/50)*area,
+                             txt
+                             );
+      glDisable(GL_TEXTURE_2D);
+   }
+
+//    DebugText.Draw(10, 10, "hello, debugtext world.", #ff10f010, #ff008000);
+
+   float ys_delta = (ys - ys_last);
+   float yl_delta = (yl - yl_last);
+   ys_last = ys_cur;
+   yl_last = yl_cur;
+   ys_cur += (ys_delta * vltOldAmount);
+   yl_cur += (yl_delta * vltOldAmount);
+
+   float xs_delta = (xs - xs_last);
+   float xl_delta = (xl - xl_last);
+   xs_last = xs_cur;
+   xl_last = xl_cur;
+   xs_cur += (xs_delta * vltOldAmount);
+   xl_cur += (xl_delta * vltOldAmount);
+
+
+   glDisable(GL_DEPTH_TEST);
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glEnable(GL_BLEND);
+   glPolygonMode(GL_FRONT, GL_FILL);
+   glColor4f(0,0,0, alpha );
+   glScalef(0.8,0.8,1.0);
+
+   float bw = 0.2;
+
+   glLoadIdentity();
+   glColor4f(0,0,0,0.45);
+   glBegin(GL_QUADS);
+   glVertex2f(-1, -1);
+   glVertex2f( 1, -1);
+   glVertex2f( 1, -1+bw);
+   glVertex2f(-1, -1+bw);
+
+   glVertex2f(-1, 1.0-bw);
+   glVertex2f( 1, 1.0-bw);
+   glVertex2f( 1, 1);
+   glVertex2f(-1, 1);
+   glEnd();
+
+   glDisable(GL_BLEND);
+
+   
+}
+
+// function onMouse(int _x, int _y, int _cbs, int _nbs) {
+//    print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+// }
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_RETURN:
+         Viewport.toggleFullScreen();
+         break;
+   }
+}
+
+function onOpen() {
+   DebugText.OnOpen();
+   Texture t <= DebugText.tex;
+   t.flags = t.flags | TEX_MINFILTERLINEAR;
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/60;
+   //FPS.limit=25;
+
+   Viewport.openWindow(640, 384);
+   Viewport.setScreenResolution(1280, 720, 4);
+   Viewport.swapInterval(1);
+
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}

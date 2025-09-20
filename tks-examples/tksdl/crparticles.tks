@@ -1,0 +1,259 @@
+///
+/// file   : crparticles.tks
+/// author : Bastian Spiegel <bastian.spiegel@web.de> <flink@tkscript.de>
+/// descr. : TKS video test
+/// license: provided "AS IS". no copyright, no liability. use as you want.
+/// created: 040901
+/// changed:
+///          xx1101 <fli> added borders
+///          120702 <fli> added "use callbacks"
+///          300303 <fli> uses Debug.tks module now
+///          090503 <fli> more compiled {} nodes
+///
+
+use tkopengl;
+use tksdl;
+
+int num_psources=256;
+int numparticles=256;
+VectorArray va; va.alloc(num_psources); va.numElements=va.maxElements;
+VectorArray vb; vb.alloc(num_psources); vb.numElements=vb.maxElements;
+Texture pscmap2;
+ParticleSystem ps;
+Texture pscmap;
+Texture pscmapa;
+Texture ptexanim;
+Texture ptexblurbuf;
+Texture ptexblurdbuf;
+boolean bvsync=1;
+boolean bwaitvblank=0;
+
+function initParticles() {
+   Texture tex_radfade;
+   tex_radfade.loadImage("gfx/radfade.png", 32, 32, 4);
+   Texture tex_fadebuf;
+
+   if(!tex_fadebuf.alloc(32, 32, 4))
+      die("out of memory");
+
+   ps.allocParticles(numparticles);
+   ps.resetParticles();
+    
+   pscmap2.loadImage("gfx/pscmap.png", 256, 1, 4);
+   pscmap.loadImage("gfx/pscmapwhite.png", 256, 1, 4);
+   pscmapa.loadImage("gfx/pscmapwhitea.png", 256, 1, 1);
+   pscmap.interleaveAlpha(pscmapa);
+   ps.setColormapModulation(pscmap);
+   //ps.setParticleShader(PSSHA_SHIFTCMAP);
+   /** create texture anim */
+   ptexblurbuf.loadImage("gfx/flare-64x64.png", 32, 32, 4);
+
+   if(!ptexblurdbuf.alloc(32, 32, 4))
+      die("out of memory");
+   if(!ptexanim.alloc(256, 256, 4))
+      die("out of memory");
+
+   int px;
+   int py;
+   ////IVector ivp=ivector(0,0), ivs=ivector(32,32), ivd;
+   ////ptexblurdbuf.copyRegion(ptexblurbuf, ivp, ivs, ivp);
+   ptexblurdbuf.copyRegion(ptexblurbuf, 0, 0, 32, 32, 0, 0);
+   for(py=0; py<8; py++)
+      for(px=0; px<8; px++)
+      {
+         ///ivd.init(px*32, py*32);
+         tex_fadebuf.multiply(ptexblurdbuf, tex_radfade);
+         ////ptexanim.copyRegion(tex_fadebuf, ivp, ivs, ivd);
+         ptexanim.copyRegion(tex_fadebuf, 0, 0, 32, 32, px*32, py*32);
+    		ptexblurdbuf.simpleBlur(ptexblurbuf);
+         //ptexblurbuf.copyRegion(ptexblurdbuf, ivp, ivs, ivp);
+         ptexblurbuf.copyRegion(ptexblurdbuf, 0, 0, 32, 32, 0, 0);
+      }
+   ptexanim.colorKeyToAlpha(#00000000);
+   ps.setTextureAnimation(ptexanim, 64, 32, 32);
+   ps.setDefaultParticleSize2f(256.0, 256.0);
+    
+   tex_radfade.free();
+   // -----------end init particles---------------
+}
+
+
+Texture tex;
+WrappedFloat rot;
+WrappedFloat rot2x;
+WrappedFloat rot2y;
+WrappedFloat rot2z;
+WrappedFloat trot;
+WrappedFloat psrot;
+
+float vrotx=0.0;
+
+function onDraw() compile {
+    
+   float dt=FPS.precision;
+
+	vrotx+=0.02*dt;
+	rot.tickPrecise(dt);
+	rot2x.tickPrecise(dt);
+	rot2y.tickPrecise(dt);
+	rot2z.tickPrecise(dt);
+	trot.tickPrecise(dt);
+	ps.tickPrecise(dt);
+
+	glClearColor(0.0,0.0,0.1,1);
+	glClear(GL_COLOR_BUFFER_BIT);
+	glColor4f(1,1,1,1);
+  	zglInitPerspective(4.0/3.0, 60.0, 0.1, 128.0);
+	glLoadIdentity();
+   glScalef((1.0/400.0), (1.0/300.0), (1.0/128.0));
+   glTranslatef(0.0, 0.0, -1024.0);
+   glMatrixMode(GL_PROJECTION);
+   glScalef(2.0, 1.0, 0.9);
+	glRotatef(vrotx,0,0,1);
+   glMatrixMode(GL_MODELVIEW);
+	glEnable(GL_TEXTURE_2D);
+	glColor4f(0.5,0.5,0.5,1);
+
+	Vector vc;
+	Vector vs=vector(8, 8, 0);
+	Vector vr;
+	Vector vt;
+	Vector pdv;
+	Matrix m;
+	int i;
+	float f=0.0;
+	ptexanim.bind();
+	
+	
+	float fstep=PI2*(1.0/float(num_psources));
+	Vector vi=vector(228.0, 128.0, 128.0);
+	Matrix m2;
+	float roti2x;
+	float roti2y;
+	float roti2z;
+	roti2x=rot2x.value;
+	roti2y=rot2y.value;
+	roti2z=rot2z.value;
+	Vector vpp;
+	float fi=0.0;
+	float fistep=0.020023001;
+	float current_rot=rot.value;
+
+	for(i=0; i<num_psources; i++)
+   {
+		vr=vi;
+		f+=fstep;
+		fi+=fistep;
+		m.init(0.0, 0.0, f+current_rot);
+		vr.rotate(m);
+		pdv=vr;
+		vpp=pdv;
+		pdv.unitScale(rnd(0.57)+0.653004);
+		float pdvspd=pdv.getAbs()/2.23;
+		Vector pdvr;
+		pdvr.init(fi, roti2x, roti2z);
+		pdv.rotate(pdvr);
+		pdv.neg();
+		vpp.unitScale(468.0);
+		roti2x+=0.006009;
+		roti2y+=0.0062501301;
+		roti2z+=0.00041;
+		m2.init(roti2x, roti2y, roti2z);
+		vpp.rotate(m2);
+		int c32=pscmap2.getXY32(rnd(255), 0);
+		int a8=rnd(255);
+		c32=(c32&$FFFFFF)|(a8<<24);
+		ps.spawnParticle(vpp, int(600.0*pdvspd)+rnd(4)*128, c32, pdv);
+   }
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	glDisable(GL_DEPTH_TEST);
+
+	ps.draw();
+	
+	Debug.Draw();
+	////if(bwaitvblank) Viewport.waitVBlank();
+}
+
+
+function InitEmitters() compile {
+   float f=0.0;
+   int l=va.getNumElements();
+   float fstep=PI2*(1.0/float(l));
+   Vector vi=vector(128, 0, 10);
+   Vector vc=vector(0, 0, 0);
+   Vector vr;
+   Matrix m;
+   int i=0;
+   loop(l)
+      {
+         vr=vi;
+         f=f+fstep;
+         m.init(0, 0, f);
+         vr.rotate(m);
+         vr.add(vc);
+         va[i++]=vr;
+      }
+}
+
+function onOpen {
+   ptexanim.unload();
+   ptexanim.upload();
+   Debug.Init();
+}
+
+function SetNumParticles(int _num) {
+   numparticles=_num;
+   wrap numparticles 16 32768;
+   ps.free();
+   initParticles();
+   trace ("numparticles set to "+numparticles);
+}
+
+function onKeyboard(Key _k) {
+   if(_k.pressed) switch(_k.name) {
+      case "v": 
+         bvsync = 1 - bvsync;
+         // Only call waitVBlank() when swap control extension is not available
+         bwaitvblank = ! Viewport.swapInterval(bvsync?1:0); 
+         trace "vsync set to "+bvsync+" , bwaitvblank is "+bwaitvblank;
+         Debug.Init();
+         break;
+      case "up": SetNumParticles(numparticles+128); break;
+      case "down": SetNumParticles(numparticles-128); break;
+      default: Debug.OnKeyboard(_k); break;
+   }
+}
+
+function main() {
+   print "crparticles starting..\n\n";
+   print "  space  : toggle screen clear mode (zini mode)";
+   print "  up     : increase number of particles +16";
+   print "  down   : decrease number of particles -16";
+   print "  d      : toggle debug overlay";
+   print "  ctrl-d : toggle console debug output";
+   print "  f      : switch to fullscreen mode";
+   print "  g      : (un-)grab mouse";
+
+   use callbacks;
+
+   initParticles();
+   ptexanim.setFlags(TEX_MODULATE);
+
+   FPS.tickInterval=2;
+   FPS.tickBuffer=20;
+
+   InitEmitters();
+
+   rot.init(0, 0.01, 0, 2PI);
+   rot2x.init(0, 0.0021228, 0, 2PI);
+   rot2y.init(0, 0.0036365, 0, 2PI);
+   rot2z.init(0, 0.00135, 0, 2PI);
+   trot.init(0, 0.001, 0, 2PI);
+   psrot.init(0, 0.00111, 0, 2PI);
+
+   Viewport.setScreenResolution(512,384,32);
+   Viewport.openWindow(320, 200);
+    
+   SDL.eventLoop();
+}

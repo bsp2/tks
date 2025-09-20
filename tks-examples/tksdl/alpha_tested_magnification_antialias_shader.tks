@@ -1,0 +1,242 @@
+
+//
+// based on the paper
+//  "Improved Alpha-Tested Magnification for Vector Textures and Special Effects"
+// by Chris Green / Valve
+//
+
+use tksdl;
+use tkopengl;
+use tkcg;
+
+float anim_zoom = 0;
+int numframesrendered=0;
+
+
+boolean b_anim = true;        // 'SPACE'
+boolean b_blend = true;       // 'b'
+boolean b_alpha_test = false; // 'a' (pixel shader does alpha test)
+boolean b_filter = true;      // 'f'
+
+Texture tex;
+
+CGContext context;
+CGProfile fragment_profile;
+CGProgram fragment_program;
+CGParameter fragment_param_tex;
+
+// Cg fragment program
+String fp_distance_alphatest_aa = "
+struct r_type {
+  float4 c : COLOR;
+};
+r_type fp_distance_alphatest_aa(float2 texCoord : TEXCOORD0, uniform sampler2D tex : TEX0)
+{
+  r_type r;
+  r.c = tex2D(tex, texCoord);
+  if(r.c > 0.2)
+  {
+     r.c = 1;
+  }
+  else
+  {
+     r.c = smoothstep(0,1,r.c * 5);
+  }
+  return r;
+}
+";
+
+
+
+
+function CalcTex() {
+   int w = 64;
+   int h = 64;
+
+   float rmin = 0.7;
+   float rmax = 0.85;
+
+   tex.flags = TEX_MINFILTERLINEAR | TEX_MAGFILTERLINEAR | TEX_ALPHA;
+   tex.alloc(w, h, 1);
+
+   float ax = 2.0 / w;
+   float ay = 2.0 / h;
+
+   float y = -1;
+   int k = 0;
+   compile loop(h)
+   {
+      float x = -1;
+      loop(w)
+      {
+         float d = sqrt(x*x + y*y);
+         if(d >= rmin)
+         {
+            if(d < rmax)
+            {
+               float a = 1 - mathSmoothStepf(0,1,(d - rmin) / (rmax - rmin));
+               tex[k++] = a * 255;
+            }
+            else
+            {
+               tex[k++] = 0;
+            }
+         }
+         else
+         {
+            tex[k++] = 255;
+         }
+         x += ax;
+      }
+      y += ay;
+   }
+}
+
+
+function onDraw() {
+   float dt=FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInitPerspective(1.0, 70.0, 0.001, 10.0);
+
+   glEnable(GL_TEXTURE_2D);
+   tex.bind();
+
+   fragment_program.bind();
+   fragment_profile.enable();
+   fragment_param_tex.enableTexture();
+
+   if(b_alpha_test)
+   {
+      glAlphaFunc(GL_GREATER, 0.5);
+      glEnable(GL_ALPHA_TEST);
+   }
+
+   if(b_blend)
+   {
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+   }
+
+   if(b_filter)
+   {
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   }
+   else
+   {
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   }
+
+   zglColorARGB(#ffffffff);
+
+   glTranslatef(0,0,-3.1 + 2*sin(anim_zoom));
+
+   glBegin(GL_QUADS);
+   glTexCoord2f(0, 0);
+   glVertex2f(-1, -1);
+
+   glTexCoord2f(1, 0);
+   glVertex2f(1, -1);
+
+   glTexCoord2f(1, 1);
+   glVertex2f(1, 1);
+
+   glTexCoord2f(0, 1);
+   glVertex2f(-1, 1);
+   glEnd();
+
+   fragment_param_tex.disableTexture();
+   fragment_profile.disable();
+
+   glDisable(GL_BLEND);
+   glDisable(GL_ALPHA_TEST);
+   glDisable(GL_TEXTURE_2D);
+
+
+   if(b_anim)
+   {
+      anim_zoom += 0.01*dt;
+      wrap anim_zoom 0 2PI;
+   }
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case 'b':
+         b_blend = ! b_blend;
+         trace "[...] b_blend is now "+b_blend;
+         break;
+
+      case 'a':
+         b_alpha_test = ! b_alpha_test;
+         trace "[...] b_alpha_test is now "+b_alpha_test;
+         break;
+
+      case 'f':
+         b_filter = ! b_filter;
+         trace "[...] b_filter is now "+b_filter;
+         break;
+
+      case VKEY_SPACE:
+         b_anim = ! b_anim;
+         trace "[...] b_anim is now "+b_anim;
+         break;
+
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function ExitShader() {
+   fragment_program <= null;
+   context.destroy();
+}
+
+function InitShader() {
+	context.create();
+	fragment_profile.getLatestFragmentProfile();
+   fragment_profile.setOptimalOptions();
+   context.fragmentProfile = fragment_profile;
+
+	fragment_program <= context.createFragmentProgramFromSource(fp_distance_alphatest_aa, "fp_distance_alphatest_aa", null);
+   fragment_program.load();
+
+	fragment_param_tex <= fragment_program.getNamedParameter("tex");
+
+   fragment_param_tex.texture = tex;
+}
+
+function onClose() {
+   ExitShader();
+}
+
+function onOpen() {
+   CalcTex();
+   tex.unload();
+   tex.upload();
+
+   InitShader();
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=60;
+
+   //Viewport.setMultisampleSamples(4); // no effect in this sample
+   //Viewport.setMultisampleBuffers(1);
+   Viewport.openWindow(512, 512);
+   Viewport.swapInterval(1);
+
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}
+

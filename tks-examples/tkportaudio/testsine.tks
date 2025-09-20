@@ -1,0 +1,308 @@
+
+use tkportaudio;
+
+int DEVICE_IDX = 0;
+
+String PREFERRED_DEVNAME;
+if(TKS.dllSuffix == ".so")  // Linux ?
+   PREFERRED_DEVNAME = "Session I/O";  // paInt24
+   // PREFERRED_DEVNAME = "Scarlett 18i20 USB,USB Audio";  // paInt32
+else
+   // PREFERRED_DEVNAME = "MONTAGE";  // overrides DEVICE_IDX when present
+   PREFERRED_DEVNAME = "MacBook Pro Speakers";  // overrides DEVICE_IDX when present
+
+// (note) 18Jul2023  Linux (Dell XPS 13 Ubuntu 12):
+//          $ test 6
+//            (only device that works, HW=Guitar Rig Session I/O,
+//               ListDevices:
+//                 devIdx=6 name="sysdefault" apiName="ALSA"
+//                 maxInputCh=128 maxOutputCh=128
+//                 defLowInputLatency=0.00870748 defLowOutputLatency=0.00870748
+//                 defHighInputLatency=0.0348299 defHighOutputLatency=0.0348299
+//                 defSampleRate=44100
+//
+// (note) Linux: must stop pulseaudio / pipewire before running this test:
+//         systemctl --user stop pulseaudio.socket && systemctl --user stop pulseaudio.service
+//         systemctl --user stop pipewire.socket && systemctl --user stop pipewire.service
+//         systemctl --user stop pipewire-pulse.socket && systemctl --user stop pipewire-pulse.service
+
+
+// #define NUM_INPUT_CH   2
+// #define NUM_OUTPUT_CH  2
+
+// float SR = 0.0f;
+// float SR = 44100.0f;
+float SR = 48000.0f;
+// float SR = 96000.0f;
+// float SR = 192000.0f;
+
+int FRAMES_PER_CBK = 64;
+// int FRAMES_PER_CBK = 128;
+// int FRAMES_PER_CBK = 192;
+// int FRAMES_PER_CBK = 256;
+
+// float SUGGESTED_LATENCY = (0);
+float SUGGESTED_LATENCY = (5/1000.0f);
+// float SUGGESTED_LATENCY = (10/1000.0f);
+// float SUGGESTED_LATENCY = (0.2);
+
+int SAMPLE_FORMAT = -1;  // automatic format selection
+// int SAMPLE_FORMAT = PA_INT16;  // works on Windows/ASIO(RME)
+// int SAMPLE_FORMAT = PA_INT24;   // works on Windows/ASIO(RME) (Linux: Native Instruments Session I/O)
+// int SAMPLE_FORMAT = PA_INT32;   // Linux: Focusrite Scarlett 18i20 2nd gen
+// int SAMPLE_FORMAT = PA_FLOAT32;  // the only setting that works on macOS/CoreAudio (Yamaha Montage)
+
+boolean b_debug = 0;
+
+
+// // FloatArray mixer_levels = [
+// //    0.0f, 0.0f, //  0/ 1:  Analog 1&2 [1]
+// //    1.0f, 1.0f, //  2/ 3:  Analog 3&4 [1] Korg Radias
+// //    1.0f, 1.0f, //  4/ 5:  Analog 5&6 [1] Yamaha FS1R
+// //    1.0f, 1.0f, //  6/ 7:  Analog 7&8 [1] Roland MKS 50
+// //    0.0f, 0.0f, //  8/ 9:  SPDIF L/R  [1]
+// //    0.0f, 0.0f, // 10/11:  Mixer L/R  [1]
+// //    1.0f, 1.0f, // 12/13:  Analog 1&2 [2] Roland Juno-G
+// //    0.0f, 0.0f, // 14/15:  Analog 3&4 [2] Yamaha a5000??
+// //    1.0f, 1.0f, // 16/17:  Analog 5&6 [2] Waldorf Micro-Q
+// //    1.0f, 1.0f, // 18/19:  Analog 7&8 [2] Roland Alpha Juno 2
+// //    0.0f, 0.0f, // 20/21:  SPDIF L/R  [2]
+// //    0.0f, 0.0f  // 22/23:  Mixer L/R  [2]
+// // ];
+
+
+
+function ListDevices() {
+   int numDev = PortAudio.GetNumDevices();
+
+   trace "[dbg] ListDevices: numDev="+numDev;
+   int devIdx = 0;
+   loop(numDev)
+   {
+      PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+      trace "[dbg] ListDevices:\n\t devIdx=" + devIdx +" name=\""+devInfo.name+"\" apiName=\""+devInfo.hostApiName + "\""
+         "\n\t maxInputCh="+devInfo.maxInputChannels+" maxOutputCh="+devInfo.maxOutputChannels+
+         "\n\t defLowInputLatency="+devInfo.defaultLowInputLatency+" defLowOutputLatency="+devInfo.defaultLowOutputLatency+
+         "\n\t defHighInputLatency="+devInfo.defaultHighInputLatency+" defHighOutputLatency="+devInfo.defaultHighOutputLatency+
+         "\n\t defSampleRate="+devInfo.defaultSampleRate;
+
+      if(PREFERRED_DEVNAME == devInfo.name)
+         DEVICE_IDX = devIdx;
+
+      int chIdx;
+
+      if(0)
+      {
+         // List input channels:
+         trace "[dbg]\t input channels:";
+         chIdx = 0;
+         loop(devInfo.maxInputChannels)
+         {
+            trace "[dbg]\t\t #"+chIdx+" : \"" + devInfo.getInputChannelName(chIdx) + "\"";
+            chIdx++;
+         }
+      }
+
+      if(0)
+      {
+         // List output channels:
+         trace "[dbg]\t output channels:";
+         chIdx = 0;
+         loop(devInfo.maxOutputChannels)
+         {
+            trace "[dbg]\t\t #"+chIdx+" : \"" + devInfo.getOutputChannelName(chIdx) + "\"";
+            chIdx++;
+         }
+      }
+
+      devIdx++;
+   }
+}
+
+
+PaStream stream;
+float ang = 0.0f;
+boolean b_debug_cbk_once = true;
+int cbk_count = 0;
+function MyCallback(PaStream _stream, FloatArray input, FloatArray output, int numFrames) {
+
+   int numInCh  = _stream.numInputChannels;
+   int numOutCh = _stream.numOutputChannels;
+
+   if(b_debug || b_debug_cbk_once)
+      trace "MyCallback: numFrames="+numFrames+" input.numElements="+input.numElements+" output.numElements="+output.numElements+" numInCh="+numInCh+" numOutCh="+numOutCh;
+   b_debug_cbk_once = false;
+
+   int ooff = 0;
+   int ioff = 0;
+   float angSpd = 0.012345f * (44100.0f/_stream.sampleRate);
+   float inMax = 0;
+   compile loop(numFrames)
+   {
+      // Write to first (stereo) channel(s)
+
+       // output[ooff + 0] = 0;
+       // output[ooff + 1] = 0;
+
+      float f = sin(ang) * 0.1;
+      // output[ooff + 0] = f;
+      // output[ooff + 1] = f;
+
+//       output[ooff + 0] = input[ioff + 12];
+//       output[ooff + 1] = input[ioff + 13];
+
+//       output[ooff + 0] = input[ioff + 0];
+//       output[ooff + 1] = input[ioff + 1];
+
+      int outChIdx = 0;
+      loop(numOutCh)
+      {
+         // Scarlett 18i20 loopback test (out 3 => in 1)
+         output[ooff + outChIdx] = f;
+         outChIdx++;
+      }
+
+      if(numInCh >= 1)
+         inMax = mathAbsMaxf(inMax, input[ioff + 0]);
+
+      ooff += numOutCh;
+      ioff += numInCh;
+      ang = mathWrapf(ang + angSpd, 0, 2PI);
+   }
+
+   if(0 == (cbk_count++ & 1023))
+   {
+      // trace "MyCallback: cbk_count="+cbk_count+" numFrames="+numFrames;
+      stdout ".";
+      // trace "input="+#(input);
+      // float sum = input.sum(0, input.numElements);
+      // if(sum != 0.0)
+      //    trace "input sum="+sum;
+      if(numInCh >= 1)
+         trace "inMax="+inMax;
+   }
+
+    // trace output;
+}
+
+function TestDevice(int _devIdx) {
+   PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(_devIdx);
+   if(null != devInfo)
+   {
+      PaStreamParameters isp, osp;
+
+      // SUGGESTED_LATENCY = devInfo.defaultHighOutputLatency;
+      // SUGGESTED_LATENCY = devInfo.defaultLowOutputLatency;
+
+      isp.deviceIndex      = _devIdx;
+      // isp.channelCount     = mathMini(devInfo.maxInputChannels, NUM_INPUT_CH);
+      isp.channelCount     = devInfo.maxInputChannels;
+      isp.sampleFormat     = (SAMPLE_FORMAT < 0) ? devInfo.defaultSampleFormat : SAMPLE_FORMAT;
+      isp.suggestedLatency = SUGGESTED_LATENCY;
+
+      osp.deviceIndex      = _devIdx;
+      // osp.channelCount     = mathMini(devInfo.maxOutputChannels, NUM_OUTPUT_CH);
+      osp.channelCount     = devInfo.maxOutputChannels;
+      osp.sampleFormat     = (SAMPLE_FORMAT < 0) ? devInfo.defaultSampleFormat : SAMPLE_FORMAT;
+      osp.suggestedLatency = SUGGESTED_LATENCY;
+
+      // latency with Yamaha Montage on macOS 13:
+      //    defLowInputLatency=0.01 defLowOutputLatency=0.00510204
+      //    defHighInputLatency=0.1 defHighOutputLatency=0.0152608
+      //    defSampleRate=44100
+      //     ==> in=441 frames, out=225 frames  (note: there is no ASIO-like control panel for changing buffer sizes)
+      //          (ringbuffer?) default settings with framesPerBuffer=0:
+      //            MyCallback: numFrames=14 input.numElements=28 output.numElements=28 numInCh=2 numOutCh=2
+      //
+
+      // latency with Yamaha Montage on Windows 10:
+      //    defLowInputLatency=0.00145125 defLowOutputLatency=0.00145125
+      //    defHighInputLatency=0.00145125 defHighOutputLatency=0.00145125
+      //    defSampleRate=44100
+      //     ==> in=64 frames, out=64 frames
+      //            MyCallback: numFrames=64 input.numElements=128 output.numElements=128 numInCh=2 numOutCh=2
+
+      //
+      // latency with RME Fireface (USB) on macOS 13:
+      //   defLowInputLatency=0.01 defLowOutputLatency=0.00213152
+      //   defHighInputLatency=0.1 defHighOutputLatency=0.0122902
+      //   defSampleRate=44100
+      //     ==> in=441 frames, out=94 frames
+      //            MyCallback: numFrames=14 input.numElements=28 output.numElements=28 numInCh=2 numOutCh=2
+
+      //
+      // latency with RME Fireface (USB) on Windows 10:
+      //   defLowInputLatency=0.00145125 defLowOutputLatency=0.00145125
+      //   defHighInputLatency=0.00145125 defHighOutputLatency=0.00145125
+      //   defSampleRate=44100
+      //     ==> in=64 frames, out=64 frames (my current ASIO buffer size setting, can go as low as 16 frames, IIRC)
+      //            MyCallback: numFrames=64 input.numElements=128 output.numElements=128 numInCh=2 numOutCh=2
+      //
+
+      if(PortAudio.OpenStream(isp, osp,
+                              (SR > 0) ? SR : devInfo.defaultSampleRate,
+                              FRAMES_PER_CBK/*framesPerBuffer*/,
+                              MyCallback,
+                              stream)
+         )
+      {
+         trace "[...] TestDevice: stream opened OK. devIdx="+_devIdx+" rate="+stream.sampleRate;
+
+         PaStreamMacOSWorkgroupJoinToken joinToken <= stream.macOSAudioWorkgroupJoin();
+         trace "[...] MacOSAudioWorkGroupJoinToken="+#(joinToken);
+
+         stream.start();
+
+         for(;;)
+         // loop(50)
+         {
+            TKS.sleep(200);
+         }
+
+         if(null != joinToken)
+         {
+            stream.macOSAudioWorkgroupLeave(joinToken);
+            joinToken <= null;
+         }
+
+         stream.stop();
+         stream.abort();
+         stream.close();
+      }
+      else
+      {
+         trace "[---] TestDevice: FAILED to open stream (devIdx="+_devIdx+").\n";
+      }
+   }
+}
+
+// function onSignal(int c) {
+//    trace "[...] test: caught signal "+c;
+
+//    trace "xxx call stream.stop";
+//    stream.stop();
+//    trace "xxx call stream.abort";
+//    stream.abort();
+//    trace "xxx call stream.close";
+//    stream.close();
+
+//    trace "[...] test: exiting..";
+//    exit(0);
+//    return false;
+// }
+
+
+PortAudio.Initialize();
+
+ListDevices();
+
+use callbacks;
+
+// b_debug = (Arguments.numElements >= 1);
+
+if(Arguments.numElements > 0)
+   TestDevice(int(Arguments[0]));
+else
+   TestDevice(DEVICE_IDX);
+
+PortAudio.Terminate();

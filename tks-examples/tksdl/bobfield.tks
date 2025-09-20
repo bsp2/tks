@@ -1,0 +1,207 @@
+/// bobfield.tks
+///
+/// ... by Bastian Spiegel <bs@tkscript.de>
+///     
+///
+module Main;
+
+use tksdl;
+use tkopengl;
+use tkoldmath;
+
+#define NUMSTARS 128
+#define NSEG 32
+
+WrappedFloat ctick;               // counter that is used to calculate the current clearColor.
+ctick.init(0.0, 0.05, 0.0, 2PI);  // init counter (value, speed, min, max)
+int iframe=0;
+int bvsync=true;
+int bwaitvsync=false;
+
+class CStar {
+   float pos_x;
+   float pos_y;
+   float radius;
+   float speed_x;
+   float speed_y;
+   float speed_a;
+   float speed_b;
+   float rot_x;
+   float rot_y;
+   float rot_a;
+   float rot_b;
+   tick(float _dt);
+   draw();
+   initRnd();
+}
+
+CStar::initRnd compile  {
+   pos_x=rnd(512.0);
+   pos_y=rnd(384.0);
+   radius=rnd(64.0);
+   speed_x=rnd(0.02)+0.001;
+   speed_y=rnd(0.02)+0.001;
+   speed_a=rnd(0.02)+0.001;
+   speed_b=rnd(0.02)+0.001;
+   rot_x=rnd(2PI);
+   rot_y=rnd(2PI);
+   rot_a=rnd(2PI);
+   rot_b=rnd(2PI);
+   
+}
+
+CStar::draw compile  {
+   glTranslatef(pos_x, pos_y, 0);
+   glEnable(GL_DEPTH_TEST);
+   float sina=sin(rot_a)*0.5+0.5;
+   float sinb=sin(rot_b)*0.5+0.5;
+   sina=(sina*0.65+sinb*0.35);
+   sinb=(sinb*0.65+sina*0.35);
+   float frada=radius*sina+12.0;
+   float fradb=radius*sinb+12.0;
+   float frad1a=frada-12;
+   float frad1b=fradb-12;
+   float fradia=frada-12+1;
+   float fradib=fradb-12+1;
+   float f;
+
+   glColor4f(0,0,0,1);
+   glBegin(GL_POLYGON);
+   f=0;
+   loop(NSEG)
+      {
+         glVertex2f(cos(f)*frada, sin(f)*fradb);
+         f+=2PI/NSEG;
+      }
+   glVertex2f(frada, 0);
+   f=0;
+   loop(NSEG)
+      {
+         glVertex2f(cos(f)*frad1a, sin(f)*frad1b);
+         f+=2PI/NSEG;
+      }
+   glEnd();
+
+   glColor4f(0.7,0.5,0.3,1);
+   glDisable(GL_DEPTH_TEST);
+   f=0;
+   glBegin(GL_POLYGON);
+   loop(NSEG)
+      {
+         glVertex2f(cos(f)*fradia, sin(f)*fradib);
+         f+=2PI/NSEG;
+      }
+   glEnd();
+}
+
+CStar::tick  compile  {
+   float sx=sin(rot_x);
+   pos_x-=_dt*(sx*sx*sx*0.5+0.5);
+   float sy=sin(rot_y);
+   pos_y-=_dt*(sy*sy*sy*0.5+0.5);
+   rot_x+=_dt*speed_x; if(rot_x>2PI)rot_x-=2PI;
+   rot_y+=_dt*speed_y; if(rot_y>2PI)rot_y-=2PI;
+   rot_a+=_dt*speed_a; if(rot_a>2PI)rot_a-=2PI;
+   rot_b+=_dt*speed_b; if(rot_b>2PI)rot_b-=2PI;
+   if(pos_x<(0-2*radius)) pos_x+=(512+(4*radius));
+   if(pos_y<(0-2*radius)) pos_y+=(384+(4*radius));
+}
+
+CStar stars[NUMSTARS]; stars.numElements=stars.maxElements;
+
+function TickStars(float _dt) compile {
+   int ci=0;
+   glLoadIdentity();
+   loop(NUMSTARS)
+      {
+         CStar st<=stars[ci++];
+         st.tick(_dt);
+      }
+}
+
+function DrawStars() compile  {
+   if(!(++iframe&127)) trace "fps="+FPS.real+" "+iframe+" frames rendered";
+   int ci=0;
+   glLoadIdentity();
+   loop(NUMSTARS)
+   {
+      glPushMatrix();
+      CStar st<=stars[ci++];
+      st.draw();
+      glPopMatrix();
+   }
+}
+
+function InitStars() compile {
+   int ci=0;
+   loop(NUMSTARS)
+   {
+      CStar st <= stars[ci++];
+      st.initRnd();
+   }
+}
+
+function onDraw  {
+   zglInit2D(512, 384);
+   glClearColor(0.6, 0.6, 0.6, 1);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glDisable(GL_CULL_FACE);
+   compile
+      DrawStars();
+
+   if(bwaitvsync) Viewport.waitVBlank();
+
+   calc();
+
+}
+
+function calc() {
+   float fprec=FPS.precision;
+//    if(fprec > 1)
+   ////trace "fprec="+fprec;
+   ctick.tickPrecise(fprec);
+   TickStars(fprec);
+//    do
+//    {
+//       float dt;
+//       if(fprec > 1.0)
+//       {
+//          dt = 1.0;
+//       }
+//       else
+//       {
+//          dt = fprec;
+//       }
+//       ctick.tickPrecise(dt);
+//       TickStars(dt);
+
+//       fprec -= dt;
+//    } while(fprec > 0);
+   ////trace fprec;
+}
+
+function onKeyboard(Key _key) {
+   int cp=_key.pressed;
+   switch(cp) {
+      case VKEY_ESCAPE: 
+         SDL.exitEventLoop(); 
+         break;
+      case 'v':
+         bvsync=1-bvsync; 
+         // Only call waitVBlank() when swap control extension is not available
+         bwaitvsync = ! Viewport.swapInterval(bvsync?1:0); 
+         trace "vsync set to "+bvsync+" , bwaitvsync is "+bwaitvsync;
+         break;
+   }
+}
+
+function main {
+   Viewport.openWindow(512, 384);
+   Viewport.caption="video_mini | [escape] to exit";
+   FPS.tickInterval=1000.0/85;
+   Viewport.swapInterval(1);
+   ////FPS.limit = 60;
+   InitStars();
+   use callbacks;
+   SDL.eventLoop();
+}

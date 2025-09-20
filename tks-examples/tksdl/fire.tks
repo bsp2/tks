@@ -1,0 +1,139 @@
+// - renders a "fire" effect (256x256, 8 and 32bit modes)
+// - the highlevel version uses 32bit colors because bytes cannot be addressed without assembler (in tks)
+// - the assembler optimized version uses 8bit colors and runs at triple speed (inline assembler removed in 2003)
+
+
+module Main;
+
+use tksdl;
+use tkopengl;
+
+
+int use_asm=1;
+Texture firetexpa;
+Texture firetexpb;
+Texture firetexa;
+Texture firetexb;
+int framecount=0;
+
+function FireInit() {
+    firetexa.alloc(256,256,4); // __32bits/perpixel__ is required for normal mode
+    firetexb.alloc(256,256,4);
+    firetexa.flags=0;
+    firetexb.flags=0;
+    firetexa.clear(0);
+    firetexb.clear(0);
+    int x=0;
+    loop(256) {
+	int r=rnd(255);
+	firetexa[256*255+x++]=r;
+    }
+    firetexpa<=firetexa;
+    firetexpb<=firetexb;
+
+    firetexa.upload();
+    firetexb.upload();
+}
+
+function FireRenderHi() {
+    Texture tex;
+    tex.screen=firetexpa;
+    Texture texb;
+    texb.screen=firetexpb;
+    compile {
+	local int ox;
+	local int oyox=257;
+	local int coyox=1;
+	loop(255)
+	    {
+	      // 3:15 a.m. :)
+	      loop(254)
+		{
+		    texb[coyox]=(tex[oyox-1]+tex[oyox+1]+tex[coyox-1]+tex[coyox+1]+tex[coyox])*(0.6/5)+tex[oyox]*0.415;
+		    coyox++;
+		    oyox++;
+		}
+	      coyox+=2;
+	      oyox+=2;
+	    }
+    }
+    // ---- process last line ----
+    int idx=256*255;
+    loop(256)
+      {
+	  int c=tex[idx];
+	  if(c) texb[idx]=c-1;
+	  else  texb[idx]=rnd(255);
+	  idx++;
+      }
+}
+
+function FireRender() {
+    FireRenderHi();
+    Texture t;
+    t<=firetexpb;
+    firetexpb<=firetexpa;
+    firetexpa<=t;
+}
+
+function onDraw {
+    glClearColor(0.0, 0.0, 1.0, 0.0);        
+    glClear(GL_COLOR_BUFFER_BIT);            
+    zglInitPerspective(4.0/3.0, 40, 0.1, 10);
+    glTranslatef(0,0,-3);
+    glLineWidth(2.0);
+    glColor4f(1,1,1,1);
+    glDisable(GL_TEXTURE_2D);
+    glBegin(GL_LINE_LOOP);
+    glVertex3f(-1,-1,0);
+    glVertex3f( 1,-1,0);
+    glVertex3f( 1, 1,0);
+    glVertex3f(-1, 1,0);
+    glEnd();
+    glEnable(GL_TEXTURE_2D);
+    FireRender();
+    firetexpb.update();
+    firetexpb.bind();
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glColor4f(0,0,1,1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0);
+    glVertex3f(-1,-1,0);
+    glTexCoord2f(1,0);
+    glVertex3f( 1,-1,0);
+    glTexCoord2f(1,1);
+    glVertex3f( 1, 1,0);
+    glTexCoord2f(0,1);
+    glVertex3f(-1, 1,0);
+    glEnd();
+    Viewport.waitVBlank();
+
+    if((framecount++&127)==0) 
+	{ 
+	    trace (use_asm?"ASM-":"COM-")+"fprec="+FPS.precision+" fps="+FPS.real;
+	}
+}
+
+function onOpen() {
+    FPS.reset();
+    FireInit();
+}
+
+function onKeyboard(Key _k) {
+    if(_k.pressed==VKEY_ESCAPE)
+	SDL.exitEventLoop();
+}
+
+function main {
+    use callbacks;                                     
+
+    FPS.tickInterval=1000.0/50;              // set timer speed to 50Hz
+    FPS.tickBuffer=0;
+
+    Viewport.openWindow(512, 384);                     // open a window on the desktop
+    Viewport.caption="fire - | [escape] exit | [space] toggle asm";  // set the window title
+
+    SDL.eventLoop();
+}
+

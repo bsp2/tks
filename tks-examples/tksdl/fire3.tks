@@ -1,0 +1,373 @@
+module Main;
+
+// amd xp2500+: 1056fps (JIT), 117fps (interpreted)
+
+use tksdl;
+use tkopengl;
+
+int framecount=0;
+boolean bvsync=true;
+boolean bwaitvblank = false;
+int b_fpslimit=1;
+FireRenderer renderer;
+
+class FireRenderer
+{
+      // ---- texture size in pixels
+   define int DEFAULT_TEXTURE_WIDTH  =128;
+   define int DEFAULT_TEXTURE_HEIGHT =32;
+   define int DECAY_RATE=82;
+   define int PAL_SIZE =1024;
+
+   private int        texture_width =DEFAULT_TEXTURE_WIDTH;
+   private int        texture_height=DEFAULT_TEXTURE_HEIGHT;
+   private Texture    firetexa;
+   private Texture    firetexb;
+   private Texture    firetexc;
+   private Texture    firetexap;
+   private Texture    firetexbp;
+   private IntArray   palette;
+   private IntArray   paletteb;
+   private float      palette_sin1,palette_sin2,palette_sin3;
+   private float      palette_sinb1,palette_sinb2,palette_sinb3;
+   private float      palette_sinb1i,palette_sinb2i,palette_sinb3i;
+
+   FireRenderer() { // ---- constructor 
+      initTextures();
+      initPalette();
+      calcPalette();
+      calcPaletteB();
+   }
+   
+   public method setSize(int _w, int _h) {
+      // ---- set the size of the render texture
+      if(_w<=0)
+         _w=DEFAULT_TEXTURE_WIDTH;
+      if(_h<=0)
+         _h=DEFAULT_TEXTURE_HEIGHT;
+      if (_w!=texture_width)||(_h!=texture_height)
+      {
+         texture_width =_w;
+         texture_height=_h;
+         initTextures();
+      }
+   }
+   
+   public method getTexture()/*:Texture*/ {
+      // ---- return the render texture
+      return firetexc;
+   }
+
+   private method initPalette() {
+      palette.alloc(PAL_SIZE);
+      palette.addEmpty(PAL_SIZE);
+      
+      paletteb.alloc(PAL_SIZE);
+      paletteb.addEmpty(PAL_SIZE);
+
+      palette_sin1=0;
+      palette_sin2=0;
+      palette_sin3=0;
+      palette_sinb1=0;
+      palette_sinb2=0;
+      palette_sinb3=0;
+      calcPalette();
+   }
+
+
+   private method calcPalette() {
+      IntArray pal <= palette;
+      compile
+      {
+         float c,d,cstep;
+         int ci;
+         
+         int ps=PAL_SIZE*0.52;
+         
+         float psin1=0.872546*0.8 + 0.2*sin(palette_sin1);
+         palette_sin1+=0.0023512*7;
+         while(palette_sin1>=2PI)palette_sin1-=2PI;
+         
+         float psin2=0.958625*0.8 + 0.2*sin(palette_sin2);
+         palette_sin2+=0.004123*5;
+         while(palette_sin2>=2PI)palette_sin2-=2PI;
+         
+         float psin3=0.476*0.8 + 0.2*sin(palette_sin3);
+         palette_sin3+=0.0011*17;
+         while(palette_sin3>=2PI)palette_sin3-=2PI;
+         
+         cstep=1.0/(ps/3.0);
+         c=0;
+         float a=0;
+         float astep=(2PI/(ps/3.0))*8;
+         for(int i=0; i<(ps/3.0); i++)
+         {
+            ci=(c-( (1.0-c)*c*0.10*(0.5+0.5*(psin1*0.6+psin2*0.2+psin3*0.2)*sin(a))))*255;
+            clamp ci 0 255;
+            pal[i]=argb(ci,64+ci/4,0,0);
+            c+=cstep;
+            a+=astep;
+         }
+         c=0;
+         a=0;
+         cstep=1.0/( (ps/2.0)-(ps/3.0) );
+         astep=2PI*cstep*16;
+         for(; i<(ps/2.0); i++)
+         {
+            ci=(c-( (1.0-c)*0.10*(0.5+0.5*(psin1*0.3+psin2*0.3+psin3*0.4)*sin(a))))*255;
+            clamp ci 0 255;
+         pal[i]=argb(ci,128+ci/2,ci,0);
+         c+=cstep;
+         a+=astep;
+         }
+         c=0;
+         cstep=1.0/(PAL_SIZE-i);
+         astep=2PI*cstep*32;
+         a=0;
+         for(; i<PAL_SIZE; i++)
+         {
+            ci=(c-( (1.0-c)*0.90*(0.5+0.5*(psin1*0.3+psin2*0.3+psin3*0.4)*sin(a))))*255;
+            pal[i]=argb(255,255,255,ci);
+            c+=cstep;
+         }
+      }
+   }
+
+   private method calcPaletteB()  {
+      IntArray palb <= paletteb;
+      compile
+      {
+         float c,d,cstep;
+         int ci;
+         
+         float psin1a=palette_sinb1;
+         palette_sinb1+=0.17812;
+         while(palette_sinb1>=2PI)palette_sinb1-=2PI;
+         
+         float psin2a=palette_sinb2;
+         palette_sinb2+=0.0154123;
+         while(palette_sinb2>=2PI)palette_sinb2-=2PI;
+         
+         float psin3a=palette_sinb3;
+         palette_sinb3+=0.0138711;
+         while(palette_sinb3>=2PI)palette_sinb3-=2PI;
+         
+         float psin1,psin2,psin3;
+      
+         cstep=1.0/PAL_SIZE;
+         c=0;
+         float a=0;
+         float astep=2PI*cstep*64;
+         for(int i=0; i<PAL_SIZE; i++)
+         {
+            psin1=sin(psin1a);
+            psin2=sin(psin2a);
+            psin3=sin(psin3a);
+            
+            ci=(c*(0.5+0.5*(psin1*psin2*psin3)*sin(a)))*PAL_SIZE;
+            clamp ci 0 PAL_SIZE;
+            palb[i]=i*0.99+(ci*0.01);
+            c+=cstep;
+            a+=astep;
+            psin1a+=0.23244;
+            psin2a+=0.18909;
+            psin3a+=0.30034235;
+         }
+      }
+   }
+
+   private method initTextures() {
+         // ---- initialize both fire render texture and the output texture
+      firetexa.alloc(texture_width, texture_height, 4); // 4= 4bytes per pixel => 32bit ARGB
+      firetexa.flags=0;
+      firetexa.clear(0);
+      firetexb.alloc(texture_width, texture_height, 4);
+      firetexb.flags=0;
+      firetexb.clear(0);
+      firetexc.alloc(texture_width, texture_height, 4);
+      firetexc.flags=0;
+      firetexc.clear(0);
+      firetexap<=firetexa;
+      firetexbp<=firetexb;
+         // ---- init last row 
+      int x=texture_width*(texture_height-1);
+      loop(texture_width) {
+         firetexa[x++]=rnd(PAL_SIZE);
+      }
+   }
+
+   public method onOpen() {
+      firetexc.upload();
+   }
+
+   public method render() {
+      
+      calcPalette();
+      calcPaletteB();
+      
+      // ---- swap front/back buffer
+      Texture t<=firetexap; 
+      firetexap<=firetexbp;
+      firetexbp<=t;
+      // ---- ^^ this has to be done outside of JIT blocks
+      // ---- now map object fields to variables
+      // ---- to increase speed of JIT block
+      Texture ta<=firetexap;
+      Texture tb<=firetexbp;
+      Texture tc<=firetexc;
+      IntArray pal<=palette;
+      
+      IntArray palb<=paletteb;
+      
+      if(1) {
+         // ---- blur and move upwards.
+         // ---- the result is written to the render "backbuffer"
+         // ---- a palette lookup is done for the result pixels and written to
+         // ---- the final output texture (firetexc) 
+         int n =texture_height-2;
+         int pa=texture_width*(texture_height-n-1);
+         int pb=texture_width*(texture_height-n-2);
+         int pc=texture_width*(texture_height-n-1);
+         int q1=texture_width*(texture_height-n-2);
+         int q2=texture_width*(texture_height-n);
+         int q3=texture_width*(texture_height-n-1)-1;
+         int q4=texture_width*(texture_height-n-1)+1;
+         compile loop(n)
+         {
+            loop(texture_width-2)
+            {
+               int c=
+                  (ta[q1++]+ta[q2++]+
+                   ta[q3++]+ta[q4++])*0.2477;
+               ta[pa++]=c;
+               tb[pb++]=palb[c];
+               tc[pc++]=pal[c];
+            }
+            pa+=2;
+            pb+=2;
+            pc+=2;
+            q1+=2;
+            q2+=2;
+            q3+=2;
+            q4+=2;
+         }
+      }
+         // ---- process last line ----
+      int idx=texture_width*(texture_height-1);
+      loop(texture_width)
+      {
+         int z=tb[idx];
+         if(z>=DECAY_RATE)
+            tb[idx]=z-DECAY_RATE;
+         else
+            tb[idx]=rnd(PAL_SIZE);
+         idx++;
+      }
+
+   }
+   
+}
+
+
+function onDraw {
+      // ---- draws the screen (and the render texture)
+   zglInit2D(Viewport.width, Viewport.height);
+   glEnable(GL_TEXTURE_2D);
+   glDisable(GL_BLEND);
+   glDisable(GL_DEPTH_TEST);
+   
+   renderer.render();
+   Texture t;
+   t<=renderer.getTexture();
+   t.update();
+   t.bind();
+
+   glColor4f(0,0,1,1);
+   glBegin(GL_QUADS);
+   glTexCoord2f( 2/t.sx, 0);
+   glVertex2f  ( 0, 0);
+   glTexCoord2f( 2/t.sx+(float(t.sx-4)/t.sx), 0);
+   glVertex2f  ( Viewport.width,  0);
+   glTexCoord2f( 2/t.sx+(float(t.sx-4)/t.sx), (float(t.sy-4)/t.sy));
+   glVertex2f  ( Viewport.width, Viewport.height);
+   glTexCoord2f( 2/t.sx, (float(t.sy-4)/t.sy));
+   glVertex2f  ( 0, Viewport.height);
+   glEnd();
+
+   if(bwaitvblank)
+      Viewport.waitVBlank();
+
+   if((framecount++&127)==0) 
+	{ // ---- output frames-per-sec stats every 128 frames
+      trace "fprec="+FPS.precision+" fps="+FPS.real;
+	}
+}
+
+function onOpen() {
+   FPS.reset();
+}
+
+function SetVSync(boolean _bVSync) {
+   bvsync = _bVSync;
+   // Only call waitVBlank() when swap control extension is not available
+   bwaitvblank = ! Viewport.swapInterval(bvsync?1:0); 
+   trace "vsync set to "+bvsync+" , bwaitvblank is "+bwaitvblank;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+      case 'v':
+         SetVSync(!bvsync);
+         break;
+      case 'f':
+         b_fpslimit=1-b_fpslimit;
+         updateFPSLimit();
+         break;
+   }
+}
+
+function updateFPSLimit() {
+   if(b_fpslimit)
+   {
+      FPS.limit=30;
+      SetVSync(false);
+   }
+   else
+   {
+      FPS.limit=0;
+   }
+   print "fps limit set to "+b_fpslimit+" ("+FPS.limit+" fps).";
+}
+
+function main {
+   if(Arguments.numElements)
+   {
+         // ---- benchmark mode (no graphics output)
+      int t=milliSeconds();
+      loop(1024)
+      {
+         renderer.render();
+      }
+      t=milliSeconds()-t;
+      print "t(ms)="+t;
+      print "fps="+ (1000/(t/1024.0));
+   }
+   else
+   {
+      use callbacks;                                     
+
+      FPS.tickInterval=1000.0/50;   // set timer speed to 50Hz
+      FPS.tickBuffer=0;             // catch up 0 missed "ticks"
+
+      updateFPSLimit();
+
+      Viewport.openWindow(FireRenderer.DEFAULT_TEXTURE_WIDTH*3, FireRenderer.DEFAULT_TEXTURE_HEIGHT*3);
+      Viewport.caption="fire - | [escape] exit";
+
+      SDL.eventLoop();
+   }
+}

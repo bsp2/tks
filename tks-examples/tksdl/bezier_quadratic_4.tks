@@ -1,0 +1,228 @@
+
+use tksdl;
+use tkopengl;
+
+int numframesrendered=0;
+float g_ctl_x = 0.25;
+float g_ctl_y = 0.5;
+int mode = 0;
+
+int lut_res = 512;
+int ctl_res = 16;
+
+
+class BezierLUT01 {
+   FloatArray lut;
+   int lut_sz;
+
+   init(int _size) {
+      lut.allocAndFill(_size + 1, 0);
+      lut_sz = _size;
+   }
+
+   update(float _ctlX, float _ctlY) {
+      float cx2 = 2*_ctlX;
+      float cy2 = 2*_ctlY;
+      float omcx2 = 1.0 - cx2;
+      float omcy2 = 1.0 - cy2;
+
+      int over = 2;
+      float t = 0;
+      float tStep = 1.0 / (over * lut_sz);
+      // trace "xxx lut.numElements="+lut.numElements;
+      // lut.fill(0);//xxxx
+      // // loop((lut_sz+1) * over)
+      loop(lut_sz * over)
+      {
+         float t2 = t*t;
+         float mx = t2*omcx2 + t*cx2;
+         float my = t2*omcy2 + t*cy2;
+
+         // // lut[int(mx * lut_sz + 0.5)] = my;
+         lut[int(mx * lut_sz)] = my;
+
+         t += tStep;
+      }
+      lut[0] = 0.0;
+      lut[lut_sz-1] = 1.0;
+      // trace "xxx lut.get(0)="+get(0);
+      // trace "xxx lut.get(1)="+get(1);
+   }
+
+   get(float _t) {
+      return lut.winLinear(_t * (lut_sz-1));
+   }
+}
+
+class BezierLUT01Array {
+   FloatArray *[] luts;
+   int lut_sz;
+   int lut_res;
+
+   init(int _size, int _res) {
+      local BezierLUT01 lut;
+      lut.init(_size);
+      lut_sz  = _size;
+      lut_res = _res;
+
+      float ctlStep = 1.0 / (_res - 1);
+      float ctlY = 0.0;
+      loop(_res)
+      {
+         float ctlX = 0.0;
+         loop(_res)
+         {
+            FloatArray fa <= new FloatArray;
+            luts.add(#(deref fa));
+            trace "xxx ctlX="+ctlX+" ctlY="+ctlY;
+            lut.update(ctlX, ctlY);
+            fa = lut.lut;
+            ctlX += ctlStep;
+         }
+
+         ctlY += ctlStep;
+      }
+   }
+
+   get(float _t, float _ctlX, float _ctlY) {
+      int iCtlX = mathClampi(lut_res * _ctlX, 0, lut_res-1);
+      int iCtlY = mathClampi(lut_res * _ctlY, 0, lut_res-1);
+      // trace "xxx iCtlX="+iCtlX+" iCtlY="+iCtlY;
+      FloatArray lut <= luts.get(iCtlY * lut_res + iCtlX);
+      return lut.winLinear(_t * (lut_sz-1));
+   }
+}
+
+BezierLUT01Array luts;
+luts.init(lut_res, ctl_res);
+
+
+function onDraw() {
+
+   float dt=FPS.precision;
+   glClearColor(0,0,0.2,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInitOrtho(1, 1);
+
+   if(1)
+   {
+      glColor3f(0.15,0.15,0.35);
+      glBegin(GL_LINES);
+      glVertex2f(-1.0f, 0.0f);
+      glVertex2f( 1.0f, 0.0f);
+      glVertex2f( 0.0f, -1.0f);
+      glVertex2f( 0.0f,  1.0f);
+      glEnd();
+
+      float lx = -1.0;
+      float ly = 0.0;
+      float t = 0;
+      float cx;
+      float cy;
+      float tStep = 1.0f / (Viewport.width-1);
+      glColor3f(0.5,0.5,0.5);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+      glBegin(GL_LINES);
+      boolean bFirst = true;
+
+      loop(Viewport.width)
+      {
+         cy = luts.get(t, g_ctl_x, g_ctl_y);
+
+         cx = t * 2.0 - 1.0;
+         cy = cy * 2.0 - 1.0;
+         
+         if(bFirst)
+         {
+            glVertex2f(cx, cy);
+            bFirst = false;
+         }
+         else
+            glVertex2f(lx, ly);
+         glVertex2f(cx, cy);
+
+         if(((t-tStep) < 0.5) && (t >= 0.5))
+         {
+            glEnd();
+            glColor3f(0.9,0.9,0.9);
+            glBegin(GL_LINES);
+         }
+         lx = cx;
+         ly = cy;
+         t += tStep;
+      }
+
+      glEnd();
+      glDisable(GL_BLEND);
+   }
+
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   if(_cbs&1)
+   {
+      g_ctl_x = float(_x) / Viewport.width;
+      g_ctl_y = 1.0 - (float(_y) / Viewport.height);
+
+      // g_ctl_x -= 0.5;
+      // g_ctl_x *= 2.0;
+      // g_ctl_x += 0.5;
+
+      // g_ctl_y -= 0.5;
+      // g_ctl_y *= 2.0;
+      // g_ctl_y += 0.5;
+
+      trace "g_ctl=("+g_ctl_x+";"+g_ctl_y+")";
+   }
+}
+
+function onKeyboard(Key _k) {
+   trace "xxx onKeyboard: k.code="+_k.code+" mod="+_k.mod+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         mode = (mode + 1) % 2;
+         trace "mode="+mode;
+         break;
+   }
+}
+
+int tim_count = 0;
+function onTimer() {
+   // trace "xxx onTimer";
+   // if(++tim_count > 100)
+   //    SDL.exitEventLoop();
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/60;
+   //FPS.limit=30;
+   FPS.limit=60;
+
+   SDL.eventPolling = false; // tksdl default is "true" (do not block while waiting for an SDL event)
+   SDL.timerInterval = 20;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+
+   Viewport.multisampleSamples = 4;
+   Viewport.multisampleBuffers = 1;
+   // Viewport.stencilBits = 8;
+   Viewport.openWindow(800, 800);
+   Viewport.swapInterval(1);
+
+   SDL.eventLoop();
+}

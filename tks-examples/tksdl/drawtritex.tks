@@ -1,0 +1,147 @@
+
+// (note) enable benchmark mode by passing any cmdline arg, e.g.
+//          $ tks drawtritex 1
+//
+// "1000 frames @512x512 took 1437 ms =>  695.89 fps => 182.425 mpix/sec" (m2pro, bilinear)
+// "1000 frames @512x512 took  489 ms => 2044.99 fps => 536.082 mpix/sec" (m2pro, nearest)
+//
+//
+
+use tksdl;
+use tkopengl;
+use tkmath;
+
+int numframesrendered = 0;
+
+Texture tex_fb;
+Texture tex_src;
+
+float ang_rot   = 0;
+float ang_alpha = 2PI*0.75;
+float ang_zoom  = 0;
+
+tex_fb.alloc(512, 512, 4);
+tex_fb.clear(#ff004040);
+
+tex_src.alloc(64, 64, 4);
+tex_src.clear(#ffffffff);
+
+Texture tex_tmp; tex_tmp.loadLocalImage("escher.png", 0,0,4);
+tex_src.scaleFrom(tex_tmp);
+
+// Add 0-border around texture
+tex_src.drawLine(0,                       0, tex_src.sx-1,            0, 0);
+tex_src.drawLine(0,                       0,            0, tex_src.sy-1, 0);
+tex_src.drawLine(tex_src.sx-1,            0, tex_src.sx-1, tex_src.sy-1, 0);
+tex_src.drawLine(0,            tex_src.sy-1, tex_src.sx-1, tex_src.sy-1, 0);
+
+boolean b_anim = 1;  // SPACE
+
+
+function onDraw() {
+   float dt = FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInitOrtho(1, 1);
+   zglColorARGB(#fff4fff4);
+
+   float S = 400 * (sin(ang_zoom)*0.4 + 0.6);
+   Matrix2x3f m; m.initTranslatef(tex_fb.sx/2, tex_fb.sy/2); m.rotatef(ang_rot);
+   Vector2f v1; v1.init(-S, -S);  Vector2f uv1; uv1.init(0, 0);  v1.transform(m);
+   Vector2f v2; v2.init( S, -S);  Vector2f uv2; uv2.init(1, 0);  v2.transform(m);
+   Vector2f v3; v3.init( S,  S);  Vector2f uv3; uv3.init(1, 1);  v3.transform(m);
+   Vector2f v4; v4.init(-S,  S);  Vector2f uv4; uv4.init(0, 1);  v4.transform(m);
+
+   tex_fb.clear(0);
+   float alpha = sin(ang_alpha)*0.5+0.5;
+   alpha = mathPowerf(alpha, 1.7);
+
+   int t = milliSeconds();
+   loop(Arguments.numElements ? 1000 : 1)
+   {
+      tex_fb.drawTriTex_fx(tex_src,
+                           v1, v2, v3,
+                           uv1, uv2, uv3,
+                           alpha
+                           );
+
+      tex_fb.drawTriTex_fx(tex_src,
+                           v1, v3, v4,
+                           uv1, uv3, uv4,
+                           alpha
+                           );
+   }
+
+   if(Arguments.numElements)
+   {
+      t = milliSeconds() - t;
+      trace "1000 frames @"+tex_fb.sx+"x"+tex_fb.sy+" took "+t+" ms => "+(1000000.0 / t)+" fps => "+(((1000.0/1000000.0)*tex_fb.sx*tex_fb.sy)*(1000.0/t))+" mpix/sec";
+      exit(10);
+   }
+
+   tex_fb.update();
+
+   if(b_anim)
+   {
+      ang_rot   = mathWrapf(ang_rot   + 0.004*dt, 0, 2PI);
+      ang_alpha = mathWrapf(ang_alpha + 0.023*dt, 0, 2PI);
+      ang_zoom  = mathWrapf(ang_zoom  + 0.007*dt, 0, 2PI);
+   }
+
+   tex_fb.bind();
+   tex_fb.enable();
+
+   glBegin(GL_QUADS);
+   glTexCoord2f(0, 1);
+   glVertex2f(-1,-1);
+
+   glTexCoord2f(1, 1);
+   glVertex2f( 1,-1);
+
+   glTexCoord2f(1, 0);
+   glVertex2f( 1, 1);
+
+   glTexCoord2f(0, 0);
+   glVertex2f(-1, 1);
+   glEnd();
+
+   tex_fb.unbind();
+   tex_fb.disable();
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // trace "[...] onMouse: x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   trace "[...] onKeyboard: k.code="+_k.code+" ("+TKS.constantToString(_k.code, "VKEY_")+") mod="+_k.mod+" pressed="+_k.pressed+" released="+_k.released+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         b_anim = !b_anim;
+         trace "[...] b_anim="+b_anim;
+         break;
+   }
+}
+
+function main() {
+   use callbacks;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   Viewport.openWindow(tex_fb.sx, tex_fb.sy);
+   Viewport.swapInterval(1);
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(0,0);
+
+   SDL.eventLoop();
+}

@@ -1,0 +1,356 @@
+
+use tksdl;
+use tkopengl;
+
+float frot=0;
+int numframesrendered=0;
+
+enum {
+   SHM_UNREAD = 0
+   SHM_NOTEON = 1
+   SHM_NOTE = 2
+};
+
+Buffer sh; //SharedBuffer sh;
+sh.size=1024;
+
+function Send(float _note, boolean _bNoteOn) {
+   while(sh.peekI8(SHM_UNREAD))
+      TKS.sleep(0);
+   sh.pokeF32(SHM_NOTE, _note);
+   sh.pokeI8(SHM_NOTEON, _bNoteOn);
+   sh.pokeI8(SHM_UNREAD, true);
+}
+
+
+function onDraw() {
+//     float dt=FPS.precision;
+//     glClearColor(0,0,0.2,1);
+//     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+//     if( !(++numframesrendered&127) )
+//       trace "FPS.real="+FPS.real;
+//     zglInitOrtho(-1,1);
+//     zglRotate3f(0,0,frot);
+//     glColor3f(0.9,0.9,0.9);
+//     glBegin(GL_QUADS);
+//     glVertex2f(-1,-1);
+//     glVertex2f( 1,-1);
+//     glVertex2f( 1, 1);
+//     glVertex2f(-1, 1);
+//     glEnd();
+//     frot+=dt;
+//     wrap frot 0 360;
+}
+
+function KeycodeToMidiNote(int _code):float {
+   switch(_code) {
+      case 122: return  0; // c-0: 122
+      case 115: return  1; //c#0: 115
+      case 120: return  2; //d-0: 120
+      case 100: return  3; //d#0: 100
+      case  99: return  4; //e-0: 99
+      case 118: return  5; //f-0: 118
+      case 103: return  6; //f#0: 103
+      case  98: return  7; //g-0: 98
+      case 104: return  8; //g#0: 104
+      case 110: return  9; //a-0: 110
+      case 106: return 10; //a#0: 106
+      case 109: return 11; //b-0: 109
+      case  44: return 12; //c-1: 44
+      case 108: return 13; //c#1: 108
+      case  46: return 14; //d-1: 46
+      case  59: return 15; //d#1: 59
+      case  47: return 16; //e-1: 47
+      case 113: return 12; //c-1: 113
+      case  50: return 13; //c#1: 50
+      case 119: return 14; //d-1: 119
+      case  51: return 15; //d#1: 51
+      case 101: return 16; //e-1: 101
+      case 114: return 17; //f-1: 114
+      case  53: return 18; //f#1: 53
+      case 116: return 19; //g-1: 116
+      case  54: return 20; //g#1: 54
+      case 121: return 21; //a-1: 121
+      case  55: return 22; //a#1: 55
+      case 117: return 23; //h-1: 117
+      case 105: return 24; //c-2: 105
+      case  57: return 25; //c#2: 57
+      case 111: return 26; //d-2: 111
+      case  48: return 27; //d#2: 48
+      case 112: return 28; //e-2: 112
+      case  91: return 29; //f-2: 91
+      case  61: return 30; //f#2: 61
+      case  93: return 31; //g-2: 93
+   }
+   return -1;
+}
+
+float octave = 60;
+function onKeyboard(Key _k) {
+   if(_k.code)
+   {
+      if(_k.pressed) print _k.code;
+      if(_k.pressed == VKEY_ESCAPE) SDL.exitEventLoop();
+      float note = KeycodeToMidiNote(_k.code);
+      if(note>=0)
+         Send(octave + note, (_k.pressed!=0) );
+   }
+}
+
+function main() {
+   use callbacks;
+   AudioDevice.openDSP(44100, 1024);
+   AudioDevice.ppq=192;
+   AudioDevice.bpm=125;
+   AudioDevice.volume=0.9;
+   AudioDevice.start();
+    Viewport.openWindow(640, 480);
+    use callbacks;
+    FPS.tickInterval=1000.0/60;
+    FPS.limit=60;
+    SDL.eventPolling=true;
+    SDL.redrawFlag=REDRAW_DIRTY;
+    SDL.eventLoop();
+   AudioDevice.stop();
+}
+
+
+// demonstrates how to output a pitch-modulated sinus signal using the audio device
+// the current note is controlled by a shared memory region
+//use tksdl;
+
+/*
+song
+  track         ; jeder track spielt hat eine pattern playlist
+    generator   ; voice verwaltung/mixer
+       voice#1   ; 
+       voice#2
+       voice#3
+       voice#4
+*/
+
+
+class ST_Voice {
+   explain "interface for a Syntracker voice generator class.
+
+ The interface methods are prefixed with \"st\" to avoid a name clash between an internal voice method
+ and a future extension of this interface.
+";
+   
+   // Parameter types: (also see stGetParamType())
+   define int ST_NONE   = 0; // unused parameter
+   define int ST_BOOL   = 1; // either 0 or 1
+   define int ST_SNORM  = 2; // -1..1
+   define int ST_UNORM  = 3; // 0..1
+   define int ST_SBYTE  = 4; // -127..127
+   define int ST_UBYTE  = 5; // 0..255
+   define int ST_SWORD  = 6; // -32767..32767
+   define int ST_UWORD  = 7; // 0..65535
+   define int ST_NOTE   = 8; // midi note (c-0..g-9 (0..127))
+   define int ST_FREQ   = 9; // frequency (0..n Hz)
+
+   // Additional Array types: (also see stGetArrayType())
+   define int ST_STEREO = 10; // left/right stereo sample pairs (-1..1 range)
+
+   // Set amplification / volume (0..1)
+   public method stSetAmp (float _amp) {}
+
+   // Set midi note (0..127) (does not trigger new note)
+   public method stSetFreq (float _note) { }
+
+   // Set panning (-1..1)
+   public method stSetPan (float _pan) { }
+
+   // Query number of parameters
+   public method stSetNumParams() : int { }
+
+   // Query voice parameter
+   public method stGetParam (int _paramNr) : float { }
+
+   // Query parameter type (gui hint) (one of ST_PT_NONE, ST_PT_BOOL ... ST_PT_FREQ)
+   public method stGetParamType (int _paramNr) : float { }
+
+   // Query parameter name (gui hint)
+   public method stGetParamName (int _paramNr) : String { }
+   
+   // Set generic voice parameter
+   public method stSetParam (int _paramNr, float _value) { }
+
+   // Query number of assignable arrays (0..n)
+   public method stGetNumArrays () : int { }
+
+   // Query the array type (gui hint) (one of ST_xxx)
+   public method stGetArrayType () : int { }
+
+   // Query the array name (gui hint)
+   public method stGetArrayName () : String { }
+
+   // Assign an array; the voice may convert the array to an internal format
+   public method stSetArray (int _arrayNr, FloatArray _array) { } 
+
+   // Trigger note
+   public method stNoteOn (float _note, float _vel) { }
+
+   // Release note
+   public method stNoteOff (float _note, float _vel) { }
+
+   // Cancel all playing notes
+   public method stAllNotesOff () { } 
+
+   // Load voice parameters (e.g. instrument change)
+   public method stLoad (Buffer _source) { } 
+
+   // Store voice parameters
+   public method stSave (Buffer _dest) { } 
+
+   // Initialize voice (called once at startup)
+   public method stInit () { } 
+
+   // Reset to default parameters
+   public method stReset () { } 
+
+   // Clean up allocated resources (called once during shutdown)
+   public method stExit () { } 
+
+   // Render _dst.numElements/2 stereo samples
+   public method stRender (FloatArray _dst) { } 
+
+   // Update state, call freq. depends on ppq/bpm
+   public method stTick () { } 
+}
+
+
+float curr_pitch;
+float pitch;
+float sine_phase=0;
+// float pitch_phase=0;
+
+float note = 81;
+float amp = 1;
+float curr_amp = 1;
+
+// float base_note=69.0;
+float total_sec=0;
+
+int framenr=0;
+
+
+
+enum {
+   ADSR_ATTACK  = 0
+   ADSR_DECAY   = 1
+   ADSR_SUSTAIN = 2
+   ADSR_RELEASE = 3
+};
+#define ADSR_ATTACK_SPD 1.0
+#define ADSR_DECAY_SPD 0.01
+#define ADSR_SUSTAIN_LVL 0.15
+#define ADSR_RELEASE_SPD 0.001
+int adsr_step = ADSR_RELEASE;
+
+FloatArray lut_interpol_amp;
+lut_interpol_amp.alloc(256); 
+lut_interpol_amp.numElements = lut_interpol_amp.maxElements;
+int off_interpol_amp;
+
+function setAmp(float _amp) {
+   amp = _amp;
+   lut_interpol_amp.fill( ((amp-curr_amp) / 256.0) );
+   off_interpol_amp = 0;
+}
+
+function onAudioFrame() {
+   if(sh.peekI8(SHM_UNREAD))
+   {
+      if(sh.peekI8(SHM_NOTEON))
+      {
+         note = sh.peekF32(SHM_NOTE);
+         setAmp(0);
+         adsr_step = ADSR_ATTACK;
+         /// causes clicks sine_phase = 0;
+
+         float freq=MIDINoteToFrequency(note);//base_note+12*(0.5+0.5*sin(pitch_phase)));
+         total_sec+=(60.0/125.0)/96.0;
+         if( ! ((++framenr)&1023) )
+         {
+            print "time= "+int(total_sec/60.0)+"m:"+(int(total_sec)%60)+"s.";
+            print "freq="+freq;
+         }
+         pitch= (freq/(44100.0*0.5));
+//          pitch_phase+=0.01;
+//          wrap pitch_phase 0 2PI;
+      }
+      else
+      {
+         if(note==sh.peekF32(SHM_NOTE))
+         {
+            setAmp(ADSR_SUSTAIN_LVL);
+            adsr_step = ADSR_RELEASE;
+         }
+      }
+      sh.pokeI8(SHM_UNREAD, false);
+   }
+   else
+   {
+      switch(adsr_step)
+      {
+         case ADSR_ATTACK:
+            amp += ADSR_ATTACK_SPD;
+            if(amp>=1)
+            {
+               amp = 1;
+               adsr_step = ADSR_DECAY;
+            }
+            setAmp(amp);
+            break;
+         case ADSR_DECAY:
+            amp -= ADSR_DECAY_SPD;
+            if(amp<=ADSR_SUSTAIN_LVL)
+            {
+               amp = ADSR_SUSTAIN_LVL;
+               adsr_step = ADSR_SUSTAIN;
+            }
+            setAmp(amp);
+            break;
+         case ADSR_SUSTAIN:
+            break;
+         case ADSR_RELEASE:
+            amp -= ADSR_RELEASE_SPD;
+            if(amp<0)
+            {
+               amp = 0;
+            }
+            setAmp(amp);
+            break;
+      }
+   }
+
+}
+
+function onAudioBeginBlock(FloatArray _fa) {
+   AudioDevice.processTimeFrames();
+   AudioDevice.finishBlock();
+}
+
+
+function onAudioRender(FloatArray _fa) {
+   int i=0;
+   float cval;
+
+   compile loop(_fa.numElements>>1) {
+      cval=sin(sine_phase) * curr_amp;
+      _fa[i++]=cval;
+      _fa[i++]=cval;
+
+      curr_amp += lut_interpol_amp[off_interpol_amp];
+      lut_interpol_amp[off_interpol_amp] = 0.0;
+      off_interpol_amp = (off_interpol_amp+1) & 255;
+
+      sine_phase+=curr_pitch;
+      ////curr_amp += (amp-curr_amp)*0.01; // interpolate amplification 
+      curr_pitch += (pitch-curr_pitch)*0.08; // interpol pitch
+   }
+   wrap sine_phase 0 2PI;
+}
+
+

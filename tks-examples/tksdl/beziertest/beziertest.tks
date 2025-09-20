@@ -1,0 +1,777 @@
+
+use tksdl;
+use tkopengl;
+
+
+float f_threshold = 0.05; // bezier flattness recursion threshold (0.15=detailed, 5.0=coarse)
+boolean i_maxrecursion = 9;
+
+boolean b_multisampling = true;
+boolean b_drawctlpoints = false; // 'c' key
+boolean b_drawlinenormals = false; // 'n' key
+boolean b_drawdots = false; // 'd' key
+
+int numframesrendered=0;
+
+float MAXX = 640*1.4;
+float MAXY = 480*1.4;
+
+boolean b_countvertices = true;
+int total_num_vertices = 0;
+
+class Test {
+
+   static DrawCubicBezierCurve(float x0, y0, x1, y1, x2, y2, x3, y3) {
+      float t = 0;
+      int numSeg = 32;
+      float ta = 1.0/32;
+      float lx=x0, ly=y0;
+      float cx, cy;
+      glBegin(GL_LINES);
+      loop(numSeg)
+      {
+         float omt = 1 - t;
+         float omt2 = omt * omt;
+         float omt3 = omt2 * omt;
+         cx = (omt3 * x0) + (3*t*omt2*x1) + (3*t*t*omt*x2) + (t*t*t*x3);
+         cy = (omt3 * y0) + (3*t*omt2*y1) + (3*t*t*omt*y2) + (t*t*t*y3);
+         t += ta;
+         glVertex2f(lx, ly);
+         glVertex2f(cx, cy);
+         lx = cx;
+         ly = cy;
+      }
+
+      glEnd();
+   }
+
+   static DrawCubicBezierCurve_Opt1(float x0, y0, x1, y1, x2, y2, x3, y3) {
+      float t = 0;
+      int numSeg = 32;
+      float ta = 1.0/32;
+      float lx=x0, ly=y0;
+      float cx, cy;
+
+
+      float t2 = 0; // t*t => f'=2t
+      float t3 = 0; // t*t*t => f'=3(t*t)
+
+      // 0.03125  ^2 = 0,0009765625
+      // 0.0625   ^2 = 0,00390625
+      // 0.09375  ^2 = 0,0087890625
+      float ta2 = ta * ta; // first delta
+      // sum of [0..numSeg-1]  = (n^2)/2 - n/2
+      int j = (numSeg * numSeg - numSeg) * 0.5;
+      // 1 = ta2*numSeg + j*ta2b
+      // 1 - ta2*numSeg = j*ta2b
+      // (1-ta2*numSeg)/j = ta2b
+      float ta2b = (1.0 - ta2*numSeg) / j;
+
+      // t += delta
+      // delta += delta2
+      // delta2 += delta3
+      float ta3 = ta * ta * ta;
+      // 1 = delta*numSeg + j*delta2 + 
+
+      // t^2*(1-t) = t^2 - t^3
+      // (1-t)^2 = 1^2 - 2t + t^2
+      //         = 1 - 2t + t^2
+      // t*(1-t)^2 = t - 2t^2 + t^3
+      // (1-t)^3 = 1^3 - 3*1^2*t + 3*1*t^2 + t^3
+      //         = 1 - 3t + 3t^2 + t^3
+      
+      float omt = 1;
+
+      glBegin(GL_LINES);
+      loop(numSeg)
+      {
+         float omt2 = omt * omt;
+         float a = omt2 * omt; // (1-t)^3
+         float b = 3*(t * omt2);
+         float c = 3*(t2 * omt);
+         float d = t2*t; // t^3
+         cx = (a * x0) + (b * x1) + (c * x2) + (d * x3);
+         cy = (a * y0) + (b * y1) + (c * y2) + (d * y3);
+         t += ta;
+         t2 += ta2;
+         omt -= ta;
+         ta2 += ta2b;
+         glVertex2f(lx, ly);
+         glVertex2f(cx, cy);
+         lx = cx;
+         ly = cy;
+      }
+
+      glEnd();
+   }
+
+
+   static DrawCubicBezierCurve_Opt2(float x0, y0, x1, y1, x2, y2, x3, y3) {
+      float t = 0;
+      int numSeg = 64;
+      float ta = 1.0/numSeg;
+      float lx=x0, ly=y0;
+      float cx, cy;
+
+
+      float t2 = 0; // t*t => f'=2t
+
+      // 0.03125  ^2 = 0,0009765625
+      // 0.0625   ^2 = 0,00390625
+      // 0.09375  ^2 = 0,0087890625
+      float ta2 = ta * ta; // first delta
+      // sum of [0..numSeg-1]  = (n^2)/2 - n/2
+      int j = (numSeg * numSeg - numSeg) * 0.5;
+      // 1 = ta2*numSeg + j*ta2b
+      // 1 - ta2*numSeg = j*ta2b
+      // (1-ta2*numSeg)/j = ta2b
+      float ta2b = (1.0 - ta2*numSeg) / j;
+
+
+      // t^2*(1-t) = t^2 - t^3
+      // (1-t)^2 = 1^2 - 2t + t^2
+      //         = 1 - 2t + t^2
+      // t*(1-t)^2 = t - 2t^2 + t^3
+      // (1-t)^3 = 1^3 - 3*1^2*t + 3*1*t^2 + t^3
+      //         = 1 - 3t + 3t^2 + t^3
+      
+      float tam3 = 3 * ta;
+      float tm3 = 0;
+
+      glBegin(GL_LINES);
+      loop(numSeg)
+      {
+         float t3 = t2 * t;
+         float t2m3 = 3 * t2;
+         float t3m3 = 3 * t3;
+
+         float a = 1 - tm3 + t2m3 - t3; // (1 - t)^3
+         float b = tm3 - 6*t2 + t3m3;   // 3 * (t * (1 - t)^2);
+         float c = t2m3 - t3m3;         // 3 * (t^2 * (1 - t));
+
+         cx = (a * x0) + (b * x1) + (c * x2) + (t3 * x3);
+         cy = (a * y0) + (b * y1) + (c * y2) + (t3 * y3);
+         t += ta;
+         t2 += ta2;
+         ta2 += ta2b;
+         tm3 += tam3;
+         glVertex2f(lx, ly);
+         glVertex2f(cx, cy);
+         lx = cx;
+         ly = cy;
+      }
+
+      glEnd();
+   }
+
+
+   static CalcDistancePointPlane(float px, py, float qx, qy, float nx, ny) : float {
+      //
+      // Return distance of point p to infinite plane. q is a point on the plane
+      // and n is the plane normal.
+      //
+      float vx, vy;
+      vx = px - qx; 
+      vy = py - qy;
+      float vdotn = vx * nx + vy * ny;
+      float nlen = sqrt(nx*nx + ny*ny);
+      //return (v.Dot(*n)/n->Abs());   
+      return vdotn / nlen;
+   }
+
+   static int debug_palette_offset = 0;
+   static IntArray debug_palette = [
+      #ffff0000,
+      #ffffff00,
+      #ff770000,
+      #ff777700,
+      #ff007777,
+      #ff00ffff,
+      #ff00ff77,
+      #ff0077ff,
+      #ff77ff00,
+      #ffff7700
+   ];
+
+   static DrawCubicBezierCurve_Casteljau_Rec(local float a1x, a1y, a2x, a2y, a3x, a3y, a4x, a4y, local int _rec, FloatArray _points) : int {
+      // Recursively divide bezier curve
+      // for diagram see http://www.math.washington.edu/~king/coursedir/m445w01/lab/lab04/lab04.html
+      //
+      //      a2___      
+      //      /    b2------- a3
+      //     /   /   \      /
+      //    /__c1--d--c2   /
+      //   b1          \  / 
+      //  /             b3
+      // a1             /
+      //               /  
+      //              a4
+
+
+      // Find midpoint between (a1x, a1y) and (a2x, a2y) ("b1")
+      local float b1x, b1y;
+      b1x = (a1x + a2x) * 0.5;
+      b1y = (a1y + a2y) * 0.5;
+      
+      // Find midpoint between (a2x, a2y) and (a3x, a3y) ("b2")
+      local float b2x, b2y;
+      b2x = (a2x + a3x) * 0.5;
+      b2y = (a2y + a3y) * 0.5;
+      
+      // Find midpoint between (a3x, a3y) and (a4x, a4y) ("b3")
+      local float b3x, b3y;
+      b3x = (a3x + a4x) * 0.5;
+      b3y = (a3y + a4y) * 0.5;
+      
+      // Find midpoint between (b1x, b1y) and (b2x, b2y) ("c1")
+      local float c1x = (b1x + b2x) * 0.5;
+      local float c1y = (b1y + b2y) * 0.5;
+      
+      // Find midpoint between (b2x, b2y) and (b3x, b3y) ("c2")
+      local float c2x = (b2x + b3x) * 0.5;
+      local float c2y = (b2y + b3y) * 0.5;
+      
+      // Find (bezier) midpoint d between (c1x, c1y) and (c2x, c2y)
+      local float d1x = (c1x + c2x) * 0.5;
+      local float d1y = (c1y + c2y) * 0.5;
+
+      // Calc normal vector for (a1, a4)
+      local float nx = -(a4y - a1y);
+      local float ny = (a4x - a1x);
+
+      // Calc distance of bezier point to (a1, a4) line
+      local float dist = abs(CalcDistancePointPlane(d1x, d1y, a1x, a1y, nx, ny));
+
+      // Draw line normal
+      if(b_drawlinenormals)
+      {
+         if(b_drawdots)
+         {
+            glEnd();
+         }
+         zglColorARGB(debug_palette[debug_palette_offset]);
+         glLineWidth(1.0f);
+         glBegin(GL_LINES);
+         glVertex2f(a1x, a1y);
+         glVertex2f(a4x, a4y);
+         glEnd();
+         glBegin(GL_LINES);
+         glVertex2f(a1x, a1y);
+         glVertex2f(a1x+nx, a1y+ny);
+         glEnd();
+         //debug_palette_offset = (debug_palette_offset + 1) % debug_palette.maxElements;
+
+         if(b_drawdots)
+         {
+            zglColorARGB(#ffc0c0c0);
+            glBegin(GL_POINTS);
+         }
+      }
+
+
+    
+      if( ((_rec < 1) || (dist > f_threshold)) && (_rec < i_maxrecursion) )
+      {
+//          trace "xxx dist="+dist;
+
+         // Left bezier curve (a1, b1, c1, d1)
+         return = DrawCubicBezierCurve_Casteljau_Rec(a1x, a1y, b1x, b1y, c1x, c1y, d1x, d1y, _rec+1, _points);
+
+         // Output bezier midpoint
+         if(b_drawdots)
+         {
+            glVertex2f(d1x, d1y);
+         }
+         _points.add(d1x);
+         _points.add(d1y);
+
+         // Right bezier curve (d1, c2, b3, a4)
+         return = DrawCubicBezierCurve_Casteljau_Rec(d1x, d1y, c2x, c2y, b3x, b3y, a4x, a4y, _rec+1, _points);
+      }
+      else
+      {
+         return _rec;
+      }
+   }
+
+   static DrawCubicBezierCurve_Casteljau(local float x0, y0, x1, y1, x2, y2, x3, y3) {
+
+      // Draw control points
+      if(b_drawctlpoints)
+      {
+         zglColorARGB(#ff008877);
+         glLineWidth(1.0);
+         glBegin(GL_LINES);
+         glVertex2f(x0, y0);
+         glVertex2f(x1, y1);
+         glEnd();
+         zglColorARGB(#ff00cc99);
+         glBegin(GL_LINES);
+         glVertex2f(x2, y2);
+         glVertex2f(x3, y3);
+         glEnd();
+      }
+      
+      FloatArray points;
+      points.alloc(2*512);
+      points.numElements = 0;
+      points.add(x0);
+      points.add(y0);
+
+      if(b_drawdots)
+      {
+         zglColorARGB(#ffc0c0c0);
+         glPointSize(3.0);
+         glBegin(GL_POINTS);
+      }
+
+      /*print */DrawCubicBezierCurve_Casteljau_Rec(x0, y0, x1, y1, x2, y2, x3, y3, 0, points);
+
+      if(b_countvertices)
+      {
+         total_num_vertices += (points.numElements/2);
+      }
+
+
+      if(b_drawdots)
+      {
+         glEnd();
+      }
+
+      points.add(x3);
+      points.add(y3);
+
+      //trace "numPoints="+(points.numElements/2);
+
+      // Draw lines
+      int i = 0;
+      zglColorARGB(#ff0080f0);
+      glLineWidth(3.0);
+      glBegin(GL_LINES);
+      loop((points.numElements/2)-1)
+      {
+         glVertex2f(points[i], points[i+1]);
+         glVertex2f(points[i+2], points[i+3]);
+         i = i + 2;
+      }
+      glEnd();
+   }
+
+
+}
+
+
+class AnimPoint {
+   float v;
+   float dir;
+   float min;
+   float max;
+
+   public method init(float _v, _dir, _min, _max) {
+      v   = _v;
+      dir = _dir;
+      min = _min;
+      max = _max;
+      dir = rnd(2.0)-1.0;
+      if(dir == 0)
+      {
+         dir -= 0.1f;
+      }
+   }
+
+   public method tick(float dt) {
+      v += dt * dir;
+      if(dir > 0)
+      {
+         if(v > max)
+         {
+            v = max - (v - max);
+            dir = -rnd(1.0)-0.1;
+
+         }
+      }
+      else
+      {
+         if(v < min)
+         {
+            v = -v;
+            dir = rnd(1.0)+0.1;
+         }
+      }
+   }
+}
+
+srand(0xdeadbeef);
+AnimPoint bez_a1x; bez_a1x.init(147.14286, 1.0, 0, MAXX);
+AnimPoint bez_a1y; bez_a1y.init(372.36218, 1.0, 0, MAXY);
+AnimPoint bez_a2x; bez_a2x.init(253.19641, 1.0, 0, MAXX);
+AnimPoint bez_a2y; bez_a2y.init(66.647897, 1.0, 0, MAXY);
+AnimPoint bez_a3x; bez_a3x.init(468.54586, 1.0, 0, MAXX);
+AnimPoint bez_a3y; bez_a3y.init(804.03311, 1.0, 0, MAXY);
+AnimPoint bez_a4x; bez_a4x.init(542.85714, 1.0, 0, MAXX);
+AnimPoint bez_a4y; bez_a4y.init(512.36218, 1.0, 0, MAXY);
+
+
+class AnimWobblePoint {
+   float v_orig;
+   float v;
+   float a;
+   float w;
+   float a2;
+   float w2;
+   float d;
+   float a3;
+   float w3;
+
+   public method init(float _vOrig, float _maxD) {
+      v_orig = _vOrig;
+      v  = _vOrig;
+      a  = rand(2PI);
+      w  = rand(2PI/200)+0.001;
+      a2 = rand(2PI);
+      w2 = rand(2PI/200)+0.001;
+      d  = rand(_maxD)+10.0f;
+      a3 = rand(2PI);
+      w3 = rand(2PI/200)+0.001;
+   }
+
+   public method tick(float dt) {
+      //a = a + dt * w;
+      a2 = a2 + dt * w2;
+      a = a + dt * w;
+      a3 = a3 + dt * w3;
+      v = sin(a2) * sin(a) * (d*sin(a3)) + v_orig;
+   }
+}
+
+
+class BezierSegment {
+   float ctl1x;
+   float ctl1y;
+   float ctl2x;
+   float ctl2y;
+   float px;
+   float py;
+   float dx;
+   float dy;
+
+   AnimPoint ap_ctl1x;
+   AnimPoint ap_ctl1y;
+   AnimPoint ap_px;
+   AnimPoint ap_py;
+
+   AnimWobblePoint aw_ctl1x;
+   AnimWobblePoint aw_ctl1y;
+   AnimWobblePoint aw_px;
+   AnimWobblePoint aw_py;
+
+   public method join(BezierSegment seg2) {      
+      dx = seg2.px;
+      dy = seg2.py;
+
+      ctl2x = -(seg2.ctl1x - dx) + dx;
+      ctl2y = -(seg2.ctl1y - dy) + dy;
+   }
+}
+
+class BezierClosedPolyLine {
+   // "The blob"
+   //String svgPolyline = "M 103.03556,308.88991 C 108.82985,195.9013 252.39488,393.95761 375.77675,209.89496 C 494.97475,15.945671 682.86312,264.4432 555.5839,314.95082 C 424.03461,361.8152 448.50773,403.84425 470.73109,484.65646 C 501.0406,585.58535 699.02556,753.35703 547.50267,751.33672 C 391.93918,753.35703 478.81231,547.28591 371.73614,547.28591 C 276.69587,547.28591 143.44167,743.2555 119.198,664.4636 C 93.096248,579.63289 285.80507,443.7659 228.29447,383.64119 C 183.84776,337.17418 98.994954,454.35188 103.03556,308.88991 z";
+
+   // Star-like thingie
+   //String svgPolyline = "M 363.65492,76.554824 C 315.1676,76.554824 325.26912,266.4635 282.84271,292.72747 C 256.12009,309.27004 36.891359,258.35539 38.385797,292.72747 C 40.406102,339.19449 244.1051,344.38491 262.63966,379.60058 C 282.84271,417.98638 159.6041,634.15903 171.72593,662.4433 C 185.23174,693.95684 321.091,470.21832 369.71583,468.49401 C 422.15304,466.6345 535.38085,682.64636 565.68543,664.46361 C 589.24858,650.32572 455.58822,407.14311 464.67017,387.6818 C 478.81231,357.37722 721.24892,323.03204 709.12709,286.66655 C 696.72235,249.45233 478.81231,318.99143 438.4062,284.64625 C 393.76506,246.70127 420.25953,76.554824 363.65492,76.554824 z";
+
+   // "klotz"
+   //String svgPolyline = "M 204.05082,248.28076 C 240.41631,248.28076 288.90363,270.50411 305.06607,276.56503 C 324.81569,283.97114 404.06101,276.56503 434.36559,276.56503 C 449.75178,276.56503 525.27932,266.4635 547.50268,274.54472 C 565.51504,281.09467 579.82756,282.62594 600.03061,306.8696 C 600.03061,306.8696 658.61946,383.64119 656.59915,401.82394 C 656.59915,401.82394 666.70068,472.53462 666.70068,488.69706 C 666.70068,488.69706 663.84148,537.21927 664.68037,547.28591 C 666.70068,571.52958 670.74129,640.21995 662.66007,656.38239 C 662.66007,656.38239 650.53824,714.97123 634.3758,733.15398 C 634.3758,733.15398 573.76664,793.76313 557.6042,807.90527 C 557.6042,807.90527 468.71078,822.0474 448.50773,822.0474 C 448.50773,822.0474 327.28942,822.0474 311.12698,822.0474 C 284.86301,822.0474 212.15986,820.94975 202.03051,811.94588 C 183.84776,795.78344 165.66502,783.66161 157.5838,767.49916 C 149.50258,751.33672 135.36044,698.80879 135.36044,672.54482 C 135.36044,646.28086 131.31983,609.91537 129.29953,597.79354 C 127.27922,585.67171 133.34014,468.49401 131.31983,458.39249 C 129.29953,448.29096 129.29953,379.60059 129.29953,367.47876 C 129.29953,367.47876 147.48227,296.76808 161.62441,288.68686 L 204.05082,248.28076 z";
+
+   // Swirl
+   String svgPolyline = "M 303.04578,361.41785 C 311.85844,376.81466 286.63903,380.89339 277.45525,376.06507 C 252.56778,362.98064 257.53667,327.89624 273.75132,310.2368 C 302.75553,278.64821 353.28453,287.76568 379.81734,317.47617 C 418.75532,361.0775 405.04149,428.84434 361.63468,463.77994 C 303.78023,510.3436 218.25859,491.85003 175.09316,434.65398 C 120.77388,362.67859 144.12754,259.18607 215.16242,207.87471 C 301.19517,145.72978 422.76967,173.98456 482.17944,258.88726 C 552.19179,358.94215 519.01235,498.66353 420.22359,566.14203 C 306.16805,644.04862 148.25848,605.92989 72.731072,493.24289 C -13.08797,365.20075 29.979768,189.07505 156.57351,105.51262 C 298.59256,11.768207 492.95421,59.791712 584.54153,200.29835 C 686.2208,356.28736 633.23664,568.89954 478.8125,668.50412";
+
+   // Krakelei
+   //String svgPolyline = "M 84.852814,258.38228 C 85.345128,272.00221 86.873119,298.84909 86.873119,318.99144 C 86.873119,333.89647 85.99214,353.85332 88.893424,365.45845 C 91.321528,375.17087 102.01739,380.60273 109.09647,387.68181 C 116.17556,394.76089 93.370627,374.41286 88.893424,365.45845 C 81.438808,350.54922 93.771877,344.41756 101.01525,337.17418 C 124.55225,313.63718 186.98408,366.20246 204.05081,377.58028 C 213.10325,383.61524 221.03818,398.15378 216.17264,407.88486 C 215.96266,408.30483 195.46956,364.97861 193.94929,357.37723 C 190.67944,341.02797 177.78685,328.44293 177.78685,310.91021 C 177.78685,295.48978 175.76654,278.58539 175.76654,262.42289 C 175.76654,252.23197 179.80715,282.53655 179.80715,292.72747 C 179.80715,304.17586 179.80715,315.62426 179.80715,327.07266 C 179.80715,340.07295 182.43106,344.44231 185.86807,351.31632 C 188.19374,355.96766 209.05187,352.59143 214.15234,351.31632 C 224.42378,348.74846 234.75631,330.50796 248.49753,327.07266 C 259.6041,324.29601 271.73614,329.8493 282.84271,327.07266 C 294.00679,324.28164 258.65498,331.05734 250.51783,339.19449 C 240.82413,348.88818 249.58593,354.658 258.59905,361.41784 C 267.66986,368.22095 282.7117,365.99628 292.94424,363.43815 C 306.06398,360.15821 299.25282,345.75073 294.96454,337.17418 C 288.39379,324.03268 280.60041,329.31496 288.90363,321.01174 C 301.8152,308.10017 301.02546,347.3277 301.02546,351.31632 C 301.02546,370.08364 323.27895,363.43815 339.41126,363.43815 C 346.14561,363.43815 352.87996,363.43815 359.61431,363.43815 C 391.3607,363.43815 406.46685,346.76167 424.26407,323.03205 C 437.92659,304.81535 436.3859,288.3115 436.3859,266.4635 C 436.3859,250.57166 414.0934,275.33339 412.14224,278.58533 C 404.72808,290.94227 408.10163,321.02611 408.10163,335.15388 C 408.10163,352.65416 409.10326,359.13861 420.22346,367.47876 C 428.8685,373.96254 462.97174,366.54189 470.73109,363.43815 C 495.41761,353.56354 516.47018,343.96302 535.38085,325.05235 C 547.95796,312.47524 545.48237,298.41602 545.48237,280.60564 C 545.48237,266.46948 530.55705,268.8754 523.25902,272.52442 C 514.62111,276.84337 509.08456,304.91394 505.07627,312.93052 C 500.78507,321.51292 504.96426,346.82766 507.09658,355.35693 C 511.50539,372.99216 513.26472,373.59328 529.31993,381.62089 C 541.94196,387.93191 568.54244,384.28198 581.84787,381.62089 C 585.73007,380.84445 597.16113,359.07559 598.01031,357.37723 C 603.16237,347.07311 590.0356,337.3872 587.90878,333.13357 C 580.99119,319.29839 568.65536,337.29523 565.68543,343.2351 C 561.53234,351.54126 564.48298,361.03325 567.70573,367.47876 C 570.09977,372.26684 590.86207,369.49906 595.99,369.49906 C 601.7822,369.49906 605.43917,352.74749 604.07122,347.27571 C 601.54426,337.16787 591.7632,332.03032 585.88848,329.09296 C 571.9562,322.12682 585.58932,328.7938 589.92909,333.13357 C 595.54358,338.74807 593.9697,361.33272 593.9697,371.51937 C 593.9697,381.88523 586.74971,390.86118 581.84787,395.76303 C 568.79867,408.81222 550.50981,433.39704 531.34024,438.18944 C 462.34516,455.43821 382.09019,456.37218 311.12698,456.37218 C 258.59905,456.37218 206.07112,456.37218 153.54319,456.37218 C 134.95444,456.37218 109.03776,454.38124 96.974644,460.41279 C 96.543191,460.62852 127.27922,487.38872 127.27922,512.94072 C 127.27922,535.71881 129.19832,555.56954 119.198,575.57018 C 105.7366,602.49299 109.77891,588.34746 119.198,569.50927 C 128.06916,551.76695 129.29953,534.79964 129.29953,514.96103 C 129.29953,496.74751 124.75081,497.44768 115.15739,484.65645 C 105.36582,471.60102 99.378973,456.15512 121.21831,472.53462 C 154.78733,497.71139 180.06794,509.42168 200.0102,549.30622 C 208.57718,566.44018 218.19295,575.56653 218.19295,595.77323 C 218.19295,597.45281 218.19295,565.01305 218.19295,553.34683 C 218.19295,535.16408 218.19295,516.98133 218.19295,498.79859 C 218.19295,480.3674 218.19295,479.35573 218.19295,498.79859 C 218.19295,509.57355 218.19295,520.34851 218.19295,531.12347 C 218.19295,541.89843 218.19295,552.67339 218.19295,563.44835 C 218.19295,576.76686 215.81788,582.55256 228.29448,585.67171 C 242.43366,589.2065 245.59447,579.1012 248.49753,567.48896 C 251.38312,555.9466 258.59905,549.73924 258.59905,535.16408 C 258.59905,530.09088 258.59905,556.96377 258.59905,565.46866 C 258.59905,579.9846 260.55453,581.6311 270.72088,581.6311 C 284.50708,581.6311 291.45255,583.0359 305.06607,577.59049 C 326.4475,569.03791 347.55553,557.26132 357.594,537.18438 C 365.93283,520.50674 363.65492,502.91781 363.65492,484.65645 C 363.65492,462.05146 341.71082,479.90132 335.37064,484.65645 C 323.31646,493.69709 321.22851,509.61611 321.22851,523.04225 C 321.22851,541.77019 319.5811,557.76033 333.35034,571.52957 C 345.66334,583.84257 352.19972,591.73262 369.71583,591.73262 C 388.64428,591.73262 401.83693,600.74423 420.22346,589.71232 C 434.16737,581.34597 447.63291,551.05586 454.56865,537.18438 C 459.58253,527.15662 459.40583,501.85791 460.62956,498.79859 C 465.37502,486.93495 451.60674,522.76805 448.50773,535.16408 C 445.09406,548.81878 486.19252,528.44351 496.99505,523.04225 C 517.15084,512.96435 560.64066,520.01779 575.78695,535.16408 C 588.21884,547.59597 585.88848,562.82617 585.88848,579.61079 C 585.88848,592.37651 571.68796,606.0207 567.70573,615.97628 C 560.32432,634.4298 535.28267,619.91872 527.29963,611.93567 C 520.23905,604.8751 511.25924,598.86471 505.07627,595.77323 C 503.7294,595.0998 503.7294,593.07949 503.05597,591.73262";
+
+   BezierSegment segments[];
+
+   init() {
+      segments.alloc(100);
+
+      StringArray tokens <= svgPolyline.splitCharset(" ,");
+      trace "xxx got "+tokens.numElements+" tokens.";
+
+      BezierSegment seg;
+      char state = ' ';
+      int i = 0;
+      float cx, cy, nx, ny;
+      for(; i<tokens.numElements; i++)
+      {
+         String tok <= tokens[i];
+         trace "xxx tok["+i+"]=\""+tok+"\".";
+         switch(state)
+         {
+            case ' ':
+               switch(tok)
+               {
+                  case "M":
+                     state = 'M';
+                     break;
+                  case "C":
+                     state = 'C';
+                     break;
+                  case "z":
+                  case "Z":
+                     i = tokens.numElements; // End of polyline
+                     break;
+               }
+               break;
+
+            case 'M':
+               // Parse start of first curve
+               cx = float(tok);
+               tok <= tokens[++i];
+               cy = float(tok);
+               trace "xxx curve start =("+cx+"; "+cy+").";
+               state = ' ';
+               break;
+
+            case 'C':
+               // Parse cubic bezier curve
+               seg <= segments.nextFree;
+               seg.ctl1x = float(tok);
+               seg.ctl1y = float(tokens[++i]);
+               seg.ctl2x = float(tokens[++i]);
+               seg.ctl2y = float(tokens[++i]);
+               nx = float(tokens[++i]);
+               ny = float(tokens[++i]);
+               seg.px = cx;
+               seg.py = cy;
+               seg.dx = nx;
+               seg.dy = ny;
+               cx = nx;
+               cy = ny;
+               state = ' ';
+               break;
+         }
+      }
+
+      trace "xxx parsed "+segments.numElements+" polyline segments";
+   }
+
+   public method initAnimMovePoints() {
+
+      BezierSegment seg;
+      foreach seg in segments {
+         seg.ap_ctl1x.init(seg.ctl1x, 1.0, 0, MAXX);
+         seg.ap_ctl1y.init(seg.ctl1y, 1.0, 0, MAXY);
+         seg.ap_px.init(seg.px, 1.0, 0, MAXX);
+         seg.ap_py.init(seg.py, 1.0, 0, MAXY);
+      }
+   }
+
+   public method initAnimWobblePoints() {
+
+      BezierSegment seg;
+      foreach seg in segments {
+         seg.aw_ctl1x.init(seg.ctl1x, 320.0/1);
+         seg.aw_ctl1y.init(seg.ctl1y, 320.0/1);
+         seg.aw_px.init(seg.px, 50.0);
+         seg.aw_py.init(seg.py, 50.0);
+      }
+   }
+
+   public method draw() {
+
+      Test.debug_palette_offset = 0;
+
+      int i = 0;
+      BezierSegment seg;
+      for(; i<segments.numElements; i++)
+      {
+         seg <= segments[i];
+         Test.DrawCubicBezierCurve_Casteljau(seg.px,    seg.py,
+                                             seg.ctl1x, seg.ctl1y,
+                                             seg.ctl2x, seg.ctl2y,
+                                             seg.dx,    seg.dy
+                                             );
+
+      }
+   }
+
+   public method animateMovePoints(float dt) {
+      int i = 0;
+      BezierSegment seg;
+
+      // Animate
+      for(i=0; i<segments.numElements; i++)
+      {
+         seg <= segments[i];
+         _= seg.ap_px.tick(dt);
+         _= seg.ap_py.tick(dt);
+         _= seg.ap_ctl1x.tick(dt);
+         _= seg.ap_ctl1y.tick(dt);
+
+         // Copyback animated values
+         seg.px = seg.ap_px.v;
+         seg.py = seg.ap_py.v;
+         seg.ctl1x = seg.ap_ctl1x.v;
+         seg.ctl1y = seg.ap_ctl1y.v;
+      }
+
+      // Make seamless
+      joinSegments();
+   }
+
+   public method animateWobblePoints(float dt) {
+      int i = 0;
+      BezierSegment seg;
+
+      // Animate
+      for(i=0; i<segments.numElements; i++)
+      {
+         seg <= segments[i];
+         _= seg.aw_px.tick(dt);
+         _= seg.aw_py.tick(dt);
+         _= seg.aw_ctl1x.tick(dt);
+         _= seg.aw_ctl1y.tick(dt);
+
+         // Copyback animated values
+         seg.px = seg.aw_px.v;
+         seg.py = seg.aw_py.v;
+         seg.ctl1x = seg.aw_ctl1x.v;
+         seg.ctl1y = seg.aw_ctl1y.v;
+      }
+
+      // Make seamless
+      joinSegments();
+   }
+
+   public method joinSegments() {
+      // Align end points and make ctl2 inverse of ctl1
+      int i;
+      BezierSegment seg;
+      BezierSegment seg2;
+      for(i=0; i< (segments.numElements-1); i++)
+      {
+         seg  <= segments[i];
+         seg2 <= segments[i+1];
+         seg.join(seg2);
+      }
+      seg <= segments[i];
+      seg2 <= segments[0];
+      seg.join(seg2);
+   }
+   
+   
+}
+
+BezierClosedPolyLine bcpl;
+bcpl.init();
+//bcpl.initAnimMovePoints();
+bcpl.initAnimWobblePoints();
+
+function DrawPolyline(float dt) {
+   bcpl.draw();
+   //bcpl.animateMovePoints(dt);
+   bcpl.animateWobblePoints(dt);
+
+   if(b_countvertices)
+   {
+      b_countvertices = false;
+      trace "Polyine has "+(bcpl.segments.numElements)+" segments and "+ total_num_vertices+" vertices.";
+   }
+}
+
+
+function DrawTestCurve(float dt) {
+//     Test.DrawCubicBezierCurve(147.14286, 372.36218, 
+//                               253.19641, 66.647897,
+//                               468.54586, 804.03311,
+//                               542.85714, 512.36218
+//                               );
+
+//     glColor3f(0.25,0.25,0.25);
+//     Test.DrawCubicBezierCurve_Opt2(bez_a1x.v, bez_a1y.v,
+//                                    bez_a2x.v, bez_a2y.v,
+//                                    bez_a3x.v, bez_a3y.v,
+//                                    bez_a4x.v, bez_a4y.v
+//                                    );
+                              
+
+    Test.DrawCubicBezierCurve_Casteljau(bez_a1x.v, bez_a1y.v,
+                                        bez_a2x.v, bez_a2y.v,
+                                        bez_a3x.v, bez_a3y.v,
+                                        bez_a4x.v, bez_a4y.v
+                                        );
+
+    bez_a1x.tick(dt);
+    bez_a1y.tick(dt);
+    bez_a2x.tick(dt);
+    bez_a2y.tick(dt);
+    bez_a3x.tick(dt);
+    bez_a3y.tick(dt);
+    bez_a4x.tick(dt);
+    bez_a4y.tick(dt);
+}
+
+function onDraw() {
+    float dt = FPS.precision;
+    dt *= 0.25; // slow down
+    glClearColor(0,0,0.2,1);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+    zglInit2D(MAXX, MAXY);
+
+    //glTranslatef(0,-140,0);
+    glTranslatef(140,20,0);
+
+    //DrawTestCurve(dt);
+
+    DrawPolyline(dt);
+
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case 'c':
+         b_drawctlpoints = !b_drawctlpoints;
+         trace "[...] b_drawctlpoints set to "+b_drawctlpoints;
+         break;
+
+      case 'n':
+         b_drawlinenormals = !b_drawlinenormals;
+         trace "[...] b_drawlinenormals set to "+b_drawlinenormals;
+         break;
+
+      case 'd':
+         b_drawdots = !b_drawdots;
+         trace "[...] b_drawdots set to "+b_drawdots;
+         break;
+
+
+   }
+}
+
+function main() {
+   if(b_multisampling)
+   {
+      Viewport.multisampleBuffers = 1;
+      Viewport.multisampleSamples = 4;
+   }
+
+   Viewport.openWindow(640*2, 480*2);
+   use callbacks;
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=60;
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}
+

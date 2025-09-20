@@ -1,0 +1,514 @@
+module MPixelFont;
+// ---- file   : pixelfont.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de> <fli@tkscript.de>
+// ---- diz    : a basic PixelFont class that can output text via OpenGL
+//               or render it into a Texture
+// ----          Note: this file is *VERY VERY ANCIENT* (originally written in 2001 when tkscript was just 2 months old :-) so..
+// ----                ..please look at a newer example if you want to learn about this language !
+// ---- license: public domain. provided "AS IS". no copyright, no liability. use as you want.
+// ----
+// ---- changed: 17Jun2003 <fli> converted from c++ to tks. the freetype2 interface is available as a plugin now (ft2font)
+// ----
+// ----
+
+use tksdl;
+use tkopengl;
+use tkoldmath;
+
+#define PIXELFONT_MAXTEXTURES 8
+
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+//
+// PixelFont
+//
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+class PixelGlyph {
+   Texture texture;
+   int     advancex;
+   float   u;
+   float   v;
+   float   ur;
+   float   vb;
+   int     bitmap_left;
+   int     bitmap_top;
+   int     bitmap_sx;
+   int     bitmap_sy;
+};
+
+class PixelFont {
+   PixelGlyph glyphs[/*224*/];
+   Texture    textures[/*PIXELFONT_MAXTEXTURES*/];
+   int        ctex_px;
+   int        ctex_maxrowy;
+   int        ctex_py;
+   Texture    ctex;
+   int        height;  // old name: advancey
+   int        origin;
+   int        flags;
+
+
+   PixelFont() { 
+      ctex<=0; ctex_px=0; ctex_py=0;ctex_maxrowy=0; height=0; flags=0; 
+      glyphs.alloc(224); glyphs.numElements=glyphs.maxElements;
+      textures.alloc(PIXELFONT_MAXTEXTURES);
+   }
+
+   ~PixelFont() { freeTextures(); }
+  
+   /*void*/ drawi(int _x, int _y, Object _str) { output(_x, _y, 0.0, _str); }
+   /*void*/ draw(Vector _v, Object _str) { output(_v.x, _v.y, _v.z, _str); }
+   /*void*/ drawTexturei(int _x, int _y, Object _str, Texture _tex) { outputTexture(_x, _y, _str, _tex);  }
+
+   /*void*/ output(float _x, float _y, float _z, Object _pstring)  {
+      //trace "Font::output(x="+_x+" y="+_y+" z="+_z+" string=\""+_pstring+"\")";
+      Texture t<=0;
+      compile {
+         String _string<=_pstring;
+         //trace "out("+_x+","+_y+",\""+_string+"\")";
+         float z=_z;//0.0f;
+         float x=_x;
+         _y+=origin;
+         int c;
+         int idx=0;
+         glBegin(GL_QUADS);
+         loop(_string.length) {
+            c=_string[idx++];
+            if(c>32)
+            {
+               PixelGlyph g<=glyphs[c-32];
+               if(g.bitmap_sx)
+               {
+                  if(t!=g.texture) // texture render state change
+                  {
+                     glEnd();
+                     t<=g.texture;
+                     t.bind(); //t->tkstate_bind();
+                     glBegin(GL_QUADS);
+                  }
+                  glTexCoord2f(g.u, g.v);
+                  glVertex3f(
+                     (g.bitmap_left+ x),
+                     (-g.bitmap_top-1 +_y),
+                     z
+                             );
+            
+                  glTexCoord2f(g.ur, g.v);
+                  glVertex3f(
+                     (g.bitmap_left+ x+g.bitmap_sx),
+                     (-g.bitmap_top-1 +_y),
+                     z
+                             );
+            
+                  glTexCoord2f(g.ur, g.vb);
+                  glVertex3f(
+                     (g.bitmap_left+ x+g.bitmap_sx),
+                     (-g.bitmap_top-1 +_y+g.bitmap_sy+1),
+                     z
+                             );
+            
+                  glTexCoord2f(g.u, g.vb);
+                  glVertex3f(
+                     (g.bitmap_left+ x),
+                     (-g.bitmap_top-1 +_y+g.bitmap_sy+1),
+                     z
+                             );
+                  x+=g.advancex;
+               }
+            }
+            else
+            {
+               if(c=='\n')     { x=_x; _y+=height; } 
+               else if(c==' ') {
+                  PixelGlyph sg<=glyphs[0];
+                  x+=g.advancex;
+               }
+            }
+         }
+         glEnd();
+      }
+   }
+    
+   /*void*/ outputTexture(int _x, int _y, Object /*String */ _string, Texture _dtex) {
+      //trace "OutputTexture("+_x+","+_y+","+_string+")";
+      Texture t<=0;
+      compile {
+         String s<=_string;
+         int dtex_z      =_dtex.z;
+         int dtex_sx     =_dtex.sx;
+         int dtex_sy     =_dtex.sy;
+         int t_sx;
+         int t_sy;
+         int x=_x;
+         _y+=origin;
+         int c;
+         int idx=0;
+         loop(s.length) {
+            c=s[idx++];
+            if(c>32) {
+               PixelGlyph g<=glyphs[c-32];
+               //tkscript->dcon.printf("char \'%c\' bitmap_sx=%i bitmap_sy=%i\n", c, g->bitmap_sx, g->bitmap_sy);
+               int skipchar=!g.bitmap_sx;
+               if(!skipchar) {
+                  if(t!=g.texture)  { 
+                     t<=g.texture; // change texture 
+                     t_sx=t.sx; t_sy=t.sy;
+                  }
+                  int tex_x=g.u*t_sx;
+                  int tex_y=g.v*t_sy;
+                  int char_sx=(g.ur*t_sx)-tex_x;
+                  int char_sy=(g.vb*t_sy)-tex_y;
+                  int char_dx=(g.bitmap_left+x);
+                  int char_dy=(_y-g.bitmap_top);
+                  //trace "printc: _y="+_y+" g.bitmap_top="+g.bitmap_top+" tex_x="+tex_x+" tex_y="+tex_y+" char_sx="+char_sx+" char_sy="+char_sy+" char_dx="+char_dx+" char_dy="+char_dy;
+         
+                  // ---- clipping ----
+                  if(char_dx<0) {
+                     // ---- char exceeds left screen border ----
+                     char_sx+=char_dx;
+                     skipchar=(char_sx<=0);
+                     tex_x-=char_dx;
+                     char_dx=0;
+                  }
+                  if((char_dx+char_sx)>=dtex_sx) {
+                     // ---- char exceeds right screen border ----
+                     char_sx-=((char_dx+char_sx)-dtex_sx);
+                     skipchar=(char_sx<=0);
+                  }
+                  if(!skipchar) {
+                     if(char_dy<0) {
+                        // ---- char exceeds top screen border ----
+                        char_sy+=char_dy;
+                        skipchar=(char_sy<=0);
+                        tex_y-=char_dy;
+                        char_dy=0;
+                     }
+                     if((char_dy+char_sy)>=dtex_sy)  {
+                        // ---- char exceeds bottom screen border ----
+                        char_sy-=((char_dy+char_sy)-dtex_sy);
+                        skipchar=(char_sy<=0);
+                     }
+                     if(!skipchar) {
+                        // ---- blit char to texture ----
+                        //_dtex.copyRegion(t, ivector(tex_x, tex_y), ivector(char_sx, char_sy), ivector(char_dx, char_dy));
+                        _dtex.copyRegion(t, tex_x, tex_y, char_sx, char_sy, char_dx, char_dy);
+                     }
+                  }
+                  x+=g.advancex;
+               }
+            }
+            else {
+               if(c=='\n') {
+                  x=_x;
+                  _y+=height;
+               }
+               else {
+                  if(c==' ') {
+                     PixelGlyph sg<=glyphs[0];
+                     x+=g.advancex;
+                  }
+               }
+            }
+         }
+      }
+   }
+    
+   /*int*/  getWidth(Object /*String*/ _string) {
+      compile {
+         String s<=_string;
+         int r=0;
+         int idx=0;
+         loop(s.length)
+         {
+            int c=s[idx++];
+            if(c>31)
+            {
+               PixelGlyph g<=glyphs[c-32];
+               r+=g.advancex;
+            }
+         }
+      }
+      return r;
+   }
+
+   /*int*/  getHeight() {return height;}
+
+   /*int*/  loadPixelFont(String _pathnameprefix) { return sioLoadPixelFont(0, _pathnameprefix);  }
+   /*int*/  sioLoadPixelFont(int _open_mode, String _pathnameprefix) { // ---- @param open_mode 0=logic, 1=local
+      freeTextures();
+      ctex<=0;
+      height=0;
+      origin=0;
+      String fontfilename;
+      fontfilename=_pathnameprefix;
+      fontfilename.append(".pff");
+      String pffbuf;
+      //pffbuf.tkscript=tkscript;
+      if(_open_mode?pffbuf.loadLocal(fontfilename, 1):pffbuf.load(fontfilename, 1))
+      {
+         // init glyphs
+         int i;
+         glyphs.numElements=0;
+         PixelGlyph g;
+         for(i=0; i<224; i++)
+         {
+            g<=glyphs.nextFree;
+            g.advancex   =0;
+            g.u          =9;
+            g.v          =0;
+            g.ur         =0;
+            g.vb         =0;
+            g.bitmap_top =0;
+            g.bitmap_left=0;
+            g.bitmap_sx  =0;
+            g.bitmap_sy  =0;
+            g.texture   <=0;
+         }
+         StringIterator is;
+         pffbuf.split('\n');
+         is.begin(pffbuf);
+         int state=0;
+         String texfilename;
+         texfilename.alloc(512);
+         int cti=0;
+         if(is.tail())
+         {
+            do
+            {
+               String cl<=is.current;
+//                trace "cl=\""+cl+"\"";
+               if(!cl.isBlank())
+               {
+                  if(state==0)
+                  {
+                     if(cl.startsWith("num_textures="))
+                     {
+                        cl.replace("num_textures=","");  int num_tex=cl;
+                        //int num_tex; sscanf((char*)cl->chars, "num_textures=%d\n", &num_tex);
+                     }
+                     else
+                        if(cl.startsWith("advancey=")) // height
+                        {
+                           cl.replace("advancey=", ""); int ay=cl;
+                           //int ay; sscanf((char*)cl->chars, "advancey=%d\n", &ay);
+                           height=ay;
+                        }
+                        else
+                           if(cl.startsWith("origin="))
+                           {
+                              cl.replace("origin=", ""); int ori=cl;
+                              //int ori; sscanf((char*)cl->chars, "origin=%d\n", &ori);
+                              origin=ori;
+                              state++;
+                           }
+                  }
+                  else
+                  {
+                     if(cl.startsWith("[texadvance]"))
+                     {
+                        //texfilename.empty();
+                        //texfilename.printf("%s-%02i.png", (char*)_fname->chars, cti++);
+                        Integer io; io.value=cti++;
+                        texfilename=_pathnameprefix+"-"+io.printf("%02i")+".png";
+                        if(!addLoadTexture(_open_mode, texfilename))
+                        {
+                           stderr "[---] loadPixelFont: cannot load font texture \""+texfilename+"\"\n";
+                        }
+                     }
+                     else
+                     {
+                        // state1:[%i]
+                        // state2:advancex=%i
+                        // state3:u=%f
+                        // state4:v=%f
+                        // state5:ur=%f
+                        // state6:vb=%f
+                        // state7:bitmap_left=%i
+                        // state8:bitmap_top=%i
+                        // state9:bitmap_sx=%i
+                        // state10:bitmap_sy=%i
+                        switch(state)
+                        {
+                           case 1:
+                              //sscanf((char*)cl->chars, "[%d]\n", &gi);
+                              cl.replace("[",""); cl.replace("]","");
+                              g<=glyphs[int(cl)];
+                              g.texture<=ctex;
+                              state++;
+                              break;
+                           case 2:
+                              cl.replace("advancex=",""); g.advancex=cl;
+                              //sscanf((char*)cl->chars, "advancex=%d\n", &gi);
+                              state++;
+                              break;
+                           case 3:
+                              //sscanf((char*)cl->chars, "u=%f\n", &g->u);
+                              cl.replace("u=",""); g.u=cl;
+                              state++;
+                              break;
+                           case 4:
+                              //sscanf((char*)cl->chars, "v=%f\n", &g->v);
+                              cl.replace("v=",""); g.v=cl;
+                              state++;
+                              break;
+                           case 5:
+                              //sscanf((char*)cl->chars, "ur=%f\n", &g->ur);
+                              cl.replace("ur=",""); g.ur=cl;
+                              state++;
+                              break;
+                           case 6:
+                              //sscanf((char*)cl->chars, "vb=%f\n", &g->vb);
+                              cl.replace("vb=",""); g.vb=cl;
+                              state++;
+                              break;
+                           case 7:
+                              //sscanf((char*)cl->chars, "bitmap_left=%d\n", &sci);
+                              cl.replace("bitmap_left=",""); g.bitmap_left=cl;
+                              state++;
+                              break;
+                           case 8:
+                              //sscanf((char*)cl->chars, "bitmap_top=%d\n", &sci);
+                              cl.replace("bitmap_top=","");
+                              g.bitmap_top=cl;
+                              state++;
+                              break;
+                           case 9:
+                              //sscanf((char*)cl->chars, "bitmap_sx=%d\n", &sci);
+                              cl.replace("bitmap_sx=","");
+                              g.bitmap_sx=cl;
+                              state++;
+                              break;
+                           case 10:
+                              //sscanf((char*)cl->chars, "bitmap_sy=%d\n", &sci);
+                              cl.replace("bitmap_sy=","");
+                              g.bitmap_sy=cl;
+                              state=1;
+                              break;
+                        }
+                     }
+                  }
+               }
+            } while(is.previous());
+         }
+         pffbuf.freeStack();
+      }
+      else
+      {
+         die("[---] unable to open pixel font file \""+fontfilename+"\".");
+         return 0;
+      }
+      if(Configuration.debugLevel>0)
+         trace "[...] loadPixelFont \""+fontfilename+"\" OK.";
+      return 1;
+   }
+    
+   /*int*/  savePixelFont(String _fname) { 
+      ctex<=0;
+      if(1) {
+         String fontfilename;
+         fontfilename=_fname;
+         fontfilename.append(".pff");
+         String pffbuf; pffbuf.alloc(16384); pffbuf.empty();
+         String lbuf;   lbuf.alloc(1024);    lbuf.empty();
+         /// ---- write "pff" pixel font file header ----
+         lbuf="name=\"";                   lbuf.append(_fname);
+         lbuf.append("\"\nnum_textures="); lbuf.append(String(textures.numElements));
+         lbuf.append("\nadvancey=");       lbuf.append(String(height));
+         lbuf.append("\norigin=");         lbuf.append(String(origin));
+         lbuf.append("\n");
+         pffbuf.append(lbuf);
+         /// ---- write glyph descriptions ----
+         int cti=0;
+         int cgi=0;
+         glyphs.numElements=0;
+         while(cgi++<224)
+         {
+            PixelGlyph cg<=glyphs.nextFree;
+            if(cg.advancex)
+            {
+               if((cgi>1)&&(cg.texture!=ctex))
+               {
+                  // ---- write texture advance tag ----
+                  ctex<=cg.texture;
+                  if(ctex) {
+                     pffbuf.append("[texadvance]\n");
+                     lbuf.empty();
+                     lbuf.append(_fname); lbuf.append("-");
+                     Integer io; io.value=cti; lbuf.append(io.printf("%02i"));
+                     lbuf.append(".png");
+                     ctex.saveImage(lbuf);
+                     trace "[...] PixelFont::savePixelFont: wrote texture "+cti+" to \""+lbuf+"\".";
+                     cti++;
+                  } else cgi=224; // exit "for" loop
+               }
+               lbuf.empty();
+               lbuf.append("[");                  lbuf.append(String(cgi-1));
+               lbuf.append("]\nadvancex=");        lbuf.append(String(cg.advancex));
+               lbuf.append("\nu=");               lbuf.append(String(cg.u));
+               lbuf.append("\nv=");               lbuf.append(String(cg.v));
+               lbuf.append("\nur=");              lbuf.append(String(cg.ur));
+               lbuf.append("\nvb=");              lbuf.append(String(cg.vb));
+               lbuf.append("\nbitmap_left=");     lbuf.append(String(cg.bitmap_left));
+               lbuf.append("\nbitmap_top=");      lbuf.append(String(cg.bitmap_top));
+               lbuf.append("\nbitmap_sx=");       lbuf.append(String(cg.bitmap_sx));
+               lbuf.append("\nbitmap_sy=");       lbuf.append(String(cg.bitmap_sy));
+               lbuf.append("\n");
+               pffbuf.append(lbuf);
+            }
+         }
+      }
+      return pffbuf.saveLocal(fontfilename);
+   }
+
+   /*void*/ addTexture() {
+      Texture t<=textures.nextFree;
+      if(t) compile {
+            int z=(flags&TEX_ALPHA)?4:1;
+            int r=t.alloc(256,256,z);
+            t.clear(0);
+            t.flags|=TEX_MODULATE;
+            if(flags&TEX_ALPHA)     t.flags|=TEX_ALPHA;
+            if(flags&TEX_INTENSITY) t.flags|=TEX_INTENSITY;
+            ctex_px=0;
+            ctex_py=0;
+            ctex_maxrowy=0;
+            if(!r) {
+               stderr "\n[---] PixelFont::addTexture: allocScreen(256,256,"+z+") failed.\n";
+               t<=0;
+            }
+            ctex<=t;
+         }
+   }
+   /*bool*/ addLoadTexture(int _open_mode, String _fname) { 
+      Texture t<=textures.nextFree;
+      if(t)
+      {
+         int r=_open_mode?
+            t.loadLocalImage(_fname,  256, 256, (flags&TEX_ALPHA)?4:1):
+            t.loadImage(_fname, 256, 256, (flags&TEX_ALPHA)?4:1);
+         if(r)
+         {
+            //trace "loaded texture \""+_fname+"\"";
+            t.flags|=TEX_MODULATE;
+            if(flags&TEX_ALPHA)     t.flags|=TEX_ALPHA;
+            if(flags&TEX_INTENSITY) t.flags|=TEX_INTENSITY;
+            ctex<=t;
+            return 1;
+         }
+         else
+         {
+            ctex<=0;
+            t<=0;
+         }
+      }
+      return 0;
+   }
+
+   /*void*/ freeTextures() { textures.free(); textures.alloc(PIXELFONT_MAXTEXTURES); }
+
+   // ---- virtual interface used by e.g. the freetype2 loader ----
+   /*void*/ addGlyph(Object /*FT_Face*/ _face, int _ascii)                    { }
+   /*void*/ init(Object /*FT_Face*/ _face, int _sx, int _sy, String _charmap) { }
+    
+}
+
+class Font : PixelFont {};

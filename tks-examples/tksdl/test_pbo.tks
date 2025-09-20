@@ -1,0 +1,153 @@
+//
+// Demonstrates OpenGL 2.1 pixel buffer objects
+//
+// also see <http://www.songho.ca/opengl/gl_pbo.html>
+//
+use tksdl;
+use tkopengl;
+
+int numframesrendered=0;
+
+IntArray pixel_buf_ids = [-1, -1];
+int pixel_buf_current_idx = 0;
+int tex_id;
+
+boolean b_pbo = true;
+
+Buffer pixel_buf;
+int pixel_buf_width  = 1024;
+int pixel_buf_height = 1024;
+int pixel_buf_size   = pixel_buf_width * pixel_buf_height * 4; // 4 bytes per pixel (BGRA)
+
+Texture tex;
+
+
+function RenderPixelBuf(float dt) {
+   int y = 0;
+   int i = 0;
+   compile loop(pixel_buf_height)
+   {
+      int x = 0;
+      loop(pixel_buf_width * 4)
+      {
+         pixel_buf[i++] = (x * y);
+         x++;
+      }
+      y++;
+   }
+   pixel_buf.offset = 0;
+}
+
+function onDraw() {
+    float dt=FPS.precision;
+    glClearColor(0,0,0.2,1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+    zglInit2D(Viewport.width, Viewport.height);
+
+    float x = 40;
+    float y = 30;
+    float w = pixel_buf_width;
+    float h = pixel_buf_height;
+
+    glColor4f(1,0,0,1);
+
+//     trace "tex.id="+tex.id+" tex_id="+tex_id;
+//     tex.bind();
+    glBindTexture(GL_TEXTURE_2D, tex_id);
+
+    if(b_pbo)
+    {
+       glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pixel_buf_ids[pixel_buf_current_idx]);
+       glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, pixel_buf_width, pixel_buf_height,
+                       GL_BGRA, GL_UNSIGNED_BYTE, 0);
+       
+       glBindBuffer(GL_PIXEL_UNPACK_BUFFER, pixel_buf_ids[(pixel_buf_current_idx+1)&1]);
+       
+       // from <http://www.songho.ca/opengl/gl_pbo.html>:
+       // ""
+       // Note that glMapBufferARB() causes sync issue.
+       // If GPU is working with this buffer, glMapBufferARB() will wait(stall)
+       // until GPU to finish its job. To avoid waiting (idle), you can call
+       // first glBufferDataARB() with NULL pointer before glMapBufferARB().
+       // If you do that, the previous data in PBO will be discarded and
+       // glMapBufferARB() returns a new allocated pointer immediately
+       // even if GPU is still working with the previous data.
+       // ""
+       zglBufferData(GL_PIXEL_UNPACK_BUFFER, pixel_buf_size, null, GL_STREAM_DRAW);
+       
+       // Map to client address space (pixel_buf will be initialized)
+       zglMapBuffer(GL_PIXEL_UNPACK_BUFFER, GL_WRITE_ONLY, pixel_buf, pixel_buf_size);
+       
+       // Update pixels
+       RenderPixelBuf(dt);
+       
+       // Release mapping
+       glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER); // release the mapped buffer
+
+
+       // from <http://www.songho.ca/opengl/gl_pbo.html>:
+       // ""
+       // it is good idea to release PBOs with ID 0 after use.
+       // Once bound with 0, all pixel operations are back to normal ways.
+       // ""
+       glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+
+       pixel_buf_current_idx = (pixel_buf_current_idx + 1) & 1;
+    }
+    else
+    {
+       tex.update();
+    }
+
+    // Draw the texture
+    glEnable(GL_TEXTURE_2D);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);
+    glVertex2f(x, y);
+    glTexCoord2f(1, 0);
+    glVertex2f(x+w, y);
+    glTexCoord2f(1, 1);
+    glVertex2f(x+w, y+h);
+    glTexCoord2f(0, 1);
+    glVertex2f(x, y+h);
+    glEnd();
+
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onOpen() {
+   tex_id = zglGenTexture();
+
+   tex.alloc(pixel_buf_width, pixel_buf_height, 4);
+   tex.id = tex_id;
+   tex.clear(#ffffffff);
+   tex.upload();
+   pixel_buf_ids[0] = zglGenBuffer();
+   pixel_buf_ids[1] = zglGenBuffer();
+}
+
+function main() {
+    use callbacks;
+
+    FPS.tickInterval=1000.0/60;
+    //FPS.limit=60;
+
+    Viewport.openWindow(640, 480);
+    zglLoadExtensions();
+    Viewport.swapInterval(1);
+
+    trace "xxx entering eventloop";
+    SDL.eventLoop();
+}
+

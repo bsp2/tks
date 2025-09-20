@@ -1,0 +1,153 @@
+
+// author : Bastian Spiegel <bs@tkscript.de>
+//   date : 21-May-2006
+//   info : Demonstrates how to use threaded event queues. no polling required (send/expect behaviour
+//          using mutexes ).
+//
+ 
+class EventQueue {
+   protected List list;
+   protected Mutex mutex; // Locked by master thread if queue is empty => slave thread waits until queue is filled.
+
+   == add(local var _v) { // Note: methods with non-local parameters are not re-entrant!. Read == as 'synchronized to "this"'.
+      list.addLast(#(deref _v));
+   }
+
+   = waitMutex() { // Read '=' as 'synchronized'
+      while(list.isEmpty())
+      {
+         // This should spin just a few times before the mutex is locked by the master thread.
+         trace "waitMutex: spinning..";
+         mutex.lock();
+         mutex.unlock();
+      }
+   }
+
+   == next() {
+      return list.removeFirst().getDeref();
+   }
+
+   == avail() : boolean {
+      return (list.head != null);
+   }
+
+   lock() {
+      mutex.lock();
+   }
+
+   unlock() {
+      mutex.unlock();
+   }
+   
+}
+
+class ThreadEventTest {
+   private Thread th;
+
+   private EventQueue to;   // holds "arguments". master thread is main thread.
+   private EventQueue from; // holds "return values". master thread is 2nd thread.
+
+   define String EXIT_MSG = ".return"; // "magic" message which terminates the slave thread.
+
+   static Sleep(local int _ms) { // Note: functions with non-local parameters are not re-entrant!
+      TKS.sleep(_ms);
+   }
+
+   static Entry(local Thread _th) {
+      ThreadEventTest thiz <= _th.userdata;
+      thiz.threadLoop();
+   }
+
+   threadLoop() {
+      for(;;)
+      {
+         to.waitMutex(); // Wait for incoming call
+         from.lock();    // Lock result queue
+         to.lock();      // Lock call queue
+         while(to.avail()) 
+         {
+            // Process all pending "call" events
+            var msg <= to.next();
+            if(msg == EXIT_MSG)
+            {
+               trace "thread: terminating.."; 
+               from.unlock();
+               to.unlock();
+               return;
+            }
+            else if(msg == 42)
+            {
+               from.add("thanks for "+msg ); // Return something so that call() can return
+               from.add("greetings");        // Return some more values
+               from.add("from thread1 :)");
+               Sleep(150); // Give the master thread some time to spin (it will only spin a few cycles)
+            }
+            else if(msg instanceof UnsignedLong)
+            {
+               from.add("thanks for that juicy UnsignedLong(="+msg+") :*)"); 
+            }
+            else
+            {
+               from.add("thanks anyway for "+msg );
+               Sleep(250); // Give the master thread some time to spin (it will only spin a few cycles)
+            }
+         }
+         from.unlock(); // Result can be picked up now
+         to.unlock();   // New "calls" can be issued now
+      }
+   }
+
+   start() {
+      th.userdata = this;
+      to.lock();
+      if(th.create(ThreadEventTest.Entry)) // Start new thread. In this example, the entry function is a static class method call.
+      {
+         print "main: thread created.";
+         
+         call( Double.Newf(PI)  ); 
+         call( Integer.New(42)  );
+         call( { "another event",  "yet another event", UnsignedLong.Newi(100) }  );
+         stop();
+      }
+      else
+      {
+         die "main: failed to create thread.";
+      }
+   }
+
+   stop() {
+      to.add( EXIT_MSG ); // Send "magic" message to terminate slave thread
+      to.unlock();        // Let slave thread process the exit message
+      trace "main: stop(). waiting for thread to return.";
+      th.wait();          // Wait until thread function has returned
+   }
+
+   call(var _v) { 
+      // Send event(s) to slave-threads, wait for slave, pick up result events  
+      if(_v instanceof ListNode) // Value list
+      {
+         Value v;
+         foreach v in _v 
+            to.add(v.getDeref());
+      }
+      else
+         to.add(deref _v); // Single value
+      Sleep(350);  // Give the slave-thread waitMutex() some time to spin (it will only spin a few cycles)
+      to.unlock(); // The "call" event queue can now be picked up by the slave-thread
+
+      
+      from.waitMutex(); // Wait for result value(s)
+      to.lock();        // Stop slave thread from spinning
+      trace "main: Call() finished.";
+      while(from.avail()) // Process all events in the result event queue
+      {
+         var ret <= from.next(); // Get next result value
+         trace "main: thread call returned \"" + ret +"\".";
+      }
+   }
+}
+
+
+ThreadEventTest test;
+test.start();
+trace "cu!";

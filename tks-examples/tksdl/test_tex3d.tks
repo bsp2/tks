@@ -1,0 +1,266 @@
+
+use tksdl;
+use tkopengl;
+
+float frot=0;
+int numframesrendered=0;
+
+int tex_id;
+
+int TEX_W = 512;
+int TEX_H = 256;
+int TEX_D = 64;
+
+int slice_offset = 0;
+
+float anim_c = 0;
+float anim_o = 0;
+float anim_o2 = 0;
+float anim_o3 = 0;
+
+
+function RenderRotQuad(float dt) {
+   // How boooorring :D
+   zglInitOrtho(-1,-1);
+   glRotatef(frot, 0,0,1);
+   float cf = 0.5 + 0.5 * sin(anim_c);
+   glColor3f(0.0, cf, cf);
+   glBegin(GL_QUADS);
+   glVertex2f(-1,-1);
+   glVertex2f( 1,-1);
+   glVertex2f( 1, 1);
+   glVertex2f(-1, 1);
+   glEnd();
+
+   anim_c += 0.1076134 * dt;
+   wrap anim_c 0 2PI;
+
+}
+
+function RenderRubberScanlines(float dt) {
+   explain "Render simple rubber-style scanline effect";
+   float y      = 0;
+   float xr     = Viewport.width;
+   float ystep  = float(Viewport.height) / TEX_H;
+   float ty     = 0;
+   float tystep = 1.0 / TEX_H;
+   glBegin(GL_QUADS);
+   float ia = anim_o;
+   loop(TEX_H)
+   {
+      float tz = (float(TEX_D-2)/TEX_D) * (0.5 + 0.5 * sin(ia));
+      tz = (slice_offset/(float(TEX_D))) - tz;//(60.0/TEX_D);
+      glTexCoord3f(0, ty, tz);
+      glVertex3f(0, y, 0);
+
+      glTexCoord3f(1.0, ty, tz);
+      glVertex3f(xr, y, 0);
+
+      glTexCoord3f(1.0, ty+tystep, tz);
+      glVertex3f(xr, y+ystep, 0);
+
+      glTexCoord3f(0, ty+tystep, tz);
+      glVertex3f(0, y+ystep, 0);
+
+      ia += 0.020123;
+
+      y += ystep;
+      ty += tystep;
+      //tz -= 2* tystep;
+   }
+   glEnd();
+
+   anim_o += 0.0103423 * dt;
+   wrap anim_o 0 2PI;
+
+   frot += dt;
+   wrap frot 0 360;
+}
+
+
+int GRID_W = 64;
+int GRID_H = 64;
+FloatArray plasma_r; plasma_r.alloc((GRID_W + 1) * (GRID_H + 1)); plasma_r.useAll();
+function RenderPlasmaGrid(float dt) {
+
+   float iaspd = 0.20123;
+   float oa = anim_o;
+   float oa2 = anim_o2;
+   float oa3 = anim_o3;
+   float oaspd = 0.24239612389;
+   float oaspd2 = 0.12102342341039612389;
+   float oaspd3 = 0.042312341351345134;
+
+   float y = 0;
+   float xstep = Viewport.width / float(GRID_W);
+   float ystep = Viewport.height / float(GRID_H);
+   float v = 0;
+   float ustep = 1.0 / GRID_W;
+   float vstep = 1.0 / GRID_H;
+   float roff = (slice_offset/(float(TEX_D)));
+
+   // Calc texture coords
+   int k = 0;
+   compile loop(GRID_H + 1)
+   {
+      float ia = (0.5 + 0.5 * sin(oa)) * 2PI;
+      float ia2 = (0.5 + 0.5 * sin(oa3)) * 2PI;
+      loop(GRID_W + 1)
+      {
+         float tz = roff - (float(TEX_D-2)/TEX_D) * (0.5 + 0.5 * sin(ia));
+         plasma_r[k++] = tz;
+         ia += iaspd * sin(ia2);
+         ia2 += 0.123491345013;
+      }
+      oa += oaspd * sin(oa2);
+      oa2 += oaspd2;
+      oa3 += oaspd3;
+   }
+
+   // Now render
+   k = 0;
+   glBegin(GL_QUADS);
+   loop(GRID_H)
+   {
+      int ix = 0;
+      float u = 0;
+      float x = 0;
+      loop(GRID_W)
+      {
+         float tzul = plasma_r[k];
+         float tzur = plasma_r[k + 1];
+         float tzdl = plasma_r[k + (GRID_W + 1)];
+         float tzdr = plasma_r[k + 1 + (GRID_W + 1)];
+         
+         glTexCoord3f(u, v, tzul);
+         glVertex3f(x, y, 0);
+
+         glTexCoord3f(u+ustep, v, tzur);
+         glVertex3f(x + xstep, y, 0);
+
+         glTexCoord3f(u+ustep, v+vstep, tzdr);
+         glVertex3f(x + xstep, y + ystep, 0);
+
+         glTexCoord3f(u, v+vstep, tzdl);
+         glVertex3f(x, y + ystep, 0);
+
+         u += ustep;
+         x += xstep;
+         ix++;
+         k++;
+      }
+      k++;
+      v += vstep;
+      y += ystep;
+   }
+   glEnd();
+
+   anim_o += 0.0103423 * dt;
+   wrap anim_o 0 2PI;
+
+   anim_o2 += 0.021231359003423 * dt;
+   wrap anim_o2 0 2PI;
+
+   anim_o3 += 0.019230890130941321231359003423 * dt;
+   wrap anim_o3 0 2PI;
+  
+}
+
+
+function onDraw() {
+
+    float dt = FPS.precision;
+
+    // Render new texture slice
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_TEXTURE_3D);
+    glClearColor(0,0,0.2,1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+    // Render texture slice
+    RenderRotQuad(dt);
+
+    // Copy texture slice
+    glBindTexture(GL_TEXTURE_3D, tex_id);
+    glCopyTexSubImage3D(GL_TEXTURE_3D, 0, 
+                        0, 0, slice_offset,
+                        0, 0,
+                        TEX_W, TEX_H
+                        );
+//     trace "xxx glCopyTexSubImage3D: glGetError="+glGetError();
+
+    // Pass2: Render 3D texture
+    glClearColor(1,0,0,1);
+    glClear(GL_COLOR_BUFFER_BIT);
+    zglInit2D(TEX_W, TEX_H);
+    glLoadIdentity();
+    glEnable(GL_TEXTURE_3D);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    glDisable(GL_BLEND);
+    glColor3f(0.1, 0.9, 0.1);
+    glDisable(GL_CULL_FACE);
+
+    //RenderRubberScanlines();
+    RenderPlasmaGrid(dt);
+
+    glDisable(GL_TEXTURE_3D);
+
+//     trace glGetError();
+
+    // Next slice
+    slice_offset = (slice_offset + 1) & (TEX_D-1);
+
+}
+
+// function onMouse(int _x, int _y, int _cbs, int _nbs) {
+//    print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+// }
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onOpen() {
+   zglLoadExtensions();
+
+   tex_id = zglGenTexture();
+   glBindTexture(GL_TEXTURE_3D, tex_id);
+
+   // Note: omitting the first glTexParameteri call will cause GL to simply skip rendering textured triangles. WTF.
+
+ 	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
+
+   glTexImage3D(GL_TEXTURE_3D,
+                0,
+                GL_RGB8,
+                TEX_W, TEX_H, TEX_D,
+                0,
+                GL_RGB,
+                GL_UNSIGNED_BYTE, //GL_UNSIGNED_INT_8_8_8_8_REV,
+                null
+                );
+   trace "xxx onOpen: glGetError="+glGetError();
+}
+
+function main() {
+    use callbacks;
+
+    FPS.tickInterval=1000.0/60;
+
+    Viewport.openWindow(512, 256);
+    Viewport.swapInterval(1);
+
+    trace "xxx entering eventloop";
+    SDL.eventLoop();
+}

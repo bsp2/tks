@@ -1,0 +1,229 @@
+
+// (note) https://www.cs.cmu.edu/%7E16385/s17/Slides/10.2_2D_Alignment__DLT.pdf
+// (note) http://web.archive.org/web/20080209130648/http://www.r3.nu/~cass/qcoord/
+
+use tksdl;
+use tkopengl;
+use tkmath;
+
+int numframesrendered = 0;
+
+boolean b_q = 1;
+boolean b_subdiv = 0;
+boolean b_subdiv_normuv = 0;
+
+Texture tex;
+
+function onOpen() {
+   tex.flags = TEX_ALPHA | TEX_MODULATE | TEX_REPEAT_S | TEX_REPEAT_T;
+   tex.alloc(8,8,4);
+   int k = 0;
+   int y = 0;
+   loop(tex.sy)
+   {
+      int x = 0;
+      loop(tex.sx)
+      {
+         if(0 == ((x^y)&1))
+            tex[k] = #FFffffff;
+         else
+            tex[k] = #1F1f1f1f;
+         k++;
+         x++;
+      }
+      y++;
+   }
+   tex.unload();
+}
+
+function onDraw() {
+   float dt = FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT);
+
+   zglInitOrtho(3,3);
+
+   tex.bind();
+   tex.enable();
+
+   glColor4f(1,1,1,1);
+
+   tex.bind();
+   tex.enable();
+
+   float tx = 0.5;
+
+   float uvMinT = -tx;
+   float uvMaxT =  tx;
+
+   float xMinT = -tx;
+   float xMaxT =  tx;
+
+   float yL =  1;
+   float yR =  1;
+
+   float s = 2.5;
+   float sT = s * 0.5;
+   float sB = s * 0.125;
+
+   if(b_subdiv)
+   {
+      Vector3f vLT; vLT.init(xMinT*s,  yL*sT, 0.0f);
+      Vector3f vRT; vRT.init(xMaxT*s,  yR*sT, 0.0f);
+      Vector3f vRB; vRB.init(1*s,     -yR*sB, 0.0f);
+      Vector3f vLB; vLB.init(-1*s,    -yL*sB, 0.0f);
+
+      Vector2f uvLT, uvRT, uvRB, uvLB;
+      if(b_subdiv_normuv)
+      {
+         uvLT.init(0,1);
+         uvRT.init(1,1);
+         uvRB.init(1,0);
+         uvLB.init(0,0);
+      }
+      else
+      {
+         uvLT.init(uvMinT/tx,  yL/tx);
+         uvRT.init(uvMaxT/tx,  yR/tx);
+         uvRB.init(1,         -yR   );
+         uvLB.init(-1,        -yL   );
+      }
+
+      Vector3f vCur;
+      Vector2f uvCur;
+      float cy = 0;
+      float step = (1.0 / 16);
+      float cyn = cy + step;
+      glBegin(GL_QUADS);
+      loop(16)
+      {
+         float cx = 0;
+         float cxn = cx + step;
+         loop(16)
+         {
+            // lt
+            uvCur.bilinearQuadPos(uvLT, uvRT, uvRB, uvLB, cx, cy);
+            vCur.bilinearQuadPos(vLT, vRT, vRB, vLB, cx, cy);
+            zglTexCoord2v(uvCur);
+            zglVertex3v(vCur);
+
+            // rt
+            uvCur.bilinearQuadPos(uvLT, uvRT, uvRB, uvLB, cxn, cy);
+            vCur.bilinearQuadPos(vLT, vRT, vRB, vLB, cxn, cy);
+            zglTexCoord2v(uvCur);
+            zglVertex3v(vCur);
+
+            // rb
+            uvCur.bilinearQuadPos(uvLT, uvRT, uvRB, uvLB, cxn, cyn);
+            vCur.bilinearQuadPos(vLT, vRT, vRB, vLB, cxn, cyn);
+            zglTexCoord2v(uvCur);
+            zglVertex3v(vCur);
+
+            // lb
+            uvCur.bilinearQuadPos(uvLT, uvRT, uvRB, uvLB, cx, cyn);
+            vCur.bilinearQuadPos(vLT, vRT, vRB, vLB, cx, cyn);
+            zglTexCoord2v(uvCur);
+            zglVertex3v(vCur);
+
+            cx += step;
+            cxn += step;
+         }
+         cy += step;
+         cyn += step;
+      }
+      glEnd();
+   }
+   else
+   {
+      glBegin(GL_QUADS);
+
+      // lt
+      if(b_q)
+         glTexCoord4f(uvMinT,yL,
+                      0,tx
+                      );
+      else
+         glTexCoord2f(uvMinT/tx,yL/tx);
+      glVertex2f(xMinT*s,yL*sT);
+
+      // rt
+      if(b_q)
+         glTexCoord4f(uvMaxT,yR,
+                      0,tx
+                      );
+      else
+         glTexCoord2f(uvMaxT/tx,yR/tx);
+      glVertex2f(xMaxT*s,yR*sT);
+
+      // rb
+      if(0 && b_q)
+         glTexCoord4f(1,-yR,
+                      0,tx
+                      );
+      else
+         glTexCoord2f(1,-yR);
+      glVertex2f(1*s,-yR*sB);
+
+      // lb
+      if(0 && b_q)
+         glTexCoord4f(-1,-yL,
+                      0,tx
+                      );
+      else
+         glTexCoord2f(-1,-yL);
+      glVertex2f(-1*s,-yL*sB);
+
+      glEnd();
+   }
+
+   tex.unbind();
+   tex.disable();
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // trace "[...] onMouse: dx="+Mouse.dx+" dy="+Mouse.dy+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   trace "[...] onKeyboard: k.code="+_k.code+" ("+TKS.constantToString(_k.code, "VKEY_")+") mod="+_k.mod+" pressed="+_k.pressed+" released="+_k.released+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      default:
+         break;
+
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case 'q':
+         b_q = !b_q;
+         trace "[...] b_q="+b_q;
+         break;
+
+      case 's':
+         b_subdiv = !b_subdiv;
+         trace "[...] b_subdiv="+b_subdiv;
+         break;
+
+      case 'n':
+         b_subdiv_normuv = !b_subdiv_normuv;
+         trace "[...] b_subdiv_normuv="+b_subdiv_normuv;
+         break;
+   }
+
+}
+
+function main() {
+   use callbacks;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   Viewport.multisampleSamples = 4;
+   Viewport.multisampleBuffers = 1;
+   Viewport.openWindow(800, 600);
+   Viewport.swapInterval(1);
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(0,0);
+
+   SDL.eventLoop();
+}

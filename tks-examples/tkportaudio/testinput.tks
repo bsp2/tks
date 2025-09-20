@@ -1,0 +1,192 @@
+use tkportaudio;
+
+int DEVICE_IDX = 0;
+
+String PREFERRED_DEVNAME;
+boolean bMacOS = (TKS.dllSuffix == ".dylib");
+if(TKS.dllSuffix == ".so")  // Linux ?
+   PREFERRED_DEVNAME = "Session I/O";
+else if(bMacOS)
+   PREFERRED_DEVNAME = "Fireface 802 (23861675)";
+else
+   PREFERRED_DEVNAME = "MONTAGE";  // overrides DEVICE_IDX when present
+
+#define NUM_INPUT_CH   30
+#define NUM_OUTPUT_CH  30
+
+float SUGGESTED_LATENCY = (0);//(4096/44100.0);
+// float SUGGESTED_LATENCY = (0.2);//(4096/44100.0);
+
+// int SAMPLE_FORMAT = PA_INT16;  // works on Windows/ASIO(RME)
+int SAMPLE_FORMAT = PA_INT24;   // works on Windows/ASIO(RME) and Linux
+// int SAMPLE_FORMAT = PA_FLOAT32;  // the only setting that works on macOS/CoreAudio (Yamaha Montage)
+
+boolean b_debug = false;
+
+function ListDevices() {
+   int numDev = PortAudio.GetNumDevices();
+
+   trace "[dbg] ListDevices: numDev="+numDev;
+   int devIdx = 0;
+   loop(numDev)
+   {
+      PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(devIdx);
+      trace "[dbg] ListDevices:\n\t devIdx=" + devIdx +" name=\""+devInfo.name+"\" apiName=\""+devInfo.hostApiName + "\"" 
+         "\n\t maxInputCh="+devInfo.maxInputChannels+" maxOutputCh="+devInfo.maxOutputChannels+
+         "\n\t defLowInputLatency="+devInfo.defaultLowInputLatency+" defLowOutputLatency="+devInfo.defaultLowOutputLatency+
+         "\n\t defHighInputLatency="+devInfo.defaultHighInputLatency+" defHighOutputLatency="+devInfo.defaultHighOutputLatency+
+         "\n\t defSampleRate="+devInfo.defaultSampleRate;
+
+      if(PREFERRED_DEVNAME == devInfo.name)
+         DEVICE_IDX = devIdx;
+
+      // List input channels:
+      if(0)
+      {
+         int chIdx;
+
+         trace "[dbg]\t input channels:";
+         chIdx = 0;
+         loop(devInfo.maxInputChannels)
+         {
+            trace "[dbg]\t\t #"+chIdx+" : \"" + devInfo.getInputChannelName(chIdx) + "\"";
+            chIdx++;
+         }
+
+         // List output channels:
+         trace "[dbg]\t output channels:";
+         chIdx = 0;
+         loop(devInfo.maxOutputChannels)
+         {
+            trace "[dbg]\t\t #"+chIdx+" : \"" + devInfo.getOutputChannelName(chIdx) + "\"";
+            chIdx++;
+         }
+      }
+
+      devIdx++;
+   }
+}
+
+
+PaStream stream;
+float ang = 0.0f;
+boolean b_debug_cbk_once = true;
+int cbkCount = 0;
+function MyCallback(PaStream _stream, FloatArray input, FloatArray output, int numFrames) {
+
+   int numInCh  = _stream.numInputChannels;
+   int numOutCh = _stream.numOutputChannels;
+
+   if(b_debug || b_debug_cbk_once)
+      trace "MyCallback: numFrames="+numFrames+" input.numElements="+input.numElements+" output.numElements="+output.numElements+" numInCh="+numInCh+" numOutCh="+numOutCh;
+   b_debug_cbk_once = false;
+
+   int ooff = 0;
+   int ioff = 3-1;
+   float inMax = 0;
+   FloatArray faIn3;
+   faIn3.empty();
+   compile loop(numFrames)
+   {
+      // Write to first (stereo) channel(s)
+
+       // output[ooff + 0] = 0;
+       // output[ooff + 1] = 0;
+
+      float f = 0;//sin(ang) * 0.1;
+      output[ooff + 0] = f;
+      output[ooff + 1] = f;
+
+      f = input[ioff];
+      faIn3.add(f);
+      f = abs(f);
+      if(f > inMax)
+         inMax = f;
+
+      output[ooff + 0] = input[ioff + 0];
+      output[ooff + 1] = input[ioff + 1];
+
+      ooff += numOutCh;
+      ioff += numInCh;
+      ang = mathWrapf(ang + 0.012345f, 0, 2PI);
+   }
+
+   if(0 == (cbkCount++ & 2047))
+   {
+      // float f = input.absMax;
+      // if(f > 0.0f)
+      //    trace "input.absMax="+f;
+      // trace "faIn3="+faIn3;
+      if(inMax > 0.0f)
+         trace "inMax="+inMax;
+      stdout ".";
+   }
+
+    // trace output;
+}
+
+function TestDevice(int _devIdx) {
+   PaDeviceInfo devInfo <= PortAudio.GetDeviceInfo(_devIdx);
+   if(null != devInfo)
+   {
+      PaStreamParameters isp, osp;
+
+      isp.deviceIndex      = _devIdx;
+      isp.channelCount     = mathMini(devInfo.maxInputChannels, NUM_INPUT_CH);
+      isp.sampleFormat     = SAMPLE_FORMAT;
+      isp.suggestedLatency = SUGGESTED_LATENCY;
+
+      osp.deviceIndex      = _devIdx;
+      osp.channelCount     = mathMini(devInfo.maxOutputChannels, NUM_OUTPUT_CH);
+      osp.sampleFormat     = SAMPLE_FORMAT;
+      osp.suggestedLatency = SUGGESTED_LATENCY;
+
+      if(PortAudio.OpenStream(isp, osp, devInfo.defaultSampleRate, 0/*framesPerBuffer*/, MyCallback, stream))
+      {
+         trace "[...] TestDevice: stream opened OK. devIdx="+_devIdx+" rate="+devInfo.defaultSampleRate;
+
+         stream.start();
+
+         for(;;)
+         // loop(20)
+         {
+            TKS.sleep(200);
+         }
+
+         stream.stop();
+         stream.abort();
+         stream.close();
+      }
+      else
+      {
+         trace "[---] TestDevice: FAILED to open stream (devIdx="+_devIdx+").\n";
+      }
+   }
+}
+
+function onSignal(int c) {
+   trace "[...] test: caught signal "+c;
+
+   stream.stop();
+   stream.abort();
+   stream.close();
+
+   trace "[...] test: exiting..";
+   exit(0);
+}
+
+
+PortAudio.Initialize();
+
+ListDevices();
+
+use callbacks;
+
+b_debug = (Arguments.numElements > 1);
+
+if(Arguments.numElements > 0)
+   TestDevice(int(Arguments[0]));
+else
+   TestDevice(DEVICE_IDX);
+
+PortAudio.Terminate();

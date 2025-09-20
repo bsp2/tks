@@ -1,0 +1,90 @@
+
+// a simple multithreading/objectpool stress test
+
+StringArray class_names <= ["String", "Integer", "Float", "PointerArray", "HashTable", "Time", "ListNode"];
+
+int num_threads;
+int num_objects;
+int num_iterations;
+
+int k = 0; // used to randomize element select, modified without synchronization
+
+class C {
+
+   static method ThreadEntry(local Thread thread) {
+      trace "hello from thread "+thread.id;
+
+      // Allocate random class instances
+      local PointerArray pa;
+      pa.alloc(num_objects);
+      pa.useAll();
+      loop(num_iterations)
+      {
+         loop(num_objects)
+         {
+            pa[k++ % pa.numElements] = TKS.newObjectByName(null, class_names[k % class_names.numElements]);
+            k += 3;
+         }
+      }
+
+      trace "bye from thread "+thread.id;
+   }
+}
+
+
+function DoBenchmark() {
+
+   _DebugOC();
+
+   trace "\nbegin test:";
+   trace "       num_threads = "+num_threads;
+   trace "       num_objects = "+num_objects;
+   trace "    num_iterations = "+num_iterations;
+   trace "\n\n";
+
+   int t = milliSeconds();
+   
+   // by initializing the pointers with null, no objects will be created automatically
+   //  (end objectcount should match start objectcount)
+   local PointerArray threads <= null;
+   local Thread th <= null;
+
+   threads <= new PointerArray;
+   threads.alloc(num_threads);
+  
+   // Start threads
+   loop(num_threads)
+   {
+      th <= new Thread;
+      th.create(C.ThreadEntry);
+      threads.add(#(deref th));
+   }
+
+   // Join threads
+   foreach th in threads {
+      th.wait();
+   }
+
+   threads <= null;
+
+   t = milliSeconds() - t;
+
+   float ips = ((1000.0/t) * (num_threads * num_objects * num_iterations));
+
+   trace "\n  t="+t+"ms => "+ ips + " random new/deletes per second.";
+   
+   _DebugOC();
+}
+
+function main() {
+
+//    num_threads    = 1;
+//    num_objects    = 16384;
+//    num_iterations = 100;
+//    DoBenchmark();
+
+   num_threads    = 16;
+   num_objects    = 16384;
+   num_iterations = 10;
+   DoBenchmark();
+}

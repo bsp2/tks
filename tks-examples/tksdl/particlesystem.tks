@@ -1,0 +1,275 @@
+module MParticleSystem;
+
+// converted from tksparticles.cpp/tksparticles.h 24Jul2003 <bs>
+// license: public domain
+
+class TKSParticle {
+    float           lt;             // life time (actually an int, needed for in-between frame precision
+    int             ttl;            // time to live
+    float           r,g,b,a;        // pen
+    float           px,py,pz;
+    float           dx,dy,dz;
+    float           sx,sy,sz;
+
+    reset() {
+	lt=0; ttl=0;
+	px=0; py=0; pz=0;
+	dx=0; dy=0; dz=0;
+	r=1; g=1; b=1; a=1;
+    }
+
+}
+
+class TKSParticleAnimFrame {
+    float ltu,ltv,rtu,rtv,rbu,rbv,lbu,lbv;
+};
+
+class TKSParticleSystem {
+    TKSParticleAnimFrame  uv_array[];
+    int                   num_animframes;
+    float                 anim_framesx;
+    float                 anim_framesy;
+    TKSParticle           particles[];
+    Texture               anim_texture;
+    Texture               cmap_texture;
+    int                   max_particles;
+    int                   num_particles;
+    int                   next_free;
+    int                   last_used;
+    float                 particle_size_x, particle_size_y, particle_size_z;
+
+    TKSParticleSystem();
+    ~TKSParticleSystem();
+
+    /*void*/ free();
+    /*int*/  allocParticles(int _num);
+    /*void*/ resetParticles();
+    /*void*/ spawnParticle(Vector _pos, int _ttl, int _c32, Vector _drift);
+    /*void*/ setTextureAnimation(Texture _tex, int _num, int _sx, int _sy);
+    /*void*/ draw();
+    /*void*/ setColormapModulation(Texture _tex);
+    /*void*/ setDefaultParticleSize2f(float _sx, float _sy);
+    /*void*/ tickPrecise(float _prec);
+}
+
+
+// -------------------------------------------------------------------------------------------------
+TKSParticleSystem::TKSParticleSystem() {
+    anim_texture<=null;
+    cmap_texture<=null;
+    num_particles=0;
+    max_particles=0;
+    next_free=0;
+    last_used=0;
+    anim_framesx=0;
+    anim_framesy=0;
+    particle_size_x=32; 
+    particle_size_y=32;
+}
+
+TKSParticleSystem::~TKSParticleSystem() {
+    free();
+}
+
+TKSParticleSystem::setDefaultParticleSize2f {
+    particle_size_x=_sx;
+    particle_size_y=_sy;
+}
+
+TKSParticleSystem::free {
+    uv_array.free();
+    num_animframes=0;
+    particles.free();
+    num_particles=0;
+    max_particles=0;
+    anim_texture<=null;
+    cmap_texture<=null;
+}
+
+TKSParticleSystem::allocParticles {
+    if(particles.alloc(_num))
+	{
+	    particles.numElements=particles.maxElements;
+	    max_particles=_num;
+	    resetParticles();
+	    return 1;
+	}
+    die("ParticleSystem::allocParticles(_num="+_num+") failed.");
+}
+
+TKSParticleSystem::resetParticles {
+    TKSParticle p;
+    int i=0;
+    compile
+	loop(max_particles)
+	{
+	    p<=particles[i++]; p.reset();
+	}
+    next_free=0;
+    num_particles=0;
+}
+
+TKSParticleSystem::spawnParticle compile {
+    if(next_free<max_particles)
+	{
+	    TKSParticle p<=particles[next_free];
+	    p.lt=0;
+	    p.ttl=_ttl;
+	    p.r=((_c32>>16)&0xFF)/255.0;
+	    p.g=((_c32>> 8)&0xFF)/255.0;
+	    p.b=((_c32    )&0xFF)/255.0;
+	    p.a=((_c32>>24)&0xFF)/255.0;
+	    p.px=_pos.x;
+	    p.py=_pos.y;
+	    p.pz=_pos.z;
+	    p.dx=_drift.x;
+	    p.dy=_drift.y;
+	    p.dz=_drift.z;
+	    p.sx=particle_size_x;
+	    p.sy=particle_size_y;
+	    last_used=next_free;
+	    // ---- find next free ----
+	    if(++num_particles<max_particles)
+		{
+		    p<=particles[num_particles];
+		    if(!p.ttl)
+			next_free=num_particles;
+		    else
+			{
+			    int i=-1;
+			    int bcont=1;
+			    while(bcont)
+				{
+				    p<=particles[++i];
+				    bcont=particles[i].ttl;
+				}
+			    next_free=i;
+			}
+		}
+	    else
+		next_free=num_particles;
+	}
+}
+
+TKSParticleSystem::tickPrecise compile {
+    TKSParticle p;
+    int i=0;
+    loop(max_particles)
+	{
+	    p<=particles[i];
+	    if(p.ttl)
+		{
+		    p.px=p.px+p.dx*_prec;
+		    p.py=p.py+p.dy*_prec;
+		    p.pz=p.pz+p.dz*_prec;
+		    p.lt+=_prec;
+		    if(p.lt>=p.ttl)
+			{
+			    p.ttl=0;
+			    p.lt=0;
+			    num_particles--;
+			    if(i<next_free) next_free=i;
+			}
+		}
+	    i++;
+	}
+}
+
+
+TKSParticleSystem::draw() {
+    if(!cmap_texture)
+	return;
+    if(!uv_array.numElements)
+	return;
+    compile   {
+	TKSParticle p;
+	TKSParticleAnimFrame paf;
+	int i=-1;
+	glBegin(GL_QUADS);
+	loop(max_particles)
+	    {
+		p<=particles[++i];
+		if(p.ttl)
+		    {
+			float plt=p.lt/float(p.ttl);
+			int cm32=cmap_texture[cmap_texture.sx*plt];
+			//trace "draw i="+i+" plt="+plt+" cm32="+cm32+" p=("+p.px+","+p.py+","+p.pz+") s=("+p.sx+","+p.sy+") d=("+p.dx+","+p.dy+","+p.dz+")";
+			glColor4ub(
+				   (((cm32>>16)&0xFF)*p.r),
+				   (((cm32>> 8)&0xFF)*p.g),
+				   (((cm32    )&0xFF)*p.b),
+				   (((cm32>>24)&0xFF)*p.a)
+				   );
+			int uvi=plt*(num_animframes-1); // the TKS JIT uses the FPU which rounds to the next int!! (i.e. 0.999*5=5, in "c" you get 4)
+			paf<=uv_array[uvi];
+			glTexCoord2f(paf.ltu, paf.ltv);
+			glVertex3f(
+			       p.px-p.sx, 
+			       p.py+p.sy, 
+			       p.pz);
+			glTexCoord2f(paf.rtu, paf.rtv);
+			glVertex3f(
+				   p.px+p.sx, 
+				   p.py+p.sy, 
+				   p.pz);
+			glTexCoord2f(paf.rbu, paf.rbv);
+			glVertex3f(
+				   p.px+p.sx, 
+				   p.py-p.sy, 
+				   p.pz);
+			glTexCoord2f(paf.lbu, paf.lbv);
+			glVertex3f(
+				   p.px-p.sx, 
+				   p.py-p.sy, 
+				   p.pz);
+		    }
+	    }
+	glEnd();
+    }
+}
+
+TKSParticleSystem::setTextureAnimation {
+    if((_num>0)&&(_sx>0)&&(_sy>0))
+	{
+	    anim_texture<=_tex;
+	    anim_framesx=float(_sx)/float(_tex.sx);
+	    anim_framesy=float(_sy)/float(_tex.sy);
+	    if(uv_array.alloc(_num))
+		{
+		    uv_array.numElements=uv_array.maxElements;
+		    float u=0,v=0;
+		    int i=-1;
+		    num_animframes=_num;
+		    TKSParticleAnimFrame paf;
+		    compile
+			loop(num_animframes)
+			{
+			    paf<=uv_array[++i];
+			    paf.ltu=u;
+			    paf.ltv=v+anim_framesy;
+			    paf.rtu=u+anim_framesx;
+			    paf.rtv=v+anim_framesy;
+			    paf.rbu=u+anim_framesx;
+			    paf.rbv=v;
+			    paf.lbu=u;
+			    paf.lbv=v;
+			    u+=anim_framesx;
+			    if((u+anim_framesx)>1.0)
+				{
+				    u=0.0;
+				    v+=anim_framesy;
+				}
+			}
+		}
+	    else
+		die ("\n[---] ParticleSystem::setTextureAnimation: failed to allocate "+_num+" UV-frames.\n");
+	}
+}
+
+TKSParticleSystem::setColormapModulation {
+    cmap_texture<=_tex;
+}
+
+
+class ParticleSystem : TKSParticleSystem {}
+

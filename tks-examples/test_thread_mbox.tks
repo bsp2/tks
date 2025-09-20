@@ -1,0 +1,142 @@
+
+// demonstrates thread mailboxes and events
+//
+// usage: tks thread_mbox_test.tks 1
+//          -> run in "ping-pong" send/reply mode
+//
+//        tks thread_mbox_test.tks 0
+//          -> run in "send only" mode (inbox may overflow)
+//
+//        tks thread_mbox_test.tks
+//          -> first run in "ping-pong", then again in "send-only" mode
+//
+
+
+dtrace false;
+//dtrace true;
+
+// 1=wait for reply from slave thread before sending a new message (recommended)
+// 0=send anyway (mailbox may overflow)
+boolean b_reply;
+
+int sleepTime = 0;
+
+
+class C {
+   static Thread t;
+
+   define int REPLY_OFF = 1000000;
+
+   define int ID_QUIT = 99999999 - REPLY_OFF;
+
+   define int NUM_ITERATIONS = 10000;
+   define int QUEUE_SIZE = 1000;
+
+   static int slave_num_recv;
+   static int slave_num_sent;
+
+   static int master_num_recv;
+   static int master_num_sent;
+
+   static MyThreadEntry(local Thread t) {
+      trace "MyThreadEntry: begin";
+
+      local Thread recv <= t.userdata;
+
+      while(true)
+      {
+         trace "MyThreadEntry: waitEvent()";
+         local Event ev <= t.waitEvent(0);
+
+         slave_num_recv++;
+         
+         if(b_reply)
+         {
+            local Event evReply = ev;
+            evReply.id += REPLY_OFF;
+            trace "MyThreadEntry: send reply to ev.id="+ev.id +" evReply.id="+evReply.id;
+            recv.sendEvent(evReply);
+            master_num_sent++;
+            trace "MyThreadEntry: reply sent";
+         }
+         
+         if(ID_QUIT == ev.id)
+         {
+            stderr "MyThreadEntry: got QUIT event\n";
+            return;
+         }
+         else
+         {
+            trace "MyThreadEntry: got event id="+ev.id;
+         }
+      }
+   }
+
+   static RunTest() {
+      trace "RunTest: begin";
+
+      slave_num_recv = 0;
+      slave_num_sent = 0;
+
+      master_num_recv = 0;
+      master_num_sent = 0;
+      
+      Thread self <= GetCurrentThread();
+      self.allocEventQueue(QUEUE_SIZE);
+
+      t.allocEventQueue(QUEUE_SIZE);
+      t.userdata = self;
+      t.create(C.MyThreadEntry);
+      int k = 1;
+      loop(NUM_ITERATIONS)
+      {
+         Event ev;
+         ev.id = k;
+         trace "RunTest: sendEvent id="+k;
+         t.sendEvent(ev);
+
+         slave_num_sent++;
+
+         if(sleepTime)
+         {
+            TKS.sleep(sleepTime);
+         }
+
+         if(b_reply)
+         {
+            trace "RunTest: wait for reply";
+            Event evReply <= self.waitEvent(0);
+            trace "RunTest: got reply "+ evReply.id;
+            master_num_recv++;
+         }
+         k++;
+      }
+      trace "RunTest: all events sent";
+      //TKS.sleep(500);
+      trace "RunTest: send QUIT event";
+      ev.id = ID_QUIT;
+      t.sendEvent(ev);
+      slave_num_sent++;
+      t.wait();
+
+      stderr "RunTest: stats:\n\t slave: sent="+slave_num_sent+" recv="+slave_num_recv+"\n\tmaster: sent="+master_num_sent+" recv="+master_num_recv+"\n";
+
+      stderr "RunTest: end\n";
+   }
+}
+
+
+if(Arguments.numElements)
+{
+   b_reply = Arguments[0];
+   C.RunTest();
+}
+else
+{
+   b_reply = false;
+   C.RunTest();
+
+
+   b_reply = true;
+   C.RunTest();
+}

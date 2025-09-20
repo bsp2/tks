@@ -1,0 +1,222 @@
+
+use tksdl;
+use tkopengl;
+
+float frot=0;
+int numframesrendered=0;
+
+PointerArray plots;
+IntArray plot_colors = [
+   #ff00ff00,
+   #ffff0000
+                        ];
+
+int current_plot_idx = 0;
+
+
+class Plot {
+
+   float min_x;
+   float max_x;
+   float min_y;
+   float max_y;
+
+   static float all_min_x;
+   static float all_max_x;
+   static float all_min_y;
+   static float all_max_y;
+
+   FloatArray x_values;
+   FloatArray y_values;
+
+   int color32;
+
+   static StaticInit() {
+      all_min_x = 9999999;
+      all_max_x = -9999999;
+      all_min_y = 9999999;
+      all_max_y = -9999999;
+   }
+
+   read(String inputFile) {
+
+      String buf;
+      buf.loadLocal(inputFile, true);
+
+      StringArray lines <= buf.splitChar('\n');
+
+      min_x = 9999999;
+      max_x = -9999999;
+      min_y = 9999999;
+      max_y = -9999999;
+
+      String *line;
+      foreach line in lines
+      {
+         StringArray words <= line.splitChar(';');
+         // trace "xxx words="+#(words);
+         float x = words.get(0).trim();
+         float y = words.get(1).trim();
+
+         if(x < min_x)
+            min_x = x;
+         if(x > max_x)
+            max_x = x;
+         if(y < min_y)
+            min_y = y;
+         if(y > max_y)
+            max_y = y;
+
+         x_values.add(x);
+         y_values.add(y);
+      }
+
+      trace "min=("+min_x+"; "+min_y+") max=("+max_x+"; "+max_y+")";
+
+      if(min_x < all_min_x)
+         all_min_x = min_x;
+      if(max_x > all_max_x)
+         all_max_x = max_x;
+      if(min_y < all_min_y)
+         all_min_y = min_y;
+      if(max_y > all_max_y)
+         all_max_y = max_y;
+   }
+
+   mapMousePos(float mx, Float retX, Float retY) {
+
+      float x = ((mx * (all_max_x - all_min_x)) / Viewport.width) + all_min_x;
+      
+      trace "xxx x="+x;
+
+      int i = 0;
+      loop(x_values.numElements)
+      {
+         if(x <= x_values.get(i))
+         {
+            retX = x;
+            retY = y_values.get(i);
+            return true;
+         }
+         i++;
+      }
+
+      return false;
+   }
+
+   draw() {
+
+      glMatrixMode(GL_PROJECTION);
+      glLoadIdentity();
+      glOrtho(all_min_x, all_max_x, all_min_y, all_max_y, 0.0, 1.0);
+      glMatrixMode(GL_MODELVIEW);
+
+      glBlendFunc(GL_SRC_COLOR, GL_ONE_MINUS_SRC_COLOR);
+      // glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+      zglColorARGB(color32);
+
+      glBegin(GL_POINTS);
+      int i = 0;
+      loop(y_values.numElements)
+      {
+         float cx = x_values.get(i);
+         float cy = y_values.get(i);
+         glVertex2f(cx, cy);
+         i++;
+      }
+      glEnd();
+
+      glDisable(GL_BLEND);
+   }
+}
+
+
+function onDraw() {
+   float dt=FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   // trace "xxx onDraw";
+   Plot *p;
+   foreach p in plots
+   {
+      // trace "xxx draw plot";
+      p.draw();
+   }
+
+}
+
+function show_mouse(int _x) {
+
+   Plot p <= plots.get(current_plot_idx);
+
+   if(null != p)
+   {
+      Float x;
+      Float y;
+
+      if(p.mapMousePos(_x, x, y))
+      {
+         trace "x="+x+" y="+y;
+      }
+   }
+}
+
+function select_plot(int _idx) {
+   current_plot_idx = _idx;
+   trace "[...] select plot #"+(_idx + 1);
+   show_mouse(Mouse.x);
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+
+   show_mouse(_x);
+
+   // print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case '1':
+         select_plot(0);
+         break;
+
+      case '2':
+         select_plot(1);
+         break;
+   }
+}
+
+function main() {
+   Viewport.openWindow(900, 500);
+   use callbacks;
+   FPS.tickInterval=1000.0/60;
+   // FPS.limit=30;
+   FPS.limit=60;
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}
+
+
+
+Plot.StaticInit();
+
+String inputFile;
+int inIdx = 0;
+foreach inputFile in Arguments
+{
+   trace "[...] read \""+inputFile+"\"";
+   Plot p <= new Plot;
+   p.read(inputFile);
+   p.color32 = plot_colors[inIdx % plot_colors.numElements];
+   plots.add(#(deref p));
+   inIdx++;
+}

@@ -1,0 +1,503 @@
+// 10May2024, 11May2024
+
+use tksdl;
+use tkopengl;
+
+int numframesrendered = 0;
+
+boolean b_debug = 1;
+
+FloatArray points;
+
+float g_p1x = 340;
+float g_p1y = 300;
+
+float g_p2x = 390;//600;
+float g_p2y = 500;//550;
+
+float g_rx = 168;
+float g_ry = 168;
+
+boolean g_b_large = 0;  // 'w'
+boolean g_b_sweep = 0;  // 's'
+
+
+// swap start end
+if(1)
+{
+   float tp = g_p1x;
+   g_p1x = g_p2x;
+   g_p2x = tp;
+   tp = g_p1y;
+   g_p1y = g_p2y;
+   g_p2y = tp;
+}
+
+
+// g_p1x = 683.208;
+// g_p1y = 284.879;
+// g_rx = 19.938029;
+// g_ry = 19.938029;
+// g_p2x = 679.991;
+// g_p2y = 287.936;
+// g_b_sweep = 1;
+
+//M 564.116605 710.698459 a 20.872117 20.872117 0 0 1 20.872117 20.869619
+g_p1x = 564.116605;
+g_p1y = 710.698459;
+g_rx = 20.872117;
+g_ry = 20.872117;
+g_p2x = 584.988722;
+g_p2y = 731.568078;
+g_b_sweep = 1;
+
+
+function CenterAndScale(float fScale) {
+   float bbMinX = mathMinf(g_p1x, g_p2x);
+   float bbMinY = mathMinf(g_p1y, g_p2y);
+   float bbMaxX = mathMaxf(g_p1x, g_p2x);
+   float bbMaxY = mathMaxf(g_p1y, g_p2y);
+   float ctrX = (bbMinX + bbMaxX) * 0.5;
+   float ctrY = (bbMinY + bbMaxY) * 0.5;
+   trace "xxx ctr=("+ctrX+";"+ctrY+") scale="+fScale;
+
+   g_p1x = (g_p1x - ctrX) * fScale + Viewport.width*0.5f;
+   g_p1y = (g_p1y - ctrY) * fScale + Viewport.height*0.5f;
+   g_rx *= fScale;
+   g_ry *= fScale;
+   g_p2x = (g_p2x - ctrX) * fScale + Viewport.width*0.5f;
+   g_p2y = (g_p2y - ctrY) * fScale + Viewport.height*0.5f;
+}
+
+
+float dbg_cx;
+float dbg_cy;
+
+float dbg_cx_neg;
+float dbg_cy_neg;
+
+float dbg_rx;
+float dbg_ry;
+
+float dbg_ang_p;
+float dbg_ang_q;
+
+int ARC_NUM_SUBDIV = 64;
+float ARC_DIST_THRESHOLD = 6.0f;
+
+int last_num_points = 0;
+
+
+function tesselateArc(float _px, float _py,
+                      float _rx, float _ry,
+                      float _rot,
+                      boolean _bLargeArcFlag,
+                      boolean _bSweepFlag,
+                      float _qx, float _qy,
+                      boolean _bForceNeg  // debug (calc 'other' ellipse center)
+                      ) {
+   // (todo) rotation
+
+   if(_rx < 0.0f)
+      _rx = -_rx;
+
+   if(_ry < 0.0f)
+      _ry = -_ry;
+
+   float lx = _px;
+   float ly = _py;
+
+   if(_rx > 0.0f && _ry > 0.0f)
+   {
+      // correct out of range radii
+      float bx = (_px - _qx) * 0.5f;
+      float by = (_py - _qy) * 0.5f;
+
+      float lambda = (bx*bx) / (_rx*_rx) + (by*by) / (_ry*_ry);
+      if(b_debug) trace "xxx tesselateArc: lambda="+lambda+" r=("+_rx+";"+_ry+")";
+      float pxd;
+      float pyd;
+      float cxd;
+      float cyd;
+      float cx;
+      float cy;
+      float prx;  // relative to center
+      float pry;
+      float qrx;
+      float qry;
+      float angP;
+      float angQ;
+
+      if(lambda > 1.0f)
+      {
+         // radii are smaller than distance between start/end points => start/end angles are opposite from each other
+         //  - largeArcFlag has no effect
+         //  - ellipse center is halfway between start/end
+         lambda = sqrt(lambda);
+         _rx *= lambda;
+         _ry *= lambda;
+         if(b_debug) trace "xxx tesselateArc: => fixed lambda="+lambda+" new r=("+_rx+";"+_ry+")";
+      }
+
+      dbg_rx = _rx;
+      dbg_ry = _ry;
+
+      // compute (x1',y1')
+      //  (todo) rotation
+      pxd = (_px - _qx) * 0.5f;  // x1'  == bx
+      pyd = (_py - _qy) * 0.5f;  // y1'
+
+      // compute (cx',cy')
+      float rxs = _rx * _rx;
+      float rys = _ry * _ry;
+      float pxds = pxd * pxd;
+      float pyds = pyd * pyd;
+      float cfac = sqrt( (rxs*rys - rxs*pyds - rys*pxds) / (rxs*pyds + rys*pxds) );  // +-
+      if(_bLargeArcFlag == _bSweepFlag ^ _bForceNeg)
+         cfac = -cfac;
+      cxd = (cfac *  (_rx * pyd)) / _ry;
+      cyd = (cfac * -(_ry * pxd)) / _rx;
+
+      // compute (cx,cy)
+      //  (todo) rotation
+      cx = cxd + (_px + _qx)*0.5;
+      cy = cyd + (_py + _qy)*0.5;
+
+      if(_bForceNeg)
+      {
+         dbg_cx_neg = cx;
+         dbg_cy_neg = cy;
+      }
+      else
+      {
+         dbg_cx = cx;
+         dbg_cy = cy;
+      }
+
+      if(1)
+      {
+         if(b_debug) trace "xxx tesselateArc: dist p-c="+sqrt( (_px-cx)*(_px-cx) + (_py-cy)*(_py-cy) );
+      }
+         
+      // calc start / end angles
+      prx = (_px - cx) / _rx;  // relative to center + normalize
+      pry = (_py - cy) / _ry;
+      angP = (prx > 1.0f) ? 0.0f : acos(prx);  // >1 workaround for micro-overflows (which would result in NaN)
+      if(pry < 0.0f)
+         angP = 2PI - angP;
+
+      qrx = (_qx - cx) / _rx;
+      qry = (_qy - cy) / _ry;
+      angQ = (qrx > 1.0f) ? 0.0f : acos(qrx);
+      // trace "xxx 1 qrx="+qrx+" angQ="+angQ+" (qrx>1.0)="+(qrx>1.0f);
+      if(qry < 0.0f)
+         angQ = 2PI - angQ;
+
+      dbg_ang_p = angP;
+      dbg_ang_q = angQ;
+
+      if(b_debug) trace "xxx tesselateArc: p=("+_px+";"+_py+") q=("+_qx+";"+_qy+")  => c=("+cx+";"+cy+")  pr=("+prx+";"+pry+")  qr=("+qrx+";"+qry+")  angP="+(angP*(360/2PI))+"  angQ="+(angQ*(360/2PI));
+
+      float w;
+      float aDelta;
+
+      if(angP > angQ)
+      {
+         if(b_debug) trace "xxx tesselateArc: angP > angQ";
+         if(lambda < 1.0f)
+         {
+            if( (angP - angQ) >= PI )
+            {
+               if(_bLargeArcFlag)
+                  aDelta = angQ - angP;
+               else
+               {
+                  angP -= 2PI;
+                  aDelta = angQ - angP;
+               }
+            }
+            else
+            {
+               if(_bLargeArcFlag)
+                  aDelta = angQ + 2PI - angP;
+               else
+                  aDelta = angQ - angP;
+            }
+         }
+         else
+         {
+            if(_bLargeArcFlag)
+               aDelta = angP - angQ;
+            else
+               aDelta = angQ - angP;
+            if(_bSweepFlag != _bLargeArcFlag)
+               aDelta = -aDelta;
+         }
+      }
+      else
+      {
+         if(b_debug) trace "xxx tesselateArc: angP <= angQ";
+         if(lambda < 1.0f)
+         {
+            if( (angQ - angP) >= PI)
+            {
+               if(_bLargeArcFlag)
+                  aDelta = angQ - angP;
+               else
+               {
+                  angQ -= 2PI;
+                  aDelta = angQ - angP;
+               }
+            }
+            else
+            {
+               if(_bLargeArcFlag)
+                  aDelta = angQ - angP - 2PI;
+               else
+                  aDelta = angQ - angP;
+            }
+         }
+         else
+         {
+            if(_bLargeArcFlag)
+               aDelta = angQ - angP;
+            else
+               aDelta = angP - angQ;
+            if(_bSweepFlag != _bLargeArcFlag)
+               aDelta = -aDelta;
+         }
+      }
+
+      w = aDelta / ARC_NUM_SUBDIV;
+
+      if(b_debug) trace "xxx tesselateArc: interp  angP="+(angP*(360/2PI))+"  angQ="+(angQ*(360/2PI))+"  aDelta="+(aDelta*(360/2PI))+"  w="+(w*(360/2PI));
+      
+      // // if( ((_bLargeArcFlag != _bSweepFlag) ^ _bLargeArcFlag) ^ bFlip )
+      // // {
+      // //    w = (angQ + 2PI - angP) / ARC_NUM_SUBDIV;
+      // //    // w = (angQ - angP) / ARC_NUM_SUBDIV;
+      // //    trace "xxx w="+w;
+      // // }
+      // // else
+      // // {
+      // //    w = (angQ - angP) / ARC_NUM_SUBDIV;
+      // // }
+
+      float a = angP + w;
+
+      loop(ARC_NUM_SUBDIV - 1)
+      {
+         float x = cos(a) * _rx + cx;
+         float y = sin(a) * _ry + cy;
+
+         if( sqrt( (x-lx)*(x-lx) + (y-ly)*(y-ly) ) >= ARC_DIST_THRESHOLD )
+         {
+            points.add2(x, y);
+            lx = x;
+            ly = y;
+         }
+         a += w;
+      }
+
+      points.add(_qx);
+      points.add(_qy);
+   }
+   else
+   {
+      // straight line
+      points.add(_qx);
+      points.add(_qy);
+   }
+}
+
+function DrawEllipse(float cx, float cy, float rx, float ry, int numSeg, int c32) {
+   float w = (2PI / numSeg);
+   float a = 0;
+   glLineWidth(1.5f);
+   zglColorARGB(c32);
+   glBegin(GL_LINE_LOOP);
+   loop(numSeg)
+   {
+      float x = cos(a) * rx + cx;
+      float y = sin(a) * ry + cy;
+      glVertex2f(x, y);
+      a += w;
+   }
+   glEnd();
+}
+
+function DrawAngles() {
+   glLineWidth(1.5f);
+   glBegin(GL_LINES);
+
+   zglColorARGB(#ffcf5555);
+   float x = cos(dbg_ang_p) * dbg_rx + dbg_cx;
+   float y = sin(dbg_ang_p) * dbg_ry + dbg_cy;
+   glVertex2f(dbg_cx, dbg_cy);
+   glVertex2f(x, y);
+
+   zglColorARGB(#ff55cf55);
+   x = cos(dbg_ang_q) * dbg_rx + dbg_cx;
+   y = sin(dbg_ang_q) * dbg_ry + dbg_cy;
+   glVertex2f(dbg_cx, dbg_cy);
+   glVertex2f(x, y);
+
+   glEnd();   
+}
+
+function DrawArcLines() {
+   glLineWidth(3.0f);
+   zglColorARGB(#fff4fff4);
+   float lx = points.get(0);
+   float ly = points.get(1);
+   int idx = 2;
+   glBegin(GL_LINES);
+   loop(points.numElements/2 -1)
+   {
+      float cx = points.get(idx++);
+      float cy = points.get(idx++);
+      glVertex2f(lx, ly);
+      glVertex2f(cx, cy);
+      lx = cx;
+      ly = cy;
+   }
+   glEnd();
+}
+
+function DrawStartEndCenterPoints() {
+   glPointSize(9.5f);
+   glBegin(GL_POINTS);
+   zglColorARGB(#ffff7777);
+   glVertex2f(g_p1x, g_p1y);
+   zglColorARGB(#ff77ff77);
+   glVertex2f(g_p2x, g_p2y);
+   zglColorARGB(#ffffff77);
+   glVertex2f(dbg_cx, dbg_cy);
+   glEnd();
+}
+
+function onDraw() {
+   if(b_debug) trace "----------------------------------------------------";
+   float dt = FPS.precision;
+   glClearColor(0,0,0.2,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInit2D(Viewport.width, Viewport.height);
+
+   glHint(GL_POINT_SMOOTH_HINT, GL_NICEST);
+   glEnable(GL_POINT_SMOOTH);
+
+   glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+   glEnable(GL_LINE_SMOOTH);
+
+   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+   glEnable(GL_BLEND);
+
+   points.empty();
+   points.add2(g_p1x, g_p1y);
+
+   tesselateArc(g_p1x, g_p1y,
+                g_rx, g_ry,
+                0/*rot*/,
+                g_b_large,
+                g_b_sweep,
+                g_p2x, g_p2y,
+                true/*bForceNeg*/
+                );
+
+   points.empty();
+   points.add2(g_p1x, g_p1y);
+
+   tesselateArc(g_p1x, g_p1y,
+                g_rx, g_ry,
+                0/*rot*/,
+                g_b_large,
+                g_b_sweep,
+                g_p2x, g_p2y,
+                false/*bForceNeg*/
+                );
+
+   if(points.numElements/2 != last_num_points)
+   {
+      last_num_points = points.numElements/2;
+      trace "[...] #points="+last_num_points;
+   }
+
+   // trace "xxx points="+points.string2;
+
+   DrawEllipse(dbg_cx_neg, dbg_cy_neg, dbg_rx, dbg_ry, 64, #ff606060);  // 'other' ellipse
+   DrawEllipse(dbg_cx, dbg_cy, dbg_rx, dbg_ry, 64, #ff808080);
+
+   DrawAngles();
+
+   DrawArcLines();
+
+   DrawStartEndCenterPoints();
+}
+
+function UpdateCaption() {
+   String s <= "M "+g_p1x+" "+g_p1y+" A "+g_rx+" "+g_ry+" 0 "+g_b_large+" "+g_b_sweep+" "+g_p2x+" "+g_p2y;
+   Viewport.caption = s;
+   trace s;
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   if(b_debug) trace "[...] onMouse: x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   if(_cbs & 2)
+   {
+      // RMB: move start
+      g_p1x = _x;
+      g_p1y = _y;
+      UpdateCaption();
+   }
+   else if(_cbs & 1)
+   {
+      // LMB: move end
+      g_p2x = _x;
+      g_p2y = _y;
+      UpdateCaption();
+   }
+}
+
+function onKeyboard(Key _k) {
+   if(b_debug) trace "[...] onKeyboard: k.code="+_k.code+" ("+TKS.constantToString(_k.code, "VKEY_")+") mod="+_k.mod+" pressed="+_k.pressed+" released="+_k.released+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case 's':
+         g_b_sweep = !g_b_sweep;
+         trace "[...] sweep is "+g_b_sweep;
+         UpdateCaption();
+         break;
+
+      case 'w':
+         g_b_large = !g_b_large;
+         trace "[...] large is "+g_b_large;
+         UpdateCaption();
+         break;
+   }
+}
+
+function main() {
+   use callbacks;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   Viewport.openWindow(1024, 1024);
+   Viewport.swapInterval(1);
+   UpdateCaption();
+
+   CenterAndScale(1);
+
+   SDL.enableUNICODE(true);
+   SDL.enableKeyRepeat(0,0);
+
+   SDL.eventLoop();
+}

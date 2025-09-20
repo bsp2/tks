@@ -1,0 +1,215 @@
+
+use tksdl;
+use tkopengl;
+
+int numframesrendered=0;
+
+// function Bezier(float t, float p1x, float p2x, float p2x, float p2y, float p3x, float p3y) {
+//    float t12x = p1x + (p2x - p1x) * t;
+//    float t12y = p1y + (p2y - p1y) * t;
+//    float t23x = p2x + (p3x - p2x) * t;
+//    float t23y = p2y + (p3y - p2y) * t;
+//    float tx = t12x + (t23x - t12x) * t;
+//    float ty = t12y + (t23y - t12y) * t;
+// }
+
+FloatArray lut;
+lut.allocAndFill(32*32*256, -9999);  // 1MB
+
+function DrawCurve_orig(float _c) {
+   int num = 256;
+   float x = 0.0f;
+   float xStep = 1.0f / num;
+   // glBegin(GL_LINES);
+   glBegin(GL_POINTS);
+   float lx = 0;
+   float ly = 1;
+   float p1x = 0;
+   float p1y = 0;
+   float p2x = 0.5 + _c*0.5;
+   float p2y = 0.5 - _c*0.5;
+   float p3x = 1;
+   float p3y = 1;
+   loop(num + 1)
+   {
+      // float t = mathPowerf(x, 1.5);
+      // float y = 1.0f - mathLogLinExpf(t, _c);
+
+      float t = x;
+      float t12x = p1x + (p2x - p1x) * t;
+      float t12y = p1y + (p2y - p1y) * t;
+      float t23x = p2x + (p3x - p2x) * t;
+      float t23y = p2y + (p3y - p2y) * t;
+      float tx = t12x + (t23x - t12x) * t;
+      float ty = t12y + (t23y - t12y) * t;
+      // glVertex2f(lx, ly);
+      glVertex2f(tx, 1.0 - ty);
+      lx = tx;
+      ly = ty;
+      x += xStep;
+   }
+   glEnd();
+}
+
+function CalcLUT(float _c, int _off) {
+   int num = 256;
+   float x = 0.0f;
+   float xStep = 1.0f / (num-1);
+   float p1x = 0;
+   float p1y = 0;
+   float p2x = 0.5 + _c*0.5;
+   float p2y = 0.5 - _c*0.5;
+   float p3x = 1;
+   float p3y = 1;
+   loop(num)
+   {
+      float t = x;
+      float t12x = p1x + (p2x - p1x) * t;
+      float t12y = p1y + (p2y - p1y) * t;
+      float t23x = p2x + (p3x - p2x) * t;
+      float t23y = p2y + (p3y - p2y) * t;
+      float tx = t12x + (t23x - t12x) * t;
+      float ty = t12y + (t23y - t12y) * t;
+      int i = (tx * 255);
+      // trace "t="+t+" i="+i+" ty="+ty;
+      if(i > 255)
+         die "oob";
+      lut[_off + i] = ty;
+      x += xStep;
+   }
+
+   int j = 0;
+   loop(256)
+   {
+      if( (_off+j) < -99)
+         die "off="+_off+" j="+j+" not initialized";
+      j++;
+   }
+}
+
+function DrawLUT(int _off) {
+   int num = 256;
+   float x = 0.0f;
+   float xStep = 1.0f / (num-1);
+   // glBegin(GL_LINES);
+   glBegin(GL_POINTS);
+   loop(num)
+   {
+      float y = lut[_off + int(x * 255)];
+      glVertex2f(x, 1.0 - y);
+      x += xStep;
+   }
+   glEnd();
+}
+
+function SaveScreenShotPNG(String _pathName) : boolean {
+   local Texture tex;
+   boolean ret = false;
+   if(tex.alloc(Viewport.width, Viewport.height, 4))
+   {
+      glReadBuffer(GL_BACK);
+      int off = 0;
+      int y = Viewport.height - 1;
+      loop(Viewport.height)
+      {
+         zglReadColorPixelsX(tex, off, 0/*x*/, y, Viewport.width);
+         y--;
+         off += Viewport.width;
+      }
+      ret = tex.saveImage(_pathName);
+   }
+   return ret;
+}
+
+function onDraw() {
+
+   float dt=FPS.precision;
+   glClearColor(0,0,0.0,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   float c = -1.0f;
+   float cStep = 2.0f / (32*32);
+   int iy = 0;
+   int idx = 0;
+   int off = 0;
+   loop(Viewport.height/32)
+   {
+      int ix = 0;
+      loop(Viewport.width/32)
+      {
+         glViewport(ix+1, iy+1, 32-2, 32-2);  // leave space for bilinear filter
+         if(idx & 1)
+            zglColorARGB(#aaaaaaaa);
+         else
+            zglColorARGB(#ffffffff);
+         zglInit2D(1, 1);
+         if(1 == numframesrendered)
+            CalcLUT(c, off);
+         DrawLUT(off);
+         c += cStep;
+         ix += 32;
+         // idx++;
+         off += 256;
+      }
+      iy += 32;
+   }
+
+   if(1 == numframesrendered)
+      SaveScreenShotPNG("mm_curves-1024x1024.png");
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   // trace "xxx onKeyboard: k.code="+_k.code+" mod="+_k.mod+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+int tim_count = 0;
+function onTimer() {
+   // trace "xxx onTimer";
+   // if(++tim_count > 100)
+   //    SDL.exitEventLoop();
+}
+
+function main() {
+   use callbacks;
+
+   FPS.tickInterval=1000.0/60;
+   //FPS.limit=30;
+   FPS.limit=60;
+
+   SDL.eventPolling = false; // tksdl default is "true" (do not block while waiting for an SDL event)
+   SDL.timerInterval = 20;
+
+   SDL.dpiAwareness = true;  // no OS scaling
+   // SDL.dpiAwareness = false;  // assume 96dpi and let OS scale window to actual DPI
+
+   // SDL.touchInput = true;  // enable WM_POINTER* messages
+
+   Viewport.multisampleSamples = 4;
+   Viewport.multisampleBuffers = 1;
+   // Viewport.stencilBits = 8;
+   Viewport.openWindow(1024, 1024);
+   //Viewport.openScreen(640, 480, 32);
+   //Viewport.swapInterval(1);
+
+   SDL.enableUNICODE(true);
+
+   trace "xxx Viewport.dpi="+Viewport.dpi;
+   trace "xxx entering eventloop";
+
+   SDL.eventLoop();
+}

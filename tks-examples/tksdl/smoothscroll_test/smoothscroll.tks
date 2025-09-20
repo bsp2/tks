@@ -1,0 +1,164 @@
+
+use tksdl;
+use tkopengl;
+
+
+int numframesrendered=0;
+
+int viewport_height, viewport_width;
+
+class Scrolly {
+
+   define int CHAR_SX = 8;
+   define int CHAR_SY = 16;
+
+   static String scroll_text = ".....this is a simple test application that was written to test vsync\'d smooth scrolling. I hope this will work fine without any judder with the s-video input of my new TFT monitor... scrolly wraps......";
+   
+   int scroll_color;
+   int scroll_off;
+   int scroll_count;
+   int scroll_speed;
+
+   static Texture tex;
+
+   public static LoadTexture() {
+      tex.loadImage("font.png", 0,0,0);
+      tex.flags = TEX_MODULATE | TEX_ALPHA;
+      tex.expand2n();
+      tex.upload();
+   }
+
+   public method init(int _color, int _speed) {
+      scroll_color = _color;
+      scroll_off = 0;
+      scroll_count = 0;
+      scroll_speed = _speed;
+   }
+
+   public method render(float _y) compile {
+      int off = scroll_off;
+      int cx = -scroll_count;
+      float uvCharWidth = float(CHAR_SX) / tex.sx;
+      float uvCharHeight = float(CHAR_SY) / tex.sy;
+      
+      glEnable(GL_TEXTURE_2D);
+      
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+      
+      zglColorARGB(scroll_color);
+      
+      glBegin(GL_QUADS);
+      while(cx < viewport_width)
+      {
+         char c = scroll_text[off % (scroll_text.length-1) ];
+         
+         if(c > ' ')
+         {
+            float ul = (c-33)*float(CHAR_SX) / tex.sx;
+            glTexCoord2f(ul, 0);
+            glVertex2f(cx, _y);
+            glTexCoord2f(ul+uvCharWidth, 0);
+            glVertex2f(cx+CHAR_SX, _y);
+            glTexCoord2f(ul+uvCharWidth, uvCharHeight);
+            glVertex2f(cx+CHAR_SX, _y+CHAR_SY);
+            glTexCoord2f(ul, uvCharHeight);
+            glVertex2f(cx, _y+CHAR_SY);
+         }
+         
+         cx += 8;
+         off ++;
+         
+      }
+      glEnd();
+      
+      glDisable(GL_BLEND);
+      glDisable(GL_TEXTURE_2D);
+   }
+
+   public method tick() {
+      scroll_count += scroll_speed;
+      if(CHAR_SX == scroll_count)
+      {
+         scroll_count -= CHAR_SX;
+         scroll_off ++;
+         if(scroll_off >= scroll_text.length-1)
+         {
+            scroll_off = 0;
+         }
+      }
+   }
+}
+
+#define NUM_SCROLLIES 30 //(480/16)
+Scrolly scrollies[NUM_SCROLLIES];
+
+
+
+function onDraw() {
+   float dt = FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT);
+   
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+   
+   zglInit2D(viewport_width, viewport_height);
+   glLoadIdentity();
+   //glTranslatef(0.375, 0.375, 0);
+   
+   float cy = 0;
+   Scrolly s;
+   foreach s in scrollies {
+      s.render(cy);
+      cy += Scrolly.CHAR_SY;
+      s.tick();
+   }
+   
+   // Note: calling DirectX vsync with NVidia Geforce 6200
+   //       causes CPU time usage of 100% :S (vsync force off enabled in control panel)
+   //       If vsync "Use the 3D application setting" is enabled in the NVidia control
+   //       panel, CPU usage goes back to ~10%.. WTF ?!
+   //       (tested with secondary TV Out (S-VHS) enabled)
+   //Viewport.waitVBlank();
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onOpen() {
+
+   viewport_width = Viewport.width;
+   viewport_height = Viewport.height;
+
+   Scrolly.LoadTexture();
+}
+
+function main() {
+   use callbacks;
+
+   
+   srand(0x44894489);
+   Scrolly s;
+   scrollies.numElements = scrollies.maxElements;
+   foreach s in scrollies {
+       s.init( argb(255, rand(255), rand(255), rand(255)), (1<<rand(3)) );
+   }
+
+   FPS.tickInterval=1000.0/60;
+   FPS.limit=60;
+
+   Viewport.openWindow(640, 480);
+   //Viewport.openScreen(1920, 1200, 32);
+
+   Viewport.swapInterval(1);
+   
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}

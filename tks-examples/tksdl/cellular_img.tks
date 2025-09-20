@@ -1,0 +1,232 @@
+
+// adapted from <http://iquilezles.org/www/articles/cellularffx/cellularffx.htm>
+//
+//  quote: "The idea is very imaginative, but also very simple: use the zbuffer of the graphics card to track the closest distance from any pixel to any of the features. Each feature expands a distance field around it."
+
+
+use tksdl;
+use tkopengl;
+
+int numframesrendered=0;
+float time;
+boolean b_zbuf = true;
+
+Texture img;
+img.loadImage("escher.png", 512, 512, 4);
+
+int numCells;
+int cellScl = 1;
+SetNumCells(8000);
+
+boolean b_anim = false;
+boolean b_bilinear = true;
+
+function renderCellularEffect(float time)
+{
+   if(b_zbuf)
+   {
+      glEnable(GL_DEPTH_TEST);
+   }
+   else
+   {
+      glDisable(GL_DEPTH_TEST);
+   }
+
+   glShadeModel(GL_SMOOTH);
+   glDepthFunc(GL_LEQUAL);
+   //glShadeModel(GL_FLAT);
+
+   int numSeg = 6 + (513000.0/numCells)/8;
+   float angScl = 2PI / (numSeg-1);
+
+
+   // render the cells
+   srand(0x12345678);
+   int j;
+   compile for( j=0; j < numCells; j++ )
+   {
+      // move the cell on the screen
+      float x = cos( rand(PI) + rand(time) );
+      float y = cos( rand(PI) + rand(time) );
+      
+      // render cone (can be optimized of course)
+      glBegin( GL_TRIANGLE_FAN );
+      float r,g,b;
+      int u = ((-x+1)*255);
+      int v = (( y+1)*255);
+      
+      int c32lt = img.getXY32( u, v );
+      float rlt = ((c32lt>>16) &255) * (1.0f / 255);
+      float glt = ((c32lt>> 8) &255) * (1.0f / 255);
+      float blt = ((c32lt    ) &255) * (1.0f / 255);
+
+      if(b_bilinear)
+      {
+         int c32rt = img.getXY32( u+1, v );
+         float rrt = ((c32rt>>16) &255) * (1.0f / 255);
+         float grt = ((c32rt>> 8) &255) * (1.0f / 255);
+         float brt = ((c32rt    ) &255) * (1.0f / 255);
+         
+         int c32rb = img.getXY32( u+1, v+1 );
+         float rrb = ((c32rb>>16) &255) * (1.0f / 255);
+         float grb = ((c32rb>> 8) &255) * (1.0f / 255);
+         float brb = ((c32rb    ) &255) * (1.0f / 255);
+         
+         int c32lb = img.getXY32( u, v+1 );
+         float rlb = ((c32lb>>16) &255) * (1.0f / 255);
+         float glb = ((c32lb>> 8) &255) * (1.0f / 255);
+         float blb = ((c32lb    ) &255) * (1.0f / 255);
+         
+         float frx = frac(x);
+         float fry = frac(y);
+         
+         // smoothstep
+         frx = frx*frx * (3.0f - 2.0f * frx);
+         fry = fry*fry * (3.0f - 2.0f * fry);
+         
+         // lerp top
+         float rt, gt, bt;
+         rt = rrt * frx + rlt * (1.0 - frx);
+         gt = grt * frx + glt * (1.0 - frx);
+         bt = brt * frx + blt * (1.0 - frx);
+      
+         // lerp bottom
+         float rb, gb, bb;
+         rb = rrb * frx + rlb * (1.0 - frx);
+         gb = grb * frx + glb * (1.0 - frx);
+         bb = brb * frx + blb * (1.0 - frx);
+      
+         r = rt * (1.0 - fry) + rb * fry;
+         g = gt * (1.0 - fry) + gb * fry;
+         b = bt * (1.0 - fry) + bb * fry;
+      }
+      else
+      {
+         r = rlt;
+         g = glt;
+         b = blt;
+      }
+      
+      
+      glColor4f(r, g, b, 1.0);
+      
+      glVertex3f( x, y, 1.0f );
+      
+      glColor4f(r*0.5, g*0.5, b*0.5, 1.0);
+      int i;
+      float rx = cellScl * 0.1 * (0.25 + 0.15 * cos(rand(2PI*0.01*time)));
+      float ry = cellScl * 0.1 * (0.25 + 0.15 * cos(rand(2PI*0.01*time)));
+      for( i=0; i < numSeg; i++ )
+      {
+         float an = angScl * i;
+         glVertex3f( x + rx*cos(an), y + ry*sin(an), -1.0f );
+      }
+      glEnd();
+   }
+}
+
+
+function onDraw() {
+   float dt=FPS.precision;
+   glClearColor(0,0,0.2,1);
+   glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+   zglInitOrtho(-1,1);
+
+   renderCellularEffect(time);
+
+   if(b_anim)
+   {
+      time += 0.001 * dt;
+   }
+
+}
+
+function ToggleZBuf() {
+   b_zbuf = !b_zbuf;
+   trace "[...] b_zbuf is now "+ b_zbuf;
+}
+
+
+function SetNumCells(int _num) {
+   numCells = _num;
+   cellScl = 513000 / numCells;
+   trace "[...] numCells is now "+numCells+" cellScl="+cellScl;
+}
+
+function DoubleNumCells() {
+   if(numCells < 257000)
+   {
+      SetNumCells(numCells * 2);
+   }
+}
+
+function HalfNumCells() {
+   if(numCells > 10)
+   {
+      SetNumCells(numCells / 2);
+   }
+}
+
+function ToggleAnimation() {
+   b_anim = ! b_anim;
+   trace "[...] b_anim is now "+b_anim;
+}
+
+function ToggleBilinearFilter() {
+   b_bilinear = ! b_bilinear;
+   trace "[...] b_bilinear is now "+b_bilinear;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         ToggleZBuf();
+         break;
+
+      case 'a':
+         ToggleAnimation();
+         break;
+
+      case 'b':
+         ToggleBilinearFilter();
+         break;
+
+      case VKEY_UP:
+         DoubleNumCells();
+         break;
+
+      case VKEY_DOWN:
+         HalfNumCells();
+         break;
+   }
+}
+
+function main() {
+   trace "[...] ";
+   trace "[...] ESCAPE - exit";
+   trace "[...]      a - toggle animation";
+   trace "[...]      b - toggle bilinear filtering";
+   trace "[...]  SPACE - toggle z-buffer";
+   trace "[...]     UP - increase #cells";
+   trace "[...]   DOWN - decrease #cells";
+   trace "[...] ";
+
+   Viewport.multisampleSamples = 2;
+   Viewport.multisampleBuffers = 1;
+   //Viewport.openWindow(640, 480);
+   Viewport.openWindow(498, 365);
+   use callbacks;
+   //Viewport.swapInterval(1);
+   FPS.tickInterval=1000.0/60;
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}
+
+

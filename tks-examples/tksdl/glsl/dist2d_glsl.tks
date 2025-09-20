@@ -1,0 +1,200 @@
+
+//
+// A GLSL / OpenGL 3.x version of the "dist2d.tks" software rendering example
+//  (c) 2011-12-29 by Bastian Spiegel
+//
+
+use tksdl;
+use tkopengl;
+
+int numframesrendered;
+
+float t;
+
+class Dist2d_GLSL {
+   FloatArray attractors;
+   FloatArray attractor_rotations;
+
+   define int NUM_ATTRACTORS = 8;
+
+   // (note) ftransform() is deprecated after version 1.20 but I'm just too lazy right now to set up my own matrices ;)
+   String vert_src = "void main() { gl_Position = ftransform(); }";
+
+   String frag_src;
+
+   int program;
+   int vert;
+   int frag;
+   int uni_viewport_sx;
+   int uni_viewport_sy;
+   IntArray uni_attractors;
+
+
+   public method init() {
+      // center points
+      attractors.alloc(NUM_ATTRACTORS * 2);
+      loop(NUM_ATTRACTORS)
+      {
+         attractors.add(0.5);
+         attractors.add(0.5);
+      }
+
+      // rotations
+      attractor_rotations.alloc(NUM_ATTRACTORS * 4);
+      loop(NUM_ATTRACTORS)
+      {
+         attractor_rotations.add(0);
+         attractor_rotations.add(rnd(0.0123123)+0.0123123);
+
+         attractor_rotations.add(0);
+         attractor_rotations.add(rnd(0.0234234) + 0.0123123);
+      }
+
+      // Load fragment shader source
+      frag_src.load("dist2d_glsl.frag", true);
+   }
+
+   public method onOpen() {
+      String log;
+
+      program = glCreateProgram();
+
+      vert = glCreateShader(GL_VERTEX_SHADER);
+      zglShaderSource(vert, vert_src);
+      glCompileShader(vert);
+      glGetShaderInfoLog(vert, log);
+      trace "[...] vertex shader log=\""+log+"\".";
+      glAttachShader(program, vert);
+
+      frag = glCreateShader(GL_FRAGMENT_SHADER);
+      zglShaderSource(frag, frag_src);
+      glCompileShader(frag);
+      glGetShaderInfoLog(frag, log);
+      trace "[...] fragment shader log=\""+log+"\".";
+      glAttachShader(program, frag);
+
+      if(0) glBindFragDataLocation(program, 0, "fragColor");
+
+      glLinkProgram(program);
+
+      glGetProgramInfoLog(program, log);
+      trace "[...] program log=\""+log+"\".";
+
+      glUseProgram(program);
+      uni_viewport_sx = glGetUniformLocation(program, "viewport_sx");
+      uni_viewport_sy = glGetUniformLocation(program, "viewport_sy");
+      glUniform1f(uni_viewport_sx, Viewport.width);
+      glUniform1f(uni_viewport_sy, Viewport.height);
+
+      int k = 0;
+      uni_attractors.empty();
+      loop(NUM_ATTRACTORS*2)
+      {
+         int loc = glGetUniformLocation(program, "attractors["+k+"]");
+         uni_attractors.add(loc);
+         k++;
+      }
+   }
+
+   public method draw(float dt) {
+      glColor3f(0.9,0.9,0.9);
+
+      glUseProgram(program);
+
+      // Update attractor position uniforms
+      int k = 0;
+      loop(NUM_ATTRACTORS*2)
+      {
+         glUniform1f(uni_attractors[k], attractors[k]);
+         k++;
+      }
+
+      zglInitOrtho(-1,1);
+      glBegin(GL_QUADS);
+      glVertex2f(-1,-1);
+      glVertex2f( 1,-1);
+      glVertex2f( 1, 1);
+      glVertex2f(-1, 1);
+      glEnd();
+
+      glUseProgram(0);
+
+      // animate attractors
+      int i = 0;
+      int j = 0;
+      loop(NUM_ATTRACTORS)
+      {
+         float v = attractor_rotations[j];
+         v += attractor_rotations[j+1] * dt;
+         wrap v 0 2PI;
+         attractor_rotations[j] = v;
+         attractors[i] = 0.5 + sin(v) * 0.5;
+
+         v = attractor_rotations[j+2];
+         v += attractor_rotations[j+3] * dt;
+         wrap v 0 2PI;
+         attractor_rotations[j+2] = v;
+         attractors[i+1] = 0.5 + sin(v) * 0.5;
+
+         i += 2;
+         j += 4;
+      }
+   }
+
+}
+
+Dist2d_GLSL dist2d;
+
+
+function onDraw() {
+   float dt=FPS.precision;
+   // glClearColor(0,0,0.2,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   dist2d.draw(dt);
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   //print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onOpen() {
+
+   zglLoadExtensions();
+
+   dist2d.onOpen();
+}
+
+function main() {
+
+   use callbacks;
+
+   FPS.tickInterval=16;
+   FPS.limit=60;
+
+   dist2d.init();
+
+   Viewport.openWindow(640, 480);
+   //Viewport.openWindow(128, 128);
+
+   // Viewport.enableGLError = true;
+   Viewport.swapInterval(1);
+
+   trace "[...]                   GL_VENDOR = \"" + glGetString(GL_VENDOR) + "\"";
+   trace "[...]                  GL_VERSION = \"" + glGetString(GL_VERSION) + "\"";
+   trace "[...] GL_SHADING_LANGUAGE_VERSION = \"" + glGetString(GL_SHADING_LANGUAGE_VERSION) + "\"";
+
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}

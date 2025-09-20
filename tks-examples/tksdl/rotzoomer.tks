@@ -1,0 +1,165 @@
+//****************************
+// Retroto Zoomer
+// Copyright 2001
+// Tommi Laukkanen
+//****************************
+// 27062002 Bastian Spiegel <fli@tkscript.de> adapted for the tks language .
+// 30062002 <fli> added video output
+// 12072002 <fli> added asm implementation which seems to be about as fast as the compiled one ...
+// 25072003 <fli> fixed so it uses the tksdl plugin now
+// 21022008 added 'b' key + swapInterval 
+//
+
+// "tks rotzoomer 1"    to benchmark script engine (i.e. disable graphics output)
+
+module Main;
+
+use "tksdl";
+
+Texture tpix;
+Texture buffer;
+tpix.loadImage("gfx/src.png", 256, 256, 4);
+buffer.alloc(256, 512, 4);
+////buffer.copyRegion(tpix, ivector(0,0), ivector(256,256), ivector(0,0)); // copy to lower half of render image
+buffer.copyRegion(tpix, 0,0, 256,256, 0,0); // copy to lower half of render image
+tpix.freeImage();
+IntArray ibuffer;
+ibuffer.visitBytes(buffer, 0, 256*512*4); // req. for the JIT engine since the Texture class is now located in a plugin
+Texture tdest;
+////tdest.setScreenArea(buffer, ivector(0,256), ivector(256,256)); // the upper half of image is the actual render buffer
+tdest.setScreenArea(buffer, 0,256, 256,256); // the upper half of image is the actual render buffer
+tdest.flags=TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR;
+
+int forceint=0;
+boolean bvsync = 1;
+boolean bwaitvblank = 0;
+boolean bdrawpixels = false;
+float deltat=0.0;
+
+function onOpen() {
+   tdest.unload();
+   tdest.upload();
+   Debug.Init();
+}
+
+function render() compile {    
+   local int dx;
+   local int dy;
+   local int fx;
+   local int fy;
+   local int ffx;
+   local int ffy;
+   local int i;
+
+   // Calculate the zooming and rotating
+   dx=sin(deltat)*(550.0+(sin(deltat/3.0)*500.0));
+   dy=cos(deltat)*(550.0+(sin(deltat/3.0)*500.0));
+   fx=((128+(sin(deltat/4.0)*900.0))<<8)-128*dx-128*dy;
+   fy=((128+(cos(deltat/4.0)*300.0))<<8)-128*dy+128*dx;
+    
+   i=65536;  // the "tpix" buffer is part of the "buffer"
+   ibuffer[i]=0; // hints the jit to preload the array pointer
+   loop(256)
+      {
+         ffx = fx; ffy = fy;
+         loop(256)
+            {
+               fy+=dy; // JAVA :buffer[i++] = tpix[((fy+=dy)&0xff00)|(((fx+=dx)>>8)&0xff)];
+               fx+=dx;
+               ibuffer[i++]=ibuffer[(fy&$ff00)|((fx>>8)&$FF)];
+            }
+         fx = ffx + dy; fy = ffy - dx;
+      }
+}
+
+function onDraw() {
+   deltat+=0.03*FPS.precision;
+   render();
+   // ---- draw rotzoomer texture ----
+   zglInit2D(256, 256);
+   glClearColor(0,0,0,0);
+   glClear(GL_COLOR_BUFFER_BIT);
+   if(bdrawpixels)
+   {
+      // For some reason, this call causes a 100% CPU load with my NVidia 6200 card..
+      tdest.drawPixels2i(0, 255); 
+   }
+   else
+   {
+      // Render a textured quad
+      glEnable(GL_TEXTURE_2D);
+      tdest.bind();
+      tdest.update();
+      glBegin(GL_QUADS);
+      glTexCoord2f(0, 1);
+      glVertex2f(0, 0);
+      glTexCoord2f(1, 1);
+      glVertex2f(256, 0);
+      glTexCoord2f(1, 0);
+      glVertex2f(256, 256);
+      glTexCoord2f(0, 0);
+      glVertex2f(0, 256);
+      glEnd();
+      glDisable(GL_TEXTURE_2D);
+   }
+   Debug.Draw();
+   if(bwaitvblank) Viewport.waitVBlank();
+}
+
+function ToggleCompiler() {
+   forceint=1-forceint;
+   Configuration.forceInt=forceint;
+   trace "forceint="+forceint;
+   Debug.Init();
+}
+
+function ToggleVSync() {
+   bvsync = 1 - bvsync;
+   // Only call waitVBlank() when swap control extension is not available
+   bwaitvblank = ! Viewport.swapInterval(bvsync?1:0); 
+   trace "vsync set to "+bvsync+" , bwaitvblank is "+bwaitvblank;
+   Debug.Init();
+}
+
+function ToggleDrawPixels() {
+   bdrawpixels = ! bdrawpixels;
+   trace "image is now rendered using "+(bdrawpixels?"glDrawPixels()":"GL texturemapping");
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed) {
+      case VKEY_SPACE:  ToggleCompiler(); break;
+      case 'v':         ToggleVSync(); break;
+      case 'b':         ToggleDrawPixels(); break;
+      default:          Debug.OnKeyboard(_k); break;
+   }
+}
+
+function main() {
+   if(Arguments.numElements)
+	{
+      int l=SDL.ticks;
+      int i;
+      for(i=0; i<1000; i++)
+		{
+         render();
+         deltat+=0.03;
+		}
+      l=SDL.ticks-l;
+      trace("time="+l+"ms\n");
+      trace((1000.0/(l/1000.0))+"fps.");
+      exit(0);
+	}
+   else
+	{
+      use callbacks;
+
+      trace("\nkeys:\tspace\t: toggle JIT\n\t\tv\t: toggle waitVerticalBlank()\n\td\t: toggle FPS overlay\n\tlctrl-d\t: toggle console FPS output (more accurate)\n\tb\t: toggle glDrawPixels()/texture mapping\n\tesc\t: quit demo.\n\n");
+      FPS.tickInterval=1000.0/50;
+
+      Viewport.openWindow(256, 256);
+      Viewport.caption="rotzoomer by Tommi Laukkanen, adapted for tks by Bastian Spiegel| [escape] to exit";
+
+      SDL.eventLoop();
+	}
+}

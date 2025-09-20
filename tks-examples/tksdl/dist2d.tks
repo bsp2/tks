@@ -1,0 +1,172 @@
+
+// also see tkdist2d example plugin
+
+use tksdl;
+use tkopengl;
+
+float frot=0;
+int numframesrendered=0;
+
+
+class Dist2d {
+   Texture tex;
+   FloatArray attractors;
+   FloatArray attractor_rotations;
+
+   define int TEX_W = 128;
+   define int TEX_H = 128;
+   
+   define int NUM_ATTRACTORS = 8;
+
+   public method init() {
+      // center points
+      attractors.alloc(NUM_ATTRACTORS * 2);
+      loop(NUM_ATTRACTORS)
+      {
+         attractors.add(0.5);
+         attractors.add(0.5);
+      }
+
+      // rotations
+      attractor_rotations.alloc(NUM_ATTRACTORS * 4);
+      loop(NUM_ATTRACTORS)
+      {
+         attractor_rotations.add(0.0);
+         attractor_rotations.add(rnd(0.0123123)+0.0123123);
+         attractor_rotations.add(0.0);
+         attractor_rotations.add(rnd(0.0234234) + 0.0123123);
+      }
+
+   }
+
+   public method onOpen() {
+      tex.alloc(TEX_W, TEX_H, 4);
+      tex.unload();
+   }
+
+   public method updateTexture() {
+
+      Texture t <= tex;
+      FloatArray attr <= attractors;
+      int k = 0;
+      float cxStep = 1.0/TEX_W;
+      float cyStep = 1.0/TEX_H;
+      float cy = 0;
+
+      compile loop(TEX_H)
+      {
+         float cx = 0;
+         loop(TEX_W)
+         {
+            int i = 0;
+            float daccum = 0.0f;
+            loop(NUM_ATTRACTORS)
+            {
+               float dx = (cx - attr[i]);
+               float dy = (cy - attr[i+1]);
+               float d = 1.41 * sqrt(dx*dx + dy*dy);
+               d = mathSmoothStepf(0, 1, d);
+               daccum = (d+daccum);
+               i = i + 2;
+            }
+            int di = (int(daccum * 155) & 31) < 15 ? 255 : 0;
+            t[k++] = rgb(di,di,di);
+            cx += cxStep;
+         }
+         cy += cyStep;
+      }
+
+      t.update();
+
+   }
+
+   public method draw(float dt) {
+      glColor3f(0.9,0.9,0.9);
+      glEnable(GL_TEXTURE_2D);
+      tex.bind();
+      zglInitOrtho(-1,1);
+      glBegin(GL_QUADS);
+      glTexCoord2f(0, 0);
+      glVertex2f(-1,-1);
+      glTexCoord2f(1, 0);
+      glVertex2f( 1,-1);
+      glTexCoord2f(1, 1);
+      glVertex2f( 1, 1);
+      glTexCoord2f(0, 1);
+      glVertex2f(-1, 1);
+      glEnd();
+
+      // animate attractors
+      int i = 0;
+      int j = 0;
+      loop(NUM_ATTRACTORS)
+      {
+         float v = attractor_rotations[j];
+         v += attractor_rotations[j+1] * dt;
+         wrap v 0 2PI;
+         attractor_rotations[j] = v;
+         attractors[i] = 0.5 + sin(v) * 0.5;
+
+         v = attractor_rotations[j+2];
+         //trace v;
+         v += attractor_rotations[j+3] * dt;
+         wrap v 0 2PI;
+         attractor_rotations[j+2] = v;
+         attractors[i+1] = 0.5 + sin(v) * 0.5;
+
+         i += 2;
+         j += 4;
+      }
+   }
+
+}
+
+
+Dist2d dist2d;
+
+
+function onDraw() {
+
+    float dt=FPS.precision;
+    glClearColor(0,0,0.2,1);
+    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+    if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+    dist2d.updateTexture();
+    dist2d.draw(dt);
+
+    frot+=dt;
+    wrap frot 0 360;
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   //print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+}
+
+function onKeyboard(Key _k) {
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+   }
+}
+
+function onOpen() {
+   dist2d.onOpen();
+}
+
+function main() {
+
+   use callbacks;
+
+   dist2d.init();
+   
+   FPS.tickInterval=1000.0/60;
+
+   Viewport.openWindow(Dist2d.TEX_W, Dist2d.TEX_H);
+
+   trace "xxx entering eventloop";
+   SDL.eventLoop();
+}

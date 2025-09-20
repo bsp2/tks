@@ -1,0 +1,110 @@
+
+// $ tks sharedbuffer_ring_writer.tks & tks sharedbuffer_ring_reader.tks
+
+// (note)   macOS: numIter=750000 writeSz=137 checksum=15  writeOff=2086704 dt=5687  => 17644 kbytes/sec
+// (note)   Linux: numIter=750000 writeSz=137 checksum=180 writeOff=2086704 dt=19285 =>  5203 kbytes/sec
+// (note) Windows: numIter=750000 writeSz=137 checksum=219 writeOff=2086704 dt=17440 =>  5753 kbytes/sec
+
+// off 0: .b [config] benchmark flag
+// off 1: .b connection id (inc'd by writer)
+// off 2: .b connection id (inc'd by reader)
+// off 3: .b reserved
+// off 4: .i [config] num iterations
+// off 8: .i [config] writeSz
+//    16: .i write offset (updated by sharedbuffer_ring_writer.tks)
+//    20: .i read offset (updated by sharedbuffer_ring_reader.tks)
+//    24: .i write iter (debug)
+//    32: bytes[4*1024*1024]
+SharedBuffer sh;
+
+boolean bBenchmark = true;
+// boolean bBenchmark = false;
+
+int numIter  = 250000;
+int writeSz  = 137;
+// int writeSz  = 10 + rand(1000); //137;
+int dataSz   = 4*1024*1024;
+int maxAvail = 1*1024*1024;
+
+if(sh.allocSharedMemoryByKey("sharedbuffer_ring", 32+dataSz))
+{
+   trace "shared memory created.";
+
+   sh.fillZero();
+   sh.pokeI8(0, bBenchmark);
+   sh.pokeI32(4, numIter);
+   sh.pokeI32(8, writeSz);
+   sh.pokeI8(1, 0); // connIdW
+   sh.pokeI8(2, 127); // connIdR
+   
+   int t;
+   int dt;
+   int iter = 0;
+   t = milliSeconds();
+   int writeOff = 0;
+   int checksum = 0;
+   int lastConnId = 0;
+   for(;;)
+   {
+      byte connIdR = sh.peekI8(2/*connIdR*/);
+      if(lastConnId != connIdR)
+      {
+         // New client connection, reset ring buffer
+         lastConnId = connIdR;
+         writeOff = 0;
+         checksum = 0;
+         iter = 0;
+         sh.pokeI32(16/*writeOff*/, 0);
+         sh.pokeI32(20/*readOff*/, 0);
+         sh.pokeI8(1/*connIdW*/, lastConnId);
+      }
+
+      if(sh.peekI8(1/*connIdW*/) == sh.peekI8(2/*connIdR*/))
+      {
+         int readOff = sh.peekI32(20);
+         int numAvail = (writeOff - readOff);
+         if(numAvail < 0)
+            numAvail += dataSz;
+
+         if( (numAvail + writeSz) <= maxAvail )
+         {
+            // trace "xxx avail: "+numAvail+"/"+maxAvail+" iter="+iter+" writeOff="+writeOff+" readOff="+readOff;
+            loop(writeSz)
+            {
+               byte c = rand(255);
+               checksum += c;
+               sh.pokeI8(32 + writeOff++, c);
+               if(writeOff >= dataSz)
+                  writeOff = 0;
+            }
+            sh.pokeI32(16, writeOff);
+
+            // Next iteration
+            iter++;
+            sh.pokeI32(24, iter);
+            // trace "xxx store iter="+iter+" writeOff="+writeOff;
+            if(!bBenchmark)
+               TKS.sleep(10+rand(20));
+            else if(iter >= numIter)
+               break;
+         }
+      }
+   }
+
+   if(bBenchmark)
+   {
+      dt = (milliSeconds() - t);
+      int bytesPerSec = (numIter * (1000.0 / dt)) * writeSz;
+      trace "checksum="+(checksum&255)+" writeOff="+writeOff+" dt="+dt+" => "+bytesPerSec/1024+" kbytes/sec";
+   }
+
+   // Wait until reader is disconnected
+   while(sh.peekI8(1/*connIdW*/) == sh.peekI8(2/*connIdR*/))
+      TKS.sleep(1);
+
+   // for(;;)TKS.sleep(1000);
+}
+else
+{
+   die "failed to create shared memory.";
+}
