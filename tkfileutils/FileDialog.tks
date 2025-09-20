@@ -1,0 +1,762 @@
+// ----
+// ---- file   : FileDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2016 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : 
+// ----
+// ---- created: 11Jul2010
+// ----
+// ---- changed: 14Jul2010, 01Mar2011, 09Jan2012, 21Dec2012, 05Jun2013, 04Mar2015, 11Mar2016
+// ----
+// ----
+// ----
+
+module MFileDialog;
+
+namespace ui;
+use namespace st2;
+
+use tkfileutils;
+
+
+class FilesTMRecord {
+   String dir_name;
+   String file_name;
+   String file_size;
+   String file_date; // modification date
+}
+
+
+class FilesTM extends TreeTableModel {
+
+   define int COL_SIZE      = 0;
+   define int COL_DATE      = 1;
+
+   FileDialogForm *file_dialog;
+
+
+   public virtual getTreeNumColumns() : int {
+      return 2;
+   }
+   
+   public virtual getTreeColumnCaption(int _col) : String {
+      return ["Size", "Date"][_col];
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      return [100, 70, 94][_col];
+   }
+
+   public method getMaximumColumnWidth(int _col) : int {
+      return [4000, 70, 130][_col];
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      return [4000, 70, 130][_col];
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TreeTableModel::getCellRenderer(_col, _row, _visibleRow);
+      if(COL_SIZE == _col-1)
+      {
+         lb.setTextPlacement(Layout.RIGHT | Layout.CENTERY);
+         /////lb.ipad_r = lb.ipad_r + 2;
+      }
+      else
+      {
+         lb.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      }
+      return lb;
+   }
+
+   public getTreeCellCaption(Object _userData, int _col) : String {
+      ////trace "xxx getTreeCellCaption: _userData="+#(_userData)+" _col="+_col;
+      if(_userData instanceof FilesTMRecord)
+      {
+         FilesTMRecord fr <= _userData;
+         switch(_col)
+         {
+            case COL_SIZE:
+               return fr.file_size;
+            case COL_DATE:
+               return fr.file_date;
+         }
+      }
+      return "";
+   }
+ 
+   // public getTreeCellIcon(Object _userData, int _col) : Icon {
+      
+   //    // if(_userData == "penguin")
+   //    // {
+   //    //    if(COL_GENDER == _col)
+   //    //    {
+   //    //       return UI.GetIcon("penguin");
+   //    //    }
+   //    // }
+
+   //    return null;
+   // }
+
+   // public getTreeRowHeight(Object _userData) : int {
+   //    return default;
+   // }
+
+   public virtual handleFold(TreeTableNode tn) {
+      TreeTableModel::handleFold(tn);
+      file_dialog.redraw();
+   }
+
+   public method handleUnfold(TreeTableNode tn) {
+
+      TreeTableModel::handleUnfold(tn);
+
+      if(tn.user_data instanceof String)
+      {
+         float oldY = view_pixel_offset_y;
+
+         tn.removeAllRight();
+
+         String pathName <= tn.user_data;
+
+         addTreeFromPath(tn, pathName, false);
+
+         tableModelChanged();
+
+         file_dialog.tv_files.centerRow();
+
+         // trace "xxx oldY="+oldY+" newY="+view_pixel_offset_y;
+
+         // Never scroll up when expanding
+         if(view_pixel_offset_y > oldY)
+         {
+            // trace "xxx scroll back";
+            file_dialog.tv_files.scrollToPositionY(oldY);
+         }
+      }
+     
+   }
+
+   public method buildTreeFromPath(String _path) {
+
+      Icon iconOpen   <= UI.GetIcon("treeopen");
+      Icon iconClosed <= UI.GetIcon("treeclosed");
+      Icon iconLeaf   <= UI.GetIcon("treeleaf");
+
+      TreeTableNode tnRoot <= initRootNode(iconOpen, iconClosed, "root", null);
+      tnRoot.open();
+
+      addTreeFromPath(tnRoot, _path, true);
+
+      tableModelChanged();
+   }
+
+   public method addTreeFromPath(TreeTableNode tnRoot, String _path, boolean _bCreateParents) {
+
+      Icon iconOpen   <= UI.GetIcon("treeopen");
+      Icon iconClosed <= UI.GetIcon("treeclosed");
+      Icon iconLeaf   <= UI.GetIcon("treeleaf");
+
+      TreeTableNode tnp <= tnRoot;
+      TreeTableNode *tn;
+
+      String path;
+
+      if(!(_path & ":") && !_path.startsWith("/") && !((file_dialog.getProgramDirectory()).isBlank()))
+      {
+         path = file_dialog.getProgramDirectory() + "/" + _path;
+      }
+      else
+      {
+         path = _path;
+      }
+
+      // Split paths into directory components
+      StringArray dirs <= path.splitCharset(":/\\");
+
+      int dirIdx = 0;
+      int pathIdx = 0;
+      int nextPathIdx = -1;
+      String absDirName = "";
+      loop(dirs.numElements)
+      {
+         String dirName <= dirs[dirIdx];
+
+         if(("." != dirName) || (".." != dirName))
+         {
+            ////trace "xxx ["+dirIdx+"] dirName=\""+dirName+"\"";
+
+            absDirName.append(dirName);
+            if(0 == dirIdx)
+            {
+               if(-1 != path.indexOfChar(':', 0))
+               {
+                  absDirName.append(":");
+               }
+            }
+            absDirName.append("/");
+
+            if(_bCreateParents)
+            {
+               tn <= tnp.insertRight(iconOpen, iconClosed, dirName, Object(absDirName));
+               tn.setLeafNode(false);
+               tn.open();
+
+               // Set current directory node as new parent
+               tnp <= tn;
+            }
+
+            // Is last node before directory contents?
+
+            if(dirIdx == (dirs.numElements-1))
+            {
+               StringArray saRec <= tkfileutils_read_directory(path);
+               if(null != saRec)
+               {
+                  IntArray iaRecSort;
+                  saRec.sortByValue(iaRecSort, false);
+                  iaRecSort.reverse();
+
+                  ////trace "xxx iaRecSort="+#(iaRecSort);
+
+                  // directories should now be the first in the list (first column is type and 'd' comes before 'f')
+                  int fileIdx = 0;
+                  loop(iaRecSort.numElements)
+                  {
+                     String rawFileRecord <= saRec[iaRecSort[fileIdx]];
+
+                     int fnStartIdx = rawFileRecord.indexOf("\"", 0);
+                     int fnEndIdx   = rawFileRecord.lastIndexOf("\"");
+
+                     String fileName;
+                     rawFileRecord.substring(fnStartIdx+1, fnEndIdx - (fnStartIdx+1)) => fileName;
+
+                     if(("." != fileName) && (".." != fileName))
+                     {
+
+                        ////trace "xxx rawFileRecord="+rawFileRecord;
+                        ////trace "xxx   fileName="+fileName;
+
+                        if('d' == rawFileRecord.getc(0))
+                        {
+                           // Is directory
+                           String subDirName = absDirName;
+                           subDirName.append(fileName);
+                           subDirName.append("/");
+
+                           tn <= tnp.insertRight(iconOpen, iconClosed, fileName, Object(subDirName));
+                           tn.setLeafNode(false);
+                           ////trace "xxx directory node, tn="+#(tn)+" tn.parent="+#(tn.parent);
+                        }
+                        else
+                        {
+                           // Is regular file
+
+                           // Parse file size
+                           String sFileSize;
+                           int fsEndIdx = rawFileRecord.indexOfChar(' ', fnEndIdx+2);
+                           rawFileRecord.substring(fnEndIdx+2, fsEndIdx - (fnEndIdx+2)) => sFileSize;
+
+                           // Parse/Decode file modification date
+                           String sFileDate;
+                           rawFileRecord.substring(fsEndIdx+1, 99999) => sFileDate;
+
+                           FilesTMRecord ftmr <= new FilesTMRecord;
+                           ftmr.dir_name  = absDirName;
+                           ftmr.file_name = fileName;
+                           ftmr.file_size = sFileSize;
+                           ftmr.file_date = sFileDate;
+                           ////trace "xxx ftmr: absDirName="+ftmr.dir_name+" size="+ftmr.file_size+" date="+ftmr.file_date;
+                   
+                           tn <= tnp.insertRight(iconLeaf, null, fileName, deref ftmr);
+                           tn.setLeafNode(true);
+                        }
+                     }
+
+                     // Next file
+                     fileIdx++;
+                  }
+               }
+               else
+               {
+                  trace "[---] FileDialog::buildTreeFromPath: failed to read directory \""+path+"\".";
+               }
+               saRec <= null;
+            }
+
+         } // not "." or ".."
+
+         // Next directory
+         dirIdx++;
+      } // loop dirs
+
+   }
+
+} // end class FilesTM
+
+
+
+class FileDialogPlugin : Layer {
+
+   public abstract method resetFileDialogPlugin() {  }
+
+   public abstract method onFileDialogPreviewFile(String _dirName, String _fileName) { }
+   
+   public abstract method onFileDialogSelectFile(String _dirName, String _fileName) { }
+
+   public method preShow() { }
+
+   public method hide() { }
+
+}
+
+class FileDialogDefs {
+   define String ACTION_OK     = "FILEDIALOG_OK";
+   define String ACTION_CANCEL = "FILEDIALOG_CANCEL";
+}
+
+
+class FileDialogForm : XMLForm, ActionProvider, FileDialogDefs {
+
+   protected TextField *tf_rootpath;
+   module    TableView *tv_files;
+   protected CheckBox  *cb_hidefiles;
+   protected Panel     *pn_plugin;
+   // protected Button    *bt_ok;
+   // protected Button    *bt_cancel;
+
+   protected FilesTM *tm_files;
+
+   protected FileDialogPlugin *plugin;
+
+   protected boolean b_hide_after_selection;
+
+   protected String last_selected_dirname;
+   protected String last_selected_filename;
+   
+   protected ActionConsumer *recipient;
+
+   module FileDialog *parent_dialog; // handleFileDialogHide() 
+
+   public String program_directory; // to create absolute paths from relative paths
+
+
+   public method initFileDialogForm(FileDialog _parentDialog) : boolean {
+
+      parent_dialog <= _parentDialog;
+
+      if(initPakFile("FileDialog.xfm"))
+      {
+         // (todo) autoResolveIds()
+         tf_rootpath  <= findLayerById("tf_rootpath");
+         tv_files     <= findLayerById("tv_files");
+         cb_hidefiles <= findLayerById("cb_hidefiles");
+         pn_plugin    <= findLayerById("pn_plugin");
+
+         tm_files <= new FilesTM;
+         tm_files.initTableModel();
+         tm_files.file_dialog <= this;
+         tv_files.setTableModel(tm_files);
+
+         b_hide_after_selection = true;
+         
+         return true;
+      }
+      return false;
+   }
+
+   public method resetFileDialog(ActionConsumer _recipient) {
+      // (note) must be called before showing the dialog
+      recipient <= _recipient;
+
+      last_selected_dirname.empty();
+      last_selected_filename.empty();
+
+      if(null != plugin)
+      {
+         plugin.resetFileDialogPlugin();
+      }
+   }
+
+   public method setEnableHideAfterSelection(boolean _bHide) {
+      b_hide_after_selection = _bHide;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OK, ACTION_CANCEL];
+   }
+
+   public method rescanPath() {
+      tm_files.buildTreeFromPath(tf_rootpath.getText());
+      tv_files.redraw();
+   }
+
+   public method setPath(String _path) {
+
+      tf_rootpath.setText(_path);
+
+      rescanPath();
+   }
+
+   public method getPath() : String {
+      return tf_rootpath.getText();
+   }
+
+   public method setEnableHideFiles(boolean _bHide) {
+
+      if(_bHide != tm_files.b_hide_leaves)
+      {
+         int rowIdx = tm_files.getCursorIndex();
+         int newRowIdx = rowIdx;
+         if(-1 != rowIdx)
+         {
+            PointerArray flatNodes <= tm_files.flat_tree_nodes;
+
+            TreeTableNode *tn;
+            tn <= flatNodes.get(rowIdx);
+
+            if(null != tn)
+            {
+               if(_bHide)
+               {
+                  // Hide files, set cursor to parent dir node if it currently points to a file node
+                  if(tn.b_leaf_node)
+                  {
+                     tn <= tn.parent;
+                     //trace "xxx leaf parent tn="+#(tn);
+                     tm_files.setEnableHideLeaves(true);
+                     newRowIdx = tn.flat_index;
+                     trace "xxx hide files: newRowIdx="+newRowIdx;
+                     tv_files.moveCursorToRow(newRowIdx);
+                     tv_files.centerRow();
+                     redraw();
+                     return;
+                  }
+                  else
+                  {
+                     tm_files.setEnableHideLeaves(true);
+                     newRowIdx = tn.flat_index;
+                     tv_files.moveCursorToRow(newRowIdx);
+                     tv_files.centerRow();
+                     redraw();
+                     return;
+                  }
+               }
+               else
+               {
+                  // Show files, find current node in new flat node list
+                  tn <= flatNodes.get(rowIdx);
+                  tm_files.setEnableHideLeaves(false);
+                  newRowIdx = flatNodes.indexOfPointer(tn, 0);
+                  tv_files.moveCursorToRow(newRowIdx);
+                  ////tm_files.setCursorIndex(newRowIdx);
+                  tv_files.centerRow();
+                  redraw();
+                  return;
+               }
+            }
+         }
+
+         tm_files.setEnableHideLeaves(_bHide);
+         redraw();
+      }
+   }
+
+   public method installPlugin(FileDialogPlugin _plugin) {
+      pn_plugin.removeChildHierarchy();
+      if(null != _plugin)
+      {
+         pn_plugin.addLayer(_plugin, Layout.CENTER);
+         plugin <= _plugin;
+      }
+      else
+      {
+         plugin <= null;
+         removeAllOverlays();
+      }
+      invalidatePreferredSizes();
+      invalidateMinimumSizes();
+      layoutHierarchy(true, false);
+      recursiveBuildTabCycleLists();
+   }
+
+   public method fileDialogPreShow() {
+      if(null != plugin)
+      {
+         plugin.preShow();
+      }
+   }
+
+   public method fileDialogPostShow() {
+      UI.SetKeyboardFocus(tv_files);
+   }
+
+   public method fileDialogHide(boolean _bDelegate) {
+      trace "xxx FileDialog::hide: last_selected_filename=\""+last_selected_filename+"\".";
+
+      if(_bDelegate)
+      {
+         if(null != parent_dialog)
+         {
+            parent_dialog.hide();
+         }
+      }
+
+      if(null != plugin)
+      {
+         plugin.hide();
+      }
+
+      if(null != recipient)
+      {
+         if(!last_selected_filename.isBlank())
+         {
+            recipient.consumeAction(Action.New(ACTION_OK, (null != parent_dialog) ? parent_dialog : this));
+         }
+         else
+         {
+            recipient.consumeAction(Action.New(ACTION_CANCEL, (null != parent_dialog) ? parent_dialog : this));
+         }
+      }
+
+   }
+
+   public method setProgramDirectory(String _path) {
+      program_directory = _path;
+   }
+
+   public method getProgramDirectory() : String {
+      return program_directory;
+   }
+
+   public method getSelectedDirName() : String {
+
+      String dir = last_selected_dirname;
+
+      dir.replace("\\", "/");
+      dir.replace("//", "/");
+
+      String progDir = program_directory;
+      if(!progDir.isBlank())
+      {
+         if(!progDir.endsWith("/"))
+            progDir.append("/");
+         
+         progDir.replace("\\", "/");
+         progDir.replace("//", "/");
+      }
+
+      dir.replace(progDir, "");
+      return dir;
+
+      // if(!(last_selected_dirname & ":") && !last_selected_dirname.startsWith("/") && !program_directory.isBlank())
+      // {
+      //    return program_directory + "/" + last_selected_dirname;
+      // }
+      // else
+      // {
+         // return last_selected_dirname;
+      // }
+   }
+
+   public method getSelectedFileName() : String {
+      return last_selected_filename;
+   }
+
+   protected method handleSelectOrPreview(boolean _bRowClicked) {
+      int rowNr = tm_files.getCursorIndex();
+      PointerArray flatNodes <= tm_files.flat_tree_nodes;
+      TreeTableNode tn <= flatNodes.get(rowNr);
+      if(null != tn)
+      {
+         if(tn.user_data instanceof FilesTMRecord)
+         {
+            FilesTMRecord ftmr <= tn.user_data;
+            if(_bRowClicked)
+            {
+               last_selected_dirname  = ftmr.dir_name;
+               last_selected_filename = ftmr.file_name;
+               
+               trace "xxx FileDialog::ROWCLICKED: last_selected_filename=\""+last_selected_filename+"\".";
+
+               if(null != plugin)
+               {
+                  plugin.onFileDialogSelectFile(ftmr.dir_name, ftmr.file_name);
+               }
+
+               if(b_hide_after_selection)
+               {
+                  fileDialogHide(true/*bDelegate*/);
+               }
+            }
+            else
+            {
+               if(null != plugin)
+               {
+                  plugin.onFileDialogPreviewFile(ftmr.dir_name, ftmr.file_name);
+               }
+            }
+         }
+      }
+   }
+
+   public method focusDefault() {
+      tv_files.grabKeyboardFocus();
+   }
+
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            fileDialogHide(true/*bDelegate*/);
+            return true;
+
+         case 's':
+            handleSelectOrPreview(true);
+            fileDialogHide(true/*bDelegate*/);
+            return true;
+      }
+   }
+   
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..", 
+"
+          c         :   Close dialog (cancel)
+
+          s         :   Select waveform and close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+   
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_RETURN: // (todo) RETURN event arrives at TableView, not here
+         case VKEY_ESCAPE:
+            fileDialogHide(true/*bDelegate*/);
+            return true;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      ActionProvider ap <= _ac.getActionProvider();
+      
+      String acName <= _ac.getActionName();
+
+      switch(@(ap))
+      {
+         case @(cb_hidefiles):
+            setEnableHideFiles(cb_hidefiles.isSelected());
+            return true;
+
+         case @(tf_rootpath):
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               setPath(tf_rootpath.getText());
+            }
+            return true;
+
+         case @(tv_files):
+            handleSelectOrPreview(TableView.ACTION_ROWCLICKED == acName);
+            return true;
+      }
+
+      return Panel::consumeAction(_ac);
+   }
+
+   // // public virtual endXFMTag(AbstractXMLForm _form, HashTable _attributes) {
+   // //    XMLForm::endXFMTag(_form, _attributes);
+
+   // //    initFileDialogForm(null/*parentDialog*/);
+   // // }
+   
+
+}
+
+
+class FileDialog : Dialog, FileDialogDefs, ActionProvider {
+
+   FileDialogForm *form;
+
+
+   public method initFileDialog() : boolean {
+      initDialog();
+
+      form <= new FileDialogForm;
+
+      if(form.initFileDialogForm(this))
+      {
+         caption = "File browser";
+         
+         initWindow(form, caption, 0, 0, 700, 600);
+
+         return true;
+      }
+      return false;
+
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_OK, ACTION_CANCEL];
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   public virtual preShow() {
+      Window::preShow();
+
+      form.fileDialogPreShow();
+   }
+
+   public virtual postShow() {
+      form.fileDialogPostShow();
+   }
+
+   public virtual hide() {
+      Dialog::hide();
+
+      form.fileDialogHide(false/*bDelegate*/);
+   }
+
+   public method handleFileDialogHide()  {
+      // called by fileDialogHide()
+      Dialog::hide();
+   }
+
+   public method setPath(String _path) {
+      form.setPath(_path);
+   }
+
+   public method installPlugin(FileDialogPlugin _plugin) {
+      form.installPlugin(deref _plugin);
+   }
+
+   public method getSelectedDirName() : String {
+      return form.getSelectedDirName();
+   }
+
+   public method getSelectedFileName() : String {
+      return form.getSelectedFileName();
+   }
+
+   public method resetFileDialog(ActionConsumer _recipient) {
+      form.resetFileDialog(deref _recipient);
+   }
+
+   public method setEnableHideAfterSelection(boolean _bHide) {
+      form.setEnableHideAfterSelection(_bHide);
+   }
+}
