@@ -1,0 +1,240 @@
+#
+# Makefile for tks + Microsoft Visual C++ 2003 / 2005 / 2008 / 2010 / 2015 / 2017 / 2019 / 2022 ToolKit. 
+# 
+# (c) 2001-2023 Bastian Spiegel <bs@tkscript.de> 
+#
+
+include ../install_msvc.mk
+
+TARGET=tks.exe
+TARGET_LIB=tks.lib
+
+
+CPPFLAGS += -I../yac -DHAVE_CYGWIN $(EXTRAFLAGS) -fp:fast
+###-I"$(VCTK)/include" -I"$(W32API)/include" 
+
+
+EXTRAFLAGS = -DDX_SYSEXEC -DHAVE_WINREG -DDX_Z -DHAVE_ISOCPP -DHAVE_TLS
+ifeq ($(BUILD_64),y)
+EXTRAFLAGS += -DDX_X64
+else
+EXTRAFLAGS += -DTKS_JIT -DDX_X86 -DDX_RDTSC
+endif
+#EXTRAFLAGS += -DHAVE_URLMON
+# note: TLS in YAC_Host::printf is thread-safe but increases .exe size by 128k (even when packed with UPX :()
+EXTRAFLAGS += -DYAC_FORCE_NO_PRINTF_TLS
+EXTRAFLAGS += -DAUTOLOAD_TKOPENGL
+
+# for SetThreadSelectedCpuSets() (Thread::setCPUCore)
+#  (note) as of 29Mar2019, this fxn is now resolved dynamically (for Win7 compatibility)
+###ifeq ($(HAVE_WIN10),y)
+EXTRAFLAGS += -DHAVE_WIN10
+###endif
+
+ifeq ($(TKS_LIB),y)
+EXTRAFLAGS += -DTKS_LIB
+ifeq ($(TKS_LIB_DEBUG),y)
+CPPFLAGS += -ZI -Gd -FS -D "_DEBUG"
+endif
+endif
+
+ifeq ($(TKS_VST),y)
+EXTRAFLAGS += -DTKS_VST
+endif
+
+EXTRALIBS= urlmon.lib advapi32.lib uuid.lib kernel32.lib
+
+ifeq ($(TKS_LIB),y)
+ifeq ($(TKS_LIB_DEBUG),y)
+EXTRALIBS += -MDd
+else
+EXTRALIBS += -MD
+endif
+endif
+
+
+include make.objects
+
+
+#
+# Add zlib include/lib paths
+#
+ifneq ($(USE_SHARED_ZLIB),y)
+CPPFLAGS += -I"$(ZLIB_SRC)"
+ALL_OBJ += $(ZLIB_OBJ)
+else
+# windows only:
+#CPPFLAGS += -I"$(ZLIB_BIN)/include"
+#EXTRALIBS += "$(ZLIB_BIN)/lib/zdll.lib"
+CPPFLAGS += -I"zlib-1.2.11/"
+CPPFLAGS += -DZLIB_WINAPI
+ifeq ($(BUILD_64),y)
+EXTRALIBS += "zlib-1.2.11/lib/x64/zlibwapi.lib"
+else
+EXTRALIBS += "zlib-1.2.11/lib/x86/zlibwapi.lib"
+endif
+endif
+
+
+#
+# Platform dependent objects
+#
+PLAF_OBJ = TKS_Plugin_win32.o tks_debug_win32.o TKS_SharedBuffer_win32.o TKS_PerfCount.o TKS_PerfCount_win32.o TKS_Process_win32.o
+
+
+#
+# Note: The dummy libc should not be needed any longer since the zlib update
+#
+NEED_DUMMY_LIBC=
+####NEED_DUMMY_LIBC=libc.lib
+
+
+#
+# Show list of available targets
+#
+help:
+	@echo "       help      : this page."
+	@echo "       all       : rebuild dynamically linked exe"
+	@echo "       bin       : build dynamically linked exe."
+	@echo "       upx       : build dynamically linked exe and compress it with UPX."
+	@echo "       doc       : generate HTML API documentation";
+	@echo "       yac       : rebuild API interface bindings"
+	@echo "       install   : build exe and install to \"$(TKS_PREFIX)\"."
+	@echo "       clean     : remove object files."
+	@echo "       realclean : clean and remove backup files."
+
+
+
+#
+# Build scriptengine executable
+#
+bin:	$(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) $(NEED_DUMMY_LIBC)
+	$(LD) $(LDFLAGS) -OUT:$(TARGET) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) $(EXTRALIBS) $(NEED_DUMMY_LIBC) 
+	@echo "Build finished at `date +%H:%M`."
+
+
+#
+# Build scriptengine lib (experimental)
+#
+bin_lib: $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
+	$(LIB) $(LDFLAGS) -OUT:$(TARGET_LIB) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) $(EXTRALIBS)
+	@echo "Lib Build finished at `date +%H:%M`."
+
+
+#
+# Compress binary [optional]
+#
+.PHONY: upx
+upx: bin
+	$(UPX) -9 $(TARGET)
+
+
+#
+# Re-scan YAC interface bindings and write ying_* files
+#
+yac:
+	$(TKS) app:ying -ng -nc api.cpp
+
+
+
+#
+# Rule to build C++ sources
+#
+.cpp.o:
+		$(CC) $(CPPFLAGS) $(OPTFLAGS) -c $< -Fo"$@"
+
+
+#
+# Rule to build C sources
+#
+.c.o:
+		$(CC) $(CPPFLAGS) $(OPTFLAGS) -c $< -Fo"$@"
+
+
+
+#
+# Note: Too heavy Optimization breaks the JIT compiler (TODO: verify that this point is still valid)
+#
+VMCore.o: VMCore.cpp
+		$(CC) $(CPPFLAGS) -c VMCore.cpp -Fo"VMCore.o" -Oy -Ot
+
+TKS_CachedScript.o: TKS_CachedScript.cpp
+		$(CC) $(CPPFLAGS) -c TKS_CachedScript.cpp -Fo"TKS_CachedScript.o" -Oy -Ot
+
+
+
+#
+# Install binary
+# 
+#  (Note: on win32, everything is installed to the SITE directory)
+#
+install:
+	$(MKDIR) "$(TKS_SITE_PREFIX)"
+	$(CP) "$(TARGET)" "$(TKS_SITE_PREFIX)/"
+#	$(CP) "$(TARGET).manifest" "$(TKS_SITE_PREFIX)/"
+#	./tks install.tks
+#	mv tks.sh.tmp $(TKS_PREFIX)/bin/tks
+#	chmod 755 $(TKS_PREFIX)/bin/tks
+	$(MKDIR) "$(TKS_SITE_PREFIX)/plugins"
+	$(MKDIR) "$(TKS_SITE_PREFIX)/modules"
+	$(MKDIR) "$(TKS_SITE_PREFIX)/libraries"
+	$(MKDIR) "$(TKS_SITE_PREFIX)/applications"
+	@echo "[...] Installed to $(TKS_SITE_PREFIX).";
+	@echo "[...] ";
+	@echo "[...]          Plugin directory is : $(TKS_SITE_PREFIX)/plugins/.";
+	@echo "[...]          Module directory is : $(TKS_SITE_PREFIX)/modules/.";
+	@echo "[...]         Library directory is : $(TKS_SITE_PREFIX)/libraries/.";
+	@echo "[...]     Application directory is : $(TKS_SITE_PREFIX)/applications/.";
+	@echo "[...] ";
+
+
+#
+# unfortunately, the msvc 2005 compiler/linker searches for a libc.lib if linking with
+# a lib compiled with msvc 2003 / vc6.
+# the solution, simply to satisfy the linker, is to provide a dummy libc.lib :)
+#
+libc.lib: dummy_libc.o
+	$(LIB) -OUT:libc.lib dummy_libc.o -LIBPATH:"$(VCTK)/lib"
+
+
+#
+# Generate HTML API documentation
+#
+.PHONY: doc
+doc:
+	$(TKS) app:dog++ -pn core api.cpp >tks.ee
+	cd doc ; $(TKS) app:dog -fp "" ../tks.ee
+
+
+# special documentation target, internally used for the "BIG" documentation that covers tks+all plugins/libraries
+.PHONY: ee
+ee:
+	$(TKS) app:dog++ -pn core api.cpp >../docs/core.ee
+
+
+#
+# Remove object files and targets.
+#
+.PHONY: clean
+clean:
+	@echo "[...] cleaning up.."
+	$(RM) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
+
+
+#
+# Make clean and remove backup files
+#
+.PHONY: realclean
+realclean:	clean
+		$(RM) `$(FIND) . -name \*\~`
+		$(RM) `$(FIND) . -name $(TARGET)`
+		$(RM) `$(FIND) . -name \*.ncb`
+		$(RM) `$(FIND) . -name \*.pdb`
+		$(RM) `$(FIND) . -name \*.exp`
+		$(RM) `$(FIND) . -name \*.plg`
+		$(RM) `$(FIND) . -name \*.obj`
+		$(RM) `$(FIND) . -name \*.sbr`
+		$(RM) `$(FIND) . -name \*.bsc`
+		$(RM) `$(FIND) . -name \*.ilk`
+		$(RM) -r `$(FIND) . -name \.vs`
+

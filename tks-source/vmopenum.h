@@ -1,0 +1,280 @@
+/// vmopenum.h
+///
+/// (c) 2002-2014 Bastian Spiegel <bs@tkscript.de>
+///     - distributed under terms of the GNU general public license (GPL).
+///
+
+#ifndef __VMOP_ENUM_H__
+#define __VMOP_ENUM_H__
+
+enum __vmopcodes {
+	VMOP_HALT=0,
+	VMOP_BRA,
+	////VMOP_SFCMP,                // unused  ">",">=","<","<=","!=","=="
+	////VMOP_SICMP,                // unused  ">",">=","<","<=","!=","=="
+	VMOP_SITESTZ,
+	VMOP_SITESTZP,
+	VMOP_BSR,                 // unused
+	VMOP_RTS,                 // unused
+	VMOP_SILOOP,
+	////VMOP_SWAPS,                // unused
+	VMOP_PUSHLV,
+	VMOP_PUSHLIVINC,
+	VMOP_PUSHINCLIV,
+	VMOP_PUSHLIVDEC,
+	VMOP_PUSHDECLIV,
+	VMOP_POPLV,
+	VMOP_PUSHV,
+	VMOP_PUSHIVINC,
+	VMOP_PUSHINCIV,
+	VMOP_PUSHIVDEC,
+	VMOP_PUSHDECIV,
+	VMOP_POPV,
+	VMOP_PUSHC,
+	VMOP_LOADFXC,                 // load fxnaddr for APICALL*
+	VMOP_MOVLV,
+	VMOP_MOVLVC,
+	VMOP_MOVV,
+	VMOP_MOVVC,
+	VMOP_INCLIV,
+	VMOP_DECLIV,
+	VMOP_INCIV,
+	VMOP_DECIV,
+	VMOP_LIVANDLIV,
+	VMOP_LIVORLIV,
+	VMOP_LIVEORLIV,
+	VMOP_LIVMODLIV,
+	VMOP_LIVADDLIV,
+	VMOP_LIVSUBLIV,
+	VMOP_LIVMULLIV,
+	VMOP_LIVDIVLIV,
+	VMOP_LIVASLLIV,
+	VMOP_LIVASRLIV,
+	VMOP_PUSHLIVANDLIV,
+	VMOP_PUSHLIVORLIV,
+	VMOP_PUSHLIVEORLIV,
+	VMOP_PUSHLIVMODLIV,
+	VMOP_PUSHLIVADDLIV,
+	VMOP_PUSHLIVSUBLIV,
+	VMOP_PUSHLIVMULLIV,
+	VMOP_PUSHLIVDIVLIV,
+	VMOP_PUSHLIVASLLIV,
+	VMOP_PUSHLIVASRLIV,
+	////VMOP_LIVANDC,              // unused
+	////VMOP_LIVORC,               // unused
+	////VMOP_LIVEORC,              // unused
+	////VMOP_LIVMODC,              // unused
+	////VMOP_LIVADDC,              // unused
+	////VMOP_LIVSUBC,              // unused
+	////VMOP_LIVMULC,              // unused
+	////VMOP_LIVDIVC,              // unused
+	////VMOP_LIVASLC,              // unused
+	////VMOP_LIVASRC,              // unused
+	VMOP_PUSHLIVANDC,
+	VMOP_PUSHLIVORC,
+	VMOP_PUSHLIVEORC,
+	VMOP_PUSHLIVMODC,
+	VMOP_PUSHLIVADDC,
+	VMOP_PUSHLIVSUBC,
+	VMOP_PUSHLIVMULC,
+	VMOP_PUSHLIVDIVC,
+	VMOP_PUSHLIVASLC,
+	VMOP_PUSHLIVASRC,
+	VMOP_LFVADDLFV,
+	VMOP_LFVSUBLFV,
+	VMOP_LFVMULLFV,
+	VMOP_LFVDIVLFV,
+	VMOP_PUSHLFVADDLFV,
+	VMOP_PUSHLFVSUBLFV,
+	VMOP_PUSHLFVMULLFV,
+	VMOP_PUSHLFVDIVLFV,
+	////VMOP_LFVADDC,              // unused
+	////VMOP_LFVSUBC,              // unused
+	////VMOP_LFVMULC,              // unused
+	////VMOP_LFVDIVC,              // unused
+	VMOP_PUSHLFVADDC,
+	VMOP_PUSHLFVSUBC,
+	VMOP_PUSHLFVMULC,
+	VMOP_PUSHLFVDIVC,
+	VMOP_SINOT,
+	VMOP_SIINV,
+	VMOP_SINEG,
+	VMOP_SIQUAD,
+	VMOP_SITESTBZ,
+	VMOP_SITESTBZ2,
+	VMOP_SFNEG,
+	VMOP_SFQUAD,
+	////VMOP_SFPOW,                // unused
+	VMOP_SFSIN,
+	VMOP_SFCOS,
+	VMOP_SFTAN,
+	////VMOP_SFATAN2,              // unused
+	VMOP_SFSQRT,
+	////VMOP_SIRND,                // unused
+	VMOP_SIABS,
+	VMOP_SFABS,
+	VMOP_SFFRAC,
+	VMOP_SFROUND,
+	VMOP_SIAND,
+	VMOP_SIOR,
+	VMOP_SIEOR,
+	VMOP_SIMOD,
+	VMOP_SIADD,
+	VMOP_SISUB,
+	////VMOP_SIADDQ,               // unused
+	////VMOP_SISUBQ,               // unused
+	VMOP_SIMUL,
+	VMOP_SIDIV,
+	VMOP_SIASL,
+	VMOP_SIASR,
+	VMOP_SICMPBGT,  // +0
+	VMOP_SICMPBGE,  // +1
+	VMOP_SICMPBLT,  // +2
+	VMOP_SICMPBLE,  // +3
+	VMOP_SICMPBNE,  // +4
+	VMOP_SICMPBEQ,  // +5
+	VMOP_SFADD,
+	VMOP_SFSUB,
+	VMOP_SFMUL,
+	VMOP_SFDIV,
+	VMOP_SFCMPBGT,  // +0
+	VMOP_SFCMPBGE,  // +1
+	VMOP_SFCMPBLT,  // +2
+	VMOP_SFCMPBLE,  // +3
+	VMOP_SFCMPBNE,  // +4
+	VMOP_SFCMPBEQ,  // +5
+	VMOP_STCIF,
+	VMOP_STCIF2,
+	VMOP_STCFI,
+	VMOP_STCFI2,
+	VMOP_IASEL,
+	VMOP_IASELBC,
+	VMOP_FASEL,
+	VMOP_FASELBC,
+	VMOP_SIAPUSHL,
+	VMOP_SIAPUSHLBC,
+	VMOP_SIAPOPL,
+	VMOP_SIAPOPLBC,
+	////VMOP_OTSWITCH,             // unused
+	////VMOP_SIPUSH,               // unused
+	VMOP_SIPOP,
+	////VMOP_STCOI,                // unused
+	////VMOP_STCOF,                // unused
+	VMOP_BEGAPICALL0, 
+	VMOP_BEGAPICALL1, 
+	VMOP_BEGAPICALL2, 
+	VMOP_BEGAPICALL3, 
+	VMOP_BEGAPICALL4, 
+	VMOP_BEGAPICALL5, 
+	VMOP_BEGAPICALL6, 
+	VMOP_BEGAPICALL7, 
+	VMOP_BEGAPICALL8, 
+	VMOP_APICALL,                  // exec apicall
+   VMOP_ENDAPICALL0,
+   VMOP_ENDAPICALL1,
+   VMOP_ENDAPICALL2,
+   VMOP_ENDAPICALL3,
+   VMOP_ENDAPICALL4,
+   VMOP_ENDAPICALL5,
+   VMOP_ENDAPICALL6,
+   VMOP_ENDAPICALL7,
+   VMOP_ENDAPICALL8,
+	VMOP_INCSTP, 
+	VMOP_DECSTP, 
+	////VMOP_SFSIN01,              // unused
+	////VMOP_SFCOS01,              // unused
+	////VMOP_SISWAPW,              // unused
+	VMOP_SIPACKARGB,
+	////VMOP_SIUNPACKARGB,         // unused
+	////VMOP_SICLAMPB,             // unused
+	////VMOP_SIMIX212,             // unused
+	////VMOP_SIMIX22,              // unused
+	////VMOP_SIMK16,               // unused
+	////VMOP_SISQRT,               // unused
+
+	VMOP_SRETI,
+	VMOP_SRETF,
+	VMOP_PUSHS,
+
+	VMOP_IVANDIV,
+	VMOP_IVORIV,
+	VMOP_IVEORIV,
+	VMOP_IVMODIV,
+	VMOP_IVADDIV,
+	VMOP_IVSUBIV,
+	VMOP_IVMULIV,
+	VMOP_IVDIVIV,
+	VMOP_IVASLIV,
+	VMOP_IVASRIV,
+	VMOP_PUSHIVANDIV,
+	VMOP_PUSHIVORIV,
+	VMOP_PUSHIVEORIV,
+	VMOP_PUSHIVMODIV,
+	VMOP_PUSHIVADDIV,
+	VMOP_PUSHIVSUBIV,
+	VMOP_PUSHIVMULIV,
+	VMOP_PUSHIVDIVIV,
+	VMOP_PUSHIVASLIV,
+	VMOP_PUSHIVASRIV,
+
+	////VMOP_IVANDC,               // unused
+	////VMOP_IVORC,                // unused
+	////VMOP_IVEORC,               // unused
+	////VMOP_IVMODC,               // unused
+	////VMOP_IVADDC,               // unused
+	////VMOP_IVSUBC,               // unused
+	////VMOP_IVMULC,               // unused
+	////VMOP_IVDIVC,               // unused
+	////VMOP_IVASLC,               // unused
+	////VMOP_IVASRC,               // unused
+
+	VMOP_PUSHIVANDC,
+	VMOP_PUSHIVORC,
+	VMOP_PUSHIVEORC,
+	VMOP_PUSHIVMODC,
+	VMOP_PUSHIVADDC,
+	VMOP_PUSHIVSUBC,
+	VMOP_PUSHIVMULC,
+	VMOP_PUSHIVDIVC,
+	VMOP_PUSHIVASLC,
+	VMOP_PUSHIVASRC,
+
+	VMOP_FVADDFV,
+	VMOP_FVSUBFV,
+	VMOP_FVMULFV,
+	VMOP_FVDIVFV,
+	VMOP_PUSHFVADDFV,
+	VMOP_PUSHFVSUBFV,
+	VMOP_PUSHFVMULFV,
+	VMOP_PUSHFVDIVFV,
+
+	////VMOP_FVADDC,               // unused
+	////VMOP_FVSUBC,               // unused
+	////VMOP_FVMULC,               // unused
+	////VMOP_FVDIVC,               // unused
+	VMOP_PUSHFVADDC,
+	VMOP_PUSHFVSUBC,
+	VMOP_PUSHFVMULC,
+	VMOP_PUSHFVDIVC,
+ 
+   VMOP_JGTIVIV, 
+	VMOP_JGEIVIV, 
+   VMOP_JLTIVIV, 
+	VMOP_JLEIVIV, 
+   VMOP_JNEIVIV, 
+	VMOP_JEQIVIV, 
+
+   VMOP_JGTIVIC, 
+	VMOP_JGEIVIC, 
+   VMOP_JLTIVIC, 
+	VMOP_JLEIVIC, 
+   VMOP_JNEIVIC, 
+	VMOP_JEQIVIC, 
+ 
+
+	VMOP_ENUM
+};
+
+//////#define VMOP_NUMCLASSES VMOP_PAD
+
+#endif // __VMOP_ENUM_H__

@@ -1,0 +1,189 @@
+#
+# Makefile for tks
+# 
+# (c) 2001-2023 Bastian Spiegel <bs@tkscript.de> 
+#
+
+
+include ../install_linux.mk
+
+
+#debug-build:
+#OPTFLAGS= -g
+
+MINOPTFLAGS= -O2
+#MINOPTFLAGS= -O1
+
+
+CPPFLAGS+= -DDX_SYSEXEC -DDX_Z -DHAVE_TLS -DHAVE_DLFCN
+CPPFLAGS +=-DAUTOLOAD_TKOPENGL
+
+ifeq ($(ARCH),X64)
+CPPFLAGS+=-DDX_X64
+else ifeq ($(ARCH),X86)
+CPPFLAGS+=  -DTKS_JIT -DDX_X86
+else ifeq ($(ARCH),ARM64)
+CPPFLAGS+= -DDX_ARM
+CPPFLAGS+= -DDX_ARM64
+else ifeq ($(ARCH),ARM32)
+#CPPFLAGS+= -DTKS_JIT -DDX_ARM
+CPPFLAGS+= -DDX_ARM
+CPPFLAGS+= -DDX_ARM32
+endif
+
+CPPFLAGS+= -I../yac 
+
+
+
+include make.objects
+
+PLAF_OBJ = TKS_Plugin_dlfcn.o tks_debug_linux.o TKS_SharedBuffer_linux.o TKS_Process_linux.o
+
+ifeq ($(CROSS_TARGET),OMAP3)
+# only add if SAVE_CPUTABLE is defined
+#CPPFLAGS += -DSAVE_CPUTABLE
+#PLAF_OBJ += tkscputbl_src_arm.o
+endif
+
+
+#
+# Build shared executable (otherwise the plugin loader may not work)
+#
+bin:	$(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
+	$(CPP) -o tks  $(LDFLAGS) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) -lm -lz -ldl -lpthread
+	@echo "Build finished at `date +%H:%M`."
+
+
+#
+# Compress binary [optional]
+#
+.PHONY: upx
+upx: bin
+	$(UPX) -9 $(TARGET)
+
+
+#
+# Re-scan YAC interface bindings and write ying_* files
+#
+yac:
+	$(TKS) app:ying -ng -nc api.cpp
+
+
+#
+# Optimization used to cause bugs in old GCC versions
+#
+#VMCore.o: VMCore.cpp
+#	$(CPP) $(CPPFLAGS) $(MINOPTFLAGS) $(DBGFLAGS) -c VMCore.cpp -o VMCore.o
+
+
+#
+# Optimization used to cause bugs in old GCC versions
+#
+#TKS_CachedScript.o: TKS_CachedScript.cpp
+#	$(CPP) $(CPPFLAGS) $(MINOPTFLAGS) $(DBGFLAGS) -c TKS_CachedScript.cpp -o TKS_CachedScript.o
+
+
+#
+# Install executable (tks.bin) and wrapper script (tks)
+#
+install:
+	cp -f tks "$(TKS_PREFIX)/tks.bin"
+	-chmod 755 "$(TKS_PREFIX)/tks.bin"
+#	( export TKS_TARGET_PREFIX="$(TKS_TARGET_PREFIX)" ; export TKS_TARGET_SITE_PREFIX="$(TKS_TARGET_SITE_PREFIX)" ; ./tks install.tks )
+	./tks install.tks
+	-cp tks.sh.tmp "$(TKS_PREFIX)/tks"
+	-rm -f tks.sh.tmp
+	-chmod 755 "$(TKS_PREFIX)/tks"
+	mkdir -p "$(TKS_SITE_PREFIX)"
+	mkdir -p "$(TKS_SITE_PREFIX)/plugins"
+	mkdir -p "$(TKS_SITE_PREFIX)/modules"
+	mkdir -p "$(TKS_SITE_PREFIX)/libraries"
+	mkdir -p "$(TKS_SITE_PREFIX)/applications"
+	cp -f ../yac/ying.tks "$(TKS_SITE_PREFIX)/applications/"
+	@echo "[...] Installed to $(TKS_PREFIX).";
+	@echo "[...] ";
+	@echo "[...]          Plugin directory is : $(TKS_SITE_PREFIX)/plugins/.";
+	@echo "[...]          Module directory is : $(TKS_SITE_PREFIX)/modules/.";
+	@echo "[...]         Library directory is : $(TKS_SITE_PREFIX)/libraries/.";
+	@echo "[...]     Application directory is : $(TKS_SITE_PREFIX)/applications/.";
+	@echo "[...] ";
+	@echo "[...] Please use the $(TKS_PREFIX)/tks startscript.";
+	@echo "[...] ";
+
+
+#
+# Generate HTML API documentation
+#
+.PHONY: doc
+doc:
+	$(TKS) app:dog++ -pn core api.cpp >tks.ee
+	cd doc ; $(TKS) app:dog -fp "" ../tks.ee
+
+
+# special documentation target, internally used for the "BIG" documentation that covers tks+all plugins/libraries
+.PHONY: ee
+ee:
+	$(TKS) app:dog++ -pn core api.cpp >../docs/core.ee
+
+
+cygwin:	$(ALL_OBJ) VMCore.o TKS_CachedScript.o tks_debug_stub.o TKS_SharedBuffer_stub.o
+	$(CPP) -o tks  $(ALL_OBJ) VMCore.o TKS_CachedScript.o tks_debug_stub.o TKS_SharedBuffer_stub.o -lm -lz 
+	@echo "Build finished at `date +%H:%M`."
+
+
+#
+# Show help
+#
+help:
+	@echo "       help     : this page."
+	@echo "       bin      : build dynamically linked exe."
+	@echo "       upx       : build dynamically linked exe and compress it with UPX."
+	@echo "       doc       : generate HTML API documentation";
+	@echo "       yac       : rebuild API interface bindings"
+	@echo "       static   : build statically linked exe."
+	@echo "       clean    : remove object files."
+	@echo "       realclean: clean and remove backup files."
+
+
+static:	$(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
+	$(CPP) -static -o tks $(LDFLAGS) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) -lm -lz -ldl -lpthread
+	@echo "Build finished at `date +%H:%M`."
+        @echo "[...] warning: static builds seem to have problems loading shared objects (plugins)"
+
+
+shared2: $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
+	$(CPP) -o tks $(LDFLAGS) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ) /usr/lib/libstdc++-3-libc6.2-2-2.10.0.a -lm -lz -ldl -lpthread
+	@echo "Build finished at `date +%H:%M`."
+
+
+#
+# Rule for building object files
+#
+.cpp.o:
+		$(CPP) $(CPPFLAGS) $(OPTFLAGS) $(DBGFLAGS) -c $< -o $@
+
+.s.o:
+		$(AS) $(AFLAGS) $< -o $@
+
+
+#
+# Remove object files and targets.
+#
+clean:
+		@echo "cleaning up.."
+		$(RM) $(ALL_OBJ) VMCore.o TKS_CachedScript.o $(PLAF_OBJ)
+
+#
+# Make clean and remove backup files
+#
+realclean:	clean
+		$(RM) `find . -name \*\~` tks
+
+
+#
+#
+#
+.PHONY: deploy
+deploy: bin
+	scp tks ${SCP_USER}@${SCP_HOST}:${SCP_TKS_PREFIX}/bin/tks.bin
+
