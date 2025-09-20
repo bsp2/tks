@@ -1,0 +1,298 @@
+.\" Copyright (C) Jonathan Woithe 2005-2006, 2008.
+.\"
+.\" This file may be copied under the conditions described
+.\" in the LDP GENERAL PUBLIC LICENSE, Version 1, September 1998
+.\" that should have been distributed together with this file.
+.\" 
+.TH SET_RLIMITS 8 22-May-2008 "set_rlimits 1.3.0"
+.SH NAME
+set_rlimits \- allow non-privileged per-application access to elevated 
+resource limits (including realtime scheduling priorities)
+.SH SYNOPSIS
+.BI "set_rlimits [" options "] " "program [<program options>]"
+.sp
+Available options:
+.B "[\-dhv]"
+.B "[\-L=<libpath>]"
+.B "[\-l[=<memlock limit>]]"
+.B "[\-n[=<nice priority limit>]]"
+.B "[\-r[=<realtime priority limit>]]"
+.sp
+.B program
+must include an absolute path or be the name of a binary without any path
+components.  In the latter case, the program to be executed will include the
+absolute path in the configuration file entry whose filename component 
+matches
+.B program.
+If a relative path is given
+.B set_rlimits
+will exit with an error.
+.sp
+.SH DESCRIPTION
+.B set_rlimits
+allows controlled access to realtime scheduling for selected users and
+programs under kernel 2.6.12 or later, along with elevated settings for
+other selected resource limits.  The 
+.B set_rlimits
+binary needs to be installed setuid root, but it only runs with elevated
+privileges to set the resource limits.
+.PP
+When
+.B set_rlimits
+is run it first sets the resource limits as requested.  The given
+.B program
+is then executed via 
+.BR exec (3)
+with these resource limits.
+.PP
+The users allowed to utilise this service (and the programs/priorities they
+can request with 
+.BR set_rlimits )
+are specified in the
+.I set_rlimits.conf 
+configuration file, usually found in
+.IR /etc/set_rlimits.conf .
+See the 
+.B CONFIGURATION FILE
+section below for more details on this file.  Note that failure to find or
+access the configuration file causes set_rlimits to abort.
+.PP
+By default, all resources with maximums defined in the configuration file
+for the requested program will be set to those maximums.  The options
+.B \-l
+,
+.B \-n
+or 
+.B \-r
+can be used to modify this behaviour; the argument is either a limit to use
+in place of the maximum or -1 (which disables setting of that resource
+limit).  If no resource limits have been altered (either due to an error or
+because all settings have been turned off) a warning will be printed but
+.B set_rlimits 
+will continue to run.
+.SH "OPTIONS"
+.TP
+.B "\-d"
+Turn on debugging output which might assist in tracking down problems.
+.TP
+.B "\-h"
+Display brief usage information.
+.TP
+.B "\-L=<libpath>"
+Set LD_LIBRARY_PATH to 
+.I libpath
+in the environment of the executed binary 
+.BR program .
+For security reasons, all directories in 
+.I libpath
+must be owned by root and not have group/other write permission.  If this
+condition is not satisifed LD_LIBRARY_PATH will not be set.  Note that the
+invoking shell's LD_LIBRARY_PATH value will not be passed through by
+.B set_rlimits:
+since
+.B set_rlimits
+runs setuid it never sees LD_LIBRARY_PATH.
+.TP
+.B "\-l[=<mlock>]"
+Set the maximum locked memory size to 
+.I mlock
+kB.  If 
+.I mlock
+is omitted it defaults to the maximum size specified for
+.BR program
+in the configuration file.
+.TP
+.B "\-n[=<limit>]"
+Set the nice priority resource limit enforced for
+.BR program .
+If
+.I limit
+is not specified, the maximum limit specified for
+.BR program
+in the configuration file is used.  Note that 
+.I limit
+is a priority, not a nice level.  The possible priorities are 0 to 39, 
+corresponding to nice levels 19 to -20 respectively but the maximum valid
+priority may be less than 39 due to configuration file restrictions (see the
+.B CONFIGURATION FILE
+section below).
+.TP
+.B "\-r[=<limit>]"
+Set the realtime priority resource limit enforced for 
+.BR program .
+If
+.I limit
+is not specified, a default limit (reported in the
+.B \-h
+output) is used.  Possible values for 
+.I limit
+range from 0 to 100 inclusive, but the maximum valid value for a given user
+and/or program may be less than 100 due to restrictions enfored in the
+configuration file (see the
+.B CONFIGURATION FILE
+section below).
+.TP
+.B "-v"
+Print the program version and exit.
+.SH CONFIGURATION FILE
+The configuration file (usually
+.IR /etc/set_rlimits.conf )
+defines which users or groups have access to the functionality in
+.BR set_rlimits ,
+and to which programs and priorities this access extends. 
+.B set_rlimits
+will exit with an error if the configuration file does not exist or is
+otherwise inaccessible by the user.  The file consists of a series of
+entries, one per line.  There are two possible formats for the lines:
+the original set_rtlimits format and an enhanced format which is easier
+to use when a larger number of rlimits are being set.  In both cases, 
+.B set_rlimits
+will print a warning if errors are detected in the configuration file and
+that line will be ignored.  A hash (#) starts a comment; everything beyond
+it is ignored to the end of the line.  Lines are limited to 1023 characters
+(including comment portions) and the presence of longer lines constitutes an
+error condition.
+.PP
+The original set_rtlimits entry format has the following form:
+.sp
+.RS
+name program max_nice_priority max_rt_priority
+.RE
+.sp
+while the enhanced configuration entry has the form:
+.sp
+.RS
+name program <key>=<value> [<key>=<value> ...]
+.RE
+.sp
+The fields and/or <key>=<value> constructs are separated by arbitary 
+whitespace.  Each line must be complete or else an error is flagged and 
+.B set_rlimits 
+refuses to run.  The meaning of the fields is outlined below.  Note that
+whitespace cannot occur between a <key>/<value> and the associated
+`=' sign.
+.TP
+.I name
+The username or groupname which this entry relates to.  To specify a 
+groupname, the first character of 
+.I name
+should be a @ sign; otherwise 
+.I name
+is assumed to be a username.  When considering a group specification a user's
+supplementary group list is scanned for a match in addition to the user's
+primary group.  Numerical IDs are not interpreted.  The special name 
+.B ALL
+can be specified to include all users on the system.  Any 
+.I name
+which does not map to a valid user or group is flagged with a warning and
+the entry ignored.
+.TP
+.I program
+The full absolute path and name of the program to execute with the elevated
+nice and/or realtime priority resource limits.  If a relative path is given
+.B set_rlimits 
+will exit with an error.
+.TP
+.I max_nice_priority
+(old format only)
+The maximum nice priority the specified user (or group) is allowed to
+request when running the given program.  Note that this is a priority, not a
+nice level.  Priorities 0 to 39 correspond to nice levels 19 to -20
+respectively.  Specifying priorities outside this range effectively allows
+the user to request any nice priority.  A negative value disables the
+setting of any nice priority for this program by the given user (or group).
+.TP
+.I max_rt_priority
+(old format only)
+The maximum realtime priority the specified user (or group) is allowed to
+request when running the given program.  Valid values are 0 to 100 inclusive.
+If a value outside this range is specified it effectively allows the user
+access to all realtime priority levels.  A negative value disables the setting
+of any realtime priority for this program by the given user (or group).
+.TP
+.I <key>=<value>
+(new format only) Configure a maximum resource limit setting for the given
+program using the new format.  Possible <key> values are
+
+.B nice
+- <value> is the maximum nice limit.  Useful values are 0 to 39, corresponding
+to nice levels 19 to -20.  A negative value prevents
+.B set_rlimits
+from setting the nice limit for the given program, while a value greater than
+39 is treated as if 39 had been specified.
+
+.B rtprio
+- <value> is the maximum realtime priority.  Useful values are 0 to 100
+inclusive.  A negative value forces the program to have no effect on the
+realtime priority while a value greater than 100 is treated as if 100 had
+been given.
+
+.B memlock
+- <value> is the maximum locked memory size in kB.  The (arbitary) hard
+upper limit imposed by the program is reported in the output generated by
+the `-h' option.
+.PP
+
+If the configuration file contains more than one line (entry) which matches
+a given invocation, the first matching entry will be used and the others
+silently ignored.
+.SH RETURN VALUE AND DIAGNOSTICS
+On success, 
+.B set_rlimits
+returns the exit status of the called program.  If
+.B set_rlimits 
+itself encountered an error condition 255 is returned.
+.PP
+.B set_rlimits
+prints reasonably verbose error messages to assist with diagnosis.  If
+these messages prove insufficient, try running
+.B set_rlimits
+in debug mode using the 
+.B \-d
+command line option.  This activates further output to stderr; it's not as
+nicely formatted as the main error messages but it may contain information
+which will assist in the diagnosis of a faulty installation or
+configuration.
+.SH SECURITY NOTES
+.B set_rlimits 
+is believed to be as safe as a program such as this can be, but it has not
+undergone an extensive security audit and is not guaranteed to be free of
+bugs.  Because elevated priviledges are used for only a small portion of the
+code the scope for problems is thought to be minimal.  However, even in the
+absence of program bugs the user is reminded that using this program allows
+ordinary unpriviledged users to request realtime priorities for processes
+they run, which can potentially compromise system stability and security.
+.PP
+.B set_rlimits 
+has been structured to maximise the amount of control an administrator has
+over who can run realtime processes, what those processes are and the
+maximum priorities allowed for those processes.  A fixed configuration file
+(usually in the system
+.I /etc
+area) contains all the access details and the programs executed by
+.BR set_rlimits
+are limited
+to those specified in the configuration file using absolute paths.  This
+again minimises the scope for problems, but this guarantee is only as good
+as the realtime programs themselves and the care with which the
+configuration file has been set up with.
+.PP
+In short, the user of
+.B set_rlimits
+should be aware of the potential security and stability issues when using
+programs such as
+.B set_rlimits
+and to deploy
+it accordingly.  
+.B set_rlimits 
+comes with no warranty and no guarantee of any kind; it is deployed and used
+at the user's risk.
+.SH NOTES
+This page describes
+.B set_rlimits
+as found in the original set_rlimits 1.3.0 distribution; 
+other versions may differ slightly.
+Mail bug reports, corrections and additions to jwoithe@physics.adelaide.edu.au.
+.SH "SEE ALSO"
+.BR getrlimit (2),
+.BR setrlimit (2)
