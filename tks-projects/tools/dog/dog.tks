@@ -1,0 +1,1473 @@
+//
+//   file: dog.tks
+//
+// author: (c) 2005-2015 Bastian Spiegel <bs@tkscript.de>
+//             - distributed under terms of the GNU general public license (GPL).
+//   date: 15-Dec-2005, 22-Dec-2005, 24-Dec-2005, 04-Jan-2006, 06-Jan-2006, 07-Jan-2006, 17-Jan-2006, 18-Jan-2006, 01-Mar-2008
+//         02-Mar-2008, 13-Jun-2008, 14-Jun-2008, 22-Jun-2008, 21-Sep-2008, 22-Sep-2008, 01-Oct-2008, 28-Dec-2015
+//
+
+module MDOG;
+
+
+define CC_END 1
+define CC_MODULE 2
+define CC_CLASS 3
+define CC_FUNCTION 4
+define CC_METHOD 5
+define CC_CONSTANT 6
+
+String ccSet = "      ";
+ccSet[0] = CC_END;
+ccSet[1] = CC_MODULE;
+ccSet[2] = CC_CLASS;
+ccSet[3] = CC_FUNCTION;
+ccSet[4] = CC_METHOD;
+ccSet[5] = CC_CONSTANT;
+
+define NO_INDEX 999999
+define MAX_SIZE 65536
+
+String inputBuffer;
+int inputOffset = 0;
+
+DOG_Module currentModule <= null;
+DOG_Class currentClass <= null;
+
+
+//inputBuffer.loadLocal("debug.ee", false);
+
+
+HashTable core_class_links <= #[
+   "Boolean"         = true,
+   "Buffer"          = true,
+   "Byte"            = true,
+   "Class"           = true,
+   "ClassArray"      = true,
+   "Configuration"   = true,
+   "Double"          = true,
+   "Envelope"        = true,
+   "Event"           = true,
+   "File"            = true,
+   "Float"           = true,
+   "FloatArray"      = true,
+   "Function"        = true,
+   "HashTable"       = true,
+   "IntArray"        = true,
+   "Integer"         = true,
+   "List"            = true,
+   "ListNode"        = true,
+   "Long"            = true,
+   "Object"          = true,
+   "ObjectArray"     = true,
+   "PakFile"         = true,
+   "PointerArray"    = true,
+   "Pool"            = true,
+   "Script"          = true,
+   "ScriptClass"     = true,
+   "ScriptObject"    = true,
+   "SharedBuffer"    = true,
+   "Short"           = true,
+   "StdErrStream"    = true,
+   "StdInStream"     = true,
+   "StdOutStream"    = true,
+   "Stream"          = true,
+   "String"          = true,
+   "StringArray"     = true,
+   "Time"            = true,
+   "TKS"             = true,
+   "TreeNode"        = true,
+   "UnsignedByte"    = true,
+   "UnsignedShort"   = true,
+   "UnsignedInteger" = true,
+   "Value"           = true,
+   "ValueArray"      = true,
+   "Variable"        = true
+];
+#define CORE_API_PREFIX "http://tkscript.de/doc/api"
+
+function InsertSortedIntoStringArray(StringArray _array, String _string) {
+   int i = 0;
+   loop(_array.numElements)
+   {
+      String c <= _array.get(i);
+      if(_string < c)
+      {
+         _array.insert(i, _string);
+         return;
+      }
+      i++;
+   }
+   _array.add(_string);
+}
+
+function InsertSortedIntoList(List _list, DOG_Object _object) {
+   explain "insert _object sorted-by-name into _list.";
+
+   String objName <= _object.name;
+   ListNode n <= _list.head;
+
+   loop(_list.size)
+   {
+      DOG_Object c <= n.objectValue;
+      if(objName < c.name)
+      {
+         if(n.prev != null)
+         {
+            _list.insert(#(deref _object), n.prev);
+         }
+         else
+         {
+            _list.addFirst(#(deref _object));
+         }
+         return;
+      }
+      n <= n.next;
+   }
+   _list.addLast(#(deref _object));
+}
+
+class DOG {
+   static String    file_prefix = "_dog_";
+   static String    project_name; // project name from .tkp project file
+   static List      modules;      // DOG_Module
+   static HashTable hash_modules; // maps module name to DOG_Module reference
+   static List      all_classes;  // references to DOG_Class objects
+   static List      all_pages;    // deletable DOG_Page objects
+   static List      all_projects; // deletable DOG_Project objects
+   static List      all_nspaces;  // deletable DOG_Namespace objects
+   static HashTable hash_projects;
+   static HashTable hash_classes; // maps class name to DOG_Class reference
+   static HashTable hash_derived_classes; // maps class name to StringArray of derived class names
+   static HashTable hash_pages;   // maps page name to DOG_Page reference
+   static HashTable hash_nspaces; // maps namespace name to DOG_Namespace reference
+   static HashTable hash_constants; // maps constant name to DOG_Constant reference
+   static HashTable hash_functions; // maps function name to DOG_Function reference
+
+   static HashTable hash_checksums; // Maps doc item (Module or Class) to input checksum (Integer object)
+   
+   static String    current_ee_dir_prefix;
+
+   static DOG_Project current_project <= null;
+
+   define int MAX_PROJECTS              =   64;
+   define int MAX_MODULES               =  512;
+   define int MAX_NAMESPACES            =   64;
+   define int MAX_PAGES                 =  512;
+   define int MAX_ALL_CLASSES           =  512;
+   define int MAX_FUNCTIONS_PER_MODULE  =  512;
+   define int MAX_CLASSES_PER_MODULE    =  256;
+   define int MAX_METHODS_PER_CLASS     =  512;
+   define int MAX_FUNCTIONS_PER_CLASS   =  512;
+   define int MAX_CONSTANTS_PER_CLASS   = 1024;
+   define int MAX_CONSTANTS             = 4096;
+   define int MAX_FUNCTIONS             = 4096;
+   define int MAX_MODULES_PER_PROJECT   =  256;
+   define int MAX_CLASSES_PER_PROJECT   =  256;
+   define int MAX_CLASSES_PER_NAMESPACE =  512;
+
+   static Init() {
+      hash_modules  .alloc(MAX_MODULES);
+      hash_classes  .alloc(MAX_ALL_CLASSES);
+      hash_derived_classes.alloc(MAX_ALL_CLASSES);
+      hash_checksums.alloc(500);
+      hash_projects .alloc(MAX_PROJECTS);
+      hash_nspaces  .alloc(MAX_NAMESPACES);
+      hash_constants.alloc(MAX_CONSTANTS);
+      hash_functions.alloc(MAX_FUNCTIONS);
+
+      LoadChecksumCache();
+   }
+
+   static GetRelPath(String _eeDirPrefix) : String {
+      /*if(_eePrefix.indexOfChar('/', 0) != -1)
+      {
+      }*/
+      if(_eeDirPrefix == DOG.current_ee_dir_prefix)
+      {
+         return "";
+      }
+      else if(DOG.current_ee_dir_prefix == "")
+      {
+         return _eeDirPrefix;
+      }
+      else
+      {
+         // TODO: cache via hashtable
+         //trace "xxx DOG.GetRelPath current=\""+current_ee_dir_prefix+"\" dest=\""+_eeDirPrefix+"\".";
+
+         StringArray ca <= current_ee_dir_prefix.splitChar('/');
+         StringArray da <= _eeDirPrefix.splitChar('/');
+         String cae;
+         String r;
+         r <= new String;
+         if(da.numElements == 0)
+         {
+            // back to root via ../
+            foreach cae in ca
+            {
+               r.append("../");
+            }
+         }
+         else {
+            // Count num matching directories
+            int i = 0;
+            int num;
+            if(ca.numElements < da.numElements)
+            {
+               num = ca.numElements;
+            }
+            else
+            {
+               num = da.numElements;
+            }
+            while(i < num) {
+               if(ca[i] != da[i])
+               {
+                  break;
+               }
+               else
+               {
+                  i++;
+               }
+            }
+            // i = index of first difference
+            int j = i;
+            while(j++ < ca.numElements)
+            {
+               r.append("../");
+            }
+            while(i < da.numElements)
+            {
+               r.append(da[i++]);
+               r.append("/");
+            }
+            
+            // ca= api/tks/
+            // da= api/tkui/
+         }
+         
+         return deref r;
+      }
+   }
+
+   static LoadChecksumCache() {
+      // Load last file written in last run (if exists)
+      File f;
+      if(f.openLocal(".dog_cache", IOS_IN))
+      {
+         hash_checksums << f;
+         Integer io <= hash_checksums["FloatArray"];
+         f.close();
+         ////trace "xxx DOG::LoadChecksumCache: cache file loaded";
+      }
+   }
+
+   static GetCacheChecksum(String _name) : int {
+      Integer io <= hash_checksums[_name];
+      if(io instanceof Integer)
+      {
+         // Have checksum
+         return io.value;
+      }
+      else
+      {
+         // No cache entry
+         return 0xdeadbeef;
+      }
+   }
+
+   static SetCacheChecksum(String _name, int _checksum) {
+      hash_checksums[_name] = Integer.New(_checksum);
+   }
+
+   static WriteChecksumCache() {
+      File f;
+      if(f.openLocal(".dog_cache", IOS_OUT))
+      {
+         f << hash_checksums;
+         f.close();
+         ////trace "xxx DOG::WriteChecksumCache: wrote cache file.";
+      }
+   }
+
+   static AddCreateNamespace(String _name) : DOG_Namespace {
+      if(_name.isBlank())
+      {
+         _name = "default";
+      }
+      DOG_Namespace nsp <= hash_nspaces.get(_name);
+      if(nsp instanceof DOG_Namespace)
+      {
+         return nsp;
+      }
+      else
+      {
+         nsp <= new DOG_Namespace;
+         nsp.name = _name;
+         nsp.init();
+         InsertSortedIntoList(all_nspaces, deref nsp);
+         hash_nspaces[_name] = nsp;
+         return nsp;
+      }
+   }
+
+   static AddClassToNamespace(String _nspace, DOG_Class _class) {
+      DOG_Namespace nsp <= AddCreateNamespace(_nspace);
+      nsp.addClass(deref _class);
+   }
+
+   static BeginProject(String _projectName) {
+      local DOG_Project p;
+
+      p.name = _projectName;
+      p.init();
+
+      if(hash_projects.exists(_projectName))
+      {
+         die "[---] project \""+_projectName+"\" already exists.";
+      }
+
+      InsertSortedIntoList(all_projects, deref p);
+      hash_projects[p.name] = p;
+      
+      current_project <= p;
+   }
+
+   static GetProject(String _name) {
+      return hash_projects.get(_name);
+   }
+
+   static AddToConstantHash(DOG_Constant _const) {
+      hash_constants[_const.name] = _const;
+   }
+
+   static GetConstant(String _name) {
+      return hash_constants.get(_name);
+   }
+
+   static AddToFunctionHash(DOG_Function _fun) {
+      hash_functions[_fun.name] = _fun;
+   }
+
+   static GetFunction(String _name) {
+      return hash_functions.get(_name);
+   }
+
+   static AddToClassHash(DOG_Class _class) {
+      hash_classes[_class.name] = _class;
+   }
+
+   static GetClass(String _name) {
+      return hash_classes.get(_name);
+   }
+
+   static GetClassGuessNSpace(String _name, DOG_Class _class) : DOG_Class {
+      if(-1 == _name.indexOf("::", 0))
+      {
+         if(null != _class)
+         {
+            DOG_Class r <= hash_classes.get(_name);
+            if(null == r)
+            {
+               if(!_class.nspace_name.isBlank())
+               {
+                  // Guess namespace from current class namespace
+                  r <= hash_classes.get(_class.nspace_name+"::"+_name);
+               }
+            }
+            return r;
+         }
+      }
+      // mynspace::myclass
+      return hash_classes.get(_name);
+   }
+
+   static GetModule(String _name) {
+      return hash_modules.get(_name);
+   }
+
+   static AddDerivedClass(String _className, String _baseClassName) {
+      StringArray ac;
+      if!(hash_derived_classes.exists(_baseClassName))
+      {
+         ac <= new StringArray;
+         hash_derived_classes[_baseClassName] = deref ac;
+      }
+      else
+      {
+         ac <= hash_derived_classes[_baseClassName];
+      }
+      InsertSortedIntoStringArray(ac, _className);
+   }
+
+   // Parse module header starting at current inputOffset
+   static BeginModule() {
+      local DOG_Module mod;
+
+      mod.parent_project <= current_project;
+      mod.begin();
+      current_project.addModule(mod);
+      
+      InsertSortedIntoList(modules, deref mod);
+
+      hash_modules[mod.name] = mod;
+
+      currentModule <= mod;
+   }
+
+   static AddClass(DOG_Class _class) {
+      explain "remember reference to _class in all_classes list.";
+
+      InsertSortedIntoList(all_classes, _class);
+   }
+
+   static ParseEE(String _eeBuf, String _eeDirPrefix) {
+
+      current_ee_dir_prefix = _eeDirPrefix;
+
+
+      inputBuffer <= _eeBuf;
+
+      // Extract project name (first line)
+      inputOffset = inputBuffer.indexOfChar('\n', 0);
+      if(inputOffset == -1)
+      {
+         die "[---] failed to parse project name.";
+      }
+      inputBuffer.substring(0, inputOffset) => project_name;
+      project_name.trim();
+      inputOffset++;
+      trace "[...] Parsing API of project \""+project_name+"\".";
+
+      BeginProject(project_name);
+
+      int inputOffsetClass = -1;
+      int inputOffsetModule = -1;
+      String checksumString;
+      currentClass <= null;
+      currentModule <= null;
+
+      // Parse the inputBuffer and convert it to a set of objects
+      while(true)
+      {
+         char cc = inputBuffer[inputOffset];
+         switch(cc)
+         {
+            default:
+               die "[---] encountered illegal control character " + cc + " at offset " + inputOffset;
+
+            case 0:
+               return true;
+
+            case CC_END:
+               if(currentClass != null)
+               {
+                  // Calculate input checksum
+                  inputBuffer.substring(inputOffsetClass, inputOffset-inputOffsetClass) => checksumString;
+                  currentClass.input_checksum = checksumString.checksum;
+                  currentClass <= null;
+                  inputOffset++;
+               }
+               else if(currentModule != null)
+               {
+                  //trace "[...] found end of module.";
+                  // Calculate input checksum
+                  inputBuffer.substring(inputOffsetModule, inputOffset-inputOffsetModule) => checksumString;
+                  currentModule.input_checksum = checksumString.checksum;
+                  currentModule <= null;
+                  inputOffset++;
+                  if(inputOffset >= (inputBuffer.length-1))
+                  {
+                     //trace "[...] found end of stream.";
+
+                     DOG.current_ee_dir_prefix = "";
+
+                     return true;
+                  }
+               }
+               else
+               {
+                  die "[---] stray CC_END found at offset " + inputOffset;
+               }
+               break;
+               
+            case CC_MODULE:
+               if(currentModule == null)
+               {
+                  inputOffsetModule = inputOffset;
+                  ///trace "[...] begin CC_MODULE.";
+                  BeginModule();
+               }
+               else
+               {
+                  die "[---] stray CC_MODULE found at offset " + inputOffset;
+               }
+               break;
+               
+            case CC_CLASS:
+               if(currentClass != null)
+               {
+                  die "[---] found CC_CLASS while parsing class (offset=" + inputOffset + ")";
+               }
+               else
+               {
+                  if(currentModule == null)
+                  {
+                     die "[---] found CC_CLASS outside of module (offset=" + inputOffset + ")";
+                  }
+                  ////trace "[...] begin CC_CLASS.";
+                  inputOffsetClass = inputOffset;
+                  currentModule.beginClass();
+               }
+               break;
+               
+            case CC_FUNCTION:
+               if(currentModule == null)
+               {
+                  die "[---] found CC_FUNCTION outside of module (offset=" + inputOffset + ")";
+               }
+               ////trace "[...] begin CC_FUNCTION.";
+               if(currentClass != null)
+               {
+                  currentClass.parseFunction();
+               }
+               else
+               {
+                  currentModule.parseFunction();
+               }
+               break;
+               
+            case CC_METHOD:
+               if(currentClass == null)
+               {
+                  die "[---] found CC_METHOD outside of class at offset " + inputOffset;
+               }
+               else
+               {
+                  ////trace "[...] begin CC_METHOD.";
+                  currentClass.parseMethod();
+               }
+               break;
+            case CC_CONSTANT:
+               if(currentClass == null)
+               {
+                  die "[---] found CC_CONSTANT outside of class at offset " + inputOffset;
+               }
+               else
+               {
+                  ////trace "[...] begin CC_CONSTANT.";
+                  currentClass.parseConstant();
+               }
+               break;
+         }
+      }
+   }
+
+   static FindProject(String _name) : DOG_Project {
+      return hash_projects[_name];
+   }
+
+   static FindPage(String _name) : DOG_Page {
+      return hash_pages[_name];
+   }
+
+   static AddPage(DOG_Page _page) {
+      all_pages.addLast(#(deref _page));
+      if(hash_pages.exists(_page.page_name))
+      {
+         die "[---] AddPage: trying to add page duplicate (page_name=\""+_page.page_name+"\").";
+      }
+      hash_pages[_page.page_name] = _page;
+   }
+
+   static ParseFiles(StringArray inputFiles) {
+      String fileName;
+      String buf;
+
+      foreach fileName in inputFiles {
+         //trace "xxx parse input file \""+fileName+"\".";
+
+         if(buf.loadLocal(fileName, true))
+         {
+            if(fileName.endsWith(".ee"))
+            {
+               String eeDirPrefix;
+               int idxDir = fileName.lastIndexOf("/");
+               if(-1 != idxDir)
+               {
+                  eeDirPrefix <= fileName.substring(0, idxDir+1);
+               }
+               else
+               {
+                  eeDirPrefix <= null;
+               }
+               // API documentation
+               if(!ParseEE(buf, eeDirPrefix))
+               {
+                  die "[---] " + fileName + ": failed to parse API doc file.";
+               }
+            }
+            else
+            {
+               // Supplementary documentation page
+
+               DOG.current_ee_dir_prefix = "";
+
+               DOG_Page pg <= new DOG_Page;
+               pg.init();
+               pg.file_name = fileName;
+               ////trace "xxx new DOG_Page file_name=\""+fileName+"\" root_node="+#(pg.root_node);
+               pg.input_checksum = buf.checksum;
+
+               // Determine page name and title
+               int idx = buf.indexOf("!%", 0);
+               if(-1 != idx)
+               {
+                  int idxE = buf.indexOfChar('\n', idx+2);
+                  if(-1 != idxE)
+                  {
+                     int idxWS = buf.indexOfChar(' ', idx+2);
+                     if(-1 != idxWS)
+                     {
+                        buf.substring(idx+2, idxWS-(idx+2)) => pg.page_name;
+                        pg.page_title <= buf.substring(idxWS+1, idxE-(idxWS+1)).trim();
+                        //trace "xxx page_name=\""+pg.page_name+"\".";
+                        //trace "xxx page_title=\""+pg.page_title+"\".";
+                        AddPage(deref pg);
+                        pg.parse(buf, idxE);
+                     }
+                     else
+                     {
+                        die "[---] " + fileName + ": missing \' \' while parsing !% page name and title.";
+                     }
+                  }
+                  else
+                  {
+                     die "[---] " + fileName + ": missing \\n while parsing !% page name and title.";
+                  }
+               }
+               else
+               {
+                  die "[---] " + fileName + ": missing !% page name and title.";
+               }
+            }
+         }
+         else
+         {
+            die "[---] failed to open input file \"" + fileName + "\".";
+         }
+      } // foreach fileName
+   }
+
+   static ResolvePageXRef() {
+      ListNode l;
+      DOG_Page p;
+
+      DOG.current_ee_dir_prefix = "";
+
+      // Resolve links to other nodes (in TOC)
+      // and create referenced_by arrays
+      foreach l in all_pages {
+         p <= l.objectValue;
+         p.resolveXRef();
+      }
+   }
+
+   static WriteHTMLPages() {
+      ListNode l;
+      DOG_Page p;
+
+      DOG.current_ee_dir_prefix = "";
+
+      // Write HTML files if a checksum changed or did not exist
+      foreach l in all_pages {
+         p <= l.objectValue;
+         int cacheChecksum = DOG.GetCacheChecksum(p.dir_prefix+p.out_file_name);
+         if(cacheChecksum != p.input_checksum)
+         {
+
+            DOG.current_ee_dir_prefix = p.dir_prefix;
+
+            p.writeHTML();
+
+            // Update checksum cache
+            DOG.SetCacheChecksum(p.dir_prefix+p.out_file_name, p.input_checksum);
+         }
+         else
+         {
+            ////trace "[dbg] skipping page file \""+p.dir_prefix+p.out_file_name+"\" because input has not changed.";
+
+            // Page skipped, make sure that xrefs to API modules/projects in page TOCs are still resolved
+            DOG.current_ee_dir_prefix = p.dir_prefix;
+            p.touchTOCLinks();
+         }
+      }
+   }
+}
+
+class DOG_Namespace : DOG_Object {
+   List all_classes;
+   HashTable hash_classes;
+
+   public method init() {
+      hash_classes.alloc(DOG.MAX_CLASSES_PER_NAMESPACE);
+   }
+
+   public method addClass(DOG_Class _class) {
+      InsertSortedIntoList(all_classes, deref _class);
+   }
+}
+
+class DOG_Project : DOG_Object {
+
+   List all_modules;
+   List all_classes;   // deletable
+   List all_functions; // References to module functions
+   HashTable hash_modules;
+   HashTable hash_classes;
+
+   String ee_dir_prefix;
+
+   public method init() {
+      hash_modules.alloc(DOG.MAX_MODULES_PER_PROJECT); // max modules per project..
+      hash_classes.alloc(DOG.MAX_CLASSES_PER_PROJECT); // max modules per project..
+      ee_dir_prefix = DOG.current_ee_dir_prefix;
+   }
+
+   public method getRelFileName() : String {
+      return DOG.GetRelPath(ee_dir_prefix) + DOG.file_prefix + "prj_" + name + ".html";
+   }
+
+   public method addModule(DOG_Module _module) {
+      InsertSortedIntoList(all_modules, deref _module);
+      hash_modules[_module.name] = _module;
+   }
+
+   public method addClass(DOG_Class _class) {
+      InsertSortedIntoList(all_classes, deref _class);
+      hash_classes[_class.name] = _class;
+   }
+
+   public method addFunction(DOG_Function _fun) {
+      InsertSortedIntoList(all_functions, deref _fun);
+      //hash_functions[_fun.name] = _fun;
+   }
+}
+
+class DOG_Object {
+   String name; // internal name (e.g. for link targets)
+   String synopsis;
+
+   public PointerArray referenced_by;
+
+   public method addReferencedBy(Object _node) {
+      referenced_by.add(#(_node));
+   }
+
+   public method writeHTML_ReferencedBy(String out) {
+      DOG_PageNode.WriteHTML_ReferencedBy(referenced_by, out);
+   }
+
+   public getName():String { 
+      return name; 
+   }
+
+   public setName(String _name) { 
+      name = _name; 
+   }
+
+   public getSynopsis():String {
+      return synopsis;
+   }
+
+   public setSynopsis(String _synopsis) {
+      synopsis = _synopsis;
+   }
+
+   public yacToString(String _r) {
+      _r = name;
+   }
+}
+
+class DOG_URL : DOG_Object {
+   protected String url;
+}
+
+
+class DOG_Description {
+   protected String raw_description; // Entire text including tags
+
+   public String description; // Text until first tag
+
+   public List see_list; // String
+   public List arg_list; // DOG_Value
+   public List url_list; // DOG_URL
+   public String author_string;
+   public StringArray date_stringarray; // history of changes
+   public String return_string;
+   public String deprecated_string <= null;
+   public String since_string;
+
+   define int TAG_NONE       = 0;
+   define int TAG_AUTHOR     = 1;
+   define int TAG_SEE        = 2;
+   define int TAG_DATE       = 3;
+   define int TAG_ARG        = 4;
+   define int TAG_TARG       = 5;
+   define int TAG_RETURN     = 6;
+   define int TAG_DEPRECATED = 7;
+   define int TAG_SINCE      = 8;
+   define int TAG_URL        = 9;
+
+   public getDescription():String {
+      return description;
+   }
+
+   private static int tag_next_type;
+   private static String tag_string;
+
+   // Returns offset in raw_description string or NO_INDEX
+   private getIndexOfNextTag(int _off):int {
+      int idxAuthor     = raw_description.indexOf("@author", _off);
+      int idxSee        = raw_description.indexOf("@see", _off);
+      int idxDate       = raw_description.indexOf("@date", _off);
+      int idxArg        = raw_description.indexOf("@arg", _off);
+      int idxTarg       = raw_description.indexOf("@targ", _off);
+      int idxReturn     = raw_description.indexOf("@return", _off);
+      int idxDeprecated = raw_description.indexOf("@deprecated", _off);
+      int idxSince      = raw_description.indexOf("@since", _off);
+      int idxUrl        = raw_description.indexOf("@url", _off);
+      
+      if(idxAuthor     == -1) idxAuthor     = NO_INDEX;
+      if(idxSee        == -1) idxSee        = NO_INDEX;
+      if(idxDate       == -1) idxDate       = NO_INDEX;
+      if(idxArg        == -1) idxArg        = NO_INDEX;
+      if(idxTarg       == -1) idxTarg       = NO_INDEX;
+      if(idxReturn     == -1) idxReturn     = NO_INDEX;
+      if(idxDeprecated == -1) idxDeprecated = NO_INDEX;
+      if(idxSince      == -1) idxSince      = NO_INDEX;
+      if(idxUrl        == -1) idxUrl        = NO_INDEX;
+
+      int minIdx = NO_INDEX;
+      tag_next_type = TAG_NONE;
+      if(idxAuthor     < minIdx) { minIdx = idxAuthor;     tag_next_type = TAG_AUTHOR;     }
+      if(idxSee        < minIdx) { minIdx = idxSee;        tag_next_type = TAG_SEE;        }
+      if(idxDate       < minIdx) { minIdx = idxDate;       tag_next_type = TAG_DATE;       }
+      if(idxArg        < minIdx) { minIdx = idxArg;        tag_next_type = TAG_ARG;        }
+      if(idxTarg       < minIdx) { minIdx = idxTarg;       tag_next_type = TAG_TARG;       }
+      if(idxReturn     < minIdx) { minIdx = idxReturn;     tag_next_type = TAG_RETURN;     }
+      if(idxDeprecated < minIdx) { minIdx = idxDeprecated; tag_next_type = TAG_DEPRECATED; }
+      if(idxSince      < minIdx) { minIdx = idxSince;      tag_next_type = TAG_SINCE;      }
+      if(idxUrl        < minIdx) { minIdx = idxUrl;        tag_next_type = TAG_URL;        }
+
+      return minIdx;
+   }
+
+   /*
+     - tags:
+     - @author <text>
+     - @see <objname>
+     - @date <text>
+     - @arg <name> <text>
+     - @targ <typelist> <text>
+     - @return <text>
+     - @deprecated <reason>
+     - @since <version>
+     - @url <name> <url> <text>
+   */
+   public parseTags() {
+      // Determine the length of the description string
+      // by searching the first tag occurence
+
+      int endIdx, startIdx = getIndexOfNextTag(0);
+
+      // Extract (comprehensive) description until start of first tag or end of buffer (idx==NO_INDEX)
+      raw_description.substring(0, startIdx) => description;
+
+      // Parse tags
+      while(startIdx != NO_INDEX)
+      {
+         int tagType = tag_next_type;
+         endIdx = getIndexOfNextTag(startIdx + 1);
+         raw_description.substring(startIdx, endIdx-startIdx) => tag_string;
+         tag_string.trim();
+         switch(tagType)
+         {
+            case TAG_AUTHOR:      parseTagAuthor();     break;
+            case TAG_SEE:         parseTagSee();        break;
+            case TAG_DATE:        parseTagDate();       break;
+            case TAG_ARG:         parseTagArg();        break;
+            case TAG_TARG:        parseTagTarg();       break;
+            case TAG_RETURN:      parseTagReturn();     break;
+            case TAG_DEPRECATED:  parseTagDeprecated(); break;
+            case TAG_SINCE:       parseTagSince();      break;
+            case TAG_URL:         parseTagUrl();        break;
+            default:
+               die "[---] internal error while parsing tag (unknown tag type " + tagType + ")";
+         }
+         startIdx = endIdx;
+      }
+   } // parseTags()
+
+   private parseTagAuthor() { // @author Carl Coder
+      tag_string.substring("@author".length, MAX_SIZE) => author_string;
+      author_string.trim();
+      //trace "[...] parseTagAuthor \""+author_string+"\"";
+   }
+
+   private parseTagSee() { // @see OtherClass
+      String t;
+      tag_string.substring("@see".length, MAX_SIZE) => t;
+      t.trim();
+      see_list.addLastString(t);
+      //trace "[...] parseTagSee \""+t+"\"";
+   }
+
+   private parseTagDate() { // @date 15.Dec.2005
+      String t;
+      tag_string.substring("@date".length, MAX_SIZE) => t;
+      t.trim();
+      date_stringarray.add(t);
+      //trace "[...] parseTagDate \""+t+"\"";
+   }
+
+   private parseTagArg():DOG_Value { // @arg myarg Description for {myarg}
+      local DOG_Value arg;
+      String s;
+      tag_string.substring("@arg".length, MAX_SIZE) => s;
+      s.trim();
+      int idx = s.indexOfChar(' ', 0);
+      if(idx != -1)
+      {
+         // Split argument name and description
+         String t;
+         s.substring(0, idx) => t;
+         arg.setName(t);
+         s.substring(idx+1, MAX_SIZE) => t;
+         arg.setSynopsis(t);
+      }
+      else
+      {
+         arg.setName(s);
+      }
+      arg_list.addLast(#(deref arg));
+
+      arg.unmangleName();
+
+      //trace "[...] parseTagArg \""+arg.getName()+"\"";
+      return arg;
+   }
+
+   private parseTagTarg() { // @targ myarg TypeA,TypeB,TypeN Description for {myarg}
+      DOG_Value arg <= parseTagArg();
+      arg.extractMetaTypesFromSynopsis();
+   }
+
+   private parseTagReturn() { // @return Description for return value
+      tag_string.substring("@return".length, MAX_SIZE) => return_string;
+      return_string.trim();
+      ////trace "[...] parseTagReturn \""+return_string+"\"";
+   }
+
+   private parseTagDeprecated() { // @deprecated Superceeded by otherMethod()
+      deprecated_string <= new String;
+      tag_string.substring("@deprecated".length, MAX_SIZE) => deprecated_string;
+      deprecated_string.trim();
+      //trace "[...] parseTagDeprecated \""+deprecated_string+"\"";
+   }
+
+   private parseTagSince() { // @since 1.0
+      String t;
+      tag_string.substring("@since".length, MAX_SIZE) => since_string;
+      since_string.trim();
+      //trace "[...] parseTagSince \""+since_string+"\"";
+   }
+
+   private parseTagUrl() { // @url tks http://tkscript.de The TkScript homepage.
+      //trace "[...] todo: parseTagUrl()";
+   }
+}
+
+class DOG_CreateObject : DOG_Object, DOG_Description {
+   protected String creator;
+   protected String create_date;
+
+   public getCreator():String {
+      return creator;
+   }
+
+   public setCreator(String _creator) {
+      creator = _creator;
+   }
+
+   // Parse name + raw description, increase inputOffset
+   public parseNameAndRawDescription() {
+      // Parse module name until occurence of next control character
+      int idx = inputBuffer.charsetIndexOf(ccSet, inputOffset+1);
+      if(idx == -1)
+      {
+         die "[---] error while searching end of documentation header (offset=" + inputOffset + ")";
+      }
+      String header = "", name = "", rawDiz = "";
+      inputBuffer.substring(inputOffset+1, idx - inputOffset -1) => header;
+      
+      inputOffset = idx;
+      
+      // Extract name from header. (Entire buffer resp. first line)
+      idx = header.indexOfChar('\n', 0);
+      if(idx == -1)
+      {
+         // If the header does not contain newlines assume that it just contains the name
+         header.trim();
+         this.name = header;
+      }
+      else
+      {
+         header.substring(0, idx) => name;
+         name.trim();
+         this.name = name;
+         header.substring(idx +1, MAX_SIZE) => rawDiz;
+         //trace "raw diz = " + rawDiz;
+         raw_description = rawDiz;
+      }
+
+      // // String t <= this.name;
+      // // if(t.startsWith("_"))  // 28Dec2015
+      // //    t = t.substring(1, 99999);
+
+      // Extract "@" tags
+      ////parseTags();
+
+      ////extractSynopsisFromDescription();
+   }
+
+   protected extractSynopsisFromDescription() {
+      description.trim();
+      int idx = description.indexOfChar('\n', 0);
+      if(idx != -1)
+      {
+         String t;
+         description.substring(0, idx) => synopsis;
+         description.substring(idx+1, MAX_SIZE) => t;
+         description = t;
+      }
+      else
+      {
+         // If the description does not contain newlines assume that it just contains the synopsis
+         synopsis = description;
+         description.empty();
+      }
+   }
+}
+
+class DOG_Module : DOG_CreateObject {
+   //
+   // A "Module" is a collection of classes and functions.
+   //
+   public List classes; // deletable DOG_Class objects
+   public List functions; // deletable DOG_Function objects
+
+   public HashTable hash_classes; // references to DOG_Class objects
+   public HashTable hash_functions; // reference to DOG_Function objects
+
+   public String ee_dir_prefix; // directory prefix of .ee file
+
+   public int input_checksum;
+
+   public DOG_Project parent_project;
+
+   public begin() {
+
+      ee_dir_prefix = DOG.current_ee_dir_prefix; // Copy current prefix
+      ////trace "xxx module ee_dir_prefix=\""+ee_dir_prefix+"\".";
+
+      hash_classes.alloc(DOG.MAX_CLASSES_PER_MODULE);
+      hash_functions.alloc(DOG.MAX_FUNCTIONS_PER_MODULE);
+
+      parseNameAndRawDescription();
+      ////trace "xxx begin module name=\""+name+"\".";
+      raw_description.replace("@this", "<code>"+name+"</code>");
+      parseTags();
+      extractSynopsisFromDescription();
+   }
+
+   public method getRelFileName() : String {
+      return DOG.GetRelPath(ee_dir_prefix) + DOG.file_prefix + name + ".html";
+   }
+
+
+   // Parse class header
+   public beginClass() {
+      local DOG_Class clazz;
+
+      clazz.parent_module <= this;
+
+      clazz.begin();
+
+      InsertSortedIntoList(classes, deref clazz);
+
+      currentClass <= clazz;
+
+      _= DOG.current_project.addClass(currentClass);
+
+      DOG.AddClass(clazz);
+
+      hash_classes[clazz.name] = clazz;
+   }
+
+   public parseFunction() {
+      local DOG_Function fun;
+
+      fun.parent_module <= this;
+      fun.begin();
+
+      InsertSortedIntoList(functions, deref fun);
+      parent_project.addFunction(fun);
+
+      hash_functions[fun.name] = fun;
+      DOG.AddToFunctionHash(fun);
+   }
+
+   public getFunction(String _name) {
+      return hash_functions.get(_name);
+   }
+
+   public getClass(String _name) {
+      return hash_classes.get(_name);
+   }
+
+   public getClassGuessNSpace(String _name, DOG_Class _class) {
+      if(-1 == _name.indexOf("::", 0))
+      {
+         if(null != _class)
+         {
+            DOG_Class r <= hash_classes.get(_name);
+            if(null == r)
+            {
+               if(!_class.nspace_name.isBlank())
+               {
+                  // Guess namespace from current class namespace
+                  r <= hash_classes.get(_class.nspace_name+"::"+_name);
+               }
+            }
+            return r;
+         }
+      }
+      return hash_classes.get(_name);
+   }
+
+}
+
+class DOG_Class : DOG_CreateObject {
+   
+   DOG_Module parent_module;
+   String nspace_name;
+   String link_name; // "::" replaced by ",,"
+
+   List functions; // DOG_Function
+   List methods; // DOG_Method
+   List constants; // DOG_Constant
+   StringArray base_classes; // base class names
+   HashTable hash_functions; // maps name to DOG_Function reference
+   HashTable hash_methods; // maps name to DOG_Method reference
+   HashTable hash_constants; // maps name to DOG_Constant reference
+
+   public int input_checksum;
+
+   public begin() {
+
+      hash_functions.alloc(DOG.MAX_FUNCTIONS_PER_CLASS);
+      hash_methods.alloc(DOG.MAX_METHODS_PER_CLASS);
+      hash_constants.alloc(DOG.MAX_CONSTANTS_PER_CLASS);
+
+      parseNameAndRawDescription();
+      parseBaseClasses();
+      int idxNSpace = name.indexOf("::", 0);
+      if(-1 != idxNSpace)
+      {
+         // Extract namespace name
+         name.substring(0, idxNSpace) => nspace_name;
+         name.replace("::", ",,") => link_name;
+      }
+      else
+      {
+         link_name = name;
+      }
+      DOG.AddToClassHash(this);
+      DOG.AddClassToNamespace(nspace_name, this);
+      raw_description.replace("@this", "<code>"+name+"</code>");
+      parseTags();
+      extractSynopsisFromDescription();
+   }
+
+   public method getRelFileName() : String {
+      return DOG.GetRelPath(parent_module.ee_dir_prefix) + DOG.file_prefix + parent_module.name + "_" + link_name + ".html";
+   }
+
+   public parseFunction() {
+      local DOG_Function f;
+      
+      f.begin();
+
+      InsertSortedIntoList(functions, deref f);
+      hash_functions[f.name] = f;
+   }
+
+   public parseMethod() {
+      local DOG_Method m;
+      
+      m.parent_module <= this;
+      m.begin();
+
+      m.clazz <= this;
+      InsertSortedIntoList(methods, deref m);
+      hash_methods[m.name] = m;
+   }
+
+   public parseConstant() {
+      local DOG_Constant c;
+
+      c.begin();
+      c.clazz <= this;
+
+      InsertSortedIntoList(constants, deref c);
+      hash_constants[c.name] = c;
+      DOG.AddToConstantHash(c);
+
+      ////trace "xxx parseConstant name=\""+name+"\" c.name=\""+c.name+"\".";
+   }
+
+   public getFunctionOrMethod(String _name) {
+      DOG_Function r <= hash_functions.get(_name);
+      if(r == null)
+      {
+         return hash_methods.get(_name);
+      }
+      else
+      {
+         return r;
+      }
+   }
+
+   public getConstant(String _name) {
+      DOG_Constant c <= hash_constants.get(_name);
+      return c;
+   }
+
+   public parseBaseClasses() {
+      int i = 0;
+      String s;
+      StringArray names <= name.splitChar(',');
+      foreach s in names
+      {
+         s.trim();
+         if(i++>0)
+         {
+            /////InsertSortedIntoStringArray(base_classes, s);
+            base_classes.add(s);
+
+            // Add to hash of derived classes
+            DOG.AddDerivedClass(name, s);
+         }
+         else
+         {
+            name = s;
+         }
+      }
+   }
+
+}
+
+class DOG_Value : DOG_Object {
+   public String type;
+
+   protected List meta_types; // String, used for native code extensions
+
+   public getType():String { return type; }
+   public setType(String _type) { 
+      type = _type; 
+      type.replace("~~", "::"); // Re-substitute namespace separator
+   }
+
+   public unmangleName() {
+      String t;
+      if(name.getc(0)=='_')
+      {
+         name.substring(1, MAX_SIZE) => t;
+         name = t;
+      }
+   }
+
+   public extractMetaTypesFromSynopsis() {
+      int idx = synopsis.indexOfChar(' ', 0);
+      if(idx != -1)
+      {
+         String s, t;
+         synopsis.substring(0, idx) => t;
+         foreach s in t.splitChar(',')
+         {
+            meta_types.addLastString(s);
+         }
+         synopsis.substring(idx+1, MAX_SIZE) => t;
+         synopsis = t;
+      }
+   }
+
+   public extractNameFromType() {
+      int idx=type.indexOfChar(' ', 0);
+      if(idx != -1)
+      {
+         String s;
+         type.substring(0, idx) => s;
+         type.substring(idx+1, MAX_SIZE) => name;
+         type = s;
+      }
+   }
+}
+
+class DOG_Constant : DOG_CreateObject {
+   String type;
+   public DOG_Class clazz;
+
+   public begin() {
+      parseNameAndRawDescription();
+      extractTypeFromName();
+      raw_description.replace("@this", "<code>"+name+"</code>");
+      parseTags();
+      extractSynopsisFromDescription();
+   }
+
+   public extractTypeFromName() {
+      int idx = name.indexOfChar(',', 0);
+      if(idx != -1)
+      {
+         String s;
+         name.substring(0, idx) => s;
+         name.substring(idx+1, MAX_SIZE) => type;
+         name = s;
+      }
+   }
+}
+
+class DOG_Function : DOG_CreateObject {
+   public DOG_Module parent_module <= null;
+   public List arguments; // DOG_Value
+   public DOG_Value return_type;
+
+   public begin() {
+      parseNameAndRawDescription();
+      // The arguments/return type is extracted from the name *after* the tags have been parsed
+      // (so that @arg synopsis can be assigned to each argument)
+      String tname;
+      name.replace("::", "~~"); // Preserve namespace separator
+      int idxRet = name.indexOfChar(':', 0);
+      int idxArg = name.indexOfChar(',', 0);
+      if(idxRet==-1)
+      {
+         if(idxArg==-1)
+            tname = name;
+         else
+            name.substring(0, idxArg) => tname;
+      }
+      else
+      {
+         if(idxArg==-1)
+            name.substring(0, idxRet) => tname;
+         else
+            name.substring(0, idxArg) => tname;
+      }
+      raw_description.replace("@this", "<code>"+tname+"()</code>");
+      parseTags();
+      extractSynopsisFromDescription();
+      parseArgTypesAndReturn();
+   }
+
+   public parseArgTypesAndReturn() {
+      int i = 0, idx;
+      DOG_Value val;
+      String s, t;
+      StringArray sp <= name.splitChar(',');
+      foreach s in sp
+      {
+         s.trim();
+         if(i++>0)
+         {
+            val <= new DOG_Value;
+            if(i == sp.numElements)
+            {
+               // Last argument
+               idx = s.indexOfChar(':', 0);
+               if(idx != -1)
+               {
+                  // Parse return type
+                  s.substring(idx+1, 256) => t;
+                  val.setType(t);
+                  return_type <= deref val;
+                  // Parse last argument
+                  val <= new DOG_Value;
+                  s.substring(0, idx) => t;
+                  val.setType(t);
+                  val.extractNameFromType();
+                  addArgument(deref val);
+               }
+               else
+               {
+                  // No return type (=> void)
+                  val.setType(s);
+                  val.extractNameFromType();
+                  addArgument(deref val);
+               }
+            }
+            else
+            {
+               val.setType(s);
+               val.extractNameFromType();
+               addArgument(deref val);
+            }
+         }
+         else
+         {
+            // First substring contains name + return type (if available)
+            idx = s.indexOfChar(':', 0);
+            if(idx != -1)
+            {
+               // Parse return type
+               val <= new DOG_Value;
+               s.substring(idx+1, 256) => t;
+               val.setType(t);
+               return_type <= deref val;
+               s.substring(0, idx) => name;
+            }
+            else
+            {
+               // No return type (=> void)
+               name = s;
+            }
+         }
+      }
+   }
+
+   public addArgument(DOG_Value _arg) {
+      arguments.addLast(#(deref _arg));
+
+      _arg.unmangleName();
+
+      // Find synopsis from arg_list
+      ListNode n;
+      foreach n in arg_list 
+      {
+         DOG_Value synArg <= n.objectValue;
+         if(synArg.name == _arg.name)
+         {
+            _arg.synopsis = synArg.synopsis;
+            break;
+         }
+      }
+   }
+}
+
+class DOG_Method : DOG_Function {
+   public DOG_Class clazz;
+}
+

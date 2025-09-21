@@ -1,0 +1,2331 @@
+//
+//   file: dog_html.tks
+//
+// author: (c) 2005-2011 Bastian Spiegel <bs@tkscript.de>
+//             - distributed under terms of the GNU general public license (GPL).
+//   date: 22-Dec-2005, 23-Dec-2005, 24-Dec-2005, 25-Dec-2005, 27-Dec-2005,  4-Jan-2006,  6-Jan-2006,  7-Jan-2006,  8-Jan-2006, 10-Jan-2006
+//         17-Jan-2006, 18-Jan-2006, 01-Mar-2008, 02-Mar-2008, 14-Jun-2008, 16-Jun-2008, 18-Jun-2008, 22-Jun-2008, 21-Sep-2008, 22-Sep-2008
+//         30-Dec-2011
+//   info: HTML output module 
+//
+
+module MDOG_HTML;
+
+
+
+#define CORE_API_URL_PREFIX "http://tkscript.de/doc/api/"
+
+HashTable core_class_hash <= #[
+   "Boolean"         = true,
+   "Buffer"          = true,
+   "Byte"            = true,
+   "Class"           = true,
+   "ClassArray"      = true,
+   "Configuration"   = true,
+   "Double"          = true,
+   "Envelope"        = true,
+   "Event"           = true,
+   "File"            = true,
+   "Float"           = true,
+   "FloatArray"      = true,
+   "Function"        = true,
+   "HashTable"       = true,
+   "IntArray"        = true,
+   "Integer"         = true,
+   "List"            = true,
+   "ListNode"        = true,
+   "Long"            = true,
+   "Object"          = true,
+   "ObjectArray"     = true,
+   "PakFile"         = true,
+   "PointerArray"    = true,
+   "Pool"            = true,
+   "Script"          = true,
+   "ScriptClass"     = true,
+   "ScriptObject"    = true,
+   "SharedBuffer"    = true,
+   "Short"           = true,
+   "StdErrStream"    = true,
+   "StdInStream"     = true,
+   "StdOutStream"    = true,
+   "Stream"          = true,
+   "String"          = true,
+   "StringArray"     = true,
+   "Time"            = true,
+   "TKS"             = true,
+   "TreeNode"        = true,
+   "UnsignedByte"    = true,
+   "UnsignedShort"   = true,
+   "UnsignedInteger" = true,
+   "Value"           = true,
+   "ValueArray"      = true,
+   "Variable"        = true
+];
+
+function GetCurrentDateString() {
+   Time t; t.now();
+   return 
+      ((["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])[t.weekday])+", "+t.monthday+"/"+
+      ((["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"])[t.month])+"/"+t.year;
+}
+
+function GetCurrentTimeString() {
+   Time t;
+   t.now();
+   return Integer.New(t.hour).printf("%02i")+":"+Integer.New(t.min).printf("%02i")+":"+Integer.New(t.sec).printf("%02i");
+}
+
+
+
+
+
+class DOG_HTML {
+   static String buf;
+
+   define int RECURSION_MAX_SIZE = 1024*1024*2; // A single text block may not be larger than 2megs
+
+   static WriteBuffer(String _fileName) {
+//       trace "_filename=";
+//       trace _fileName;
+      if(buf.saveLocal(_fileName))
+      {
+         //trace "[...] wrote \"" + _fileName + "\".";
+         stdout ".";
+      }
+      else
+      {
+         die "[---] failed to write \"" + _fileName + "\".";
+      }
+   }
+
+   static private Object html_tags <= [
+      "b", "big", "br", "code", "i", "li", "ol", "p", "pre", "small", "u", "ul", "sub", "sup"
+   ];
+
+   static TextToHtml(String _text, DOG_Module _mod, DOG_Class _class, DOG_Page _page, DOG_PageNode _pageNode,
+                     boolean _bAllowHTML, boolean _bNewlines) : String {
+      explain "Convert text to HTML, allow mini-subset of attributeless html tags in text. Replace § links in the context of _mod and _class.";
+      String text = _text;
+
+      if(_bAllowHTML)
+      {
+         // Preserve HTML entities &#..;
+         text.replace("&#","__?ANDHASH?__");
+
+         String s;
+         foreach s in html_tags 
+            {
+               text.replace("<"+s+">", "?!?"+s+"?!!?");
+               text.replace("</"+s+">", "?!?_"+s+"?!!?");
+            }
+      }
+
+      // TODO: handle more entities (percent, umlaute..)
+      text.replace("&", "&amp;");
+      text.replace("<", "&lt;");
+      text.replace(">", "&gt;");
+
+      if(_bAllowHTML)
+      {
+         foreach s in html_tags 
+            {
+               text.replace("?!?"+s+"?!!?", "<"+s+">");
+               text.replace("?!?_"+s+"?!!?", "</"+s+">");
+            }
+
+         // Restore HTML entities
+         text.replace("__?ANDHASH?__", "&#");
+      }
+
+
+      ReplaceQuicklinks(text, _mod, _class, _page, _pageNode);
+
+      if(_bNewlines)
+      {
+         // In order to not clutter up the documentation with linebreak elements (<br>)
+         // just replace two successive empty lines by <br>
+         String line;
+         int emptyLineCount = 0;
+         StringArray lines <= text.splitChar('\n');
+         text.empty();
+         foreach line in lines
+         {
+            if(line.isBlank())
+            {
+               emptyLineCount++;
+            }
+            else
+            {
+               if(emptyLineCount==1)
+               {
+                  text.append("\n<br>\n");
+               }
+               else if(emptyLineCount>1)
+               {
+                  text.append("\n<br>&nbsp;<br>\n");
+               }
+               text.append(line);
+               ////text.append("\n");
+               emptyLineCount = 0;
+            }
+         }
+
+         if(emptyLineCount==1)
+         {
+            text.append("\n<br>\n");
+         }
+         else if(emptyLineCount>1)
+         {
+            text.append("\n<br>&nbsp;<br>\n");
+         }
+
+      }
+
+      // Replace files references in `` strings by their contents
+      int endIdx, begIdx = text.indexOfChar('`', 0);
+      while(begIdx != -1) 
+      {
+         if(text.length >= RECURSION_MAX_SIZE)
+         {
+            die "[---] text size exceeds "+RECURSION_MAX_SIZE+" chars. Check your files for infinite include recursions or increase RECURSION_MAX_SIZE constant.";
+         }
+         begIdx++;
+         endIdx = text.indexOfChar('`', begIdx);
+         if(endIdx != -1)
+         {
+            String fileName;
+            text.substring(begIdx, endIdx-begIdx) => fileName;
+            String fileBuf;
+            if(fileBuf.loadLocal(fileName, true))
+            {
+               text.replace("`"+fileName+"`", fileBuf);
+            }
+            else
+            {
+               trace "[---] failed to include file \""+fileName+"\".";
+            }
+            begIdx = text.indexOfChar('`', begIdx);
+         }
+         else
+         {
+            break;
+         }
+      }
+
+      return text;
+   }
+
+   static ReplaceQuicklinks(String _text, DOG_Module _mod, DOG_Class _class, DOG_Page _page, DOG_PageNode _pageNode) : Object {
+      explain "Replace quicklinks to modules, classes, functions/methods/constants or pagenodes (§modOrClassOrFunOrConst, §mod.class, §modOrClass.fun, §class.const, §mod.class.fun, §mod.class.const, §mypage.mynode)
+@arg mod Current module context
+@arg class Current class context or null";
+
+      Object ret <= null;
+
+      int qlOff = 0;
+      int qlBegIdx = _text.indexOfChar('§', 0);
+      while(qlBegIdx != -1)
+      {
+         int qlEndIdx = _text.charsetIndexOf(" \t\n\r();/?!+-,*~{}[]%&", qlBegIdx);
+         if(qlEndIdx == -1)
+         {
+            qlEndIdx = _text.length;
+            // if quicklink ends with '.' just treat it like a regular punctuation mark.
+            if(qlEndIdx > 1)
+            {
+               if(_text[qlEndIdx-2] == '.')
+               {
+                  qlEndIdx-=2;
+               }
+            }
+         }
+         else if(qlEndIdx > 0)
+         {
+            // if quicklink ends with '.' just treat it like a regular punctuation mark.
+            if(_text[qlEndIdx-1] == '.')
+            {
+               qlEndIdx--;
+            }
+         }
+         String qlStr;
+         String qlReplStr; qlReplStr.empty();
+         _text.substring(qlBegIdx+1, qlEndIdx-qlBegIdx-1) => qlStr;
+         ////trace "xxx qlStr=\""+qlStr+"\" mod="+#(_mod)+" class="+#(_class)+" page="+#(_page);
+         StringArray qlSubStr;
+         DOG_Function qlFun;
+         DOG_Class qlClass;
+         DOG_Module qlMod;
+         DOG_Constant qlConst;
+         DOG_Page qlPage;
+         DOG_PageNode qlPageNode;
+         DOG_Project qlProject;
+
+         switch(qlStr.numIndicesOf("."))
+         {
+            case 0:
+               // §modOrClassOrFunOrConst
+
+               // Try to link to project
+               qlProject <= DOG.FindProject(qlStr);
+               if(null != qlProject)
+               {
+                  qlReplStr = "<a href=\"";
+                  qlReplStr.append(qlProject.getRelFileName());
+                  qlReplStr.append("\"><code>");
+                  qlReplStr.append(qlProject.name);
+                  qlReplStr.append("</code></a>");
+                  ret <= qlProject;
+                  break;
+               }
+
+               // Try to link to page
+               qlPage <= DOG.FindPage(qlStr);
+               if(null != qlPage)
+               {
+                  qlReplStr = "<a href=\"";
+                  qlReplStr.append(qlPage.getRelFileName());
+                  qlReplStr.append("\"><code>");
+                  qlReplStr.append(qlPage.page_title);
+                  qlReplStr.append("</code></a>");
+                  ret <= qlPage;
+                  break;
+               }
+
+               // Try class
+               qlClass <= DOG.GetClassGuessNSpace(qlStr, _class);
+               if(qlClass != null)
+               {
+                  // Target is class
+                  qlReplStr = "<a href=\"" + qlClass.getRelFileName();
+                  qlReplStr.append("\"><code>");
+                  qlReplStr.append(qlStr);
+                  qlReplStr.append("</code></a>");
+                  ret <= qlClass;
+                  break;
+               }
+
+               // Try module
+               qlMod <= DOG.GetModule(qlStr);
+               if(qlMod != null)
+               {
+                  // Target is module
+                  qlReplStr = "<a href=\"" + qlMod.getRelFileName();
+                  qlReplStr.append("\"><code>");
+                  qlReplStr.append(qlStr);
+                  qlReplStr.append("</code></a>");
+                  trace "xxx target is module qlMod.ee_dir_prefix=\""+qlMod.ee_dir_prefix+"\".";
+                  ret <= qlMod;
+                  break;
+               }
+
+               // Try link to root-level page node
+               if(_page != null)
+               {
+                  qlPageNode <= _page.findToplevelNode(qlStr);
+                  if(null == qlPageNode)
+                  {
+                     qlPageNode <= _page.findBestMatchNode(qlStr);
+                  }
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(_page.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+
+               
+               if(_class != null)
+               {
+                  qlFun <= _class.getFunctionOrMethod(qlStr);
+                  if(qlFun != null)
+                  {
+                     // Target is class function/method 
+                     qlReplStr = "<a href=\""+ DOG.GetRelPath(_mod.ee_dir_prefix)+DOG.file_prefix;
+                     qlReplStr.append(_mod.name);
+                     qlReplStr.append("_");
+                     qlReplStr.append(_class.link_name);
+                     qlReplStr.append(".html#");
+                     if(qlFun instanceof DOG_Method)
+                     {
+                        qlReplStr.append("m_");
+                     }
+                     else
+                     {
+                        qlReplStr.append("f_");
+                     }
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("()</code></a>");
+                     ret <= qlFun;
+                     break;
+                  }
+                  else
+                  {
+                     qlConst <= _class.getConstant(qlStr);
+                     if(qlConst != null)
+                     {
+                        // Target is class constant
+                        qlReplStr = "<a href=\"" + DOG.GetRelPath(qlConst.clazz.parent_module.ee_dir_prefix) + DOG.file_prefix;
+                        qlReplStr.append(qlConst.clazz.parent_module.name);
+                        qlReplStr.append("_");
+                        qlReplStr.append(qlConst.clazz.link_name);
+                        qlReplStr.append(".html#c_");
+                        qlReplStr.append(qlStr);
+                        qlReplStr.append("\"><code>");
+                        qlReplStr.append(qlStr);
+                        qlReplStr.append("</code></a>");
+                        ret <= qlConst;
+                        break;
+                     }
+                  }
+               }
+
+               // Try module function
+               if(_mod != null)
+               {
+                  qlFun <= _mod.getFunction(qlStr);
+                  if(qlFun != null)
+                  {
+                     // Target is module function
+                     qlReplStr = "<a href=\"" + DOG.GetRelPath(qlFun.parent_module.ee_dir_prefix) + DOG.file_prefix;
+                     qlReplStr.append(qlFun.parent_module.name);
+                     qlReplStr.append(".html#f_");
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("()</code></a>");
+                     ret <= qlFun;
+                     break;
+                  }
+               }
+
+               // Try any class constant
+               qlConst <= DOG.GetConstant(qlStr);
+               if(qlConst != null)
+               {
+                  // Target is class constant
+                  ////qlReplStr = "<a href=\"" + DOG.GetRelPath(_mod.ee_dir_prefix) + DOG.file_prefix;
+                  qlReplStr = "<a href=\"" + DOG.GetRelPath(qlConst.clazz.parent_module.ee_dir_prefix) + DOG.file_prefix;
+                  qlReplStr.append(qlConst.clazz.parent_module.name);
+                  qlReplStr.append("_");
+                  qlReplStr.append(qlConst.clazz.link_name);
+                  qlReplStr.append(".html#c_");
+                  qlReplStr.append(qlStr);
+                  qlReplStr.append("\"><code>");
+                  qlReplStr.append(qlStr);
+                  qlReplStr.append("</code></a>");
+                  ret <= qlConst;
+                  break;
+               }
+
+               // Try any function
+               qlFun <= DOG.GetFunction(qlStr);
+               if(qlFun != null)
+               {
+                  // Target is module function
+                  qlReplStr = "<a href=\"" + DOG.GetRelPath(qlFun.parent_module.ee_dir_prefix) + DOG.file_prefix;
+                  qlReplStr.append(qlFun.parent_module.name);
+                  qlReplStr.append(".html#f_");
+                  qlReplStr.append(qlStr);
+                  qlReplStr.append("\"><code>");
+                  qlReplStr.append(qlStr);
+                  qlReplStr.append("()</code></a>");
+                  ret <= qlFun;
+                  break;
+               }
+
+
+               break;
+
+
+            case 1:
+               // §mod.class, §modOrClass.fun, §class.const
+               qlSubStr <= qlStr.splitChar('.');
+
+               // Try link to page node
+               if(_page != null)
+               {
+                  qlPageNode <= _page.findNode(qlSubStr, 0);
+
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(_page.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+
+               // Try link to toplevel node of a page
+               qlPage <= DOG.FindPage(qlSubStr[0]);
+               if(null != qlPage)
+               {
+                  qlPageNode <= qlPage.findToplevelNode(qlSubStr[1]);
+
+                  if(null == qlPageNode)
+                  {
+                     qlPageNode <= qlPage.findBestMatchNode(qlSubStr[1]);
+                  }
+
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(qlPage.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+
+
+               qlClass <= DOG.GetClassGuessNSpace(qlSubStr[0], _class);
+               if(qlClass != null)
+               {
+                  // Must be class.fun/method
+                  qlFun <= qlClass.getFunctionOrMethod(qlSubStr[1]);
+                  if(qlFun != null)
+                  {
+                     // Target is class function/method 
+                     qlReplStr = "<a href=\"" + DOG.GetRelPath(qlClass.parent_module.ee_dir_prefix) + DOG.file_prefix;
+                     qlReplStr.append(qlClass.parent_module.name);
+                     qlReplStr.append("_");
+                     qlReplStr.append(qlClass.link_name);
+                     qlReplStr.append(".html#");
+                     if(qlFun instanceof DOG_Method)
+                     {
+                        qlReplStr.append("m_");
+                     }
+                     else
+                     {
+                        qlReplStr.append("f_");
+                     }
+                     qlReplStr.append(qlSubStr[1]);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("()</code></a>");
+                     ret <= qlFun;
+                     break;
+                  }
+                  else
+                  {
+                     qlConst <= qlClass.getConstant(qlSubStr[1]);
+                     if(qlConst != null)
+                     {
+                        // Target is class constant
+                        // trace "xxx mod="+#(_mod);
+
+                        ////qlReplStr = "<a href=\"" + DOG.GetRelPath(_mod.ee_dir_prefix) + DOG.file_prefix;
+                        qlReplStr = "<a href=\"" + DOG.GetRelPath(qlClass.parent_module.ee_dir_prefix) + DOG.file_prefix;
+                        ////qlReplStr.append(_mod.name);
+                        qlReplStr.append(qlClass.parent_module.name);
+                        qlReplStr.append("_");
+                        qlReplStr.append(qlClass.link_name);
+                        qlReplStr.append(".html#c_");
+                        qlReplStr.append(qlSubStr[1]);
+                        qlReplStr.append("\"><code>");
+                        qlReplStr.append(qlSubStr[1]);
+                        qlReplStr.append("</code></a>");
+                        ret <= qlConst;
+                        break;
+                     }
+                  }
+               }
+
+               qlMod <= DOG.GetModule(qlSubStr[0]);
+               if(qlMod != null)
+               {
+                  ////stderr "xxx replacequicklink: mod.node qlStr=\""+qlStr+"\".\n";
+               
+                  qlClass <= qlMod.getClassGuessNSpace(qlSubStr[1], _class);
+                  if(qlClass != null)
+                  {
+                     // Target is mod.class
+                     qlReplStr = "<a href=\"" + DOG.GetRelPath(qlMod.ee_dir_prefix) + DOG.file_prefix;
+                     qlReplStr.append(qlMod.name);
+                     qlReplStr.append("_");
+                     qlReplStr.append(qlClass.link_name);
+                     qlReplStr.append(".html\"><code>");
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("</code></a>");
+                     ret <= qlClass;
+                     break;
+                  }
+
+                  qlFun <= qlMod.getFunction(qlSubStr[1]);
+                  if(qlFun != null)
+                  {
+                     // Target is module function
+                     qlReplStr = "<a href=\"" + DOG.GetRelPath(qlMod.ee_dir_prefix) + DOG.file_prefix;
+                     qlReplStr.append(qlMod.name);
+                     qlReplStr.append(".html#f_");
+                     qlReplStr.append(qlSubStr[1]);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlStr);
+                     qlReplStr.append("()</code></a>");
+                     ret <= qlFun;
+                     break;
+                  }
+                  
+               }
+               break;
+
+            case 2:
+               // §mod.class.fun
+               qlSubStr <= qlStr.splitChar('.');
+
+               // Try link to page node
+               if(_page != null)
+               {
+                  qlPageNode <= _page.findNode(qlSubStr, 0);
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(_page.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+
+               // Try link to sublevel node of a page
+               qlPage <= DOG.FindPage(qlSubStr[0]);
+               if(null != qlPage)
+               {
+                  qlPageNode <= qlPage.findNode(qlSubStr, 1);
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(qlPage.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+
+
+               qlMod <= DOG.GetModule(qlSubStr[0]);
+               if(qlMod != null)
+               {
+                  qlClass <= qlMod.getClassGuessNSpace(qlSubStr[1], _class);
+                  if(qlClass != null)
+                  {
+                     qlFun <= qlClass.getFunctionOrMethod(qlSubStr[2]);
+                     if(qlFun != null)
+                     {
+                        // Target is class function/method 
+                        qlReplStr = "<a href=\"" + DOG.GetRelPath(qlMod.ee_dir_prefix) + DOG.file_prefix;
+                        qlReplStr.append(qlMod.name);
+                        qlReplStr.append("_");
+                        qlReplStr.append(qlClass.link_name);
+                        qlReplStr.append(".html#");
+                        if(qlFun instanceof DOG_Method)
+                        {
+                           qlReplStr.append("m_");
+                        }
+                        else
+                        {
+                           qlReplStr.append("f_");
+                        }
+                        qlReplStr.append(qlSubStr[2]);
+                        qlReplStr.append("\"><code>");
+                        qlReplStr.append(qlStr);
+                        qlReplStr.append("()</code></a>");
+                        ret <= qlFun;
+                        break;
+                     }
+                     else
+                     {
+                        qlConst <= qlClass.getConstant(qlSubStr[2]);
+                        if(qlConst != null)
+                        {
+                           // Target is class constant
+                           qlReplStr = "<a href=\"" + DOG.GetRelPath(qlMod.ee_dir_prefix) + DOG.file_prefix;
+                           qlReplStr.append(qlMod.name);
+                           qlReplStr.append("_");
+                           qlReplStr.append(qlClass.link_name);
+                           qlReplStr.append(".html#c_");
+                           qlReplStr.append(qlSubStr[2]);
+                           qlReplStr.append("\"><code>");
+                           qlReplStr.append(qlSubStr[2]);
+                           qlReplStr.append("</code></a>");
+                           ret <= qlConst;
+                           break;
+                        }
+                     }
+                  }
+               }
+               break;
+
+            default:
+
+               qlSubStr <= qlStr.splitChar('.');
+
+               // Try link to page node
+               if(_page != null)
+               {
+                  qlPageNode <= _page.findNode(qlSubStr, 0);
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(_page.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+
+               // Try link to sublevel node of a page
+               qlPage <= DOG.FindPage(qlSubStr[0]);
+               if(null != qlPage)
+               {
+                  qlPageNode <= qlPage.findNode(qlSubStr, 1);
+                  if(null != qlPageNode)
+                  {
+                     qlReplStr = "<a href=\"";
+                     qlReplStr.append(qlPage.getRelFileName());
+                     qlReplStr.append("#");
+                     qlReplStr.append(qlPageNode.abs_node_name);
+                     qlReplStr.append("\"><code>");
+                     qlReplStr.append(qlPageNode.node_title);
+                     qlReplStr.append("</code></a>");
+                     if(null != _pageNode)
+                     {
+                        qlPageNode.addReferencedBy(_pageNode);
+                     }
+                     ret <= qlPageNode;
+                     break;
+                  }
+               }
+               break;
+
+         } // end switch numIndices
+
+         if(qlReplStr.isBlank())
+         {
+            // die ?
+            trace "[---] cannot resolve quicklink \"" + qlStr + "\".";
+            //trace "[---]     mod="+#(_mod)+" class="+#(_class)+" page="+#(_page);
+            qlReplStr = "<font color=\"#ff0000\">&rarr;" + qlStr+"</font>";
+         }
+         _text.replaceRegion(qlBegIdx, qlEndIdx, qlReplStr);
+
+         ////trace "[...] quicklink: \"" + qlStr +"\" -> "+ qlReplStr;
+
+         qlBegIdx = _text.indexOfChar('§', qlOff);
+      } // end while qlBegIdx
+
+      return ret;
+   }
+
+   static TextToHtmlOneliner(String _text, DOG_Module _mod, DOG_Class _class, DOG_Page _page) : String {
+      String text <= TextToHtml(_text, _mod, _class, _page, null, true, true);
+      text.replace(" ", "&nbsp;");
+      return text;
+   }
+
+   static WriteGoto(String _target, _caption) {
+      buf.append("\n<br>&nbsp;<br>&rarr;<small>&nbsp;</small><a href=\"");
+      buf.append(_target);
+      buf.append("\">");
+      buf.append(_caption);
+      buf.append("</a>");
+   }
+
+
+   static Output() {
+
+      // Create global index page
+      //WriteIndex();
+
+      stdout "[...] Writing API HTML pages...";
+
+      ListNode ln;
+      DOG_Project prj;
+      foreach ln in DOG.all_projects {
+         prj <= ln.objectValue;
+
+         DOG.current_project <= prj;
+
+         // Write module documentation pages
+         WriteProjectModules();
+         
+         // Write class documentation pages
+         WriteProjectClasses();
+
+         // Write project index page
+         WriteProjectIndex();
+
+         DOG.current_ee_dir_prefix = "";
+      }
+
+      // Write namespace index files
+      DOG.current_ee_dir_prefix = "";
+      DOG_Namespace nsp;
+      foreach ln in DOG.all_nspaces {
+         nsp <= ln.objectValue;
+
+         WriteNamespaceIndex(nsp);
+      }
+
+      trace "...done.";
+      
+   }
+
+   static BeginPage(String _title) {
+      buf.append("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\" \"http://www.w3.org/TR/html4/loose.dtd\">");
+      buf.append("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\"><title>");
+      buf.append(_title);
+      buf.append("</title>");
+      buf.append("<style type=\"text/css\">
+TD {
+   vertical-align: baseline;
+}
+DIV.method {
+          border-color: #000000;
+          border-width: 1px 1px 1px 1px;
+          border-style: solid;
+          padding: 0px;
+          margin: 50px 0px 0px 0px;
+          background-color: #fcfcf8; 
+}
+DIV.method_name {
+          font: 19pt serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 6px;
+          border-style: solid;
+          margin: 0px;
+          padding: 4px 4px 4px 12px;
+          background-color: #f0f0f0;
+          color: #202060; 
+}
+DIV.method_synopsis {
+          font: 10pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 10px; 4px; 10px; 4px;
+          background-color: #f8f8f8;
+}
+DIV.method_signature_title {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+          background-color: #f0f0e0;
+          color: #202020;
+}
+DIV.method_signature {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+          background-color: #f0f0f0;
+          color: #000000;
+}
+TABLE.method_signature {
+          color: #000000;
+	  background-color: #f0f0f0;
+          font: 11pt monospace;
+          margin-left: 50px;
+}
+DIV.method_arguments_title {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+          background-color: #f0f0e0;
+          color: #202020;
+}
+DIV.method_arguments {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+}
+TABLE.method_arguments {
+          margin-left: 50px;
+}
+TD.arg_type {
+          font: 11pt monospace, fixed;
+          font-weight: bold;
+          vertical-align: baseline;
+}
+TD.arg_name {
+          font: 11pt monospace, fixed;
+          font-style: italic;
+          vertical-align: baseline;
+}
+TD.arg_diz {
+          font: 10pt sans-serif;
+}
+DIV.method_returns_title {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+          background-color: #f0f0e0;
+          color: #202020;
+}
+DIV.method_returns {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+}
+TABLE.method_returns {
+          margin-left: 50px;
+}
+DIV.method_diz_title {
+          font: 11pt sans-serif;
+          border-color: #000000;
+          border-width: 0px 0px 1px 0px;
+          border-style: solid;
+          padding: 4px;
+          background-color: #f0f0e0;
+          color: #202020;
+}
+DIV.method_diz {
+          font: 11pt sans-serif;
+          border-width: 0px;
+          border-style: solid;
+          padding: 4px;
+          margin-left: 50px;
+}
+.page_up {
+    font: 9pt serif;
+    border-width: 3px 3px 3px 3px; border-style: solid; border-color: #e8e8e8;
+    background-color: #f8f8f8; 
+    -moz-border-radius: 10px;
+    padding: 1px 1px 1px 2px;
+    margin-bottom: .8em;
+    margin-left: 2em;
+    }
+</style>
+");
+      buf.append("</head>\n<body><a name=\"top\"></a>");
+   }
+
+   static AddAutoGenNotice(String _b) {
+      _b.append("\n\n<br><hr><center><small><code style=\"color:#dedede\">auto-generated by <i>\"DOG\"</i>, the <a style=\"color:#d2d2d2\" href=\"http://tkscript.de\"><small>TkScript</small></a> document generator. ");
+      _b.append(GetCurrentDateString());
+      _b.append(" ");
+      _b.append(GetCurrentTimeString());
+      _b.append("</code></small></center>\n");
+   }
+
+   static EndPage() {
+      AddAutoGenNotice(buf);
+      buf.append("\n</body></html>");
+   }
+
+   static WriteIndex() {
+      buf.empty();
+
+      BeginPage(DOG.project_name+" project index");
+
+      buf.append("<h1>Project &lsaquo;&nbsp;");
+      buf.append(DOG.project_name);
+      buf.append("&nbsp;&rsaquo;</h1>");
+
+      WriteModuleIndex();
+
+      WriteAllModulesFunctionIndex();
+
+      WriteClassIndex();
+
+      WriteAllModulesAllClassesFunctionIndex();
+
+      WriteAllModulesAllClassesMethodIndex();
+
+      EndPage();
+
+      WriteBuffer(DOG.file_prefix+"index.html");
+
+      trace "[...] wrote \""+DOG.file_prefix+"index.html\".";
+   }
+
+   static AppendType(String _type, String _d) {
+      //_d.append("<b>");
+      DOG_Class clazz <= DOG.GetClass(_type);
+      if(clazz != null)
+      {
+         _d.append("<a style=\"text-decoration: none\" href=\""); //  
+         _d.append(DOG.GetRelPath(clazz.parent_module.ee_dir_prefix));
+         _d.append(DOG.file_prefix);
+         _d.append(clazz.parent_module.name);
+         _d.append("_");
+         _d.append(clazz.link_name);
+         _d.append(".html\">"); // <small>
+         _d.append(clazz.name); // </small>
+         _d.append("</a>");
+      }
+      else if(core_class_hash.exists(_type))
+      {
+         _d.append("<a style=\"text-decoration: none\" href=\""); // 
+         _d.append(CORE_API_URL_PREFIX);
+         _d.append(_type);
+         _d.append(".html\">"); // <small>
+         _d.append(_type);
+         _d.append("</a>"); // </small>
+      }
+      else
+      {
+         _d.append(_type);
+      }
+      //_d.append("</b>");
+   }
+
+   static WriteModuleIndex() {
+      buf.append("\n<a name=\"modules\"></a><h2>Modules</h2>\n<ul>\n");
+      ListNode n;
+      foreach n in DOG.modules 
+      {
+         DOG_Module mod <= n.objectValue;
+         String modName = mod.getName();
+         
+         buf.append("\n<li><code><a href=\"");
+         buf.append(DOG.file_prefix);
+         buf.append(modName);
+         buf.append(".html\">");
+         buf.append(modName);
+         buf.append("</a>");
+         buf.append("</code>&nbsp;-&nbsp;<small><i>");
+         buf.append( TextToHtmlOneliner(mod.getSynopsis(), mod, null, null) );
+         buf.append("</i></small>");
+      }
+      buf.append("</ul>\n");
+   }
+
+   static WriteFunctionListShort(DOG_Module _mod, 
+                                 DOG_Class _class,
+                                 String _funType, 
+                                 List _functions, 
+                                 String _linePrefix, StringArray _lines, StringArray _sortLines,
+                                 boolean _bModName,
+                                 boolean _bClassName) {
+      String lineBuf;
+      ListNode fn;
+      String modName = _mod.getName();
+      foreach fn in _functions
+      {
+         DOG_Function fun <= fn.objectValue;
+
+         String funName = fun.getName();
+
+         _sortLines.add(funName);
+
+         lineBuf.empty();
+         lineBuf.append(_linePrefix);
+         lineBuf.append("<code><a href=\"");
+         lineBuf.append(DOG.file_prefix);
+         lineBuf.append(modName);
+         if(_class != null)
+         {
+            lineBuf.append("_");
+            lineBuf.append(_class.link_name);
+         }
+         lineBuf.append(".html#");
+         lineBuf.append(_funType);
+         lineBuf.append("_");
+         lineBuf.append(funName);
+         lineBuf.append("\">");
+         lineBuf.append(funName);
+         lineBuf.append("</a>");
+
+         // Write arguments
+         String lastArgType <= null;
+         if(fun.arguments.size)
+         {
+            lineBuf.append("(");
+            ListNode an;
+            int argi = 0;
+            foreach an in fun.arguments
+            {
+               DOG_Value arg <= an.objectValue;
+               String argType <= arg.getType();
+               if(argi++>0)
+               {
+                  lineBuf.append(",&nbsp;");
+               }
+               if(argType != lastArgType)
+               {
+                  lastArgType <= argType;
+                  AppendType(argType, lineBuf);
+                  lineBuf.append("&nbsp;");
+               }
+               lineBuf.append(arg.getName());
+            } 
+            lineBuf.append(")");
+         }
+         else
+         {
+            lineBuf.append("()");
+         }
+
+         // Append return type
+         String retType = fun.return_type.getType();
+         if(! retType.isBlank())
+         {
+            lineBuf.append("&nbsp;:&nbsp;");
+            AppendType(retType, lineBuf);
+         }
+         if(_bModName)
+         {
+            lineBuf.append("&nbsp;(<small>");
+            lineBuf.append(modName);
+            if(_bClassName)
+            {
+               lineBuf.append(".");
+               lineBuf.append(_class.name);
+            }
+            lineBuf.append("</small>)");
+         }
+         lineBuf.append("</code>&nbsp;-&nbsp;<small><i>");
+         if(fun instanceof DOG_Method)
+         {
+            DOG_Method castMethod <= fun;
+            lineBuf.append( TextToHtmlOneliner(fun.getSynopsis(), _mod, castMethod.clazz, null) );
+         }
+         else
+         {
+            lineBuf.append( TextToHtmlOneliner(fun.getSynopsis(), _mod, null, null) );
+         }
+         lineBuf.append("</i></small>");
+
+         _lines.add(lineBuf);
+      }
+   }
+
+   static WriteSeeList(List _see, DOG_Module _mod, DOG_Class _class) {
+      if(_see.size > 0)
+      {
+         String see;
+         see.empty();
+         ListNode n;
+         int i = 0;
+         see.append("<ul>");
+         foreach n in _see
+         {
+            if(i++ > 0)
+            {
+               see.append(", ");
+            }
+            String s = n.stringValue;
+            s.trim();
+            if(s.startsWith("http://"))
+            {
+               see.append("<li><a href=\"");
+               see.append(s);
+               see.append("\">");
+               see.append(TextToHtml(s, _mod, _class, null, null, false, false));
+               see.append("</a>");
+            }
+            else
+            {
+               if(!s.startsWith("§"))
+               {
+                  s.insert(0, "§");
+               }
+               see.append("<li>");
+               see.append(s);
+            }
+         }
+
+         ReplaceQuicklinks(see, _mod, _class, null, null);
+
+         see.append("</ul>");
+
+         buf.append("<u>See also</u>:&nbsp;&nbsp;<p><small>");
+         buf.append(see);
+         buf.append("</small></p>\n");
+      }
+   }
+
+   static WriteFunctionList(List _functions, DOG_Module _mod, DOG_Class _class) {
+      int i = 0;
+      ListNode n;
+      foreach n in _functions 
+      {
+         DOG_Function fun <= n.objectValue;
+         
+         ////buf.append("\n<hr>\n");
+
+         // Anchor
+         buf.append("<a name=\"");
+         if(fun instanceof DOG_Method)
+            buf.append("m_");
+         else
+            buf.append("f_");
+         buf.append(fun.getName());
+         buf.append("\"></a>");
+
+         // Header
+         buf.append("<div class=\"method\">\n");
+         buf.append("<table border=0 width=\"100%\" cellpadding=0 cellspacing=0>\n");
+         buf.append("<tr><td width=\"100%\"><div class=\"method_name\">");
+         if(fun instanceof DOG_Method)
+            buf.append("Method");
+         else
+            buf.append("Function");
+         buf.append(" <b><code>");
+         buf.append(fun.getName());
+         buf.append("</code></b></div><td></tr>\n");
+
+         // Deprecated
+         if(fun.deprecated_string != null)
+         {
+            // TODO: polish
+            buf.append("<tr><td><u><b>Deprecated</b></u>:&nbsp;&nbsp;<i>");
+            buf.append( TextToHtmlOneliner(fun.deprecated_string, _mod, _class, null) );
+            buf.append("</i></td></tr>\n");
+         }
+
+         // Synopsis
+         buf.append("<tr><td width=\"100%\"><div class=\"method_synopsis\">");
+         buf.append( TextToHtml(fun.getSynopsis(), _mod, _class, null, null, true, false) );
+         buf.append("</div></td></tr>\n");
+
+         // Author(s)
+         if! (fun.author_string.isBlank())
+         {
+            // TODO: polish
+            buf.append("<tr><td><u>Author</u>:&nbsp;&nbsp;<i>");
+            buf.append( TextToHtmlOneliner(fun.author_string, _mod, _class, null) );
+            buf.append("</i></td></tr>\n");
+         }
+
+         // Since
+         if! (fun.since_string.isBlank())
+         {
+            // TODO: polish
+            buf.append("<tr><td><u>Since</u>:&nbsp;&nbsp;<i>");
+            buf.append( TextToHtmlOneliner(fun.since_string, _mod, _class, null) );
+            buf.append("</i></td></tr>\n");
+         }
+
+         // Signature
+         buf.append("<tr><td width=\"100%\"><div class=\"method_signature_title\">Signature</div></td></tr>\n");
+         buf.append("<tr><td width=\"100%\"><div class=\"method_signature\"><table border=0 cellpadding=3 cellspacing=0 class=\"method_signature\">\n");
+         buf.append("<tr><td>");
+         buf.append(fun.getName());
+         buf.append("</td><td>(</td>");
+         int argi = 0;
+         ListNode an;
+         DOG_Value arg;
+         DOG_Value r;
+         if(fun.arguments.size > 0)
+         {
+            foreach an in fun.arguments
+            {
+               arg <= an.objectValue;
+               if(argi > 0)
+               {
+                  buf.append("<td>,</td></tr>\n<tr><td>&nbsp;</td><td>&nbsp;</td>");
+               }
+               buf.append("<td class=\"arg_type\">");
+               AppendType(arg.type, buf);
+               buf.append("</td><td class=\"arg_name\">");
+               buf.append(arg.name);
+               buf.append("</td>");
+               argi++;
+            }
+            if(argi > 1)
+            {
+               buf.append("</td><td>&nbsp;</td></tr>\n<tr><td>&nbsp;</td><td>&nbsp;</td><td>)</td><td>&nbsp;</td><td>&nbsp;</td></tr>\n");
+            }
+            else
+            {
+               buf.append("</td><td>)</td></tr>\n");
+            }
+            if!(fun.return_type.getType().isBlank())
+            {
+               r <= fun.return_type;
+               buf.append("<tr><td>&nbsp;</td><td>:</td><td class=\"arg_type\" colspan=3>");
+               AppendType(r.type, buf);
+               buf.append("</td></tr>\n");
+            }
+            buf.append("</table></div></td></tr>\n");
+         }
+         else
+         {
+            buf.append("<td>)</td>");
+            if!(fun.return_type.getType().isBlank())
+            {
+               r <= fun.return_type;
+               buf.append("<td>:</td><td class=\"arg_type\">");
+               AppendType(r.type, buf);
+               buf.append("</td>");
+            }
+            buf.append("</tr>\n</table></div></td></tr>\n");
+         }
+
+         // Arguments
+         if(fun.arguments.size > 0)
+         {
+            buf.append("<tr><td width=\"100%\"><div class=\"method_arguments_title\">Arguments</div></td></tr>\n");
+            buf.append("<tr><td><div class=\"method_arguments\"><table class=\"method_arguments\" border=0 cellpadding=4 cellspacing=0>\n");
+            foreach an in fun.arguments {
+               arg <= an.objectValue;
+               buf.append("<tr><td class=\"arg_type\" valign=top align=right>");
+               AppendType(arg.type, buf);
+               buf.append("</td><td class=\"arg_name\" valign=top>");
+               buf.append(arg.name);
+               buf.append("</td><td class=\"arg_diz\" valign=top>&#150;</td><td class=\"arg_diz\" valign=top>");
+               buf.append(TextToHtml(arg.getSynopsis(), _mod, _class, null, null, true, false));
+               buf.append("</td></tr>\n");
+            }
+            buf.append("</table></div></td></tr>\n");
+         }
+
+         // Returns
+         if!(fun.return_type.getType().isBlank())
+         {
+            r <= fun.return_type;
+            buf.append("<tr><td width=\"100%\"><div class=\"method_returns_title\">Returns</div></td></tr>\n");
+            buf.append("<tr><td><div class=\"method_arguments\"><table class=\"method_arguments\" border=0 cellpadding=4 cellspacing=0>\n");
+            buf.append("<tr><td class=\"arg_type\" valign=top align=right>");
+            AppendType(r.type, buf);
+            buf.append("</td><td class=\"arg_diz\" valign=top>&#150;</td><td class=\"arg_diz\" valign=top>");
+            /////buf.append(TextToHtml(r.getSynopsis(), _mod, _class, null, null, true, false));
+            buf.append(TextToHtml(fun.return_string, _mod, _class, null, null, true, false));
+            buf.append("</td></tr>\n</table></div></td></tr>\n");
+         }
+
+         // Description
+         if!(fun.getDescription().isBlank())
+         {
+            buf.append("<tr><td width=\"100%\"><div class=\"method_diz_title\">Description</div></td></tr>\n");
+            buf.append("<tr><td><div class=\"method_diz\">");
+            buf.append(TextToHtml(fun.getDescription(), _mod, _class, null, null, true, true));
+            buf.append("</div></td></tr>\n");
+         }
+            
+         buf.append("</table>\n"); // End of method table
+         buf.append("</div>\n"); // End of method div
+
+         WriteHistory(fun.date_stringarray, _mod, _class, buf);
+
+         WriteSeeList(fun.see_list, _mod, _class);
+
+         WriteGoto("#top", "top of page");
+      }
+   }
+
+   static WriteHistory(StringArray _history, DOG_Module _mod, DOG_Class _class, String _buf) {
+      // Change dates
+      if (_history.numElements > 0)
+      {
+         if(_history.numElements == 1)
+         {
+            _buf.append("<br>&nbsp;<br><u>Date</u>:&nbsp;&nbsp;<i>");
+            _buf.append( TextToHtml(_history[0], _mod, _class, null, null, true, true) );
+            _buf.append("</i><br>\n");
+         }
+         else
+         {
+            _buf.append("<br>&nbsp;<br><u>History</u>:");
+            String dateString;
+            _buf.append("<ul>");
+            foreach dateString in _history
+            {
+               _buf.append("<li><i>");
+               _buf.append( TextToHtml(dateString, _mod, _class, null, null, true, true) );
+               _buf.append("</i>\n");
+            }
+            _buf.append("</ul>\n");
+         }
+      }
+   }
+
+   static WriteSortedLines(StringArray _lines, StringArray _sortLines, String _buf) {
+      explain "Sort the _sortLines array and append _lines sorted by _sortLines criteria to _buf.";
+
+      IntArray linesIds;
+      linesIds.empty();
+      _sortLines.sortByValue(linesIds, false);
+      
+      int i=0;
+      loop linesIds.numElements
+      {
+         _buf.append(_lines[linesIds[i++]]);
+      }
+   }
+
+   static WriteAllModulesFunctionIndex() {
+      explain "Write a sorted list of all functions in all modules.";
+
+      buf.append("\n<a name=\"functions\"></a><hr><h2>Module functions</h2>\n<ul>\n");
+      StringArray lines, sortLines;
+      lines.empty(); sortLines.empty();
+      ListNode mn;
+      foreach mn in DOG.modules 
+      {
+         DOG_Module mod <= mn.objectValue;
+
+         WriteFunctionListShort(mod, null, "f", mod.functions, "\n<li>", lines, sortLines, true, false);
+      }
+
+      WriteSortedLines(lines, sortLines, buf);
+
+      buf.append("</ul>\n");
+   }
+
+   static WriteAllModulesAllClassesFunctionIndex() {
+      explain "Write a sorted list of all functions in all classes in all modules.";
+
+      buf.append("\n<a name=\"class_functions\"></a><hr><h2>Class functions</h2>\n<ul>\n");
+      StringArray lines, sortLines;
+      lines.empty(); sortLines.empty();
+      ListNode mn;
+      foreach mn in DOG.modules 
+      {
+         DOG_Module mod <= mn.objectValue;
+
+         ListNode cn;
+         foreach cn in mod.classes
+         {
+            DOG_Class clazz <= cn.objectValue;
+            WriteFunctionListShort(mod, clazz, "f", clazz.functions, "\n<li>", lines, sortLines, true, true);
+         }
+      }
+
+      WriteSortedLines(lines, sortLines, buf);
+
+      buf.append("</ul>\n");
+   }
+
+   static WriteAllModulesAllClassesMethodIndex() {
+      explain "Write a sorted list of all methods in all classes in all modules.";
+
+      buf.append("\n<a name=\"class_methods\"></a><hr><h2>Class methods</h2>\n<ul>\n");
+      StringArray lines, sortLines;
+      lines.empty(); sortLines.empty();
+      ListNode mn;
+      foreach mn in DOG.modules 
+      {
+         DOG_Module mod <= mn.objectValue;
+
+         ListNode cn;
+         foreach cn in mod.classes
+         {
+            DOG_Class clazz <= cn.objectValue;
+            WriteFunctionListShort(mod, clazz, "m", clazz.methods, "\n<li>", lines, sortLines, true, true);
+         }
+      }
+
+      WriteSortedLines(lines, sortLines, buf);
+
+      buf.append("</ul>\n");
+   }
+
+   static WriteClassFunctionsShort(DOG_Module _mod, DOG_Class _class, String _buf, boolean _bModName) {
+      if(_class.functions.size > 0)
+      {
+         String modName <= _mod.name;
+         _buf.append("\n<a name=\"");
+         _buf.append("f_");
+         _buf.append(modName);
+         _buf.append("_");
+         _buf.append(_class.link_name);
+         _buf.append("\"></a>");
+         _buf.append("\n<br>&nbsp;&nbsp;<small><u>Functions</u>:</small>\n<ul>\n");
+         StringArray lines, sortLines;
+         lines.empty(); sortLines.empty();
+         WriteFunctionListShort(_mod, _class , "f", _class.functions, "\n<li>", lines, sortLines, _bModName, false);
+         WriteSortedLines(lines, sortLines, _buf);
+         _buf.append("</ul>\n");
+      }
+   }
+
+   static WriteClassMethodsShort(DOG_Module _mod, DOG_Class _class, String _buf, boolean _bModName) {
+      if(_class.methods.size > 0)
+      {
+         String modName <= _mod.name;
+         _buf.append("\n<a name=\"");
+         _buf.append("m_");
+         _buf.append(modName);
+         _buf.append("_");
+         _buf.append(_class.link_name);
+         _buf.append("\"></a>");
+         _buf.append("\n<br>&nbsp;&nbsp;<small><u>Methods</u>:</small>\n<ul>\n");
+         StringArray lines, sortLines;
+         lines.free(); sortLines.empty();
+         WriteFunctionListShort(_mod, _class, "m", _class.methods, "\n<li>", lines, sortLines, _bModName, false);
+         WriteSortedLines(lines, sortLines, _buf);
+         _buf.append("</ul>\n");
+      }
+   }
+
+   static WriteClassConstantsShort(DOG_Module _mod, DOG_Class _class, String _buf) {
+      if(_class.constants.size > 0)
+      {
+         String modName <= _mod.name;
+         _buf.append("\n<br>&nbsp;&nbsp;<small><u>Constants</u>:</small>\n<ul>\n");
+         StringArray lines, sortLines;
+         lines.empty(); sortLines.empty();
+         ListNode cn <= _class.constants.head;
+         while(cn != null)
+         {
+            DOG_Constant constant <= cn.objectValue;
+            String constantName <= constant.name;
+            String lineBuf;
+            lineBuf.empty();
+            lineBuf.append("<li><code>");
+            AppendType(constant.type, lineBuf);
+            lineBuf.append("&nbsp;</code><a href=\"");
+            lineBuf.append(DOG.GetRelPath(_mod.ee_dir_prefix));
+            lineBuf.append(DOG.file_prefix);
+            lineBuf.append(modName);
+            lineBuf.append("_");
+            lineBuf.append(_class.link_name);
+            lineBuf.append(".html#c_");
+            lineBuf.append(constantName);
+            lineBuf.append("\"><code>");
+            lineBuf.append(constantName);
+            lineBuf.append("</code></a>&nbsp;-&nbsp;<i>");
+            lineBuf.append( TextToHtmlOneliner(constant.synopsis, _mod, _class, null) );
+            lineBuf.append("</i>\n");
+            lines.add(lineBuf);
+            sortLines.add(constantName);
+            cn <= cn.next;
+         }
+         WriteSortedLines(lines, sortLines, _buf);
+         _buf.append("</ul>\n");
+      }
+   }
+
+   static WriteClassConstants(DOG_Module _mod, DOG_Class _class, String _buf) {
+      if(_class.constants.size > 0)
+      {
+         String modName <= _mod.name;
+         StringArray lines, sortLines;
+         lines.empty(); sortLines.empty();
+         ListNode cn <= _class.constants.head;
+         while(cn != null)
+         {
+            DOG_Constant constant <= cn.objectValue;
+            String constantName <= constant.name;
+            String lineBuf;
+            lineBuf.empty();
+
+            // Anchor
+            lineBuf.append("\n<a name=\"");
+            lineBuf.append("c_");
+            lineBuf.append(constantName);
+            lineBuf.append("\"></a>");
+
+            // Header
+            lineBuf.append("<div class=\"method\">\n");
+            lineBuf.append("<table border=0 width=\"100%\" cellpadding=0 cellspacing=0>\n");
+            lineBuf.append("<tr><td width=\"100%\"><div class=\"method_name\">Constant <b><code>");
+            lineBuf.append(constantName);
+            lineBuf.append("&nbsp;(");
+            AppendType(constant.type, lineBuf);
+            lineBuf.append(")</code></b></div><td></tr>\n");
+
+            // Synopsis
+            lineBuf.append("<tr><td width=\"100%\"><div class=\"method_synopsis\">");
+            lineBuf.append( TextToHtmlOneliner(constant.synopsis, _mod, _class, null) );
+            lineBuf.append("</div></td></tr>\n");
+
+            // Since
+            if! (constant.since_string.isBlank())
+            {
+               // TODO: polish
+               lineBuf.append("<tr><td><u>Since</u>:&nbsp;&nbsp;<i>");
+               lineBuf.append( TextToHtmlOneliner(constant.since_string, _mod, _class, null) );
+               lineBuf.append("</i></td></tr>\n");
+            }
+
+            // Description
+            if!(constant.description.isBlank())
+            {
+               lineBuf.append("<tr><td width=\"100%\"><div class=\"method_diz_title\">Description</div></td></tr>\n");
+               lineBuf.append("<tr><td><div class=\"method_diz\">");
+               lineBuf.append( TextToHtml(constant.description, _mod, _class, null, null, true, true) );
+               lineBuf.append("</div></td></tr>\n");
+            }
+
+            // TODO: polish
+            lineBuf.append("<tr><td>");
+            WriteHistory(constant.date_stringarray, _mod, _class, lineBuf);
+            lineBuf.append("</td></tr>\n");
+
+            lineBuf.append("</table></div>\n");
+
+            lines.add(lineBuf);
+            sortLines.add(constantName);
+            cn <= cn.next;
+         }
+         WriteSortedLines(lines, sortLines, _buf);
+         _buf.append("</ul>\n");
+      }
+   }
+
+   static GetNamespaceLinks():String {
+      String ret;
+
+      ret.empty();
+      int i = 0;
+      ListNode mn;
+      foreach mn in DOG.all_nspaces
+      {
+         DOG_Namespace nsp <= mn.objectValue;
+         if(i++ > 0)
+            ret.append(", ");
+         ret.append("<a href=\"");
+         ret.append(DOG.GetRelPath(""));
+         ret.append(DOG.file_prefix);
+         ret.append("nsp_");
+         ret.append(nsp.name);
+         ret.append(".html\"><code>");
+         ret.append(nsp.name);
+         ret.append("</code></a>&nbsp;");
+      }
+      return ret;
+   }
+
+   static GetProjectLinks():String {
+      String ret;
+
+      ret.empty();
+      int i = 0;
+      ListNode mn;
+      foreach mn in DOG.all_projects
+      {
+         DOG_Project p <= mn.objectValue;
+         if(i++ > 0)
+            ret.append(", ");
+         ret.append("<a href=\"");
+         ret.append(DOG.GetRelPath(p.ee_dir_prefix));
+         ret.append(DOG.file_prefix);
+         ret.append("prj_");
+         ret.append(p.name);
+         ret.append(".html\"><code>");
+         ret.append(p.name);
+         ret.append("</code></a>&nbsp;");
+      }
+      return ret;
+   }
+
+   static GetProjectModuleLinks():String {
+      String ret;
+
+      //prepare {
+      if(true) {
+         ret.empty();
+         int i = 0;
+         ListNode mn;
+         foreach mn in DOG.current_project.all_modules
+            {
+               DOG_Module mod <= mn.objectValue;
+               String modName <= mod.getName();
+               if(i++ > 0)
+                  ret.append(", ");
+               ret.append("<a href=\"");
+               ret.append(DOG.GetRelPath(mod.ee_dir_prefix));
+               ret.append(DOG.file_prefix);
+               ret.append(modName);
+               ret.append(".html\"><code>");
+               ret.append(modName);
+               ret.append("</code></a>&nbsp;");
+            }
+      }
+      return ret;
+   }
+
+   static GetFunctionSignatureTitle(DOG_Function _fun) : String {
+      String ret;
+      ret.empty();
+      ListNode acn;
+      ret.append(_fun.name);
+      ret.append("(");
+      int i = 0;
+      foreach acn in _fun.arguments {
+         DOG_Value av <= acn.objectValue;
+         if(i++ > 0)
+         {
+            ret.append(", ");
+         }
+         ret.append(av.type);
+         ret.append(" ");
+         ret.append(av.name);
+      }
+      ret.append(")");
+      if(! _fun.return_type.type.isBlank())
+      {
+         ret.append(" : ");
+         ret.append(_fun.return_type.type);
+      }
+      return ret;
+   }
+
+   static GetProjectFunctionLinks():String {
+      String ret;
+      
+      if(true) {
+         ret.empty();
+         int i = 0;
+         ListNode cn;
+         ////trace "xxx GetClassLinks: DOG.current_ee_dir_prefix=\""+DOG.current_ee_dir_prefix+"\".";
+         foreach cn in DOG.current_project.all_functions
+         {
+            DOG_Function fun <= cn.objectValue;
+            if(i++ > 0)
+               ret.append(", ");
+            ret.append("<a href=\"");
+            ret.append(DOG.GetRelPath(fun.parent_module.ee_dir_prefix));
+            ret.append(DOG.file_prefix);
+            ret.append(fun.parent_module.name);
+            ret.append(".html#f_");
+            ret.append(fun.name);
+            ret.append("\" title=\"");
+            ret.append(GetFunctionSignatureTitle(fun));
+            ret.append("\"><code>");
+            ret.append(fun.name);
+            ret.append("</code></a>&nbsp;");
+         }
+      }
+      return ret;
+   }
+
+   static GetProjectClassLinks():String {
+      String ret;
+      
+      if(true) {//prepare {
+         ret.empty();
+         int i = 0;
+         ListNode cn;
+         ////trace "xxx GetClassLinks: DOG.current_ee_dir_prefix=\""+DOG.current_ee_dir_prefix+"\".";
+         foreach cn in DOG.current_project.all_classes
+         {
+            DOG_Class clazz <= cn.objectValue;
+            if(i++ > 0)
+               ret.append(", ");
+            ret.append("<a href=\"");
+            ret.append(DOG.GetRelPath(clazz.parent_module.ee_dir_prefix));
+            ret.append(DOG.file_prefix);
+            ret.append(clazz.parent_module.getName());
+            ret.append("_");
+            ret.append(clazz.link_name);
+            ret.append(".html\"><code>");
+            ret.append(clazz.name);
+            ret.append("</code></a>&nbsp;");
+         }
+      }
+      return ret;
+   }
+
+   static GetNamespaceClassLinks(DOG_Namespace _nsp) : String {
+      String ret;
+      
+      if(true) {//prepare {
+         ret.empty();
+         int i = 0;
+         ListNode cn;
+         ////trace "xxx GetClassLinks: DOG.current_ee_dir_prefix=\""+DOG.current_ee_dir_prefix+"\".";
+         foreach cn in _nsp.all_classes
+         {
+            DOG_Class clazz <= cn.objectValue;
+            if(i++ > 0)
+               ret.append(", ");
+            ret.append("<a href=\"");
+            ret.append(DOG.GetRelPath(clazz.parent_module.ee_dir_prefix));
+            ret.append(DOG.file_prefix);
+            ret.append(clazz.parent_module.getName());
+            ret.append("_");
+            ret.append(clazz.link_name);
+            ret.append(".html\"><code>");
+            ret.append(clazz.name);
+            ret.append("</code></a>&nbsp;");
+         }
+      }
+      return ret;
+   }
+
+   static AppendModuleClassIndexShort(StringArray _lines, StringArray _sortLines, DOG_Module _mod) {
+      explain "append index of all classes in module _mod.";
+      String lineBuf;
+      
+      String modName <= _mod.getName();
+      
+      ListNode cn;
+      foreach cn in _mod.classes
+      {
+         DOG_Class clazz <= cn.objectValue;
+
+         _sortLines.add(clazz.name);
+         
+         lineBuf.empty();
+         lineBuf.append("\n<li><code><a href=\"");
+         lineBuf.append(DOG.GetRelPath(_mod.ee_dir_prefix));
+         lineBuf.append(DOG.file_prefix);
+         lineBuf.append(modName);
+         lineBuf.append("_");
+         lineBuf.append(clazz.link_name);
+         lineBuf.append(".html");
+         lineBuf.append("\">");
+         lineBuf.append(clazz.name);
+         lineBuf.append("</a>");
+
+         lineBuf.append("&nbsp;(<small>");
+         lineBuf.append(modName);
+         lineBuf.append("</small>)");
+
+         lineBuf.append("</code>&nbsp;-&nbsp;<small><i>");
+         lineBuf.append( TextToHtmlOneliner(clazz.getSynopsis(), _mod, clazz, null) );
+         lineBuf.append("</i></small>");
+         
+         _lines.add(lineBuf);
+      }
+   }
+
+   static AppendModuleClassIndex(StringArray _lines, StringArray _sortLines, DOG_Module _mod, boolean _bModName) {
+      explain "append index of all classes in module _mod to _lines; also append function/method index.";
+      String lineBuf;
+      
+      String modName <= _mod.getName();
+      
+      ListNode cn;
+      foreach cn in _mod.classes
+      {
+         DOG_Class clazz <= cn.objectValue;
+
+         _sortLines.add(clazz.name);
+         
+         lineBuf.empty();
+         lineBuf.append("\n<li><code><a href=\"");
+         lineBuf.append(DOG.GetRelPath(_mod.ee_dir_prefix));
+         lineBuf.append(DOG.file_prefix);
+         lineBuf.append(modName);
+         lineBuf.append("_");
+         lineBuf.append(clazz.link_name);
+         lineBuf.append(".html");
+         lineBuf.append("\">");
+         lineBuf.append(clazz.name);
+         lineBuf.append("</a>");
+         if(_bModName)
+         {
+            lineBuf.append("&nbsp;(<small>");
+            lineBuf.append(modName);
+            lineBuf.append("</small>)");
+         }
+         lineBuf.append("</code>&nbsp;-&nbsp;<small><i>");
+         lineBuf.append( TextToHtmlOneliner(clazz.getSynopsis(), _mod, clazz, null) );
+         lineBuf.append("</i></small>");
+         
+         WriteClassFunctionsShort(_mod, clazz, lineBuf, _bModName);
+
+         WriteClassMethodsShort(_mod, clazz, lineBuf, _bModName);
+
+         WriteClassConstantsShort(_mod, clazz, lineBuf);
+
+         if( (clazz.functions.size==0) && (clazz.methods.size==0) )
+         {
+            lineBuf.append("\n<br>&nbsp;<br>\n");
+         }
+         else
+         {
+            lineBuf.append("\n<br>\n");
+         }
+
+         _lines.add(lineBuf);
+      }
+   }
+
+   static WriteClassIndex() {
+      explain "Write a sorted list of classes in all modules";
+
+      buf.append("\n<a name=\"classes\"></a><hr><h2>Classes</h2><ul>\n");
+      StringArray lines, sortLines;
+      lines.empty(); sortLines.empty();
+      ListNode mn;
+      foreach mn in DOG.modules
+      {
+         DOG_Module mod <= mn.objectValue;
+
+         AppendModuleClassIndexShort(lines, sortLines, mod);
+      }
+
+      WriteSortedLines(lines, sortLines, buf);
+
+      buf.append("</ul>\n");
+   }
+
+   static WriteBaseClassesShort(DOG_Class _class) {
+      if(_class.base_classes.numElements > 0)
+      {
+         StringArray baseClassNames <= _class.base_classes;
+
+         buf.append("\n<br>&nbsp;&nbsp;<small><u>Base classes</u>:</small>\n<ul>\n");
+         int i = 0;
+         loop(baseClassNames.numElements)
+         {
+            String baseClassName <= baseClassNames[i++];
+
+            DOG_Class baseClass <= DOG.GetClass(baseClassName);
+            if(baseClass != null)
+            {
+               buf.append("\n<li><a href=\"");
+               buf.append(DOG.GetRelPath(baseClass.parent_module.ee_dir_prefix));
+               buf.append(DOG.file_prefix);
+               buf.append(baseClass.parent_module.name);
+               buf.append("_");
+               buf.append(baseClass.link_name);
+               buf.append(".html\"><code>");
+               buf.append(baseClass.parent_module.name);
+               buf.append(".");
+               buf.append(baseClass.name);
+               buf.append("</code></a>");
+            }
+            else
+            {
+               if(baseClassName == "Object")
+               {
+                  buf.append("\n<li><a href=\"");
+                  buf.append(CORE_API_URL_PREFIX);
+                  buf.append("object.html\"><code>Object</code></a>");
+               }
+               else
+               {
+                  trace "DOG.hash_classes = "+#(DOG.hash_classes);
+                  die "[---] WriteBaseClassesShort: cannot resolve base class \"" + baseClassName + "\".";
+               }
+            }
+         }
+            
+         buf.append("</ul>\n");
+      }
+   }
+
+   static WriteDerivedClassesShort(DOG_Class _class) {
+      StringArray derivedClassNames <= DOG.hash_derived_classes[_class.name];
+      if(derivedClassNames != null)
+      {
+         buf.append("\n<br>&nbsp;&nbsp;<small><u>Derived classes</u>:</small>\n<ul>\n");
+         int i = 0;
+         loop(derivedClassNames.numElements)
+         {
+            String derivedClassName <= derivedClassNames[i++];
+            DOG_Class derivedClass <= DOG.GetClass(derivedClassName);
+            if(derivedClass != null)
+            {
+               buf.append("\n<li><a href=\"");
+               buf.append(DOG.GetRelPath(derivedClass.parent_module.ee_dir_prefix));
+               buf.append(DOG.file_prefix);
+               buf.append(derivedClass.parent_module.name);
+               buf.append("_");
+               buf.append(derivedClass.link_name);
+               buf.append(".html\"><code>");
+               buf.append(derivedClass.parent_module.name);
+               buf.append(".");
+               buf.append(derivedClass.name);
+               buf.append("</code></a>");
+            }
+            else
+            {
+               trace "DOG.hash_classes = "+#(DOG.hash_classes);
+               die "[---] WriteDerivedClassesShort: cannot resolve derived class \"" + derivedClassName + "\".";
+            }
+         }
+            
+         buf.append("</ul>\n");
+      }
+   }
+
+   static WriteProjectModules() {
+      explain "Write module documentation, one page per module.";
+
+      ListNode mn;
+      int i;
+      foreach mn in DOG.current_project.all_modules
+      {
+         DOG_Module mod <= mn.objectValue;
+
+         DOG.current_ee_dir_prefix = mod.ee_dir_prefix;
+
+         int cacheChecksum = DOG.GetCacheChecksum(mod.name);
+         if(cacheChecksum != mod.input_checksum)
+         {
+            String modName <= mod.getName();
+            
+            StringArray lines, sortLines;
+            
+            // Write module index page
+            buf.empty();
+            BeginPage(modName + " module index");
+
+            mod.writeHTML_ReferencedBy(buf);
+            
+            DOG_Page indexPage;
+            indexPage <= DOG.FindPage("index");
+            if(null != indexPage)
+            {
+               WriteGoto(indexPage.getRelFileName(), "home");//DOG.file_prefix+"index.html", "index");
+            }
+
+            // Write parent project link
+            WriteGoto(DOG.GetRelPath(DOG.current_project.ee_dir_prefix) + DOG.file_prefix+"prj_" + (DOG.current_project.name) + ".html", 
+                      "index of project <code>" + (DOG.current_project.name) + "</code>"
+                      );
+
+
+            buf.append("<h1>Module <code>");
+            buf.append(modName);
+            buf.append("</code></h1>\n");
+            
+            buf.append("<u>Synopsis</u>:&nbsp;<i>");
+            buf.append(mod.synopsis);
+            buf.append("</i>\n");
+            
+            if(mod.functions.size > 0)
+            {
+               buf.append("\n<hr><h2>Functions</h2>\n<ul>");
+               lines.empty(); sortLines.empty();
+               WriteFunctionListShort(mod, null, "f", mod.functions, "\n<li>", lines, sortLines, true, false);
+               WriteSortedLines(lines, sortLines, buf);
+               buf.append("</ul>\n");
+            }
+            
+            if(mod.classes.size > 0)
+            {
+               buf.append("<h2>Classes</h2>\n<ul>");
+               lines.empty(); sortLines.empty();
+               AppendModuleClassIndex(lines, sortLines, mod, false);
+               WriteSortedLines(lines, sortLines, buf);
+               buf.append("</ul>\n");
+            }
+            
+            // Write long module description
+            buf.append("\n<hr><u>Description</u>:<br>&nbsp;<br>\n");
+            buf.append( TextToHtml(mod.getDescription(), mod, null, null, null, true, true) );
+            
+            WriteHistory(mod.date_stringarray, mod, null, buf);
+            
+           
+            // Write long module function description
+            if(mod.functions.size > 0)
+            {
+               WriteFunctionList(mod.functions, mod, null);
+            }
+
+            buf.append("<hr>");
+            WriteProjectAllModulesAllClassesLinks();
+            buf.append("<hr>");
+
+            WriteGoto("#top", "top of page");
+
+            EndPage();
+//          trace "modName=\"";
+//          trace modName;
+//          trace "\".";
+            WriteBuffer(mod.ee_dir_prefix + DOG.file_prefix + modName + ".html");
+
+            // Update checksum cache
+            DOG.SetCacheChecksum(mod.name, mod.input_checksum);
+
+         } // if checksum differs from cached checksum
+         else
+         {
+            ////trace "[dbg] skipping output for module \""+mod.name+"\" because input has not changed.";
+         }
+
+      } // foreach module
+   }
+
+   static WriteProjectAllModulesAllClassesLinks() {
+      // Write oneline module index
+
+      buf.append("<table border=0>\n");
+
+      // Write online module index ("project modules:")
+      buf.append("<tr><td valign=top><small><i>Project Modules:</i></small><td><small><i>");
+      buf.append(GetProjectModuleLinks());
+      buf.append("</i></small></tr>");
+
+      // Write oneline class index ("project classes:")
+      buf.append("<tr><td valign=top><small><i>Project Classes:</i></small><td><small><i>");
+      buf.append(GetProjectClassLinks());
+      buf.append("</i></small></tr>\n");
+
+      // Write oneline function index ("project functions:")
+      buf.append("<tr><td valign=top><small><i>Project Functions:</i></small><td><small><i>");
+      buf.append(GetProjectFunctionLinks());
+      buf.append("</i></small></tr>\n");
+
+      // Write oneline namespace index ("all namespaces:")
+      buf.append("<tr><td valign=top><small><i>All Namespaces:</i></small><td><small><i>");
+      buf.append(GetNamespaceLinks());
+      buf.append("</i></small></tr>\n");
+
+      // Write oneline project index ("all projects:")
+      buf.append("<tr><td valign=top><small><i>All Projects:</i></small><td><small><i>");
+      buf.append(GetProjectLinks());
+      buf.append("</i></small></tr>\n");
+
+      buf.append("</table>\n");
+   }
+
+   static WriteProjectIndex() {
+      buf.empty();
+      BeginPage( (DOG.current_project.name) + " project index");
+      
+      _= DOG.current_project.writeHTML_ReferencedBy(buf);
+
+      DOG_Page indexPage;
+      indexPage <= DOG.FindPage("index");
+      if(null != indexPage)
+      {
+         WriteGoto(indexPage.getRelFileName(), "home");
+      }
+
+      buf.append("<br>&nbsp;<br>\n");
+      buf.append("<h1>Project <code>");
+      buf.append(DOG.current_project.name);
+      buf.append("</code></h1>\n");
+
+      WriteProjectAllModulesAllClassesLinks();
+      
+      EndPage();
+      
+      WriteBuffer((DOG.current_project.ee_dir_prefix) + DOG.file_prefix + "prj_" + (DOG.current_project.name) + ".html");
+   }
+
+   static WriteNamespaceIndex(DOG_Namespace _nsp) {
+      buf.empty();
+      BeginPage( (_nsp.name) + " namespace index");
+      
+      DOG_Page indexPage;
+      indexPage <= DOG.FindPage("index");
+      if(null != indexPage)
+      {
+         WriteGoto(indexPage.getRelFileName(), "home");
+      }
+
+      buf.append("<br>&nbsp;<br>\n");
+      buf.append("<h1>Namespace <code>");
+      buf.append(_nsp.name);
+      buf.append("</code></h1>\n");
+
+      // Write index
+      buf.append("<table border=0>\n");
+
+      // Write oneline class index ("all classes:")
+      buf.append("<tr><td valign=top><small><i>Namespace Classes:</i></small><td><small><i>");
+      buf.append(GetNamespaceClassLinks(_nsp));
+      buf.append("</i></small></tr>\n");
+
+      // Write oneline namespace index ("all namespaces:")
+      buf.append("<tr><td valign=top><small><i>All Namespaces:</i></small><td><small><i>");
+      buf.append(GetNamespaceLinks());
+      buf.append("</i></small></tr>\n");
+
+      // Write oneline project index ("all projects:")
+      buf.append("<tr><td valign=top><small><i>All Projects:</i></small><td><small><i>");
+      buf.append(GetProjectLinks());
+      buf.append("</i></small></tr>\n");
+
+      buf.append("</table>\n");
+      
+      EndPage();
+      
+      WriteBuffer(DOG.file_prefix + "nsp_" + (_nsp.name) + ".html");
+   }
+
+   static WriteProjectClasses() {
+      explain "Write class documentation, one page per class.";
+
+      ListNode mn;
+      int i;
+      foreach mn in DOG.current_project.all_modules
+      {
+         DOG_Module mod <= mn.objectValue;
+         String modName <= mod.getName();
+
+         DOG.current_ee_dir_prefix = mod.ee_dir_prefix;
+
+         ListNode cn;
+         foreach cn in mod.classes
+         {
+            DOG_Class clazz <= cn.objectValue;
+
+            int cacheChecksum = DOG.GetCacheChecksum(clazz.name);
+            if(cacheChecksum != clazz.input_checksum)
+            {
+            
+               buf.empty();
+               BeginPage(modName+"."+clazz.name+" class index");
+
+               clazz.writeHTML_ReferencedBy(buf);
+
+               // Write documentation index link
+               DOG_Page indexPage;
+               indexPage <= DOG.FindPage("index");
+               if(null != indexPage)
+               {
+                  WriteGoto(indexPage.getRelFileName(), "home");//DOG.file_prefix+"index.html", "index");
+               }
+
+               // Write parent namespace link
+               if(!clazz.nspace_name.isBlank())
+               {
+                  WriteGoto(DOG.GetRelPath("") + DOG.file_prefix + "nsp_" + clazz.nspace_name + ".html", 
+                            "index of namespace <code>"+clazz.nspace_name+"</code>");
+               }
+               
+               // Write parent project link
+               WriteGoto(DOG.GetRelPath(DOG.current_project.ee_dir_prefix) + DOG.file_prefix+"prj_" + (DOG.current_project.name) + ".html", 
+                         "index of project <code>" + (DOG.current_project.name) + "</code>"
+                         );
+
+               // Write parent module link
+               WriteGoto(mod.getRelFileName(), "index of module <code>"+mod.name+"</code>");
+              
+               
+               // Write class doc header 
+               buf.append("<h1>Class <code>");
+               buf.append(modName);
+               buf.append(".");
+               buf.append(clazz.name);
+               buf.append("</code></h1>\n");
+               
+               buf.append("<hr>\n<u>Synopsis</u>:&nbsp;<i>");
+               buf.append( TextToHtmlOneliner(clazz.getSynopsis(), mod, clazz, null) );
+               buf.append("</i>");
+               
+               buf.append("\n<br>");
+               ////buf.append("<br>&nbsp;<br>\n");
+
+               WriteBaseClassesShort(clazz);
+               WriteDerivedClassesShort(clazz);
+               
+               // Write class fun/method index
+               WriteClassFunctionsShort(mod, clazz, buf, false);
+
+               WriteClassMethodsShort(mod, clazz, buf, false);
+
+               WriteClassConstantsShort(mod, clazz, buf);
+
+               // Write long class description
+               if!(clazz.getDescription().isBlank())
+               {
+                  buf.append("\n<u>Description</u>:<p>\n");
+                  buf.append( TextToHtml(clazz.getDescription(), mod, clazz, null, null, true, true) );
+                  buf.append("</p>\n");
+               }
+               
+               WriteHistory(mod.date_stringarray, mod, clazz, buf);
+               
+               WriteSeeList(clazz.see_list, mod, clazz);
+               
+               if!(clazz.getDescription().isBlank())
+               {
+                  WriteGoto("#top", "top of page");
+               }
+
+               buf.append("\n<hr>\n");
+               
+               // Write long class function description
+               if(clazz.functions.size > 0)
+               {
+                  WriteFunctionList(clazz.functions, mod, clazz);
+               }
+            
+               // Write long class method description
+               if(clazz.methods.size > 0)
+               {
+                  WriteFunctionList(clazz.methods, mod, clazz);
+               }
+               
+               // Write long class constant description
+               if(clazz.constants.size > 0)
+               {
+                  WriteClassConstants(mod, clazz, buf);
+               }
+               
+
+               buf.append("\n<br>&nbsp;<br><hr>\n");
+
+               WriteProjectAllModulesAllClassesLinks();
+
+               EndPage();
+            
+               WriteBuffer(mod.ee_dir_prefix + DOG.file_prefix + modName + "_" + clazz.link_name + ".html");
+
+               // Update cache checksum
+               DOG.SetCacheChecksum(clazz.name, clazz.input_checksum);
+
+            } // if checksum differs
+            else
+            {
+               ////trace "[dbg] skipping output for class \""+clazz.name+"\" because input has not changed.";
+            }
+
+         } // loop classes
+
+      } // loop modules
+      
+   } // WriteClasses
+
+
+} // end class DOG_HTML
+

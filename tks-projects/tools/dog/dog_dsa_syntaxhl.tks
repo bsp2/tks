@@ -1,0 +1,287 @@
+//
+//   file: dog_dsa_syntaxhl.tks
+//
+// author: (c) 2008 Bastian Spiegel <bs@tkscript.de>
+//             - distributed under terms of the GNU general public license (GPL).
+//   date: 19-Jun-2008
+//   info: simple TkScript syntax highlighter
+//
+
+module MDOGDSASyntaxHL;
+
+
+String delim_chars = " \n\'\"/*\\,;:(){}[]<>-+!?=~";
+
+#define IDX_SPACE     0
+#define IDX_LF        1
+#define IDX_SQUOT     2
+#define IDX_DQUOT     3
+#define IDX_SLASH     4
+#define IDX_MUL       5
+#define IDX_BACKSLASH 6
+
+#define QUOTE_NONE   0
+#define QUOTE_SINGLE 1
+#define QUOTE_DOUBLE 2
+
+#define COMM_NONE 0
+#define COMM_C    1  // /*..*/ c style comment
+#define COMM_CPP  2  // // c++ style comment
+
+HashTable keywords;
+keywords.alloc(300);
+
+function AddKeyword(String word, String color, boolean bBold) {
+   // int, char, String, sin, cos, ..
+   keywords[word] = "<font color=\""+color+"\">" + (bBold?"<b>":"") + word + (bBold?"</b>":"") + "</font>";
+}
+
+String kw; 
+foreach kw in [
+   "if", "else", "for", "do", "while", "class", "function", "return", "switch", "case", "break", "loop", "use", "new", "foreach", 
+   "enum", "define", "#define", "tag", "local", "module", "this", "deref", "prepare", "compile", "extends", "method", "public", 
+   "private", "protected", "instanceof", "static", "returns", "constraint", "delegate", "explain", "try", "catch", "finally", "throw", 
+   "namespace"
+] AddKeyword(kw, "#000000", true);
+
+foreach kw in [
+   "void", "int", "short", "byte", "bool", "boolean", "char", "float"
+] AddKeyword(kw, "#404040", true);
+
+foreach kw in [
+   "default", "null", "true", "false", "maybe" 
+] AddKeyword(kw, "#90d0d0", true);
+
+foreach kw in [
+   "tcchar", "sin", "cos", "tan", "asin", "acos", "sqrt", "rad", "deg", "abs", "frac", "round", "rnd", "rand", "2n", "ln", "exp", 
+   "#", "typeid", "typename", "@",
+   "trace", "dtrace", "print", "stderr", "stdout", "die"
+] AddKeyword(kw, "#3010f0", false);
+
+
+HashTable ht_api;
+ht_api.alloc(256);
+foreach kw in [
+   "Boolean", "Buffer", "Byte", "Class", "ClassArray", "Configuration", "Double", "Envelope", "Event", "Exception", "File", "Float", "FloatArray", "FloatArray128", "FloatArray16", "FloatArray32", "FloatArray64", "FloatArray8", "Function", "HashTable", "IntArray", "IntArray128", "IntArray16", "IntArray32", "IntArray64", "IntArray8", "Integer", "List", "ListNode", "Long", "Mutex", "Object", "ObjectArray", "PakFile", "PointerArray", "Pool", "Script", "SharedBuffer", "Short", "Stack", "StdErrStream", "StdInStream", "StdOutStream", "Stream", "String", "String128", "String16", "String32", "String64", "String8", "StringArray", "StringIterator", "Thread", "Time", "TKS", "TreeNode", "UnsignedByte", "UnsignedInteger", "UnsignedLong", "UnsignedShort", "Value", "ValueArray", "Variable"
+] ht_api[kw] = kw;
+
+
+String r;
+String buf;
+String charStr = " ";
+String t;
+
+int i;
+int wordStart;
+int quoteMode;
+int commMode;
+
+function WordEnd() {
+   if(wordStart != i)
+   {
+      buf.substring(wordStart, i-wordStart) => t;
+      if(ht_api.exists(t))
+      {
+         String qlink = "§" + t;
+         if(null != DOG_HTML.ReplaceQuicklinks(qlink, null, null, DSA.current_page, null))
+         {
+            qlink.replace("<a href", "<a style=\"font: 12pt Courier New,fixed; font-weight: bold\" href");
+            r.append(qlink);
+         }
+      }
+      else if(keywords.exists(t))
+      {
+         r.append(keywords[t]);
+      }
+      else
+      {
+         // Regular word
+         r.append(t);
+      }
+   }
+}
+
+function SimpleChar(char c) {
+   if('<' == c)
+   {
+      r.append("&lt;");
+   }
+   else if('>' == c)
+   {
+      r.append("&gt;");
+   }
+   else if('&' == c)
+   {
+      r.append("&amp;");
+   }
+   else if(0 != c)
+   {
+      charStr.putc(0, c);
+      r.append(charStr);
+   }
+}
+
+function DSA_Example_TKS(StringArray args, String _r) {
+   r <= _r;
+   buf <= args[0];
+   int bufLen = buf.length;
+
+   wordStart = 0;
+   quoteMode = QUOTE_NONE;
+   commMode = COMM_NONE;
+
+   r.append("<pre class=\"Example_TKS\">");
+
+   compile for(i=0; i<bufLen; i++)
+   {
+      char c = buf.getc(i);
+      char cn = buf.getc(i+1);
+      int idxDelim = delim_chars.indexOfChar(c, 0);
+      if(-1 != idxDelim)
+      {
+         if(idxDelim == IDX_LF)
+         {
+            if(COMM_CPP == commMode)
+            {
+               // End // c++ style comment
+               commMode = COMM_NONE;
+               r.append("</font>");
+            }
+            else if( (COMM_NONE == commMode) && (QUOTE_NONE == quoteMode) )
+            {
+               WordEnd();
+            }
+
+            r.append("<br>");
+            wordStart = i + 1;
+         }
+         else if( (idxDelim == IDX_SQUOT) && (COMM_NONE == commMode) )
+         {
+            if(QUOTE_NONE == quoteMode)
+            {
+               WordEnd();
+               // Begin '   ' string
+               quoteMode = QUOTE_SINGLE;
+               r.append("<font color=\"#aa3333\">\'");
+            }
+            else if(QUOTE_SINGLE == quoteMode)
+            {
+               // End '   ' string
+               quoteMode = QUOTE_NONE;
+               r.append("\'</font>");
+               wordStart = i + 1;
+            }
+            else
+            {
+               // ' within "   " string
+               r.append("\'");
+            }
+         }
+         else if( (idxDelim == IDX_DQUOT) && (COMM_NONE == commMode) )
+         {
+            if(QUOTE_NONE == quoteMode)
+            {
+               WordEnd();
+               // Begin "   " string
+               quoteMode = QUOTE_DOUBLE;
+               r.append("<font color=\"#aa3333\">\"");
+            }
+            else if(QUOTE_DOUBLE == quoteMode)
+            {
+               // End "   " string
+               quoteMode = QUOTE_NONE;
+               r.append("\"</font>");
+               wordStart = i + 1;
+            }
+            else
+            {
+               // " within '   ' string
+               r.append("\"");
+            }
+         }
+         else if( (idxDelim == IDX_BACKSLASH) && (cn == '\'') )
+         {
+            // Escaped ' character
+            r.append("\\\'");
+            i++;
+         }
+         else if( (idxDelim == IDX_BACKSLASH) && (cn == '\"') )
+         {
+            // Escaped " character
+            r.append("\\\"");
+            i++;
+         }
+         else if( (idxDelim == IDX_BACKSLASH) && (cn == '\\') )
+         {
+            // Escaped \ character
+            r.append("\\\\");
+            i++;
+         }
+         else if( (idxDelim == IDX_SLASH) && (cn == '*') && (QUOTE_NONE == quoteMode) && (COMM_NONE == commMode) )
+         {
+            // Begin /* c style comment
+            WordEnd();
+            commMode = COMM_C;
+            r.append("<font color=\"#909090\">/*");
+            i++;
+         }
+         else if( (idxDelim == IDX_MUL) && (cn == '/') && (QUOTE_NONE == quoteMode) && (COMM_C == commMode) )
+         {
+            // End */ c style comment
+            commMode = COMM_NONE;
+            r.append("*/</font>");
+            i++;
+            wordStart = i + 1;
+         }
+         else if( (idxDelim == IDX_SLASH) && (cn == '/') && (QUOTE_NONE == quoteMode) && (COMM_NONE == commMode) )
+         {
+            // Begin // c++ style comment
+            WordEnd();
+            commMode = COMM_CPP;
+            r.append("<font color=\"#909090\">//");
+            i++;
+         }
+         else
+         {
+            if( (QUOTE_NONE == quoteMode) && (COMM_NONE == commMode) )
+            {
+               // Delimiter character found
+               WordEnd();
+               SimpleChar(c);
+               wordStart = i + 1;
+            }
+            else
+            {
+               // Delimiter character within "   " or '  ' string
+               SimpleChar(c);
+            }
+         }
+      }
+      else
+      {
+         if( (QUOTE_NONE != quoteMode) || (COMM_NONE != commMode) )
+         {
+            // Regular character
+            SimpleChar(c);
+         }
+         // else: parse until word is complete
+      }
+   }
+
+   
+   if(COMM_NONE != commMode) // script did not close comment?
+   {
+      r.append("</font>");
+   }
+   else if(QUOTE_NONE != quoteMode) // script did not close quotes ?
+   {
+      r.append("</font>");
+   }
+
+   r.append("</pre>\n");
+   
+}
+
+
+DSA.RegisterFunction("Example_TKS", DSA_Example_TKS);
+

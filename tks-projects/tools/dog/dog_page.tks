@@ -1,0 +1,1459 @@
+//
+//   file: dog_page.tks
+//
+// author: (c) 2008 Bastian Spiegel <bs@tkscript.de>
+//             - distributed under terms of the GNU general public license (GPL).
+//   date: 13-Jun-2008, 14-Jun-2008, 15-Jun-2008, 16-Jun-2008, 18-Jun-2008, 19-Jun-2008, 22-Jun-2008
+//
+
+module MDOGPage;
+
+
+#define CH_COMMA 3      // ,
+#define CH_PARRIGHT 4   // )
+#define CH_PARA 5       // §
+#define CH_EXCL 6       // !
+#define CH_LT 7         // <
+#define CH_GT 8         // >
+#define CH_BACKSLASH 11 // \
+#define CH_DOLLAR 12    // $
+
+
+
+class DOG_PageBlock {
+   DOG_PageNode parent_node;
+   DOG_PageBlock next;
+
+   public method writeHTML(String out) { }
+}
+
+class DOG_PageTextBlock extends DOG_PageBlock {
+   // Unformatted text block, needs to be converted to output format (HTML)
+   String text;
+
+   public method writeHTML(String out) {
+
+      // Convert to HTML and replace quicklinks
+      out.append( DOG_HTML.TextToHtml(text, null, null, parent_node.parent_page, parent_node, false, true) );
+   }
+}
+
+class DOG_PagePreTextBlock extends DOG_PageBlock {
+   // pre-formatted text block, output as-is
+   String text;
+
+   public method writeHTML(String out) {
+      out.append(text);
+   }
+}
+
+class DOG_PageFunBlock extends DOG_PageBlock {
+   // function call
+   String fun_name;
+   StringArray args;
+
+   public method writeHTML(String out) {
+      String t;
+      t.empty();
+      DSA.CallFunction(fun_name, args, t);
+      out.append(t);
+   }
+}
+
+class DOG_PageNode {
+   DOG_Page parent_page;
+   DOG_PageNode parent;
+   DOG_PageNode next;
+   DOG_PageNode inner;
+   DOG_PageNode last_inner;
+   int toc_nesting_level;
+   int toc_serial;
+
+   String node_name; // "myothersubnode"
+   String abs_node_name; // "myrootnode.mysubnode.myothersubnode", used for links
+   String node_title;
+   String node_sub_title;
+   DOG_PageBlock first_block;
+   DOG_PageBlock last_block;
+
+   boolean b_external;         // true if this is a pseudo/proxy node that links to another node
+   boolean b_external_ql;     // true if this is a quick link
+   String external_node_name;  // name of link target
+   Object external_node; // resolved node ptr
+   PointerArray referenced_by; // initialized during resolveXRef(), keeps track of all nodes that link to this node
+
+   public method init() {
+      first_block <= null;
+      last_block <= null;
+      external_node <= null;
+      b_external = false;
+   }
+
+   public method extractSubTitle() {
+      int idxST = node_title.indexOf("---", 0);
+      if(-1 != idxST)
+      {
+         node_title.substring(idxST+3, node_title.length-idxST-3) => node_sub_title;
+         node_title.replaceRegion(idxST, node_title.length, "");
+         node_title.trim();
+         node_sub_title.trim();
+      }
+   }
+
+   public method calcAbsNodeName() {
+      String t;
+      t.empty();
+      DOG_PageNode n <= this;
+      while(n.parent != null)
+      {
+         t.insert(0, n.node_name);
+         if(n.parent.parent != null)
+         {
+            t.insert(0, ".");
+         }
+         n <= n.parent;
+      }
+      abs_node_name = t;
+      ////trace "xxx calcAbsNodeName: abs_node_name=\""+abs_node_name+"\".";
+   }
+
+   public method addTextBlock(String _text) {
+      DOG_PageTextBlock b <= new DOG_PageTextBlock;
+      b.parent_node <= this;
+      b.text = _text;
+      ////trace "xxx addTextBlock first_block="+#(first_block)+" last_block="+#(last_block)+" text=\""+_text+"\".";
+      if(null == first_block)
+      {
+         first_block <= deref b;
+      }
+      else
+      {
+         last_block.next <= deref b;
+      }
+      last_block <= b;
+   }
+
+   public method addPreTextBlock(String _text) {
+      DOG_PagePreTextBlock b <= new DOG_PagePreTextBlock;
+      b.parent_node <= this;
+      b.text = _text;
+      //trace "xxx addPreTextBlock first_block="+#(first_block)+" last_block="+#(last_block)+" text=\""+_text+"\".";
+      if(null == first_block)
+      {
+         first_block <= deref b;
+      }
+      else
+      {
+         last_block.next <= deref b;
+      }
+      last_block <= b;
+   }
+
+   public method addFunBlock(String _funName, StringArray _args) {
+      DOG_PageFunBlock b <= new DOG_PageFunBlock;
+      b.parent_node <= this;
+      b.fun_name = _funName;
+      b.args = _args;
+      //trace "xxx addPreTextBlock first_block="+#(first_block)+" last_block="+#(last_block)+" text=\""+_text+"\".";
+      if(null == first_block)
+      {
+         first_block <= deref b;
+      }
+      else
+      {
+         last_block.next <= deref b;
+      }
+      last_block <= b;
+   }
+
+   public method getTOCString() : String {
+      // return "1.1.2.3." style string
+      String tocString = String(toc_serial) + ".";
+      DOG_PageNode n <= parent;
+      while(n != null)
+      {
+         if(n.parent != null)
+         {
+            tocString = String(n.toc_serial) + "." + tocString;
+         }
+         n <= n.parent;
+      }   
+      return tocString;
+   }
+
+   static public method WriteHTML_ReferencedBy(PointerArray referenced_by, String out) {
+      if(referenced_by.numElements > 0)
+      {
+         DOG_PageNode rn;
+         out.append("\n<table class=\"page_up\" border=0><tr><td style=\"vertical-align: top\"><b>Up:</b></td><td>\n");
+         out.append("<ol style=\"margin-bottom: 0px\">\n");
+         int i = 0;
+         foreach rn in referenced_by {
+            /*if(i++ > 0)
+              {
+              out.append(", ");
+              }*/
+            out.append("<li style=\"margin-bottom: 0px\">");
+            DOG_PageNode prn <= rn.parent;
+            String ts; ts.empty();
+            while(prn.parent != null)
+            {
+               String url; url.empty();
+               url.append("<a href=\"");
+               url.append(rn.parent_page.getRelFileName());
+               url.append("#toc__");
+               url.append(prn.abs_node_name);
+               url.append("\">");
+               url.append(prn.node_title);
+               url.append("</a>");
+               url.append("&nbsp;&raquo;&nbsp;");
+               
+               ts.insert(0, url);
+               prn <= prn.parent;
+            }
+            //ts.append("&rarr;");
+            
+            // Write page link
+            out.append("<a href=\"");
+            out.append(rn.parent_page.getRelFileName());
+            out.append("\">");
+            out.append(rn.parent_page.page_title);
+            out.append("</a>");
+            
+            out.append("&nbsp;&raquo;&nbsp;");
+            
+            out.append(ts);
+            out.append(rn.node_title);
+            out.append("</a>\n");
+         }
+         out.append("</ul>\n");
+         out.append("</td></tr></table>\n");
+      }
+   }
+   
+   public method writeHTML(String out) {
+      int nesting = toc_nesting_level;
+
+      if(false == b_external)
+      {
+         // Write anchor
+         out.append("<a name=\"");
+         out.append(abs_node_name);
+         out.append("\"></a>\n");
+
+       
+         // Write node title
+         if(nesting > 0)
+         {
+            String divClass;
+            if(nesting >= 3)
+            {
+               nesting = 3;
+               if(inner != null)
+               {
+                  divClass <= "Node3_inner";
+               }
+               else
+               {
+                  divClass <= "Node3";
+               }
+            }
+            else
+            {
+               divClass <= "Node" + nesting;
+            }
+
+            out.append("<div class=\""+divClass+"\">"+getTOCString()+"&nbsp;"+node_title+"</div>\n");
+         }
+
+         ////trace "xxx writeReferencedBy: this="+#(this)+" referenced_by="+#(referenced_by);
+         WriteHTML_ReferencedBy(referenced_by, out);
+
+
+         out.append("\n<div class=\"page_blocks\">");
+      
+         // Write text blocks
+         DOG_PageBlock b <= first_block;
+         while(b != null)
+         {
+            //trace "xxx abs_node_name=\""+abs_node_name+"\" b = "+#(b);
+            b.writeHTML(out);
+            b <= b.next;
+         }
+
+         out.append("</div>\n");
+      }
+
+
+
+      // Write inner nodes
+      if(inner != null)
+      {
+         inner.writeHTML(out);
+      }
+
+      // Write next nodes
+      if(next != null)
+      {
+         next.writeHTML(out); // TODO: use iteration instead of recursion
+      }
+   }
+
+   public method addReferencedBy(Object _node) {
+      referenced_by.add(#(_node));
+      ////trace "xxx addReferencedBy this="+#(this)+" referenced_by="+#(referenced_by);
+   }
+
+   public method resolveXRef() {
+      if(b_external && !b_external_ql)
+      {
+         DOG_PageNode n <= null;
+         DOG_Page pg <= null;
+
+         ////trace "xxx resolveXRef: external_node_name=\""+external_node_name+"\".";
+         StringArray t <= external_node_name.splitChar('.');
+
+         pg <= DOG.FindPage(t[0]);
+         if(null != pg)
+         {
+            if(t.numElements > 1)
+            {
+               n <= pg.findNode(t, 1);
+               if(null == n)
+               {
+                  n <= pg.findBestMatchNode(t[1]);
+               }
+            }
+            else
+            {
+               // Link to page
+               n <= pg.root_node;
+               ////trace "xxx link to page \""+pg.page_title+"\".";
+            }
+         }
+
+         if(null == n)
+         {
+            n <= parent_page.findNode(t, 0);
+         }
+
+         if(null == n)
+         {
+            n <= parent_page.findBestMatchNode(t[0]);
+         }
+
+         if(n instanceof DOG_PageNode)
+         {
+            external_node <= n;
+
+            ////trace "[...] resolved external node \""+external_node_name+"\" to "+#(n);
+            n.addReferencedBy(this);
+         }
+         else
+         {
+            trace "[---] warning: external node \""+external_node_name+"\" could not be resolved.";
+         }
+      }
+
+      // Write inner nodes
+      if(inner != null)
+      {
+         inner.resolveXRef();
+      }
+
+      // Write next nodes
+      if(next != null)
+      {
+         next.resolveXRef(); // TODO: use iteration instead of recursion
+      }
+   }
+
+   module method genTOCRec(String toc) {
+      toc.append("<li>");
+
+      toc.append("<a name=\"toc__");
+      ////trace "xxxx abs_node_name=\""+abs_node_name+"\".";
+      toc.append(abs_node_name);
+      toc.append("\"></a>\n");
+      
+      toc.append(getTOCString());
+      if(b_external)
+      {
+         if(b_external_ql)
+         {
+            String ql = node_name;
+            Object o <= DOG_HTML.ReplaceQuicklinks(ql, null, null, parent_page, null);
+            ////trace "xxx genTOCRec: o="+#(o);
+            if(o instanceof DOG_Object)
+            {
+               DOG_Object co <= o;
+               co.addReferencedBy(this);
+            }
+            else if(o instanceof DOG_PageNode)
+            {
+               DOG_PageNode pn <= o;
+               pn.addReferencedBy(this);
+            }
+            ////trace "xxx ql=\""+ql+"\".";
+            toc.append("&nbsp;");
+            toc.append(ql);
+            toc.append("&nbsp;");
+         }
+         else
+         {
+            toc.append("&nbsp;<a href=\"");
+            if(external_node != null)
+            {
+               DOG_PageNode n <= external_node;
+               toc.append(n.parent_page.getRelFileName());
+               if(n.inner != null)
+               {
+                  // Link to TOC entry
+                  toc.append("#toc__");
+               }
+               else
+               {
+                  // Directly link to node
+                  toc.append("#");
+               }
+               if(@(n) != @(n.parent_page.root_node))
+               {
+                  toc.append(n.abs_node_name);
+               }
+            }
+            else
+            {
+               toc.append("unresolved/unresolved.html#");
+               toc.append(external_node_name);
+            }
+            toc.append("\">");
+            toc.append(node_title); // TODO: convert to HTML
+            toc.append("</a>\n");
+         }
+      }
+      else
+      {
+         toc.append("&nbsp;<a href=\"#");
+         toc.append(abs_node_name);
+         toc.append("\">");
+         toc.append(node_title); // TODO: convert to HTML
+         toc.append("</a>\n");
+      }
+
+      if(b_external)
+      {
+         toc.append("&raquo;&nbsp;");
+      }
+      if(!node_sub_title.isBlank())
+      {
+         if(false == b_external)
+         {
+            toc.append("-&nbsp;");
+         }
+         toc.append("<i>");
+         toc.append(DOG_HTML.TextToHtml(String(node_sub_title), null, null, parent_page, null, true, false));
+         toc.append("</i>");
+      }
+      if(inner != null)
+      {
+         toc.append("<ul>");
+         inner.genTOCRec(toc);
+         toc.append("</ul>");
+      }
+      if(next != null)
+      {
+         next.genTOCRec(toc);
+      }
+   }
+
+}
+
+class DOG_Page {
+   DOG_PageNode root_node;
+   String page_name;
+   String page_title;
+   String file_name; // source file name
+   String out_file_name; // generated HTML file (without dir prefix)
+   String dir_prefix; // Where the generated file will be placed (absolute path)
+   HashTable node_hash; // for best-match search when not specifying full node path in links
+   HashTable macros; // macros/variables
+
+   protected DOG_PageNode cnode;
+   protected String cblock;
+
+   int input_checksum;
+
+   public method init() {
+      node_hash.alloc(500);
+      macros.alloc(100);
+
+      // Create root node
+      root_node <= new DOG_PageNode;
+      root_node.init();
+      root_node.parent_page <= this;
+      root_node.toc_nesting_level = 0;
+      root_node.toc_serial = 0;
+   }
+
+   public method getRelFileName() : String {
+      return DOG.GetRelPath(dir_prefix) + out_file_name;
+   }
+
+   public method findToplevelNode(String _name) : DOG_PageNode {
+      DOG_PageNode n <= root_node.inner;
+      while(null != n)
+      {
+         if(n.node_name == _name)
+         {
+            return n;
+         }
+         else
+         {
+            n <= n.next;
+         }
+      }
+      return null;
+   }
+
+   public method findBestMatchNode(String _name) : DOG_PageNode {
+      return node_hash[_name];
+   }
+
+   public method findNode(StringArray _path, int _off) : DOG_PageNode {
+      DOG_PageNode n <= root_node.inner;
+      while(null != n)
+      {
+         if(n.node_name == _path[_off])
+         {
+            _off++;
+            if(_off == _path.numElements)
+            {
+               return n;
+            }
+            else
+            {
+               n <= n.inner;
+            }
+         }
+         else
+         {
+            n <= n.next;
+         }
+      }
+      return null;
+   }
+
+   protected method addText(String _text) {
+      if(!_text.isBlank())
+      {
+         cnode.addTextBlock(_text);
+      }
+   }
+
+   protected method addPreText(String _text) {
+      if(!_text.isBlank())
+      {
+         cnode.addPreTextBlock(_text);
+      }
+   }
+
+   protected method addFunBlock(String _funName, StringArray _args) {
+      cnode.addFunBlock(_funName, _args);
+   }
+
+   protected method calcLineNr(String buf, int off) : int {
+      int lineNr = 1;
+      int idx = 0;
+      while( idx < buf.length )
+      {
+         idx = buf.indexOfChar('\n', idx);
+         if(-1 != idx)
+         {
+            if(idx > off)
+            {
+               // Found
+               return lineNr;
+            }
+            else
+            {
+               // Not within current line
+               lineNr++;
+               idx++;
+            }
+         }
+         else
+         {
+            // No more lines left, must be in current line
+            return lineNr;
+         }
+      }
+   }
+
+   protected method parseError(String buf, int off, String _msg) {
+      die "[---] "+file_name+"("+calcLineNr(buf, off+1)+"): "+_msg;
+   }
+
+   protected method beginNode(String buf, int off) : int {
+      // Parse node name and title
+      DOG_PageNode n <= new DOG_PageNode;
+      n.init();
+      n.parent_page <= this;
+      n.parent <= cnode;
+      n.toc_nesting_level = cnode.toc_nesting_level + 1;
+
+      if(buf.getc(off) == '.')
+      {
+         // Is external link, !..some_page.some_node
+         n.b_external = true;
+         off++;
+         if(buf.getc(off) == '§')
+         {
+            n.b_external_ql = true;
+         }
+      }
+
+      //trace "xxx beginNode cnode="+#(cnode);
+      if(null == cnode.inner)
+      {
+         // First inner node
+         cnode.inner <= deref n;
+         n.toc_serial = 1;
+      }
+      else
+      {
+         // Next inner node
+         DOG_PageNode lin <= cnode.last_inner;
+         lin.next <= deref n;
+         n.toc_serial = lin.toc_serial + 1;
+      }
+      cnode.last_inner <= n;
+      cnode <= n;
+
+      int idxWS = buf.indexOfChar(' ', off);
+      if(-1 != idxWS)
+      {
+         buf.substring(off, idxWS-off) => n.node_name;
+         //trace "xxx beginNode: node_name=\""+n.node_name+"\".";
+         if(n.b_external)
+         {
+            n.external_node_name = n.node_name;
+         }
+
+         int idxE = buf.indexOfChar('\n', idxWS+1);
+         if(-1 != idxE)
+         {
+            n.node_title <= buf.substring(idxWS+1, idxE-(idxWS+1)).trim();
+            //trace "xxx beginNode: node_title=\""+n.node_title+"\".";
+            n.extractSubTitle();
+            n.calcAbsNodeName();
+
+            if(false == n.b_external)
+            {
+               node_hash[n.node_name] = n; // put in best-match hash, may overwrite existing node
+            }
+
+            return idxE + 1;
+         }
+         else
+         {
+            parseError(buf, idxWS, "missing \\n while parsing node title");
+         }
+      }
+      else
+      {
+         parseError(buf, off, "missing \' \' while parsing node name");
+      }
+
+   }
+
+   protected method endNode(String buf, int off) : int {
+      if(off < buf.length)
+      {
+         if(cnode.parent == null)
+         {
+            parseError(buf, off, "trying to close root node (check nesting!)");
+         }
+
+         if( (buf[off] == ' ') || (buf[off] == '\n') )
+         {
+            // Unchecked close
+            cnode <= cnode.parent;
+            return off + 1;
+         }
+         else
+         {
+            // Checked close, parse node name
+            int idxWS = buf.charsetIndexOf(" \n", off);
+            if(-1 != idxWS)
+            {
+               String t;
+               buf.substring(off, idxWS-off) => t;
+               //trace "xxx endNode: closing node name=\""+t+"\".";
+               if(cnode.node_name != t)
+               {
+                  parseError(buf, off, "wrong node nesting, have \""+t+"\", expected \""+cnode.node_name+"\"");
+               }
+               cnode <= cnode.parent;
+
+               return idxWS + 1;
+            }
+            else
+            {
+               parseError(buf, off, "missing whitespace while parsing closing node name");
+            }
+         }
+      }
+      else
+      {
+         // Special case: Unchecked close at end of buffer
+         cnode <= cnode.parent;
+         return off + 1;
+      }
+   }
+
+   protected method parseComment(String buf, int off) : int {
+      int idxE = buf.indexOfChar('\n', off+1);
+      if(-1 == idxE)
+      {
+         parseError(buf, off+1, "missing \\n while parsing line comment.");
+      }
+      else
+      {
+         // Skip comment
+         return idxE + 1;
+      }
+   }
+
+   protected method parseMacroCall(String buf, int off, boolean bRaw) : int {
+      String macroName;
+      int idxWS;
+
+      idxWS = buf.charsetIndexOf(" ()", off);
+      if(-1 != idxWS)
+      {
+         buf.substring(off, idxWS-off) => macroName;
+
+         if(!macros.exists(macroName))
+         {
+            parseError(buf, off, "macro \""+macroName+"\" does not exist");
+         }
+
+         //trace "xxx parseMacroCall: macroName=\""+macroName+"\".";
+
+         if(buf[idxWS]=='(') // Has args?
+         {
+            int idxE = buf.indexOfChar(')', idxWS+1);
+            if(-1 != idxE)
+            {
+               String args;
+               String t;
+               buf.substring(idxWS+1, idxE-(idxWS+1)) => args;
+               //trace "xxx parseMacroCall:  name=\""+macroName+"\"  args=\""+args+"\".";
+               StringArray argArray <= args.splitChar(',');
+               int argNr = 1;
+
+               String macroDat = macros[macroName];
+               //trace "xxx macroDat=\""+macroDat+"\".";
+
+               foreach t in argArray {
+                  t.trim();
+                  if(t.getc(0) == '$')
+                  {
+                     String macroNameArg;
+                     t.substring(1, t.length-1) => macroNameArg;
+                     if(macros.exists(macroNameArg))
+                     {
+                        t = macros[macroNameArg];
+                        macroDat.replace("$("+argNr+")", t);
+                     }
+                     else
+                     {
+                        parseError(buf, off, "macro \""+macroNameArg+"\" does not exist (while substituting arg #"+argNr+" of call to macro \""+macroName+"\").");
+                     }
+                  }
+                  else
+                  {
+                     macroDat.replace("$("+argNr+")", t);
+                  }
+                  argNr++;
+               }
+
+               if(bRaw)
+               {
+                  addPreText(macroDat);
+               }
+               else
+               {
+                  addText(macroDat);
+               }
+
+               return idxE + 1;
+            }
+            else
+            {
+               parseError(buf, idxWS+1, "missing \')\' end of function argument list");
+            }
+         }
+         else
+         {
+            // Macro call without args
+            if(macros.exists(macroName))
+            {
+               if(bRaw)
+               {
+                  addPreText(macros[macroName]);
+               }
+               else
+               {
+                  addText(macros[macroName]);
+               }
+            }
+            else
+            {
+               parseError(buf, off, "macro \""+macroName+"\" does not exist");
+            }
+            if(buf[idxWS]==')')
+            {
+               return idxWS;
+            }
+            else
+            {
+               return idxWS + 1;
+            }
+         }
+      }
+      else
+      {
+         parseError(buf, off, "missing whitespace or \'(\' while parsing macro name");
+      }
+   }
+
+   protected method parseAnonMacro(String buf, int off, boolean bRaw) : int {
+      int idxE = buf.indexOf("!$$", off);
+      if(-1 != idxE)
+      {
+         String t;
+         buf.substring(off, idxE-off) => t;
+         if(bRaw)
+         {
+            addPreText(t);
+         }
+         else
+         {
+            addText(t);
+         }
+         return idxE + 3;
+      }
+      else
+      {
+         parseError(buf, off, "missing !$$ end tag while parsing anonymous macro");
+      }
+   }
+
+   protected method parseMacro(String buf, int off) : int {
+      String macroName;
+      int idxWS;
+      int idxE;
+
+      if(buf[off] == '!')
+      {
+         // Insert raw macro
+         if(buf.getc(off+1) == ' ')
+         {
+            // !$! anonymous macro text !$$
+            return parseAnonMacro(buf, off+2, true);
+         }
+         else
+         {
+            // !$!mymacro
+            // !$!mymacro(<args>)
+            return parseMacroCall(buf, off+1, true);
+         }
+      }
+      else if(buf[off] == '?')
+      {
+         // Insert text macro
+         if(buf.getc(off+1) == ' ')
+         {
+            // !$! anonymous macro text !$$
+            return parseAnonMacro(buf, off+2, false);
+         }
+         else
+         {
+            // !$?mymacro
+            // !$?mymacro(<args>)
+            return parseMacroCall(buf, off+1, false);
+         }
+      }
+      else
+      {
+         // Define macro
+         // !$mymacro blabla !$$
+
+         idxWS = buf.charsetIndexOf(" \n", off);
+         if(-1 != idxWS)
+         {
+            buf.substring(off, idxWS-off) => macroName;
+            //trace "xxx parseMacro: define macro name=\""+macroName+"\".";
+            idxE = buf.indexOf("!$$", idxWS+1);
+            if(-1 != idxE)
+            {
+               String macro;
+               buf.substring(idxWS+1, idxE-(idxWS+1)) => macro;
+               //macro.trim();
+               //trace "xxx parseMacro: macroName=\""+macroName+"\" macroDat=\""+macro+"\".";
+               macros[macroName] = String(macro); // Store a copy of "macro" in the hashtable
+               return idxE + 3;
+            }
+            else
+            {
+               parseError(buf, idxWS+1, "missing !$$ end of macro tag while parsing macro \""+macroName+"\"");
+            }
+         }
+         else
+         {
+            parseError(buf, off, "missing whitespace while parsing macro name");
+         }
+      }
+   }
+
+   protected method parseFunCall(String buf, int off, boolean bStage2, String ret) : int {
+      // $:MyStage1Fun(<args>)
+      // $;MyStage2Fun(<args>)
+
+      int idxB = buf.indexOfChar('(', off + 1);
+      if(-1 != idxB)
+      {
+         String funName;
+         buf.substring(off, idxB-off) => funName;
+         //trace "xxx parseFunCall: function name=\""+funName+"\".";
+         // TODO: ')' and ',' may not appear in argument String
+         int idxE = buf.indexOfChar(')', idxB+1);
+         if(-1 != idxE)
+         {
+            String args;
+            String t;
+            buf.substring(idxB+1, idxE-(idxB+1)) => args;
+            //trace "xxx parseFunCall:    args=\""+args+"\".";
+            StringArray argArray <= args.splitChar(',');
+            int argNr = 1;
+            foreach t in argArray {
+               t.trim();
+               if(t.getc(0) == '$')
+               {
+                  String macroName;
+                  t.substring(1, t.length-1) => macroName;
+                  if(macros.exists(macroName))
+                  {
+                     t = macros[macroName];
+                  }
+                  else
+                  {
+                     parseError(buf, off, "macro \""+macroName+"\" does not exist (while substituting arg #"+argNr+" of call to function \""+funName+"\").");
+                  }
+               }
+               argNr++;
+            }
+            ////DSA.CallFunction(funName, argArray, ret);
+            addFunBlock(funName, argArray);
+            return idxE + 1;
+         }
+         else
+         {
+            parseError(buf, idxB+1, "missing \')\' end of function argument list");
+         }
+      }
+      else
+      {
+         parseError(buf, off + 1, "missing \'(\' start of function argument list");
+      }
+   }
+
+   public method parse(String buf, int off) {
+      String t;
+
+      ////trace "xxx parse page \""+page_name+"\".";
+
+      // Determine directory prefix
+      int idxDir = file_name.lastIndexOf("/");
+      if(-1 != idxDir)
+      {
+         file_name.substring(0, idxDir+1) => dir_prefix;
+         file_name.replaceRegion(0, idxDir+1, "");
+      }
+
+
+      // Determine output filename
+      int idxSuffix = file_name.lastIndexOf(".");
+      if(-1 != idxSuffix)
+      {
+         // Replace suffix by .html
+         file_name.substring(0, idxSuffix) => t;
+      }
+      else
+      {
+         // Simply add .html suffix
+         t = file_name;
+      }
+      t.append(".html");
+      out_file_name = t;
+
+      // Preserve escaped characters
+      String replBuf; replBuf.alloc(3);
+      replBuf[0] = 1;
+      replBuf[1] = 2;
+      replBuf[2] = CH_COMMA;
+      buf.replace("!\\,", replBuf);
+
+      replBuf[2] = CH_PARRIGHT;
+      buf.replace("!\\)", replBuf);
+
+      replBuf[2] = CH_PARA;
+      buf.replace("!\\§", replBuf);
+
+      replBuf[2] = CH_EXCL;
+      buf.replace("!\\!", replBuf);
+
+      replBuf[2] = CH_LT;
+      buf.replace("!\\<", replBuf);
+
+      replBuf[2] = CH_GT;
+      buf.replace("!\\>", replBuf);
+
+      replBuf[2] = CH_BACKSLASH;
+      buf.replace("!\\\\", replBuf);
+
+      replBuf[2] = CH_DOLLAR;
+      buf.replace("!\\$", replBuf);
+
+      cnode <= root_node;
+
+      cblock <= null;
+      String funRet;
+
+      int offT = off; // Textblock start
+      
+      while(off < buf.length)
+      {
+         //trace "xxx while off<len: off="+off+" offT="+offT;
+         int idxEx = buf.indexOfChar('!', off);
+         if(-1 != idxEx)
+         {
+            if( (idxEx+1) < buf.length )
+            {
+               switch( buf[idxEx+1] )
+               {
+                  case '.': // !. Begin inner node
+
+                     // Add text until start of tag
+                     buf.substring(offT, idxEx-offT) => t;
+                     addText(t);
+
+                     off = beginNode(buf, idxEx+2);
+                     offT = off;
+                     break;
+
+                  case '/': // !/ End node
+
+                     // Add text until start of tag
+                     buf.substring(offT, idxEx-offT) => t;
+                     addText(t);
+
+                     off = endNode(buf, idxEx+2);
+                     offT = off;
+                     break;
+
+                  case '*': // !* Comment until end of line
+
+                     // Add text until start of tag
+                     buf.substring(offT, idxEx-offT) => t;
+                     addText(t);
+
+                     off = parseComment(buf, idxEx+2);
+                     offT = off;
+                     break;
+
+                  case '$': // !$ Define or insert macro/var
+
+                     // Add text until start of tag
+                     buf.substring(offT, idxEx-offT) => t;
+                     addText(t);
+
+                     off = parseMacro(buf, idxEx+2);
+                     offT = off;
+                     break;
+
+                  case ':': // !: Stage 1 function call
+
+                     // Add text until start of tag
+                     buf.substring(offT, idxEx-offT) => t;
+                     addText(t);
+
+                     funRet.empty();
+                     off = parseFunCall(buf, idxEx+2, false, funRet);
+                     offT = off;
+
+                     if(!funRet.isBlank())
+                     {
+                        addText(funRet);
+                     }
+                     break;
+
+                  case ';': // !; Stage 2 function call
+
+                     // Add text until start of tag
+                     buf.substring(offT, idxEx-offT) => t;
+                     addText(t);
+
+                     funRet.empty();
+                     off = parseFunCall(buf, idxEx+2, true, funRet);
+                     offT = off;
+                     if(!funRet.isBlank())
+                     {
+                        addPreText(funRet);
+                     }
+                     break;
+
+                  default: // Regular '!' character
+                     off = idxEx+1;
+                     break;
+               }
+            }
+            else
+            {
+               // Special case: Text ends with '!'
+               buf.substring(offT, buf.length-offT) => t;
+               addText(t);
+               off = buf.length; // done
+            }
+         }
+         else
+         {
+            // No more tags left to parse
+            buf.substring(offT, buf.length-offT) => t;
+            addText(t);
+            off = buf.length; // done
+         }
+      }
+   }
+
+   protected method genTOC(String toc) {
+      toc.append("<div class=\"toc\">\n");
+      toc.append("<b>Table of Contents:</b>");
+      toc.append("<ul>\n");
+      DOG_PageNode n <= root_node;
+      if(n.inner != null)
+      {
+         n.inner.genTOCRec(toc);
+      }
+      toc.append("</ul>\n");
+      toc.append("</div>\n");
+   }
+
+   public method resolveXRef() : boolean {
+      
+      if(root_node != null)
+      {
+         return root_node.resolveXRef();
+      }
+      else
+      {
+         return true;
+      }
+   }
+
+   public method touchTOCLinks() {
+      // Note: this should be called when writeHTML() is *not* called
+      DSA.SetCurrentPage(this);
+
+      String toc;
+      toc.empty();
+      genTOC(toc); // To create referenced by entries for quicklinks
+   }
+
+   public method writeHTML() {
+
+      DSA.SetCurrentPage(this);
+
+      String out;
+      out.alloc(32*1024);
+      out.empty();
+
+      // Write doctype
+      out.append("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">\n");
+
+      // Write HTML header
+      out.append("<html><head>\n");
+
+      // Write content type/charset
+      out.append("<meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\">\n");
+
+      // Write page title
+      out.append("<title>");
+      out.append(page_title);
+      out.append("</title>\n");
+
+      // Write stylesheet decl (some styles have been borrowed from naturaldocs (www.naturaldocs.org)
+      out.append(
+"<style type=\"text/css\">
+BODY    {  background-color: #ffffff;
+           color: #101010;
+           font: 10pt Verdana, sans-serif;
+           margin: 0px;
+           padding: 0px;
+        }
+A:link {
+           color: #505090;
+           font: 10pt Verdana, sans-serif;
+           font-weight: bold;
+           text-decoration: none;
+}
+A:visited {
+           color: #706850;
+           font: 10pt Verdana, sans-serif;
+           font-weight: bold;
+           text-decoration: none;
+}
+A:hover {
+           color: #a02020;
+           font: 10pt Verdana, sans-serif;
+           font-weight: bold;
+}
+A:active {
+           color: #f01010;
+           font: 10pt Verdana, sans-serif;
+           font-weight:  bold;
+}
+DIV.bg { 
+           background-color: #a0a0a0;
+           font: 10pt Verdana, sans-serif;
+           padding-left: 4%;
+           padding-right: 4%;
+           padding-top: 1%;
+        }
+DIV.column_out {
+          background-color: #f8f8f8; 
+          margin: 0px:
+          padding: 4px;
+           border: 1px solid #404040;
+           border-radius: 15px;
+           -o-border-radius: 15px;
+           -moz-border-radius: 15px;
+}
+DIV.column { 
+           background-color: #ffffff;
+           color: #101010;
+           font: 10pt Verdana, sans-serif;
+           padding: 8px;
+          border-color: #efefef;
+          border-width: 4px 7px 4px 7px;
+          border-style: solid;
+          border-radius: 15px;
+          -moz-border-radius: 15px;
+           -o-border-radius: 15px;
+        }
+LI      { margin-bottom: 2pt; }
+UL      { margin-bottom: 8pt; }
+CODE.dsa { letter-spacing: 0px; 
+          font-size: 13pt;
+          color: #909090;
+        }
+DIV.toc { border-color: #e0e0e0;
+          border-width: 4px;
+          border-style: solid;
+          background-color: #f8f8f8; 
+          padding: 4px;
+          border-radius: 15px;
+          -moz-border-radius: 15px;
+           -o-border-radius: 15px;
+        }
+DIV.pre { border-color: #c0c0c0 #a0a0a0 #a0a0a0 #c0c0c0;
+          border-width: 1px 1px 1px 1px;
+          border-style: solid;
+          background-color: #fcfcf8; 
+          font: 12pt Courier New,fixed;
+          margin-left: 55px;
+          padding: 0px 8px 0px 8px;
+          color: #505050;
+        }
+.page_blocks {
+          background-color: #ffffff;
+/*        text-align: justify;*/
+          margin-left: 4%;
+          margin-right: 7%;
+}
+.TitlePage {
+          background-color: #ffffff;
+          margin: 0px;
+       }
+.smalltitle {
+          background-color: #ffffff;
+          margin: 0px;
+          border: 1px solid #d0d0d0;
+          border-width: 0px 0px 1px 0px;
+          font-size: 36pt;
+          color: #a0a0a0;
+       }
+.smalltitle_2 {
+          background-color: #ffffff;
+          margin: 0px;
+          border-width: 0px;
+          font-size: 19pt;
+          color: #b0b0b0;
+       }
+.smalltitle_3 {
+          background-color: #ffffff;
+          margin: 0px;
+          border-width: 0px;
+          font-size: 14pt;
+          color: #e0e0e0;
+       }
+.ExampleTitle {
+           color: #00ff00;
+        }
+.Example {
+          padding: 15px;
+          border: 1px solid #C0C0C0;
+          border-width: 1px 1px 1px 6px;
+          border-style: dashed dashed dashed solid;
+          color: #707070;
+          background-color: #fcfcf8; 
+          margin: 0px 5ex 5px 55px;
+          font: 12pt Courier New,fixed;
+        }
+.Example_TKS {
+          font: 12pt fixed;
+          padding: 15px;
+          border: 1px solid #C0C0C0;
+          border-width: 1px 1px 1px 6px;
+          border-style: dashed dashed dashed solid;
+          color: #404040;
+          background-color: #fcfcf8; 
+          margin: 0px 5ex 5px 55px;
+          font: 12pt Courier New,fixed;
+        }
+.page_up {
+    font: 9pt serif;
+    border-width: 3px 3px 3px 3px; border-style: solid; border-color: #e8e8e8;
+    background-color: #f8f8f8; 
+    border-radius: 10px;
+    -moz-border-radius: 10px;
+    -o-border-radius: 15px;
+    padding: 1px 1px 1px 2px;
+    margin-bottom: .8em;
+    margin-left: 1em;
+    }
+DIV.Node1 {
+    font: 24pt serif;
+    border-width: 0px 0px 24px 0px; 
+    background-color: #fcfcfc;
+    border-style: solid; 
+    border-color: #f0f0f0;
+    margin-bottom: .5em;
+    margin-top: 4.5em;
+    padding-left: 10px;
+    padding-top: 20px;
+    padding-bottom: 8px;
+    }
+DIV.Node2 {
+    font: 18pt serif;
+    border-width: 0px 0px 0px 7px; border-style: solid; 
+    border-color: #ffffff #e0e0e0 #ffffff #e0e0e0;
+    padding-left: 4px;
+    margin-bottom: .5em;
+    margin-top: 3em;
+    }
+DIV.Node3 {
+    font: 12pt serif;
+    border-width: 0 0 1px 0; border-style: solid; border-color: #e0e0e0;
+    padding-left: 2px;
+    margin-bottom: .5em;
+    margin-top: 1.3em;
+    }
+
+DIV.Node3_inner {
+    font: 12pt serif;
+    border-width: 0 0 9px 0; border-style: solid; border-color: #f0f0f0;
+    padding-left: 2px;
+    margin-bottom: .5em;
+    margin-top: 1.3em;
+    }
+
+</style>");
+//          -moz-border-radius: 10px
+
+
+/* round subchapter border:
+DIV.Node1 {
+    font: 24pt serif;
+    border-width: 4px 8px 4px 8px; 
+    -moz-border-radius: 20px 20px 20px 20px;
+    background-color: #fcfcfc;
+    border-style: solid; 
+    border-color: #f0f0f0 #f0f0f0 #f0f0f0 #f0f0f0;
+    margin-bottom: .5em;
+    margin-top: 4.5em;
+    padding-left: 10px;
+    padding-top: 20px;
+    padding-bottom: 20px;
+    }
+*/
+
+      // End of HTML header
+      out.append("</head>\n");
+
+      // Write body
+      out.append("<body>");
+
+      //out.append("<table border=0><tr><td class=\"column_l\">&nbsp;<td class=\"column\" width=\"80%\">");
+      //out.append("<div class=\"bg\"><div class=\"column\">");
+      out.append("<div class=\"bg\"><div class=\"column_out\"><div class=\"column\">");
+
+      if(root_node != null)
+      {
+         ////trace "xxx page=\""+page_name+"\" root_node="+#(root_node);
+         root_node.writeHTML(out);
+      }
+
+      DOG_HTML.AddAutoGenNotice(out);
+
+      out.append("\n</div></div></div>\n");
+      //out.append("\n</div></div>\n");
+      //out.append("\n</td><td class=\"column_r\">&nbsp;</tr></table>\n");
+
+      out.append("\n</body></html>");
+
+      // Generate and insert table of contents (TOC)
+      String toc;
+      toc.empty();
+      genTOC(toc);
+      out.replace("%%toc%%", toc);
+
+      //trace "xxx done";
+      ////out.saveLocal("test.html");
+
+      // Re-substitute special characters
+      String replBuf; replBuf.alloc(3);
+      replBuf[0] = 1;
+      replBuf[1] = 2;
+      replBuf[2] = CH_COMMA;
+      out.replace(replBuf, ",");
+      replBuf[2] = CH_PARRIGHT;
+      out.replace(replBuf, ")");
+      replBuf[2] = CH_PARA;
+      out.replace(replBuf, "§");
+      replBuf[2] = CH_EXCL;
+      out.replace(replBuf, "!");
+      replBuf[2] = CH_LT;
+      out.replace(replBuf, "<");
+      replBuf[2] = CH_GT;
+      out.replace(replBuf, ">");
+      replBuf[2] = CH_BACKSLASH;
+      out.replace(replBuf, "\\");
+      replBuf[2] = CH_DOLLAR;
+      out.replace(replBuf, "$");
+
+
+      out.saveLocal(dir_prefix + out_file_name);
+   }
+}

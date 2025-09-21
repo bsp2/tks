@@ -1,0 +1,348 @@
+//
+//   file: dog++.tks
+// author: (c) 2008-2015 Bastian Spiegel <bs@tkscript.de>
+//             - distributed under terms of the GNU general public license (GPL).
+//
+//   date: 29-Feb-2008 , 01-Mar-2008, 21-Sep-2008, 28-Dec-2015
+//   info: DOG++ is the C++ frontend to DOG, the tkScript _do_cumentation _g_enerator.
+//
+//  usage: tks app:dog++ <modulename> <inputfiles> | tks app:dog
+//
+
+define CC_END 1
+define CC_MODULE 2
+define CC_CLASS 3
+define CC_FUNCTION 4
+define CC_METHOD 5
+define CC_CONSTANT 6
+
+String project_name = "core";
+String file_name; // Name of current source file
+boolean b_auto_module = false; // automatically emit beginmodule / endmodule commands
+String module_name <= null; // Name of current module context
+String class_name <= null; // Name of current class context or NULL if there is no current class
+String buf; // Current file buffer
+String block; // Current comment block (without leading/trailing /* and */)
+
+function PrintUsage() {
+   stderr
+"Usage:
+    tks app:dog++ [-mn,--modulename <modulename>] [-pn,--projectname <projectname>] <inputfiles> | tks app:dog
+
+\n";
+   stderr "[---] dog++: invalid arguments.\n";
+   die "";
+}
+
+function ParseError(String _msg, int _offset) {
+   // Convert offset to line number
+   int lineNr=1;
+   int idx = 0;
+   for(;;)
+   {
+      idx = buf.indexOfChar('\n', idx);
+      if(idx != -1)
+      {
+         if(idx < _offset)
+         {
+            lineNr++;
+            idx++;
+         }
+         else
+         {
+            break;
+         }
+      }
+      else
+      {
+         break;
+      }
+   }
+   stderr "[---] dog++: "+_msg+". file=\""+file_name+"\", line "+lineNr+" (character offset="+_offset+").\n";
+   die "";
+}
+
+function ExtractBlockUntilEndOfComment(int _offset) {
+   int idxEndComment = buf.indexOf("*/", _offset);
+   if(idxEndComment != -1)
+   {
+      buf.substring(_offset, (idxEndComment-_offset)) => block;
+   }
+   else
+   {
+      ParseError("premature end of file found while looking for \"*/\" end of block comment", _offset);
+   }
+}
+
+
+function ProcessFile() {
+   //
+   // Parse '@' tags in file and emit documentation in 'ee' format to stdout
+   //
+   //stderr "[dbg] dog++: ProcessFile \""+file_name+"\"\n";
+   if(buf.loadLocal(file_name, true))
+   {
+      int idx = 0;
+      int idxAt;
+      int numTags = 0;
+      
+      for(;;)
+      {
+         idxAt = buf.indexOfChar('@', idx);
+         
+         if(idxAt != -1)
+         {
+            int idxTagLineEnd = buf.indexOfChar('\n', idxAt);
+            if(idxTagLineEnd != -1)
+            {
+               int idxTagEnd = buf.indexOfChar(' ', idxAt);
+               if(idxTagEnd != -1)
+               {
+                  if(idxTagEnd < idxTagLineEnd)
+                  {
+                     String tagName;
+                     String tagValue;
+                     //trace "xxx start="+(idxAt+1)+" end="+idxTagEnd;
+                     buf.substring(idxAt+1, (idxTagEnd-1-idxAt)) => tagName;
+                     buf.substring(idxTagEnd+1, (idxTagLineEnd-1-idxTagEnd)) => tagValue;
+                     tagValue.trim();
+
+                     if(tagValue.startsWith("_"))  // 28Dec2015
+                        tagValue = tagValue.substring(1, 99999);
+
+                     //trace "xxx tagName.length="+tagName.length;
+                     //stderr "xxx found tag=\""+tagName+"\" value=\""+tagValue+"\".\n";
+                     //print "xxx module_name="+#(module_name);
+                     switch(tagName)
+                     {
+                        case "beginmodule":
+                           if(!b_auto_module && (null != module_name))
+                           {
+                              ParseError("found @beginmodule before @endmodule (\""+module_name+"\")", idxAt);
+                           }
+                           else
+                           {
+                              if(!b_auto_module)
+                              {
+                                 module_name <= String(tagValue);
+                                 ////trace "xxx @beginmodule \""+module_name+"\".";
+
+                                 // Emit module start command
+                                 StdOutStream.i8 = CC_MODULE;
+                                 print module_name;
+                              }
+
+                              ExtractBlockUntilEndOfComment(idxTagLineEnd+1);
+                              if(!b_auto_module)
+                              {
+                                 stdout block;
+                              }
+                           }
+                           break;
+
+                        case "endmodule":
+                           if(null == module_name)
+                           {
+                              ParseError("found @endmodule outside of module context", idxAt);
+                           }
+                           else
+                           {
+                              if(!b_auto_module)
+                              {
+                                 // Emit end of module control character
+                                 StdOutStream.i8 = CC_END;
+
+                                 module_name <= null;
+                              }
+                           }
+                           break;
+
+                        case "class":
+                           if(null == module_name)
+                           {
+                              ParseError("found @class outside of module context", idxAt);
+                           }
+                           else
+                           {
+                              if(class_name != null)
+                              {
+                                 // Emit end of class control character
+                                 StdOutStream.i8 = CC_END;
+                              }
+                              class_name <= String(tagValue);
+
+                              // Emit class start command
+                              StdOutStream.i8 = CC_CLASS;
+                              print class_name;
+
+                              ExtractBlockUntilEndOfComment(idxTagLineEnd+1);
+                              stdout block;
+                           }
+                           break;
+
+                        case "method":
+                           if(null == module_name)
+                           {
+                              ParseError("found @method outside of module context", idxAt);
+                           }
+                           else if(null == class_name)
+                           {
+                              ParseError("found @method outside of class context", idxAt);
+                           }
+                           else
+                           {
+                              // Emit method command
+                              StdOutStream.i8 = CC_METHOD;
+                              print tagValue;
+
+                              ExtractBlockUntilEndOfComment(idxTagLineEnd+1);
+                              stdout block;
+                           }
+                           break;
+
+                        case "constant":
+                           if(null == module_name)
+                           {
+                              ParseError("found @constant outside of module context", idxAt);
+                           }
+                           else if(null == class_name)
+                           {
+                              ParseError("found @constant outside of class context", idxAt);
+                           }
+                           else
+                           {
+                              // Emit constant command
+                              StdOutStream.i8 = CC_CONSTANT;
+                              print tagValue;
+
+                              ExtractBlockUntilEndOfComment(idxTagLineEnd+1);
+                              stdout block;
+                           }
+                           break;
+
+                        case "function":
+                           if(null == module_name)
+                           {
+                              ParseError("found @function outside of module context", idxAt);
+                           }
+                           if(null != class_name)
+                           {
+                              // Emit end of class control character
+                              StdOutStream.i8 = CC_END;
+                              class_name <= null;
+                           }
+                           // Emit function command
+                           StdOutStream.i8 = CC_FUNCTION;
+                           print tagValue;
+                           
+                           ExtractBlockUntilEndOfComment(idxTagLineEnd+1);
+                           stdout block;
+                           break;
+                     }
+
+                     // Parse next tag
+                     idx = idxTagLineEnd + 1;
+                  }
+                  else
+                  {
+                     // No valid tag, try next
+                     idx++;
+                  }
+               }
+               else
+               {
+                  // No valid tag, try next
+                  idx++;
+               }
+            }
+            else
+            {
+               // No valid tag, try next
+               idx++;
+            }
+         }
+         else
+         {
+            // Done, no more tags to parse
+            return;
+         }
+      }
+   }
+   else
+   {
+      die "[---] dog++: failed to open input file \""+file_name+"\".";
+   }
+}
+
+
+function main() {
+
+   if(Arguments.numElements < 1)
+   {
+      PrintUsage();
+   }
+
+   int i = 0;
+   while(i < Arguments.numElements)
+   {
+      file_name <= Arguments[i];
+
+      if(file_name.compare("-pn") || file_name.compare("--projectname"))
+      {
+         i++;
+         if(i < Arguments.numElements)
+         {
+            project_name = Arguments[i].trim();
+
+            // Emit project name command
+            print project_name;
+
+            i++;
+         }
+         else
+         {
+            PrintUsage();
+         }
+      }
+      else if(file_name.compare("-mn") || file_name.compare("--modulename"))
+      {
+         i++;
+         if(i < Arguments.numElements)
+         {
+            b_auto_module = true;
+            module_name <= String(Arguments[i].trim());
+            
+            // Emit module start command
+            StdOutStream.i8 = CC_MODULE;
+            print module_name;
+
+            i++;
+         }
+         else
+         {
+            PrintUsage();
+         }
+      }
+      else
+      {
+         ProcessFile();
+         i++;
+      }
+   }
+
+   if(b_auto_module)
+   {
+      // Emit end of module control character
+      StdOutStream.i8 = CC_END;
+
+      module_name <= null;
+   }
+
+   if(module_name != null)
+   {
+      stderr "[---] dog++: missing @endmodule tag for module \""+module_name+"\".\n";
+      die "";
+   }
+
+
+}

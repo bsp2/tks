@@ -1,0 +1,1774 @@
+!%test_syntaxhl Syntax highlighting test
+
+!.main TkScript syntax highlighting
+
+A simple example:
+
+!$code
+/* c style comment */ more text
+// This is a comment
+
+function Test(String s) {
+   trace s;
+   trace 'squot/* sdfd*/ style string';
+   trace "yo, \"some
+multiline
+text";
+}
+
+Test("hello, world.");
+!$$
+!;Example_TKS($code)
+
+
+
+A more sophisticated example:
+
+
+!$code
+//
+//   file: dog_dsa_syntaxhl.tks
+//
+// author: (c) 2008 Bastian Spiegel <bs@tkscript.de>
+//             - distributed under terms of the GNU general public license (GPL).
+//   date: 19-Jun-2008
+//   info: simple TkScript syntax highlighter
+//
+
+module MDOGDSASyntaxHL;
+
+
+String delim_chars = " \n\'\"/*\\,;:(){}[]<>-+!?=~";
+
+#define IDX_SPACE     0
+#define IDX_LF        1
+#define IDX_SQUOT     2
+#define IDX_DQUOT     3
+#define IDX_SLASH     4
+#define IDX_MUL       5
+#define IDX_BACKSLASH 6
+
+#define QUOTE_NONE   0
+#define QUOTE_SINGLE 1
+#define QUOTE_DOUBLE 2
+
+#define COMM_NONE 0
+#define COMM_C    1  // /*..*/ c style comment
+#define COMM_CPP  2  // // c++ style comment
+
+HashTable keywords;
+keywords.alloc(300);
+
+function AddKeyword(String word, String color, boolean bBold) {
+   // int, char, String, sin, cos, ..
+   keywords[word] = "<font color=\""+color+"\">" + (bBold?"<b>":"") + word + (bBold?"</b>":"") + "</font>";
+}
+
+String kw; 
+foreach kw in [
+   "if", "else", "for", "do", "while", "class", "function", "return", "switch", "case", "break", "loop", "use", "new", "foreach", 
+   "enum", "define", "#define", "tag", "local", "module", "this", "deref", "prepare", "compile", "extends", "method", "public", 
+   "private", "protected", "instanceof", "static", "returns", "constraint", "delegate", "explain", "try", "catch", "finally", "throw", 
+   "namespace"
+] AddKeyword(kw, "#000000", true);
+
+foreach kw in [
+   "void", "int", "short", "byte", "bool", "boolean", "float", "Object", "String", "Array"
+] AddKeyword(kw, "#404040", true);
+
+foreach kw in [
+   "default", "null", "true", "false", "maybe" 
+] AddKeyword(kw, "#207080", true);
+
+foreach kw in [
+   "tcchar", "sin", "cos", "tan", "asin", "acos", "sqrt", "rad", "deg", "abs", "frac", "round", "rnd", "rand", "2n", "ln", "exp", 
+   "#", "typeid", "typename", "@",
+   "trace", "print", "stderr", "stdout"
+] AddKeyword(kw, "#3010a0", false);
+
+
+
+String r;
+String buf;
+String charStr = " ";
+String t;
+
+int i;
+int wordStart = 0;
+int quoteMode = QUOTE_NONE;
+int commMode = COMM_NONE;
+
+function WordEnd() {
+   ////trace "xxx WordEnd: wordStart="+wordStart+" i="+i;
+   if(wordStart != i)
+   {
+      buf.substring(wordStart, i-wordStart) => t;
+      trace "xxx found delim wordStart="+wordStart+" i="+i+" t=\""+t+"\".";
+      if(keywords.exists(t))
+      {
+         trace "xxx    ==> is keyword";
+         r.append(keywords[t]);
+      }
+      else
+      {
+         // Regular word
+         r.append(t);
+      }
+   }
+}
+
+function DSA_Example_TKS(StringArray args, String _r) {
+   r <= _r;
+   buf <= args[0];
+   int bufLen = buf.length;
+
+   r.append("<pre class=\"Example_TKS\">");
+
+   for(i=0; i<bufLen; i++)
+   {
+      char c = buf.getc(i);
+      char cn = buf.getc(i+1);
+      int idxDelim = delim_chars.indexOfChar(c, 0);
+      //trace "xxx i="+i+" c="+tcchar(c)+" cn="+tcchar(cn)+" idxDelim="+idxDelim;
+      if(-1 != idxDelim)
+      {
+         if(idxDelim == IDX_LF)
+         {
+            if(COMM_CPP == commMode)
+            {
+               // End // c++ style comment
+               commMode = COMM_NONE;
+               r.append("</font>");
+            }
+            else if( (COMM_NONE == commMode) && (QUOTE_NONE == quoteMode) )
+            {
+               WordEnd();
+            }
+
+            r.append("<br>");
+            wordStart = i + 1;
+         }
+         else if( (idxDelim == IDX_SQUOT) && (COMM_NONE == commMode) )
+         {
+            if(QUOTE_NONE == quoteMode)
+            {
+               WordEnd();
+               // Begin '   ' string
+               quoteMode = QUOTE_SINGLE;
+               r.append("<font color=\"#aa3333\">\'");
+            }
+            else if(QUOTE_SINGLE == quoteMode)
+            {
+               // End '   ' string
+               quoteMode = QUOTE_NONE;
+               r.append("\'</font>");
+               wordStart = i + 1;
+            }
+            else
+            {
+               // ' within "   " string
+               r.append("\'");
+            }
+         }
+         else if( (idxDelim == IDX_DQUOT) && (COMM_NONE == commMode) )
+         {
+            if(QUOTE_NONE == quoteMode)
+            {
+               WordEnd();
+               // Begin "   " string
+               quoteMode = QUOTE_DOUBLE;
+               r.append("<font color=\"#aa3333\">\"");
+            }
+            else if(QUOTE_DOUBLE == quoteMode)
+            {
+               // End "   " string
+               quoteMode = QUOTE_NONE;
+               r.append("\"</font>");
+               wordStart = i + 1;
+            }
+            else
+            {
+               // " within '   ' string
+               r.append("\"");
+            }
+         }
+         else if( (idxDelim == IDX_BACKSLASH) && (cn == '\'') )
+         {
+            // Escaped ' character
+            r.append("\\\'");
+            i++;
+         }
+         else if( (idxDelim == IDX_BACKSLASH) && (cn == '\"') )
+         {
+            // Escaped " character
+            r.append("\\\"");
+            i++;
+         }
+         else if( (idxDelim == IDX_BACKSLASH) && (cn == '\\') )
+         {
+            // Escaped \ character
+            r.append("\\\\");
+            i++;
+         }
+         else if( (idxDelim == IDX_SLASH) && (cn == '*') && (QUOTE_NONE == quoteMode) && (COMM_NONE == commMode) )
+         {
+            // Begin /* c style comment
+            WordEnd();
+            commMode = COMM_C;
+            r.append("<font color=\"#a0a0a0\">/*");
+            i++;
+         }
+         else if( (idxDelim == IDX_MUL) && (cn == '/') && (QUOTE_NONE == quoteMode) && (COMM_C == commMode) )
+         {
+            // End */ c style comment
+            commMode = COMM_NONE;
+            r.append("*/</font>");
+            i++;
+            wordStart = i + 1;
+         }
+         else if( (idxDelim == IDX_SLASH) && (cn == '/') && (QUOTE_NONE == quoteMode) && (COMM_NONE == commMode) )
+         {
+            // Begin // c++ style comment
+            WordEnd();
+            commMode = COMM_CPP;
+            r.append("<font color=\"#a0a0a0\">//");
+            i++;
+         }
+         else
+         {
+            if( (QUOTE_NONE == quoteMode) && (COMM_NONE == commMode) )
+            {
+               // Delimiter character found
+               WordEnd();
+               charStr.putc(0, c);
+               r.append(charStr);
+               wordStart = i + 1;
+            }
+            else
+            {
+               // Delimiter character within "   " or '  ' string
+               charStr.putc(0, c);
+               r.append(charStr);
+            }
+         }
+      }
+      else
+      {
+         if( (QUOTE_NONE != quoteMode) || (COMM_NONE != commMode) )
+         {
+            // Regular character
+            charStr.putc(0, c);
+            r.append(charStr);
+         }
+         // else: parse until word is complete
+      }
+   }
+
+   
+   if(COMM_NONE != commMode) // script did not close comment?
+   {
+      r.append("</font>");
+   }
+   else if(QUOTE_NONE != quoteMode) // script did not close quotes ?
+   {
+      r.append("</font>");
+   }
+
+   r.append("</pre>\n");
+   
+}
+
+
+DSA.RegisterFunction("Example_TKS", DSA_Example_TKS);
+
+!$$
+!;Example_TKS($code)
+
+
+Und noch eins weils so schön ist:
+
+
+!$code
+// ----
+// ---- file   : TextField.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2005-2008 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "ui" toolkit.
+// ----
+// ---- changed: 24-Jun-2005, 25-Jun-2005, 26-Jun-2005, 28-Jun-2005, 02-Jul-2005, 11-Aug-2005
+// ----          14-Aug-2005, 28-Apr-2007, 09-May-2007, 12-May-2007, 18-May-2007, 26-May-2007,
+// ----          11-Nov-2007, 14-Apr-2008
+// ----
+// ----
+
+module "MTextField";
+
+namespace ui;
+
+
+class TextField extends Control, AbstractTextField {
+
+   define int DEFAULT_MAX_TEXT_LENGTH = 255;
+   define int DEFAULT_VISIBLE_TEXT_LENGTH = 16;
+
+   define String ACTION_TEXTCHANGED = "onTextChanged";
+   define String ACTION_TEXTENTERED = "onTextEntered";
+   define String ACTION_TEXTEDITED = "onTextEdited";
+
+   protected Font font<=null;
+   protected String text, undo_text;
+   protected int fgColor32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_FG);
+   protected int bgColor32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_BG);
+
+   define int MOUSE_TO_CURSOR_H_CORRECT = 1; // hmm. somehow the cursor is off by one pixel so correct that (font=tahoma(free))
+   define int IPAD_H = 2;
+   define int IPAD_V = 1;
+   define int MIN_SIZE_X=8;
+   define int MIN_SIZE_Y=8;
+   define int MAX_SIZE_X=1024;
+
+   define int MIN_WIDTH_FOR_PAGING = 100;
+   define int PAGING_AMOUNT = 8;
+
+   define int NO_ANCHOR = -1;
+
+   protected int max_text_length;
+   protected int visible_text_length;
+   protected int selection_anchor;
+   protected int selection_start;
+   protected int selection_end;
+   protected int cursor_position; // char index
+   protected int view_offset; // number of chars
+   protected int view_pixel_offset; // text shift left
+   protected boolean b_editing;
+   protected boolean b_mouse_selection;
+   protected boolean b_align_right = false; // true=right align text (integer edit style)
+   protected boolean b_update_inner_layout = false;
+
+   protected boolean b_caret_visible;
+   protected TimerAction caretTimerAction;
+
+   TextField() {
+      cursor_position = -1;
+      view_offset = 0;
+      view_pixel_offset = 0;
+      b_editing = false;
+      caretTimerAction.setActionName("onCaretTimer");
+      caretTimerAction.setActionConsumer(this);
+      b_caret_visible = false;
+      max_text_length = DEFAULT_MAX_TEXT_LENGTH;
+      visible_text_length = DEFAULT_VISIBLE_TEXT_LENGTH;
+      b_mouse_selection = false;
+      selectNone();
+   }
+
+   public function New(String _text) {
+      local TextField tf;
+      tf.setFontByName(UIConstants.DEFAULT_FONT_NAME_TEXTFIELD);
+      tf.setText(_text);
+      return deref tf;
+   }
+
+   public method getProvidedActionNames() returns StringArray {
+      return [ACTION_TEXTCHANGED, ACTION_TEXTENTERED, ACTION_TEXTEDITED];
+   }
+
+   public onLookAndFeelChanged() {
+      fgColor32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_FG);
+      bgColor32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_BG);
+   }
+
+   protected method restartCaretTimer() {
+      caretTimerAction.setTicks(500);
+      UI.Schedule(caretTimerAction);
+      redraw();
+   }
+
+   protected method startCaretTimer() {
+      b_caret_visible = true;
+      UI.CancelScheduleFor(this);
+      caretTimerAction.setTicks(500);
+      UI.Schedule(caretTimerAction);
+      redraw();
+   }
+
+   public method consumeAction(AbstractAction _ac) : boolean {
+      switch(_ac.getActionName())
+      {
+         case "onCaretTimer":
+            ////trace "xxx TextField: consume onCaretTimer action";
+            b_caret_visible = !b_caret_visible;
+            restartCaretTimer();
+            return true;
+      }
+   }
+
+   public method setEnableRightAlign(boolean _bRightAlign) {
+      b_align_right = _bRightAlign;
+   }
+
+   public method getEnableRightAlign() : boolean {
+      return b_align_right;
+   }
+
+   public method setHexValue(int _val) {
+      Integer io;
+      io.value = _val;
+      setText(io.printf("0x%x"));
+   }
+
+   public method setText(String _text) {
+      text<= Object(_text); // duplicate string
+      selectNone();
+      moveCursorHome();
+      updateInnerLayout();
+      redraw();
+   }
+
+   public method getText() returns String {
+      return Object(text);
+   }
+
+   public method setTextReference(String _textRef) {
+      explain "Set text string by reference.";
+
+      if(_textRef instanceof String)
+      {
+         text <= deref _textRef;
+      }
+   }
+
+   public method getTextReference() returns String {
+      explain "Return reference to text String.";
+
+      return text; 
+   }
+
+   public method setMaxTextLength(int _length) {
+      if(_length<1)
+      {
+         _length = 1;
+      }
+      max_text_length = _length;
+      ////trace "xxx TextField: maxCols="+max_text_length;
+   }
+
+   public method getMaxTextLength() returns int {
+      return max_text_length;
+   }
+
+   public method setVisibleTextLength(int _length) {
+      if(_length < 1)
+      {
+         _length = 1;
+      }
+      visible_text_length = _length;
+      invalidateSizeCache();
+      ////trace "xxx TextField: cols="+visible_text_length;
+   }
+
+   public method getVisibleTextLength() : int {
+      return visible_text_length;
+   }
+
+   public method setSelection(int _startIndex, _endIndex) {
+      if(text.length > 0)
+      {
+         if(_startIndex < 0)
+         {
+            _startIndex = 0;
+         }
+         else
+         {
+            if(_startIndex >= (text.length - 1))
+            {
+               _startIndex = (text.length - 1);
+            }
+         }
+         if(_endIndex < 0)
+         {
+            _endIndex = (text.length - 1);
+         }
+         if(_endIndex > _startIndex)
+         {
+            int t = _startIndex; 
+            _startIndex = _endIndex; 
+            _endIndex = t;
+         }
+         selection_start = _startIndex;
+         selection_end = _endIndex;
+      }
+      else
+      {
+         selectNone();
+      }
+   }
+
+   public method getSelectionStart() returns int {
+      return selection_start;
+   }
+
+   public method getSelectionEnd() returns int {
+      return selection_end;
+   }
+
+   public method setFontByName(String _fontName) {
+      setFont(UI.GetFontByName(_fontName));
+   }
+
+   public method setFont(Font _font) {
+      if(_font instanceof Font)
+      {
+         font <= deref _font;
+         invalidateSizeCache();
+      }
+   }
+
+   public method getFont() returns Font {
+      return font;
+   }
+
+   public method selectWord() returns int {
+      int ia = text.indexOfWordStart(cursor_position + 1);
+      int ie = text.indexOfWordEnd(cursor_position);
+      if(ia!=-1)
+      {
+         if(ie!=-1)
+         {
+            selection_start = ia;
+            selection_end = ie;
+            redraw();
+         }
+      }
+   }
+
+   public method selectAll() {
+      selection_start = 0;
+      selection_end = text.length;
+      redraw();
+   }
+   
+   public method selectNone() {
+      selection_anchor = NO_ANCHOR;
+      selection_start = 0;
+      selection_end = 0;
+   }
+
+   protected method calcSizeX() : float {
+      ////trace "\n\n\n\n\nxxx TextField::calcSizeX";
+      if(font==null)
+      {
+         setFontByName(UIConstants.DEFAULT_FONT_NAME_TEXTFIELD);
+      }
+      ////trace "xxx TextField::calcSizeX font="+#(font);
+      if(font != null)
+      {
+         float px = (font.stringWidth("M")*visible_text_length) + (IPAD_H*2+UIConstants.DEFAULT_BORDER_SIZE*2); // + inner border space
+         if(px < MIN_SIZE_X)
+         {
+            px = MIN_SIZE_X;
+         }
+         else
+         {
+            if(px > MAX_SIZE_X)
+            {
+               px = MAX_SIZE_X;
+            }
+         }
+         ////trace "xxx TextField::calcSizeX: returning px="+px;
+         return px;
+      }
+      return 8;
+   }
+
+   protected method calcSizeY() : float {
+      ////trace "xxx TextField::calcSizeY";
+      if(font == null)
+      {
+         setFontByName(UIConstants.DEFAULT_FONT_NAME_TEXTFIELD);
+      }
+      if(font!=null)
+      {
+         float py=font.stringHeight(text) + (IPAD_V*2 + UIConstants.DEFAULT_BORDER_SIZE*2);
+         if(py < MIN_SIZE_Y)
+            py = MIN_SIZE_Y;
+         return py;
+      }
+      return 21;
+   }
+
+   protected method updateInnerLayout() {
+      if(b_align_right)
+      {
+         if(font instanceof Font)
+         {
+            float sw=font.stringWidth(text);
+            float avail = (getSizeX() - IPAD_H*2 - UIConstants.DEFAULT_BORDER_SIZE*2 -2); // -2 for caret
+            if(sw < avail)
+            {
+               view_pixel_offset = -(avail - sw);
+               view_offset = 0;
+               ////trace "xxx updateInnerLayout: sw="+sw+" avail="+avail+" view_pixel_offset = "+view_pixel_offset;
+            }
+            else
+            {
+               ////trace "xxx updateInnerLayout: view_pixel_offset = "+view_pixel_offset;
+               if(view_pixel_offset < 0)
+               {
+                  view_pixel_offset = 0;
+               }
+            }
+         }
+         else
+         {
+            b_update_inner_layout = true;
+         }
+      }
+   }
+
+
+   public method onMouseEnter(MouseEvent _ev) {
+      UI.ShowCursor(UIConstants.CURSOR_TYPE);
+   }
+
+   public method onMouseLeave(MouseEvent _ev) {
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   public method onMouseHold(MouseEvent _ev) : boolean {
+      return b_mouse_selection;
+   }
+
+   public method onMouseFocus() {
+   }
+
+   public method onMouseUnfocus() {
+      stopEditing(true, false);
+   }
+
+   public method onMouseDoubleClick(MouseEvent _ev) returns boolean {
+      if(_ev.isLeftButton())
+      {
+         if(b_editing)
+         {
+            setCursorByPixel(_ev.getMouseRelX());
+            selectWord();
+            return true;
+         }
+      }
+   }
+
+   public method onMouseClick(MouseEvent _ev) returns boolean {
+      if(b_mouse_selection)
+      {
+         setSelectionEndByPixel(_ev.getMouseRelX());
+         b_mouse_selection = false;
+      }
+      else
+      {
+         selectNone();
+         setCursorByPixel(_ev.getMouseRelX());
+      }
+      return true;
+   }
+
+//    public method onMouseLeave(MouseEvent _ev) {
+//       selectNone();
+//    }
+
+   public method onMouse(MouseEvent _ev) returns boolean {
+      if(_ev.middleButtonDown())
+      {
+         pasteMouseSelection();
+         return true;
+      }
+      if(_ev.isLeftButton())
+      {
+         if(_ev.isLeftButtonDown())
+         {
+            // ---- left mouse button click starts edit mode
+            if(!b_editing)
+            {
+               startEditing();
+            }
+            setCursorAndSelectionStartByPixel(_ev.getMouseRelX());
+            b_mouse_selection = true;
+            return true;
+         }
+         else
+         {
+            if(b_mouse_selection)
+            {
+               setSelectionEndByPixel(_ev.getMouseRelX());
+               b_mouse_selection = false;
+               return true;
+            }
+         }
+      }
+      else
+      {
+         if(b_mouse_selection)
+         {
+            setSelectionEndByPixel(_ev.getMouseRelX());
+            return true;
+         }
+      }
+   }
+
+   public method isMouseFocusLocked() returns boolean {
+      return b_mouse_selection;
+   }
+
+   protected method setCursorByPixel(float _mouseX) {
+      // ---- determine char offset at given mouse coordinate
+      selectNone();
+      String ctext;
+      text.substring(view_offset, 1024) => ctext; // until end of string
+      int idx=font.stringIndexAtPixelX(ctext, _mouseX - (UIConstants.DEFAULT_BORDER_SIZE+IPAD_H)+MOUSE_TO_CURSOR_H_CORRECT+view_pixel_offset);
+      if(idx != -1)
+      {
+         moveCursorTo(idx + view_offset);
+         startCaretTimer();
+      }
+   }
+
+   protected method setCursorAndSelectionStartByPixel(float _mouseX) {
+      // ---- determine char offset at given mouse coordinate
+      selectNone();
+      String ctext;
+      text.substring(view_offset, 1024) => ctext; // until end of string
+      int idx=font.stringIndexAtPixelX(ctext, _mouseX-(UIConstants.DEFAULT_BORDER_SIZE+IPAD_H)+MOUSE_TO_CURSOR_H_CORRECT+view_pixel_offset);
+      if(idx!=-1)
+      {
+         moveCursorTo(idx + view_offset);
+         selection_anchor = cursor_position;
+         selection_start = cursor_position;
+         selection_end = selection_start;
+         startCaretTimer();
+      }
+   }
+
+   protected method setSelectionEndByPixel(float _mouseX) {
+      if(selection_anchor != NO_ANCHOR)
+      {
+         if(_mouseX <= 0f)
+         {
+            _mouseX = 0f;
+            int dx = (-Mouse.dx*2) + 1;
+            loop(dx)
+               moveCursorLeft(); // scroll view left
+         }
+
+         // ---- determine char offset at given mouse coordinate
+         String ctext;
+         text.substring(view_offset, 1024) => ctext; // until end of string
+
+         float cw=font.stringWidth(ctext);
+         _mouseX = _mouseX-(UIConstants.DEFAULT_BORDER_SIZE+IPAD_H) + MOUSE_TO_CURSOR_H_CORRECT +view_pixel_offset;
+         if(_mouseX > cw)
+         {
+            expandSelectionToNextChar();
+            moveCursorRight();
+         }
+         else
+         {
+            int idx=font.stringIndexAtPixelX(ctext, _mouseX);
+            if(idx >= 0)
+            {
+               anchorSelection(idx + view_offset);
+               moveCursorTo(idx + view_offset);
+            }
+         }
+         redraw();
+      }
+   }
+
+   public method startEditing() {
+      undo_text = text;
+      b_editing = true;
+      b_caret_visible = true;
+      if(cursor_position == -1)
+      {
+         cursor_position = 0;
+      }
+      grabKeyboardFocus();
+      startCaretTimer();
+      redraw();
+   }
+
+   protected method handleTextEdited() {
+      provideAction(StringAction.New(getProvidedActionAlias(ACTION_TEXTEDITED), this, text));
+   }
+
+   public method stopEditing(boolean _bProvideAction, boolean _bReturnKey) {
+      //trace "xxx textfield: stopediting bProvideAction="+_bProvideAction+" bReturnKey="+_bReturnKey;
+      loseKeyboardFocus();
+      b_mouse_selection = false;
+      b_editing = false;
+      b_caret_visible = false;
+      UI.CancelScheduleFor(this);
+      redraw();
+      if(_bProvideAction)
+      {
+         if(_bReturnKey)
+         {
+            ///trace "xxx provideAction ACTION_TEXTENTERED";
+            provideAction(StringAction.New(getProvidedActionAlias(ACTION_TEXTENTERED), this, text));
+         }
+         else
+         {
+            if(text!=undo_text)
+            {
+               provideAction(StringAction.New(getProvidedActionAlias(ACTION_TEXTCHANGED), this, text));
+            }
+         }
+      }
+   }
+
+   public method undo() {
+      moveCursorHome();
+      text=undo_text;
+      selectAll();
+   }
+
+   public method isTabCycleMember() : boolean {
+      return true;
+   }
+
+   public method onTabFocus() {
+      startEditing();
+      moveCursorEnd();
+      selectAll();
+   }
+
+//    public method onTabFocusLost() {
+//       ////stopEditing(true, false);
+//    }
+
+   public method onKeyboardFocusLost() {
+      stopEditing(true, false);
+   }
+
+   public method onKeyboardFocus() {
+      startEditing();
+   }
+
+   public method onKey(Key _k) returns boolean {
+      ////trace "xxx TextField::onKey entered.";
+
+      boolean bCtrl = (_k.mod&VMOD_LCTRL) || (_k.mod&VMOD_RCTRL);
+      boolean bShift = (_k.mod&VMOD_LSHIFT) || (_k.mod&VMOD_RSHIFT);
+      boolean bAlt = (_k.mod&VMOD_LALT) || (_k.mod&VMOD_RALT);
+      if((_k.mod&VMOD_LALT) || (_k.mod&VMOD_RALT))
+      {
+         bCtrl = false; // SDL workaround
+      }
+      if((_k.released==VKEY_LSHIFT) || (_k.released==VKEY_RSHIFT))
+      {
+         // ---- If the shift key is released the next shift+cursor events start a new selection
+         selection_anchor = NO_ANCHOR;
+      }
+
+
+      switch(_k.pressed)
+      {
+         case VKEY_LEFT:
+            if(bCtrl)
+            {
+               if(bShift)
+               {
+                  if(selection_anchor == NO_ANCHOR)
+                  {
+                     selection_anchor = cursor_position;
+                     selection_start = 0;
+                     selection_end = 0;
+                  }
+                  // ---- set/expand selection
+                  expandSelectionToPreviousWord();
+               }
+               else
+               {
+                  selectNone();
+               }
+               moveCursorStartOfWord();
+            }
+            else
+            {
+               if(bShift)
+               {
+                  if(selection_anchor==NO_ANCHOR)
+                  {
+                     selection_anchor = cursor_position;
+                     selection_start = 0;
+                     selection_end = 0;
+                  }
+                  expandSelectionToPreviousChar();
+               }
+               else
+               {
+                  selectNone();
+               }
+               moveCursorPageLeft();
+            }
+            startCaretTimer();
+            return true;
+
+         case VKEY_RIGHT:
+            if(bCtrl)
+            {
+               if(bShift)
+               {
+                  if(selection_anchor == NO_ANCHOR)
+                  {
+                     selection_anchor = cursor_position;
+                     selection_start = 0;
+                     selection_end = 0;
+                  }
+                  expandSelectionToNextWord();
+               }
+               else
+               {
+                  selectNone();
+               }
+               moveCursorEndOfWord();
+               return true;
+            }
+            else
+            {
+               if(bShift)
+               {
+                  if(selection_anchor == NO_ANCHOR)
+                  {
+                     selection_anchor = cursor_position;
+                     selection_start = 0;
+                     selection_end = 0;
+                  }
+                  expandSelectionToNextChar();
+               }
+               else
+               {
+                  selectNone();
+               }
+               moveCursorPageRight();
+            }
+            startCaretTimer();
+            return true;
+
+         case VKEY_RETURN:
+            stopEditing(true, true);
+            return true;
+
+         case VKEY_HOME:
+            if(bShift)
+            {
+               expandSelectionToHome();
+            }
+            else
+            {
+               selectNone();
+            }
+            moveCursorHome();
+            startCaretTimer();
+            return true;
+
+         case VKEY_END:
+            if(bShift)
+            {
+               expandSelectionToEnd();
+            }
+            else
+            {
+               selectNone();
+            }
+            moveCursorEnd();
+            startCaretTimer();
+            return true;
+
+         case VKEY_DELETE:
+            if(bShift)
+            {
+               cutSelection();
+            }
+            else
+            {
+               if(selection_end > selection_start)
+               {
+                  deleteSelection();
+               }
+               else
+               {
+                  selectNone();
+                  
+                  deleteChar();
+               }
+            }
+            startCaretTimer();
+            return true;
+
+         case VKEY_INSERT:
+            if(bShift)
+            {
+               pasteSelection();
+               return true;
+            }
+            break;
+
+         case VKEY_BACKSPACE:
+            if(selection_end>selection_start)
+            {
+               deleteSelection();
+            }
+            else
+            {
+               if(cursor_position > 0)
+               {
+                  moveCursorPageLeft();
+                  deleteChar();
+                  startCaretTimer();
+               }
+            }
+            return true;
+            
+      }
+
+      /////print "k.mod="+_k.mod+" bctrl="+bCtrl+" bShift="+bShift+" k.pressed="+_k.pressed+" k.unicode="+_k.unicode;
+
+      if(! (bCtrl || bAlt))
+      {
+         if(_k.pressed)
+         {
+            switch(_k.unicode)
+            {
+               case 0:
+                  return true;
+               default:
+                  if(_k.unicode >= ' ')
+                  {
+                     if(selection_end>selection_start)
+                     {
+                        // ---- replace selection with char xxx
+                        String s = " "; 
+                        s[0] = _k.unicode;
+                        pasteString(s);
+                     }
+                     else
+                     {
+                        insertChar(_k.unicode);
+                     }
+                     startCaretTimer();
+                     return true;
+                  }
+                  break;
+            }
+         }
+      }
+      else
+      {
+         /// ---- is the SDL support for mod+unicode broken? e.g. lctrl-e gives me unicode 5 (should be 101?!?)
+         String seltext; 
+         ////print "_k.pressed="+_k.pressed;
+         if(_k.pressed)
+         {
+            ////print "k.unicode="+_k.unicode+" ("+tcchar(_k.unicode)+")";
+            switch(_k.unicode) // todo: should be .unicode
+            {
+               case 1:
+               case 'A': // goto beg. of line
+                  // ---- move cursor to start of line
+                  if(bShift)
+                  {
+                     expandSelectionToHome();
+                  }
+                  moveCursorHome();
+                  startCaretTimer();
+                  return true;
+                  
+               case 5:
+               case 'E': 
+                  // move cursor to end of line
+                  if(bShift)
+                  {
+                     // ---- select until end of line
+                     expandSelectionToEnd();
+                  }
+                  moveCursorEnd();
+                  startCaretTimer();
+                  return true;
+
+               case 24:
+               case 'X':
+                  cutSelection();
+                  return true;
+
+               case 3:
+               case 'C':
+                  copySelection();
+                  return true;
+                  
+               case 22:
+               case 'V':
+                  // --- paste clipboard to selection or cursor position
+                  pasteSelection();
+                  return true;
+                  
+               case 'K':
+                  // ---- kill until end of line
+                  killUntilEnd();
+                  return true;
+
+               case 26:
+               case 'Z':
+                  undo();
+                  return true;
+            }
+         }
+      }
+      return Layer::onKey(_k);
+   }
+
+   // ---- fix selection to selection_anchor
+   protected method anchorSelection(int _idx) {
+      if(_idx<selection_anchor)
+      {
+         selection_start = _idx;
+         selection_end = selection_anchor;
+      }
+      else
+      {
+         selection_start = selection_anchor;
+         selection_end = _idx;
+      }
+   }
+
+   public method killUntilEnd() {
+      if(selection_end > cursor_position)
+      {
+         selection_end = cursor_position;
+         if(selection_end > selection_start)
+         {
+            selectNone();
+         }
+      }
+      text.substring(0, cursor_position);
+      updateInnerLayout();
+      redraw();
+      handleTextEdited();
+   }
+
+   public method expandSelectionToEnd() {
+      if(selection_anchor==NO_ANCHOR)
+      {
+         selection_anchor=cursor_position;
+         selection_start=0;
+         selection_end=0;
+      }
+      anchorSelection(text.length-1);
+   }
+
+   public method cutSelection() {
+      // --- move selection to clipboard
+      if(selection_end>selection_start)
+      {
+         String seltext;
+         text.substring(selection_start, selection_end-selection_start) => seltext;
+         UI.SetClipboard(seltext);
+         if(cursor_position > selection_start)
+         {
+            moveCursorTo(selection_start);
+         }
+         text.deleteRegion(selection_start, selection_end-selection_start);
+         selectNone();
+         updateInnerLayout();
+         handleTextEdited();
+      }
+   }
+
+   public method deleteSelection() {
+      if(selection_end>selection_start)
+      {
+         moveCursorTo(0);
+         text.deleteRegion(selection_start, selection_end-selection_start);
+         int csr=selection_start;
+         selectNone();
+         moveCursorTo(csr);
+         updateInnerLayout();
+         redraw();
+         handleTextEdited();
+      }
+   }
+
+   public method copySelection() {
+      // --- copy selection to clipboard
+      if(selection_end>selection_start)
+      {
+         String seltext;
+         text.substring(selection_start, selection_end-selection_start) => seltext;
+         UI.SetClipboard(seltext);
+      }
+   }
+
+   public method pasteMouseSelection() {
+      String s=UI.GetClipboard();
+      if(s.length<2)
+         return;
+      // ---- paste at cursor position
+      int oldcsr=cursor_position;
+      int i=0;
+      loop(s.length-1)
+         {
+            insertChar(s[i++]);
+         }
+      moveCursorTo(oldcsr);
+      startCaretTimer();
+      updateInnerLayout();
+      handleTextEdited();
+   }
+
+   public method pasteSelection() {
+      String s=UI.GetClipboard();
+      pasteString(s);
+   }
+
+   public method pasteString(String s) {
+      if(s.length < 2)
+      {
+         return;
+      }
+      if(selection_end > selection_start)
+      {
+         // ---- replace current selection
+         int csr=cursor_position;
+         String sl; text.substring(0, selection_start) => sl;
+         String sr; text.substring(selection_end, text.length-selection_end) => sr;
+         text = sl;
+         text.append(s);
+         text.append(sr);
+         if(csr>(text.length-1))
+         {
+            csr=text.length-1;
+         }
+         moveCursorTo(selection_start+s.length-1);
+         selectNone();
+      }
+      else
+      {
+         // ---- paste at cursor position
+         int i=0;
+         loop(s.length-1)
+         {
+            insertChar(s[i++]);
+         }
+      }
+      startCaretTimer();
+      updateInnerLayout();
+      handleTextEdited();
+   }
+
+   public method insertChar(char _c) {
+      if(b_editing)
+      {
+         if(text.length<max_text_length)
+         {
+            String s=tcchar(_c);
+            text.insert(cursor_position, s);
+            moveCursorRight();
+            updateInnerLayout();
+
+            handleTextEdited();
+         }
+      }
+   }
+
+   public method deleteChar() {
+      if(b_editing)
+      {
+         if(text.length>1)
+         {
+            text.deleteRegion(cursor_position, 1);
+            if(selection_end>=text.length)
+               selection_end=text.length-1;
+            if(selection_end<=selection_start)
+            {
+               selectNone();
+            }
+            updateInnerLayout();
+
+            handleTextEdited();
+         }
+      }
+   }
+
+   public method expandSelectionToPreviousChar() {
+      if(cursor_position>0)
+      {
+         anchorSelection(cursor_position-1);
+      }
+   }
+
+   public method expandSelectionToNextChar() {
+      if(cursor_position<(text.length-1))
+      {
+         anchorSelection(cursor_position+1);
+      }
+   }
+
+
+   public method moveCursorPageLeft() {
+      ////trace "xxx moveCursorPageLeft view_offset="+view_offset+" cursor_position"+cursor_position+" view_pixel_offset="+view_pixel_offset;
+      if(text.length>0)
+      {
+         cursor_position--;
+         if(cursor_position<0)
+         {
+            cursor_position=0;
+         }
+         if( (cursor_position==0) || (cursor_position == view_offset) )
+         {
+            view_pixel_offset = 0;
+         }
+         if(cursor_position<view_offset)
+         {
+            view_pixel_offset = 0;
+            if(getSizeX()<MIN_WIDTH_FOR_PAGING)
+               view_offset--;
+            else
+               view_offset-=PAGING_AMOUNT;
+            if(view_offset<0)
+               view_offset=0;
+         }
+         updateInnerLayout();
+         redraw();
+      }
+   }
+
+   public method moveCursorLeft() {
+      ////trace "xxx moveCursorLeft view_offset="+view_offset+" cursor_position"+cursor_position+" view_pixel_offset="+view_pixel_offset;
+      if(text.length>0)
+      {
+         cursor_position--;
+         if(cursor_position<0)
+         {
+            cursor_position=0;
+         }
+         if( (cursor_position==0) || (cursor_position==view_offset) )
+         {
+            view_pixel_offset = 0;
+         }
+         if(cursor_position<view_offset)
+         {
+            view_pixel_offset = 0;
+            view_offset--;
+            if(view_offset<0)
+               view_offset=0;
+         }
+         ////trace "xxx view_offset="+view_offset+" view_pixel_offset="+view_pixel_offset;
+         updateInnerLayout();
+         redraw();
+      }
+   }
+
+   public method moveCursorPageRight() {
+      ////trace "xxx moveCursorPageRight view_offset="+view_offset;
+      int viewoff = view_offset;
+      moveCursorRight();
+      if(getSizeX()>=MIN_WIDTH_FOR_PAGING)
+      {
+         if(viewoff != view_offset)
+         {
+            int cursorpos = cursor_position;
+            loop(PAGING_AMOUNT-1)
+            {
+               moveCursorRight();
+            }
+            // Move cursor back
+            moveCursorTo(cursorpos);
+         }
+      }
+   }
+
+   protected method moveCursorRight() {
+      ////trace "xxx moveCursorRight cursor_position="+cursor_position+" view_offset="+view_offset+" view_pixel_offset="+view_pixel_offset;
+      if(text.length>0)
+      {
+         int oldcsr=cursor_position++;
+         if(cursor_position>(text.length-1)) // length includes ASCIIZ
+         {
+            cursor_position=text.length-1;
+            if(cursor_position<0)
+               cursor_position=0;
+         }
+         if(cursor_position>oldcsr) // Has actually moved?
+         {
+            String ctext;
+            float ncw;
+            float sw;
+            float pcw;
+
+            // Determine new visible text length
+            text.substring(view_offset, cursor_position-view_offset) => ctext;
+            sw = font.stringWidth(ctext);
+            if(sw>=(getSizeX()-4+view_pixel_offset-2)) // -2 for caret
+            {
+               // Text until cursor position is wider than visible area
+               // Determine view_offset and view_pixel_offset
+               text.substring(cursor_position-1, 1) => ctext;
+               ncw = font.stringWidth(ctext);
+
+               if(ncw > 0)
+               {
+                  // Need to scroll <ncw> pixels to make the new char visible
+                  float scrw = 0;
+                  boolean bIncView = 0;
+                  view_pixel_offset += ncw;
+                  do 
+                  {
+                     text.substring(view_offset, 1) => ctext;
+                     pcw = font.stringWidth(ctext);
+                     if(pcw>0)
+                     {
+                        bIncView = ((scrw+pcw) <= ncw);
+                        if( bIncView )
+                        {
+                           view_offset++;
+                           scrw += pcw;
+                           view_pixel_offset -= pcw;
+                        }
+                     }
+                     else
+                     {
+                        bIncView = false;
+                     }
+                  } while( bIncView );
+                  
+                  do
+                  {
+                     text.substring(view_offset, 1) => ctext;
+                     pcw = font.stringWidth(ctext);
+                     bIncView = (view_pixel_offset >= pcw);
+                     if(bIncView)
+                     {
+                        view_offset++;
+                        view_pixel_offset -= pcw;
+                     }
+                  } while(bIncView);
+               }
+
+
+               ////trace "xxx view_offset="+view_offset+" view_pixel_offset = "+view_pixel_offset;
+               
+            }
+
+            //text.substring(ctext, view_offset, text.length);
+            
+            
+
+            /*
+            String ctext;
+            float sw;
+            text.substring(ctext, view_offset, cursor_position-view_offset);
+            sw=font.stringWidth(ctext);
+            if(sw>=(getSizeX()-4)) // xxx -4 should be ipad_h*2 ?!
+            {
+               text.substring(ctext, view_offset, text.length);
+               sw=font.stringWidth(ctext);
+               if(sw>=(getSizeX()-4))
+               {
+                  view_offset++;
+               }
+            }
+            */
+         }
+         redraw();
+         
+      }
+   }
+
+   // ---- move cursor to given index
+   public method moveCursorTo(int _index) {
+      if(_index>=0)
+      {
+         if(_index<text.length)
+         {
+            int l;
+            l=_index-cursor_position;
+            if(l>=0)
+            {
+               loop(l)
+               {
+                  moveCursorRight();
+               }
+            }
+            else
+            {
+               loop(-l)
+               {
+                  moveCursorLeft();
+               }
+            }
+         }
+      }
+   }
+
+   public method expandSelectionToHome() {
+      if(selection_anchor==NO_ANCHOR)
+      {
+         selection_anchor=cursor_position;
+         selection_start=0;
+         selection_end=0;
+      }
+      anchorSelection(0);
+   }
+
+   public method moveCursorHome() {
+      int l=cursor_position;
+      loop(l)
+      {
+         moveCursorLeft();
+      }
+   }
+
+   public method moveCursorEnd() {
+      int l=(text.length-cursor_position);
+      while(l-->0)
+      {
+         moveCursorRight();
+      }
+   }
+
+   public method expandSelectionToPreviousWord() {
+      int idx=text.indexOfWordStart(cursor_position);
+      if(idx>=0)
+         anchorSelection(idx);
+   }
+
+   public method moveCursorStartOfWord() {
+      moveCursorTo(text.indexOfWordStart(cursor_position));
+   }
+
+   public method expandSelectionToNextWord() {
+      int idx=text.indexOfWordEnd(cursor_position);
+      if(idx>=0)
+         anchorSelection(idx);
+   }
+
+   public method moveCursorEndOfWord() {
+      moveCursorTo(text.indexOfWordEnd(cursor_position));
+   }
+
+   public method onDraw() {
+
+      if(b_update_inner_layout)
+      {
+         b_update_inner_layout = false;
+         updateInnerLayout();
+      }
+
+      glLoadIdentity();
+      float sx=getSizeX(), sy=getSizeY();
+      float scx=sx/getMinimumSizeX();
+      float scy=sy/getMinimumSizeY();
+      float px,py;
+      if(scx>1)
+         scx=1;
+      if(scy>1)
+         scy=1;
+
+      if(b_editing)
+         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDITING_BG));
+      else
+         UIRenderer.DrawFilledRectangle(0, 0, sx, sy, UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_BG));
+
+     
+      // ---- draw (visible) text 
+      local String ctext,cartext,seltext;
+      ////trace "xxx TextField::onDraw font="+#(font)+" minSizeX="+getMinimumSizeX();
+      float sw=font.stringWidth(text);
+      if(view_offset>0)
+      {
+         text.substring(view_offset, text.length) => ctext;
+      }
+      else
+      {
+         ctext<=text;
+      }
+      px=(UIConstants.DEFAULT_BORDER_SIZE+IPAD_H*scx) - view_pixel_offset;
+      py=(UIConstants.DEFAULT_BORDER_SIZE+IPAD_V*scy);
+      glPushMatrix();
+      glScalef(scx, scy, 1);
+      ////trace "xxx view_offset="+view_offset+" px="+px+" ctext="+ctext;
+      UIRenderer.DrawClippedText(ctext, font, fgColor32, px/*-view_pixel_offset*/, py, IPAD_H/*px+view_pixel_offset*/, py, sx, sy);
+      glPopMatrix();
+
+      // ---- draw selection
+      float selxl,selxr,selviewl;
+      selxl=-1f;
+      //print "drawsel selstart="+selection_start+" selend="+selection_end+" view_offset="+view_offset;
+      if(selection_end>selection_start)
+      {
+         if(selection_end>view_offset)
+         {
+            if(view_offset>0)
+            {
+               text.substring(0, view_offset) => seltext;
+               selviewl=font.stringWidth(seltext);
+            }
+            else
+            {
+               selviewl=0f;
+            }
+            if(selection_start>0)
+            {
+               text.substring(0, selection_start) => seltext;
+               selxl=font.stringWidth(seltext);
+            }
+            else
+            {
+               selxl=0f;
+            }
+            selxl-=selviewl;
+            text.substring(0, selection_end) => seltext;
+            selxr=font.stringWidth(seltext);
+            selxr-=selviewl;
+            if(selxr>=sx)
+            {
+               selxr=sx-(UIConstants.DEFAULT_BORDER_SIZE+IPAD_H);
+            }
+            
+            int bg32,fg32;
+            //if(hasMouseFocus())
+            if(hasKeyboardFocus())
+            {
+               bg32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDITING_SELECT_BG);
+               fg32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDITING_SELECT_FG);
+            }
+            else
+            {
+               bg32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_SELECT_BG);
+               fg32 = UI.lnf.getColor(LookAndFeel.COLOR_TEXT_EDIT_SELECT_FG);
+            }
+
+            if(selection_start<view_offset)
+            {
+               text.substring(view_offset, selection_end-view_offset) => seltext;
+               selxl=0f;
+            }
+            else
+            {
+               text.substring(selection_start, selection_end-selection_start) => seltext;
+            }
+            float fillw = (selxr-selxl);
+            float fillrx = selxl+UIConstants.DEFAULT_BORDER_SIZE+IPAD_H-view_pixel_offset;
+            if(fillrx < (/*UIConstants.DEFAULT_BORDER_SIZE+*/IPAD_H) )
+            {
+               fillw -= (/*UIConstants.DEFAULT_BORDER_SIZE+*/IPAD_H) - fillrx;
+               fillrx = (/*UIConstants.DEFAULT_BORDER_SIZE+*/IPAD_H);
+            }
+            fillrx += 0.375f;
+            ////trace "xxx fillrx="+fillrx+" fillw="+fillw+" sizex="+size_x;
+            UIRenderer.DrawFilledRectangle( fillrx, UIConstants.DEFAULT_BORDER_SIZE,
+                                            fillw, sy-UIConstants.DEFAULT_BORDER_SIZE*2, bg32);
+            UIRenderer.DrawClippedText(seltext, font, fg32, 
+                                       selxl+UIConstants.DEFAULT_BORDER_SIZE+IPAD_H-view_pixel_offset, UIConstants.DEFAULT_BORDER_SIZE+IPAD_V,
+                                       /*selxl+*//*UIConstants.DEFAULT_BORDER_SIZE+*/IPAD_H/*-view_pixel_offset*/, UIConstants.DEFAULT_BORDER_SIZE+IPAD_V,
+                                       sx, sy);
+         }
+         
+      }
+
+        
+      // ---- draw caret (cursor)
+      ////trace "xxx TextField::onDraw: b_editing="+b_editing+" b_caret_visible="+b_caret_visible+" cursor_position="+cursor_position;
+      if(b_editing && b_caret_visible && (cursor_position>=0))
+      {
+         float cfw,vfw;
+         text.substring(0, cursor_position) => cartext;
+         cfw=font.stringWidth(cartext);
+         text.substring(0, view_offset) => cartext;
+         vfw=font.stringWidth(cartext);
+         cfw-=vfw;
+         cfw+=px/*-view_pixel_offset*/;
+         if(cfw>(sx-(UIConstants.DEFAULT_BORDER_SIZE+IPAD_H+2)) )
+            cfw=(sx-(UIConstants.DEFAULT_BORDER_SIZE+IPAD_H+2));
+
+         int c32 = UI.lnf.getColor(LookAndFeel.COLOR_CARET_FG);
+         if(selxl>=0)
+         {
+            if(cfw>=selxl)
+            {
+               if(cfw<=selxr)
+               {
+                  c32 = UI.lnf.getColor(LookAndFeel.COLOR_CARET_SELECT_FG);
+               }
+            }
+         }
+         ////UIRenderer.DrawFilledRectangle(cfw, py, 2, sy-py*2, c32);
+         UIRenderer.DrawXORFilledRectangle(cfw, py, 1, sy-py*2);
+      }
+      
+
+      UIRenderer.DrawSoftShadowSunkenBorder(0, 0, sx, sy);
+   }
+
+   public method beginXFMTag(AbstractXMLForm _form, HashTable _attributes) returns boolean {
+      if(Control::beginXFMTag(_form, _attributes))
+      {
+         ////print "TextField::beginXFMTag";
+         String atname, atval, atnamelc, atvallc;
+         StringArray atsplit;
+         foreach atname in _attributes
+         {
+            atval<=_attributes[atname];
+            atnamelc = atname;
+            atnamelc.toLower();
+            switch(atname)
+            {
+               case "maxCols":
+                  setMaxTextLength(int(atval) + 1);
+                  break;
+
+               case "cols":
+                  setVisibleTextLength(int(atval) + 1);
+                  break;
+
+               case "textAlign":
+                  atvallc = atval;
+                  atvallc.toLower();
+                  switch(atvallc)
+                  {
+                     case "right":
+                        b_align_right = true;
+                        break;
+                  }
+                  break;
+                  
+               case "text":
+                  setText(atval);
+                  break;
+
+               case ACTION_TEXTCHANGED:
+                  _form.addHandledAction(atname, StringAction, atval);
+                  break;
+
+               case ACTION_TEXTENTERED:
+                  _form.addHandledAction(atname, StringAction, atval);
+                  break;
+
+               case ACTION_TEXTEDITED:
+                  _form.addHandledAction(atname, StringAction, atval);
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+
+}
+!$$
+!;Example_TKS($code)
+
+
+!/main
+
