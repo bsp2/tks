@@ -1,0 +1,74 @@
+`tksampler` is a rather sophisticated audio sampler engine.
+
+Features:
+   - seamless sample switching
+      - via MIDI program change or RPN
+   - extensive (per voice) mod matrix
+      - up to 16 entries per sample zone
+      - up to 16 matrix variations per sample zone
+      - 183 sources
+      - 203 destinations
+      - log / lin / exp curve per entry
+      - slew per entry
+         - can also be used to generate attack / decay mini-envelopes
+      - 4 scratch registers
+      - 13 op modes per entry (add, mul, replace, blend, compare, step, ..)
+      - support for 14 bit hi-res continuous controllers (CCs)
+         - modwheel (CC#1), breath control (CC#2), foot control (CC#4), expression (CC#11)
+   - arbitrary number of zones (layers) per sample
+      - mono or stereo
+      - note, velocity, modulation (e.g. modwheel) filters
+      - "alt" groups
+      - "mutex" groups
+   - up to 32 voice buses
+      - for routing audio between sample zones
+      - sample zone cross modulation (RM, AM, FM, ..)
+   - arbitrary number of sample loops per zone
+      - pitch or time based number of repeats
+      - oneshot, forward, backward, pingpong, xfade loop modes
+      - loops can be selected and switched via MIDI and mod matrix
+   - monophonic and polyphonic glide
+      - time or pitch based
+      - separate up / down settings
+      - sample / envelope / LFO / modseq legato retrig settings
+   - 1D / 2D wavetables
+      - static cycle length (2..4096 frames)
+      - dynamic, pitch-dependent cycle length ("lo-fi timestretch")
+   - additive (re-)synthesis
+      - up to 256 partials
+      - configurable stereo spread
+      - up to 8 realtime-interpolatable resynthesis parameter sets
+      - partial bit and sample rate reduction
+      - conversion to regular wavetables (export to sample clipboard)
+   - 4x3 ASR cubic bezier envelopes per voice
+      - modulatable attack / decay+sustain / release speeds and levels
+      - loopable sustain section
+   - 4 LFOs per voice
+      - sine / saw up+down / triangle / pulse / noise shapes
+      - configurable start phase (fixed or random)
+      - delay and fade-in
+      - oneshot and loop modes
+      - global or per-voice
+   - 4 mod sequencers per voice
+      - oneshot and loop modes
+      - slew
+      - forward, backward, pingpong, random, random(no repeat) play modes
+      - time, note on, note off, mod rise / fall / edge / zcross step modes
+      - up to 16 patterns, selectable via MIDI / mod matrix
+   - MIDI or threshold triggered sampling
+      - polyphonization of monophonic (oscillator) sound sources
+         - update rate is ~300Hz
+   - sample start and loop point modulation
+      - random, velocity-based, and / or mod matrix controlled
+   - voice calibration tables
+      - for (subtle) voice modulation
+      - up to 6 lanes
+   - per-voice plugins
+      - free and open source [STFX](https://github.com/bsp2/stfx/) plugin format
+      - filters, waveshapers, ring-modulation, distortion, oscillators, ..
+      - sample FM (sample read-rate modulation, `SR` plugin destination)
+      - sample AM (amplitude modulation, `AM` plugin destination)
+      - envelopes / modulation (`VM1`..`VM8` plugin destinations)
+
+
+See [here](http://miditracker.org/eureka/readme.html#features) for more information.
