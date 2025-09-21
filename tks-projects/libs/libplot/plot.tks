@@ -1,0 +1,262 @@
+// simple plot utility that renders a user defined function
+//
+// usage in emacs org-mode document:
+//
+//   #+begin_src tks :cmd-line "-ef lib:plot.tsl" :results output replace :eval yes
+//     function myfunc(float x) { return pow(sin(x), 3); }
+//     Plot.Run(myfunc, 0, 2PI);
+//     trace "plot finished";
+//   #+end_src
+//   #+results:
+//   : plot finished
+//
+//
+
+// cmdline test:  $ (make; cp plot.tsl /usr/local/lib/tks/libraries) ; tks -ef "lib:plot.tsl" test; ic test.png
+
+use tksdl;
+use tkopengl;
+
+module MPlotLib;
+
+int numframesrendered=0;
+float g_exp = 0;
+int mode = 5;
+
+float range_min = -1;
+float range_max = 1;
+Function *plot_fxn;
+
+
+function softclip(float x) {
+   // == a version of smoothstep that uses a division (and inputs in the range of -1..1 instead of 0..1)
+   return x < -1 ? -1 : x > 1 ? 1 : 1.5*(1 - x*x/3)*x;
+}
+
+function sinsw(float x) {
+   float bend = 0.8;
+
+   float xexp = 0.05f + (1.0f - bend) * 0.9f;
+   x = x*0.5 + 0.5;  // -1..1 => 0..1
+
+   x = x + 0.5;
+   if(x >= 1.0)
+      x -= 1.0;
+
+   float ph = frac(x);
+   ph = (ph - 0.5f) * 2.0f;
+   ph = mathPowerf(ph, xexp);
+   ph = ph * 0.5f + 0.5f;
+
+   return sin(ph * 2PI);
+}
+
+function sinbend(float x) {
+   float xexp = 3.8;
+
+   x = x*0.5 + 0.5;  // -1..1 => 0..1
+   float ph = mathPowerf(x, xexp);
+
+   return sin(ph * 2PI);
+}
+
+function onDraw() {
+
+   float dt=FPS.precision;
+   glClearColor(0.97,0.97,0.97,1);
+   // glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+   glClear(GL_COLOR_BUFFER_BIT);
+   glDisable(GL_DEPTH_TEST);
+
+   if( !(++numframesrendered&127) )
+      trace "FPS.real="+FPS.real;
+
+   zglInitOrtho(1, 1);
+
+   if(1)
+   {
+      glColor3f(0.9,0.9,0.9);
+      glEnable(GL_LINE_SMOOTH);
+      glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+      glLineWidth(1.5);
+      glBegin(GL_LINES);
+      glVertex2f(-1.0f, 0.0f);
+      glVertex2f( 1.0f, 0.0f);
+      glVertex2f( 0.0f, -1.0f);
+      glVertex2f( 0.0f,  1.0f);
+      glEnd();
+
+      float lx = -1.0;
+      float ly = 0.0;
+      float cx = -1;
+      float cy;
+      float xStep = 2.0f / (Viewport.width-1);
+      glColor3f(0.8,0.2,0.2);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glEnable(GL_BLEND);
+      glBegin(GL_LINES);
+      boolean bFirst = true;
+      float t;
+      float fExp;
+
+      loop(Viewport.width)
+      {
+         t = ((cx+1)*0.5);
+         t = range_min + (range_max - range_min) * t;
+         cy = plot_fxn.eval({t});
+
+         if(bFirst)
+         {
+            glVertex2f(cx, cy);
+            bFirst = false;
+         }
+         else
+            glVertex2f(lx, ly);
+         glVertex2f(cx, cy);
+
+         if((lx < 0.0) && (cx >= 0.0))
+         {
+            glEnd();
+            glColor3f(0.95,0.1,0.1);
+            glBegin(GL_LINES);
+         }
+         lx = cx;
+         ly = cy;
+         cx += xStep;
+      }
+
+      glEnd();
+      glDisable(GL_BLEND);
+   }
+
+   if(numframesrendered > 1 && Plot.screenshot_pathname >= ".png")
+   {
+      if(Plot.SaveScreenshot())
+         SDL.exitEventLoop();
+   }
+
+}
+
+function onMouse(int _x, int _y, int _cbs, int _nbs) {
+   // print "x="+_x+" y="+_y+" cbs="+_cbs+" nbs="+_nbs;
+   if(_cbs&1)
+   {
+      g_exp = ((2.0*_y / Viewport.height) - 1.0) * 7.0;
+      trace "g_exp="+g_exp;
+   }
+}
+
+function onKeyboard(Key _k) {
+   // trace "xxx onKeyboard: k.code="+_k.code+" mod="+_k.mod+" unicode="+_k.unicode+" "+tcchar(_k.unicode);
+   switch(_k.pressed)
+   {
+      case VKEY_ESCAPE:
+         SDL.exitEventLoop();
+         break;
+
+      case VKEY_SPACE:
+         mode = (mode + 1) % 4;
+         trace "mode="+mode;
+         break;
+   }
+}
+
+int tim_count = 0;
+function onTimer() {
+   // trace "xxx onTimer";
+   // if(++tim_count > 100)
+   //    SDL.exitEventLoop();
+}
+
+class Plot {
+   static int view_sx = 1200;
+   static int view_sy =  480;
+   static String screenshot_pathname;
+
+   static SetSize(int _w, int _h) {
+      view_sx = _w;
+      view_sy = _h;
+   }
+
+   public static SaveScreenshot() : boolean {
+      trace "[dbg] UI.SaveScreenShotPNG: pathName=\""+screenshot_pathname+"\"";
+      float offX = 0;
+      float offY = 0;
+      float w = Viewport.width;
+      float h = Viewport.height;
+
+      local Texture tex;
+      boolean ret = false;
+      if(tex.alloc(w, h, 4))
+      {
+         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+         // glReadBuffer(GL_BACK);
+         glReadBuffer(GL_FRONT);
+         glFinish();
+         int off = 0;
+         int y = (Viewport.height - 1 - offY);
+         int texY = 0;
+         // trace "xxx vph="+Viewport.height+" vpy="+y;
+         loop(h)
+         {
+            if(1)
+            {
+               zglReadColorPixelsX(tex, off, offX, y, w);
+               tex.clearAlpha(#ff);
+            }
+            else
+            {
+               // work on macOS but is _very_ slow (resolves whole FB per pixel ??!)
+               int x = offX;
+               int texX = 0;
+               loop(w)
+               {
+                  int c32 = zglReadColorPixel(x++, y);
+                  c32 |= #ff000000;
+                  tex.setXY32(texX++, texY, c32);
+               }
+               texY++;
+            }
+
+            y--;
+            off += w;
+         }
+         ret = tex.saveImage(screenshot_pathname);
+      }
+      return ret;
+   }
+
+   static Run(Function _plotFxn, float _rangeMin, float _rangeMax) {
+      use callbacks;
+
+      plot_fxn <= _plotFxn;
+      range_min = _rangeMin;
+      range_max = _rangeMax;
+
+      FPS.tickInterval=1000.0/60;
+      //FPS.limit=30;
+      FPS.limit=60;
+
+      SDL.eventPolling = false; // tksdl default is "true" (do not block while waiting for an SDL event)
+      SDL.timerInterval = 20;
+
+      SDL.dpiAwareness = true;  // no OS scaling
+
+      Viewport.multisampleSamples = 4;
+      Viewport.multisampleBuffers = 1;
+      // Viewport.stencilBits = 8;
+      Viewport.openWindow(view_sx, view_sy);
+      Viewport.swapInterval(1);
+
+      SDL.eventLoop();
+   }
+
+   static SavePNG(String _pngPathname, Function _plotFxn, float _rangeMin, float _rangeMax) {
+      screenshot_pathname = _pngPathname;
+      Run(_plotFxn, _rangeMin, _rangeMax);
+   }
+}
+
+//Plot.Run(sinsw, -1, 1);
+
+// trace "hello from plot.tks";
