@@ -1,0 +1,1079 @@
+/// retrovaders2.tks
+///   - a game programmed by Bastian Spiegel <bs@tkscript.de>
+//      graphics and (most) sound effects by Gerd Feldkirch <gerd.feldkirch@t-online.de>
+//      released on the 30th of August 2003.
+//
+//  license: do what you want, this script source is 100% copyleft
+
+module Main;
+use tksdl;
+use tkopengl;
+use tkoldmath;
+
+// -----------------------------------------------------------------------------
+int bvsync=false;
+int bswapstereo=false;
+int i;
+// -----------------------------------------------------------------------------colors
+float bgr=0.1,bgg=0.1,bgb=0.2,bga=0; // #backgroundcolor
+// -----------------------------------------------------------------------------textures
+Texture tex_font,tex_fontmask,tex_player,tex_ufo,tex_cspread;
+Texture tex_inv1_1,tex_inv1_2,tex_inv2_1,tex_inv2_2,tex_inv3_1,tex_inv3_2;
+float font_sx=16,font_sy=21;
+float fps_dt;
+// -----------------------------------------------------------------------------audio samples
+enum { SMP_ITEM, SMP_INVSHOT, SMP_PLAYERSHOT, SMP_PLAYERSHOTCLICK, SMP_INVDIE, SMP_INVHIT, SMP_INVLAND, SMP_UFOHIT, SMP_UFODIE, SMP_ITEMPLUS, SMP_NUM };
+AudioSample samples[SMP_NUM]; i=0; 
+loop(SMP_NUM) 
+{ AudioSample a<=samples.nextFree; a.loadAIFF("audio/smp"+++i+".aif"); a.baseFrequency=220; a.frequency=22050; }
+SamplePlayer smp; smp.polyphony=8;
+function onAudioBeginBlock(FloatArray _dst) {
+    _dst.fill(0);
+    smp.processSamples(_dst);
+    AudioDevice.finishBlock();
+}
+function PlaySample(int _id, float _velo, float _pan, int _note) {
+    AudioSample a<=samples[_id];
+    if(a) { smp.sample=a; smp.pan=_pan*0.5; smp.noteOn(_note, _velo); }
+}
+// -----------------------------------------------------------------------------point+rect classes
+class Point { float x,y; }
+class Rect : Point { 
+    float sx,sy; 
+    testBBox(Object _r) {
+	compile {
+	    Rect r<=_r; 
+	    int bh,bv;
+	    if r.x>=x bh=r.x<(x+sx);
+	    else bh=(r.x+r.sx)>=x;
+	    if r.y>=y bv=r.y<(y+sy);
+	    else bv=(r.y+r.sy)>=y;
+	}
+	return bh&bv;
+    }
+}
+// -----------------------------------------------------------------------------function forward declarations
+function GMTitle_Draw();
+function GMInGame_Draw();
+function GMGameOver_Draw();
+function GMWarp_Draw();
+// -----------------------------------------------------------------------------background star field
+class CStar : Point { float spdy; } CStar stars[]; 
+function Stars_Init() compile {
+    int i=0;
+    stars.alloc(512);
+    loop(stars.maxElements) { 
+	CStar cs<=stars.nextFree; 
+	cs.x=rnd(620)+10; cs.y=rnd(460)+10;
+	cs.spdy=rnd(4.0)+0.25;
+    }
+}
+function Stars_Draw(float _len, float _fx) compile {
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    CStar cs;
+    float cr=0.5*(1-_fx)+bgr*_fx,cg=0.5*(1-_fx)+bgg*_fx,cb=0.5*(1-_fx)+bgb*_fx,ca=0.5*(1-_fx)+bga*_fx;
+    glColor4f(cr,cg,cb,ca);
+    if(_fx>0)
+	{
+	    float linelen=64*_len;
+	    glBegin(GL_LINES);
+	    stars.numElements=0;
+	    loop(stars.maxElements)
+		{
+		    cs<=stars.nextFree;
+		    glVertex2f(cs.x, cs.y);
+		    glVertex2f(cs.x, cs.y+linelen);
+		    cs.y+=cs.spdy*fps_dt;
+		    if(cs.y>480)cs.y-=480+linelen;
+		}
+	    glEnd();
+	}
+    else
+	{
+	    glBegin(GL_POINTS);
+	    stars.numElements=0;
+	    loop(stars.maxElements)
+		{
+		    cs<=stars.nextFree;
+		    glVertex2i(cs.x, cs.y);
+		    cs.y+=cs.spdy*fps_dt;
+		    if(cs.y>480)cs.y-=480;
+		}
+	    glEnd();
+	}
+}
+// -----------------------------------------------------------------------------title
+float cspread_count=0;
+float invrot_count=0;
+function GMTitle_Init() {
+    game_mode=GM_TITLE;
+}
+function GMTitle_Draw {
+    Stars_Draw(0, 0);
+
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_DEPTH_TEST);  glDepthFunc(GL_ALWAYS);
+    glClearDepth(-20); glClear(GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_BLEND);
+    glEnable(GL_ALPHA_TEST); glAlphaFunc(GL_GREATER, 0);
+    tex_fontmask.bind();
+    float cf=1;
+    glColor4f(cf,cf,cf,cf);
+    DrawText("* RETROVADERS 2 *",170,80);
+    DrawText("- A GAME BY BASTIAN SPIEGEL (CODE)",20,120);
+    DrawText("  AND GERD FELDKIRCH (FONT+GRAPHICS) -",20,144);
+    DrawText("  * PRESS SPACE BAR TO START GAME *",20,434);
+    DrawText(" - 25 POINTS",240,210);
+    DrawText(" - 100 POINTS",240,280);
+    DrawText(" - 150 POINTS",240,350);
+    glDisable(GL_ALPHA_TEST);
+
+    // ---- draw funky rasters
+    glColor4f(1,1,1,1); 
+    glDisable(GL_BLEND);
+    glDepthFunc(GL_EQUAL);
+    tex_cspread.bind();
+    glBegin(GL_QUADS);
+    float h=512;
+    float cy=-cspread_count*h; //((sin(cspread_count)*0.5)+0.5)*1024;
+    glTexCoord2f(0,0); glVertex2f(0,cy); 
+    glTexCoord2f(0,0); glVertex2f(640,cy); 
+    glTexCoord2f(2,0); glVertex2f(640,cy+h*2); 
+    glTexCoord2f(2,0); glVertex2f(0,cy+h*2); 
+    glEnd();
+    cspread_count+=0.00075*fps_dt; if(cspread_count>=1)cspread_count-=1;
+
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    
+    tex_font.bind();
+    DrawText("* RETROVADERS 2 *",170,80);
+    DrawText("- A GAME BY BASTIAN SPIEGEL (CODE)",20,120);
+    DrawText("  AND GERD FELDKIRCH (FONT+GRAPHICS) -",20,144);
+    DrawText("  * PRESS SPACE BAR TO START GAME *",20,434);
+    DrawText(" - 25 POINTS",240,210);
+    DrawText(" - 100 POINTS",240,280);
+    DrawText(" - 150 POINTS",240,350);
+
+
+    // ---- draw the space invaders
+    float ca;
+    cf=1;
+    glColor4f(cf,cf,cf,cf);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    Vector v1,v2,v3,v4; v1.init(-32,-32,0);v2.init( 32,-32,0);v3.init( 32, 32,0);v4.init(-32, 32,0);
+    Matrix m; m.init(0,0,invrot_count); v1.rotate(m);v2.rotate(m);v3.rotate(m);v4.rotate(m);
+    Vector vp; vp.init(160,220,0); v1.add(vp);v2.add(vp);v3.add(vp);v4.add(vp); vp.init(0,74,0);
+    tex_inv1_1.bind();
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);  zglVertexv(v1);
+    glTexCoord2f(1, 0);  zglVertexv(v2);
+    glTexCoord2f(1, 1);  zglVertexv(v3);
+    glTexCoord2f(0, 1);  zglVertexv(v4);
+    glEnd();
+    tex_inv2_1.bind(); v1.add(vp);v2.add(vp);v3.add(vp);v4.add(vp);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);  zglVertexv(v1);
+    glTexCoord2f(1, 0);  zglVertexv(v2);
+    glTexCoord2f(1, 1);  zglVertexv(v3);
+    glTexCoord2f(0, 1);  zglVertexv(v4);
+    glEnd();
+    tex_inv3_1.bind(); v1.add(vp);v2.add(vp);v3.add(vp);v4.add(vp);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);  zglVertexv(v1);
+    glTexCoord2f(1, 0);  zglVertexv(v2);
+    glTexCoord2f(1, 1);  zglVertexv(v3);
+    glTexCoord2f(0, 1);  zglVertexv(v4);
+    glEnd();
+    invrot_count+=0.061*fps_dt; if(invrot_count>=2PI)invrot_count-=2PI;
+
+
+    Scores_Draw();
+}
+// -----------------------------------------------------------------------------player variables
+Pool  ply_bullets;
+ply_bullets.template=Point; ply_bullets.alloc(32);
+int   ply_numbullets_fired;
+int   ply_numbullets_hit;
+int   ply_numbullets;
+int   ply_freebullets;
+int   ply_fire;
+int   ply_fire_timeout;
+Rect  ply_sprite;
+float ply_speedx,ply_speedy,ply_speed;
+float ply_health;
+int   ply_score;
+int   hiscore=20000;
+int   ply_hit_timeout;
+float ply_score_flashcount;
+int   levelnr;
+float ply_diecount;
+// -----------------------------------------------------------------------------draw 3D cube (extras)
+function DrawTexturedCube() compile {
+    glEnable(GL_CULL_FACE); glFrontFace(GL_CCW);  glCullFace(GL_BACK);
+    glBegin(GL_QUADS); 
+    glTexCoord2f(0,1); glVertex3f( 1,-1,-1); // back
+    glTexCoord2f(1,1); glVertex3f(-1,-1,-1);
+    glTexCoord2f(1,0); glVertex3f(-1, 1,-1);
+    glTexCoord2f(0,0); glVertex3f( 1, 1,-1);
+    glTexCoord2f(0,1); glVertex3f(-1,-1, 1); // front
+    glTexCoord2f(1,1); glVertex3f( 1,-1, 1);
+    glTexCoord2f(1,0); glVertex3f( 1, 1, 1);
+    glTexCoord2f(0,0); glVertex3f(-1, 1, 1);
+    glTexCoord2f(0,0); glVertex3f(-1,-1,-1); // top
+    glTexCoord2f(1,0); glVertex3f( 1,-1,-1);
+    glTexCoord2f(1,1); glVertex3f( 1,-1, 1);
+    glTexCoord2f(0,1); glVertex3f(-1,-1, 1);
+    glTexCoord2f(0,1); glVertex3f(-1, 1, 1); // bottom
+    glTexCoord2f(1,1); glVertex3f( 1, 1, 1);
+    glTexCoord2f(1,0); glVertex3f( 1, 1,-1);
+    glTexCoord2f(0,0); glVertex3f(-1, 1,-1);
+    glTexCoord2f(1,0); glVertex3f(-1,-1, 1); // left
+    glTexCoord2f(0,0); glVertex3f(-1, 1, 1);
+    glTexCoord2f(0,1); glVertex3f(-1, 1,-1);
+    glTexCoord2f(1,1); glVertex3f(-1,-1,-1);
+    glTexCoord2f(1,0); glVertex3f( 1,-1,-1); // right
+    glTexCoord2f(0,0); glVertex3f( 1, 1,-1);
+    glTexCoord2f(0,1); glVertex3f( 1, 1, 1);
+    glTexCoord2f(1,1); glVertex3f( 1,-1, 1);
+    glEnd();
+}
+// -----------------------------------------------------------------------------font output
+function DrawText(Object _text, float _x, float _y) compile {
+    String text<=_text;
+    int l=text.length,i=0;
+    float x=_x,y=_y,u,ustep=font_sx*(1.0/1024.0),ustepd=(font_sx-0)*(1.0/1024.0),vstep=float(font_sy)/float(tex_font.sy);
+    glBegin(GL_QUADS);
+    loop(l)
+	{
+	    int c=text[i++];
+	    switch(c)
+		{
+		default:
+		    //if(c>='&')c--;
+		    if(c>31)
+			{
+			    c-=32;
+			    u=c*ustep;
+			    glTexCoord2f(u, 0);            glVertex2f(x,y);
+			    glTexCoord2f(u+ustepd, 0);     glVertex2f(x+font_sx,y);
+			    glTexCoord2f(u+ustepd, vstep); glVertex2f(x+font_sx,y+font_sy);
+			    glTexCoord2f(u, vstep);        glVertex2f(x,y+font_sy);
+			    x+=font_sx;
+			}
+		    break;
+		case 32:   x+=font_sx;        break;
+		case 10:   x=_x; y+=font_sy;  break;
+		}
+	}
+    glEnd();
+}
+// -----------------------------------------------------------------------------extras
+enum /*extra types*/ { EXT_SMARTBOMB, EXT_SUB_WEAPON, EXT_FREEZE, EXT_SUB_SPEED, EXT_SUB_SCORE, EXT_ADD_WEAPON, EXT_ADD_SPEED, EXT_ADD_SCORE, EXT_NUM };
+enum /*extra state*/ { EST_APPEARING, EST_NORMAL, EST_COLLECTING, EST_COLLECTED };
+String extra_names[]<=["SMARTBOMB", "WEAPON - ", "FREEZE ", "SPEED - ", "SCORE - ", "WEAPON + ", "SPEED + ", "SCORE + "];
+class Extra : Rect {
+    int   type;
+    int   state;
+    float state_timeout;
+    float rotx,rotz;
+
+    move();
+    checkPlayerCollision();
+    draw();
+    drawAPPEARING();
+    drawNORMAL();
+    drawCOLLECTING();
+}
+Pool extras; extras.template=Extra; extras.alloc(16);
+float extras_freezecount;
+Texture tex_extras[EXT_NUM];
+Extra::draw() {
+    Texture t<=tex_extras[type]; t.bind();
+    switch(state) {
+    case EST_APPEARING:  drawAPPEARING();  break;
+    case EST_NORMAL:     drawNORMAL();     break;
+    case EST_COLLECTING: drawCOLLECTING(); break;
+    case EST_COLLECTED:                    break;
+    }
+}
+function Extra_Spawn(float _x, float _y) {
+    trace "extra_spawn()";
+    int id=extras.qAlloc();
+    if(id!=-1)
+	{
+	    Extra e<=extras[id];
+	    int r=rnd(/*!EXT_NUM*/35);  trace "r="+r;
+	    switch(r) { // lowest id has the least probabilty
+		case 0: r=0; break;
+		case 1:case 2: r=1; break;
+		case 2:case 3:case 4: r=2; break;
+		case 5:case 6:case 7:case 8: r=3; break;
+		case 9:case 10:case 11:case 12:case 13: r=4; break;
+		case 14:case 15:case 16:case 17:case 18:case 19: r=5; break;
+		case 20:case 21:case 22:case 23:case 24:case 25:case 26: r=6; break;
+	        case 27:case 28:case 29:case 30:case 31:case 32:case 33:case 34: r=7; break;
+	    }
+	    e.type=r;
+	    e.x=_x; e.y=_y; e.sx=32; e.sy=32;
+	    e.rotx=0; e.rotz=0; //rnd(360.0); e.rotz=rnd(360.0);
+	    e.state=EST_APPEARING; e.state_timeout=1;
+	}
+}
+Extra::move() {    
+    y+=fps_dt*1;
+    if(y>=480) { state_timeout=0; state=EST_COLLECTED; extras.qFreeByObject(this); }
+}
+Extra::checkPlayerCollision() {    
+    Rect p<=ply_sprite;
+    if(testBBox(p))
+	{
+	    Player_Extra(type);
+	    state=EST_COLLECTING; state_timeout=1;
+	}
+}
+
+Extra::drawAPPEARING() compile {
+    glEnable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    glColor4f(1,1,1,1);
+    zglInitPerspective(1.3, 65.0, 0.1, 10);
+    glLoadIdentity();
+    glViewport((x-sx*0.5)*(Viewport.width/640.0), Viewport.height-((y+sy*1.5)*(Viewport.height/480.0)), sx*2*(Viewport.width/640.0), sy*2*(Viewport.height/480.0));
+    glTranslatef(0,0,-4-10*sin(state_timeout*PI*0.5));
+    zglRotate3f(rotx, 30, rotz);
+    DrawTexturedCube();
+    glDisable(GL_CULL_FACE);
+    glViewport(0,0,Viewport.width, Viewport.height);
+    move();
+    checkPlayerCollision();
+    state_timeout-=0.01*fps_dt;
+    if(state_timeout<=0) { state=EST_NORMAL; state_timeout=0; }
+}
+Extra::drawNORMAL() compile {
+    glEnable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    glColor4f(1,1,1,1);
+    glViewport((x-sx*0.5)*(Viewport.width/640.0), Viewport.height-((y+sy*1.5)*(Viewport.height/480.0)), sx*2*(Viewport.width/640.0), sy*2*(Viewport.height/480.0));
+    zglInitPerspective(1.3, 65.0, 0.1, 10);
+    glLoadIdentity();
+    glTranslatef(0,0,-4-0.5*(0.5+0.5*sin(state_timeout*2PI)));
+    zglRotate3f(rotx, 30, rotz);
+    DrawTexturedCube();
+    glDisable(GL_CULL_FACE);
+    glViewport(0,0,Viewport.width, Viewport.height);
+    state_timeout+=0.02*fps_dt; if(state_timeout>1)state_timeout--;
+    rotx+=2.41*fps_dt; if(rotx>=360.0)rotx-=360.0;
+    rotz+=0.234*fps_dt; if(rotz>=360.0)rotz-=360.0;
+    move();
+    checkPlayerCollision();
+}
+Extra::drawCOLLECTING() compile {
+    glEnable(GL_TEXTURE_2D);
+    glViewport((x-sx*0.5)*(Viewport.width/640.0), Viewport.height-((y+sy*1.5)*(Viewport.height/480.0)), sx*2*(Viewport.width/640.0), sy*2*(Viewport.height/480.0));
+    zglInitPerspective(1.3, 65.0, 0.01, 10);
+    glLoadIdentity();
+    glTranslatef(0,0,-4);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    float cf=sin(state_timeout*PI*0.5); float cfc=cf<0.5?(2*cf):1; glColor4f(cfc,cfc,cfc,cfc);
+    float rx=rotx>=180.0 ? ((360.0*(1-cf))+rotx*cf) : (rotx*cf);
+    float rz=rotz>=180.0 ? ((360.0*(1-cf))+rotz*cf) : (rotz*cf);
+    zglRotate3f(rx, 30*cf, rz);
+    DrawTexturedCube();
+    glDisable(GL_CULL_FACE);
+    glViewport(0,0,Viewport.width, Viewport.height);
+    state_timeout-=0.01*fps_dt;
+    if(state_timeout<=0) { state=EST_COLLECTED; state_timeout=0; extras.qFreeByObject(this); }
+}
+function Extras_Draw {
+    int id; foreach id in extras { Extra e<=extras[id]; e.draw();  }
+    zglInit2D(640, 480);
+    glLoadIdentity();
+}
+
+// -----------------------------------------------------------------------------aliens
+enum /*alien states*/ { AST_ALIVE, AST_HIT, AST_DYING, AST_DEAD };
+class Alien : Rect {
+    int     cx,csx;
+    float   health;
+    float   def_health;
+    int     state; // see "alien states"
+    float   state_timeout;  // counts down 1..0
+    int     score;
+
+    init(float _x, float _y, float _sx, float _sy, float _cx, float _csx, float _health, int _score);
+    draw();
+    drawALIVE();
+    drawHIT();
+    drawDYING();
+}
+class UFO : Alien {
+  drawALIVE();
+  drawHIT();
+  drawDYING();
+}
+Object aliens[7*5+1]; i=0; loop(7*5) aliens[i++]=new Alien(); aliens[i++]=new UFO();
+float alien_speedx;
+float alien_movedelay;
+int   aliens_left;
+float alien_gamma;
+float aliens_movecount;
+int   aliens_move;
+int   aliens_animphase;
+Pool  alien_bullets;
+alien_bullets.template=Point; alien_bullets.alloc(16);
+float alien_bulletcount;
+float ufo_speedx;
+Alien::init {
+    x=_x; y=_y; sx=_sx; sy=_sy; cx=_cx; csx=_csx; health=_health; def_health=_health; score=_score ;
+    state=AST_ALIVE;
+    state_timeout=0;
+}
+function Aliens_Init() {
+    int i=0;
+    aliens.numElements=0;
+    Alien a;
+    float x=105,y=50;
+    loop(7)
+	{
+	    a<=aliens.nextFree; a.init(x,y,32,32,8,24,0.75,150);
+	    x+=64;
+	}
+    x=105; y=90;
+    loop(7)
+	{
+	    a<=aliens.nextFree; a.init(x,y,32,32,6,26,0.5,100);
+	    x+=64;
+	}
+    x=105; y=130;
+    loop(7)
+	{
+	    a<=aliens.nextFree; a.init(x,y,32,32,6,26,0.5,100);
+	    x+=64;
+	}
+    x=105; y=170;
+    loop(7)
+	{
+	    a<=aliens.nextFree; a.init(x, y, 32, 32, 2, 30, 0.25, 25);
+	    x+=64;
+	}
+    x=105; y=210;
+    loop(7)
+	{
+	    a<=aliens.nextFree; a.init(x, y, 32, 32, 2, 30, 0.25, 25);
+	    x+=64;
+	}
+    _Debug();
+    aliens.getNextFree().init(500,16,64,32,0,64,0.5 /*nrg*/,250);
+    alien_speedx=rnd(1)*2-1;
+    alien_movedelay=0;
+    aliens_left=5*7;
+    alien_gamma=0;
+    aliens_move=0;
+    aliens_movecount=0;
+    aliens_animphase=0;
+    alien_bulletcount=0;
+    ufo_speedx=rnd(1)*2-1;
+    alien_bullets.empty();
+}
+float calien_speedx;
+int   calien_bmovex;
+float calien_gamma;
+Alien::draw {
+    switch(state)
+	{
+	case AST_ALIVE: drawALIVE(); break;
+	case AST_HIT:   drawHIT();   break;
+	case AST_DYING: drawDYING(); break;
+	case AST_DEAD:               break;
+	}
+}
+Alien::drawALIVE {
+    float ca;
+    float cf=calien_gamma*(health/def_health);
+    glColor4f(cf,cf,cf,cf);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0, 0);  glVertex2f(x, y);
+    glTexCoord2f(1, 0);  glVertex2f(x+sx, y);
+    glTexCoord2f(1, 1);  glVertex2f(x+sx, y+sy);
+    glTexCoord2f(0, 1);  glVertex2f(x, y+sy);   glEnd();
+    Player_CheckBulletCollision(this);
+    if(calien_bmovex) {
+	x+=calien_speedx;
+	if((x>=(640-sx))||(x<=0))
+	    {
+		x-=calien_speedx;
+		alien_speedx=-alien_speedx;
+		alien_movedelay=1;
+		calien_bmovex=0;
+	    }
+    }
+    if(!calien_bmovex) {
+	y+=0.25*fps_dt;
+	if(y>(480-32)) {
+	    GMGameOver_Init();
+	}
+    }
+}
+
+Alien::drawHIT {
+    float frx,fry,ca;
+    frx=sin(PI*state_timeout)*64*0.5;
+    fry=sin(PI*state_timeout)*48*0.5;
+    ca=1-sin(PI*state_timeout)*0.5;
+    glColor4f(ca,ca,ca,ca);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0); glVertex2f(x-frx, y-fry);
+    glTexCoord2f(1,0); glVertex2f(x+sx+frx, y-fry);
+    glTexCoord2f(1,1); glVertex2f(x+sx+frx, y+sy+fry);
+    glTexCoord2f(0,1); glVertex2f(x-frx, y+sy+fry);
+    glEnd();
+    state_timeout-=0.03*fps_dt;
+    if(state_timeout<=0)
+	if(health>0) { state=AST_ALIVE; state_timeout=0; }
+	else { PlaySample(SMP_INVDIE, 1,(x/320)-1,40);  state=AST_DYING; state_timeout=1; }
+}
+
+Alien::drawDYING {
+    float ca;
+    ca=state_timeout;   glColor4f(ca,ca,ca,ca);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0); glVertex2f(x,    y);
+    glTexCoord2f(1,0); glVertex2f(x+sx, y);
+    glTexCoord2f(1,1); glVertex2f(x+sx, y+sy);
+    glTexCoord2f(0,1); glVertex2f(x,    y+sy);
+    glEnd();
+    state_timeout-=0.03*fps_dt;
+    if(state_timeout<=0) 
+	{ state=AST_DEAD; state_timeout=0; aliens_left--; if(!aliens_left) GMWarp_Init(); }
+}
+
+UFO::drawALIVE {
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    glColor4f(1,1,1,1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0); glVertex2f(x,    y);
+    glTexCoord2f(1,0); glVertex2f(x+sx, y);
+    glTexCoord2f(1,1); glVertex2f(x+sx, y+sy);
+    glTexCoord2f(0,1); glVertex2f(x,    y+sy);
+    glEnd();
+    Player_CheckUFOBulletCollision(this);
+    x+=ufo_speedx*fps_dt*0.5/*UFO_SPEED*/;
+    if(ufo_speedx==-1) { if(x<=(-160-sx)) ufo_speedx=1; }
+    else if(x>=800) ufo_speedx=-1;
+}
+
+UFO::drawHIT {
+    float cf;
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    glColor4f(1,1,1,1);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0); glVertex2f(x,    y);
+    glTexCoord2f(1,0); glVertex2f(x+sx, y);
+    glTexCoord2f(1,1); glVertex2f(x+sx, y+sy);
+    glTexCoord2f(0,1); glVertex2f(x,    y+sy);
+    glEnd();
+    cf=state_timeout; glColor4f(cf,cf,cf,cf);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_COLOR);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0); glVertex2f(x,    y);
+    glTexCoord2f(1,0); glVertex2f(x+sx, y);
+    glTexCoord2f(1,1); glVertex2f(x+sx, y+sy);
+    glTexCoord2f(0,1); glVertex2f(x,    y+sy);
+    glEnd();
+    Player_CheckUFOBulletCollision(this);
+    x+=ufo_speedx*fps_dt*0.5/*UFO_SPEED*/;
+    if(ufo_speedx==-1) { if(x<=(-160-sx)) ufo_speedx=1; } else if(x>=800) ufo_speedx=-1;
+    state_timeout-=0.03*fps_dt;
+    if(state_timeout<=0)
+	if(health>0) { state=AST_ALIVE; state_timeout=0; }
+	else { PlaySample(SMP_UFODIE, 0.47, (x/320)-1,42); state=AST_DYING; state_timeout=1; Extra_Spawn(x+sx*0.5, y+sy*0.5);  }
+}
+
+UFO::drawDYING {
+    float ca;
+    ca=state_timeout;  glColor4f(ca,ca,ca,ca);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0,0); glVertex2f(x,    y);
+    glTexCoord2f(1,0); glVertex2f(x+sx, y);
+    glTexCoord2f(1,1); glVertex2f(x+sx, y+sy);
+    glTexCoord2f(0,1); glVertex2f(x,    y+sy);
+    glEnd();
+    state_timeout-=0.03*fps_dt;
+    if(state_timeout<=0) { 
+	alien_speedx=rnd(1)*2-1;
+	init(400-800*alien_speedx,16,64,32,0,64,0.5 /*nrg*/,1000); 
+    }
+}
+
+function Aliens_Draw() {
+    glEnable(GL_TEXTURE_2D);
+    calien_bmovex=alien_movedelay==0;
+    int i=0;
+    if((alien_gamma!=1)||!aliens_move) calien_speedx=0; else { calien_speedx=fps_dt*alien_speedx*32; }
+    if(aliens_animphase) tex_inv1_2.bind(); else tex_inv1_1.bind();
+    if(ply_diecount!=0) calien_gamma=alien_gamma*ply_diecount; else calien_gamma=alien_gamma;
+    Alien a;
+    aliens.numElements=0;
+    loop(7*5+1)
+	{
+	    a<=aliens.nextFree;
+	    if(i==7) if(aliens_animphase) tex_inv2_2.bind(); else tex_inv2_1.bind();
+	    else if(i==21) if(aliens_animphase) tex_inv3_2.bind(); else tex_inv3_1.bind();
+	    else if(i==35) tex_ufo.bind();
+	    a.draw();
+	    i++;
+	}
+    
+    if(ply_diecount==0)
+	{
+	    aliens_animphase=(aliens_animphase+aliens_move)&1;
+	    aliens_move=false;
+	    aliens_movecount+=0.08*(1-(aliens_left/35.0))*fps_dt+0.007*fps_dt; 
+	    if(aliens_movecount>=1){ aliens_move=true; aliens_movecount-=1; }
+	    if(alien_movedelay>0) { alien_movedelay-=0.01*fps_dt; if(alien_movedelay<0) alien_movedelay=0; }
+	    if(alien_gamma<1) { alien_gamma+=0.01*fps_dt; if(alien_gamma>1)alien_gamma=1; }
+	    
+	    // ---- draw alien bullets and check collision w/ player
+	    Point p; int id;
+	    glDisable(GL_TEXTURE_2D);
+	    glDisable(GL_BLEND);
+	    glBegin(GL_LINES);
+	    foreach id in alien_bullets {
+		p<=alien_bullets[id];
+		glColor4f(1.0,0.5,0.5,1);
+		glVertex2f(p.x, p.y);
+		glColor4f(1,1,1,1);
+		glVertex2f(p.x, p.y-8);
+		p.y+=fps_dt;
+		if(p.y>479) { alien_bullets.qFree(id); }
+		else if p.x>(ply_sprite.x+3) if p.x<(ply_sprite.x+29) if p.y>ply_sprite.y if p.y<(ply_sprite.y+ply_sprite.sy) 			     Player_Die();
+	    }
+	    glEnd();
+	    
+	    // ---- trigger new alien bullet
+	    float al=(aliens_left/35.0);
+	    float bcdt=(levelnr-1)*0.0064; bcdt*=(2.0-al); bcdt+=al*0.001;
+	    alien_bulletcount+=bcdt*fps_dt;
+	    if(alien_bulletcount>=1) {
+		id=alien_bullets.qAlloc();
+		alien_bulletcount--;
+		if(id!=-1) {
+		    p<=alien_bullets[id];
+		    int ra=rnd(aliens_left);
+		    aliens.numElements=0;
+		    i=0;
+		    loop(aliens.maxElements)
+			{
+			    a<=aliens.nextFree;
+			    if(a.state==AST_ALIVE)
+				if(i++==ra) { 
+				    p.x=a.x+a.sx*0.5; p.y=a.y+a.sy; 
+				    PlaySample(SMP_INVSHOT, 0.23, (a.x/320)-1, 59);
+				}
+			}
+		}
+	    }
+	}
+}
+// -----------------------------------------------------------------------------player functions
+function Player_Init() {
+    ply_health=1.0;
+    ply_hit_timeout=0;
+    ply_speedx=0;
+    ply_speedy=0;
+    ply_speed=1.5;
+    ply_sprite.x=320;
+    ply_sprite.y=440;
+    ply_sprite.sx=32;
+    ply_sprite.sy=32;
+    ply_score=0;
+    // ---- init bullets
+    ply_fire=false;
+    ply_fire_timeout=0;
+    ply_numbullets=5;
+    ply_freebullets=5;
+    ply_bullets.empty();
+    msg_timeout=128; msg="GET READY!"; msg_block=true;
+    ply_score_flashcount=0;
+    ply_numbullets_fired=0;
+    ply_numbullets_hit=0;
+    ply_diecount=0;
+}
+function Player_DrawBullets() {
+    // --- draw bullets and check collision with alien sprites 
+    glDisable(GL_TEXTURE_2D);
+    glDisable(GL_BLEND);
+    glBegin(GL_LINES);
+    int id;
+    foreach id in ply_bullets compile {
+	    Point p<=ply_bullets[id];
+	    if(p.y<ply_sprite.y)
+		{
+		    glColor4f(1.0,0.5,0.5,1);
+		    glVertex2f(p.x, p.y);
+		    glColor4f(1,1,1,1);
+		    glVertex2f(p.x, p.y-8);
+		}
+	    p.y-=5*fps_dt;
+	    if(p.y<0) { ply_bullets.qFree(id); ply_freebullets++; }
+	}
+    glEnd();
+    if(ply_fire) {
+	ply_fire=false;
+	if(ply_freebullets)
+	    {
+		id=ply_bullets.qAlloc(); if(id>=0) { 
+		    p<=ply_bullets[id];
+		    p.x=ply_sprite.x+ply_sprite.sx/2-1;
+		    p.y=ply_sprite.y+ply_sprite.sy;
+		    ply_freebullets--;
+		    ply_numbullets_fired++;
+		    PlaySample(SMP_PLAYERSHOT+rnd(2), 0.5, (p.x/320)-1,42);
+		}
+	    }
+    }
+}
+
+function Player_Draw() compile {
+    glEnable(GL_TEXTURE_2D);
+    tex_player.bind();
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    if(ply_diecount>0)
+	{
+	    Matrix m; m.init(0,0,ply_diecount*2PI*3);
+	    Vector v1; v1.init(-ply_sprite.sx*0.5, -ply_sprite.sy*0.5, 0); v1.rotate(m); 
+	    Vector v2; v2.init(ply_sprite.sx*0.5, -ply_sprite.sy*0.5, 0);      v2.rotate(m); 
+	    Vector v3; v3.init(ply_sprite.sx*0.5, ply_sprite.sy*0.5, 0);           v3.rotate(m); 
+	    Vector v4; v4.init(-ply_sprite.sx*0.5, ply_sprite.sy*0.5, 0);      v4.rotate(m); 
+	    float ca=ply_diecount;  glColor4f(ca,ca,ca,ca);
+	    float cx=ply_sprite.x+ply_sprite.sy*0.5,cy=ply_sprite.y+ply_sprite.sy*0.5;
+	    glBegin(GL_QUADS);
+	    glTexCoord2f(0,0); glVertex2f(cx+v1.x, cy+v1.y);
+	    glTexCoord2f(1,0); glVertex2f(cx+v2.x, cy+v2.y);
+	    glTexCoord2f(1,1); glVertex2f(cx+v3.x, cy+v3.y);
+	    glTexCoord2f(0,1); glVertex2f(cx+v4.x, cy+v4.y);
+	    glEnd();
+	    ply_diecount-=0.01*fps_dt; if(ply_diecount<=0) GMGameOver_Init();
+	}
+    else
+	{
+	    glColor4f(1,1,1,1);
+	    glBegin(GL_QUADS);
+	    glTexCoord2f(0,0); glVertex2f(ply_sprite.x, ply_sprite.y);
+	    glTexCoord2f(1,0); glVertex2f(ply_sprite.x+ply_sprite.sx, ply_sprite.y);
+	    glTexCoord2f(1,1); glVertex2f(ply_sprite.x+ply_sprite.sx, ply_sprite.y+ply_sprite.sy);
+	    glTexCoord2f(0,1); glVertex2f(ply_sprite.x, ply_sprite.y+ply_sprite.sy);
+	    glEnd();
+	    ply_sprite.x+=fps_dt*ply_speedx*ply_speed; // move space ship left/right
+	    if(ply_sprite.x>(640-ply_sprite.sx)) ply_sprite.x=640-ply_sprite.sx; // clip sprite to screen borders
+	    if(ply_sprite.x<0) ply_sprite.x=0;
+	}
+    Player_DrawBullets();
+}
+function Player_Extra(int _type) {
+    trace "Player_Extra(type="+_type+" name=\""+extra_names[_type]+"\")";
+    msg_timeout=384; msg=extra_names[_type];  msg_block=false;
+    int sid=SMP_ITEM;
+    switch(_type) {
+    case EXT_ADD_SCORE: Player_Score(1000);  sid=SMP_ITEMPLUS; break;
+    case EXT_SUB_SCORE: Player_Score(-1000); break;
+    case EXT_FREEZE:	Player_Score(150);   sid=SMP_ITEMPLUS; break;
+    case EXT_SMARTBOMB: Player_Score(150);   sid=SMP_ITEMPLUS; break;
+    case EXT_ADD_SPEED: 
+	Player_Score(150); sid=SMP_ITEMPLUS;
+	ply_speed+=0.25;
+	break;
+    case EXT_SUB_SPEED:
+	Player_Score(150);
+	if(ply_speed>0.25) ply_speed-=0.25;
+	break;
+    case EXT_ADD_WEAPON:
+	Player_Score(150); sid=SMP_ITEMPLUS;
+	if(ply_numbullets!=ply_bullets.maxElements) { ply_numbullets++; ply_freebullets++; }
+	break;
+    case EXT_SUB_WEAPON: trace "subweapon----------------------";
+	Player_Score(500);
+	if(ply_numbullets) ply_numbullets--;
+	if(ply_freebullets) ply_freebullets--;
+	break;
+    }
+    PlaySample(sid, 0.65, (ply_sprite.x/320)-1,40);
+}
+function Player_Score(int _score) {
+    ply_score+=_score;
+    int bnsc=ply_score!=hiscore;
+    if(ply_score<0)ply_score=0;
+    if bnsc if ply_score>hiscore
+	{
+	    trace "new hiscore!";
+	    hiscore=ply_score;
+	}
+    ply_score_flashcount=1;
+}
+function Player_CheckBulletCollision(Alien a) {
+    int id;
+    Point p;
+    foreach id in ply_bullets compile {
+	p<=ply_bullets[id];
+	if p.x>=(a.x+a.cx) if p.x<(a.x+a.csx) if p.y>=a.y if p.y<(a.y+a.sy) // test point in rectangle
+	    {
+		ply_bullets.qFree(id);
+		ply_freebullets++;
+		a.health-=0.25; if(a.health<0)a.health=0;
+		a.state=AST_HIT;
+		a.state_timeout=1;
+		Player_Score(a.score);
+		ply_numbullets_hit++;
+		PlaySample(SMP_INVHIT, 1,(a.x/320)-1,45);  
+	    }
+    }
+}
+function Player_CheckUFOBulletCollision(Alien a) {
+    int id;
+    Point p;
+    foreach id in ply_bullets compile {
+	p<=ply_bullets[id];
+	if p.x>=(a.x+a.cx) if p.x<(a.x+a.csx) if p.y>=a.y if p.y<(a.y+a.sy) // test point in rectangle
+	    {
+		ply_bullets.qFree(id);
+		ply_freebullets++;
+		a.health-=0.25; if(a.health<0)a.health=0;
+		a.state=AST_HIT;
+		a.state_timeout=1;
+		Player_Score(a.score);
+		ply_numbullets_hit++;
+		PlaySample(SMP_UFOHIT, 0.15,(a.x/320)-1,40);
+	    }
+    }
+}
+function Player_Die() { PlaySample(SMP_UFOHIT, 0.25, 0,37); ply_diecount=1; }
+// -----------------------------------------------------------------------------game modes
+enum /*game-modes*/ { GM_TITLE, GM_INGAME, GM_WARP, GM_GAMEOVER };
+int game_mode=GM_TITLE;
+// -----------------------------------------------------------------------------ingame scores
+function Scores_Draw() {
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+    Integer io;
+    io.value=ply_score;
+    if(ply_score_flashcount>0) 
+	{ 
+	    float cf=sin(0.5*PI*ply_score_flashcount)*0.35+0.5; glColor4f(cf,cf,cf,cf); 
+	    ply_score_flashcount-=0.03*fps_dt; if(ply_score_flashcount<0) ply_score_flashcount=0;
+	}
+    else glColor4f(0.5,0.5,0.5,0.5);
+    tex_font.bind();
+    DrawText(io.printf("%09i"),10,10);
+    glColor4f(1,1,1,1);
+    DrawText("HI:",240,10);
+    io.value=hiscore;
+    glColor4f(0.75,0.75,0.75,0.75);
+    DrawText(io.printf("%09i"), 288,10);
+
+}
+// -----------------------------------------------------------------------------messages
+float  msg_timeout;
+String msg;
+int    msg_block;
+/*bool*/ function Message_Draw() {
+    if(msg_timeout)
+	{
+	    msg_timeout-=fps_dt;  if(msg_timeout<0)msg_timeout=0;
+	    glEnable(GL_TEXTURE_2D);
+	    glEnable(GL_BLEND); glBlendFunc(GL_ONE_MINUS_DST_COLOR, GL_ONE);
+	    if(msg_timeout<32)
+		{ float cf=sin(PI*0.5*msg_timeout/32.0)*0.5; glColor4f(cf,cf,cf,cf); }
+	    else glColor4f(0.5,0.5,0.5,0.5);
+	    tex_font.bind(); DrawText(msg,(640-(msg.length*16))*(msg_block?0.5:1),msg_block?246:40);
+	    return msg_block;
+	}
+    else return false;
+}
+// -----------------------------------------------------------------------------ingame functions
+function GMInGame_Draw {
+    Stars_Draw(0, 0);
+    if(!Message_Draw())
+	{
+	    Aliens_Draw();
+	    Player_Draw();
+	}
+    Extras_Draw();
+    Scores_Draw();
+}
+function GMInGame_Start() {
+    game_mode=GM_INGAME;
+    levelnr=1;
+    trace "GMInGame_Start()";
+    Aliens_Init();
+    Player_Init();
+}
+function GMInGame_NextLevel() {
+    game_mode=GM_INGAME;
+    trace "GMInGame_NextLevel()";
+    ply_speedx=0;
+    Aliens_Init();
+}
+function GMInGame_Pause() {
+}
+// -----------------------------------------------------------------------------warp functions
+float warp_plyx;
+function GMWarp_Init() {
+    msg_timeout=200; msg="WARP TO LEVEL "+++levelnr; msg_block=true;
+    game_mode=GM_WARP;
+    warp_plyx=ply_sprite.x;
+}
+function GMWarp_Draw  {
+    float fm=msg_timeout*(1.0/200);
+    float cl=sin(PI*fm);
+    Stars_Draw(cl, 0.9-cl*0.4);
+    if(!Message_Draw())
+	GMInGame_NextLevel();
+    float cp=cos(PI*0.5*fm);
+    ply_sprite.x=320*cp+warp_plyx*(1-cp);
+    Player_Draw();
+    Scores_Draw();
+}
+// -----------------------------------------------------------------------------gameover functions
+function GMGameOver_Init() {
+    PlaySample(SMP_INVLAND, 0.41, 0, 53);
+    trace "u r dead.";
+    ply_diecount=0;
+    msg_timeout=300; msg="GAME OVER"; msg_block=true;
+    game_mode=GM_GAMEOVER;
+}
+function GMGameOver_Draw  {
+    Stars_Draw(0,0);
+    if(!Message_Draw())
+	GMTitle_Init();
+    else
+	Scores_Draw();
+}
+// -----------------------------------------------------------------------------repaint event handler
+int num_frames_rendered=0;
+function onDraw() compile {
+   glMatrixMode(GL_PROJECTION);
+   glTranslatef(0.625, 0.625, 0f);
+   glMatrixMode(GL_MODELVIEW);
+
+    glClearColor(bgr,bgg,bgb,bga);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_BLEND);
+    glDisable(GL_CULL_FACE);
+    zglInit2D(640, 480);
+
+    fps_dt=FPS.precision;
+
+    switch(game_mode)
+	{
+	case GM_TITLE:    GMTitle_Draw();    break;
+	case GM_INGAME:   GMInGame_Draw();   break;
+	case GM_WARP:     GMWarp_Draw();     break;
+	case GM_GAMEOVER: GMGameOver_Draw(); break;
+	}
+
+    if(!(++num_frames_rendered&127)) trace "fps="+FPS.real;
+
+    if(bvsync) Viewport.waitVBlank();
+}
+// -----------------------------------------------------------------------------keyboard event handler
+function onKeyboard(Key _k) {
+    switch(game_mode)
+	{
+	case GM_TITLE:
+	    switch(_k.pressed)
+		{
+		case 'v': bvsync=1-bvsync; trace "bvsync="+bvsync; break;
+		case 's': bswapstereo=1-bswapstereo; trace "swap stereo set to "+bswapstereo; AudioDevice.swapstereo=bswapstereo; break;
+		case VKEY_ESCAPE: SDL.exitEventLoop(); break;
+		case VKEY_SPACE: GMInGame_Start();
+		}
+	    break;
+	case GM_INGAME:
+	    switch(_k.pressed)
+		{
+		case 'v': bvsync=1-bvsync; trace "bvsync="+bvsync; break;
+		case 's': bswapstereo=1-bswapstereo; trace "swap stereo set to "+bswapstereo; AudioDevice.swapstereo=bswapstereo; break;
+		case VKEY_ESCAPE: GMTitle_Init(); break;
+		case VKEY_SPACE: GMInGame_Pause(); break;
+		case VKEY_LEFT: ply_speedx=-1; break;
+		case VKEY_RIGHT: ply_speedx=1; break;
+		case VKEY_LCTRL:
+		case 'x':
+      case VKEY_PAGEDOWN: // 'b' on Pandora
+		case 'd': ply_fire=1; break;
+		case 'w': GMWarp_Init(); break;
+		case 'e': GMGameOver_Init(); break;
+		case 'r': Player_Die(); break;
+		case 'o': Extra_Spawn(16.0+rnd(640-16*2), 24.0); break;
+		}
+	    switch(_k.released)
+		{
+		case VKEY_LEFT: if(ply_speedx==-1) ply_speedx=0; break;
+		case VKEY_RIGHT: if(ply_speedx==1) ply_speedx=0; break;
+		}
+	    break;
+	case GM_GAMEOVER:
+	    switch(_k.pressed)
+		{
+		case 'v': bvsync=1-bvsync; trace "bvsync="+bvsync; break;
+		case VKEY_ESCAPE: SDL.exitEventLoop(); break;
+		case VKEY_SPACE: GMTitle_Init(); break;
+		}
+	    break;
+	}
+}
+// -----------------------------------------------------------------------------texture loader
+function LoadTexture(Texture _dst, String _name, int _sx, int _sy, int _bytes, int _flags) {
+    _dst.unload(); _dst.loadImage(_name, _sx, _sy, _bytes); _dst.flags=_flags; _dst.upload(); 
+}
+function onOpen() {
+    LoadTexture(tex_player,"gfx/player.png",64,64,4, TEX_ALPHA|TEX_MODULATE);
+    LoadTexture(tex_ufo,"gfx/ufo.png", 64,64,4,TEX_MODULATE|TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR);
+    LoadTexture(tex_inv1_1,"gfx/inv1_1o2.png", 64,64,1, TEX_MODULATE);
+    LoadTexture(tex_inv1_2,"gfx/inv1_2o2.png", 64,64,1, TEX_MODULATE);
+    LoadTexture(tex_inv2_1,"gfx/inv2_1o2.png", 64,64,1, TEX_MODULATE);
+    LoadTexture(tex_inv2_2,"gfx/inv2_2o2.png", 64,64,1, TEX_MODULATE);
+    LoadTexture(tex_inv3_1,"gfx/inv3_1o2.png", 64,64,1, TEX_MODULATE);
+    LoadTexture(tex_inv3_2,"gfx/inv3_2o2.png", 64,64,1, TEX_MODULATE);
+    LoadTexture(tex_cspread,"gfx/cspread.png", 1024,1,4, TEX_REPEAT_S);
+    Texture t; t.loadImage("gfx/font.png",0,0,1);  tex_font.alloc(960,21,4); tex_font.scaleFrom(t); // for palette images
+    tex_font.expand2n(); //tex_font.saveImage("test22.png");
+    tex_font.flags=TEX_MODULATE|TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR; tex_font.upload(); 
+    tex_fontmask.alloc(tex_font.sx, tex_font.sy, 4); 
+    tex_fontmask.scaleFrom(tex_font);  // copyimage
+    tex_fontmask.createMask(#050505); 
+    tex_fontmask.flags=TEX_ALPHA; tex_fontmask.upload(); 
+    tex_extras.numElements=tex_extras.maxElements;
+    int i=0;
+    foreach t in tex_extras LoadTexture(t, "gfx/ext"+i+++".png", 32,32,4,TEX_MODULATE|TEX_MINFILTERLINEAR|TEX_MAGFILTERLINEAR);
+    FPS.reset();
+}
+// -----------------------------------------------------------------------------program start
+function main() {
+    use callbacks;
+
+    trace "starting main";
+
+    //Viewport.flags=SDL_NOFRAME;
+    AudioDevice.openDSP(44100,2048);
+    AudioDevice.start();
+
+    Stars_Init();
+
+    FPS.tickInterval=1000.0/60.0;
+    FPS.limit=60;
+
+    Viewport.openWindow(640, 480);
+    trace "window opened";
+
+    SDL.eventLoop();
+    AudioDevice.stop();
+}
