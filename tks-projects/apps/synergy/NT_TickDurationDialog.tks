@@ -1,0 +1,426 @@
+// ----
+// ---- file   : NT_TickDurationDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2007-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 15Oct2007
+// ---- changed: 06Nov2007, 20Sep2009, 05Jan2010, 06Feb2010, 28Apr2010, 20Mar2011, 28Feb2013
+// ----          23Jan2015, 11Feb2015, 09Sep2016, 28Jan2017, 14Jul2017, 27Nov2018, 30Nov2018
+// ----          03Dec2018, 02Sep2023, 04Oct2023, 20Oct2023, 27Oct2023, 30Oct2023, 09Oct2024
+// ----
+// ----
+// ----
+
+module MNT_TickDurationDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_TickDurationDialog extends Dialog, ActionConsumer, ActionProvider {
+
+   define int MIN_WIDTH = 200;
+   define int MIN_HEIGHT = 70;
+
+   define String ACTION_SELECT;
+   define String ACTION_CANCEL;
+
+   protected ActionConsumer *recipient;
+   protected FloatParam *fp_value;
+   protected CheckBox   *cb_hex;
+   protected ComboBox   *cm_type;
+   protected CheckBox   *cb_allchannels;  // xxx never used ?
+
+   protected Button *bt_ok;
+   protected Button *bt_cancel;
+
+   static StringArray type_names = ["Ticks", "Steps", "Beats", "Bars"];
+   define int TYPE_TICKS = 0;
+   define int TYPE_STEPS = 1;
+   define int TYPE_BEATS = 2;
+   define int TYPE_BARS  = 3;
+   protected int type;
+
+   protected int ticks;
+   protected float step_resolution;
+
+
+   // <method_init.png>
+   public static New(String         _caption,
+                     String         _message,
+                     int            _ticks,
+                     int            _stepResolution,
+                     boolean        _bAllChannels,
+                     ActionConsumer _recipient
+                     ) : NT_TickDurationDialog {
+      local NT_TickDurationDialog d;
+      d.initTickDurationDialog(deref _caption, deref _message, _ticks, _stepResolution, _bAllChannels, "textinput", _recipient);
+      return deref d;
+   }
+
+   // <method_init.png>
+   protected initTickDurationDialog(String         _caption,
+                                    String         _message,
+                                    int            _ticks,
+                                    int            _stepResolution,
+                                    boolean        _bAllChannels,
+                                    String         _iconName,
+                                    ActionConsumer _recipient
+                                    ) {
+
+      initDialog();
+
+      step_resolution = _stepResolution;
+      ticks = _ticks;
+      type = TYPE_STEPS;
+
+      recipient <= deref _recipient;
+      int w, h;
+      local Panel l;
+      l.initPanel();
+      l.setLayout(SuperBorderLayout);
+
+      // Add message text + icon
+      local Label lbMessage;
+      lbMessage.initLabel();
+      lbMessage.setCaption(_message);
+      Icon icon <= UI.GetIcon(_iconName);
+      if(null != icon)
+      {
+         lbMessage.setIcon(icon);
+         lbMessage.setIconPlacement(Layout.LEFT);
+      }
+      l.addLayer(deref lbMessage, Layout.CENTER);
+
+      // Add FloatParam
+      local Panel pfp;
+      pfp.initPanel();
+      pfp.setLayout(SuperBorderLayout);
+      pfp.setAlignment(Layout.CENTER);
+      pfp.setPadBottom(UI.IsHiDPI() ? 3 : 3);
+
+      local FloatParam fp;
+      fp_value <= fp;
+      fp.initFloatParam();
+      fp.setEnableMaxEditable(true);
+      fp.setMaxValueLimit(65536);
+      fp.setStep(1);
+      fp.setAlignment(Layout.LEFT | Layout.BASELINE);
+      fp.setToolTipCaption("Pattern length (in ticks)\n\n (note) 'h' toggles between hex/dec\n (note) 'i' multiplies by 2\n (note) 'u' divides by 2\n (note) 't' multiplies by 1.5\n (note) 'r' divides by 1.5");
+      fp.setEnableNoTabProvide(true);
+
+      cb_hex <= CheckBox.New(false, "Hex");
+      cb_hex.setToolTipCaption("Edit number as hex\n\n (note) 'h' toggles between hex/dec");
+      cb_hex.setAlignment(Layout.LEFT | Layout.BASELINE);
+
+      // Add combobox (ticks, steps, beats, or bars)
+      local ComboBox cm;
+      cm_type <= cm;
+      cm.initComboBox();
+      cm.setEditable(true);
+      // // cm.setDefaultInnerPadding();
+      cm.setOptions(["Ticks", "Steps", "Beats", "Bars"]);
+      cm.setSelectedOption(type);
+      cm.setAlignment(Layout.LEFT | Layout.BASELINE);
+      cm.setToolTipCaption("Length unit\n\n (note) PAGEUP to select next unit\n (note) PAGEDOWN to select previous unit\n (note) 'b' cycles through options");
+
+      setTicks(_ticks, step_resolution);
+
+      pfp.addLayer(deref cb_hex, Layout.LEFT);
+      pfp.addLayer(deref cm, Layout.LEFT);
+      pfp.addLayer(deref fp, Layout.LEFT);
+      l.addLayer(deref pfp, Layout.BOTTOM);
+
+      if(_bAllChannels)
+      {
+         // Add checkbox (all tracks)
+         CheckBox cb <= CheckBox.New(false, "All channels");
+         l.addLayer(deref cb, Layout.BOTTOM);
+         cb_allchannels <= cb;
+      }
+
+      // Add OK button
+      local Button btOk;
+      bt_ok <= deref btOk;
+      btOk.initButton();
+      btOk.setCaption("Ok");
+      btOk.setAlignment(Layout.CENTER);
+      btOk.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP,    UIConstants.DIALOGBUTTON_PAD_LEFT,
+                        UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT
+                        );
+      btOk.setProvidedActionAlias(Button.ACTION_CLICK, "ok");
+      btOk.setEnableLabelButtonHiDPI();
+
+      // Add Cancel button
+      local Button btCancel;
+      bt_cancel <= deref btCancel;
+      btCancel.initButton();
+      btCancel.setCaption("Cancel");
+      btCancel.setIcon(UI.GetIcon("cancel"));
+      btCancel.setIconScale(0.5);
+      btCancel.setIconPlacement(Layout.LEFT|Layout.CENTERY);
+      btCancel.setAlignment(Layout.CENTER);
+      btCancel.setPadding4f(UIConstants.DIALOGBUTTON_PAD_TOP,    UIConstants.DIALOGBUTTON_PAD_LEFT,
+                            UIConstants.DIALOGBUTTON_PAD_BOTTOM, UIConstants.DIALOGBUTTON_PAD_RIGHT
+                            );
+      btCancel.setProvidedActionAlias(Button.ACTION_CLICK, "cancel");
+      btCancel.setEnableLabelButton(true);
+
+      // Group the Ok and Cancel buttons
+      local Panel p;
+      p.initPanel();
+      p.setLayout(SuperBorderLayout);
+      p.addLayer(btOk, Layout.LEFT);
+      p.addLayer(btCancel, Layout.RIGHT);
+      p.setAlignment(Layout.CENTER);
+      l.addLayer(deref p, Layout.BOTTOM);
+
+      // Calculate inner window size
+      w = mathMaxf(btOk.getPreferredSizePadX(), lbMessage.getPreferredSizePadX());
+      if(w < MIN_WIDTH*UI.font_scaling)
+         w = MIN_WIDTH*UI.font_scaling;
+
+      h = mathMaxf(fp_value.getPreferredSizePadY() +
+                   mathMaxf(btOk.getPreferredSizePadY(), btCancel.getPreferredSizePadY()) +
+                   (_bAllChannels ? cb_allchannels.getPreferredSizePadY() : 0) +
+                   lbMessage.getPreferredSizePadY()
+                   + 8,
+                   MIN_HEIGHT*UI.font_scaling
+                   );
+      l.setSize2f(w, h);
+
+      // Initialize window
+      initWindow(deref l,
+                 _caption,
+                 0, 0, // update position in show()
+                 w, h
+                 );
+
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         fp_value,
+         cm_type,
+         cb_hex,
+
+         bt_ok,
+         bt_cancel
+                              ];
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <method.png>
+   public virtual isPopup():boolean {
+      // Overwrites Layer::isPopup
+      return true;
+   }
+
+   // <method_set.png>
+   public method setTicks(int _ticks, int _stepResolution) {
+      ticks = _ticks;
+      step_resolution = _stepResolution;
+
+      int numTicksPerNote = current_song.ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+      switch(type)
+      {
+         case TYPE_TICKS:
+            fp_value.setMaxValue(1 << (1 + int(log2(ticks))));
+            fp_value.setPrecision(0);
+            fp_value.setValueAndValidate(ticks);
+            break;
+
+         case TYPE_STEPS:
+            fp_value.setMaxValue(1 << (1 + int(log2(ticks / step_resolution))));
+            fp_value.setPrecision(4);
+            fp_value.setValueAndValidate(ticks / step_resolution);
+            break;
+
+         case TYPE_BEATS:
+            fp_value.setMaxValue(2048);
+            fp_value.setPrecision(4);
+            fp_value.setValueAndValidate(ticks / numTicksPerBeat);
+            break;
+
+         case TYPE_BARS:
+            fp_value.setMaxValue(512);
+            fp_value.setPrecision(4);
+            fp_value.setValueAndValidate(ticks / numTicksPerBar);
+            break;
+      }
+
+      fp_value.redraw();
+   }
+
+   // <method_get.png>
+   public method getTicks() : int {
+      return ticks;
+   }
+
+   // <ui_handle.png>
+   protected handleTypeChanged() {
+      type = cm_type.getSelectedOption();
+      setTicks(ticks, step_resolution);
+      Global.Print("Type is "+type_names.get(type));
+   }
+
+   // <ui_handle.png>
+   protected method handleValueChanging() {
+      int numTicksPerNote = current_song.ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+      float val = fp_value.getFloatValue();
+
+      switch(type)
+      {
+         case TYPE_TICKS:
+            ticks = val;
+            Global.Print(ticks+" ticks");
+            break;
+
+         case TYPE_STEPS:
+            ticks = val * step_resolution;
+            Global.Print(val+" steps ("+ticks+" ticks)");
+            break;
+
+         case TYPE_BEATS:
+            ticks = val * numTicksPerBeat;
+            Global.Print(val+" beats ("+ticks+" ticks)");
+            break;
+
+         case TYPE_BARS:
+            ticks = val * numTicksPerBar;
+            Global.Print(val+" bars ("+ticks+" ticks)");
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelection() {
+      fp_value.stopEditing(false/*bProvideAction*/, false/*bReturnKey*/, true/*bQuiet*/); // Do not provide new action to avoid recursion!
+      handleValueChanging();
+      hide();
+      if(recipient instanceof ActionConsumer)
+      {
+         FloatAction ac <= FloatAction.New(ACTION_SELECT, this, fp_value.getFloatValue());
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method dialogCanceled() {
+      hide();
+      if(recipient instanceof ActionConsumer)
+      {
+         // Emit empty action to signalize "canceled" state
+         Action ac <= Action.New(ACTION_CANCEL, this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            dialogCanceled();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleSelection();
+            return true;
+
+         case VKEY_PAGEUP:
+            cm_type.selectNextOptionAction();
+            return true;
+
+         case VKEY_PAGEDOWN:
+            cm_type.selectPreviousOptionAction();
+            return true;
+
+         case 'b':
+            cm_type.selectNextOptionCycle();
+            handleTypeChanged();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      fp_value.onTabFocus();
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String name = _ac.getActionName();
+      // trace "xxx TickDurationDialog: got action name="+name;
+
+      ActionProvider ap <= _ac.getActionProvider();
+
+      switch(@(ap))
+      {
+         case @(cb_hex):
+            if(name == CheckBox.ACTION_TOGGLE)
+            {
+               fp_value.setDisplayType(cb_hex.isSelected() ? FloatParam.DISPLAY_HEX : FloatParam.DISPLAY_FLOAT);
+               fp_value.updateValue();
+            }
+            return true;
+
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+      }
+
+      switch(name)
+      {
+         case "ok": // via button "ok"
+            handleSelection();
+            break;
+
+         case "cancel": // via button "cancel"
+            dialogCanceled();
+            break;
+
+         case FloatParam.ACTION_VALUECHANGING:
+         case FloatParam.ACTION_VALUEEDITED:
+            handleValueChanging();
+            return true;
+
+         case FloatParam.ACTION_VALUECHANGED:
+         case FloatParam.ACTION_VALUEUNCHANGED:
+            handleSelection();
+            break;
+
+         case FloatParam.ACTION_TOGGLEHEX:
+            cb_hex.setSelected(FloatParam.DISPLAY_HEX == fp_value.getDisplayType());
+            return true;
+      }
+      return true;
+   }
+
+}

@@ -1,0 +1,160 @@
+// ----
+// ---- file   : Montage_OpForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 24Oct2022
+// ---- changed: 05Nov2022, 10Nov2022, 17Nov2022
+// ----
+// ----
+// ----
+
+module MMontage_OpForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Montage_OpForm extends Montage_ParamForm {
+   // MontagePartFMOperator
+
+   int op_idx;
+
+   protected FloatParam *fp_bp;
+
+   protected StringArray bp_note_options;
+
+
+   // <method.png>
+   static StringArray octave_notes = ["C x", "C#x", "D x", "D#x", "E x", "F x", "F#x", "G x", "G#x", "A x", "A#x", "B x"];
+   protected method genBPNoteOptions() {
+      if(bp_note_options.isEmpty())
+      {
+         int noteIdx = 9;
+         loop(100)
+         {
+            bp_note_options.add(octave_notes[noteIdx%12].replace("x", String( (noteIdx/12) -1)));
+            noteIdx++;
+         }
+      }
+   }
+
+   // <init.png>
+   public method initOpForm(EditMIDISynthFormMontage _parentSynthForm, int _opIdx) : boolean {
+
+      initParamForm(_parentSynthForm);
+
+      op_idx = _opIdx;
+
+      local String buf;
+      MIDISynthProfile msp <= parent_synth_form.profile;
+
+      String groupCaption <= "FM Op";
+
+      createWidgetsFromMSPGroup(buf, msp, groupCaption);
+      // trace buf;
+      // exit(10);
+
+      local String bufXFM;
+      bufXFM.load("Montage_OpForm.xfm", true/*bRemoveCR*/);
+      bufXFM.replace("$(WIDGETS)", buf);
+
+      if(!parseXMLForm(bufXFM))
+      {
+         trace "[---] failed to parse \"Montage_OpForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      if(!resolveWidgetsFromMSPGroup(msp, groupCaption, param_widgets))
+      {
+         trace "[---] Montage_OpForm: resolveWidgetsFromMSPGroup("+groupCaption+") failed.";
+         return false;
+      }
+
+      genBPNoteOptions();
+
+      fp_bp.setUserTable(bp_note_options);
+      fp_bp.setDisplayType(FloatParam.DISPLAY_USER);
+
+      recursiveBuildTabCycleLists();
+
+      return true;
+   }
+
+   // <method.png>
+   public method enter() {
+   }
+
+   // <method.png>
+   public method leave() {
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers, param_widgets);
+   }
+
+   // <method_get.png>
+   public method getOpByIdx(int _opIdx) : MontagePartFMOperator {
+      return parent_synth_form.getOpByIdx(_opIdx);
+   }
+
+   // <method_get.png>
+   public method getOp() : MontagePartFMOperator {
+      return parent_synth_form.getOpByIdx(op_idx);
+   }
+
+   // <ui_show.png>
+   public method showOp() {
+      MontagePartFMOperator c <= getOp();
+      updateParamWidgets(c);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      int paramIdx = param_widgets.indexOfPointer(ap, 0);
+      if(paramIdx >= 0)
+      {
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            int opIdx = 0;
+            loop(8)
+            {
+               MontagePartFMOperator op <= getOpByIdx(opIdx++);
+               handleParamChanged(op, paramIdx, ap);
+            }
+         }
+         else
+         {
+            handleParamChanged(getOp(), paramIdx, ap);
+         }
+
+         if(FloatParam.ACTION_VALUECHANGED == acName)
+            parent_synth_form.refocusDefault();
+
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            break;
+      }
+   }
+
+}

@@ -1,0 +1,666 @@
+// ----
+// ---- file   : PageSubSongs.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 09Nov2010, 21Nov2010, 07Feb2011, 17Feb2011, 18Feb2011, 28Feb2011, 06Mar2011
+// ----          07Mar2011, 09Jan2012, 15Jan2012, 21Dec2012, 08May2013, 23May2013, 01Jun2013
+// ----          05Jun2013, 27Aug2013, 11Aug2014, 12Aug2014, 31Aug2014, 05Sep2014, 16Sep2014
+// ----          19Sep2014, 23Feb2015, 09Feb2017, 25Apr2020, 26Apr2020, 31May2021, 13Oct2023
+// ----          22Oct2023, 02Oct2024, 05Oct2024, 16Jan2025
+// ----
+// ----
+// ----
+
+module MPageSubSongs;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageSubSongs extends Page {
+
+   define String ACTION_SUBSONG_SELECTED;
+
+   protected ManageSubSongsTM tm;
+
+   protected XMLForm *xfm;
+
+   protected Button    *bt_close;
+   protected Button    *bt_new;
+   protected Button    *bt_delete;
+   protected Button    *bt_moveup;
+   protected Button    *bt_movedown;
+   protected TableView *tv_subsongs;
+
+   protected TextField *tf_songname;
+   protected TextField *tf_subname;
+
+   protected static Dialog_DeleteSubSong dialog_deletesubsong;
+
+   protected PopupMenu *pm_context;
+
+   protected TextInputDialog *dlg_new;
+   protected TextInputDialog *dlg_clone;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      // initDialog();
+
+      if(!initPakFile("PageSubSongs.xfm"))
+      {
+         trace "[---] failed to parse PageSubSongs.xfm";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+         return false;
+
+      tm.initTableModel();
+      tv_subsongs.setTableModel(tm);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_PROJECT;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      tv_subsongs.tableModelChanged();
+
+      focusFirstTabCycleMember();
+
+      updateLeadSelectionToCurrentSong(true/*bMoveCursor*/);
+
+      handleSelectSubSong();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_subsongs);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         tv_subsongs,
+         bt_new,
+         bt_delete,
+         bt_moveup,
+         bt_movedown,
+         tf_songname,
+         tf_subname,
+                              ];
+   }
+
+   // <ui_update.png>
+   protected method updateLeadSelectionToCurrentSong(boolean _bMoveCursor) {
+      int songIdx = all_songs.indexOfPointer(current_song, 0);
+      if(_bMoveCursor)
+         tv_subsongs.moveCursorToRow(songIdx);
+      tv_subsongs.setLeadSelection(songIdx);
+   }
+
+   // <method_get.png>
+   public method getSelectedSubSong() : ST_Song {
+      int ci = tm.getCursorIndex();
+      if(ci >= 0)
+      {
+         ST_Song song <= all_songs.get(ci);
+         return song;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method selectSubSongByIdx(int _idx, boolean _bSaveUI) {
+      tv_subsongs.moveCursorToRow(_idx);
+
+      Global.SelectSubSongByIdx(_idx, _bSaveUI, true/*bViaUI*/);
+
+      handleSelectSubSong();
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectSubSong() {
+      ST_Song song <= getSelectedSubSong();
+      if(null != song) // should never be null
+      {
+         tf_songname.setText(song.song_name);
+         tf_songname.setEditable(true);
+
+         tf_subname.setText(song.sub_name);
+         tf_subname.setEditable(true);
+
+         root_form.transportCycle(song.b_cycle);
+      }
+      else
+      {
+         tf_songname.setText("n/a");
+         tf_songname.setEditable(false);
+         tf_subname.setText("n/a");
+         tf_subname.setEditable(false);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSongNameChanged(boolean _bEnter) {
+      ST_Song song <= getSelectedSubSong();
+      if(null != song)
+      {
+         song.song_name = tf_songname.getText();
+         tv_subsongs.tableModelChanged();
+      }
+
+      if(_bEnter)
+         pageFocusDefault();
+
+      root_form.updateSongWidgets();
+   }
+
+   // <ui_handle.png>
+   protected method handleSubNameChanged(boolean _bEnter) {
+      ST_Song song <= getSelectedSubSong();
+      if(null != song)
+      {
+         song.sub_name = tf_subname.getText();
+         tv_subsongs.tableModelChanged();
+      }
+
+      if(_bEnter)
+         pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method confirmDeleteSelectedSubSong() {
+      ST_Song song <= getSelectedSubSong();
+      if(null != song)
+      {
+         if(all_songs.numElements > 1)
+         {
+            dialog_deletesubsong.run(song.sub_name);
+         }
+         else
+         {
+            // Not allowed to delete main song
+            Global.Warning("Cannot delete main sub-song");
+         }
+      }
+   }
+
+   // <method_delete.png>
+   public method deleteSelectedSubSong() {
+      // Called by dialog_deletesubsong when deletion is confirmed and allowed (not the last song)
+      ST_Song song <= getSelectedSubSong();
+      if(null != song)
+      {
+         int rowIdx = tm.getCursorIndex();
+         boolean bLead = tm.isLeadSelection();
+
+         // (note) this will make sure to select another song in case the one to be deleted is current
+         Global.RemoveSubSongByIdx(rowIdx);
+
+         Global.Debug("PageSubSongs::deleteSelectedSubSong: delete song #"+rowIdx);
+         tv_subsongs.tableModelChanged();
+         tv_subsongs.moveCursorToRow(rowIdx);
+         handleSelectSubSong();
+         if(bLead)
+         {
+            selectSubSongByIdx(tm.getCursorIndex(), true);
+         }
+         updateLeadSelectionToCurrentSong(false/*bMoveCursor*/);
+      }
+   }
+
+   // <method_new.png>
+   protected method newSubSong2(String _subSongName) {
+      local String songName <= current_song.song_name;
+      int idx = Global.NewSubSong();
+      Global.SelectSubSongByIdx(idx, true/*bSaveUI*/, true/*bViaUI*/);
+      current_song.song_name = songName;
+      current_song.sub_name  = _subSongName;
+      tv_subsongs.tableModelChanged();
+      tv_subsongs.moveCursorToRow(idx);
+      handleSelectSubSong();
+      updateLeadSelectionToCurrentSong(false/*bMoveCursor*/);
+      pageFocusDefault();
+   }
+
+   // <method_new.png>
+   protected method newSubSong1() {
+      dlg_new <= TextInputDialog.New("Enter sub-song name",
+                                     " Enter new sub-song name",
+                                     "Create", "Cancel",
+                                     "sub #"+all_songs.numElements,
+                                     32/*maxCols*/, 32/*visCols*/,
+                                     this
+                                     );
+
+      dlg_new.setButtonFontByName("big4");
+      dlg_new.setMessageFontByName("big6");
+      dlg_new.setTextFontByName("big5");
+      dlg_new.setButtonIcons(UI.GetIcon("add"), UI.GetIcon("cancel"));
+      dlg_new.invalidateSizeCaches();
+      dlg_new.resizeToMinimum();
+      dlg_new.showCentered();
+   }
+
+   // <method_new.png>
+   protected method cloneSubSong1() {
+      dlg_clone <= TextInputDialog.New("Enter sub-song name",
+                                     " Enter cloned sub-song name",
+                                     "Clone", "Cancel",
+                                     current_song.sub_name,
+                                     32/*maxCols*/, 32/*visCols*/,
+                                     this
+                                     );
+
+      dlg_clone.setButtonFontByName("big4");
+      dlg_clone.setMessageFontByName("big6");
+      dlg_clone.setTextFontByName("big5");
+      dlg_clone.setButtonIcons(UI.GetIcon("clone"), UI.GetIcon("cancel"));
+      dlg_clone.invalidateSizeCaches();
+      dlg_clone.resizeToMinimum();
+      dlg_clone.showCentered();
+   }
+
+   // <method_new.png>
+   protected method cloneSubSong2(String _subSongName) {
+      ST_Song selectedSong <= getSelectedSubSong();
+      if(SongFileWriter.SaveSubSongFile(Global.GetSubSongClipboardFileName(), selectedSong))
+      {
+         // Create new sub-song and make it current
+         newSubSong2(_subSongName);
+
+         // Load saved sub-song from clipboard file
+         if(SongFileReader.LoadSubSongFile(Global.GetSubSongClipboardFileName(), current_song))
+         {
+            current_song.sub_name = _subSongName;
+            handleSelectSubSong();
+            updateLeadSelectionToCurrentSong(true/*bMoveCursor*/);
+            Global.Success("Clone sub-song");
+            pageFocusDefault();
+         }
+         else
+         {
+            Global.Error("Failed to clone sub-song");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method moveUp() {
+      int idx = tm.getCursorIndex();
+      if(idx > 0)
+      {
+         boolean bLead = tm.isLeadSelection();
+         all_songs.swap(idx, idx-1);
+         tv_subsongs.tableModelChanged();
+         tv_subsongs.moveCursorToRow(idx-1);
+         if(bLead)
+            updateLeadSelectionToCurrentSong(false/*bMoveCursor*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method moveDown() {
+      int idx = tm.getCursorIndex();
+      if(0 <= idx < (all_songs.numElements -1))
+      {
+         boolean bLead = tm.isLeadSelection();
+         all_songs.swap(idx, idx+1);
+         tv_subsongs.tableModelChanged();
+         tv_subsongs.moveCursorToRow(idx+1);
+         if(bLead)
+            updateLeadSelectionToCurrentSong(false/*bMoveCursor*/);
+      }
+   }
+
+   // <method.png>
+   protected method copySubSongToClipboard() {
+      // (todo)
+      ST_Song selectedSong <= getSelectedSubSong();
+      if(SongFileWriter.SaveSubSongFile(Global.GetSubSongClipboardFileName(), selectedSong))
+      {
+         Global.Print("Save sub-song to clipboard file");
+      }
+   }
+
+   // <method.png>
+   protected method pasteClipboard() {
+      // (todo)
+   }
+
+   // <method.png>
+   protected method activateSelectedSubSong() {
+      int idx = tm.getCursorIndex();
+      if(-1 != idx)
+      {
+         selectSubSongByIdx(idx, true);
+         tv_subsongs.setLeadSelection(idx);
+         handleSelectSubSong();
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+
+      pm_context <= PopupMenu.New(this);
+
+      boolean bHaveSubSong = (null != getSelectedSubSong());
+      boolean bHaveClipboard = false;//(null != clipboard_subsong);
+
+      PopupMenuButton *pmb;
+
+      String sIcon_adds   <= UI.PreferMonoIcons() ? "adds_mono"    : "adds";
+      String sIcon_remove <= UI.PreferMonoIcons() ? "removes_mono" : "trashcan_sm";
+
+      pmb <= pm_context.addDefaultButton("Select", "select");
+      pmb.setActive(bHaveSubSong);
+      pmb.setAccelerators("RETURN", "lctrl-x a");
+
+      pm_context.addSeparator();
+      pmb <= pm_context.addIconButton("New", sIcon_adds, "new");
+      pmb.setAccelerators("INSERT", "lctrl-x d");
+
+      pm_context.addSeparator();
+      pmb <= pm_context.addDefaultButton("Clone", "clone");
+      pmb.setAccelerators(null, "lshift-INSERT");
+
+      pm_context.addSeparator();
+      pmb <= pm_context.addIconButton("Delete", sIcon_remove, "delete");
+      pmb.setActive(bHaveSubSong);
+      pmb.setAccelerators(null, "lctrl-x v");
+
+
+      pm_context.addSeparator();
+      pmb <= pm_context.addDefaultButton("Move up", "moveup");
+      pmb.setAccelerators(null, "lctrl-UP");
+      pmb.setActive(bHaveSubSong);
+
+      pmb <= pm_context.addDefaultButton("Move down", "movedown");
+      pmb.setAccelerators(null, "lctrl-DOWN");
+      pmb.setActive(bHaveSubSong);
+
+      pm_context.showAtXY(tv_subsongs.contextmenu_suggested_abs_x,
+                           tv_subsongs.contextmenu_suggested_abs_y
+                           );
+      if(_bFocusFirst)
+         pm_context.focusNextMenuItem();
+   }
+
+   // <ui_handle.png>
+   protected method handleContextMenuAction(String acName) : boolean {
+      pageFocusDefault();
+      switch(acName)
+      {
+         case "new":
+            newSubSong1();
+            return true;
+
+         case "clone":
+            cloneSubSong1();
+            return true;
+
+         case "delete":
+            confirmDeleteSelectedSubSong();
+            return true;
+
+         case "select":
+            activateSelectedSubSong();
+            return true;
+
+         case "moveup":
+            moveUp();
+            return true;
+
+         case "movedown":
+            moveDown();
+            return true;
+
+         case "copy":
+            copySubSongToClipboard();
+            return true;
+
+         case "paste":
+            pasteClipboard();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            activateSelectedSubSong();
+            return true;
+
+         case 'c':
+            // hide();
+            return true;
+
+         case 'd':
+            newSubSong1();
+            return true;
+
+         case 'v':
+            confirmDeleteSelectedSubSong();
+            return true;
+
+         case VKEY_UP:
+            moveUp();
+            return true;
+
+         case VKEY_DOWN:
+            moveDown();
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() : boolean {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Close dialog
+          a         :   Activate selected sub-song
+          d         :   New sub-song
+          v         :   Delete selected sub-song
+         UP         :   Move selected sub-song up
+       DOWN         :   Move selected sub-song down
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+        case VKEY_ESCAPE:
+           root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bHistory*/);
+           return true;
+
+         case 'a':
+            if(_k.modNone())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case VKEY_UP:
+            if(_k.modCtrlOnly())
+            {
+               moveUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrlOnly())
+            {
+               moveDown();
+               return true;
+            }
+            break;
+
+         case VKEY_INSERT:
+            if(_k.modNone())
+            {
+               newSubSong1();
+               return true;
+            }
+            else if(_k.modShiftOnly())
+            {
+               cloneSubSong1();
+               return true;
+            }
+            break;
+
+         case VKEY_DELETE:
+            confirmDeleteSelectedSubSong();
+            return true;
+
+         case 'n':
+            if(_k.modShift())
+            {
+               UI.SetKeyboardFocus(tf_subname);
+               tf_subname.onTabFocus();
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               UI.SetKeyboardFocus(tf_songname);
+               tf_songname.onTabFocus();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            if(!PopupMenu.IsFocusAction(_action))
+               handleContextMenuAction(acName);
+            return true;
+
+         case @(dlg_new):
+            if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED == acName)
+            {
+               sac <= _action;
+               newSubSong2(sac.getStringValue());
+               pageFocusDefault();
+            }
+            else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED == acName)
+            {
+               dlg_new <= null;
+            }
+            return true;
+
+         case @(dlg_clone):
+            if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED == acName)
+            {
+               sac <= _action;
+               cloneSubSong2(sac.getStringValue());
+            }
+            else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED == acName)
+            {
+               dlg_clone <= null;
+            }
+            return true;
+
+         case @(bt_new):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               cloneSubSong1();
+            }
+            else
+            {
+               newSubSong1();
+            }
+            return true;
+
+         case @(bt_delete):
+            confirmDeleteSelectedSubSong();
+            return true;
+
+         case @(bt_moveup):
+            moveUp();
+            return true;
+
+         case @(bt_movedown):
+            moveDown();
+            return true;
+
+         case @(tv_subsongs):
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               if(Global.GetSubSongIdx() == tm.getCursorIndex())
+               {
+                  root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bHistory*/);
+                  Global.Print("Edit sub-song #"+tm.getCursorIndex());
+               }
+               else
+               {
+                  selectSubSongByIdx(tm.getCursorIndex(), true);
+                  updateLeadSelectionToCurrentSong(false/*bMoveCursor*/);
+                  Global.Print("Activate sub-song #"+tm.getCursorIndex());
+               }
+            }
+            else if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               handleSelectSubSong();
+               Global.Print("Select sub-song #"+tm.getCursorIndex());
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showContextMenu(tv_subsongs.b_contextmenu_kbd/*bFocusFirst*/);
+            }
+            return true;
+
+         case @(tf_songname):
+            handleSongNameChanged((TextField.ACTION_TEXTENTERED == acName));
+            return true;
+
+         case @(tf_subname):
+            handleSubNameChanged((TextField.ACTION_TEXTENTERED == acName));
+            return true;
+
+      }
+      return true;
+   }
+
+}

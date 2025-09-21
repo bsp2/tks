@@ -1,0 +1,495 @@
+// ----
+// ---- file   : NTS_EuclidDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 30Jan2017
+// ---- changed: 07Oct2019, 04Oct2023, 30Oct2023, 01Nov2023, 06Oct2024
+// ----
+// ----
+// ----
+module MNTS_EuclidDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NTS_EuclidDialog extends Dialog {
+
+   define String TA_GENERATE;
+   protected TimerAction *ta_generate;
+
+   protected NodeTrigSeqEditor *editor;
+   protected NTS_Track *cursor_track;
+   protected NTS_EuclidParams *params;
+
+   protected XMLForm *xfm;
+
+   protected Button *bt_close;
+
+   protected FloatParam *fp_num_trigs;
+   protected FloatParam *fp_num_steps;
+   protected ComboBox   *cm_pre_mode;
+   protected ComboBox   *cm_post_mode;
+   protected CheckBox   *cb_reverse;
+   protected CheckBox   *cb_invert;
+   protected FloatParam *fp_rotation;
+
+   protected CheckBox *cb_write_trigs;
+   protected CheckBox *cb_write_arg1;
+   protected ComboBox *cm_write_arg1_mode_set;
+   protected ComboBox *cm_write_arg1_mode_clear;
+   protected CheckBox *cb_write_repeats;
+   protected CheckBox *cb_write_overlayed;
+
+   protected Button   *bt_undo;
+   protected CheckBox *cb_always_undo;
+   protected Button   *bt_clear;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NTS_EuclidDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Generate Euclidean Rhythm",
+                 100, 100,
+                 640, 240
+                 );
+
+      resizeToMinimum();
+
+      initTimers();
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_generate  <= TimerAction.New(TA_GENERATE, this, 1000.0/10);
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   public method run(NodeTrigSeqEditor _editor) {
+      editor <= _editor;
+
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+
+      cursor_track <= editor.grid.getCursorTrack();
+      params <= cursor_track.euclid_params;
+
+      fp_num_trigs.setValue(params.num_trigs);
+      fp_num_steps.setValue(params.num_steps);
+      cm_pre_mode.setSelectedOption(params.pre_mode);
+      cm_post_mode.setSelectedOption(params.pre_mode);
+      cb_reverse.setSelected(params.b_reverse);
+      cb_invert.setSelected(params.b_invert);
+      fp_rotation.setValue(params.rotation);
+
+      cb_write_trigs.setSelected(params.b_write_trigs);
+      cb_write_arg1.setSelected(params.b_write_arg1);
+      cm_write_arg1_mode_set.setSelectedOption(params.write_arg1_mode_set);
+      cm_write_arg1_mode_clear.setSelectedOption(params.write_arg1_mode_clear);
+      cb_write_repeats.setSelected(params.b_write_repeats);
+      cb_write_overlayed.setSelected(params.b_overlay);
+
+      cb_always_undo.setSelected(params.b_always_undo);
+
+      // // showCentered();
+      showNearMouse(-30*UI.font_scaling, -30*UI.font_scaling);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(bt_close);
+
+      relayout();
+      resizeToMinimum();
+      resizeToMinimum();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      ta_generate.cancel();
+
+      Dialog::hide();
+   }
+
+   // <ui_handle.png>
+   protected method handleNumTrigsChanged() {
+      params.num_trigs = fp_num_trigs.getFloatValue();
+
+      ta_generate.reschedule();
+
+      Global.Print("Num trigs is "+params.num_trigs);
+   }
+
+   // <ui_handle.png>
+   protected method handleNumStepsChanged() {
+      params.num_steps = fp_num_steps.getFloatValue();
+
+      ta_generate.reschedule();
+
+      Global.Print("Num steps is "+params.num_steps+((0 == params.num_steps)?" (use track length)+":""));
+   }
+
+   // <ui_handle.png>
+   protected method handlePreModeChanged() {
+      params.pre_mode = cm_pre_mode.getSelectedOption();
+
+      ta_generate.reschedule();
+
+      Global.Print("Pre inc/dec mode is "+cm_pre_mode.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handlePostModeChanged() {
+      params.post_mode = cm_post_mode.getSelectedOption();
+
+      ta_generate.reschedule();
+
+      Global.Print("Post inc/dec mode is "+cm_post_mode.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleReverseChanged() {
+      params.b_reverse = cb_reverse.isSelected();
+
+      ta_generate.reschedule();
+
+      Global.Print("Reverse is "+Utils.GetEnableString(params.b_reverse));
+   }
+
+   // <ui_handle.png>
+   protected method handleInvertChanged() {
+      params.b_invert = cb_invert.isSelected();
+
+      ta_generate.reschedule();
+
+      Global.Print("Invert is "+Utils.GetEnableString(params.b_invert));
+   }
+
+   // <ui_handle.png>
+   protected method handleRotationChanged() {
+      params.rotation = fp_rotation.getFloatValue();
+
+      ta_generate.reschedule();
+
+      Global.Print("Rotation is "+params.rotation);
+   }
+
+   // <ui_handle.png>
+   protected method handleWriteTrigsChanged() {
+      params.b_write_trigs = cb_write_trigs.isSelected();
+
+      if(params.b_write_trigs)
+      {
+         ta_generate.reschedule();
+      }
+
+      Global.Print("Write trigs is "+Utils.GetEnableString(params.b_write_trigs));
+   }
+
+   // <ui_handle.png>
+   protected method handleWriteArg1Changed() {
+      params.b_write_arg1 = cb_write_arg1.isSelected();
+
+      if(params.b_write_arg1)
+      {
+         ta_generate.reschedule();
+      }
+
+      Global.Print("Write arg1 is "+Utils.GetEnableString(params.b_write_arg1));
+   }
+
+   // <ui_handle.png>
+   protected method handleWriteArg1ModeSetChanged() {
+      params.write_arg1_mode_set = cm_write_arg1_mode_set.getSelectedOption();
+
+      if(0 != params.write_arg1_mode_set)
+      {
+         ta_generate.reschedule();
+      }
+
+      Global.Print("Write arg1 mode 'set' is "+cm_write_arg1_mode_set.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleWriteArg1ModeClearChanged() {
+      params.write_arg1_mode_clear = cm_write_arg1_mode_clear.getSelectedOption();
+
+      if(0 != params.write_arg1_mode_clear)
+      {
+         ta_generate.reschedule();
+      }
+
+      Global.Print("Write arg1 mode 'clear' is "+cm_write_arg1_mode_clear.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleWriteRepeatsChanged() {
+      params.b_write_repeats = cb_write_repeats.isSelected();
+
+      if(params.b_write_repeats)
+      {
+         ta_generate.reschedule();
+      }
+
+      Global.Print("Write repeats is "+Utils.GetEnableString(params.b_write_repeats));
+   }
+
+   // <ui_handle.png>
+   protected method handleWriteOverlayedChanged() {
+      params.b_overlay = cb_write_overlayed.isSelected();
+
+      ta_generate.reschedule();
+
+      Global.Print("Write overlayed is "+Utils.GetEnableString(params.b_overlay));
+   }
+
+   // <ui_handle.png>
+   protected method handleAlwaysUndoChanged() {
+      params.b_always_undo = cb_always_undo.isSelected();
+
+      Global.Print("Always undo is "+Utils.GetEnableString(params.b_always_undo));
+   }
+
+   // <method.png>
+   protected =replay= method generate() {
+      Euclid e;
+
+      int len = params.num_steps;
+      if(0 == len)
+         len = cursor_track.play_length;
+
+      e.generate(params.num_trigs, len);
+      e.calcPatAndIntervalVec((1 == params.pre_mode)/*bIncDecPre*/,
+                              (2 == params.pre_mode)/*bDecIncPre*/,
+                              params.b_reverse,
+                              (1 == params.post_mode)/*bIncDecPost*/,
+                              (2 == params.post_mode)/*bDecIncPost*/,
+                              params.rotation
+                              );
+
+      int stepIdx = 0;
+      int srcIdx = 0;
+
+      loop(cursor_track.play_length)
+      {
+         NTS_Step st <= cursor_track.getStepByIndex(stepIdx);
+
+         boolean bSet = 'X' == (e.pat.getc(srcIdx));
+
+         if(params.b_invert)
+            bSet = !bSet;
+
+         boolean bClear = !bSet && !params.b_overlay;
+
+         if(bSet)
+         {
+            if(params.b_write_trigs)
+            {
+               st.setEnableTrig(true);
+            }
+
+            if(params.b_write_repeats)
+            {
+               st.setEnableRepeat(true);
+            }
+
+            if(params.b_write_arg1)
+            {
+               if(0 != params.write_arg1_mode_set)
+               {
+                  st.setArg1(params.write_arg1_mode_set - 1);
+               }
+            }
+         }
+         else if(bClear)
+         {
+            if(params.b_write_trigs)
+            {
+               st.setEnableTrig(false);
+            }
+
+            if(params.b_write_repeats)
+            {
+               trace "xxx clear repeat step="+stepIdx;
+               st.setEnableRepeat(false);
+            }
+
+            if(params.b_write_arg1)
+            {
+               if(0 != params.write_arg1_mode_clear)
+               {
+                  st.setArg1(params.write_arg1_mode_clear - 1);
+               }
+            }
+
+         }
+
+         // Next step
+         stepIdx++;
+         srcIdx = (srcIdx + 1) % len;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleUndo() {
+      NTS_EuclidParams curParams = params;
+      editor.undoRedo(true/*bForceUndo*/, true/*bSaveRedo*/);
+      cursor_track <= editor.grid.getCursorTrack();
+      params <= cursor_track.euclid_params;
+      params = curParams;
+   }
+
+   // <ui_handle.png>
+   protected method handleGenerate() {
+      Global.Debug("NTS_EuclidDialog::handleGenerate");
+
+      if(params.b_always_undo)
+      {
+         handleUndo();
+      }
+
+      generate();
+
+      editor.handlePatternChanged(false/*bFromUI*/);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      if(VKEY_ESCAPE == _k.code)
+      {
+         hide();
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_GENERATE == acName)
+      {
+         handleGenerate();
+         return;
+      }
+
+      switch(@(ap))
+      {
+         case @(fp_num_trigs):
+            handleNumTrigsChanged();
+            return true;
+
+         case @(fp_num_steps):
+            handleNumStepsChanged();
+            return true;
+
+         case @(cm_pre_mode):
+            handlePreModeChanged();
+            return true;
+
+         case @(cm_post_mode):
+            handlePostModeChanged();
+            return true;
+
+         case @(cb_reverse):
+            handleReverseChanged();
+            return true;
+
+         case @(cb_invert):
+            handleInvertChanged();
+            return true;
+
+         case @(fp_rotation):
+            handleRotationChanged();
+            return true;
+
+         case @(cb_write_trigs):
+            handleWriteTrigsChanged();
+            return true;
+
+         case @(cb_write_arg1):
+            handleWriteArg1Changed();
+            return true;
+
+         case @(cm_write_arg1_mode_set):
+            handleWriteArg1ModeSetChanged();
+            return true;
+
+         case @(cm_write_arg1_mode_clear):
+            handleWriteArg1ModeClearChanged();
+            return true;
+
+         case @(cb_write_repeats):
+            handleWriteRepeatsChanged();
+            return true;
+
+         case @(cb_write_overlayed):
+            handleWriteOverlayedChanged();
+            return true;
+
+         case @(bt_undo):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               editor.undoEndTimer();
+               editor.undoBegin();
+               Global.Print("Set new undo state");
+            }
+            else
+            {
+               handleUndo();
+            }
+            return true;
+
+         case @(cb_always_undo):
+            handleAlwaysUndoChanged();
+            return true;
+
+         case @(bt_clear):
+            editor.clearCursorTrack();
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+}

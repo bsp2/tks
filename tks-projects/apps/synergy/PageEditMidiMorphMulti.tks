@@ -1,0 +1,545 @@
+// ----
+// ---- file   : PageEditMidiMorphMulti.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 06Jun2018
+// ---- changed: 11Jan2019, 01Nov2019, 21Sep2023, 03Oct2023
+// ----
+// ----
+// ----
+
+module MPageEditMidiMorphMulti;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageEditMidiMorphMulti extends Page {
+
+   protected Button    *bt_parent;
+
+   protected Button    *bt_moveup;
+   protected Button    *bt_movedown;
+   protected Button    *bt_tools;
+   protected PopupMenu *pm_tools;
+   protected Button    *bt_fromcurrent;
+
+   public TableView   *tv_multi;
+   protected MIDIMorphSceneMultiTM tm_multi;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageEditMidiMorphMulti.xfm"))
+      {
+         trace "[---] failed to parse PageEditMidiMorphMulti.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      tm_multi.initTableModel();
+      tv_multi.setTableModel(tm_multi);
+
+      if(app_lnf.b_ascii_back_buttons)
+         Global.ASCIIBackButton(bt_parent);
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_EDITMIDIMORPH;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      tv_multi.moveCursorToRow(MIDIMorphScene.last_selected_multi);
+
+      updateWidgets(false/*bFocusTV*/);
+
+      layoutHierarchy(true, false);
+      layoutHierarchy(true, false);
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      root_form.pg_editmidimorph.updateFromLastChanged(-1/*groupIdx=keep current*/);
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_multi);
+   }
+
+   // <ui_midi.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+
+      if(!MMTListener::mmtHandleGlobalValueDefault(_val))
+      {
+         tv_multi.moveCursorToRow(mmtSelectTableRow(tm_multi, _val));
+         tv_multi.centerRow();
+      }
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_parent,
+         bt_tools, bt_fromcurrent,
+         tv_multi,
+         bt_moveup, bt_movedown
+                              ];
+
+   }
+
+   // <method_get.png>
+   protected method getSelectedMulti() : MIDIMorphMulti {
+      return MIDIMorphScene.GetMultiByIdx(tm_multi.getCursorIndex());
+   }
+
+   // <ui_handle.png>
+   public method updateWidgets(boolean _bFocusTV) {
+
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         tv_multi.tableModelChanged();
+         tv_multi.setLeadSelection(MIDIMorphScene.last_selected_multi);
+
+         int rowIdx = tm_multi.getCursorIndex();
+
+         bt_moveup  .setEditable(rowIdx > 0);
+         bt_movedown.setEditable(rowIdx < (MIDIMorphScene.NUM_MULTIS-1));
+
+         if(_bFocusTV)
+         {
+            UI.SetKeyboardFocus(tv_multi);
+         }
+      }
+      else
+      {
+         // Should not be reachable
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRowSelected() {
+      int rowIdx = tm_multi.getCursorIndex();
+
+      if(-1 != rowIdx)
+      {
+         bt_moveup  .setEditable(rowIdx > 0);
+         bt_movedown.setEditable(rowIdx < (MIDIMorphScene.NUM_MULTIS-1));
+
+         updateWidgets(false/*bFocusTV*/);
+
+         Global.Print("Select multi "+(rowIdx+1));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRowClicked() {
+      int rowIdx = tm_multi.getCursorIndex();
+
+      if(-1 != rowIdx)
+      {
+         root_form.selectMultiSceneByIdx(rowIdx);
+
+         Global.Print("Activate multi "+(rowIdx+1));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiFromCurrent() {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         multi.scene_indices = MIDIMorphScene.scene_indices;
+         tv_multi.tableModelChanged();
+
+         Global.Print("Copy from current scene selection");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiCopy() {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         if(null == MIDIMorphScene.multi_clipboard)
+         {
+            MIDIMorphScene.multi_clipboard <= new MIDIMorphMulti;
+            MIDIMorphScene.multi_clipboard.init();
+         }
+         MIDIMorphScene.multi_clipboard.copyFrom(multi);
+
+         Global.Print("Copy multi to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiPaste() {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         if(null != MIDIMorphScene.multi_clipboard)
+         {
+            multi.copyFrom(MIDIMorphScene.multi_clipboard);
+            tv_multi.tableModelChanged();
+
+            Global.Print("Paste clipboard to multi");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiClear() {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         multi.clear();
+         tv_multi.tableModelChanged();
+
+         Global.Print("Clear multi");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveUp() {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         int idx = tm_multi.getCursorIndex();
+
+         if(idx > 0)
+         {
+            PointerArray multis <= MIDIMorphScene.multis;
+
+            multis.swap(idx, idx - 1);
+
+            tv_multi.tableModelChanged();
+            tv_multi.moveCursorToPreviousRow();
+
+            Global.Print("Move entry up");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveDown() {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         int idx = tm_multi.getCursorIndex();
+
+         if(idx < (MIDIMorphScene.NUM_MULTIS - 1))
+         {
+            PointerArray multis <= MIDIMorphScene.multis;
+
+            multis.swap(idx, idx + 1);
+
+            tv_multi.tableModelChanged();
+            tv_multi.moveCursorToNextRow();
+
+            Global.Print("Move entry down");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleIncGroup(int _groupIdx) {
+      MIDIMorphMulti multi <= getSelectedMulti();
+
+      if(null != multi)
+      {
+         int sceneIdx = multi.incGroup(_groupIdx);
+         MIDIMorphScene mms <= MIDIMorphScene.GetSceneByIdx(_groupIdx, sceneIdx);
+         if(null != mms)
+         {
+            Global.Print("Group "+tcchar('A' + _groupIdx)+" scene is "+(sceneIdx+1)+" ("+mms.mms_name+")");
+         }
+         else
+         {
+            Global.Print("Group "+tcchar('A' + _groupIdx)+" scene is -");
+         }
+         tv_multi.tableModelChanged();
+      }
+   }
+
+   // <ui_show.png>
+   protected method showToolsMenu() {
+
+      pm_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      pmb <= pm.addDefaultButton("Copy multi", "multi_copy");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("", "lctrl-c");
+
+      pmb <= pm.addDefaultButton("Paste multi", "multi_paste");
+      pmb.setFontByName("big6");
+      pmb.setActive(null != MIDIMorphScene.multi_clipboard);
+      pmb.setAccelerators("", "lctrl-v");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Clear multi", "multi_clear");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("", "lshift-BACKSPACE");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy from current", "multi_fromcurrent");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("", "lctrl-o");
+
+      pm.resizeToMinimum();
+
+      pm.showBelowLayer(bt_tools);
+
+      Global.Print("Show tools menu.");
+   }
+
+   // <ui_handle.png>
+   public method handleActiveMultiChanged() {
+      // Called from RootForm when multi is selected and this page is visible
+      tv_multi.setLeadSelection(MIDIMorphScene.last_selected_multi);
+      tv_multi.redraw();
+   }
+
+   // <ui_cmd.png>
+   public method cmdGetRedirect() : CmdProvider {
+      return root_form.pg_editmidimorph;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            if(_k.modShift())
+            {
+               handleIncGroup(0);
+            }
+            else
+            {
+               showToolsMenu();
+            }
+            return true;
+
+         case 'b':
+            if(_k.modShift())
+            {
+               handleIncGroup(1);
+            }
+            else
+            {
+            }
+            return true;
+
+         case 'c':
+            if(_k.modShift())
+            {
+               handleIncGroup(2);
+            }
+            else if(_k.modCtrl())
+            {
+               handleMultiCopy();
+            }
+            return true;
+
+         case 'd':
+            if(_k.modShift())
+            {
+               handleIncGroup(3);
+            }
+            else
+            {
+            }
+            return true;
+
+         case 'e':
+            if(_k.modShift())
+            {
+               handleIncGroup(4);
+            }
+            else
+            {
+            }
+            return true;
+
+         case 'f':
+            if(_k.modShift())
+            {
+               handleIncGroup(5);
+            }
+            else
+            {
+            }
+            return true;
+
+         case 'g':
+            if(_k.modShift())
+            {
+               handleIncGroup(6);
+            }
+            else
+            {
+            }
+            return true;
+
+         case 'h':
+            if(_k.modShift())
+            {
+               handleIncGroup(7);
+            }
+            else
+            {
+            }
+            return true;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               handleMultiPaste();
+            }
+            return true;
+
+         case 'o':
+            if(_k.modCtrl())
+            {
+               handleMultiFromCurrent();
+            }
+            return true;
+
+         case 's':
+            root_form.showPageParent();
+            return true;
+
+         case VKEY_BACKSPACE:
+            if(_k.modShift())
+            {
+               handleMultiClear();
+            }
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               handleMoveUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               handleMoveDown();
+               return true;
+            }
+            break;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(tv_multi):
+
+            if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               handleRowSelected();
+            }
+
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               handleRowClicked();
+            }
+            return true;
+
+         case @(bt_parent):
+            root_form.showPageParent();
+            return true;
+
+         case @(bt_moveup):
+            handleMoveUp();
+            return true;
+
+         case @(bt_movedown):
+            handleMoveDown();
+            return true;
+
+         case @(bt_tools):
+            showToolsMenu();
+            return true;
+
+         case @(pm_tools):
+            Global.Debug2("PageEditMidiMorphMulti: pm_tools acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               pageFocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "multi_fromcurrent":
+                  handleMultiFromCurrent();
+                  return true;
+
+               case "multi_copy":
+                  handleMultiCopy();
+                  return true;
+
+               case "multi_paste":
+                  handleMultiPaste();
+                  return true;
+
+               case "multi_clear":
+                  handleMultiClear();
+                  return true;
+            }
+            return true;
+
+         case @(bt_fromcurrent):
+            handleMultiFromCurrent();
+            return true;
+
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

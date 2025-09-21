@@ -1,0 +1,181 @@
+// Velocity smoothing script
+//
+//   created: 17Jun2023
+//   changed: 10Jul2023
+//
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ configuration
+boolean b_debug = 0;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /configuration
+
+tag float p_smooth_amt_fast = 0.90;
+tag float p_smooth_amt_med  = 0.75;
+tag float p_smooth_amt_slow = 0.40;
+tag float p_smooth_amt_out_fast = 0.8;
+tag float p_smooth_amt_out_med  = 0.5;
+tag float p_smooth_amt_out_slow = 0.3;
+
+tag int p_smooth_time_fast = 1;  // 16th threshold (16ths since last note on)
+tag int p_smooth_time_med  = 2;  // 16th threshold (16ths since last note on)
+tag int p_smooth_time_out  = 3;  // 16th threshold (16ths since last note on)
+
+use namespace st2;
+
+ui::XMLForm *xfm;
+boolean b_ui_update = true;
+boolean b_ui_update_force = true;
+
+int ticksPer16th = current_song.ppq / 4;
+int last_note_on_16th = 0;
+float last_vel = 64.0;
+float new_vel = 64.0;
+boolean b_timeout = true;
+int last_type = 0;  // 0=last smooth was fast, 2=last smooth was slow, 2=last smooth was slow
+
+function OnUIInit(ui::XMLForm _xfm) {
+   xfm <= _xfm;
+   b_ui_update = true;
+}
+
+function OnUIUpdate(ui::XMLForm _xfm, boolean _bForce, MIDIPipeFrame _frOut) {
+   xfm <= _xfm;
+   // called periodically
+   if(null != xfm)
+   {
+      if(b_ui_update || _bForce)
+      {
+         b_ui_update = false;
+         b_ui_update_force |= _bForce;
+
+         ui::CheckBox *cb;
+         ui::FloatParam *fp;
+         ui::TextField *tf;
+
+         b_ui_update_force = false;
+      }
+   }
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   if(null != xfm)
+   {
+      ui::CheckBox *cb;
+      ui::FloatParam *fp;
+      ui::TextField *tf;
+
+      cb <= xfm.findLayerById(id);
+      fp <= cb;
+      tf <= cb;
+
+      switch(id)
+      {
+
+      }
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bMuted)
+      return;
+
+   MIDIPipeEvent pev;
+   int evIdx;
+   int numEv;
+
+   int tCur16th = current_song.tick_nr / ticksPer16th;
+   int tDelta16th = mathMaxi(0, tCur16th - last_note_on_16th);
+   // trace "xxx tDelta16th="+tDelta16th;
+
+   float amtFast = 1.0 - p_smooth_amt_fast;
+   float amtMed  = 1.0 - p_smooth_amt_med;
+   float amtSlow = 1.0 - p_smooth_amt_slow;
+
+   float amtOutFast = 1.0 - p_smooth_amt_out_fast;
+   float amtOutMed  = 1.0 - p_smooth_amt_out_med;
+   float amtOutSlow = 1.0 - p_smooth_amt_out_slow;
+
+   // Note-on
+   numEv = frameRec.getNumEventsNoteOnByFlt(note_dev, note_ch);
+   if(numEv > 0)
+   {
+      evIdx = 0;
+      loop(numEv)
+      {
+         frameRec.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, note_dev, note_ch);
+
+         float newVel = pev.velocity;
+
+         if(b_timeout)
+         {
+            // First note after timeout
+            if(0 == last_type)
+            {
+               // Last smooth was FAST
+               newVel = last_vel + (newVel - last_vel) * amtOutFast;
+               if(b_debug) trace "xxx script<vel_smooth>: TOUT<fast> tDelta16th="+tDelta16th+" amtOutFast="+amtOutFast+" note="+pev.note+" last_vel="+last_vel+" vel="+pev.velocity+" => newVel="+newVel;
+            }
+            else if(1 == last_type)
+            {
+               // Last smooth was MEDIUM
+               newVel = last_vel + (newVel - last_vel) * amtOutMed;
+               if(b_debug) trace "xxx script<vel_smooth>: TOUT<med> tDelta16th="+tDelta16th+" amtOutMed="+amtOutMed+" note="+pev.note+" last_vel="+last_vel+" vel="+pev.velocity+" => newVel="+newVel;
+            }
+            else
+            {
+               // Last smoothh was SLOW
+               newVel = last_vel + (newVel - last_vel) * amtOutSlow;
+               if(b_debug) trace "xxx script<vel_smooth>: TOUT<slow> tDelta16th="+tDelta16th+" amtOutSlow="+amtOutSlow+" note="+pev.note+" last_vel="+last_vel+" vel="+pev.velocity+" => newVel="+newVel;
+            }
+            last_vel = newVel;
+            b_timeout = false;
+            last_type = 2/*SLOW*/;
+         }
+         else if(tDelta16th < p_smooth_time_fast)
+         {
+            // Smooth FAST
+            newVel = last_vel + (newVel - last_vel) * amtFast;
+            if(b_debug) trace "xxx script<vel_smooth>: FAST tDelta16th="+tDelta16th+" amtFast="+amtFast+" note="+pev.note+" last_vel="+last_vel+" vel="+pev.velocity+" => newVel="+newVel;
+            last_type = 0;
+         }
+         else if(tDelta16th < p_smooth_time_med)
+         {
+            // Smooth MEDIUM 
+            newVel = last_vel + (newVel - last_vel) * amtMed;
+            if(b_debug) trace "xxx script<vel_smooth>: MED tDelta16th="+tDelta16th+" amtMed="+amtMed+" note="+pev.note+" last_vel="+last_vel+" vel="+pev.velocity+" => newVel="+newVel;
+            last_type = 1;
+         }
+         else
+         {
+            // Smooth SLOW
+            newVel = last_vel + (newVel - last_vel) * amtSlow;
+            if(b_debug) trace "xxx script<vel_smooth>: SLOW tDelta16th="+tDelta16th+" amtSlow="+amtSlow+" note="+pev.note+" last_vel="+last_vel+" vel="+pev.velocity+" => newVel="+newVel;
+            last_type = 2;
+         }
+        
+         // Update event
+         frameRec.noteOn(true/*bSet*/, note_dev, pev.midiCh, pev.note, newVel, pev.duration);
+
+         new_vel = newVel;
+         last_note_on_16th = tCur16th;
+         last_vel = new_vel;
+
+         evIdx++;
+      }
+   }
+
+   if(tDelta16th >= p_smooth_time_out)
+   {
+      if(last_vel != new_vel)
+      {
+         last_vel = new_vel;
+         if(b_debug) trace "xxx script<vel_smooth>: <<< p_smooth_timeout after "+tDelta16th+" 16th(s) (to="+p_smooth_time_out+") >>> ";
+      }
+      b_timeout = true;
+   }
+
+}

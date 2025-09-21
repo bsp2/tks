@@ -1,0 +1,1395 @@
+// ----
+// ---- file   : ST_Song.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 14Sep2006, ..., 2007, ..., 2008, ...
+// ----          18Sep2009, 19Sep2009, 20Sep2009, 21Sep2009, 22Sep2009, 23Sep2009, 25Sep2009
+// ----          05Jan2010, 14Jan2010, 02May2010, 06Jun2010, 13Jun2010, 08Sep2010, 16Oct2010
+// ----          09Nov2010, 19Jan2011, 23Jan2011, 06Feb2011, 17Feb2011, 18Feb2011, 20Feb2011
+// ----          28Feb2011, 18Mar2011, 16Jan2012, 05Feb2012, 19Feb2012, 03Jan2013, 05Jan2013
+// ----          12May2013, 15May2013, 23May2013, 09Aug2014, 11Aug2014, 18Aug2014, 27Sep2014
+// ----          28Sep2014, 29Sep2014, 17Jan2015, 24Jan2015, 30Jan2015, 26Feb2015, 01Mar2015
+// ----          17Mar2015, 23Mar2015, 11May2015, 17May2015, 03Oct2015, 04Oct2015, 14Nov2015
+// ----          17Dec2015, 29Jan2017, 03Feb2017, 16Apr2017, 04Jan2018, 09Feb2018, 17Jun2018
+// ----          12Jan2019, 18Jan2019, 25Jun2019, 27Aug2019, 19Sep2019, 21Sep2019, 02Nov2019
+// ----          08Nov2019, 16Feb2020, 20Feb2020, 13Apr2020, 25Apr2020, 26Apr2020, 28Apr2020
+// ----          12Sep2020, 12Oct2020, 31May2021, 13Aug2022, 22Apr2023, 15Jun2023, 28Jul2023
+// ----          15Oct2023, 18Nov2023, 01Dec2023, 04Oct2024, 05Oct2024, 06Oct2024
+// ----
+// ----
+// ----
+
+module MST_Song;
+
+use tksdl;
+
+use namespace st2;
+
+
+// <class.png>
+class ST_Song {
+
+   define int NUM_MARKERS = 8;
+
+   public int     last_played_song_offset;
+   public boolean b_render_all; // true after position jump (loop)
+
+   public int     song_offset;    // Current play offset (ticks)
+   public int     song_length;    // only a hint, for procedural waveforms
+
+   public int     current_end_offset; // Current song end offset (ticks)
+   public int     current_repeat_offset;
+   public int     current_repeat_end_offset; // Current repeat end offset (ticks)
+
+   public boolean b_custom_cycle;  // 1=no song seek at loop end
+
+   public boolean b_block_loop;  // 1=custom (tracker) block loop cycle (song seek)
+
+   public int     cycle_length; // #beats (<0) or #bars (>0)
+   public boolean b_cycle;
+
+   public int     ppq;            // Tick precision per quarter
+   public float   bpm;            // Beats per minute
+   public float   bpm_mul;        // BPM multiplier (not saved, set by tempo mapping)
+
+   public byte sig_beats;   // time signature / measure
+   public byte sig_notelen;
+
+   public String  song_name;      // Song name
+   public String  author_name;    // Who composed this song
+   public String  author_comment; //
+   public String  sub_name;
+
+   public int ui_song_offset; // Current edit offset (ticks)
+
+   public MIDIPipeRoot pipe_root;
+   protected int node_next_gid; // 1..n
+
+   IntArray song_markers; // beat or bar index per marker (beat <0, bar >0)
+
+   StringArray song_marker_labels;
+
+   int scratch_marker;
+
+   // used by NodeTracker
+   public int locked_keyjazz_node_gid;  // -1 when not locked to any node
+   public int locked_keyjazz_track;     // 0..n
+
+   protected int blink_count; // used when replay is not active
+
+   public CtlTagEntry *[] ctltag_entries; // CtlTagEntry instances
+
+   public int tick_nr;  // increases monotonically and resets when replay is stopped
+
+   public int ui_last_selected_pipe_idx;
+   public int ui_last_selected_node_idx;
+
+   public String smf_export_pathname;  // may contain vars (i.e. before ToNativePathName())
+
+
+   // <init.png>
+   public method init() {
+
+      bpm_mul = 1.0;
+
+      setPPQQuiet(STConfig.DEFAULT_PPQ);
+      setBPMQuiet(STConfig.DEFAULT_BPM);
+
+      sig_beats   = STConfig.DEFAULT_SIG_BEATS;
+      sig_notelen = STConfig.DEFAULT_SIG_NOTELEN;
+
+      cycle_length = 1; // one bar
+
+      song_name      = "n/a";
+      author_name    = "";
+      author_comment = "";
+
+      song_offset    = 0;
+      ui_song_offset = 0;
+
+      song_markers.allocAndFill(NUM_MARKERS, 0);
+      song_markers[1] = 2;
+      song_markers[2] = 4;
+      song_markers[3] = 6;
+      song_markers[4] = 8;
+      song_markers[5] = 10;
+      song_markers[6] = 12;
+      song_markers[7] = 16;
+
+      song_marker_labels.alloc(NUM_MARKERS);
+      song_marker_labels.useAll();
+
+      // Free MIDI pipes
+      pipe_root.freePipes();
+      pipe_root.allocPipeSlots(16);
+
+      node_next_gid = 1;
+
+      MIDI.UpdateMIDIPipeRoot(pipe_root);
+
+      locked_keyjazz_node_gid = -1;
+      locked_keyjazz_track    = 0;
+
+      ctltag_entries.free();
+
+      smf_export_pathname = "export.mid";
+   }
+
+   // <method_get.png>
+   public =replay= method getLastPlayedSongOffset() : int {
+      return last_played_song_offset;
+   }
+
+   // <method_get.png>
+   public =replay= method getSongOffset() : int {
+      return song_offset;
+   }
+
+   // <method.png>
+   public method getNumTicksPer16th() : int {
+      return (ppq / 4);
+   }
+
+   // <method.png>
+   public method getNumTicksPerBeat() : int {
+      return ((ppq * 4)/*numTicksPerNote*/ / float(sig_notelen));
+   }
+
+   // <method.png>
+   public method getNumTicksPerBar() : int {
+      return sig_beats * ((ppq * 4)/*numTicksPerNote*/ / float(sig_notelen));
+   }
+
+   // <method.png>
+   public method getNum16thPerBar() : float {
+      return getNumTicksPerBar() / (ppq / 4.0);
+   }
+
+   // <method_get.png>
+   public =replay= method getBeatQuantizedOffset() : int {
+      local int off = song_offset;
+
+      local int numTicksPerNote = ppq * 4;
+      local float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+
+      off = off / numTicksPerBeat;
+      off = off * numTicksPerBeat;
+
+      return off;
+   }
+
+   // <method_get.png>
+   public =replay= method getBarQuantizedOffset() : int {
+      int off = song_offset;
+
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = (numTicksPerBeat * sig_beats);
+
+      off = off / numTicksPerBar;
+      off = off * numTicksPerBar;
+
+      return off;
+   }
+
+   // <method_get.png>
+   public =replay= method quantizeToNext16ths(int _ticks, int _num16th) : int {
+      if(_num16th > 0)
+      {
+         int numTicksPer16th = (ppq / 4) * _num16th;
+         _ticks = (_ticks + numTicksPer16th-1) / numTicksPer16th;
+         _ticks = _ticks * numTicksPer16th;
+         return _ticks;
+      }
+      return _ticks;
+   }
+
+   // <replay.png>
+   public =replay= method playLoop(int _startOff, int _endOff, int _repeatOff) {
+      // called by e.g. NT_PatternView.loopCurrentPattern()
+
+      seek(_startOff);
+      last_played_song_offset = song_offset; // (todo) needed ? this is read when redrawing a pattern
+
+      current_end_offset = _endOff;
+
+      current_repeat_offset     = _repeatOff;
+      current_repeat_end_offset = _endOff;
+   }
+
+   // <exit.png>
+   public method exit() {
+      pipe_root.freePipes();
+
+      reset();
+   }
+
+   // <method_set.png>
+   protected method setPPQQuiet(int _ppq) {
+      ppq = _ppq;
+      AudioDevice.ppq = ppq;
+   }
+
+   // <method_set.png>
+   public =replay= method setPPQ(int _ppq) {
+      explain "Set precision per quarter (e.g. protracker uses 24..144)";
+
+      setPPQQuiet(_ppq);
+
+      handleSongSpeedChanged(true/*bUpdateTicks*/, true/*bPPQ*/, false/*bBPM*/);
+
+      // Notify audio process (when connected)
+      SysEx.QueueSendSeqTempoSet(bpm, ppq);
+   }
+
+   // <method_get.png>
+   public method getPPQ() : int {
+      return ppq;
+   }
+
+   // <method_set.png>
+   protected method setBPMQuiet(float _bpm) {
+      if(_bpm < 1)
+         _bpm = 1;
+      else if(_bpm > 500)
+         _bpm = 500;
+
+      bpm = _bpm;
+      AudioDevice.bpm = bpm;
+   }
+
+   // <method_set.png>
+   public =replay= method setBPM(float _bpm) {
+      explain "Set beats per minute (e.g. 125)";
+
+      setBPMQuiet(_bpm);
+
+      handleSongSpeedChanged(false/*bUpdateTicks*/, false/*bPPQ*/, true/*bBPM*/);
+
+      // Notify audio process (when connected)
+      SysEx.QueueSendSeqTempoSet(bpm, ppq);
+   }
+
+   // <method_set.png>
+   public =replay= method setBPMMul(float _mul) {
+      bpm_mul = mathClampf(_mul, 0.5f, 2.0f);
+   }
+
+   // <method_set.png>
+   public =replay= method setBPMMulAndUpdateMIDITimer(float _mul) {
+      _mul = mathClampf(_mul, 0.5f, 2.0f);
+      if(_mul != bpm_mul)
+      {
+         bpm_mul = _mul;
+         MIDI.UpdateMIDITimer();
+      }
+   }
+
+   // <method_get.png>
+   public method getBPM() : float {
+      return bpm;
+   }
+
+   // <method_handle.png>
+   protected method handleSongSpeedChanged(boolean _bUpdateTicks, boolean _bPPQ, boolean _bBPM) {
+      pipe_root.handleSongSpeedChanged(_bPPQ, _bBPM);
+
+      if(!b_custom_cycle)
+      {
+         if(_bUpdateTicks)
+         {
+            setCycleLength(cycle_length);
+         }
+      }
+   }
+
+   // <method.png>
+   public method reset() {
+      // called aftering loading/initializing a song and when replay stops
+      song_offset = ui_song_offset; // 0 31Jan2012
+      seek(song_offset);
+      setBPMMulAndUpdateMIDITimer(1.0);
+   }
+
+   // <method.png>
+   public method hardReset() {
+      // "panic"
+   }
+
+   // <replay.png>
+   public =replay= method tick(boolean _bKeyJazzOnly) {
+      explain "Update state of all channels and generators";
+
+      // if(Global.b_playing)
+      // trace "xxx --------------------------------------------------- tick";
+
+      last_played_song_offset = song_offset;
+
+      if(b_render_all)
+      {
+         b_render_all = false;
+         // pattern_view.flagRenderAll();
+      }
+
+      if(!_bKeyJazzOnly)
+      {
+         song_offset++;
+      }
+
+      if(replay.b_playing) // (note) do not seek since this causes problems with the orderlist scroller
+      {
+         // /trace "xxx tick off="+song_offset+" len="+current_length;
+         // trace "xxx current_end_offset="+current_end_offset+" b_custom_cycle="+b_custom_cycle;
+         if(0 != current_end_offset)
+         {
+            /* Repeat/cycle mode */
+            if(!b_custom_cycle)
+            {
+               if(song_offset >= current_end_offset)
+               {
+                  Global.Debug3("ST_Song::tick: END song_offset="+song_offset+" current_end_offset="+current_end_offset);
+                  // trace "ST_Song::tick: END song_offset="+song_offset+" current_end_offset="+current_end_offset;
+                  // trace "xxx loop current_repeat_offset="+current_repeat_offset+" current_repeat_end_offset="+current_repeat_end_offset;
+                  song_offset        = current_repeat_offset;
+                  current_end_offset = current_repeat_end_offset;
+
+                  // trace "xxx ST_Song::tick: call seekInternal(off="+song_offset+") replay.b_freerun_loop="+replay.b_freerun_loop;
+                  seekInternal(song_offset, !replay.b_freerun_loop);
+                  b_render_all = true;
+
+                  if(true == STConfig.b_midi_send_songpos)
+                     replay.sendCurrentSongPos();
+
+                  if(maybe == replay.b_cycle)
+                     replay.b_cycle_mute_after_loop = true;
+               }
+            }
+         }
+
+     }
+
+      ////trace "xxx ST_Song::tick: LEAVE";
+   }
+
+   // <method.png>
+   public method tickIdle() {
+      blink_count++;
+      tick_nr++;
+   }
+
+   // <method.png>
+   public =replay= method seekInternal(int _t, boolean _bSeekNodes) {
+      explain "Seek to given point in time";
+
+      // trace "xxx ST_Song::seekInternal(t="+_t+" bSeekNodes="+_bSeekNodes+")";
+
+      ////trace "xxx Song::seek: t="+_t;
+      // Utils.Backtrace();
+
+      song_offset = _t;
+
+      // // if(_bSeekNodes)
+      // // {
+      pipe_root.seek(_t, _bSeekNodes/*false=only seek master*/);
+      // // }
+
+      if(replay.b_playing && !b_custom_cycle && !b_block_loop)
+      {
+         queueCycleLoop(song_offset, 0/*numTicksOverrideOr0*/, true/*bQuiet*/, true/*bImmediate*/);
+      }
+
+   }
+
+   // <method.png>
+   public method seek(int _t) {
+      explain "Seek to given point in time";
+
+      // trace "xxx ST_Song::seek("+_t+")";
+
+      seekInternal(_t, true/*bSeekNodes*/);
+   }
+
+   // <method.png>
+   public =replay= method setSongOffset(int _ticks) {
+      // Called by NodeArranger
+      //  (note) do _not_ seek nodes
+      // trace "xxx ST_Song::setSongOffset("+_ticks+")";
+      song_offset = _ticks;
+      ui_song_offset = _ticks;
+   }
+
+   // <method.png>
+   public =replay= method seekToPrevBeat() : int {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      int cBeat = song_offset / numTicksPerBeat;
+
+      int ticks;
+
+      if(cBeat > 0)
+      {
+         if( (0 == (song_offset % numTicksPerBeat)) || (replay.b_playing && ((song_offset % numTicksPerBeat) < (numTicksPerBeat / 2))) )
+         {
+            ticks = (cBeat - 1) * numTicksPerBeat;
+         }
+         else
+         {
+            ticks = cBeat * numTicksPerBeat;
+         }
+      }
+      else
+      {
+         ticks = 0;
+      }
+
+      seek(ticks);
+
+      // trace "xxx prevBeat: song_offset="+song_offset+" cBeat="+(cBeat-1)+" numTicksPerBeat="+numTicksPerBeat;
+
+      root_form.handleSongPosSelected();
+
+      return findSongMarkerIdx();
+   }
+
+   // <method.png>
+   public =replay= method seekToNextBeat() {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      int cBeat = song_offset / numTicksPerBeat;
+
+      int ticks;
+
+      if(cBeat < 999)
+      {
+         ticks = (cBeat + 1) * numTicksPerBeat;
+
+         seek(ticks);
+
+         // trace "xxx nextBeat: song_offset="+song_offset+" cBeat="+(cBeat+1)+" numTicksPerBeat="+numTicksPerBeat;
+      }
+
+      root_form.handleSongPosSelected();
+
+      return findSongMarkerIdx();
+   }
+
+   // <method.png>
+   public =replay= method seekToPrevBar() {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      int cBar = song_offset / numTicksPerBar;
+
+      int ticks;
+
+      if(cBar > 0)
+      {
+         if( (0 == (song_offset % numTicksPerBar)) || (replay.b_playing && ((song_offset % numTicksPerBar) < numTicksPerBeat)) )
+         {
+            ticks = (cBar - 1) * numTicksPerBar;
+         }
+         else
+         {
+            ticks = cBar * numTicksPerBar;
+         }
+      }
+      else
+      {
+         ticks = 0;
+      }
+
+      seek(ticks);
+
+      root_form.handleSongPosSelected();
+
+      return findSongMarkerIdx();
+   }
+
+   // <method.png>
+   public =replay= method seekToNextBar() {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      int cBar = song_offset / numTicksPerBar;
+
+      int ticks;
+
+      ticks = (cBar + 1) * numTicksPerBar;
+
+      seek(ticks);
+
+      root_form.handleSongPosSelected();
+
+      return findSongMarkerIdx();
+   }
+
+   // <replay.png>
+   public method queueNewLoop(local int _repOff, local int _repEnd, local boolean _bQuiet) {
+      current_repeat_offset     = _repOff;
+      current_repeat_end_offset = _repEnd;
+
+      if(0 == current_end_offset)
+      {
+         current_end_offset = _repEnd;
+      }
+
+      if(!_bQuiet)
+      {
+         //Global.Print("Song: new loop queued: off="+_repOff+" end="+_repEnd);
+
+         Global.Print("Loop queued: "+RootForm.GetSongPosString(_repOff)+" .. "+RootForm.GetSongPosString(_repEnd));
+      }
+   }
+
+   // <method.png>
+   public method estimateDuration() : float {
+      // in minutes
+      return float(current_end_offset) / (ppq * bpm);
+   }
+
+   // <method.png>
+   public =replay= method loadSongMarker(int _idx) {
+      int beatsOrBars = getSongMarker(_idx);
+
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      int ticks = (beatsOrBars < 0) ?
+      (-beatsOrBars * numTicksPerBeat) :
+      ( beatsOrBars * numTicksPerBar ) ;
+
+      if(replay.b_playing)
+      {
+         int cycleTicks = (cycle_length < 0) ?
+            (-cycle_length * numTicksPerBeat) :
+            ( cycle_length * numTicksPerBar ) ;
+
+         queueNewLoop(ticks, ticks + cycleTicks, false/*bQuiet*/);
+      }
+      else
+      {
+         seek(ticks);
+
+         root_form.handleSongPosSelected();
+
+         Global.Print("Load "+((_idx<0)?"scratch ":"")+"marker "+RootForm.GetSongPosString(ticks)+((_idx>=0) ? (" \""+song_marker_labels.get(_idx)+"\"") : ""));
+      }
+   }
+
+   // <method.png>
+   public =replay= method saveSongMarker(int _idx) {
+      int songTicks = song_offset;
+
+      // Align to beat start
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+      int beat  = int(songTicks / numTicksPerBeat);
+
+      if(0 == (beat % sig_beats))
+      {
+         // Save bar marker
+         setSongMarker(_idx, beat / sig_beats);
+      }
+      else
+      {
+         // Save beat marker
+         setSongMarker(_idx, -beat);
+      }
+   }
+
+   // <method_get.png>
+   public method getSongMarker(int _idx) : int {
+      if(_idx >= 0)
+         return song_markers.get(_idx);
+      else
+         return scratch_marker;
+   }
+
+   // <method_get.png>
+   public method getSongMarkerLabel(int _idx) : String {
+      return song_marker_labels.get(_idx);
+   }
+
+   // <method_set.png>
+   public method setSongMarkerLabel(int _idx, String _label) {
+      if(0 <= _idx < song_marker_labels.numElements)
+      {
+         song_marker_labels[_idx] = _label;
+      }
+   }
+
+   // <method.png>
+   public method beatsOrBarsToTicks(int beatsOrBars) : int {
+
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      int ticks = (beatsOrBars < 0) ?
+      (-beatsOrBars * numTicksPerBeat) :
+      ( beatsOrBars * numTicksPerBar ) ;
+
+      return ticks;
+   }
+
+   // <method_set.png>
+   public method setSongMarker(int _idx, int _beatsOrBars) : int {
+      if(_idx >= 0)
+      {
+         song_markers[_idx] = _beatsOrBars;
+
+         Global.Print("Save marker at ["+RootForm.GetSongMarkerString(_beatsOrBars)+"].");
+      }
+      else
+      {
+         scratch_marker = _beatsOrBars;
+
+         Global.Print("Save scratch marker at ["+RootForm.GetSongMarkerString(_beatsOrBars)+"].");
+      }
+   }
+
+   // <method.png>
+   protected method sortSongMarkersInt(IntArray _markers, int _cIdx) : int {
+      // Good ole bubblesort..never fails...*cough*
+      boolean bSwapped = true;
+
+      boolean bSortLabels = @(_markers) == @(song_markers);
+
+      while(bSwapped)
+      {
+         bSwapped = false;
+         int idx = 1;
+         int p = _markers[0];
+
+         loop(_markers.numElements - 1)
+         {
+            int n = _markers[idx];
+
+            if(n < p)
+            {
+               if(_cIdx == idx)
+               {
+                  _cIdx = idx - 1;
+               }
+               else if(_cIdx == (idx - 1))
+               {
+                  _cIdx = idx;
+               }
+
+               _markers.swap(idx, idx - 1);
+
+               if(bSortLabels)
+               {
+                  song_marker_labels.swap(idx, idx - 1);
+               }
+
+               bSwapped = true;
+               break;
+            }
+
+            p = n;
+            idx++;
+         }
+      }
+
+      return _cIdx;
+   }
+
+   // <method_set.png>
+   public =replay= method setCycleLength(int _beatsOrBars) {
+      cycle_length = _beatsOrBars;  // <0: beats  >0: bars
+
+      if(replay.b_playing)
+      {
+         int numTicksPerNote = ppq * 4;
+         float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+         float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+         int cycleTicks = (cycle_length < 0)
+            ? (-cycle_length * numTicksPerBeat)
+            : ( cycle_length * numTicksPerBar )
+            ;
+
+         queueNewLoop(current_repeat_offset,
+                      current_repeat_offset + cycleTicks,
+                      false/*bQuiet*/
+                      );
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableCycle(boolean _bEnabled) {
+      // Called by Replay.setCycle() via RootForm.transportCycle()
+      b_cycle = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getAlignedBeatStartInTicks(int _ticks) {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      return int(_ticks / numTicksPerBeat) * numTicksPerBeat;
+   }
+
+   // <method_get.png>
+   public method getAlignedBarStartInTicks(int _ticks) {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      return int(_ticks / numTicksPerBar) * numTicksPerBar;
+   }
+
+   // <method_get.png>
+   public method getAlignedCycleStartInTicks(int _ticks) {
+
+      return (cycle_length < 0) ? getAlignedBeatStartInTicks(_ticks) : getAlignedBarStartInTicks(_ticks);
+   }
+
+   // <method_get.png>
+   public method getCycleLengthInTicks() {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      return (cycle_length < 0) ? (-cycle_length * numTicksPerBeat) : (cycle_length * numTicksPerBar);
+   }
+
+   // <replay.png>
+   public =replay= method queueCycleLoop(local int _offset,
+                                         local int _numTicksOverrideOr0,
+                                         local boolean _bQuiet, local boolean _bImmediate
+                                         ) {
+
+      // (note) called from UI or replay thread.
+      // (note) when called from replay thread, _bQuiet must be true.
+
+      if(replay.b_cycle)
+      {
+         local int numTicksPerNote = ppq * 4;
+         local float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+         local float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+         local int cycleTicks;
+         if(_numTicksOverrideOr0 > 0)
+            cycleTicks = _numTicksOverrideOr0;
+         else
+            cycleTicks = (cycle_length < 0) ?
+               (-cycle_length * numTicksPerBeat) :
+               ( cycle_length * numTicksPerBar ) ;
+
+         Global.Debug2("ST_Song::queueCycleLoop: offset="+_offset+" cycleTicks="+cycleTicks+" bImmediate="+_bImmediate);
+
+         queueNewLoop(_offset, _offset + cycleTicks, _bQuiet);
+
+         if(_bImmediate)
+         {
+            // Don't queue, immediately jump to loop
+            current_end_offset = current_repeat_end_offset;
+         }
+      }
+      else
+      {
+         Global.Debug2("ST_Song::queueCycleLoop: loop off");
+
+         current_end_offset = 0;
+      }
+   }
+
+   // <method.png>
+   public =replay= method seekToPrevMarker() : int {
+      int ticks = song_offset;
+
+      IntArray markers = song_markers;
+      if(-1 == markers.indexOf(scratch_marker, 0))
+      {
+         markers.add(scratch_marker);
+      }
+      sortSongMarkersInt(markers, -1);
+
+      int mIdx = markers.numElements - 1;
+
+      int nTicks = beatsOrBarsToTicks(markers.get(mIdx));
+
+      mIdx--;
+
+      loop(markers.numElements - 1)
+      {
+         int pTicks = beatsOrBarsToTicks(markers.get(mIdx));
+
+         if((nTicks == ticks) || ((replay.b_playing && (ticks > nTicks))) )
+         {
+            seek(pTicks);
+            root_form.handleSongPosSelected();
+            return;
+         }
+         else if(ticks > nTicks)
+         {
+            seek(nTicks);
+            root_form.handleSongPosSelected();
+            return;
+         }
+
+         nTicks = pTicks;
+
+         mIdx--;
+      }
+
+      seek(0);
+
+      root_form.handleSongPosSelected();
+
+      return findSongMarkerIdx();
+   }
+
+   // <method.png>
+   public =replay= method seekToNextMarker() : int {
+      int ticks = song_offset;
+
+      IntArray markers = song_markers;
+      if(-1 == markers.indexOf(scratch_marker, 0))
+      {
+         markers.add(scratch_marker);
+      }
+      sortSongMarkersInt(markers, -1);
+
+      int mIdx = 0;
+      int pTicks = 0;
+
+      loop(markers.numElements)
+      {
+         int mTicks = beatsOrBarsToTicks(markers.get(mIdx));
+
+         if(mTicks > ticks)
+         {
+            seek(mTicks);
+            root_form.handleSongPosSelected();
+            return;
+         }
+
+         pTicks = mTicks;
+
+         mIdx++;
+      }
+
+      root_form.handleSongPosSelected();
+
+      return findSongMarkerIdx();
+   }
+
+   // <method.png>
+   public method findSongMarkerIdx() : int {
+      int ticks = song_offset;
+      int marker;
+
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+      int markerIdx = 0;
+
+      foreach marker in song_markers
+      {
+         if(marker < 0)
+         {
+            if(ticks == (-marker * numTicksPerBeat))
+            {
+               return markerIdx;
+            }
+         }
+         else if(ticks == (marker * numTicksPerBar))
+         {
+            return markerIdx;
+         }
+
+         markerIdx++;
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public =replay= method getBlinkState() : boolean {
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+
+      int t;
+
+      if(replay.b_playing)
+      {
+         t = song_offset % (2 * numTicksPerBeat);
+      }
+      else
+      {
+         t = blink_count % (2 * numTicksPerBeat);
+      }
+
+      return (t < numTicksPerBeat);
+   }
+
+   // <method_get.png>
+   public method getCtlIpolNumTicks() : int {
+      if(STConfig.midi_ctl_ipol_timeout > 0)
+      {
+         float numTicksPerNote = ppq * 4;
+         float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+         float msBeat = 1000 * 60 * (numTicksPerBeat / ppq) / bpm;
+
+         return (STConfig.midi_ctl_ipol_timeout / msBeat) * numTicksPerBeat;
+      }
+      else
+      {
+         return 0;
+      }
+   }
+
+   // <method_set.png>
+   public method nodeSetMaxGID(int _gid) {
+      // Called after/while loading a song
+      node_next_gid = _gid;
+
+      if(node_next_gid <= 0)
+      {
+         trace "[---] ST_Song::nodeSetMAXGID: invalid GID ("+node_next_gid+"). Fixing..";
+         node_next_gid = 1;
+      }
+   }
+
+   // <method_get.png>
+   public method nodeGetMaxGID() : int {
+      // Called when saving a song
+      return node_next_gid;
+   }
+
+   // <method_get.png>
+   public method nodeAllocGID() : int {
+      return node_next_gid++;
+   }
+
+   // <method_find.png>
+   public method findNodeByGID(local int _gid) : Node {
+      local int pipeIdx = 0;
+
+      while(pipeIdx < pipe_root.maxPipes)
+      {
+         local MIDIPipe pipe <= pipe_root.getPipeByIdx(pipeIdx);
+
+         if(null != pipe)
+         {
+            local int nodeIdx = 0;
+
+            while(nodeIdx < pipe.numNodes)
+            {
+               local MIDIPipeNode pipeNode <= pipe.getNodeByIdx(nodeIdx);
+
+               if(pipeNode instanceof MIDIPipeNodeScriptProxy)
+               {
+                  local MIDIPipeNodeScriptProxy nsp <= pipeNode;
+                  local Node sci <= nsp.sci;
+
+                  if(sci.getNodeGID() == _gid)
+                  {
+                     return sci;
+                  }
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeIdx++;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getCtlTagEntryByIdx(int _idx) : CtlTagEntry {
+      return ctltag_entries.get(_idx);
+   }
+
+   // <method.png>
+   public =replay= method moveCtlTagEntryUp(int _idx) : boolean {
+      if(_idx > 0)
+      {
+         if(_idx < ctltag_entries.numElements)
+         {
+            ctltag_entries.swap(_idx, _idx - 1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method moveCtlTagEntryDown(int _idx) : boolean {
+      if(_idx < (ctltag_entries.numElements - 1))
+      {
+         if(_idx >= 0)
+         {
+            ctltag_entries.swap(_idx, _idx + 1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public method findNumCtlTagEntriesForDevCh(STX_MIDIOutDevice _dev, byte _midiCh) : int {
+      int r = 0;
+      CtlTagEntry *entry;
+
+      foreach entry in ctltag_entries
+      {
+         if(@(entry.mm_event.dev) == @(_dev))
+         {
+            if( (-1 == _midiCh) || (_midiCh == (entry.mm_event.dev_ch)) )
+            {
+               r++;
+            }
+         }
+      }
+
+      return r;
+   }
+
+   // <method.png>
+   public method isKeyJazzLocked() : boolean {
+      return (-1 != locked_keyjazz_node_gid);
+   }
+
+   // <method.png>
+   public =replay= method releaseKeyJazzLock() {
+      locked_keyjazz_node_gid = -1;
+   }
+
+   // <method.png>
+   public =replay= method releaseKeyJazzLockIfMatched(MIDIPipeNode _node) {
+      // Called when node is deleted
+      if(-1 != locked_keyjazz_node_gid)
+      {
+         if(_node instanceof MIDIPipeNodeScriptProxy)
+         {
+            MIDIPipeNodeScriptProxy nsp <= _node;
+            Node scriptNode <= nsp.sci;
+            Node lockedNode <= findNodeByGID(locked_keyjazz_node_gid);
+
+            if(@(lockedNode) == @(scriptNode))
+            {
+               locked_keyjazz_node_gid = -1;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method releaseKeyJazzLockIfHasParentPipe(MIDIPipe _pipe) {
+      // Called when pipe is deleted
+      if(-1 != locked_keyjazz_node_gid)
+      {
+         Node lockedNode <= findNodeByGID(locked_keyjazz_node_gid);
+
+         if(null != lockedNode)
+         {
+            if(null != lockedNode.parent_pipe) // should not be null
+            {
+               if(@(lockedNode.parent_pipe) == @(_pipe))
+               {
+                  locked_keyjazz_node_gid = -1;
+               }
+            }
+         }
+         else
+         {
+            // Should not be reached but quietly unset locked node just in case
+            locked_keyjazz_node_gid = -1;
+         }
+      }
+   }
+
+   // <method.png>
+   public getTicksAsBarsAndBeatsString(int _ticks) : String {
+      // e.g. "<some msg> (4 beats) (1 bar)"
+      int numTicksPerNote = ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * sig_beats;
+
+      float numBars = (_ticks / numTicksPerBar);
+      float numBeats = (_ticks / numTicksPerBeat);
+
+      return "("+Utils.GetNumString3(numBars, "bar", "bars")+") ("+Utils.GetNumString3(numBeats, "beat", "beats")+")";
+   }
+
+   // <method.png>
+   public milliSecondsTo16th(local float _ms) {
+      local float numTicksPer16th = ppq / 4.0;
+      local float ms16th = 1000 * 60 * (numTicksPer16th / ppq) / bpm;
+      return _ms / ms16th;
+   }
+
+   // <method.png>
+   public sixteenthToMilliSeconds(local float _16th) {
+      return ( (1000 * 60 * 0.25) * _16th ) / bpm;
+   }
+
+   // <method.png>
+   public ticksToMilliSeconds(local float _ticks) : float {
+      // // float ms = 1000 * 60 * (_ticks / ppq) / bpm;
+      return (1000.0f * 60.0f * _ticks) / (ppq * bpm);
+   }
+
+   // <method.png>
+   public milliSecondsToTicks(local float _ms) : float {
+      // ms = 1000 * 60 * ((songTicks / ppq) / bpm);
+      // (ms/(1000 * 60)) = (songTicks / ppq) / bpm;
+      // (ms/(1000 * 60)) * bpm = (songTicks / ppq);
+      // (ms/(1000 * 60)) * bpm * ppq = songTicks;
+      // // int durTicks = (durMillisec/(1000 * 60)) * bpm * ppq;
+      return (_ms / (1000 * 60)) * bpm * ppq;
+   }
+
+   // <method_find.png>
+   public method findPipeByName(String _name) : MIDIPipe {
+      int pipeIdx = 0;
+      loop(pipe_root.numPipes)
+      {
+         MIDIPipe pipe <= pipe_root.getPipeByUsedIdx(pipeIdx);
+         if(pipe.name == _name)
+         {
+            return pipe;
+         }
+         pipeIdx++;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findPipeNodeByName(MIDIPipe _pipe, String _nodeName) : MIDIPipeNode {
+      int nodeIdx = 0;
+      loop(_pipe.numNodes)
+      {
+         MIDIPipeNode n <= _pipe.getNodeByIdx(nodeIdx);
+         if(n.name == _nodeName)
+            return n;
+         nodeIdx++;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findUniqueAutoCh(int _autoDevIdx, byte _autoChPref, MIDIPipe _fltPipe/*or null*/) : byte {
+      // Returns -1 when none was found
+      byte ch = _autoChPref;
+      boolean bUnique;
+      loop(16) // #midi channels
+      {
+         // Iterate all nodes and check if the dev/ch combo is globally unique
+         bUnique = true;
+         int pipeIdx = 0;
+         loop(pipe_root.numPipes)
+         {
+            MIDIPipe pipe <= pipe_root.getPipeByUsedIdx(pipeIdx);
+
+            if(null == _fltPipe || @(_fltPipe) == @(pipe))
+            {
+               int nodeIdx = 0;
+               loop(pipe.numNodes)
+               {
+                  MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+
+                  if(n instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     Node sn <= n.sci;
+
+                     if(sn.b_auto_filter_a)
+                        if(sn.auto_dev_filter_a == _autoDevIdx)
+                           if((-1 == sn.auto_ch_filter_a) || (sn.auto_ch_filter_a == ch))
+                              bUnique = false;
+
+                     if(sn.b_auto_filter_b)
+                        if(sn.auto_dev_filter_b == _autoDevIdx)
+                           if((-1 == sn.auto_ch_filter_b) || (sn.auto_ch_filter_b == ch))
+                              bUnique = false;
+                  }
+
+                  if(!bUnique)
+                     break;
+
+                  // Next node
+                  nodeIdx++;
+               }
+            }
+
+            // Next pipe
+            pipeIdx++;
+         }
+
+         if(bUnique)
+            break;
+
+         // Try next MIDI channel
+         ch = (ch + 1) & 15;
+      }
+
+      if(bUnique)
+         return ch;
+      else
+         return -1;
+   }
+
+   // <method_find.png>
+   public method findFirstNodeForAutoDevCh(local int _autoDevIdx, local byte _autoCh) : Node {
+      // Returns null when none was found
+
+      // Iterate all nodes and find first node that listens to given automation port
+      local int pipeIdx = 0;
+      loop(pipe_root.numPipes)
+      {
+         local MIDIPipe pipe <= pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         local int nodeIdx = 0;
+         loop(pipe.numNodes)
+         {
+            local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+
+            if(n instanceof MIDIPipeNodeScriptProxy)
+            {
+               local Node sn <= n.sci;
+
+               if(sn.b_auto_filter_a)
+                  if(sn.auto_dev_filter_a == _autoDevIdx)
+                     if((-1 == sn.auto_ch_filter_a) || (sn.auto_ch_filter_a == _autoCh))
+                        return sn;
+
+               if(sn.b_auto_filter_b)
+                  if(sn.auto_dev_filter_b == _autoDevIdx)
+                     if((-1 == sn.auto_ch_filter_b) || (sn.auto_ch_filter_b == _autoCh))
+                        return sn;
+            }
+
+            // Next node
+            nodeIdx++;
+         }
+
+         // Next pipe
+         pipeIdx++;
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstNodeByClassName(String _className, Integer _retPipeIdx, Integer _retNodeIdx) : Node {
+      // Returns null when none was found
+
+      // Iterate all nodes and find first node that listens to given automation port
+      local int pipeIdx = 0;
+      loop(pipe_root.numPipes)
+      {
+         local MIDIPipe pipe <= pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         local int nodeIdx = 0;
+         loop(pipe.numNodes)
+         {
+            local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+
+            if(n instanceof MIDIPipeNodeScriptProxy)
+            {
+               local Node sn <= n.sci;
+
+               if(sn.yacMetaClassName() == _className)
+               {
+                  if(null != _retPipeIdx)
+                     _retPipeIdx = pipe.pipeIdx;
+
+                  if(null != _retNodeIdx)
+                     _retNodeIdx = nodeIdx;
+
+                  return sn;
+               }
+            }
+
+            // Next node
+            nodeIdx++;
+         }
+
+         // Next pipe
+         pipeIdx++;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method hasCtlTags() : boolean {
+      return !ctltag_entries.isEmpty();
+   }
+
+   // <method_find.png>
+   public method findSampleUIDs(IntArray _retSmpUIDs) {
+      int pipeIdx = 0;
+      loop(pipe_root.numPipes)
+      {
+         MIDIPipe pipe <= pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         int nodeIdx = 0;
+         loop(pipe.numNodes)
+         {
+            MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+
+            if(n instanceof MIDIPipeNodeScriptProxy)
+            {
+               Node sn <= n.sci;
+               sn.nodeFindSampleUIDs(_retSmpUIDs);
+            }
+
+            nodeIdx++;
+         }
+
+         pipeIdx++;
+      }
+   }
+
+   // <method_find.png>
+   public method findNumNodes() : int {
+      int retNumNodes = 0;
+      int pipeIdx = 0;
+      loop(pipe_root.numPipes)
+      {
+         MIDIPipe pipe <= pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         int nodeIdx = 0;
+         loop(pipe.numNodes)
+         {
+            MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+
+            if(n instanceof MIDIPipeNodeScriptProxy)
+            {
+               // Node sn <= n.sci;
+               retNumNodes++;
+            }
+
+            nodeIdx++;
+         }
+
+         pipeIdx++;
+      }
+      return retNumNodes;
+   }
+
+}

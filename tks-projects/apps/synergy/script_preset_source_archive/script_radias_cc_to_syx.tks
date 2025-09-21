@@ -1,0 +1,78 @@
+//
+// Radias CC to parameter change SysEx
+//
+//  see RADIAS_MIDI_Imple_E1.pdf table 3
+//
+
+// Maps CC# to Radias parameter id
+//  (note) e.g. param id $521F = param id $52, sub id $1F
+IntArray cc_to_param_mapping = [
+   // 1, $500C,  // modwheel(CC#1) to vocoder level
+   1, $5201,  // modwheel(CC#1) to band 1 level 
+   2, $5213,  // breathcontrol(CC#2) to band 10 level 
+   3, $5215,  // (CC#3) to band 11 level 
+   4, $521F,  // footcontrol(CC#4) to band 16 level 
+                                ];
+
+Buffer syx;
+syx.size = 12;
+
+function send_param(MIDIPipeFrame _frOut, int _paramIdSubId, int _paramValue) {
+   int id    = (_paramIdSubId >> 8) & 255;
+   int subId = _paramIdSubId & 255;
+
+   syx.offset = 0;
+   syx.i8 = 0xF0;
+   syx.i8 = 0x42; // Korg Id
+   syx.i8 = 0x30 | 0/*RADIAS_DEVICE_NR*/;
+   syx.i8 = 0x72; // Radias Id
+   syx.i8 = 0x41; // RADIAS_FUN_PARAMETERCHANGE
+   syx.i8 = id & 127; // Parameter Id LSB
+   syx.i8 = (id>>7)&127; // Parameter Id MSB
+   syx.i8 = subId&127; // Parameter Sub Id LSB
+   syx.i8 = (subId>>7)&127; // Parameter Sub Id MSB
+   syx.i8 = _paramValue&127; 
+   syx.i8 = (_paramValue>>7)&127;
+   syx.i8 = 0xF7;
+
+   _frOut.sysex(true/*bSet*/, out_1_dev, syx);
+}
+
+function process(MIDIPipeFrame fr, MIDIPipeFrame frOut) {
+   int numEvents = fr.getNumEventsCCByFlt(in_1_dev, in_1_ch);
+   if(0 != numEvents)
+   {
+      MIDIPipeEvent ev;
+      int evIdx = 0;
+      while(evIdx < numEvents)
+      {
+         fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_CC, in_1_dev, in_1_ch);
+
+         int mapIdx = 0;
+         loop(cc_to_param_mapping.numElements/2)
+         {
+            if(cc_to_param_mapping[mapIdx] == ev.ccId)
+            {
+               send_param(frOut, cc_to_param_mapping[mapIdx+1], ev.ccValue);
+               break;
+            }           
+
+            mapIdx += 2;
+         }
+
+         evIdx++;
+      }
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(!bMuted)
+   {
+      process(framePlay, framePlay);
+      process(frameRec,  framePlay);
+   }
+}

@@ -1,0 +1,999 @@
+// ----
+// ---- file   : NT_Track.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 10Jan2015, 11Jan2015, 12Jan2015, 17Jan2015, 19Jan2015, 23Jan2015, 24Jan2015
+// ----          28Jan2015, 08Feb2015, 11Feb2015, 27Feb2015, 08Mar2015, 17Apr2015, 30Jun2015
+// ----          26Jul2015, 28Jul2015, 27Sep2015, 02Oct2015, 26Oct2015, 04Dec2015, 05Dec2015
+// ----          09Apr2016, 12Sep2016, 29Jan2017, 01Jul2017, 04Oct2017, 17Jun2018, 02Aug2019
+// ----          19Oct2019, 02Nov2019, 06Mar2020, 28Apr2020, 27Oct2020, 21Jun2021, 02Jan2022
+// ----          20Feb2022, 03Apr2023, 05Oct2024, 06Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_Track;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_Track {
+
+   NodeTracker *parent_node;
+
+   public int track_nr; // index into parent node tracks[]
+
+   public String  name;             // track name
+   public boolean is_muted;
+
+   public boolean ctl_mute_timeout;       // >0: muted via CTL_MUTE
+
+   public NT_TEL tel;
+
+   public NT_TrackPattern *[] patterns;  // NT_TrackPattern instances
+
+   //
+   // Replay related members:
+   //
+   public int     slide_base_note;  // Current (last voice) voice base note (or -1)
+   public float   slide_speed;      // 1..255 (255=slide immediately, -1=no sliding)
+   public float   slide_note;       // Current (interpolated) slide note (replay) (or -1)
+   public int     slide_to_note;    // Current slide destination note (or -1)
+
+   public float   current_pb;       // -1..1
+
+   public int     delay_countdown; // CTL_DELAY
+   public int     delay_ticks;     // CTL_DELAY
+
+
+   // (todo) retrig_deltatime multiplier (for high ppq)
+   public IntArray   retrig_notes; // last triggered note (for retrig)
+   // // public FloatArray retrig_vel; // last triggered note velocity
+   // // public IntArray   retrig_dur;   // last triggered note duration
+   public float      retrig_dtcountdown;  // CTL_RETRIG (deltatime countdown)
+   public int        retrig_repcountdown; // CTL_RETRIG (repeats countdown)
+   public float      retrig_deltatime;    // CTL_RETRIG
+   public int        retrig_numrepeats;   // CTL_RETRIG
+
+   public int current_instrument_nr;     // last selected instrument (and initial/default track instrument)
+
+   public IntArray play_current_notes; // for polyphonic aftertouch generation. indexed by ctlId.
+
+   // used for selecting cels while recording MIDI note on/off events
+   // also used to determine poly pressure key value
+   // -1 when note slot is inactive, note number otherwise
+   public IntArray rec_current_notes; // indexed by (visible) noteCelIdx (_not_ ctlId!)
+   public IntArray rec_noteon_patoff;        // 128 midi note slots
+   public IntArray rec_noteon_song_ticks;    // 128 midi note slots
+   public IntArray rec_noteon_patnrs;        // for multi-pattern CTL_DURn recording (128 midi note slots)
+   public IntArray rec_noteon_dur_ctl_ids;   // 128 midi note slots
+   public IntArray rec_noteon_dur_left;      // 5 note slots (noteCelIdx). #ticks left (NodeSeq=>tracker export / polypressure)
+   public int rec_num_active_notes; // used by NodeTracker.recordFrame() (MIDI)
+
+   public IntArray new_notes; // temp. for current tick.
+
+   public float eq_anim; // ui: counts down from 1.0 to 0 when a new note has been triggered on this track
+   public float hltrackname_countdown; // ui: label effect when switching tracks/channels
+
+   public int cursor_x;         // Last used cursor position
+
+   public int   keyjazz_instr_nr; // Current keyjazz instrument. Also used to resolve controller names.
+   public int   keyjazz_octave;
+   public float keyjazz_on_velocity;
+   public float keyjazz_off_velocity;
+   public int   keyjazz_duration;
+   public int   keyjazz_last_note;
+
+   public int push_seqedit_cel_encoder_off; // scroll offset
+
+   public IntArray ext_active_notes;  // Notes recv'd via auto device(s)
+
+   public FloatArray injected_ctl_values;  // CTL_NUM elements, INVALID_VALUE if undefined
+   public IntArray injected_ctl_states;     // true if val is new, false if it was not set on current tick
+
+   // used by NodeMonitor import:
+   boolean b_import_addcel_INSTR;
+   boolean b_import_addcel_PB;
+   boolean b_import_addcel_PC;
+   boolean b_import_addcel_AT;
+   boolean b_import_addcel_NOTE1;
+   boolean b_import_addcel_NOTE2;
+   boolean b_import_addcel_NOTE3;
+   boolean b_import_addcel_NOTE4;
+   boolean b_import_addcel_NOTE5;
+   boolean b_import_addcel_VEL1;
+   boolean b_import_addcel_VEL2;
+   boolean b_import_addcel_VEL3;
+   boolean b_import_addcel_VEL4;
+   boolean b_import_addcel_VEL5;
+   boolean b_import_addcel_DUR1;
+   boolean b_import_addcel_DUR2;
+   boolean b_import_addcel_DUR3;
+   boolean b_import_addcel_DUR4;
+   boolean b_import_addcel_DUR5;
+   boolean b_import_addcel_POLYAT1;
+   boolean b_import_addcel_POLYAT2;
+   boolean b_import_addcel_POLYAT3;
+   boolean b_import_addcel_POLYAT4;
+   boolean b_import_addcel_POLYAT5;
+   int import_orig_cursor_x;
+
+   namespace boolean b_queued_sel_instr;  // true after instr was selected in UI (=> send reset values)
+
+   int   hlpolystep_offset;  // ticks
+   float hlpolystep_countdown;  // 1.0 .. 0
+
+   int  last_polystep_tickoff;
+   byte last_polystep_patnr;
+
+
+   // <init.png>
+   public method init(NodeTracker _parent, int _trackNr) {
+      parent_node <= _parent;
+
+      track_nr         = _trackNr;
+      is_muted         = false;
+      keyjazz_instr_nr = 0;
+      slide_note       = -1;
+      slide_base_note  = 0;
+      slide_to_note    = 0;
+
+      tel.init();
+
+      patterns.alloc(128);
+      patterns.useAll();
+
+      play_current_notes.alloc(NT_TrackPattern.NUM_NOTESLOTS);
+      play_current_notes.useAll();
+
+      retrig_notes.alloc(NT_TrackPattern.NUM_NOTESLOTS);
+      retrig_notes.useAll();
+
+      new_notes.alloc(NT_TrackPattern.NUM_NOTESLOTS);
+      new_notes.useAll();
+
+      // // retrig_vel.alloc(NT_TrackPattern.NUM_NOTESLOTS);
+      // // retrig_vel.useAll();
+
+      // // retrig_dur.alloc(NT_TrackPattern.NUM_NOTESLOTS);
+      // // retrig_dur.useAll();
+
+      ext_active_notes.empty();
+
+      rec_current_notes.alloc(NT_TrackPattern.NUM_NOTESLOTS);
+      rec_current_notes.useAll();
+
+      rec_noteon_patoff.alloc(128);
+      rec_noteon_patoff.useAll();
+
+      rec_noteon_song_ticks.alloc(128);
+      rec_noteon_song_ticks.useAll();
+
+      rec_noteon_patnrs.alloc(128);
+      rec_noteon_patnrs.useAll();
+
+      rec_noteon_dur_ctl_ids.alloc(128);
+      rec_noteon_dur_ctl_ids.useAll();
+
+      rec_noteon_dur_left.alloc(NT_TrackPattern.NUM_NOTESLOTS/*5*/);
+      rec_noteon_dur_left.useAll();
+
+      injected_ctl_values.alloc(NT_TrackPattern.CTL_NUM);
+      injected_ctl_values.useAll();
+
+      injected_ctl_states.alloc(NT_TrackPattern.CTL_NUM);
+      injected_ctl_states.useAll();
+
+      current_instrument_nr = 1;
+      cursor_x = 1;
+
+      initKeyJazz();
+
+      reset();
+   }
+
+   // <init.png>
+   protected method initKeyJazz() {
+      keyjazz_instr_nr     = 1;
+      keyjazz_on_velocity  = 64;////STConfig.node_tracker_write_noteon_velocity;
+      keyjazz_off_velocity = 0;////STConfig.node_tracker_write_noteoff_velocity;
+      keyjazz_octave       = 48;
+      keyjazz_duration     = 12;///STConfig.patternview_write_duration;
+
+      keyjazz_last_note = 5*12;
+   }
+
+   // <method.png>
+   public method reset() {
+      slide_base_note  = -1;
+      slide_speed      = -1;
+      slide_note       = -1;
+      slide_to_note    = -1;
+
+      current_pb = 0;
+
+      play_current_notes.fill(-1);
+
+      rec_current_notes     .fill(-1);
+      rec_noteon_patoff     .fill(-1);
+      rec_noteon_song_ticks .fill(-1);
+      rec_noteon_patnrs     .fill(-1);
+      rec_noteon_dur_ctl_ids.fill(-1);
+      rec_noteon_dur_left   .fill(0);
+      rec_num_active_notes = 0;
+
+      delay_countdown = -1;
+
+      retrig_notes.fill(-1);
+      // // retrig_vel.fill(-1);
+      // // retrig_dur.fill(-1);
+      retrig_dtcountdown  = 0;
+      retrig_repcountdown = 0;
+      retrig_deltatime    = 0;
+      retrig_numrepeats   = 0;
+
+      injected_ctl_values.fill(NT_TrackPattern.INVALID_VALUE);
+      injected_ctl_states.fill(false);
+
+      ctl_mute_timeout = 0;
+
+      last_polystep_tickoff = -1;
+      last_polystep_patnr   = -1;
+   }
+
+   // <method.png>
+   public method importResetActiveNotes() {
+      // used by Monitor import to minimize number of note-cels (no note offs)
+      rec_current_notes.fill(-1);
+      rec_num_active_notes = 0;
+   }
+
+   // <method.png>
+   public method importTrackDurLeft(int _frameDelta) {
+      // used by Monitor import (e.g. NodeSeq=>Tracker) for tracking polypressure events
+      //  (called after importing frame)
+      int noteCelIdx = 0;
+      loop(rec_noteon_dur_left.numElements)
+      {
+         if(rec_noteon_dur_left[noteCelIdx] > 0)
+         {
+            // trace "xxx rec_noteon_dur_left["+noteCelIdx+"] = "+rec_noteon_dur_left[noteCelIdx]+" #active="+rec_num_active_notes+" frameDelta="+_frameDelta;
+            rec_noteon_dur_left[noteCelIdx] = rec_noteon_dur_left[noteCelIdx] - _frameDelta;
+            if(rec_noteon_dur_left[noteCelIdx] <= 0)
+            {
+               rec_current_notes[noteCelIdx] = -1;
+               rec_num_active_notes--;
+               if(rec_num_active_notes < 0)
+                  rec_num_active_notes = 0;  // should not be reachable
+            }
+         }
+         noteCelIdx++;
+      }
+   }
+
+   // <method_get.png>
+   public method isMuted() : boolean {
+      explain "Query whether track is currently muted.";
+
+      int trackBit = (1 << track_nr);
+
+      if(parent_node.node_mute_temp_track_mask & trackBit)
+      {
+         return true;
+      }
+
+      if(0 != parent_node.node_solo_temp_track_mask)
+      {
+         if(trackBit != (parent_node.node_solo_temp_track_mask & trackBit))
+            return true;
+      }
+
+      if(!is_muted)
+      {
+         if( (parent_node.solo_track_nr) == -1)
+         {
+            return false;
+         }
+         else
+         {
+            return (parent_node.solo_track_nr) != track_nr;
+         }
+      }
+      else
+      {
+         return true;
+      }
+   }
+
+   // <method_set.png>
+   public method toggleMute() {
+      setMuted(is_muted ^ 1);
+   }
+
+   // <method_set.png>
+   public method setMuted(boolean _bMuted) {
+      is_muted = _bMuted;
+
+      if(is_muted)
+      {
+         stopCurrentVoices();
+      }
+   }
+
+   // <replay.png>
+   public method stopCurrentVoices() {
+   }
+
+   // <method_get.png>
+   public method isSolo() : boolean {
+      return (parent_node.solo_track_nr == track_nr);
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      name = _name;
+   }
+
+   // <method_get.png>
+   public method getName() : String {
+      return name;
+   }
+
+   // <method_get.png>
+   public method getTrackLayout() : NT_TEL {
+      return tel;
+   }
+
+   // <method_get.png>
+   public method getPattern(int _patNr) : NT_TrackPattern {
+      return patterns.get(_patNr);
+   }
+
+   // <method_set.png>
+   public method setPattern(int _patNr, NT_TrackPattern _pat) {
+      patterns[_patNr] = deref _pat;
+   }
+
+   // <replay.png>
+   public =replay= method queueInstrumentSelected() {
+      b_queued_sel_instr = true;
+   }
+
+   // <replay.png>
+   public method checkResetQueuedInstrumentSelected() : boolean {
+      boolean r = b_queued_sel_instr;
+      b_queued_sel_instr = false;
+      return r;
+   }
+
+   // <method_get.png>
+   public method getOrCreatePattern(int _patNr) : NT_TrackPattern {
+      NT_TrackPattern pat <= patterns.get(_patNr);
+
+      if(null == pat)
+      {
+         if(0 <= _patNr < 128)
+         {
+            pat <= new NT_TrackPattern;
+
+            patterns[_patNr] = deref pat;
+
+            pat.init(this, _patNr);
+         }
+      }
+
+      return pat;
+   }
+
+   // <method_get.png>
+   public method getCurrentPattern() : NT_TrackPattern {
+      // Get currently replayed track pattern
+      NT_TrackPattern pat <= patterns.get(parent_node.play_pattern_nr);
+      // trace "xxx track getCurrentPattern: "+parent_node.play_pattern_nr;
+      if(null == pat)
+      {
+         // Create pattern so keyjazz notes are played
+         pat <= getOrCreatePattern(parent_node.play_pattern_nr);
+      }
+      return pat;
+   }
+
+   // <method_get.png>
+   public method getCurrentEditPattern() : NT_TrackPattern {
+      // Get current edit track pattern
+      if(null != parent_node)
+      {
+         local NT_TrackPattern pat <= patterns.get(parent_node.edit_pattern_nr);
+         if(null == pat)
+         {
+            pat <= getOrCreatePattern(parent_node.edit_pattern_nr);
+         }
+         return pat;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method isEnvelopeEmptyInAllPatterns(local int _ctlIdx) : boolean {
+      int patNr = 0;
+      loop(127)
+      {
+         local NT_TrackPattern pat <= patterns.get(patNr);
+         if(null != pat)
+         {
+            if(!pat.isEnvelopeEmpty(_ctlIdx))
+               return false;
+         }
+
+         patNr++;
+      }
+
+      return true;
+   }
+
+   // <method_set.png>
+   public =replay= method keyjazzSetInstrumentNr(int _nr) {
+      // trace "xxx Track::keyjazzSetInstrumentNr("+_nr+")";
+      keyjazz_instr_nr = _nr;
+      current_instrument_nr = _nr;
+
+      queueInstrumentSelected();  // send reset values on next replay tick
+   }
+
+   // <replay.png>
+   public method seek(int _time) {
+
+      ext_active_notes.empty();
+
+      NT_TrackPattern pat <= getCurrentPattern();
+      if(null != pat)
+      {
+         pat.seek(_time);
+      }
+
+      // delay_countdown = -1;
+      // delay_ticks     = 0;
+
+      // retrig_dtcountdown = 0;
+   }
+
+   // <method.png>
+   public method injectCtl(int _ctl, float _val) {
+      // trace "xxx injectCtl ctl="+_ctl+" val="+_val;
+      injected_ctl_states[_ctl] = true;
+      injected_ctl_values[_ctl] = _val;
+   }
+
+   // <replay.png>
+   public method beginDelay(int _ticks) : boolean {
+      if(0 != delay_countdown)
+      {
+         delay_countdown = _ticks;
+         delay_ticks     = _ticks;
+
+         // trace "xxx NT_Track::beginDelay: ticks="+_ticks+" delay_countdown="+delay_countdown;
+         return true;
+      }
+      else
+      {
+         // delay just finished, playing delayed step
+         return false;
+      }
+   }
+
+   // <replay.png>
+   public method beginRetrig(int _params) {
+      // // Integer io=_params;
+      // // trace "xxx beginRetrig: params="+io.printf("%02x");
+      retrig_deltatime  = (current_song.ppq * 0.5) / (1 + ((_params >> 4) & 15));  // 1/8, 1/16, 1/24, 1/32, ..
+      retrig_numrepeats = (_params & 15);
+
+      retrig_dtcountdown  = retrig_deltatime + 1; // +1 since tickRetrig() is called on same tick
+      retrig_repcountdown = retrig_numrepeats;
+
+      // trace "xxx beginRetrig: deltatime="+retrig_deltatime+" repcountdown="+retrig_repcountdown;
+   }
+
+   // <replay.png>
+   public method tickRetrig(MIDIPipeFrame _framePlay, NT_Instrument _instr,
+                            FloatArray _vel, IntArray _dur,
+                            boolean _bMuted
+                            ) {
+
+      if(retrig_dtcountdown > 0)
+      {
+         // trace "xxx tickRetrig: _framePlay="+#(_framePlay)+" instr="+#(_instr)+" bMuted="+_bMuted;
+
+         retrig_dtcountdown--;
+
+         if(retrig_dtcountdown <= 0)
+         {
+            // Retrig all playing voices
+            if(!_bMuted)
+            {
+               int noteIdx = 0;
+               loop(NT_TrackPattern.NUM_NOTESLOTS)
+               {
+                  byte note = retrig_notes[noteIdx];
+
+                  if(-1 != note)
+                  {
+                     // Note on
+                     _instr.emitNoteOn(_framePlay, note, _vel[noteIdx], _dur[noteIdx]);
+
+                     play_current_notes[noteIdx] = note;
+                  }
+                  noteIdx++;
+               }
+            }
+
+            // Schedule next retrig
+            if(retrig_repcountdown > 0)
+            {
+               retrig_repcountdown--;
+               if(retrig_repcountdown > 0)
+               {
+                  retrig_dtcountdown += retrig_deltatime;
+               }
+            }
+         }
+      }
+   }
+
+   // <ui.png>
+   public method retrigEQ() {
+      eq_anim = 1.0f;
+   }
+
+   // <replay.png>
+   public method tick(MIDIPipeFrame _framePlay,
+                      MIDIPipeFrame _frameRec,
+                      boolean _bSeekPattern,
+                      boolean _bMuted,
+                      boolean _bPlaySeq,
+                      boolean _bAdvSeq,
+                      boolean _bAllowDelayBegin
+                      ) {
+
+      // Animate soundtracker-style equalizer
+      if(eq_anim > 0.0f)
+      {
+         eq_anim -= 0.01;
+         if(eq_anim < 0.0f)
+         {
+            eq_anim = 0.0f;
+         }
+      }
+
+      // trace "xxx track::tick: this="+#(this)+" parent_node.play_pattern_nr="+parent_node.play_pattern_nr;
+
+      NT_TrackPattern pat <= getCurrentPattern();
+
+      // trace "xxx track::tick: pat="+#(pat);
+
+      if(null != pat)
+      {
+         // trace "xxx track::tick: pat.offset="+pat.offset;
+         boolean bDelayEnd = false;
+
+         if(_bSeekPattern)
+         {
+            // Start new pattern
+            // Global.Debug("NT_Track::tick: bSeekPattern=1, pat.seek("+parent_node.jam_current_ticks+")");
+            pat.seek(parent_node.jam_current_ticks);
+
+            if(_bAllowDelayBegin)
+            {
+               // Cancel delay
+               // trace "xxx ST_Track: cancel delay";
+               delay_countdown = -1;
+               delay_ticks     = 0;
+            }
+         }
+
+         // Handle track delay
+         if(replay.b_playing)
+         {
+            if(delay_countdown > 0)
+            {
+               // trace "xxx ST_Track: delay_countdown="+delay_countdown;
+               delay_countdown--;
+               if(0 != delay_countdown)
+               {
+                  return;
+               }
+               else
+               {
+                  bDelayEnd = true;
+               }
+            }
+         }
+
+
+         // if(bDelayEnd)
+         //    trace "xxx nt:track: bDelay=true, play tick***********";
+         pat.tick(_framePlay, _frameRec,
+                  _bMuted || isMuted(),
+                  _bPlaySeq,
+                  _bAdvSeq,
+                  _bAllowDelayBegin
+                  );
+
+         // // // Reset SHRESET-style injected values
+         // // FloatArray ictlSHBak = injected_ctl_values;
+         // // injected_ctl_values.fill(ST_Pattern.INVALID_VALUE);
+         // // // Restore SH-style values (valid until next track reset or envelope event)
+         // // injected_ctl_values[ST_Pattern.CTL_VEL1] = ictlSHBak[ST_Pattern.CTL_VEL1];
+         // // injected_ctl_values[ST_Pattern.CTL_VEL2] = ictlSHBak[ST_Pattern.CTL_VEL2];
+         // // injected_ctl_values[ST_Pattern.CTL_VEL3] = ictlSHBak[ST_Pattern.CTL_VEL3];
+         // // injected_ctl_values[ST_Pattern.CTL_VEL4] = ictlSHBak[ST_Pattern.CTL_VEL4];
+         // // injected_ctl_values[ST_Pattern.CTL_VEL5] = ictlSHBak[ST_Pattern.CTL_VEL5];
+         // // injected_ctl_values[ST_Pattern.CTL_DUR]  = ictlSHBak[ST_Pattern.CTL_DUR];
+
+
+         // Handle seek after delay
+         if(bDelayEnd)
+         {
+            if(_bAllowDelayBegin) // not polystep?
+            {
+               // //pat.seek(pat.offset + delay_ticks);
+               while(delay_ticks > 0)
+               {
+                  // Catch up after delay
+                  pat.tick(_framePlay,
+                           _frameRec,
+                           _bMuted || isMuted(),
+                           _bPlaySeq,
+                           true,//_bAdvSeq
+                           false/*_bAllowDelayBegin*/
+                           );
+                  delay_ticks--;
+               }
+            }
+
+            delay_countdown = -1;
+         }
+      }
+      else
+      {
+         trace "xxx no pat. parent_node="+#(parent_node); // never reached
+      }
+
+      // [05Oct2024] reset injected_ctl_states at end of replay tick
+      injected_ctl_states.fill(false);
+   }
+
+   // <method.png>
+   public method removeEnvelopesByCtlId(int _ctlId) {
+      NT_TrackPattern *pat;
+
+      foreach pat in patterns
+      {
+         if(null != pat)
+         {
+            Envelope env <= pat.getEnvelope(_ctlId);
+
+            if(null != env)
+            {
+               if(env.numElements)
+               {
+                  trace "[~~~] NT_TrackPattern::removeEnvelopesByCtlId: warning: delete non-empty envelope";
+               }
+
+               parent_node.undoTouchController(track_nr, pat.pat_nr, _ctlId, env);
+
+               pat.deleteEnvelope(_ctlId);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method isKeyJazzLocked() : boolean {
+      // trace "xxx isKeyJazzLocked: ch="+(current_song.locked_keyjazz_channelnr)+" trk="+current_song.locked_keyjazz_track;
+
+      if(parent_node.getNodeGID() == current_song.locked_keyjazz_node_gid)
+      {
+         if(track_nr == current_song.locked_keyjazz_track)
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method toggleKeyJazzLock() : boolean {
+      if(isKeyJazzLocked())
+      {
+         // Is currently locked --> unlock
+         current_song.locked_keyjazz_node_gid = -1;
+         return false;
+      }
+
+      // Lock
+      current_song.locked_keyjazz_node_gid = parent_node.getNodeGID();
+      current_song.locked_keyjazz_track    = track_nr;  // 0..n
+      return true;
+   }
+
+   // <method_get.png>
+   public method areAllPatternsEmpty() : boolean {
+      NT_TrackPattern *pat;
+      foreach pat in patterns
+      {
+         if(null != pat && !pat.isPatternEmpty())
+            return false;
+      }
+      return true;
+   }
+
+   // <method.png>
+   public method importLazyCreateCels() {
+      // called by Import Monitor
+
+      tel.orderByVisibility();
+
+      b_import_addcel_INSTR = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_INSTR,
+                                                              NT_CEL.STYLE_LETTER,
+                                                              NT_CEL.RANGE_0_255
+                                                              );
+
+      b_import_addcel_PB = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_PB,
+                                                           NT_CEL.STYLE_HEX,
+                                                           NT_CEL.RANGE_M64_P63
+                                                           );
+
+      b_import_addcel_PC = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_PC,
+                                                           NT_CEL.STYLE_HEX,
+                                                           NT_CEL.RANGE_0_127
+                                                           );
+
+      b_import_addcel_AT = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_AT,
+                                                           NT_CEL.STYLE_HEX,
+                                                           NT_CEL.RANGE_0_127
+                                                           );
+
+      b_import_addcel_NOTE1 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_NOTE1,
+                                                              NT_CEL.STYLE_NOTE,
+                                                              NT_CEL.RANGE_0_127
+                                                              );
+      b_import_addcel_NOTE2 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_NOTE2,
+                                                              NT_CEL.STYLE_NOTE,
+                                                              NT_CEL.RANGE_0_127
+                                                              );
+      b_import_addcel_NOTE3 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_NOTE3,
+                                                              NT_CEL.STYLE_NOTE,
+                                                              NT_CEL.RANGE_0_127
+                                                              );
+      b_import_addcel_NOTE4 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_NOTE4,
+                                                              NT_CEL.STYLE_NOTE,
+                                                              NT_CEL.RANGE_0_127
+                                                              );
+      b_import_addcel_NOTE5 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_NOTE5,
+                                                              NT_CEL.STYLE_NOTE,
+                                                              NT_CEL.RANGE_0_127
+                                                              );
+
+      b_import_addcel_VEL1 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_VEL1,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_127
+                                                             );
+      b_import_addcel_VEL2 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_VEL2,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_127
+                                                             );
+      b_import_addcel_VEL3 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_VEL3,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_127
+                                                             );
+      b_import_addcel_VEL4 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_VEL4,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_127
+                                                             );
+      b_import_addcel_VEL5 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_VEL5,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_127
+                                                             );
+      b_import_addcel_DUR1 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_DUR1,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_255
+                                                             );
+      b_import_addcel_DUR2 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_DUR2,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_255
+                                                             );
+      b_import_addcel_DUR3 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_DUR3,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_255
+                                                             );
+      b_import_addcel_DUR4 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_DUR4,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_255
+                                                             );
+      b_import_addcel_DUR5 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_DUR5,
+                                                             NT_CEL.STYLE_HEX,
+                                                             NT_CEL.RANGE_0_255
+                                                             );
+
+      b_import_addcel_POLYAT1 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_POLYAT1,
+                                                                NT_CEL.STYLE_HEX,
+                                                                NT_CEL.RANGE_0_127
+                                                                );
+      b_import_addcel_POLYAT2 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_POLYAT2,
+                                                                NT_CEL.STYLE_HEX,
+                                                                NT_CEL.RANGE_0_127
+                                                                );
+      b_import_addcel_POLYAT3 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_POLYAT3,
+                                                                NT_CEL.STYLE_HEX,
+                                                                NT_CEL.RANGE_0_127
+                                                                );
+      b_import_addcel_POLYAT4 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_POLYAT4,
+                                                                NT_CEL.STYLE_HEX,
+                                                                NT_CEL.RANGE_0_127
+                                                                );
+      b_import_addcel_POLYAT5 = tel.lazyAddVisibleCelForCtlById(NT_TrackPattern.CTL_POLYAT5,
+                                                                NT_CEL.STYLE_HEX,
+                                                                NT_CEL.RANGE_0_127
+                                                                );
+
+   }
+
+   // <method.png>
+   public method importLazyHideUnusedCels() {
+      // Remove unused cels
+      if(b_import_addcel_INSTR)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_INSTR))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_INSTR);
+      }
+
+      if(b_import_addcel_PB)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_PB))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_PB);
+      }
+
+      if(b_import_addcel_PC)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_PC))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_PC);
+      }
+
+      if(b_import_addcel_AT)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_AT))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_AT);
+      }
+
+      if(b_import_addcel_NOTE1)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_NOTE1))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_NOTE1);
+      }
+
+      if(b_import_addcel_NOTE2)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_NOTE2))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_NOTE2);
+      }
+
+      if(b_import_addcel_NOTE3)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_NOTE3))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_NOTE3);
+      }
+
+      if(b_import_addcel_NOTE4)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_NOTE4))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_NOTE4);
+      }
+
+      if(b_import_addcel_NOTE5)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_NOTE5))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_NOTE5);
+      }
+
+      if(b_import_addcel_VEL1)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_VEL1))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_VEL1);
+      }
+
+      if(b_import_addcel_VEL2)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_VEL2))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_VEL2);
+      }
+
+      if(b_import_addcel_VEL3)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_VEL3))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_VEL3);
+      }
+
+      if(b_import_addcel_VEL4)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_VEL4))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_VEL4);
+      }
+
+      if(b_import_addcel_VEL5)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_VEL5))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_VEL5);
+      }
+
+      if(b_import_addcel_DUR1)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_DUR1))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_DUR1);
+      }
+
+      if(b_import_addcel_DUR2)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_DUR2))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_DUR2);
+      }
+
+      if(b_import_addcel_DUR3)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_DUR3))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_DUR3);
+      }
+
+      if(b_import_addcel_DUR4)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_DUR4))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_DUR4);
+      }
+
+      if(b_import_addcel_DUR5)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_DUR5))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_DUR5);
+      }
+
+      if(b_import_addcel_POLYAT1)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_POLYAT1))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_POLYAT1);
+      }
+
+      if(b_import_addcel_POLYAT2)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_POLYAT2))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_POLYAT2);
+      }
+
+      if(b_import_addcel_POLYAT3)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_POLYAT3))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_POLYAT3);
+      }
+
+      if(b_import_addcel_POLYAT4)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_POLYAT4))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_POLYAT4);
+      }
+
+      if(b_import_addcel_POLYAT5)
+      {
+         if(isEnvelopeEmptyInAllPatterns(NT_TrackPattern.CTL_POLYAT5))
+            tel.hideCelsByCtlId(NT_TrackPattern.CTL_POLYAT5);
+      }
+
+      tel.calcCursorExtents();
+   }
+
+}

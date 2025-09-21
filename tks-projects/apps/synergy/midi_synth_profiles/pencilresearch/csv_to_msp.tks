@@ -1,0 +1,324 @@
+// 30Mar2025
+
+// String sInputPathname = "/Users/bsp/git/midi/Black Corporation/Deckard\'s Dream MK2.csv";
+// String sInputPathname = "/Users/bsp/git/midi/Novation/Summit and Peak.csv";
+String sInputPathname = "/Users/bsp/git/midi/Roland/System-8.csv";
+
+// -----------------------------------------------------------------------------
+String sOut;
+
+if(Arguments.numElements >= 1)
+{
+   sInputPathname = Arguments[0];
+}
+
+class Utils {
+   static GetCurrentDateTimeStringNumeric() : String {
+      Time t;
+      Integer io_mon;
+      Integer io_mday;
+      Integer io_h;
+      Integer io_m;
+      Integer io_s;
+      t.now();
+      io_mon = t.month + 1;
+      io_mday = t.monthday;
+      io_h.value=t.hour;
+      io_m.value=t.min;
+      io_s.value=t.sec;
+      return t.year + io_mon.printf("%02d")+io_mday.printf("%02d")+"-"+io_h.printf("%02i")+io_m.printf("%02i")+io_s.printf("%02i");
+   }
+
+   // <method.png>
+   static ConvertToVarName(String _name) : String {
+      local String r = _name;
+      r.replaceChar(' ',  '_');
+      r.replaceChar('-',  '_');
+      r.replaceChar('+',  '_');
+      r.replaceChar(':',  '_');
+      r.replaceChar('/',  '_');
+      r.replaceChar('\\', '_');
+      r.replaceChar('$',  '_');
+      r.replaceChar('&',  '_');
+      r.replaceChar('Â§',  '_');
+      r.replaceChar('%',  '_');
+      r.replaceChar('\'', '_');
+      r.replaceChar('`',  '_');
+      r.replaceChar('<',  '_');
+      r.replaceChar('>',  '_');
+      r.replaceChar('*',  '_');
+      r.replaceChar('|',  '_');
+      r.replaceChar('!',  '_');
+      r.replaceChar('?',  '_');
+      r.replaceChar('^',  '_');
+      r.replaceChar('=',  '_');
+      r.replaceChar('~',  '_');
+      r.replaceChar('#',  '_');
+      r.replaceChar(';',  '_');
+      if(0 == r.charsetIndexOf("0123456789", 0))
+         r.insert(0, "x");
+      return deref r;
+   }
+
+   static SplitPathname(String name, path, file) {
+      // Split last used file name into directory/file components
+
+      int idx = name.lastIndexOf("/");
+      int idxDos = name.lastIndexOf("\\");
+      if(idxDos > idx)
+      {
+         idx = idxDos;
+      }
+
+      if(-1 != idx)
+      {
+         name.substring(0, idx) => path;
+         name.substring(idx+1, -1) => file;
+      }
+      else
+      {
+         path = null;
+         file = name;
+      }
+
+      // // trace "xxx SplitPathname: name=\""+name+"\" path=\""+path+"\" file=\""+file+"\".";
+   }
+
+   public static GetPluralString(int _num) : String {
+      if((0 == _num) || (abs(_num) > 1))
+         return "s";
+      return "";
+   }
+}
+
+if(sInputPathname >= ".csv")
+{
+   String sBuf;
+   if(sBuf.loadLocal(sInputPathname, true/*bRemoveCR*/))
+   {
+      trace "[...] read \""+sInputPathname+"\"";
+      StringArray aLines <= sBuf.splitChar('\n');
+      if(aLines.numElements >= 2)
+      {
+         sOut.append("<!-- imported from \""+sInputPathname+"\" by csv_to_msp.tks on "+Utils.GetCurrentDateTimeStringNumeric()+" -->\n");
+         sOut.append("<!--  (note) see https://github.com/pencilresearch/midi -->\n\n");
+
+         String sManufacturer;
+         String sDevice;
+         HashTable htSections; htSections.alloc(999);
+         String *sSection;
+         StringArray *[] aSectionLines;
+
+         // Sort lines into sections
+         int lineNr = 1;
+         String *sLine;
+         foreach sLine in aLines
+         {
+            if(!sLine.isBlank())
+            {
+               if(lineNr >= 2)
+               {
+                  // 0            1      2       3              4
+                  // manufacturer,device,section,parameter_name,parameter_description,
+                  //
+                  // 5      6      7            8            
+                  // cc_msb,cc_lsb,cc_min_value,cc_max_value,
+                  //
+                  // 9        10       11             12             
+                  // nrpn_msb,nrpn_lsb,nrpn_min_value,nrpn_max_value,
+                  //
+                  // 13          14    15
+                  // orientation,notes,usage
+                  //
+                  // trace "xxx sLine=<<<"+sLine+">>>";
+                  StringArray aCols <= sLine.splitChar(',');
+                  // trace "xxx #cols="+aCols.numElements+" aCols="+aCols;
+                  if(aCols.numElements >= 15)  // (note) some .csvs only have 15 columns
+                  {
+                     if(sManufacturer.isBlank())
+                     {
+                        sManufacturer = aCols[0];
+                        sDevice       = aCols[1];
+                        trace "[...] manufacturer=\""+sManufacturer+"\" device=\""+sDevice+"\"";
+                     }
+
+                     sSection <= aCols[2];
+                     if(htSections.exists(sSection))
+                     {
+                        aSectionLines <= htSections[sSection];
+                     }
+                     else
+                     {
+                        aSectionLines <= new PointerArray;
+                        htSections[sSection] = deref aSectionLines;
+                        if(Configuration.debugLevel > 0)
+                           trace "[dbg] sSection \""+sSection+"\"";
+                     }
+                     aSectionLines.add(#(deref aCols));
+                  }
+                  else
+                  {
+                     trace "[~~~] unexpected #cols="+aCols.numElements+" in line "+lineNr+", skipping..";
+                  }
+               }
+            }
+            lineNr++;
+         }
+
+         // Header
+         String sId = (Utils.ConvertToVarName(sManufacturer+"_"+sDevice).toLower());
+         sOut.append(
+"<MIDISynthProfile\n"+
+"  id="+sId+"\n"+
+(sManufacturer.isBlank()?"":("  manufacturer=\""+sManufacturer+"\"\n"))+
+"  caption=\""+sDevice+"\"\n"+
+"  inherit=1\n"+
+"  >\n"
+                     );
+
+         // Process sections
+         StringArray aSections; htSections.keysToArray(aSections);
+         IntArray aSorted; aSections.sortByValue(aSorted, false/*bCS*/);
+         // trace "xxx aSorted="+aSorted;
+         int idx = 0;
+         int secIdx = 0;
+         int totalNumParams = 0;
+         foreach idx in aSorted
+         {
+            sSection <= aSections[idx];
+            trace "[...] section=\""+sSection+"\"";
+            aSectionLines <= htSections[sSection];
+            sOut.append("\n  <editgroup caption=\""+sSection+"\"/>\n");
+            int paramIdx = 0;
+            foreach aCols in aSectionLines
+            {
+               // trace "xxx aCols="+aCols;
+               String sParamName <= aCols.get(3);
+               String sDesc <= aCols.get(4);
+               int ccMSB = (aCols.get(5).isBlank()) ? -1 : aCols.get(5);
+               int ccLSB = (aCols.get(6).isBlank()) ? -1 : aCols.get(6);
+               int ccMin = aCols.get(7);
+               int ccMax = aCols.get(8);
+               int nrpnMSB = (aCols.get(9).isBlank()) ? -1 : aCols.get(9);
+               int nrpnLSB = (aCols.get(10).isBlank()) ? -1 : aCols.get(10);
+               int nrpnMin = aCols.get(11);
+               int nrpnMax = aCols.get(12);
+               boolean bBipolar = !(aCols.get(13/*orientation*/) <= "0-based");
+               String sNotes <= aCols.get(14);
+               String sUsage = aCols.get(15);  // (note) null / blank in some CSVs
+               String sInfo = sDesc.isBlank() ? sNotes : sNotes.isBlank() ? sDesc : (sDesc+"\n"+sNotes);
+               String sEditOptions = "";
+               if(!sUsage.isBlank())
+               {
+                  if(!sInfo.isBlank())
+                     sInfo.append("\n");
+                  sInfo.append(sUsage);
+
+                  // parse ';' separated ranges and generate 'editOptions' attribute
+                  StringArray aOpt <= sUsage.splitChar(';');
+                  String *sOpt;
+                  foreach sOpt in aOpt
+                  {
+                     // trace "xxx sOpt=\""+sOpt+"\"";
+                     int idxCol = sOpt.indexOfChar(':', 0);
+                     if(idxCol > 0)
+                     {
+                        String sOptValue <= sOpt.substring(0, idxCol).trim();
+                        String sOptName  <= sOpt.substring(idxCol + 1, 999).trim();
+                        // trace "xxx   sOptValue=\""+sOptValue+"\" sOptName=\""+sOptName+"\"";
+                        if(!sEditOptions.isBlank())
+                           sEditOptions.append(";");
+                        int idxMinus = sOptValue.indexOfChar('-', 0);
+                        if(idxMinus < 0)
+                           idxMinus = sOptValue.indexOfChar('~', 0);  // some CSVs use '-', some '~', some both
+                        if(idxMinus > 0)
+                        {
+                           // named value range
+                           int optMin = sOptValue.substring(0, idxMinus).trim();
+                           int optMax = sOptValue.substring(idxMinus+1,99).trim();
+                           // trace "xxx     optMin="+optMin+" optMax="+optMax;
+                           sEditOptions.append("@"+optMin+".."+optMax+":"+sOptName);
+                        }
+                        else
+                        {
+                           // named value
+                           sEditOptions.append("@"+int(sOptValue)+":"+sOptName);
+                        }
+                     }
+                  }
+               }
+               if(!sParamName.isBlank())
+               {
+                  if(ccMSB >= 0)
+                  {
+                     sOut.append(
+                        "\n    <cc id=p_"+secIdx+"_"+paramIdx+"\n"+
+                        "        nr="+ccMSB+"\n"+
+                        ((ccLSB >= 0)?("        nrLo="+ccLSB+"\n"):"")+
+                        "        caption=\""+sParamName+"\"\n"+
+                        "        min="+ccMin+" max="+ccMax+"\n"+
+                        (bBipolar?"        celRange=M64_P63\n":"")+
+                        "        celStyle="+((ccMax >= 16)?"HEX":"LO_NIBL")+"\n"+
+                        (sInfo.isBlank()?"":("        info=\""+sInfo+"\"\n"))+
+                        (sEditOptions.isBlank()?"":("        editOptions=\""+sEditOptions+"\"\n"))+
+                        "        />\n"
+                                 );
+                  }
+
+                  if(nrpnLSB >= 0)
+                  {
+                     sOut.append(
+                        "\n    <nrpn id=p_"+secIdx+"_"+paramIdx+"\n"+
+                        ((nrpnMSB > 0)?("          nrLo="+nrpnLSB):("          nr="+nrpnLSB))+"\n"+
+                        ((nrpnMSB > 0)?("          nrHi="+nrpnMSB+"\n"):"")+
+                        "          caption=\""+sParamName+"\"\n"+
+                        "          min="+nrpnMin+" max="+nrpnMax+"\n"+
+                        (bBipolar?"          celRange=M64_P63\n":"")+
+                        "          celStyle="+((nrpnMax >= 16)?"HEX":"LO_NIBL")+"\n"+
+                        (sInfo.isBlank()?"":("          info=\""+sInfo+"\"\n"))+
+                        (sEditOptions.isBlank()?"":("          editOptions=\""+sEditOptions+"\"\n"))+
+                        "          />\n"
+                                 );
+                  }
+                  paramIdx++;
+                  totalNumParams++;
+               }
+            }  // foreach aCols
+            secIdx++;
+         } // foreach idx
+
+         sOut.append("\n</MIDISynthProfile>\n");
+
+         if(Configuration.debugLevel > 0)
+            trace sOut;
+
+         if(!sId.isBlank())
+         {
+            // // String sOutputPathname = sInputPathname.replace(".csv", ".msp");
+            // // String sOutputPath;
+            // // String sOutputFile;
+            // // Utils.SplitPathname(sOutputPathname, sOutputPath, sOutputFile);
+            String sOutputFile <= sId+".msp";
+            if(sOutputFile >= ".msp")
+            {
+               sOut.saveLocal(sOutputFile);
+               trace "[...] wrote \""+sOutputFile+"\" ("+htSections.numElements+" section"+Utils.GetPluralString(htSections.numElements)+", "+totalNumParams+" param"+Utils.GetPluralString(totalNumParams)+")";
+            }
+         }
+         else
+         {
+            trace "[---] invalid/missing manufacturer / device (id=\""+sId+"\")";
+         }
+      }
+   }
+   else
+   {
+      trace "[---] failed to open \""+sInputPathname+"\" for reading";
+      exit(10);
+   }
+}
+else
+{
+   trace "[---] input must be .csv";
+   exit(10);
+}

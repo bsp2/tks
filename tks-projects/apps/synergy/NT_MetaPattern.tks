@@ -1,0 +1,263 @@
+// ----
+// ---- file   : NT_MetaPattern.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 10Jan2015, 17Jan2015, 28Jan2015, 11Feb2015, 14Feb2015, 18Apr2015, 03May2015
+// ----          12May2015, 04Feb2017, 24Mar2017, 25Jun2019, 28Apr2020, 20Jul2021, 16Apr2022
+// ----          28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_MetaPattern;
+
+use namespace ui;
+use namespace st2;
+
+
+class NT_MetaPattern : NodePattern {
+
+   NodeTracker *parent_node;
+
+   public int num_ticks;  // pattern length in ticks
+
+   public int ui_pattern_replay_start_offset; // used while editing to start replay at arbitrary edit offsets
+
+   public boolean b_empty; // editor hint, set to false as soon as pattern is edited
+
+   Buffer cnp_event_data; // used by clipboard/copy'n'paste to store NT_TrackPattern data
+
+   public byte midi_pat_nr;  // original midi pattern (in linked midi_node_gid)
+   public byte audio_pat_nr; // recorded audio pattern (in linked audio_node_gid)
+
+   NT_RandomParams *randomParamsDummy;
+
+
+   public virtual patInit(NodeTracker _parent, int _patNr) {
+
+      NodePattern::patInit(_parent, _patNr);
+
+      parent_node <= _parent;
+
+      num_ticks = 0; /// current_song.ppq * 4
+
+      b_empty = true;
+
+      midi_pat_nr = -1;
+      audio_pat_nr = -1;
+   }
+
+   public method patIsEmpty() : boolean {
+      return b_empty || (0 == num_ticks);
+   }
+
+   public =replay= method setNumTicks(int _ticks) {
+      num_ticks = _ticks;
+
+      // Check whether _ticks is 0 and all track patterns are empty
+      b_empty = parent_node.isPatternEmptyCheck(pat_nr);
+   }
+
+   public method getNumTicks() : int {
+      return num_ticks;
+   }
+
+   public virtual patHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+      // nothing to do
+   }
+
+   public virtual patCopyFrom(NT_MetaPattern o, boolean _bClear) {
+
+      // (note) this also copies the actual pattern/event data
+
+      NodePattern::patCopyFrom(o, _bClear);
+
+      num_ticks = o.num_ticks;
+
+      ui_pattern_replay_start_offset = o.ui_pattern_replay_start_offset;
+
+      b_empty = o.b_empty;
+
+      midi_pat_nr  = o.midi_pat_nr;
+      audio_pat_nr = o.audio_pat_nr;
+
+      if(b_clipboard)
+      {
+         if(!o.b_clipboard)
+         {
+            // Copy regular pattern to clipboard
+
+            // Copy event data
+            cnp_event_data.free();
+
+            // Determine event data size
+            DummyStream ds;
+            ds.offset = 0;
+            ds.size = 0;
+            o.saveEventData(ds);
+
+            Global.Debug2("NT_MetaPattern: event data size="+ds.size);
+
+            // Save state to memory buffer
+            cnp_event_data.size = ds.offset;
+            cnp_event_data.offset = 0;
+            o.saveEventData(cnp_event_data);
+
+            ////SongFileReader.InitOutDevIdxMapAndUseCount();
+         }
+         else
+         {
+            // Copy clipboard to clipboard (used by undo when preparing redo entry)
+            cnp_event_data = o.cnp_event_data;
+         }
+      }
+      else if(o.b_clipboard)
+      {
+         // Copy clipboard to regular pattern
+         if((o.cnp_event_data.size) > 0)
+         {
+            o.cnp_event_data.setOffset(0);
+            loadEventData(o.cnp_event_data);
+         }
+      }
+      // else: internal error
+
+      // // // Copy Randomizer params
+      // // if(null != o.random_params)
+      // // {
+      // //    getOrCreateRandomParams();
+      // //    random_params.copyFrom(o.random_params);
+      // // }
+      // // else
+      // // {
+      // //    random_params <= null;
+      // // }
+
+   }
+
+   public method saveEventData(Stream ofs) {
+      int numTracks = parent_node.tracks.numElements;
+
+      ofs.i8 = numTracks;
+
+      NT_Track *track;
+      foreach track in (parent_node.tracks)
+      {
+         NT_TrackPattern pat <= track.getOrCreatePattern(pat_nr); // (note) pattern should already exist
+         pat.saveState(ofs, 0/*forcePatNr*/);
+      }
+   }
+
+   public method loadEventData(Stream ifs) {
+      int numTracks = parent_node.tracks.numElements;
+
+      int readNumTracks = ifs.i8;
+
+      if(readNumTracks == numTracks)
+      {
+         NT_Track *track;
+         foreach track in parent_node.tracks
+         {
+            NT_TrackPattern pat <= track.getOrCreatePattern(pat_nr); // (note) pattern should already exist
+            pat.init(track, pat_nr); // re-init
+            pat.loadState(ifs);
+            pat.pat_nr = pat_nr; // restore orig patnr (overwritten by loadState())
+            pat.meta_pattern <= this;
+         }
+      }
+      else
+      {
+         trace "[~~~] NT_MetaPattern::loadEventData: #tracks mismatch (read="+readNumTracks+" this="+numTracks+")";
+      }
+   }
+
+   public virtual patSaveState(Stream ofs) {
+
+      // Version
+      ofs.i16 = 5;
+
+      NodePattern::patSaveState(ofs);
+
+      ofs.i32 = num_ticks;
+
+      ofs.i32 = ui_pattern_replay_start_offset; // v2+
+
+      ofs.i8 = midi_pat_nr; // v3+
+      ofs.i8 = audio_pat_nr; // v3+
+   }
+
+   public virtual patLoadState(Stream ifs, short ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      if(ver >= 1)
+      {
+         // trace "xxx NT_MetaPattern::patLoadState: ver="+ver;
+
+         if(!NodePattern::patLoadState(ifs, ver, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         num_ticks = ifs.i32;
+
+         if(ver >= 2)
+         {
+            ui_pattern_replay_start_offset = ifs.i32; // v2+
+         }
+
+         if(ver >= 3)
+         {
+            midi_pat_nr  = ifs.s8; // v3+
+            audio_pat_nr = ifs.s8; // v3+
+         }
+
+         // Random params (v4+)
+         //  (note) moved to NT_TrackPattern in v5+
+         //  (todo) remove
+         if(4 == ver)
+         {
+            byte verRandomParams = ifs.u8;
+            trace "xxx NT_MetaPattern::patLoadState: verRandomParams="+verRandomParams+" parent_node="+#(parent_node);
+            if(verRandomParams > 0)
+            {
+               randomParamsDummy <= new NT_RandomParams;
+               randomParamsDummy.init();
+
+               // getOrCreateRandomParams();
+               if(1 == verRandomParams)
+               {
+                  // v1: 1 lane
+                  NT_RandomParamsLane lane <= randomParamsDummy.getLane(0);
+                  if(!lane.loadState(ifs))
+                  {
+                     trace "[---] NT_MetaPattern::patLoadState: failed to load random params lane (ver="+ver+")";
+                     return false;
+                  }
+               }
+               else
+               {
+                  // 5 lanes
+                  if(!randomParamsDummy.loadState(ifs))
+                  {
+                     trace "[---] NT_MetaPattern::patLoadState: failed to load random params state (ver="+ver+")";
+                     return false;
+                  }
+               }
+            }
+            else
+            {
+               randomParamsDummy <= null;
+            }
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+}

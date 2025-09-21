@@ -1,0 +1,997 @@
+// ----
+// ---- file   : FileNameDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2013-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : based on ui::StringDialog
+// ----
+// ---- created: 26May2013
+// ---- changed: 18Aug2014, 04Mar2015, 20Apr2015, 08Mar2017, 12Mar2017, 14Mar2017, 04Jan2018
+// ----          25Feb2018, 26Feb2018, 04Mar2018, 02May2018, 02Jan2019, 20Sep2019, 05Nov2019
+// ----          02Mar2020, 03Mar2020, 13Mar2020, 05May2020, 01Nov2020, 25Jun2021, 19Feb2023
+// ----          21Oct2023, 17Jan2024, 02Aug2024, 05Aug2024, 31Jan2025, 20Mar2025, 21Mar2025
+// ----
+// ----
+// ----
+
+module MFileNameDialog;
+
+use namespace ui;
+namespace st2;
+
+
+// <class.png>
+class FileNameDialogTextField : TextField {
+   protected virtual focusPreviousTabCycleMember(boolean _bLocal) {
+      FileNameDialog dlg <= getRoot();
+      dlg.handleSelection(FileNameDialog.ACTION_PREVIOUS);
+   }
+
+   protected virtual focusNextTabCycleMember(boolean _bLocal) {
+      FileNameDialog dlg <= getRoot();
+      dlg.handleSelection(FileNameDialog.ACTION_NEXT);
+   }
+}
+
+
+// <class.png>
+class FileNameDialog extends FloatingLayer, ActionConsumer, ActionProvider {
+
+   // (note) lctrl-d: show dir-selection popup
+   // (note) lctrl-f: open in explorer
+   // (note) lctrl-g: change to last-used dir
+   // (note) lctrl-h: copy current to last-used dir
+   // (note) lctrl-q: close dialog (alt: ESCAPE)
+
+   define String ACTION_RETURN;   // select file
+   define String ACTION_PREVIEW;  // preview file
+   define String ACTION_PREVIOUS;
+   define String ACTION_NEXT;
+   define String ACTION_CANCEL;
+
+   protected ActionConsumer *recipient;
+   protected Button *bt_path;
+   protected FileNameDialogTextField *tf;
+
+   protected Button *bt_browse;
+
+   protected Button *bt_ok;
+
+   protected String  filedialog_title;
+   protected boolean filedialog_b_dir;
+
+   protected boolean b_save;
+   protected String dir_name_prefix;
+   protected String file_suffix;
+   protected String base_dir;
+
+   protected String last_used_dir_name_prefix;
+
+   protected StringArray auto_completions;
+   protected StringArray auto_completions_pathnames;
+   protected ComboBoxPopup *cmp_auto_complete;
+
+   protected static String tf_help = "\n\n (note) press DOWN for auto-completion\n\n (note) press lctrl-d for (sub-)directory dialog\n\n (note) press lctrl-g to select last-saved/loaded directory\n (note) press lctrl-h to copy current to last-used(saved/loaded) directory var\n\n (note) type dirname or \"..\" or \"/\" to change directories\n\n (note) type \"mkdir mynewdirname\" to create new subdirectory\n\n (note) press ESCAPE or lctrl-q to cancel file dialog";
+
+   protected String *auto_complete_tab_pattern;
+
+   protected StringArray subdir_names;
+   protected ComboBoxPopup *cmp_subdir;
+
+
+   // <ui_init.png>
+   public method init(String _fontName) {
+
+      initFloatingLayer();
+
+      setLayout(SuperBorderLayout);
+      setPadding4f(0,0,0,0);
+
+      Panel p <= new Panel;
+      p.initPanel();
+      p.configureAsControlPanel();
+      p.setPadding4f(2,2,2,2);
+      addLayer(deref p, Layout.CENTER);
+
+      bt_path <= new Button;
+      bt_path.initButton();
+      bt_path.setEnableLabelButton(true);
+      bt_path.setCaptionSizeReserve("/f/samples/other/dir/long/nested/sub/dir/and/a/dir with a very long name (MMMMMMMMM)");
+      bt_path.setAlignment(Layout.EXPANDX);
+      bt_path.setToolTipCaption("Current path\n\n (note) click to show sub-directory selector\n (note) lctrl-d");
+      p.addLayer(bt_path, Layout.TOP);
+
+      tf <= new FileNameDialogTextField();
+      tf.initTextField();
+      tf.setPadding4f(0,1,0,0);
+      tf.setEnableCursorUpDown(true);
+      tf.setEnableCursorLeftRight(true);
+      tf.setEnableProvideRightClick(true);
+      tf.setEnableSkipEsc(true);
+
+      if(null != _fontName)
+      {
+         tf.setFontByName(_fontName);
+      }
+
+      tf.alignment = Layout.EXPANDX;
+      tf.b_always_send_textchanged = true;
+      p.addLayer(tf, Layout.CENTER);
+
+      if(1)
+      {
+         bt_browse <= Button.NewIconButton("file_browse", Layout.CENTER);
+         bt_browse.setEnableHold(true);
+         bt_browse.setEnableLabelButton(true);
+         bt_browse.setPadding4f(2, 2, 2, 2);
+         bt_browse.setIconPadding4f(0, 0, 0, 0);
+         bt_browse.setInnerPadding4f(0, 0, 0, 0);
+         bt_browse.setToolTipCaption("Show all available files\n\n (note) Type DOWN in filename textfield to auto-complete/browse files (supports * pattern matching)\n\n (note) enter \"/\" (+RETURN) to go back to root directory\n\n (note) hold-click to open current directory in system file manager");
+         bt_browse.setAlignment(Layout.CENTERY);
+         p.addLayer(bt_browse, Layout.RIGHT);
+      }
+
+      bt_ok <= Button.NewIconButton("ok_sm", Layout.CENTER);
+      bt_ok.setEnableLabelButton(true);
+      bt_ok.setToolTipCaption("Load\n\n (note) RETURN");
+      bt_ok.setPadding4f(2, 2, 2, 2);
+      bt_ok.setAlignment(Layout.CENTERY);
+      p.addLayer(bt_ok, Layout.RIGHT);
+   }
+
+   // <ui_init.png>
+   public method configure(String         _title,
+                           String         _fileName,
+                           boolean        _bDir,
+                           ActionConsumer _recipient,
+                           boolean        _bSave,
+                           String         _suffix,
+                           String         _baseDir
+                           ) {
+
+      _fileName.replace("//", "/");
+      _fileName.replace("//", "/");
+
+      Global.Debug("FileNameDialog: fileName=\""+_fileName+"\" bDir="+_bDir+" bSave="+_bSave+" suffix=\""+_suffix+"\" baseDir=\""+_baseDir+"\"");
+
+      filedialog_title    = _title;
+      filedialog_b_dir    = _bDir;
+
+      b_save = _bSave;
+      file_suffix = _suffix;
+
+      base_dir = _baseDir;
+
+      recipient <= _recipient;
+
+      tf.setMaxTextLength(1024);
+      tf.setVisibleTextLength(27);
+
+      if(_bSave)
+         tf.setBackgroundTint(#10FFCA11);
+      else
+         tf.setBackgroundTint(0);
+
+      if(!_bDir)
+      {
+         dir_name_prefix = "";
+         String fileName = "";
+         if(!_fileName.isBlank())
+            Utils.SplitPathname(_fileName, dir_name_prefix, fileName);
+         else
+            dir_name_prefix = _baseDir;
+
+         if(dir_name_prefix.isBlank())
+            dir_name_prefix = _baseDir;
+
+         if(last_used_dir_name_prefix.isBlank())
+         {
+            last_used_dir_name_prefix = dir_name_prefix;
+            Global.Print("FileNameDialog::configure: set initial last_used_dir_name_prefix=\""+last_used_dir_name_prefix+"\"");
+         }
+
+         bt_path.setCaption(dir_name_prefix);
+         // // trace "xxx FileNameDialog: dir_name_prefix=\""+dir_name_prefix+"\"";
+         // // trace "xxx FileNameDialog:        fileName=\""+fileName+"\"";
+         tf.setToolTipCaption(Utils.LazyAppendSuffix(_fileName, file_suffix)+tf_help);
+         fileName = Utils.LazyRemoveSuffix(fileName, file_suffix);
+         tf.setText(fileName);
+      }
+      else
+      {
+         tf.setText(_fileName);
+      }
+
+      if(_bSave)
+      {
+         bt_ok.setIcon(UI.GetIcon("prj_save"));
+         bt_ok.setToolTipCaption("Save\n\n (note) RETURN");
+      }
+      else
+      {
+         bt_ok.setIcon(UI.GetIcon("ok_sm"));
+         bt_ok.setToolTipCaption("Load\n\n (note) RETURN");
+      }
+
+      recursiveBuildTabCycleLists();
+
+      resizeToMinimum();
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_RETURN, ACTION_PREVIEW, ACTION_PREVIOUS, ACTION_NEXT, ACTION_CANCEL];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual hideByMouseClick() {
+      handleSelection(ACTION_CANCEL);
+   }
+
+   // <method.png>
+   protected method updateFileNameBackground() {
+      tf.setBackgroundTint(0);
+
+      local String fileName <= getSelectedPathName();
+      if(null != fileName)
+      {
+         fileName <= Utils.ToNativePathName(deref fileName);
+         boolean bExists = Utils.CanFileBeRead(fileName);
+         if(bExists)
+         {
+            if(b_save)
+            {
+               // yellow: warning, file already exists and will be overwritten
+               tf.setBackgroundTint(#28ffff00);
+            }
+            else
+            {
+               // green: ok, file can be read
+               tf.setBackgroundTint(#2000ff00);
+            }
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      FloatingLayer::postShow();
+      tf.onTabFocus();
+
+      updateFileNameBackground();
+   }
+
+   // <method.png>
+   protected method handleDirChanged() {
+      dir_name_prefix.replace("//", "/");
+      bt_path.setCaption(dir_name_prefix);
+      bt_path.redraw();
+      updateFileNameBackground();
+   }
+
+   // <method.png>
+   protected method appendToFileNames(StringArray _allNames,
+                                      String _baseDir,
+                                      local String _subDirName,
+                                      boolean _bDirOnly,
+                                      boolean _bNameOnly,
+                                      boolean _bRecurse
+                                      ) {
+      // trace "xxx appendToFileNames: dirName=\""+_baseDir+"/"+_subDirName+"\"";
+      local StringArray fileNames <= Utils.ReadDirectory(Utils.ToNativePathName(_baseDir)+"/"+_subDirName);
+      if(null != fileNames)
+      {
+         local String *fileName;
+         foreach fileName in fileNames
+         {
+            local StringArray words <= fileName.splitSpace(true);
+            if(fileName <= "d ")
+            {
+               local String subDirName <= words.get(1);
+               if("." != subDirName)
+               {
+                  if(".." != subDirName)
+                  {
+                     if(_bDirOnly || b_save)  // only add dirname in save mode
+                     {
+                        local String addDirName = subDirName;
+                        fileName.replace(addDirName, _subDirName+"/"+addDirName+"/");
+                        if(_bNameOnly)
+                           _allNames.add(subDirName);
+                        else
+                           _allNames.add(fileName.substring(2, fileName.length-2));  // skip "d " and add
+                     }
+                     if(_bRecurse)
+                        appendToFileNames(_allNames, _baseDir, _subDirName+"/"+subDirName, _bDirOnly, _bNameOnly, true/*bRecurse*/);
+                  }
+               }
+            }
+            else if( (fileName <= "f ") && !_bDirOnly )
+            {
+               if(!_subDirName.isBlank())
+               {
+                  fileName.insert(3, _subDirName+"/");
+               }
+               local String fname <= words.get(1);
+               // // trace "xxx fname=\""+fname+"\" file_suffix=\""+file_suffix+"\"";
+               if(fname.toLower().endsWith(file_suffix))
+               {
+                  if(_bNameOnly)
+                     _allNames.add(fname);
+                  else
+                     _allNames.add(fileName.substring(2, fileName.length-2)); // skip "f "
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method calcAutoCompletions(String _forcePatternOrNull) {
+      if(!filedialog_b_dir)
+      {
+         auto_completions.free();
+         auto_completions_pathnames.free();
+
+         StringArray patterns;
+         patterns.free();
+         String *pat;
+
+         if(null != _forcePatternOrNull)
+         {
+            patterns.add(_forcePatternOrNull.toLower());
+         }
+         else
+         {
+            foreach pat in (tf.getText().splitChar(' '))
+            {
+               patterns.add("*"+pat.toLower()+"*");
+            }
+         }
+
+         // Find all files, recursively
+         StringArray fileNames; fileNames.free();
+         appendToFileNames(fileNames, dir_name_prefix, "", false/*bDirOnly*/, false/*bNameOnly*/, true/*bRecurse*/);
+
+         // Filter the list
+         if(null != fileNames)
+         {
+            String *fileName;
+            foreach fileName in fileNames
+            {
+               // // trace "xxx fileName=\""+fileName+"\"";
+               boolean bMatch = (fileName <= "d ");
+
+               if(!bMatch)
+               {
+                  bMatch = true;
+                  foreach pat in patterns
+                  {
+                     if(!(fileName.toLower().patternMatch(pat)))
+                     {
+                        bMatch = false;
+                        break;
+                     }
+                  }
+               }
+
+               if(bMatch)
+               {
+                  fileName.replace("//", "/");
+                  fileName.replace("//", "/");
+                  local StringArray fnWords <= fileName.splitSpace(true);
+                  // // trace "xxx fileName=>>"+fileName+"<< word0=\""+(fnWords.get(0))+"\"";
+                  // // trace "xxx fileName words="+#(fnWords);
+                  auto_completions_pathnames.add(fnWords.get(0));
+                  int idx = fileName.lastIndexOf("\"");
+                  if(-1 != idx)
+                  {
+                     fileName.insert(idx+1, "\t"); // right align date/time
+                  }
+                  auto_completions.add(fileName);
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showAutoCompletions(String _forcePatternOrNull, int _selectedOption) {
+      calcAutoCompletions(_forcePatternOrNull);
+
+      if(auto_completions.numElements > 0)
+      {
+         ComboBoxPopup cmp <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                             null/*fontOrNull*/,
+                                                             auto_completions,
+                                                             null/*optionsLongOrNull*/,
+                                                             _selectedOption,
+                                                             tf.getSizeX()/*prefSx*/,
+                                                             null/*toolTipCaptions*/,
+                                                             null/*optionBGColors*/,
+                                                             null/*option_fgtints*/
+                                                             );
+
+         cmp.showBelowLayer(tf);
+         cmp.centerRow();
+         cmp.focusFirstTabCycleMember();
+         cmp.setEnableHideOnFirstEntryUp(true);
+         cmp_auto_complete <= deref cmp;
+         cmp.setEnableMouseOverPreview(true);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoCompletionSelection(int _idx, boolean _bPreview) {
+      String pathName = auto_completions.get(_idx);
+      // // trace "xxx handleAutoCompletionSelection: idx="+_idx;
+      // // trace "xxx selected pathName \""+pathName+"\" idx="+_idx+" dir_name_prefix=\""+dir_name_prefix+"\"";
+      StringArray words <= pathName.splitSpace(true);
+
+      if(null != words)
+      {
+         pathName = dir_name_prefix+"/"+words.get(0);
+         pathName.replace("//", "/");
+         pathName.replace("//", "/");
+
+         // Update dir_name and textfield
+         String fileName = "";
+         String dirNamePrefix = "";
+         Utils.SplitPathname(pathName, dirNamePrefix, fileName);
+         // // trace "xxx split dirNamePrefix=\""+dirNamePrefix+"\"";
+         // // trace "xxx split fileName=\""+fileName+"\"";
+
+         if(!_bPreview) // while selecting entries in combobox (not confirmed with "return", yet)
+         {
+            dir_name_prefix = dirNamePrefix;
+            // // trace "xxx FileNameDialog: dir_name_prefix=\""+dir_name_prefix+"\"";
+            // // trace "xxx FileNameDialog:        fileName=\""+fileName+"\"";
+         }
+
+         if(fileName.isBlank())
+         {
+            if(!_bPreview)
+            {
+               Global.Print("Change dir to \""+Utils.FixFileName(dir_name_prefix+"/")+"\"");
+               handleDirChanged();
+            }
+         }
+         else
+         {
+            tf.setToolTipCaption(Utils.LazyAppendSuffix(pathName, file_suffix)+tf_help);
+
+            if(recipient instanceof ActionConsumer)
+            {
+               StringAction ac <= StringAction.New(getProvidedActionAlias(ACTION_PREVIEW), this,
+                                                   Utils.LazyAppendSuffix(pathName, file_suffix)
+                                                   );
+               recipient.consumeAction(ac);
+            }
+
+            fileName = Utils.LazyRemoveSuffix(fileName, file_suffix);
+         }
+
+         if(!_bPreview)
+            tf.setText(fileName);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method selectNextAutoCompletition() {
+      local String s <= tf.getText().trim();
+      if(null == auto_complete_tab_pattern)
+      {
+         auto_complete_tab_pattern <= "*" + s + "*";
+      }
+
+      // Global.Debug2("selectNextAutoCompletion: tab_pattern=\""+auto_complete_tab_pattern+"\"");
+
+      calcAutoCompletions(auto_complete_tab_pattern);
+      // // trace "xxx selectNextAutoCompletion: auto_completion_pathnames="+#(auto_completions_pathnames);
+      int idx = auto_completions_pathnames.indexOfObject(s, 0);
+      if(-1 == idx)
+         idx = 0;
+      else
+         idx = (idx + 1) % auto_completions_pathnames.numElements;
+      if(idx < auto_completions_pathnames.numElements)
+      {
+         tf.setText(auto_completions_pathnames.get(idx));
+         tf.selectAll();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method showAutoCompletionsForTabPattern() {
+      local String s <= tf.getText().trim();
+      int idx = auto_completions_pathnames.indexOfObject(s, 0);
+      if(-1 != idx)
+      {
+         showAutoCompletions(auto_complete_tab_pattern/*forcePatternOrNull*/, idx);
+      }
+      else
+      {
+         // Should not be reachable
+         auto_complete_tab_pattern <= null;
+         showAutoCompletions(null/*forcePatternOrNull*/, -1);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMkDir(String _s) {
+      _s.replace("mkdir ", "");
+      _s.trim();
+      local String nativeDirName <= Utils.ToNativePathName(_s);
+      local String localDirName <= Utils.ToNativePathName(dir_name_prefix)+"/"+nativeDirName;
+      Global.Debug("FileNameDialog::handleMkDir: mkdir \""+localDirName+"\"");
+      tkfileutils_mkdir(localDirName);
+      dir_name_prefix.append("/");
+      dir_name_prefix.append(nativeDirName);
+      handleDirChanged();
+      Global.Print("Create directory \""+nativeDirName+"\"");
+      tf.setText("");
+      tf.onTabFocus();
+   }
+
+   // <method.png>
+   protected method changeToParentDir(boolean _bKeepName) {
+      dir_name_prefix.replace("//", "/");
+      dir_name_prefix.replace("//", "/");
+      StringArray dirWords = dir_name_prefix.splitChar('/');
+      // trace "xxx changeToParentDir: dir_name_prefix=\""+dir_name_prefix+"\" dirWords="+dirWords;
+      if(dirWords.numElements > 0)
+      {
+         dirWords.delete(dirWords.numElements - 1);
+         dir_name_prefix = "";
+         String *dirWord;
+         int dirWordIdx = 0;
+         foreach dirWord in dirWords
+         {
+            if(dirWordIdx++ > 0)
+               dir_name_prefix.append("/");
+            dir_name_prefix.append(dirWord);
+         }
+         if(!_bKeepName)
+            tf.setText("");
+         Global.Print("Change to parent dir \""+dir_name_prefix+"\"");
+         handleDirChanged();
+      }
+      else
+      {
+         dir_name_prefix = base_dir;
+         if(!_bKeepName)
+            tf.setText("");
+         Global.Print("Change to root dir \""+dir_name_prefix+"\"");
+         handleDirChanged();
+      }
+      UI.SetKeyboardFocus(tf);
+   }
+
+   // <method.png>
+   protected method changeToRootDir(boolean _bKeepName) {
+      dir_name_prefix = base_dir;
+      Global.Print("Change to base dir \""+base_dir+"\"");
+      if(!_bKeepName)
+         tf.setText("");
+      UI.SetKeyboardFocus(tf);
+      handleDirChanged();
+   }
+
+   // <method.png>
+   protected method changeToLastUsedDir() {
+      if(!last_used_dir_name_prefix.isBlank())
+      {
+         dir_name_prefix = last_used_dir_name_prefix;
+         Global.Print("Change to last-used dir \""+dir_name_prefix+"\"");
+         UI.SetKeyboardFocus(tf);
+         handleDirChanged();
+      }
+      else
+      {
+         Global.Warning("last saved dir is blank");
+      }
+   }
+
+   // <method.png>
+   protected method copyToLastUsedDir() {
+      last_used_dir_name_prefix = dir_name_prefix;
+      Global.Print("Copy last-used dir \""+dir_name_prefix+"\"");
+      UI.SetKeyboardFocus(tf);
+   }
+
+   // <method_get.png>
+   protected method getSelectedPathName() : String {
+      // used to check if file already exists in save mode
+      //   returns null when text refers to a directory or the "mkdir" command
+      local String selFile = tf.getText();
+
+      if(selFile <= "mkdir ")
+         return null;
+
+      local String tryDirName;
+      selFile.replace("//", "/") => tryDirName;
+      tryDirName.replace("//", "/");
+
+      if(tryDirName.startsWith("/"))
+         tryDirName = base_dir + "/"+tryDirName;
+      else
+         tryDirName = dir_name_prefix + "/"+tryDirName;
+
+      if(null != tkfileutils_read_directory(Utils.ToNativePathName(tryDirName)))
+         return null;
+
+      if(selFile == "..")
+         return null;
+
+      if(selFile == "/")
+         return null;
+
+      local String selPathName;
+      if(selFile.startsWith("/"))
+         selPathName = Utils.LazyAppendSuffix(base_dir + selFile, file_suffix);
+      else
+         selPathName = Utils.LazyAppendSuffix(dir_name_prefix + "/" + selFile, file_suffix);
+
+      return deref selPathName;
+   }
+
+   // <ui_handle.png>
+   module handleSelection(String _actionName) {
+
+      if(ACTION_NEXT == _actionName)
+      {
+         selectNextAutoCompletition();
+         return;
+      }
+
+      String selFile = tf.getText();
+
+      if(ACTION_CANCEL != _actionName)
+      {
+         if(selFile <= "mkdir ")
+         {
+            handleMkDir(selFile);
+            return;
+         }
+      }
+
+      tf.stopEditing(false, false, true); // Do not provide new action to avoid recursion!
+
+      if(ACTION_CANCEL == _actionName)
+      {
+         // Hide subdir popup
+         if(null != cmp_subdir)
+         {
+            if(cmp_subdir.isFloatingLayerVisible())
+               cmp_subdir.hide();
+         }
+
+         Global.Print("Cancel file dialog");
+         hide();
+         Action acCancel <= Action.New(getProvidedActionAlias(_actionName), this);
+         if(null != recipient)
+         {
+            recipient.consumeAction(acCancel);
+         }
+      }
+      else
+      {
+         if(selFile == "..")
+         {
+            changeToParentDir(false/*bKeepName*/);
+         }
+         else if(selFile == "/")
+         {
+            changeToRootDir(false/*bKeepName*/);
+         }
+         else
+         {
+            // Try Change directory
+            String tryDirName;
+            selFile.replace("//", "/") => tryDirName;
+            tryDirName.replace("//", "/");
+            if(tryDirName.startsWith("/"))
+            {
+               tryDirName = base_dir + "/"+tryDirName;
+            }
+            else
+            {
+               tryDirName = dir_name_prefix + "/"+tryDirName;
+            }
+
+            if(null != tkfileutils_read_directory(Utils.ToNativePathName(tryDirName)))
+            {
+               dir_name_prefix = tryDirName;
+               if(!dir_name_prefix.endsWith("/"))
+                  dir_name_prefix.append("/");
+               Global.Print("Change dir to \""+Utils.FixFileName(dir_name_prefix+"/")+"\"");
+               tf.setText("");
+               UI.SetKeyboardFocus(tf);
+               handleDirChanged();
+            }
+            else
+            {
+               if(selFile.endsWith("/"))
+               {
+                  Global.Warning("Failed to cd to \""+tryDirName+"\"");
+                  UI.SetKeyboardFocus(tf);
+               }
+               else
+               {
+                  // // trace "xxx handleSelection _actionName="+_actionName+" recipient="+#(recipient);
+                  hide();
+
+                  if(recipient instanceof ActionConsumer)
+                  {
+                     String selPathName;
+                     // // trace "xxx FileNameDialog: selFile=\""+selFile+"\" base_dir=\""+base_dir+"\" dir_name_prefix=\""+dir_name_prefix+"\"";
+                     if(selFile.startsWith("/"))
+                        selPathName = Utils.LazyAppendSuffix(base_dir + selFile, file_suffix);
+                     else
+                        selPathName = Utils.LazyAppendSuffix(dir_name_prefix + "/" + selFile, file_suffix);
+
+                     selPathName.replace("//", "/");
+
+                     last_used_dir_name_prefix = dir_name_prefix;
+                     Global.Debug("FileNameDialog::handleSelection: set last_used_dir_name_prefix=\""+last_used_dir_name_prefix+"\"");
+
+                     StringAction ac <= StringAction.New(getProvidedActionAlias(_actionName), this, selPathName);
+                     recipient.consumeAction(ac);
+                     // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_show.png>
+   public method openExplorer() {
+      if(Utils.IsWindows())
+      {
+         local String cmdLine <= "explorer "+Utils.FixPathname_psystem_exe(dir_name_prefix);
+         Global.Debug2("FileNameDialog: exec cmdLine=>>"+cmdLine+"<<");
+         system(cmdLine);
+      }
+   }
+
+   // <ui_show.png>
+   public method showSubDirComboBoxPopup() {
+      subdir_names.empty();
+      subdir_names.add("/");
+      subdir_names.add("..");
+      appendToFileNames(subdir_names, dir_name_prefix, "", true/*bDirOnly*/, true/*bNameOnly*/, false/*bRecurse*/);
+
+      if(0)
+      {
+         trace "[dbg] subdirs:\n";
+         String *s;
+         foreach s in subdir_names
+         {
+            trace "       "+s;
+         }
+      }
+
+      ComboBoxPopup cmp <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                          null/*fontOrNull*/,
+                                                          subdir_names,
+                                                          null/*optionsLongOrNull*/,
+                                                          2/*first dir after ..*/,
+                                                          getSizeX()/*prefSx*/,
+                                                          null/*toolTipCaptions*/,
+                                                          null/*optionBGColors*/,
+                                                          null/*option_fgtints*/
+                                                          );
+
+      cmp.showAboveLayer(this);
+      cmp.moveToClippedPosition2f(cmp.getPositionX() - 3, cmp.getPositionY() + 2);
+      cmp.centerRow();
+      cmp.focusFirstTabCycleMember();
+      cmp.setEnableHideOnFirstEntryUp(false);
+      cmp.setPageSize(4);
+      cmp_subdir <= deref cmp;
+   }
+
+   // <ui_handle.png>
+   protected method handleSubDirSelection(int _idx) {
+      if(0 == _idx) // "/"
+      {
+         changeToRootDir(true/*bKeepName*/);
+      }
+      else if(1 == _idx)
+      {
+         changeToParentDir(true/*bKeepName*/);
+      }
+      else
+      {
+         dir_name_prefix = dir_name_prefix + "/" + subdir_names.get(_idx);
+
+         if(!dir_name_prefix.endsWith("/"))
+            dir_name_prefix.append("/");
+         Global.Print("Change dir to \""+Utils.FixFileName(dir_name_prefix+"/")+"\"");
+         UI.SetKeyboardFocus(tf);
+         handleDirChanged();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleSelection(ACTION_CANCEL);
+            return true;
+
+         case 'd':
+            if(_k.modCtrl())
+            {
+               showSubDirComboBoxPopup();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               openExplorer();
+               return true;
+            }
+            break;
+
+         case 'q':
+            if(_k.modCtrl())
+            {
+               handleSelection(ACTION_CANCEL);
+               return true;
+            }
+            break;
+
+         case 'g':
+            if(_k.modCtrl())
+            {
+               changeToLastUsedDir();
+               return true;
+            }
+            break;
+
+         case 'h':
+            if(_k.modCtrl())
+            {
+               copyToLastUsedDir();
+               return true;
+            }
+            break;
+
+         // // case VKEY_TAB:
+         // //    handleSelection(ACTION_TAB); // never recv'd
+         // //    return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName = _ac.getActionName();
+      IntAction *iac;
+
+      // trace "xxx FileNameDialog::consumeAction: acName="+acName;
+
+      switch(@(ap))
+      {
+         case @(bt_path):
+            showSubDirComboBoxPopup();
+            return true;
+
+         case @(bt_browse):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               openExplorer();
+            }
+            else
+            {
+               showAutoCompletions("*"/*forcePatternOrNull*/, -1/*selectedOption*/);
+            }
+            return true;
+
+         case @(tf):
+            if(TextField.ACTION_RIGHT_CLICK == acName)
+            {
+               showAutoCompletions("*"/*forcePatternOrNull*/, -1/*selectedOption*/);
+               return true;
+            }
+            updateFileNameBackground();  // char typed
+            break;
+
+         case @(bt_ok):
+            handleSelection(ACTION_RETURN);
+            return true;
+
+         case @(cmp_auto_complete):
+            switch(acName)
+            {
+               case ComboBoxPopup.ACTION_OPTIONSELECTED:
+                  iac <= _ac;
+                  handleAutoCompletionSelection(iac.getIntValue(), false/*bPreview*/);
+                  updateFileNameBackground();
+                  UI.SetKeyboardFocus(tf);
+                  break;
+
+               case ComboBoxPopup.ACTION_OPTIONPREVIEW:
+                  iac <= _ac;
+                  handleAutoCompletionSelection(iac.getIntValue(), true/*bPreview*/);
+                  break;
+
+               case ComboBoxPopup.ACTION_CANCEL_OPTION_SELECTION:
+                  UI.SetKeyboardFocus(tf);
+                  break;
+            }
+            return true;
+
+         case @(cmp_subdir):
+            switch(acName)
+            {
+               case ComboBoxPopup.ACTION_OPTIONSELECTED:
+                  iac <= _ac;
+                  handleSubDirSelection(iac.getIntValue());
+                  UI.SetKeyboardFocus(tf);
+                  break;
+
+               case ComboBoxPopup.ACTION_OPTIONPREVIEW:
+                  break;
+
+               case ComboBoxPopup.ACTION_CANCEL_OPTION_SELECTION:
+                  UI.SetKeyboardFocus(tf);
+                  break;
+            }
+            return true;
+      }
+
+      switch(acName)
+      {
+         // // case TextField.ACTION_TEXTCHANGED: // tab (never recv'd)
+         // //    handleSelection(ACTION_TAB);
+         // //    break;
+
+         case TextField.ACTION_TEXTEDITED: // char typed/deleted
+            // trace "xxx TextField.ACTION_TEXTEDITED: reset tab_pattern";
+            auto_complete_tab_pattern <= null;
+            break;
+
+         case TextField.ACTION_TEXTENTERED: // return
+            handleSelection(ACTION_RETURN);
+            break;
+
+         case TextField.ACTION_CURSORDOWN:
+            if(null != auto_complete_tab_pattern)
+               showAutoCompletionsForTabPattern();
+            else
+               showAutoCompletions(null/*forcePatternOrNull*/, -1/*selectedOption*/);
+            break;
+
+         case TextField.ACTION_CURSORLEFT:
+         case TextField.ACTION_CURSORRIGHT:
+            // intentionally left blank
+            return true;
+
+         case TextField.ACTION_CURSORUP:
+            handleSelection(ACTION_CANCEL);
+            break;
+
+      }
+
+      return true;
+   }
+
+}

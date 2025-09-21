@@ -1,0 +1,192 @@
+// ----
+// ---- file   : NodePattern.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 05Sep2014, 07Sep2014, 08Sep2014, 09Sep2014, 13Sep2014, 20Sep2014, 21Sep2014
+// ----          22Sep2014, 23Sep2014, 27Sep2014, 11Feb2015, 14Feb2015, 18Apr2015, 03May2015
+// ----          21Oct2015, 05Nov2015, 08Jan2016, 03Mar2016, 26Feb2017, 24Mar2017, 03Sep2017
+// ----          03Jan2018, 07Mar2018, 31May2019, 25Jun2019, 28Apr2020, 07May2022
+// ----
+// ----
+// ----
+
+module MNodePattern;
+
+use namespace ui;
+use namespace st2;
+
+
+class NodePattern {
+
+   int pat_nr;  // idx 0..(Node.NUM_PATTERNS-1)
+
+   // 8 chars or less.
+   // (note) use nodeGetPatternNameByIdx(), nodeSetPatternNameByIdx() to access this field
+   public String pat_name;
+
+   // Indexed by class name
+   static HashTable nodepattern_clipboards;
+
+   boolean b_clipboard; // true=is clipboard pattern
+
+
+   public method patInit(Node _parent, int _patNr) {
+      pat_nr = _patNr;
+   }
+
+   public method patSetName(String _name) {
+      pat_name = _name;
+   }
+
+   public method patIsEmpty() : boolean {
+      return false;
+   }
+
+   public method patReset(boolean _bSoft) {
+   }
+
+   public method patHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+   }
+
+   public method patCopyFrom(NodePattern _o, boolean _bClear) {
+
+      SongFileReader.InitIdentityOutDevIdxMap();
+
+      // (note) _bClear may be used to copy only the pattern setup but clear the events (e.g. NodeAuto)
+      pat_name = _o.pat_name;
+   }
+
+   public method patCopyFromGeneric(NodePattern _o) {
+
+      MIDI.LockUpdateOutDeviceNames();
+      SongFileReader.InitIdentityOutDevIdxMap();
+      MIDI.UnlockUpdateOutDeviceNamesAndDiscardQueue();
+
+      DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      _o.patSaveState(ds);
+
+      Buffer cb;
+      cb.size = ds.offset;
+      cb.offset = 0;
+      _o.patSaveState(cb);
+
+      cb.offset = 0;
+
+      patLoadState(cb,
+                   1/*ver*/,
+                   MSongFileReader.piperoot_outdevidxmap,
+                   MSongFileReader.piperoot_outdevusecount
+                   );
+   }
+
+   public method patCompare(NodePattern _o) {
+   }
+
+   public method patGetClipboard() : NodePattern {
+      return nodepattern_clipboards.get(yacMetaClassName());
+   }
+
+   public patNewClipboard() : NodePattern {
+      NodePattern cb <= yacNew();
+      cb.patInit(null, 0);
+      cb.b_clipboard = true;
+      return deref cb;
+   }
+
+   public method patGetOrCreateClipboard() : NodePattern {
+      NodePattern clipboard <= patGetClipboard();
+
+      if(null == clipboard)
+      {
+         clipboard <= patNewClipboard();
+         nodepattern_clipboards[yacMetaClassName()] = deref clipboard;
+      }
+
+      return clipboard;
+   }
+
+   public method patFreeClipboard() {
+      NodePattern clipboard <= patGetClipboard();
+
+      if(null != clipboard)
+      {
+         nodepattern_clipboards[yacMetaClassName()] = null;
+      }
+   }
+
+   static method PatGetClipboardForClass(String _name) : NodePattern {
+      if(nodepattern_clipboards.exists(_name))
+      {
+         return nodepattern_clipboards[_name];
+      }
+      return null;
+   }
+
+   static method PatFreeClipboardForClass(String _name) {
+      if(nodepattern_clipboards.exists(_name))
+      {
+         nodepattern_clipboards.delete(_name);
+      }
+   }
+
+   public method patCopyToClipboard() {
+      NodePattern clipboard <= patGetOrCreateClipboard();
+
+      if(null != clipboard)
+      {
+         clipboard.patCopyFrom(this, false/*bClear*/);
+      }
+   }
+
+   public =replay= method patCopyFromClipboard() : boolean {
+      NodePattern clipboard <= patGetOrCreateClipboard();
+
+      if(null != clipboard)
+      {
+         patCopyFrom(clipboard, false/*bClear*/);
+
+         patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+
+         return true;
+      }
+
+      return false;
+   }
+
+   public method patSaveState(Stream ofs) {
+
+      // Write version
+      ofs.i16 = 1;
+
+      // Write pattern name
+      Utils.WriteString(ofs, pat_name);
+   }
+
+   public method patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Read pattern name
+         Utils.ReadString(ifs, pat_name);
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] NodePattern::patLoadState: invalid version ("+ver+").";
+      }
+
+      return false;
+   }
+
+}

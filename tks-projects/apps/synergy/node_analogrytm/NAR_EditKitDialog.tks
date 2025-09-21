@@ -1,0 +1,2413 @@
+// ----
+// ---- file   : NAR_EditKitDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 25Oct2019
+// ---- changed: 26Oct2019, 27Oct2019, 28Oct2019, 29Oct2019, 06Nov2019, 16Jul2021, 25Nov2022
+// ----          19Feb2023, 05Oct2023, 30Oct2023, 02Nov2023, 25Nov2023, 28Nov2023, 30Nov2023
+// ----          01Dec2023
+// ----
+// ----
+// ----
+
+module MNAR_EditKitDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NAR_SoundPresetCacheEntry {
+   StringArray sound_preset_pathnames;
+   StringArray sound_preset_names;
+   StringArray sound_preset_names_long;
+
+   AR_Sound *[] sounds;  // AR_Sound instances (can be null) (when STConfig.b_node_analog_rytm_find_preset is true)
+   IntArray     sound_checksums;
+
+
+   // <method.png>
+   protected method addSound(String _pathName) {
+      local AR_Sound snd;
+      local File f;
+      if(f.openLocal(_pathName, IOS_IN))
+      {
+         local Buffer syx;
+         local Buffer raw;
+         // trace "xxx addSound: f.size="+f.size;
+
+         if(207/*AR_SOUND_SYX_V4_SZ*/ == f.size)
+         {
+            // old v4 format (FW1.50/1.61b)
+            f.readBuffer(syx, 0, 207/*AR_SOUND_SYX_V4_SZ*/, true/*bResize*/);
+            f.close();
+         }
+         else
+         {
+            f.readBuffer(syx, 0, snd.requiredSizeSyx, true/*bResize*/);
+            f.close();
+         }
+
+         if(snd.syxToRaw(syx))  // converts V4 or V5 Syx to V5 raw
+         {
+            snd.getRawBuffer(raw);
+            sounds.add(#(deref snd));
+            sound_checksums.add(raw.checksum);
+         }
+         else
+         {
+            sounds.add(null);
+            sound_checksums.add(-1);
+         }
+      }
+   }
+
+   // <method_update.png>
+   public method rescan(int _trackIdx) {
+      sound_preset_pathnames.empty();
+      sound_preset_names.empty();
+      sound_preset_names_long.empty();
+      sounds.empty();
+      sound_checksums.empty();
+
+      local StringArray folders <= NAR_EditKitDialog.GetPresetFolderNamesByTrackIdx(_trackIdx);
+      String *folder;
+      foreach folder in folders
+      {
+         local String folderPathName = Utils.ToNativePathName(STConfig.node_rootpath)+"/analogrytm/sound_presets/"+folder;
+         Global.Debug("NAR_SoundPresetCacheEntry::rescan: trackIdx="+_trackIdx+" folderPathName=\""+folderPathName+"\"");
+
+         local StringArray filenames <= Utils.ReadDirectory(folderPathName);
+         if(null != filenames)
+         {
+            String *filenameEn;
+            foreach filenameEn in filenames
+            {
+               if(filenameEn.startsWith("f"))
+               {
+                  StringArray attr <= filenameEn.splitSpace(true);
+                  String fileName <= attr.get(1);
+                  if(fileName.endsWith(Global.AR_SOUND_FILE_SUFFIX/*.syx*/))
+                  {
+                     sound_preset_pathnames.add(folderPathName+"/"+fileName);
+                     sound_preset_names.add(fileName.replace(Global.AR_SOUND_FILE_SUFFIX/*.syx*/, ""));
+                     sound_preset_names_long.add(fileName.replace(Global.AR_SOUND_FILE_SUFFIX/*.syx*/, "")+"\t["+folder+"]");
+                     if(STConfig.b_node_analog_rytm_find_preset)
+                     {
+                        addSound(folderPathName+"/"+fileName);
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      // Sort by name
+      local IntArray sortIndices;
+      sound_preset_names.sortByValue(sortIndices, false/*bCS*/);
+      sound_preset_pathnames .rearrange(sortIndices);
+      sound_preset_names     .rearrange(sortIndices);
+      sound_preset_names_long.rearrange(sortIndices);
+
+      if(STConfig.b_node_analog_rytm_find_preset)
+      {
+         sounds.rearrange(sortIndices);
+         sound_checksums.rearrange(sortIndices);
+      }
+   }
+
+   // <method.png>
+   public method findMatchingSound(AR_Sound _kitSound) : int {
+      int r = -1;
+      AR_Sound *snd;
+      local Buffer sndBuf;
+      local Buffer kitSndBuf;
+      _kitSound.getRawBuffer(kitSndBuf);
+      int kitSndChecksum = kitSndBuf.checksum;
+      int idx = 0;
+      foreach snd in sounds
+      {
+         if(null != snd)
+         {
+            if(sound_checksums[idx] == kitSndChecksum)
+            {
+               snd.getRawBuffer(sndBuf);
+               if(sndBuf.compareBuffer(kitSndBuf))
+               {
+                  r = idx;
+                  break;
+               }
+            }
+         }
+         idx++;
+      }
+      return r;
+   }
+}
+
+
+// <class.png>
+class NAR_EditKitDialog extends Dialog {
+
+   define String TA_SENDSOUND;
+   protected TimerAction ta_sendsound;
+
+   define String TA_TRKSWITCH;
+   protected TimerAction ta_trkswitch;
+
+   protected XMLForm *xfm;
+
+   protected NodeAnalogRytmEditor  *editor;
+   protected NodeAnalogRytm        *ar;
+   protected NodeAnalogRytmPattern *snapshot;
+   protected NAR_Kit               *kit;
+   protected AR_Kit                *ar_kit;
+   protected AR_Kit                 ar_kit_orig;  // for revert
+
+   protected ComboBox *cm_track;
+   protected ComboBox *cm_machine;
+
+   protected ComboBox *cm_preset;
+   protected CheckBox *cb_preset_find;
+   protected Button   *bt_preset_load;
+   protected CheckBox *cb_preset_autoload;
+   protected Button   *bt_preset_save;
+
+   protected Button *bt_revert;
+   protected Button *bt_close;
+   protected Button *bt_sound;
+
+   protected PointerArray lb_synth_param;
+   protected PointerArray fp_synth_param;
+
+   protected FloatParam *fp_smp_tun;
+   protected FloatParam *fp_smp_fin;
+   protected FloatParam *fp_smp_br;
+   protected ComboField *cf_smp_smp;
+
+   protected FloatParam *fp_smp_sta;
+   protected Button     *bt_smp_sta;
+   protected Button     *bt_smp_end;
+   protected FloatParam *fp_smp_end;
+   protected CheckBox   *cb_smp_lop;
+   protected FloatParam *fp_smp_lev;
+
+   protected FloatParam *fp_flt_atk;
+   protected FloatParam *fp_flt_dec;
+   protected FloatParam *fp_flt_sus;
+   protected FloatParam *fp_flt_rel;
+
+   protected FloatParam *fp_flt_frq;
+   protected FloatParam *fp_flt_res;
+   protected ComboBox   *cm_flt_typ;
+   protected FloatParam *fp_flt_env;
+
+   protected FloatParam *fp_amp_atk;
+   protected FloatParam *fp_amp_hld;
+   protected FloatParam *fp_amp_dec;
+   protected FloatParam *fp_amp_ovr;
+
+   protected FloatParam *fp_amp_del;
+   protected FloatParam *fp_amp_rev;
+   protected FloatParam *fp_amp_pan;
+   protected FloatParam *fp_amp_vol;
+
+   protected FloatParam *fp_lfo_spd;
+   protected ComboBox   *cm_lfo_mul;
+   protected FloatParam *fp_lfo_fad;
+   protected ComboBox   *cm_lfo_dst;
+
+   protected ComboBox   *cm_lfo_wav;
+   protected Label      *lb_lfo_sph;
+   protected FloatParam *fp_lfo_sph;
+   protected ComboBox   *cm_lfo_mod;
+   protected FloatParam *fp_lfo_dep;
+
+   protected int queued_send_track_idx;
+
+   protected PointerArray sound_preset_track_cache;  //
+   protected StringArray *sound_preset_pathnames;
+   protected StringArray *sound_preset_names;
+   protected StringArray *sound_preset_names_long;
+   protected NAR_SaveSoundPresetDialog *dlg_preset_save;
+   public    String      last_preset_name;
+
+   protected NAR_EditSoundDialog *dlg_edit_sound;
+
+   define int GROUP_SYN = 0;
+   define int GROUP_SMP = 1;
+   define int GROUP_FLT = 2;
+   define int GROUP_AMP = 3;
+   define int GROUP_LFO = 4;
+   static StringArray group_names = ["SYN", "SMP", "FLT", "AMP", "LFO"];
+   protected int last_touched_group;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NAR_EditKitDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Import Analog Rytm Pattern",
+                 100, 100,
+                 640, 240
+                 );
+
+      // (todo) create combobox bgcolor table to indicate incompatible machines (depending on track nr)
+
+      int paramNr = 1;
+      loop(8)
+      {
+         lb_synth_param.add(xfm.findLayerById("lb_synth_param_"+paramNr));
+         fp_synth_param.add(xfm.findLayerById("fp_synth_param_"+paramNr));
+         paramNr++;
+      }
+
+      sound_preset_track_cache.alloc(12/*num AR tracks*/);
+      sound_preset_track_cache.useAll();
+
+      String tt <= bt_preset_load.getToolTipCaption();
+      tt.replace("$(NODE_ROOTPATH)", STConfig.node_rootpath);
+      tt.replace("//", "/");
+      tt <= bt_preset_save.getToolTipCaption();
+      tt.replace("$(NODE_ROOTPATH)", STConfig.node_rootpath);
+      tt.replace("//", "/");
+
+      if(initEditSoundDialog())
+      {
+         initTimers();
+
+         // Succeeded
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_sendsound  <= TimerAction.New(TA_SENDSOUND,  this, 50);
+      ta_trkswitch  <= TimerAction.New(TA_TRKSWITCH,  this, 200);
+   }
+
+   // <ui_init.png>
+   protected method initEditSoundDialog() : boolean {
+      dlg_edit_sound <= new NAR_EditSoundDialog;
+      if(!dlg_edit_sound.init())
+      {
+         Global.Error("NAR_EditSoundDialog::init() failed");
+         return false;
+      }
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      setWindowTitle("Edit Analog Rytm Kit");
+
+      if(!b_layer_postinit_done)
+      {
+         resizeToMinimum();
+      }
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+      ta_trkswitch.reschedule();
+   }
+
+   // <ui_show.png>
+   public method showKit(NodeAnalogRytmEditor _editor, NodeAnalogRytm _ar, NAR_Kit _kit) : boolean {
+      editor <= _editor;
+      ar     <=  _ar;
+      kit    <= _kit;
+      ar_kit <= kit.ar_kit;
+      ar_kit_orig = ar_kit;
+      snapshot  <= editor.getEditPattern();
+
+      if(null != snapshot)
+      {
+         if(ar_kit.version >= 2)
+         {
+            cf_smp_smp.setOptions(snapshot.sample_names);
+
+            cb_preset_find.setSelected(STConfig.b_node_analog_rytm_find_preset);
+
+            cm_track.setSelectedOption(ar.kit_editor_track_idx);
+            handleTrackChanged(true/*bQuiet*/, true/*bRescan*/);
+            selectPresetBySound();
+
+            ar.b_kit_editor_visible = true;
+
+            showCenteredFirst();
+
+            return true;
+         }
+         else
+         {
+            Global.Error("EditKitDialog: unsupported kit version "+ar_kit.version);
+         }
+      }
+      return false;
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      ta_sendsound.cancel();
+      ta_trkswitch.cancel();
+      ar.b_kit_editor_visible = false;
+      Dialog::hide();
+      editor.updateKitTrack();
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_close);
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefaultAfterAction(String _acName) {
+      if(FloatParam.ACTION_VALUECHANGED == _acName)
+         refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           cm_track,
+                           bt_sound,
+                           cm_machine,
+
+                           cm_preset,
+                           cb_preset_find,
+                           bt_preset_load,
+                           cb_preset_autoload,
+                           bt_preset_save,
+
+                           fp_synth_param[0],
+                           fp_synth_param[1],
+                           fp_synth_param[2],
+                           fp_synth_param[3],
+                           fp_synth_param[4],
+                           fp_synth_param[5],
+                           fp_synth_param[6],
+                           fp_synth_param[7],
+
+                           fp_smp_tun,
+                           fp_smp_fin,
+                           fp_smp_br,
+                           cf_smp_smp,
+
+                           bt_smp_sta,
+                           fp_smp_sta,
+                           bt_smp_end,
+                           fp_smp_end,
+                           cb_smp_lop,
+                           fp_smp_lev,
+
+                           fp_flt_atk,
+                           fp_flt_dec,
+                           fp_flt_sus,
+                           fp_flt_rel,
+
+                           fp_flt_frq,
+                           fp_flt_res,
+                           cm_flt_typ,
+                           fp_flt_env,
+
+                           fp_amp_atk,
+                           fp_amp_hld,
+                           fp_amp_dec,
+                           fp_amp_ovr,
+
+                           fp_amp_del,
+                           fp_amp_rev,
+                           fp_amp_pan,
+                           fp_amp_vol,
+
+                           fp_lfo_spd,
+                           cm_lfo_mul,
+                           fp_lfo_fad,
+                           cm_lfo_dst,
+
+                           cm_lfo_wav,
+                           fp_lfo_sph,
+                           cm_lfo_mod,
+                           fp_lfo_dep,
+
+                           bt_close,
+                           bt_revert,
+                         ]
+                        );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <method.png>
+   public method queueSendSound(int _trackIdx) {
+      trace "[trc] NAR_EditKitDialog::queueSendSound("+_trackIdx+")";
+      queued_send_track_idx = _trackIdx;
+      ta_sendsound.schedule();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRevert() {
+      AR_Kit t = ar_kit;
+      ar_kit = ar_kit_orig;
+      ar_kit_orig = t;
+      editor.handleKitSend();
+      handleTrackChanged(true/*bQuiet*/, true/*bRescan*/);
+      selectPresetBySound();
+      Global.Print("Revert kit");
+   }
+
+   // <method.png>
+   protected =replay= method handleRandLastTouchedGroup() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         FloatParam *fp;
+         switch(last_touched_group)
+         {
+            default:
+            case GROUP_SYN:
+               int paramIdx = 0;
+               foreach fp in fp_synth_param
+               {
+                  if(paramIdx > 0)  // param#1 is level (don't randomize)
+                  {
+                     fp.randomize();
+                     handleSynthParamChanged(paramIdx, fp);
+                  }
+                  paramIdx++;
+               }
+               break;
+
+            case GROUP_SMP:
+               fp_smp_tun.randomize(); handleSmpTUNChanged();
+               fp_smp_fin.randomize(); handleSmpFINChanged();
+               fp_smp_br .randomize(); handleSmpBRChanged();
+               cf_smp_smp.randomize(':'); handleSmpSMPChanged();
+               trace "xxx cf_smp_smp.getSelectedOptionName()=\""+cf_smp_smp.getSelectedOptionName()+"\"";
+               fp_smp_sta.randomize(); handleSmpSTAChanged();
+               fp_smp_end.randomize(); handleSmpENDChanged();
+               cb_smp_lop.randomize(); handleSmpLOPChanged();
+               break;
+
+            case GROUP_FLT:
+               fp_flt_atk.randomize(); handleFltATKChanged();
+               fp_flt_dec.randomize(); handleFltDECChanged();
+               fp_flt_sus.randomize(); handleFltSUSChanged();
+               fp_flt_rel.randomize(); handleFltRELChanged();
+               fp_flt_frq.randomize(); handleFltFRQChanged();
+               fp_flt_res.randomize(); handleFltRESChanged();
+               cm_flt_typ.randomize(); handleFltTYPChanged();
+               fp_flt_env.randomize(); handleFltENVChanged();
+               break;
+
+            case GROUP_AMP:
+               fp_amp_atk.randomize(); handleAmpATKChanged();
+               fp_amp_hld.randomize(); handleAmpHLDChanged();
+               fp_amp_dec.randomize(); handleAmpDECChanged();
+               fp_amp_ovr.randomize(); handleAmpOVRChanged();
+               fp_amp_del.randomize(); handleAmpDELChanged();
+               fp_amp_rev.randomize(); handleAmpREVChanged();
+               // fp_amp_pan.randomize(); handleAmpPANChanged();
+               // fp_amp_vol.randomize(); handleAmpVOLChanged();
+               break;
+
+            case GROUP_LFO:
+               fp_lfo_spd.randomize(); handleLfoSPDChanged();
+               cm_lfo_mul.randomize(); handleLfoMULChanged();
+               fp_lfo_fad.randomize(); handleLfoFADChanged();
+               cm_lfo_dst.randomize(); handleLfoDSTChanged();
+               cm_lfo_wav.randomize(); handleLfoWAVChanged();
+               fp_lfo_sph.randomize(); handleLfoSPHChanged();
+               cm_lfo_mod.randomize(); handleLfoMODChanged();
+               fp_lfo_dep.randomize(); handleLfoDEPChanged();
+               break;
+         }
+
+         handleTrackChanged(true/*bQuiet*/, true/*bRescan*/);
+         queueSendSound(trackIdx);
+         selectPresetBySound();
+
+         Global.Print("Randomize group \""+group_names[last_touched_group]+"\"");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateMachine() {
+
+      int trackIdx = cm_track.getSelectedOption();
+
+      int listIdx = 0;
+      local StringArray machineNames;
+      for(;;)
+      {
+         local Integer machineId = AR_Sound.GetMachineIdByTrackAndListIndex(trackIdx, listIdx);
+         if(-1 != machineId)
+         {
+            machineNames.add(((machineId+1).printf("%02d"))+": "+AR_Sound.GetMachineNameById(machineId));
+            listIdx++;
+         }
+         else
+            break;
+      }
+      cm_machine.setOptions(machineNames);
+
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         listIdx = AR_Sound.GetListIndexByTrackIndexAndMachineId(trackIdx, arSound.machine);
+         cm_machine.setSelectedOption(listIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackChanged(boolean _bQuiet, boolean _bRescan) {
+
+      ar.kit_editor_track_idx = cm_track.getSelectedOption();
+      editor.updateKitTrack();
+      editor.updateKitTrackLevel();
+
+      if(_bRescan)
+         rescanPresetsForCurrentTrack(false/*bForce*/);
+
+      updateMachine();
+      updateSynthParamLabels();
+      updateSynthParamValues();
+      updateSampleParamValues();
+      updateFilterParamValues();
+      updateAmpParamValues();
+      updateLFOParamValues();
+
+      if(!_bQuiet)
+         Global.Print("Select Track \""+cm_track.getSelectedOptionName()+"\"");
+   }
+
+   // <method.png>
+   protected method selectPresetBySound() {
+      if(STConfig.b_node_analog_rytm_find_preset)
+      {
+         int trackIdx = cm_track.getSelectedOption();
+         NAR_SoundPresetCacheEntry en <= sound_preset_track_cache.get(trackIdx);
+         if(null != en)
+         {
+            local AR_Sound arSoundRef;
+            if(ar_kit.getSoundRefByIndex(trackIdx, arSoundRef))
+            {
+               int presetIdx = en.findMatchingSound(arSoundRef);
+               if(-1 != presetIdx)
+               {
+                  Global.Debug2("NAR_EditKitDialog::handleTrackChanged: matching presetIdx="+presetIdx);
+               }
+               cm_preset.setSelectedOption(presetIdx);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectPreviousTrack() {
+      cm_track.selectPreviousOptionCycle();
+      handleTrackChanged(false/*bQuiet*/, true/*bRescan*/);
+      selectPresetBySound();
+   }
+
+   // <method.png>
+   public method selectNextTrack() {
+      cm_track.selectNextOptionCycle();
+      handleTrackChanged(false/*bQuiet*/, true/*bRescan*/);
+      selectPresetBySound();
+   }
+
+   // <ui_handle.png>
+   protected method handleMachineChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      int listIdx = cm_machine.getSelectedOption();
+      int machineId = AR_Sound.GetMachineIdByTrackAndListIndex(trackIdx, listIdx);
+      if(-1 != machineId)
+      {
+         local AR_Sound arSound;
+         if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+         {
+            arSound.machine = machineId;
+            queueSendSound(trackIdx);
+         }
+         Global.Print("Machine is "+cm_machine.getSelectedOptionName());
+         updateSynthParamLabels();
+         updateSynthParamValues();
+         updateLFOParamValues();
+      }
+   }
+
+   // <method_get.png>
+   protected static ParamHasLSB(int paramIdx, int arSoundMachine) {
+      // Param 2
+      if((2-1) == paramIdx)
+      {
+         return [29/*sy chip*/,
+                 30/*bd acoustic*/,
+                 31/*sd acoustic*/,
+                 32/*sy raw*/,
+                 33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      // Param 3
+      else if((3-1) == paramIdx)
+      {
+         return [33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      // Param 4
+      else if((4-1) == paramIdx)
+      {
+         return [32/*sy raw*/,
+                 33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      // Param 5
+      else if((5-1) == paramIdx)
+      {
+         return [33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      // Param 6
+      else if((6-1) == paramIdx)
+      {
+         return [33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      // Param 7
+      else if((7-1) == paramIdx)
+      {
+         return [33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      // Param 8
+      else if((8-1) == paramIdx)
+      {
+         return [33/*hh lab*/
+                 ].contains(arSoundMachine);
+      }
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updateSynthParamLabels() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         int paramIdx = 0;
+         FloatParam *fp;
+         loop(8)
+         {
+            fp <= fp_synth_param.get(paramIdx);
+            Label lb <= lb_synth_param.get(paramIdx);
+            local String cap <= arSound.getMachineParamShortName(paramIdx);
+
+            // Extended LSB precision ?
+            if(ParamHasLSB(paramIdx, arSound.machine))
+            {
+               fp.setPrecision(2);
+               fp.setStep(0.01);
+            }
+            else
+            {
+               // Regular byte (MSB) param
+               fp.setPrecision(0);
+               fp.setStep(1);
+            }
+
+            if(1)
+               fp.setEditable("-" != cap);
+
+            lb.setCaption(/*(paramIdx+1)+"."+*/cap+":");
+            if(( cap & "TUN") ||
+               ((cap & "TON") && (6/*cp classic*/ != arSound.machine))  ||
+               ( cap & "T1")  ||
+               ( cap & "T2")  ||
+               ( cap & "FMT") ||
+               ( cap & "COL") ||
+               ((cap & "SWD") && (15/*noise gen*/ == arSound.machine))  ||
+               ((cap & "BAL") && (23/*sd natural*/ != arSound.machine)) ||
+               ( cap & "SYM") ||
+               ( cap & "BND")
+               )
+            {
+               fp.setMinMaxValues(-64, 63);
+            }
+            else if(( cap & "OF2") ||
+                    ( cap & "OF3") ||
+                    ( cap & "OF4")
+                    )
+            {
+               fp.setMinMaxValues(-24, 24);
+            }
+            else if( ((cap & "TYP") && (21/*bd plastic*/ == arSound.machine)) ||
+                     ( cap & "RST") ||
+                     ( cap & "POL")
+                     )
+            {
+               fp.setMinMaxValues(0, 1);
+            }
+            else if((cap & "TYP") && (25/*cy ride*/ == arSound.machine))
+            {
+               fp.setMinMaxValues(0, 3);
+            }
+            else if(cap & "SNP")
+            {
+               fp.setMinMaxValues(0, 3);
+            }
+            else if((cap & "CFG") && (28/*dual vco*/ == arSound.machine))
+            {
+               fp.setMinMaxValues(0, 79);
+            }
+            else
+            {
+               fp.setMinMaxValues(0, 127);
+            }
+            lb.redraw();
+            fp.redraw();
+            paramIdx++;
+         }
+
+         local StringArray *aOpt;
+         local FloatArray   aPstVal;
+         local StringArray  aPstName;
+
+         //
+         // Param 3
+         //
+         fp <= fp_synth_param.get(3-1);
+         if(32/*sy raw*/ == arSound.machine)
+         {
+            // 0..126,inf
+            aOpt <= new StringArray;
+            aPstVal.empty();
+            aPstName.empty();
+            int idx3 = 0;
+            loop(127)
+            {
+               aOpt.add(String(idx3));
+               aPstVal.add(idx3);
+               aPstName.add(String(idx3));
+               idx3++;
+            }
+            aOpt.add("inf");
+            aPstVal.add(127);
+            aPstName.add("127:<inf>");
+            fp.setUserTable(deref aOpt);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 127);
+            fp.setPresetOptions(aPstVal, aPstName);
+         }
+         else
+         {
+            fp.setDisplayType(FloatParam.DISPLAY_FLOAT);
+            fp.setUserTable(null);
+            fp.setPresetOptions(null, null);
+         }
+
+         //
+         // Param 4
+         //
+         fp <= fp_synth_param.get(4-1);
+         if(25/*cy ride*/ == arSound.machine)
+         {
+            // 0..3 => A..D
+            fp.setUserTable(["A", "B", "C", "D"]);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 3);
+            fp.setPresetOptions([0.0f, 1.0f, 2.0f, 3.0f],
+                                ["0:A", "1:B", "2:C", "3:D"]
+                                );
+
+         }
+         else
+         {
+            fp.setDisplayType(FloatParam.DISPLAY_FLOAT);
+            fp.setUserTable(null);
+            fp.setPresetOptions(null, null);
+         }
+
+         //
+         // Param 6
+         //
+         fp <= fp_synth_param.get(6-1);
+         if(32/*sy raw*/ == arSound.machine)
+         {
+            // 0=sin,1=asin,2=tri,3=ssaw,4=asaw,5=saw,6=ring
+            fp.setUserTable(["sine", "asm sine", "tri", "sine-saw", "asm saw", "saw", "ring"]);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 6);
+            fp.setPresetOptions([0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f],
+                                ["0:sine", "1:asym sine", "2:tri", "3:sine-saw", "4:asym saw", "5:saw", "6:ring"]
+                                );
+
+         }
+         else
+         {
+            fp.setDisplayType(FloatParam.DISPLAY_FLOAT);
+            fp.setUserTable(null);
+            fp.setPresetOptions(null, null);
+         }
+
+         //
+         // Param 7
+         //
+         fp <= fp_synth_param.get(7-1);
+         if(26/*bd sharp*/ == arSound.machine || 30/*bd acoustic*/ == arSound.machine)
+         {
+            // 0=sinA,1=sinB,2=asinA,3=asinB,4=triA,5=triB,6=ssawA,7=ssawB,8=sawA,9=sawB,10=sqrA,11=sqrB
+            fp.setUserTable(["sine R", "sine", "a sine R",   "asm sine",
+                             "tri R",  "tri",  "sin-saw R",  "sine-saw",
+                             "saw R",  "saw",  "sqr R",      "sqr"
+                             ]);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 11);
+            fp.setPresetOptions([0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f],
+                                ["0:sine phase-reset", "1:sine", "2:asym sine phase-reset", "3:asym sine",
+                                 "4:tri phase-reset",  "5:tri",  "6:sine-saw phase-reset",  "7:sine-saw",
+                                 "8:saw phase-reset",  "9:saw",  "10:sqr phase-reset",      "11:sqr"
+                                 ]
+                                );
+
+         }
+         else if(32/*sy raw*/ == arSound.machine)
+         {
+            fp.setUserTable(["sine", "sine-saw", ".sine", ".sine-saw"]);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 3);
+            fp.setPresetOptions([0.0f, 1.0f, 2.0f, 3.0f],
+                                ["0:sine", "1:sine-saw", "2:sine phase-reset", "3:sine-saw phase-reset"]
+                                );
+
+         }
+         else if(29/*sy chip*/ == arSound.machine)
+         {
+            aOpt <= new StringArray;
+            aOpt = ["sine", "asm sine", "tri",   "sine-saw",
+                    "saw",  "sqr",      "noise", "anm1",
+                    "anm2", "anm3",     "anm4",  "anm5",
+                    "pwm+", "pwm-",     "triB",  "+tri",
+                    "tri+", "triX",     "sawB",  "+saw",
+                    "saw+", "sawX",     "sqrB",  "+sqr",
+                    "sqr+", "sqrX",     "tbl1",  "tbl2",
+                    "tbl3", //29=p1%..127=p99%
+                    ];
+            int pct7 = 1;
+            loop(127-29+1)
+               aOpt.add("p"+(pct7++)+"%");
+            int val7 = 0;
+            aPstName.empty();
+            aPstVal.empty();
+            loop(128)
+            {
+               aPstName.add(val7+":"+aOpt.get(val7));
+               aPstVal.add(val7++);
+            }
+            fp.setUserTable(deref aOpt);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 127);
+            fp.setPresetOptions(aPstVal, aPstName);
+         }
+         else
+         {
+            fp.setDisplayType(FloatParam.DISPLAY_FLOAT);
+            fp.setUserTable(null);
+            fp.setPresetOptions(null, null);
+         }
+
+         //
+         // Param 8
+         //
+         fp <= fp_synth_param.get(8-1);
+         if(16/*ut impulse*/ == arSound.machine)
+         {
+            // 0,1 => +,-
+            fp.setUserTable(["+pos", "-neg"]);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 1);
+            fp.setPresetOptions([0.0f, 1.0f],
+                                ["0: +pos", "1: -neg"]
+                                );
+
+         }
+         else if(29/*sy chip*/ == arSound.machine)
+         {
+            aOpt <= new StringArray;
+            aOpt = ["128T",    "128",     "64T",     "128d",
+                    "64",      "32T",     "64d",     "32",
+                    "16T",     "32d",     "16",      "8T",
+                    "16d",     "8",       "4T",      "8d",
+                    "4",       "2T",      "4d",      "2",
+                    "1T",      "2d",      "1",       "1d",
+                    "1.0Hz",   "1.56Hz",  "1.88Hz",  "2Hz",
+                    "3.13Hz",  "3.75Hz",  "4Hz",     "5Hz",
+                    "6.25Hz",  "7.5Hz",   "10Hz",    "12.5Hz",
+                    "15Hz",    "20Hz",    "25Hz",    "30Hz",
+                    "40Hz",    "50Hz",    "60Hz",    "75Hz",
+                    "100Hz",   "120Hz",   "150Hz",   "180Hz",
+                    "200Hz",   "240Hz",   "250Hz",   "300Hz",
+                    "350Hz",   "360Hz",   "400Hz",   "420Hz",
+                    "480Hz",   "S 240Hz", "S 200Hz", "S 150Hz",  // (note) S=oneshot mode
+                    "S 120Hz", "S 100Hz", "S 60Hz",  "S 50Hz",
+                    "S 30Hz",  "S 25Hz"
+                    ];
+
+            aPstName.empty();
+            aPstVal.empty();
+            int val8 = 0;
+            loop(65+1)
+            {
+               aPstName.add(val8+":"+aOpt.get(val8));
+               aPstVal.add(val8++);
+            }
+            fp.setUserTable(deref aOpt);
+            fp.setDisplayType(FloatParam.DISPLAY_USER);
+            fp.setMinMaxValues(0, 65);
+            fp.setPresetOptions(aPstVal, aPstName);
+         }
+         else
+         {
+            fp.setDisplayType(FloatParam.DISPLAY_FLOAT);
+            fp.setUserTable(null);
+            fp.setPresetOptions(null, null);
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateSynthParamValues() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         int paramIdx = 0;
+         loop(8)
+         {
+            Label lb <= lb_synth_param.get(paramIdx);
+            local String cap <= arSound.getMachineParamShortName(paramIdx);
+            FloatParam fp <= fp_synth_param.get(paramIdx);
+            if(fp.getMinValue() < 0)
+            {
+               fp.setValue( (arSound.getMachineParam(paramIdx) / 256.0) - 64 );
+            }
+            else
+            {
+               fp.setValue(arSound.getMachineParam(paramIdx) / 256.0);
+            }
+            paramIdx++;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSynthParamChanged(int _idx, FloatParam _fp) {
+      int trackIdx = cm_track.getSelectedOption();
+      int listIdx = cm_machine.getSelectedOption();
+      int machineId = AR_Sound.GetMachineIdByTrackAndListIndex(trackIdx, listIdx);
+      if(-1 != machineId)
+      {
+         float val = _fp.getFloatValue();
+         local AR_Sound arSound;
+         if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+         {
+            Label lb <= lb_synth_param.get(_idx);
+            local String cap <= arSound.getMachineParamShortName(_idx);
+            if(_fp.getMinValue() < 0)
+               arSound.setMachineParam(_idx, (val + 64) * 256);
+            else
+               arSound.setMachineParam(_idx, val * 256);
+            Global.Print("Param#"+(_idx+1)+" \""+(lb_synth_param[_idx].getCaption())+"\" is "+val);
+            queueSendSound(trackIdx);
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateSampleParamValues() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         fp_smp_tun.setValue(arSound.smpTUN - 64);
+         fp_smp_fin.setValue(arSound.smpFIN - 64);
+         fp_smp_br .setValue(arSound.smpBR);
+         cf_smp_smp.setSelectedOption(arSound.smpSMP);
+
+         fp_smp_sta.setValue(arSound.smpSTA);
+         fp_smp_end.setValue(arSound.smpEND);
+         cb_smp_lop.setSelected(arSound.smpLOP);
+         fp_smp_lev.setValue(arSound.smpLEV);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpTUNChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.smpTUN = fp_smp_tun.getFloatValue() + 64;
+         Global.Print("Sample TUN is "+arSound.smpTUN);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpFINChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.smpFIN = fp_smp_fin.getFloatValue() + 64;
+         Global.Print("Sample FIN is "+arSound.smpFIN);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpBRChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.smpBR = fp_smp_br.getFloatValue();
+         Global.Print("Sample BR is "+arSound.smpBR);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpSMPChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.smpSMP = cf_smp_smp.getSelectedOption();
+         Global.Print("Sample SMP is "+arSound.smpSMP);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRenameSample(int _idx, String _s) : boolean {
+      // Returns true when _s has been changed/fixed and ComboField needs to be updated
+      local String s = _s;
+      if(_idx > 0)
+      {
+         int idxCol = _s.indexOfChar(':', 0);
+         local Integer smpIdx;
+         if(-1 == idxCol)
+         {
+            s = _s.replace(":", "_");
+            smpIdx = _idx;
+            s = smpIdx.printf("%03d")+":"+s;
+         }
+         else
+         {
+            smpIdx = _s.substring(0, idxCol);
+            if(smpIdx != _idx)
+            {
+               smpIdx = _idx;
+               s = smpIdx.printf("%03d")+":"+s.substring(idxCol+1, 999);
+            }
+         }
+      }
+      else
+      {
+         s = "000: OFF";
+      }
+      Global.Debug("NAR_EditKitDialog::handleRenameSample: rename smpIdx="+_idx+" to \""+s+"\"");
+      StringArray smpNames <= snapshot.sample_names;
+      smpNames[_idx] = s;
+      return (s != _s);
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpSTAChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         if(bt_smp_sta.getToggleState())
+         {
+            int curSTA = arSound.smpSTA;
+            int curEND = arSound.smpEND;
+            int delta = fp_smp_sta.getFloatValue() - curSTA;
+            boolean bClip = true;
+            if(0 <= (curSTA + delta) <= (120 << 8))
+            {
+               if(0 <= (curEND + delta) <= (120 << 8))
+               {
+                  arSound.smpSTA = curSTA + delta;
+                  arSound.smpEND = curEND + delta;
+                  fp_smp_end.setValue(arSound.smpEND);
+                  // trace "xxx delta="+delta+" curSTA="+curSTA+" curEND="+curEND+" => len="+(arSound.smpEND - arSound.smpSTA);
+                  bClip = false;
+               }
+            }
+            if(bClip)
+            {
+               int len = curEND - curSTA;
+               // trace "xxx clip delta="+delta+" len="+len;
+               if(delta > 0)
+               {
+                  if(len > 0)
+                  {
+                     fp_smp_sta.setValue( ((120 << 8) - len) );
+                     fp_smp_end.setValue(120 << 8);
+                  }
+                  else
+                  {
+                     fp_smp_sta.setValue(120 << 8);
+                     fp_smp_end.setValue( ((120 << 8) + len) );
+                  }
+               }
+               else
+               {
+                  if(len > 0)
+                  {
+                     fp_smp_sta.setValue(0);
+                     fp_smp_end.setValue(len);
+                  }
+                  else
+                  {
+                     fp_smp_sta.setValue(-len);
+                     fp_smp_end.setValue(0);
+                  }
+               }
+            }
+         }
+         else
+         {
+            arSound.smpSTA = fp_smp_sta.getFloatValue();
+         }
+         int l = (arSound.smpEND - arSound.smpSTA);
+         Global.Print("Sample STA is "+(arSound.smpSTA >> 8)+":"+(arSound.smpSTA&255)+" (len="+(l>>8)+":"+(l&255)+")");
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpENDChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         if(bt_smp_sta.getToggleState())
+         {
+            int curSTA = arSound.smpSTA;
+            int curEND = arSound.smpEND;
+            int delta = fp_smp_end.getFloatValue() - curEND;
+            boolean bClip = true;
+            if(0 <= (curSTA + delta) <= (120<<8))
+            {
+               if(0 <= (curEND + delta) <= (120<<8))
+               {
+                  arSound.smpSTA = arSound.smpSTA + delta;
+                  arSound.smpEND = arSound.smpEND + delta;
+                  fp_smp_sta.setValue(arSound.smpSTA);
+                  bClip = false;
+               }
+            }
+            if(bClip)
+            {
+               int len = arSound.smpEND - arSound.smpSTA;
+               if(delta > 0)
+               {
+                  if(len > 0)
+                  {
+                     fp_smp_sta.setValue( ((120 << 8) - len) );
+                     fp_smp_end.setValue(120.0);
+                  }
+                  else
+                  {
+                     fp_smp_sta.setValue(120.0);
+                     fp_smp_end.setValue( ((120 << 8) + len) );
+                  }
+               }
+               else
+               {
+                  if(len > 0)
+                  {
+                     fp_smp_sta.setValue(0);
+                     fp_smp_end.setValue(len);
+                  }
+                  else
+                  {
+                     fp_smp_sta.setValue(-len);
+                     fp_smp_end.setValue(0);
+                  }
+               }
+            }
+         }
+         else
+         {
+            arSound.smpEND = fp_smp_end.getFloatValue();
+         }
+         int l = (arSound.smpEND - arSound.smpSTA);
+         Global.Print("Sample END is "+(arSound.smpEND >> 8)+":"+(arSound.smpEND&255)+" (len="+(l>>8)+":"+(l&255)+")");
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpSwapSTA_END() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         int t = arSound.smpSTA;
+         arSound.smpSTA = arSound.smpEND;
+         arSound.smpEND = t;
+         fp_smp_sta.setValue(arSound.smpSTA);
+         fp_smp_end.setValue(arSound.smpEND);
+         Global.Print("Swap sample start / end");
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpLOPChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.smpLOP = cb_smp_lop.isSelected();
+         Global.Print("Sample LOP is "+Utils.GetEnableString(arSound.smpLOP));
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpLEVChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.smpLEV = fp_smp_lev.getFloatValue();
+         Global.Print("Sample LEV is "+arSound.smpLEV);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateFilterParamValues() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         fp_flt_atk.setValue(arSound.fltATK);
+         fp_flt_dec.setValue(arSound.fltDEC);
+         fp_flt_sus.setValue(arSound.fltSUS);
+         fp_flt_rel.setValue(arSound.fltREL);
+
+         fp_flt_frq.setValue(arSound.fltFRQ);
+         fp_flt_res.setValue(arSound.fltRES);
+         cm_flt_typ.setSelectedOption(arSound.fltTYP);
+         fp_flt_env.setValue(arSound.fltENV - 64);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltATKChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltATK = fp_flt_atk.getFloatValue();
+         Global.Print("Filter ATK is "+arSound.fltATK);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltDECChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltDEC = fp_flt_dec.getFloatValue();
+         Global.Print("Filter DEC is "+arSound.fltDEC);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltSUSChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltSUS = fp_flt_sus.getFloatValue();
+         Global.Print("Filter SUS is "+arSound.fltSUS);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltRELChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltREL = fp_flt_rel.getFloatValue();
+         Global.Print("Filter REL is "+arSound.fltREL);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltFRQChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltFRQ = fp_flt_frq.getFloatValue();
+         Global.Print("Filter FRQ is "+arSound.fltFRQ);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltRESChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltRES = fp_flt_res.getFloatValue();
+         Global.Print("Filter RES is "+arSound.fltRES);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltTYPChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltTYP = cm_flt_typ.getSelectedOption();
+         Global.Print("Filter TYP is "+cm_flt_typ.getSelectedOptionName());
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltENVChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.fltENV = fp_flt_env.getFloatValue() + 64;
+         Global.Print("Filter ENV is "+arSound.fltENV);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateAmpParamValues() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         fp_amp_atk.setValue(arSound.ampATK);
+         fp_amp_hld.setValue(arSound.ampHLD);
+         fp_amp_dec.setValue(arSound.ampDEC);
+         fp_amp_ovr.setValue(arSound.ampOVR);
+
+         fp_amp_del.setValue(arSound.ampDEL);
+         fp_amp_rev.setValue(arSound.ampREV);
+         fp_amp_pan.setValue(arSound.ampPAN - 64);
+         fp_amp_vol.setValue(arSound.ampVOL);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpATKChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampATK = fp_amp_atk.getFloatValue();
+         Global.Print("Amp ATK is "+arSound.ampATK);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpHLDChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampHLD = fp_amp_hld.getFloatValue();
+         Global.Print("Amp HLD is "+arSound.ampHLD);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpDECChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampDEC = fp_amp_dec.getFloatValue();
+         Global.Print("Amp DEC is "+arSound.ampDEC);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpOVRChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampOVR = fp_amp_ovr.getFloatValue();
+         Global.Print("Amp OVR is "+arSound.ampOVR);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpDELChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampDEL = fp_amp_del.getFloatValue();
+         Global.Print("Amp DEL is "+arSound.ampDEL);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpREVChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampREV = fp_amp_rev.getFloatValue();
+         Global.Print("Amp REV is "+arSound.ampREV);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpPANChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampPAN = fp_amp_pan.getFloatValue() + 64;
+         Global.Print("Amp PAN is "+arSound.ampPAN);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAmpVOLChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.ampVOL = fp_amp_vol.getFloatValue();
+         Global.Print("Amp VOL is "+arSound.ampVOL);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateLFOParamValues() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         fp_lfo_spd.setValue(arSound.lfoSPD - 64);
+         cm_lfo_mul.setSelectedOption(arSound.lfoMUL);
+         fp_lfo_fad.setValue(arSound.lfoFAD - 64);
+
+         local StringArray lfoDstUI;
+         int listIdx = 0;
+         loop(AR_Sound.GetNumLfoDestUI())
+         {
+            local String destName <= arSound.getLfoDestNameByListIdx(listIdx++);
+            destName.replace("Param 1", "Param 1\t");  // right-align hack
+            destName.replace("Param 2", "Param 2\t");
+            destName.replace("Param 3", "Param 3\t");
+            destName.replace("Param 4", "Param 4\t");
+            destName.replace("Param 5", "Param 5\t");
+            destName.replace("Param 6", "Param 6\t");
+            destName.replace("Param 7", "Param 7\t");
+            destName.replace("Param 8", "Param 8\t");
+            lfoDstUI.add(destName);
+         }
+         cm_lfo_dst.setOptions(lfoDstUI);
+         cm_lfo_dst.setSelectedOption(arSound.lfoDestListIdx);
+         cm_lfo_wav.setSelectedOption(arSound.lfoWAV);
+         lb_lfo_sph.setCaption((6/*rnd*/ == arSound.lfoWAV)?"SLEW:":"SPH:");
+         fp_lfo_sph.setValue(arSound.lfoSPH);
+         cm_lfo_mod.setSelectedOption(arSound.lfoMOD);
+         updateLfoDEP(arSound.lfoDEP);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoSPDChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.lfoSPD = fp_lfo_spd.getFloatValue() + 64;
+         Global.Print("LFO SPD is "+arSound.lfoSPD);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoMULChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.lfoMUL = cm_lfo_mul.getSelectedOption();
+         Global.Print("LFO MUL is "+cm_lfo_mul.getSelectedOptionName());
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoFADChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.lfoFAD = fp_lfo_fad.getFloatValue() + 64;
+         Global.Print("LFO FAD is "+arSound.lfoFAD);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoDSTChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.setLfoDestByListIdx(cm_lfo_dst.getSelectedOption());
+         Global.Print("LFO DST is "+cm_lfo_dst.getSelectedOptionName());
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoWAVChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.lfoWAV = cm_lfo_wav.getSelectedOption();
+         Global.Print("LFO WAV is "+cm_lfo_wav.getSelectedOptionName());
+         queueSendSound(trackIdx);
+         lb_lfo_sph.setCaption((6/*rnd*/ == arSound.lfoWAV)?"SLEW:":"SPH:");
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoSPHChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.lfoSPH = fp_lfo_sph.getFloatValue();
+         Global.Print("LFO SPH is "+arSound.lfoSPH);
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoMODChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.lfoMOD = cm_lfo_mod.getSelectedOption();
+         Global.Print("LFO MOD is "+cm_lfo_mod.getSelectedOptionName());
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateLfoDEP(short _val) {
+      if(_val >= 0x4000)
+         fp_lfo_dep.setValue((_val-0x4000) / 129.0);  // 0..127
+      else
+         fp_lfo_dep.setValue((_val-0x4000) / 128.0);  // -128..0
+   }
+
+   // <ui_handle.png>
+   protected method handleLfoDEPChanged() {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         float f = fp_lfo_dep.getFloatValue();
+         if(f >= 0.0f)
+            arSound.lfoDEP = 0x4000 + (f * 129);
+         else
+            arSound.lfoDEP = 0x4000 + (f * 128);
+         updateLfoDEP(arSound.lfoDEP);
+         Global.Print("LFO DEP is "+fp_lfo_dep.getFloatValue());
+         queueSendSound(trackIdx);
+      }
+   }
+
+   // <method.png>
+   protected method getPresetFolderName() : String {
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         switch(arSound.machine)
+         {
+            case 15:  // AR_SOUND_MACHINE_NOISE_GEN
+            case 16:  // AR_SOUND_MACHINE_IMPULSE
+               return STConfig.node_analog_rytm_preset_folder_names.get(0);  // "00_noisegen_impulse"
+
+            case  0:  // AR_SOUND_MACHINE_BD_HARD
+            case  1:  // AR_SOUND_MACHINE_BD_CLASSIC
+            case 13:  // AR_SOUND_MACHINE_BD_FM
+            case 21:  // AR_SOUND_MACHINE_BD_PLASTIC
+            case 22:  // AR_SOUND_MACHINE_BD_SILKY
+            case 26:  // AR_SOUND_MACHINE_BD_SHARP
+            case 30:  // AR_SOUND_MACHINE_BD_ACOUSTIC
+            case  2:  // AR_SOUND_MACHINE_SD_HARD
+            case  3:  // AR_SOUND_MACHINE_SD_CLASSIC
+            case 14:  // AR_SOUND_MACHINE_SD_FM
+            case 23:  // AR_SOUND_MACHINE_SD_NATURAL
+            case 31:  // AR_SOUND_MACHINE_SD_ACOUSTIC
+            case 28:  // AR_SOUND_MACHINE_SY_DUAL_VCO
+            case 29:  // AR_SOUND_MACHINE_SY_CHIP
+            case 32:  // AR_SOUND_MACHINE_SY_RAW
+               return STConfig.node_analog_rytm_preset_folder_names.get(1);  // "01_bd_sd_sy"
+
+            case  4:  // AR_SOUND_MACHINE_RS_HARD
+            case  5:  // AR_SOUND_MACHINE_RS_CLASSIC
+            case  6:  // AR_SOUND_MACHINE_CP_CLASSIC
+               return STConfig.node_analog_rytm_preset_folder_names.get(2);  // "02_rs_cp"
+
+            case  7:  // AR_SOUND_MACHINE_BT_CLASSIC
+               return STConfig.node_analog_rytm_preset_folder_names.get(3);  // "03_bt"
+
+            case  8:  // AR_SOUND_MACHINE_XT_CLASSIC
+               return STConfig.node_analog_rytm_preset_folder_names.get(4);  // "04_lt_mt_ht"
+
+            case  9:  // AR_SOUND_MACHINE_CH_CLASSIC
+            case 17:  // AR_SOUND_MACHINE_CH_METALLIC
+            case 10:  // AR_SOUND_MACHINE_OH_CLASSIC
+            case 18:  // AR_SOUND_MACHINE_OH_METALLIC
+            case 24:  // AR_SOUND_MACHINE_HH_BASIC
+            case 33:  // AR_SOUND_MACHINE_HH_LAB
+               return STConfig.node_analog_rytm_preset_folder_names.get(5);  // "05_ch_oh"
+
+            case 11:  // AR_SOUND_MACHINE_CY_CLASSIC
+            case 19:  // AR_SOUND_MACHINE_CY_METALLIC
+            case 25:  // AR_SOUND_MACHINE_CY_RIDE
+            case 12:  // AR_SOUND_MACHINE_CB_CLASSIC
+            case 20:  // AR_SOUND_MACHINE_CB_METALLIC
+               return STConfig.node_analog_rytm_preset_folder_names.get(6);  // "06_cy_cb"
+
+            case 27:  // AR_SOUND_MACHINE_DISABLE
+               break;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   module static GetPresetFolderNamesByTrackIdx(int _trackIdx) : StringArray {
+      local StringArray ret;
+      switch(_trackIdx)
+      {
+         default:
+         case 0:  // BD
+         case 1:  // SD
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(0));  // "00_noisegen_impulse"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(1));  // "01_bd_sd_dualvco"
+            break;
+
+         case 2:  // RS
+         case 3:  // CP
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(0));  // "00_noisegen_impulse"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(1));  // "01_bd_sd_dualvco"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(2));  // "02_rs_cp"
+            break;
+
+         case 4:  // BT
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(0));  // "00_noisegen_impulse"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(3));  // "03_bt"
+            break;
+
+         case 5:  // LT
+         case 6:  // MT
+         case 7:  // HT
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(0));  // "00_noisegen_impulse"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(4));  // "04_lt_mt_ht"
+            break;
+
+         case 8:  // CH
+         case 9:  // OH
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(0));  // "00_noisegen_impulse"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(5));  // "05_ch_oh"
+            break;
+
+         case 10: // CY
+         case 11: // CB
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(0));  // "00_noisegen_impulse"
+            ret.add(STConfig.node_analog_rytm_preset_folder_names.get(6));  // "06_cy_cb"
+            break;
+      }
+      return deref ret;
+   }
+
+   // <method.png>
+   protected method rescanPresetsForCurrentTrack(boolean _bForce) {
+      // trace "xxx STConfig.node_analog_rytm_preset_folder_names="+#(STConfig.node_analog_rytm_preset_folder_names);
+      int trackIdx = cm_track.getSelectedOption();
+
+      NAR_SoundPresetCacheEntry en <= sound_preset_track_cache.get(trackIdx);
+
+      if(null == en)
+      {
+         en <= new NAR_SoundPresetCacheEntry;
+         sound_preset_track_cache[trackIdx] = deref en;
+
+         _bForce = true;
+      }
+
+      sound_preset_pathnames  <= en.sound_preset_pathnames;
+      sound_preset_names      <= en.sound_preset_names;
+      sound_preset_names_long <= en.sound_preset_names_long;
+
+      if(_bForce)
+      {
+         en.rescan(trackIdx);
+         Global.Debug("NAR_EditKitDialog::rescanPresetsForCurrentTrack: found "+(sound_preset_names.numElements)+" preset(s)");
+      }
+
+      cm_preset.setOptions(sound_preset_names);
+      cm_preset.setOptionsLong(sound_preset_names_long);
+   }
+
+   // <method.png>
+   protected method rescanAllPresets() {
+      NAR_SoundPresetCacheEntry *en;
+      int trackIdx = 0;
+      int curTrackIdx = cm_track.getSelectedOption();
+      foreach en in sound_preset_track_cache
+      {
+         if(null != en)
+         {
+            en.rescan(trackIdx);
+         }
+         trackIdx++;
+      }
+
+      rescanPresetsForCurrentTrack(true/*bForce*/);
+   }
+
+   // <ui_handle.png>
+   protected method loadSoundPreset() {
+      local String pathName <= sound_preset_pathnames.get(cm_preset.getSelectedOption());
+      local File f;
+      if(f.openLocal(pathName, IOS_IN))
+      {
+         int trackIdx = cm_track.getSelectedOption();
+         local AR_Sound arSoundRef;
+         if(ar_kit.getSoundRefByIndex(trackIdx, arSoundRef))
+         {
+            local AR_Sound arSoundTmp = arSoundRef;
+            local Buffer syx;
+
+            if(207/*AR_SOUND_SYX_V4_SZ*/ == f.size)
+            {
+               // old v4 format (FW1.50/1.61b)
+               f.readBuffer(syx, 0, 207/*AR_SOUND_SYX_V4_SZ*/, true/*bResize*/);
+               f.close();
+            }
+            else
+            {
+               // V5 format (FW1.70)
+               f.readBuffer(syx, 0, arSoundRef.requiredSizeSyx, true/*bResize*/);
+               f.close();
+            }
+
+            if(arSoundTmp.syxToRaw(syx)) // converts V4 or V5 Syx to V5 raw
+            {
+               arSoundRef = arSoundTmp;
+
+               handleTrackChanged(false/*bQuiet*/, false/*bRescan*/);
+               queueSendSound(trackIdx);
+
+               Global.Print("Load preset \""+cm_preset.getSelectedOptionName()+"\"");
+               last_preset_name = cm_preset.getSelectedOptionName();
+            }
+         }
+         else
+         {
+            Global.Error("Load preset: getSoundRefByIndex("+trackIdx+") failed !!!");
+         }
+      }
+      else
+      {
+         Global.Error("Load preset: failed to open \""+pathName+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method saveSoundPreset1() {
+      dlg_preset_save <= new NAR_SaveSoundPresetDialog;
+      dlg_preset_save.run(this, sound_preset_names);
+   }
+
+   // <ui_handle.png>
+   public method saveSoundPreset2(String _name) {
+      local String subFolderName <= getPresetFolderName();
+      int trackIdx = cm_track.getSelectedOption();
+      local AR_Sound arSound;
+      local Buffer syx;
+      if(ar_kit.getSoundRefByIndex(trackIdx, arSound))
+      {
+         arSound.getSyxBuffer(syx);
+         arSound.rawToSyx(syx, trackIdx);
+
+         _name.trim();
+         _name = Utils.ConvertToFileName(_name);
+
+         local String pathName = Utils.ToNativePathName(STConfig.node_rootpath)+"/analogrytm/sound_presets/"+subFolderName+"/"+_name+Global.AR_SOUND_FILE_SUFFIX/*.syx*/;
+         local File f;
+         if(f.openLocal(pathName, IOS_OUT))
+         {
+            f.writeBuffer(syx, 0, syx.offset);
+            f.close();
+
+            // // rescanPresetsForCurrentTrack(true/*bForce*/);
+            rescanAllPresets();
+
+            cm_preset.setSelectedOptionByName(_name);
+            Global.Success("Save preset \""+_name+"\"");
+            last_preset_name = _name;
+         }
+         else
+         {
+            Global.Error("Save preset: failed to open \""+pathName+"\"");
+         }
+      }
+      else
+      {
+         Global.Error("Save preset: getSoundRefByIndex("+trackIdx+") failed !!!");
+      }
+   }
+
+   // <ui_show.png>
+   public method showSoundSettingsDialog() {
+      int trackIdx = cm_track.getSelectedOption();
+      dlg_edit_sound.showSound(editor,
+                               this/*kitDialog*/,
+                               ar,
+                               kit,
+                               trackIdx,
+                               NAR_Defs.track_names_short.get(trackIdx)
+                               );
+   }
+
+   // <method.png>
+   protected method hideAndJumpToBookmarkedNode() {
+      // Close dialog and jump back to other bookmarked node (e.g. TrigSeq)
+      hide();
+      PageNode pgNode <= root_form.pg_node;
+      pgNode.tryPipeNodeABSwap();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         selectPreviousTrack();
+         return true;
+      }
+
+      if(_ev.wheelDown())
+      {
+         selectNextTrack();
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          z         :   Switch between pipenodes A/B
+"
+                                     ,
+                                     this
+                                     );
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case 'z':
+               hideAndJumpToBookmarkedNode();
+               r = true; break;
+
+            default:
+               r = maybe; break;
+         }
+
+         if(true == r)
+         {
+            return true;
+         }
+         else if(maybe == r)
+         {
+            Global.Print("");
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+         case 'e':
+            hide();
+            return true;
+
+         case 'd':
+         case VKEY_PAGEDOWN:
+            if(0 == _key.mod)
+            {
+               selectNextTrack();
+               return true;
+            }
+            break;
+
+         case 'k':
+            hideAndJumpToBookmarkedNode();
+            return true;
+
+         case 'r':
+            handleRandLastTouchedGroup();
+            return true;
+
+         case 't':
+            handleRevert();
+            return true;
+
+         case 's':
+         case VKEY_PAGEUP:
+            if(0 == _key.mod)
+            {
+               selectPreviousTrack();
+               return true;
+            }
+            else if(_key.modCtrl())
+            {
+               saveSoundPreset1();
+               return true;
+            }
+            break;
+
+         case 'w':
+            showSoundSettingsDialog();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      // trace "xxx NAR_EditKitDialog: got action name="+name;
+
+      if(TA_SENDSOUND == acName)
+      {
+         editor.queueKitSendSoundX(queued_send_track_idx);
+         return true;
+      }
+      else if(TA_TRKSWITCH == acName)
+      {
+         int newTrkIdx = ar.getQueuedKitEditorTrackIdxAndReset();
+         if(-1 != newTrkIdx)
+         {
+            if(newTrkIdx != cm_track.getSelectedOption())
+            {
+               Global.Debug3("NAR<kit>: switch editor track via AR trig to newTrkIdx="+newTrkIdx);
+               cm_track.setSelectedOption(newTrkIdx);
+               handleTrackChanged(true/*bQuiet*/, true/*bRescan*/);
+               selectPresetBySound();
+            }
+         }
+         ta_trkswitch.reschedule();
+         return true;
+      }
+
+      int synthParamIdx = fp_synth_param.indexOfPointer(ap, 0);
+      if(-1 != synthParamIdx)
+      {
+         last_touched_group = GROUP_SYN;
+         handleSynthParamChanged(synthParamIdx, ap);
+         refocusDefaultAfterAction(acName);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(cm_track):
+            handleTrackChanged(false/*bQuiet*/, true/*bRescan*/);
+            selectPresetBySound();
+            return true;
+
+         case @(cm_machine):
+            handleMachineChanged();
+            return true;
+
+         case @(cm_preset):
+            if(cb_preset_autoload.isSelected())
+            {
+               loadSoundPreset();
+            }
+            return true;
+
+         case @(cb_preset_find):
+            STConfig.b_node_analog_rytm_find_preset = cb_preset_find.isSelected();
+            Global.Print("Auto-select preset by track sound is "+Utils.GetEnableString(STConfig.b_node_analog_rytm_find_preset));
+            return true;
+
+         case @(bt_preset_load):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               rescanAllPresets();
+            }
+            else
+            {
+               loadSoundPreset();
+            }
+            return true;
+
+         case @(cb_preset_autoload):
+            Global.Print("Auto-load sound preset is "+Utils.GetEnableString(cb_preset_autoload.isSelected()));
+            return true;
+
+         case @(bt_preset_save):
+            saveSoundPreset1();
+            return true;
+
+            // Sample
+         case @(fp_smp_tun):
+            last_touched_group = GROUP_SMP;
+            handleSmpTUNChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_smp_fin):
+            last_touched_group = GROUP_SMP;
+            handleSmpFINChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_smp_br):
+            last_touched_group = GROUP_SMP;
+            handleSmpBRChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(cf_smp_smp):
+            last_touched_group = GROUP_SMP;
+            if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleSmpSMPChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRENAMED == acName)
+            {
+               int optIdx = cf_smp_smp.getSelectedOption();
+               if(handleRenameSample(optIdx, cf_smp_smp.getSelectedOptionName()))
+               {
+                  cf_smp_smp.setOptions(snapshot.sample_names);
+                  cf_smp_smp.setSelectedOption(optIdx);
+               }
+            }
+            return true;
+
+         case @(fp_smp_sta):
+            last_touched_group = GROUP_SMP;
+            handleSmpSTAChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(bt_smp_sta):
+            last_touched_group = GROUP_SMP;
+            Global.Print("Move sample start+end is "+Utils.GetEnableString(bt_smp_sta.getToggleState()));
+            return true;
+
+         case @(bt_smp_end):
+            last_touched_group = GROUP_SMP;
+            handleSmpSwapSTA_END();
+            return true;
+
+         case @(fp_smp_end):
+            last_touched_group = GROUP_SMP;
+            handleSmpENDChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(cb_smp_lop):
+            last_touched_group = GROUP_SMP;
+            handleSmpLOPChanged();
+            return true;
+
+         case @(fp_smp_lev):
+            last_touched_group = GROUP_SMP;
+            handleSmpLEVChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+            // Filter
+         case @(fp_flt_atk):
+            last_touched_group = GROUP_FLT;
+            handleFltATKChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_flt_dec):
+            last_touched_group = GROUP_FLT;
+            handleFltDECChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_flt_sus):
+            last_touched_group = GROUP_FLT;
+            handleFltSUSChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_flt_rel):
+            last_touched_group = GROUP_FLT;
+            handleFltRELChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_flt_frq):
+            last_touched_group = GROUP_FLT;
+            handleFltFRQChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_flt_res):
+            last_touched_group = GROUP_FLT;
+            handleFltRESChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(cm_flt_typ):
+            last_touched_group = GROUP_FLT;
+            handleFltTYPChanged();
+            return true;
+
+         case @(fp_flt_env):
+            last_touched_group = GROUP_FLT;
+            handleFltENVChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(bt_revert):
+            handleRevert();
+            return true;
+
+            // Amp
+         case @(fp_amp_atk):
+            last_touched_group = GROUP_AMP;
+            handleAmpATKChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_hld):
+            last_touched_group = GROUP_AMP;
+            handleAmpHLDChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_dec):
+            last_touched_group = GROUP_AMP;
+            handleAmpDECChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_ovr):
+            last_touched_group = GROUP_AMP;
+            handleAmpOVRChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_del):
+            last_touched_group = GROUP_AMP;
+            handleAmpDELChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_rev):
+            last_touched_group = GROUP_AMP;
+            handleAmpREVChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_pan):
+            last_touched_group = GROUP_AMP;
+            handleAmpPANChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_amp_vol):
+            last_touched_group = GROUP_AMP;
+            handleAmpVOLChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+            // LFO
+         case @(fp_lfo_spd):
+            last_touched_group = GROUP_LFO;
+            handleLfoSPDChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(cm_lfo_mul):
+            last_touched_group = GROUP_LFO;
+            handleLfoMULChanged();
+            return true;
+
+         case @(fp_lfo_fad):
+            last_touched_group = GROUP_LFO;
+            handleLfoFADChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(cm_lfo_dst):
+            last_touched_group = GROUP_LFO;
+            handleLfoDSTChanged();
+            return true;
+
+         case @(cm_lfo_wav):
+            last_touched_group = GROUP_LFO;
+            handleLfoWAVChanged();
+            return true;
+
+         case @(fp_lfo_sph):
+            last_touched_group = GROUP_LFO;
+            handleLfoSPHChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(cm_lfo_mod):
+            last_touched_group = GROUP_LFO;
+            handleLfoMODChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(fp_lfo_dep):
+            last_touched_group = GROUP_LFO;
+            handleLfoDEPChanged();
+            refocusDefaultAfterAction(acName);
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+
+         case @(bt_sound):
+            showSoundSettingsDialog();
+            return true;
+      }
+
+      return Dialog::consumeAction(_ac);
+   }
+
+}

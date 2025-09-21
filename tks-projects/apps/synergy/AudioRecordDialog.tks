@@ -1,0 +1,463 @@
+// ----
+// ---- file   : AudioRecordDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2020-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 27Nov2020
+// ---- changed: 29Nov2020, 01Feb2021, 19Jul2021, 04Oct2023, 30Oct2023, 16Nov2023, 19Nov2023
+// ----
+// ----
+// ----
+
+module MAudioRecordDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class AudioRecordDialog extends Dialog {
+
+   define String ACTION_CLOSE  = "onCloseAudioRecordDialog";
+   define String ACTION_ADDSMP = "onAddSmp";
+
+   define String TA_ADDSMP;
+   protected TimerAction ta_addsmp;
+
+   protected XMLForm   *xfm;
+
+   protected ComboField  *cf_prefix;
+   protected Button      *bt_prefix_query;
+   protected Button      *bt_start;
+   protected Button      *bt_stop;
+   protected Button      *bt_livecapture;
+   protected Button      *bt_record_start;
+   protected Button      *bt_record_stop;
+   protected Button      *bt_start_replay;
+   protected Button      *bt_record_sync;
+   protected Button      *bt_stop_addsmp;
+   protected Button      *bt_stoptrim;
+   protected Button      *bt_stoptrim_addsmp;
+   protected Button      *bt_stoptrim_addsmp_restart;
+   protected Button      *bt_stoptrim_addmultismp;
+   protected Button      *bt_stoptrim_addmultismp_restart;
+   protected LayerSwitch *ls_close;
+   protected Button      *bt_close;
+
+   protected boolean b_modal;
+   protected Layer *recipient;  // or null
+
+   static StringArray name_prefix_history;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("AudioRecordDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Audio Remote Control",
+                 100, 100,
+                 640, 240
+                 );
+
+      initTimers();
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_addsmp <= TimerAction.New(TA_ADDSMP, this, 200);
+   }
+
+   // <method_set.png>
+   public method setEnableModal(boolean _bModal) {
+      b_modal = _bModal;
+   }
+
+   // <method_set.png>
+   public method setRecipient(Layer _l) {
+      recipient <= _l;
+   }
+
+   // <method_set.png>
+   public method setNamePrefix(String _prefix) {
+      if(null != _prefix)
+      {
+         cf_prefix.setSelectedOptionName(_prefix.replace("*", ""));
+         handlePrefixChanged(false/*bReturn*/);
+      }
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return b_modal;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return b_modal;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      if(name_prefix_history.isEmpty())
+         name_prefix_history = STConfig.audio_record_dialog_prefix_history;
+
+      cf_prefix.setOptionsSorted(name_prefix_history);
+
+      ls_close.switchToLayerNr(b_modal?0:1);
+
+      resizeToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+
+      restoreGeometryIfValid(UI.IsHiDPI()
+                             ? STConfig.audio_record_dialog_geo_hidpi
+                             : STConfig.audio_record_dialog_geo_lodpi
+                             );
+   }
+
+   // <method.png>
+   protected method provideAddSmp() {
+      if(null != recipient)
+         ta_addsmp.reschedule();
+   }
+
+   // <method.png>
+   protected method provideAddSmp2() {
+      if(null != recipient)
+      {
+         local Action ac <= Action.New(ACTION_ADDSMP, this);
+         recipient.consumeAction(ac);
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         STConfig.audio_record_dialog_geo_hidpi = getGeometry4f();
+      else
+         STConfig.audio_record_dialog_geo_lodpi = getGeometry4f();
+
+      name_prefix_history = cf_prefix.getOptions();
+
+      Dialog::hide();
+
+      ta_addsmp.cancel();
+
+      if(null != recipient)
+      {
+         local Action acClose <= Action.New(ACTION_CLOSE, this);
+         recipient.consumeAction(acClose);
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_prefix_query);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(cf_prefix);
+      layers.add(bt_prefix_query);
+      layers.add(bt_stop_addsmp);
+      layers.add(bt_stoptrim);
+      layers.add(bt_livecapture);
+      layers.add(bt_record_start);
+      layers.add(bt_record_stop);
+      layers.add(bt_start_replay);
+      layers.add(bt_record_sync);
+      layers.add(bt_stoptrim_addsmp);
+      layers.add(bt_stoptrim_addsmp_restart);
+      layers.add(bt_stoptrim_addmultismp);
+      layers.add(bt_stoptrim_addmultismp_restart);
+      layers.add(bt_start);
+      layers.add(bt_stop);
+      return layers;
+   }
+
+   // <method.png>
+   protected method handlePrefixChanged(boolean _bReturn) {
+      local String pfx = Utils.ConvertToFileName(cf_prefix.getSelectedOptionName());
+      pfx.trim();
+      Global.Print("Sample prefix is \""+pfx+"\"");
+
+      SysEx.QueueAtrkPrefix(pfx);
+
+      if(_bReturn)
+      {
+         cf_prefix.setSelectedOptionName(pfx);
+         refocusDefault();
+      }
+   }
+
+   // <method.png>
+   public method handleSendAtrkPrefixQuery() {
+      SysEx.QueueSendAtrkPrefixQuery();
+      Global.Print("Send prefix query");
+   }
+
+   // <method.png>
+   public method handleReceiveAtrkPrefix(String _prefix) {
+      cf_prefix.setSelectedOptionName(_prefix);
+      Global.Print("Rcv prefix=\""+_prefix+"\"");
+   }
+
+   // <method.png>
+   public method handleRecordStart() {
+      SysEx.QueueAtrkRecordStart();
+      Global.Print("Start audio recording (switch to AudioTrack page)");
+   }
+
+   // <method.png>
+   protected method handleRecordStop() {
+      SysEx.QueueAtrkRecordStop();
+      Global.Print("Stop audio recording");
+   }
+
+   // <method.png>
+   protected method handleStartReplay() {
+      if(!replay.b_playing)
+      {
+         root_form.handleToggleReplay(false/*bShift*/);
+         Global.Print("Start replay");
+      }
+   }
+
+   // <method.png>
+   protected method handleRecordSync() {
+      SysEx.QueueAtrkRecordStop();
+      TKS.sleep(50);
+      SysEx.QueueRecordArm();
+      TKS.sleep(50);
+      if(replay.b_playing)
+      {
+         replay.b_atrk_sync_restart = true;
+         Global.Print("Restart audio recording (bar sync)");
+      }
+      else
+      {
+         // Start replay
+         root_form.handleToggleReplay(true/*bSendMMC*/);
+         Global.Print("Start replay + audio recording (bar sync)");
+      }
+   }
+
+   // <method.png>
+   protected method handleStart() {
+      if(!replay.b_playing)
+      {
+         root_form.handleToggleReplay(true/*bSendMMC*/);
+         Global.Print("Start+SendMMC");
+      }
+   }
+
+   // <method.png>
+   protected method handleStop() {
+      if(replay.b_playing)
+      {
+         root_form.handleToggleReplay(false/*bDontSendMMC*/);
+         Global.Print("Stop+SendMMC");
+      }
+   }
+
+   // <method.png>
+   protected method handleStopAddSmp() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_REC_STOP_ADDSMP);
+      Global.Print("Stop+AddSmp");
+      provideAddSmp();
+   }
+
+   // <method.png>
+   protected method handleStopTrim() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM);
+      Global.Print("Stop+Trim");
+   }
+
+   // <method.png>
+   protected method handleStopTrimAddSmp() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP);
+      Global.Print("Stop+Trim+AddSmp");
+      provideAddSmp();
+   }
+
+   // <method.png>
+   protected method handleStopTrimAddSmpRestart() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP_RESTART);
+      Global.Print("Stop+Trim+AddSmp+Restart");
+      provideAddSmp();
+   }
+
+   // <method.png>
+   protected method handleStopTrimAddMultiSmp() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP);
+      Global.Print("Stop+Trim+AddMultiSmp");
+      provideAddSmp();
+   }
+
+   // <method.png>
+   protected method handleStopTrimAddMultiSmpRestart() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP_RESTART);
+      Global.Print("Stop+Trim+AddMultiSmp+Restart");
+      provideAddSmp();
+   }
+
+   // <method.png>
+   protected method handleLiveCaptureNext() {
+      SysEx.QueueAtrk(SysEx.SYX_MSGID_ATRK_LIVEREC_CAPTURE);
+      Global.Print("LiveCaptureNext");
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxxx AudioRecordDialog::onKey: pressed="+_k.pressed+" name="+_k.name;
+      switch(_k.pressed)
+      {
+         default:
+            break;
+
+         case VKEY_F1:
+            if(_k.modShift())
+            {
+               hide();
+               return true;
+            }
+            break;
+
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+
+      if(TA_ADDSMP == acName)
+      {
+         provideAddSmp2();
+         return true;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(cf_prefix):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               Global.Print("Add prefix \""+cf_prefix.getSelectedOptionName()+"\"");
+               handlePrefixChanged(false/*bReturn*/);
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handlePrefixChanged(true/*bReturn*/);
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               // RETURN pressed while option already exists
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               Global.Print("Remove prefix \""+cf_prefix.getLastRemovedOptionName()+"\"");
+               handlePrefixChanged(false/*bReturn*/);
+            }
+            else
+            {
+               // Edit option name
+               handlePrefixChanged(false/*bReturn*/);
+            }
+            return true;
+
+         case @(bt_prefix_query):
+            handleSendAtrkPrefixQuery();
+            return true;
+
+         case @(bt_record_start):
+            handleRecordStart();
+            return true;
+
+         case @(bt_record_stop):
+            handleRecordStop();
+            return true;
+
+         case @(bt_start_replay):
+            handleStartReplay();
+            return true;
+
+         case @(bt_record_sync):
+            handleRecordSync();
+            return true;
+
+         case @(bt_stoptrim):
+            handleStopTrim();
+            return true;
+
+         case @(bt_stop_addsmp):
+            handleStopAddSmp();
+            return true;
+
+         case @(bt_livecapture):
+            handleLiveCaptureNext();
+            return true;
+
+         case @(bt_stoptrim_addsmp):
+            handleStopTrimAddSmp();
+            return true;
+
+         case @(bt_stoptrim_addsmp_restart):
+            handleStopTrimAddSmpRestart();
+            return true;
+
+         case @(bt_stoptrim_addmultismp):
+            handleStopTrimAddMultiSmp();
+            return true;
+
+         case @(bt_stoptrim_addmultismp_restart):
+            handleStopTrimAddMultiSmpRestart();
+            return true;
+
+         case @(bt_start):
+            handleStart();
+            return true;
+
+         case @(bt_stop):
+            handleStop();
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return true;
+   }
+
+}

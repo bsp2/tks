@@ -1,0 +1,549 @@
+// ----
+// ---- file   : PipeIO.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 09Sep2014, 27Sep2014, 28Jan2015, 14Feb2015, 24Feb2015, 27Feb2015, 04Oct2015
+// ----          19Jan2017, 04Jan2018, 07Mar2018, 04May2018, 14Sep2019, 21Sep2019, 19Jun2021
+// ----          22Oct2022, 25Nov2022, 24Sep2023, 04Oct2024
+// ----
+// ----
+// ----
+
+module MPipeIO;
+
+use namespace st2;
+
+
+// <class.png>
+class PipeIO {
+
+   // <save.png>
+   public static PipeNode_SaveState(MIDIPipeNode _node, Stream _ofs) {
+
+      // Write version
+      _ofs.i16 = 4;
+
+      boolean bScript = false;
+
+      MIDIPipeNodeScriptProxy nsp <= _node;
+
+      bScript = (_node instanceof MIDIPipeNodeScriptProxy);
+
+      // Write node name
+      Utils.WriteString(_ofs, _node.name);
+
+      // Write remark (v3+)
+      Utils.WriteString(_ofs, _node.remark);
+
+      // Write suggested preset name (v4+)
+      Utils.WriteString(_ofs, _node.suggestedPresetName);
+
+      // Write native class name
+      Utils.WriteString(_ofs, _node.yacClassName());
+
+      // Write state (v2+)
+      _ofs.i8 = _node.state;
+      _ofs.i8 = _node.presoloState;
+
+      // Write script class name
+      if(bScript)
+      {
+         Node n <= nsp.sci;
+
+         Utils.WriteString(_ofs, n.yacMetaClassName());
+
+         n.nodeSaveState(_ofs);
+      }
+
+   }
+
+   // <load.png>
+   public static PipeNode_LoadState(MIDIPipe _parentPipe,
+                                    Stream   _ifs,
+                                    IntArray _outDevIdxMap,
+                                    IntArray _outDevUseCount,
+                                    Node     _nodeOrNull,
+                                    String   _catClassOrNull
+                                    ) : boolean {
+
+      // (note) when "catClassOrNull" is not null, only load node category/class (Misc, Keys, ..)
+      //         and don't create new node (used by NewTrackDialog)
+
+      // Read version
+      short ver = _ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Read node name
+         local String nodeName;
+         Utils.ReadString(_ifs, nodeName);
+
+         // Read remark (v3+)
+         local String nodeRemark;
+
+         if(ver >= 3)
+         {
+            Utils.ReadString(_ifs, nodeRemark);
+         }
+
+         // Read suggested preset name (v4+)
+         local String nodeSuggestedPresetName;
+         if(ver >= 4)
+         {
+            Utils.ReadString(_ifs, nodeSuggestedPresetName);
+         }
+
+         // Read native class name
+         local String nativeClassName;
+         nativeClassName.empty();
+
+         Utils.ReadString(_ifs, nativeClassName);
+
+         local MIDIPipeNode *n;
+         local String scriptClassName;
+
+         if(null == _catClassOrNull)
+         {
+            if(null != _nodeOrNull)
+            {
+               n <= _nodeOrNull.parent_pipenode;
+               if(nativeClassName != n.yacClassName())
+               {
+                  Global.Error("Native class name mismatch");
+                  return false;
+               }
+            }
+            else
+            {
+               n <= TKS.newObjectByName(null/*nsp*/, nativeClassName);
+            }
+
+            // trace "xxx nativeClassName=\""+nativeClassName+"\" n="+#(n);
+
+            if(n instanceof MIDIPipeNode)
+            {
+               n.init(_parentPipe);
+
+               if(ver >= 2)
+               {
+                  // Read state (v2+)
+                  n.state = _ifs.i8;
+                  n.presoloState = _ifs.i8;
+               }
+
+               // Read script class name
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  MIDIPipeNodeScriptProxy nsp <= n;
+
+                  Utils.ReadString(_ifs, scriptClassName);
+
+                  // renamed on17Oct2015
+                  scriptClassName.replace("NodeMultiSeq", "NodeBuffer");
+
+                  if(Configuration.debugLevel > 1)
+                     Global.Debug2("PipeNode_LoadState: load node sci type="+scriptClassName);
+
+                  Node *sn;
+                  if(null != _nodeOrNull)
+                  {
+                     sn <= _nodeOrNull;
+
+                     if(scriptClassName != _nodeOrNull.yacMetaClassName())
+                     {
+                        Global.Error("Meta class name mismatch");
+                        return false;
+                     }
+                  }
+                  else
+                  {
+                     sn <= Node.NewNodeByName(scriptClassName);
+                  }
+
+                  if(sn instanceof Node)
+                  {
+                     if(null == _nodeOrNull)
+                     {
+                        nsp.sci = #(deref sn);
+                     }
+
+                     sn.nodeInit(_parentPipe, nsp);
+
+                     if(sn.nodeLoadState(_ifs, _outDevIdxMap, _outDevUseCount))
+                     {
+                        // trace "xxx PipeIO: sn.nodeLoadState scriptClassName="+scriptClassName+" OK";
+
+                        if(null == _nodeOrNull)
+                        {
+                           _parentPipe.addNode(#(deref n));
+                        }
+
+                        if(!nodeName.isBlank())
+                        {
+                           n.name = nodeName;
+                        }
+
+                        if(!nodeRemark.isBlank())
+                        {
+                           n.remark = nodeRemark;
+                        }
+
+                        if(!nodeSuggestedPresetName.isBlank())
+                        {
+                           n.suggestedPresetName = nodeSuggestedPresetName;
+                        }
+
+                        if(MIDIPIPE_STATE_SOLO == n.state)
+                        {
+                           _parentPipe.soloNode = n;
+                        }
+
+                        return true;
+                     }
+                     else
+                     {
+                        trace "[---] PipeNode_LoadState: sn.nodeLoadState() failed. class=\""+scriptClassName+"\".";
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] PipeNode_LoadState: failed to instantiate script class \""+scriptClassName+"\".";
+                  }
+               }
+               else
+               {
+                  // (todo) load native class state
+                  return true;
+               }
+            }
+            else
+            {
+               trace "[---] PipeNode_LoadState: failed to instantiate native class \""+nativeClassName+"\".";
+            }
+         } // catClassOrNull
+         else
+         {
+            trace "[>>>] PipeIO::PipeNode_LoadState<ReadClassName>: ver="+ver;
+
+            // Just load class name (for NewTrackDialog)
+            int t;
+            if(ver >= 2)
+            {
+               // Read state (v2+)
+               t = _ifs.i8;  // n.state
+               t = _ifs.i8;  // n.presoloState
+            }
+
+            // dummy read
+            Utils.ReadString(_ifs, scriptClassName);
+
+            // trace "xxx scriptClassName=\""+scriptClassName+"\"";
+
+            ver = _ifs.i16;  // read actual/derived class version
+            ver = _ifs.i16;  // read Node base class version
+            trace "[>>>] PipeIO::PipeNode_LoadState<ReadClassName>: FOURCC_NSTREAM_NODE baseVer="+ver;
+            if(ver >= 1)
+            {
+               if(ver >= 12)
+               {
+                  t = _ifs.i8;  // edit_pattern_nr
+                  t = _ifs.i8;  // play_pattern_nr
+               }
+               if(ver >= 2)
+               {
+                  t = _ifs.i32;  // last_pattern_start_editor_song_offset
+                  t = _ifs.i32;  // last_pattern_start_song_offset
+
+                  if(ver >= 3)
+                  {
+                     Utils.ReadString(_ifs, _catClassOrNull);
+                     return true;
+                  }
+               }
+            }
+         }
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <save.png>
+   public static Pipe_SaveState(MIDIPipe _pipe, Stream _ofs) {
+
+      // Write version
+      _ofs.i16 = 7;
+
+      // Write name
+      Utils.WriteString(_ofs, _pipe.name);
+
+      // Write remark (v4+)
+      Utils.WriteString(_ofs, _pipe.remark);
+
+      // Write suggested preset name (v5+)
+      Utils.WriteString(_ofs, _pipe.suggestedPresetName);
+
+      // Write state (v2+)
+      _ofs.i8 = _pipe.state;
+      _ofs.i8 = _pipe.presoloState;
+
+      // Write last edited node (v3+)
+      _ofs.i8 = _pipe.lastEditedNodeIdx;
+
+      // Write final output flag (v6+)
+      _ofs.i8 = _pipe.finalOutput;
+
+      // Write numNodes
+      _ofs.i16 = _pipe.numNodes;
+
+      int nodeIdx = 0;
+      loop(_pipe.numNodes)
+      {
+         MIDIPipeNode n <= _pipe.getNodeByIdx(nodeIdx);
+
+         // Node data size (v7+)
+         int nodeDataSzOffset = _ofs.offset;
+         _ofs.i32 = 0;
+
+         PipeNode_SaveState(n, _ofs);
+
+         // Fix node data size (v7+)
+         int coff = _ofs.offset;
+         int nodeDataSz = coff - nodeDataSzOffset - 4;
+         _ofs.seek(nodeDataSzOffset, SEEK_SET);
+         _ofs.i32 = nodeDataSz;
+         _ofs.seek(coff, SEEK_SET);
+
+         // Next node
+         nodeIdx++;
+      }
+
+   }
+
+   // <load.png>
+   public static Pipe_LoadState(MIDIPipe _pipe, Stream _ifs, short ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      if(ver >= 1)
+      {
+         // Read name
+         String pipeName;
+         pipeName.empty();
+         Utils.ReadString(_ifs, pipeName);
+
+         if(!pipeName.isBlank())
+         {
+            _pipe.name = pipeName;
+         }
+
+         // Read remark (v4+)
+         if(ver >= 4)
+         {
+            String pipeRemark;
+            pipeRemark.empty();
+            Utils.ReadString(_ifs, pipeRemark);
+
+            if(!pipeRemark.isBlank())
+            {
+               _pipe.remark = pipeRemark;
+            }
+         }
+
+         // Read suggested preset name (v5+)
+         if(ver >= 5)
+         {
+            String pipeSuggestedPresetName;
+            pipeSuggestedPresetName.empty();
+            Utils.ReadString(_ifs, pipeSuggestedPresetName);
+
+            if(!pipeSuggestedPresetName.isBlank())
+            {
+               _pipe.suggestedPresetName = pipeSuggestedPresetName;
+            }
+         }
+
+         if(ver >= 2)
+         {
+            // Read state (v2+)
+            _pipe.state = _ifs.i8;
+            _pipe.presoloState = _ifs.i8;
+            if(MIDIPIPE_STATE_SOLO == _pipe.state)
+            {
+               MIDIPipeRoot root <= _pipe.root;
+               root.soloPipe = _pipe;
+            }
+
+            if(ver >= 3)
+            {
+               _pipe.lastEditedNodeIdx = _ifs.s8;
+            }
+
+            if(ver >= 6)
+            {
+               // Final output flag (v6+)
+               _pipe.finalOutput = _ifs.b8;
+            }
+         }
+
+         // Read numNodes
+         int numNodes = _ifs.i16;
+
+         int nodeIdx = 0;
+         loop(numNodes)
+         {
+            // Node data size (v7+)
+            int nodeDataSz;
+            if(ver >= 7)
+               nodeDataSz = _ifs.i32;
+            else
+               nodeDataSz = 0;
+
+            int nodeDataStartOffset = _ifs.offset;
+
+            if(STConfig.b_debug_hifreq && Configuration.debugLevel > 1)
+               trace "[trc] Pipe_LoadState: pipeName=\""+pipeName+"\" nodeIdx="+nodeIdx+" nodeDataSz="+nodeDataSz;
+
+            if(!PipeNode_LoadState(_pipe,
+                                   _ifs,
+                                   _outDevIdxMap, _outDevUseCount,
+                                   null/*nodeOrNull*/,
+                                   null/*catClassOrNull*/
+                                   )
+               )
+            {
+               if( (ver >= 7) && STConfig.b_ignore_node_load_error )
+               {
+                  trace "[~~~] Pipe_LoadState: failed to load pipenode idx="+nodeIdx+" name=\""+pipeName+"\", skipping "+nodeDataSz+" bytes..";
+                  _ifs.seek(nodeDataStartOffset + nodeDataSz, SEEK_SET);
+               }
+               else
+               {
+                  trace "[---] Pipe_LoadState: failed to load pipenode idx="+nodeIdx+" name=\""+pipeName+"\".";
+                  return false;
+               }
+            }
+
+            // Next node
+            nodeIdx++;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <save.png>
+   public static PipeRoot_SaveState(Stream _ofs) {
+
+      // Write version
+      _ofs.i16 = 1;
+
+      // Write pipes
+      _ofs.i16 = current_pipe_root.maxPipes;
+      _ofs.i16 = current_pipe_root.numPipes;
+
+      int pipeIdx = 0;
+      loop(current_pipe_root.maxPipes)
+      {
+         MIDIPipe p <= current_pipe_root.getPipeByIdx(pipeIdx);
+
+         if(null != p)
+         {
+            Pipe_SaveState(p, _ofs);
+         }
+         else
+         {
+            // Unused
+            _ofs.i16 = 0; // (ver)
+         }
+
+         pipeIdx++;
+      }
+
+      // (todo) write MIDIPipeDevice channel reset states
+   }
+
+   // <load.png>
+   public static PipeRoot_LoadState(Stream _ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = _ifs.i16;
+
+      if(ver >= 1)
+      {
+         int maxPipes = _ifs.i16;
+
+         if(maxPipes >= 0)
+         {
+            int numPipes = _ifs.i16;
+
+            if(numPipes >= 0)
+            {
+               int pipeIdx = 0;
+
+               loop(maxPipes)
+               {
+                  short pipeVer = _ifs.i16;
+
+                  if(pipeVer > 0)
+                  {
+                     MIDIPipe p <= current_pipe_root.allocPipe(pipeIdx);
+
+                     if(!Pipe_LoadState(p, _ifs, pipeVer, _outDevIdxMap, _outDevUseCount))
+                     {
+                        return false;
+                     }
+                  }
+                  // else: unused pipe slot
+
+                  pipeIdx++;
+               }
+
+               // Store reference/use count in MIDI devices and show error messages for devices
+               //  that are unavailable but referenced / used
+               STX_VirtualMIDIOutDevice *outDevVirt;
+               int oldDevIdx = 0;
+               int newDevIdx;
+               foreach newDevIdx in _outDevIdxMap
+               {
+                  if(-1 != newDevIdx)
+                  {
+                     outDevVirt <= MIDI.GetMIDIOutDeviceByIndex(newDevIdx);
+
+                     if(outDevVirt instanceof STX_VirtualMIDIOutDevice)
+                     {
+                        if(outDevVirt.b_unavail)
+                        {
+                           outDevVirt.unavail_use_count = _outDevUseCount[oldDevIdx];
+
+                           // (note) silently ignore unavailable devices if they are not used at all
+                           if(outDevVirt.unavail_use_count > 0)
+                           {
+                              if(STConfig.b_debug_mididev_unavail)
+                              {
+                                 Global.Warning("Output device \""+outDevVirt.getAliasOrDeviceName()+"\" is not present, cannot map dev_idx!!");
+
+                                 trace "[~~~]";
+                                 trace "[~~~] WARNING: output device \""+outDevVirt.getAliasOrDeviceName()+"\" is not present, cannot map dev_idx!!";
+                                 trace "[~~~]           please connect the device and restart the app before loading this song!";
+                              }
+                           }
+                        }
+                     }
+                  }
+
+                  oldDevIdx++;
+               }
+
+               return true;
+            }
+         }
+
+      }
+
+      return false;
+   }
+}

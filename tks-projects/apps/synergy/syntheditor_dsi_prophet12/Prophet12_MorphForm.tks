@@ -1,0 +1,193 @@
+// ----
+// ---- file   : Prophet12_MorphForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 21Feb2017
+// ---- changed: 22Feb2017, 23Feb2017, 09May2017, 26May2017
+// ----
+// ----
+// ----
+
+module MProphet12_MorphForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Prophet12_MorphForm extends XMLForm, ActionProvider, MIDIMapDefs, Prophet12_Defs {
+
+   define String ACTION_MORPH_EDITED;
+
+   namespace EditMIDISynthFormProphet12 *parent_editor;
+
+   protected Scroller    *sc_blend;
+   protected LayerSwitch *ls_detune;
+   protected CheckBox    *cb_detune;
+   protected CheckBox    *cb_enable;
+
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_MORPH_EDITED];
+   }
+
+   // <init.png>
+   public method init(EditMIDISynthFormProphet12 _parentEditor) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      if(!initPakFile("Prophet12_MorphForm.xfm"))
+      {
+         trace "[---] failed to parse \"Prophet12_MorphForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      recursiveBuildTabCycleLists();
+
+      return true;
+   }
+
+   // <method_set.png>
+   public method setGlobalToolTips() {
+      cb_enable.setToolTipCaption("When checked, apply global morph to mod matrix and master tuning");
+      sc_blend.setToolTipCaption("Global morph blend factor");
+   }
+
+   // <method_set.png>
+   public method configureOsc() {
+      ls_detune.switchToLayerNr(1);
+      cb_detune.setSelected(maybe);
+   }
+
+   // <method_set.png>
+   public method configureEnv34OrLFO() {
+      ls_detune.switchToLayerNr(1);
+      cb_detune.setSelected(maybe);
+      cb_detune.setToolTipCaption("Enable full or partial mod dest interpolation\n\n (note) false=use either left or right side mod dest and amount (left=blend factor <0.5, right=factor >=0.5)\n\n (note) true=full interpolation of dest and amount\n\n (note) maybe(mixed)=use left or right hand side mod dest (left=blend factor <0.5, right=blend factor >= 0.5) and blend only the modulation amount");
+   }
+
+   // <method_set.png>
+   public method configureGlobal() {
+      ls_detune.switchToLayerNr(1);
+      // // cb_detune.setEnableMixedState(false);
+      cb_detune.setToolTipCaption("Enable full or partial mod matrix interpolation\n\n (note) false=use either left or right side settings (left=blend factor <0.5, right=factor >=0.5)\n\n (note) true=full interpolation of src / dst\n\n (note) maybe(mixed)=use right hand side mod src/dst if left is unused and blend only the modulation amount, fallback to to \"false\" when left is in use");
+      cb_detune.setSelected(false);
+   }
+
+   // <method_get.png>
+   protected method getPatch() : Prophet12_Patch {
+      return parent_editor.patch;
+   }
+
+   // <method_get.png>
+   public method isEnabled() : boolean {
+      return cb_enable.isSelected();
+   }
+
+   // <method_set.png>
+   public method setEnable(boolean _bEnable) {
+      cb_enable.setSelected(_bEnable);
+   }
+
+   // <method_get.png>
+   public method getFactor() : float {
+      return sc_blend.getValue() / 1000.0f;
+   }
+
+   // <method_get.png>
+   public method allowDetune() : boolean {
+      return cb_detune.isSelected();
+   }
+
+   // <method.png>
+   public method resetBias() {
+      sc_blend.setValue(500);
+      sc_blend.redraw();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(sc_blend);
+
+      if(1 == ls_detune.getCurrentChildNr())
+         layers.add(cb_detune);
+
+      layers.add(cb_enable);
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) : boolean {
+      // Version
+      _ofs.i16 = 1;
+
+      _ofs.f32 = sc_blend.getValue();
+      _ofs.i8 = cb_detune.isSelected();
+      _ofs.i8 = cb_enable.isSelected();
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs) : boolean {
+      short ver = _ifs.u16;
+
+      if(1 <= ver < 99)
+      {
+         sc_blend.setValue(_ifs.f32);
+         cb_detune.setSelected(_ifs.i8);
+         cb_enable.setSelected(_ifs.i8);
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Prophet12_MorphForm::loadState: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      return XMLForm::onMouse(_ev);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(sc_blend):
+         case @(cb_detune):
+         case @(cb_enable):
+            provideAction(Action.New(getProvidedActionAlias(ACTION_MORPH_EDITED), this));
+            Global.Print("Blend is "+(sc_blend.getValue()/10.0)+"%");
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,401 @@
+// ----
+// ---- file   : Montage_FMForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 21Oct2022
+// ---- changed: 23Oct2022, 24Oct2022, 26Oct2022, 28Oct2022, 29Oct2022, 05Nov2022, 17Nov2022
+// ----
+// ----
+// ----
+
+module MMontage_FMForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Montage_FMForm extends Montage_ParamForm, Montage_EGPresetListener {
+   // "FMCommon"
+
+   protected FloatParam *fp_pan_alt;
+
+   protected FloatParam *fp_pitch_keyfollow;
+   protected FloatParam *fp_pitch_keyfollow_centernote;
+
+   // protected ComboBox   *cm_filter_type;
+   protected FloatParam *fp_filter_keyfollow;
+   protected FloatParam *fp_filter_hpf_keyfollow;
+
+   protected FloatParam *fp_feg_time_keyfollow_centernote;
+
+   protected FloatParam *fp_cutoffscl_bp_1;
+   protected FloatParam *fp_cutoffscl_bp_2;
+   protected FloatParam *fp_cutoffscl_bp_3;
+   protected FloatParam *fp_cutoffscl_bp_4;
+
+   protected FloatParam *fp_lfo_ext;
+   protected FloatParam *fp_lfo_speed;
+
+   protected StringArray pan_options;
+   protected StringArray keyfollow_options;
+   protected StringArray note_options;
+
+
+
+   // <method.png>
+   protected method genPanOptions() {
+      if(pan_options.isEmpty())
+      {
+         int pan = -64;
+         loop(128)
+         {
+            if(0 == pan)
+               pan_options.add("C");
+            else if(pan < 0)
+               pan_options.add("L"+(-pan));
+            else
+               pan_options.add("R"+pan);
+            pan++;
+         }
+      }
+   }
+
+   // <method.png>
+   protected method genKeyFollowOptions() {
+      if(keyfollow_options.isEmpty())
+      {
+         int amt = -200;
+         while(amt < -190)
+         {
+            keyfollow_options.add(amt+"%");
+            amt += 1;
+         }
+         while(amt < -105)
+         {
+            keyfollow_options.add(amt+"%");
+            amt += 5;
+         }
+         while(amt < -95)
+         {
+            keyfollow_options.add(amt+"%");
+            amt += 1;
+         }
+         while(amt < -10)
+         {
+            keyfollow_options.add(amt+"%");
+            amt += 5;
+         }
+         while(amt < 10)
+         {
+            if(amt >= 0)
+               keyfollow_options.add("+"+amt+"%");
+            else
+               keyfollow_options.add(amt+"%");
+            amt += 1;
+         }
+         while(amt < 95)
+         {
+            keyfollow_options.add("+"+amt+"%");
+            amt += 5;
+         }
+         while(amt < 105)
+         {
+            keyfollow_options.add("+"+amt+"%");
+            amt += 1;
+         }
+         while(amt < 190)
+         {
+            keyfollow_options.add("+"+amt+"%");
+            amt += 5;
+         }
+         while(amt < 190)
+         {
+            keyfollow_options.add("+"+amt+"%");
+            amt += 5;
+         }
+         while(amt < 192)
+         {
+            keyfollow_options.add("+"+amt+"%");
+            amt += 2;
+         }
+         while(amt <= 200)
+         {
+            keyfollow_options.add("+"+amt+"%");
+            amt += 1;
+         }
+      }
+   }
+
+   // <method.png>
+   static StringArray octave_notes = ["C x", "C#x", "D x", "D#x", "E x", "F x", "F#x", "G x", "G#x", "A x", "A#x", "B x"];
+   protected method genNoteOptions() {
+      if(note_options.isEmpty())
+      {
+         int noteIdx = 0;
+         loop(128)
+         {
+            note_options.add(octave_notes[noteIdx%12].replace("x", String( (noteIdx/12) -2)));
+            noteIdx++;
+         }
+      }
+   }
+
+   // <init.png>
+   public method initFMForm(EditMIDISynthFormMontage _parentSynthForm) : boolean {
+
+      initParamForm(_parentSynthForm);
+
+      local String buf;
+      MIDISynthProfile msp <= parent_synth_form.profile;
+
+      String groupCaption <= "FM Common";
+      createWidgetsFromMSPGroup(buf, msp, groupCaption);
+
+      local String bufXFM;
+      bufXFM.load("Montage_FMForm.xfm", true/*bRemoveCR*/);
+      bufXFM.replace("$(WIDGETS)", buf);
+
+      if(!parseXMLForm(bufXFM))
+      {
+         trace "[---] failed to parse \"Montage_FMForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      if(!resolveWidgetsFromMSPGroup(msp, groupCaption, param_widgets))
+      {
+         trace "[---] Montage_FMForm: resolveWidgetsFromMSPGroup("+groupCaption+") failed.";
+         return false;
+      }
+
+      genPanOptions();
+
+      fp_pan_alt.setUserTable(pan_options);
+      fp_pan_alt.setDisplayType(FloatParam.DISPLAY_USER);
+
+      genKeyFollowOptions();
+
+      fp_pitch_keyfollow.setUserTable(keyfollow_options);
+      fp_pitch_keyfollow.setDisplayType(FloatParam.DISPLAY_USER);
+
+      genNoteOptions();
+
+      fp_pitch_keyfollow_centernote.setUserTable(note_options);
+      fp_pitch_keyfollow_centernote.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_filter_keyfollow.setUserTable(keyfollow_options);
+      fp_filter_keyfollow.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_filter_hpf_keyfollow.setUserTable(keyfollow_options);
+      fp_filter_hpf_keyfollow.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_feg_time_keyfollow_centernote.setUserTable(note_options);
+      fp_feg_time_keyfollow_centernote.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_cutoffscl_bp_1.setUserTable(note_options);
+      fp_cutoffscl_bp_1.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_cutoffscl_bp_2.setUserTable(note_options);
+      fp_cutoffscl_bp_2.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_cutoffscl_bp_3.setUserTable(note_options);
+      fp_cutoffscl_bp_3.setDisplayType(FloatParam.DISPLAY_USER);
+
+      fp_cutoffscl_bp_4.setUserTable(note_options);
+      fp_cutoffscl_bp_4.setDisplayType(FloatParam.DISPLAY_USER);
+
+      recursiveBuildTabCycleLists();
+
+      return true;
+   }
+
+   // <method.png>
+   public method enter() {
+   }
+
+   // <method.png>
+   public method leave() {
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers, param_widgets);
+   }
+
+   // <method_get.png>
+   public method getPartFMCommon() : MontagePartFMCommon {
+      MontagePartFM p <= parent_synth_form.getEditPartFM();
+      if(null != p)
+         return p.common;
+      return null;
+   }
+
+   // <ui_show.png>
+   public method showPartFMCommon() {
+      MontagePartFMCommon c <= getPartFMCommon();
+      if(null != c)
+      {
+         if(c.getExtendedLFOSwitch())
+         {
+            fp_lfo_speed.setMaxValue(415);
+            fp_lfo_speed.setToolTipCaption("Extended LFO Speed");
+         }
+         else
+         {
+            fp_lfo_speed.setMaxValue(99);
+            fp_lfo_speed.setToolTipCaption("LFO Speed");
+         }
+      }
+      updateParamWidgets(c);
+   }
+
+   // <method.png>
+   public method dumpEGSettings(PointerArray _currentEGSettings) {
+      MontagePartFMCommon c <= getPartFMCommon();
+      if(null != c)
+      {
+         // "FM peg"
+         // "FM feg"
+         c.dumpEGSettings(_currentEGSettings);
+      }
+   }
+
+   // <method.png>
+   protected method debugData() {
+      MontagePartFMCommon c <= getPartFMCommon();
+      if(null != c)
+      {
+         c.data.hexdump(0, c.data.size);
+      }
+   }
+
+   // <method_get.png>
+   protected virtual getAliasOverride(MIDISynthProfileCtlAlias _alias) : MIDISynthProfileCtlAlias {
+      if("2nd LFO Speed" == _alias.id)
+      {
+         MontagePartFMCommon c <= getPartFMCommon();
+         if(null != c)
+         {
+            if(c.getExtendedLFOSwitch())
+            {
+               MIDISynthProfile msp <= parent_synth_form.data.midi_profile;
+               return msp.findAliasById("Extended LFO Speed");
+            }
+         }
+      }
+      return _alias;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLFOExtChanged() {
+      MontagePerformance replayPerf <= parent_synth_form.replay_perf;
+      MontagePartFM pFM <= replayPerf.getPartFMByIdx(parent_synth_form.data.current_part_idx);
+      MontagePartFMCommon c <= pFM.common;
+
+      if(1 == fp_lfo_ext.getFloatValue())
+      {
+         fp_lfo_speed.setMaxValue(415);
+         fp_lfo_speed.setToolTipCaption("Extended LFO Speed");
+
+         c.invalidateReplayExtendedLFOSpeed();
+      }
+      else
+      {
+         fp_lfo_speed.setMaxValue(99);
+         fp_lfo_speed.setValue(c.get2ndLFOSpeed());
+         fp_lfo_speed.setToolTipCaption("LFO Speed");
+
+         c.invalidateReplay2ndLFOSpeed();
+      }
+      showPartFMCommon();
+   }
+
+   // <ui_handle.png>
+   public virtual =replay= loadEGPreset(Montage_EGPreset _preset, String _typeName) {
+      Global.Debug("Montage_FMForm::loadEGPreset: typeName="+_typeName+" preset.name="+_preset.name);
+      MontagePartFMCommon c <= getPartFMCommon();
+      if(null != c)
+      {
+         switch(_typeName)
+         {
+            case "FM peg":
+               c.loadPEGPreset(_preset);
+               break;
+
+            case "FM feg":
+               c.loadFEGPreset(_preset);
+               break;
+         }
+
+         showPartFMCommon();
+         parent_synth_form.handleParamEdited();
+         Global.Print("Load EG Preset \""+_typeName+"\"");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         local PointerArray currentEGSettings;
+         dumpEGSettings(currentEGSettings);
+         Montage_EGPresetDialog.ShowEGPresetDialog(this, deref currentEGSettings);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      if(VKEY_BACKSPACE == _k.code)
+      {
+         trace "xxx MontagePartFMCommon.data:";
+         debugData();
+         return true;
+      }
+
+      return Montage_ParamForm::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      int paramIdx = param_widgets.indexOfPointer(ap, 0);
+      if(paramIdx >= 0)
+      {
+         handleParamChanged(getPartFMCommon(), paramIdx, ap);
+
+         if(@(ap) == @(fp_lfo_ext))
+         {
+            handleLFOExtChanged();
+         }
+
+         if(FloatParam.ACTION_VALUECHANGED == acName)
+            parent_synth_form.refocusDefault();
+
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            break;
+      }
+   }
+
+}

@@ -1,0 +1,1412 @@
+// ----
+// ---- file   : AudioLiveRecForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 17Jul2021
+// ---- changed: 18Jul2021, 19Jul2021, 21Jul2021, 10Aug2022, 11Aug2022, 12Aug2022, 13Aug2022
+// ----          18Dec2022, 29Jul2023, 16Nov2023, 17Nov2023, 19Nov2023, 02Dec2023, 22Mar2024
+// ----          15Nov2024, 06Jan2025, 26Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MAudioLiveRecForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class AudioLiveRecForm extends XMLForm, RemoteEventListener {
+
+   define int UPDATE_STALE_TIMEOUT = 10*1000;  // auto-update after 10 seconds
+
+   define int TINT32_RECORD = #58ef6467;
+   define int TINT32_QUEUED = #58efef17;
+
+   define String ACTION_CLOSE  = "onCloseAudioLiveRecDialog";
+
+   protected Button      *bt_instance;
+   protected ComboBox    *cm_instances;
+   protected Button      *bt_query;
+   protected LayerSwitch *ls_close;
+   protected Button      *bt_close;
+
+   protected ComboBox *cm_nsp;
+   protected CheckBox *cb_monitor;
+
+   protected ComboField *cf_flt;
+   protected Button     *bt_clone;
+
+   protected CheckBox   *cb_modulo;
+   protected FloatParam *fp_modulo_voicenr;
+   protected FloatParam *fp_modulo_numvoices;
+   protected CheckBox   *cb_modulo_pan;
+   protected FloatParam *fp_input_pan;
+   protected FloatParam *fp_extra_16ths;
+   protected CheckBox   *cb_force_stereo;
+
+   protected Button   *bt_sample;
+   protected ComboBox *cm_samples;
+   protected Button   *bt_norm_clear;
+   protected Button   *bt_record;
+   protected Button   *bt_replay;
+
+   protected Layer *recipient;  // or null
+
+   protected boolean b_autoshow_track;
+   protected boolean b_autoedit_sample;  // overrides b_autoshow_track mode
+
+   static int last_update_ms = -9999999;
+   static Time last_update_time;
+
+   static IntArray smppeak_newer_sampleids_todo;
+   static Time smppeak_last_update_time;
+
+   static SysExSamplerInstance   *[] instances;
+   static SysExSample            *[] all_samples;
+   static StringArray                all_sample_options;
+   static SysExSample            *[] filtered_samples;
+   static SysExTrack             *[] all_tracks;
+   static HashTable                  smp_peaks;  // indexed by String(smp.unique_id), maps to FloatArray (1 normalized peak per ms)
+
+   static StringArray params;  // remove? params for last selected LRI
+
+   boolean b_last_seen_liverec_active;
+
+   static StringArray sample_filters;
+
+   static StringArray sample_namespace_names;  // see querySampleNamespaces()
+
+   boolean b_docked_to_timeline;
+   NA_TimelineForm *parent_timeline;  // valid when docked
+
+
+   // <ui_init.png>
+   public method initAudioLiveRecForm() : boolean {
+
+      if(!initPakFile("AudioLiveRecForm.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      b_autoedit_sample = STConfig.b_audio_liverec_auto_edit_sample;
+
+      return true;
+   }
+
+   // <method_set.png>
+   public method setRecipient(Layer _l) {
+      recipient <= _l;
+   }
+
+   // <ui_show.png>
+   public method preShow() {
+
+      if(!sample_filters.containsObject(""))
+         sample_filters.insert(0, "");
+      cf_flt.setOptionsSorted(sample_filters);
+
+      ls_close.switchToLayerNr(b_docked_to_timeline?0:1);
+
+      bt_instance.setToggleState(b_autoshow_track);
+      bt_sample.setToggleState(b_autoedit_sample);
+
+      // // if(!b_layer_postinit_done)
+      // // {
+          resizeToMinimum();
+      // // }
+
+      if(QueryIfStale())
+      {
+         updateWidgetsAfterQuery();
+         handleInstanceChanged(false/*bAllowEdit*/);
+      }
+
+      tryPreselectTrackerAudioPatternSample();
+
+      handleReplayToggled();
+   }
+
+   // <ui_show.png>
+   public method postShow() {
+      handleResizeParent();
+      refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public method hide() {
+
+      if(null != recipient)
+      {
+         local Action acClose <= Action.New(ACTION_CLOSE, this);
+         recipient.consumeAction(acClose);
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_close);
+   }
+
+   // <method_set.png>
+   public method setEnableDockedToTimeline(boolean _bDocked, NA_TimelineForm _parentTimeline) {
+      b_docked_to_timeline  = _bDocked;
+      parent_timeline      <= _parentTimeline;
+      ls_close.switchToLayerNr(b_docked_to_timeline?0:1);
+   }
+
+   // <method.png>
+   public method handleResizeParent() {
+      if(dlg_audio_liverec.isFloatingLayerVisible())
+      {
+         dlg_audio_liverec.resizeAtLeastToMinimumForce(false/*bForceX*/, false/*bForceY*/);
+         dlg_audio_liverec.validateClippedPosition();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           bt_instance,
+                           cm_instances,
+                           bt_query,
+                           bt_close,
+
+                           cm_nsp,
+                           cb_monitor,
+
+                           cf_flt,
+                           bt_clone,
+
+                           cb_modulo,
+                           fp_modulo_voicenr,
+                           fp_modulo_numvoices,
+                           cb_modulo_pan,
+                           fp_input_pan,
+                           fp_extra_16ths,
+                           cb_force_stereo,
+
+                           bt_sample,
+                           cm_samples,
+                           bt_norm_clear,
+                           bt_record,
+                           bt_replay
+                         ]
+                        );
+   }
+
+   // <method.png>
+   public static ClearCaches() {
+      last_update_ms = 0;
+      last_update_time.utime = 0;
+      smppeak_last_update_time.utime = 0;
+
+      instances.free();
+      all_samples.free();
+      all_sample_options.free();
+      filtered_samples.free();
+      all_tracks.free();
+      smp_peaks.free();
+      params.free();
+      sample_namespace_names.free();
+   }
+
+   // <ui_handle.png>
+   public static Query() : boolean {
+
+      // Query ModSample instances
+      SysEx.QueueSendQuerySamplerInstances(false/*bLiveRecOnly*/);
+
+      loop(SysEx.WAIT_REPLY_NUM_RETRIES)
+      {
+         if(SysEx.b_queued_recv_sampler_instances)
+         {
+            instances = SysEx.queued_recv_sampler_instances;
+            Global.Debug("AudioLiveRecForm::query: recv'd "+instances.numElements+" instance(s)");
+
+            // Query sample namespaces
+            SysEx.QueueSendQuerySmpNamespaces();
+            loop(SysEx.WAIT_REPLY_NUM_RETRIES)
+            {
+               if(SysEx.b_queued_recv_smp_namespaces)
+               {
+                  Global.Debug("AudioLiveRecForm::querySampleNamespaces: recvd "+#(SysEx.queued_recv_smp_namespaces));
+                  sample_namespace_names = SysEx.queued_recv_smp_namespaces;
+
+                  // Query samples
+                  SysEx.QueueSendQuerySamples(null/*namePattern*/, 5*12/*targetNote=C-5*/);
+                  loop(SysEx.WAIT_REPLY_NUM_RETRIES)
+                  {
+                     if(SysEx.b_queued_recv_samples)
+                     {
+                        all_samples.free();
+                        filtered_samples.free();
+                        all_sample_options.free();
+                        float msPer16th = current_song.sixteenthToMilliSeconds(1.0);
+                        SysExSample *sysSmpFlt;
+                        SysExSample *sysSmp;
+                        foreach sysSmp in SysEx.queued_recv_samples
+                        {
+                           // if(sysSmp.first_liverec_zone_idx >= 0)
+                           // {
+                              sysSmpFlt <= new SysExSample;
+                              sysSmpFlt = sysSmp;
+                              Global.Debug("AudioLiveRecForm::Query: recv sample uid="+sysSmpFlt.unique_id+" nsp="+sysSmpFlt.namespace_id+" name=\""+sysSmpFlt.name+"\"");
+                              all_samples.add(#(deref sysSmpFlt));
+                              local Integer io = sysSmpFlt.unique_id;
+                              all_sample_options.add(sysSmpFlt.unique_id+"/$"+io.printf("%04x")+": "+sysSmpFlt.name+"\t"+sysSmpFlt.millisecs+"ms ("+int((sysSmpFlt.millisecs / msPer16th) + 0.5)+" 16ths) ");
+                           // }
+                        }
+                        Global.Debug("AudioLiveRecForm::query: recv'd "+(SysEx.queued_recv_samples.numElements)+" sample(s), filtered "+all_samples.numElements+" sample(s)");
+
+                        // Query tracks
+                        SysEx.QueueSendQueryTracks();
+                        if(SysEx.WaitForQueryTracks())
+                        {
+                           all_tracks = SysEx.queued_recv_tracks;
+                           Global.Debug("AudioLiveRecForm::query: recv'd "+all_tracks.numElements+" track(s)");
+
+                           last_update_ms = milliSeconds();
+                           last_update_time.now();
+
+                           return true;
+                        }
+                        else
+                           return false;
+                     }
+                     TKS.sleep(SysEx.WAIT_REPLY_SLEEP_MS);
+                  }
+
+                  Global.Error("Timeout while waiting for QUERY_SAMPLESINSTANCES reply");
+                  return;
+               }
+               TKS.sleep(SysEx.WAIT_REPLY_SLEEP_MS);
+            }
+
+            Global.Error("Timeout while waiting for QUERY_SMP_NAMESPACES reply");
+            return;
+         }
+
+         TKS.sleep(SysEx.WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for QUERY_SAMPLER_INSTANCES reply");
+      return false;
+   }
+
+   // <ui_handle.png>
+   public static QueryIfStale() : boolean {
+      int deltaMS = (milliSeconds() - last_update_ms);
+      Global.Debug("AudioLiveRecForm::queryIfStale: deltaMS="+deltaMS);
+      if( deltaMS > UPDATE_STALE_TIMEOUT )
+         return Query();
+      else
+         return true;
+   }
+
+   // <ui_handle.png>
+   public method handleQuery() {
+      if(Query())
+      {
+         updateWidgetsAfterQuery();
+         handleInstanceChanged(false/*bAllowEdit*/);
+
+         if(b_docked_to_timeline)
+         {
+            NodeArrangerEditor parentEditor <= parent_timeline.parent_editor;
+            parentEditor.cmdUpdateSamplePeaks();
+
+            parent_timeline.refreshAudioClipNamesFromSampleNames2();
+            parent_timeline.updateAudioTimelineTrackModesFromSysEx(all_tracks);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleQueryIfStale() {
+      if(QueryIfStale())
+      {
+         updateWidgetsAfterQuery();
+         handleInstanceChanged(false/*bAllowEdit*/);
+      }
+   }
+
+   // <method_find.png>
+   public static FindSamplerInstanceByDevIdxAndCh(byte _vstDevIdx, byte _ch) : SysExSamplerInstance {
+      SysExSamplerInstance *lri;
+      foreach lri in instances
+      {
+         if( (lri.dev_idx == _vstDevIdx) &&
+             ( (-1 == _ch) || (-1 == lri.midi_ch) || (lri.midi_ch == _ch) )
+             )
+            return lri;
+      }
+      return null;
+   }
+
+   // // // <method_find.png>
+   // // public static FindLiveRecInstanceByDevIdxAndCh(byte _vstDevIdx, byte _ch) : SysExSamplerInstance {
+   // //    SysExSamplerInstance *lri;
+   // //    foreach lri in instances
+   // //    {
+   // //       if( (lri.dev_idx == _vstDevIdx) &&
+   // //           ( (-1 == _ch) || (-1 == lri.midi_ch) || (lri.midi_ch == _ch) ) &&
+   // //           (lri.first_liverec_zone_idx >= 0)
+   // //           )
+   // //          return lri;
+   // //    }
+   // //    return null;
+   // // }
+
+   // <method_find.png>
+   public static FindSampleByUniqueId(local short _uid) : SysExSample {
+      SysExSample *smp;
+      foreach smp in all_samples
+      {
+         if(smp.unique_id == _uid)
+            return smp;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public static FindSamplePeaksByUniqueId(short _uid) : FloatArray {
+      String sUID = _uid;
+      return smp_peaks.get(sUID);
+   }
+
+   // <method_find.png>
+   public static FindOrQuerySamplePeaksByUniqueId(short _uid, boolean _bForceUpdate) : FloatArray {
+      String sUID = _uid;
+      if(_bForceUpdate || !smp_peaks.exists(sUID))
+      {
+         if(SysEx.IsAudioConnected())
+         {
+            SysEx.QueueSendSmpPeaks(_uid, 1.0/*intervalMS*/);
+            if(SysEx.WaitForSmpPeaks())
+            {
+               FloatArray smpPeaks <= new FloatArray;
+               smpPeaks.scale(SysEx.queued_recv_smp_peaks, 1.0/255.0);
+               smp_peaks[sUID] = deref smpPeaks;
+               return smpPeaks;
+            }
+         }
+         return null;
+      }
+      else
+         return smp_peaks.get(sUID);
+   }
+
+   // <method.png>
+   public static ForceSamplePeakUpdates() {
+      smppeak_last_update_time.utime = 0;
+   }
+
+   // <method_update.png>
+   public static UpdateSamplePeaks(IntArray _smpUIDs) : int {
+      int numUpdated = 0;
+
+      Global.Debug2("AudioLiveRecForm::UpdateSamplePeaks: smpUIDs="+#(_smpUIDs));
+
+      if(smppeak_newer_sampleids_todo.isEmpty())
+      {
+         SysEx.QueueSendQueryNewerSampleIds(smppeak_last_update_time.utime);
+         SysEx.WaitForNewerSampleIds();
+
+         smppeak_newer_sampleids_todo = SysEx.queued_recv_newer_sample_ids;
+         Global.Debug2("AudioLiveRecForm::UpdateSamplePeaks: utime="+smppeak_last_update_time.utime+" smppeak_newer_sampleids_todo="+#(smppeak_newer_sampleids_todo));
+      }
+
+      boolean bDone = false;
+      while(!bDone)
+      {
+         if(smppeak_newer_sampleids_todo.isEmpty())
+            break;
+         int smpUID = smppeak_newer_sampleids_todo.first;
+         if(_smpUIDs.contains(smpUID))
+         {
+            Global.Debug2("AudioLiveRecForm::UpdateSamplePeaks: query smpUID="+smpUID);
+            _smpUIDs.remove(smpUID);
+            smppeak_newer_sampleids_todo.remove(smpUID);
+            if(!FindOrQuerySamplePeaksByUniqueId(smpUID, true/*bForceUpdate*/))
+               return numUpdated;  // abort to avoid repeated timeouts (e.g. audio host closed)
+            else
+            {
+               Global.Debug2("AudioLiveRecForm::UpdateSamplePeaks: update peaks for smpUID="+smpUID+" ("+smppeak_newer_sampleids_todo.numElements+" left)");
+               numUpdated++;
+               bDone = true; // update only one peak at a time
+            }
+         }
+         else
+         {
+            smppeak_newer_sampleids_todo.remove(smpUID);
+         }
+      }
+
+      if(smppeak_newer_sampleids_todo.isEmpty())
+      {
+         smppeak_last_update_time.now();
+      }
+
+      return numUpdated;
+   }
+
+   // <method_delete.png>
+   public static DeleteSamplePeaksByUniqueId(short _uid) {
+      String sUID = _uid;
+      if(smp_peaks.exists(sUID))
+         smp_peaks.delete(sUID);
+   }
+
+   // <method_delete.png>
+   public static DeleteUnusedSamples() : int {
+
+      // Update sample cache
+      Query();
+
+      // Find referenced sample unique_ids
+      local IntArray smpUIDs;
+      Global.FindSampleUIDs(smpUIDs);
+      Global.Debug("AudioLiveRecForm::DeleteUnusedSamples: found "+smpUIDs+" unique sample references");
+
+      local IntArray deleteSmpUIDs;
+      local Integer io;
+
+      SysExSample *smp;
+      foreach smp in all_samples
+      {
+         String smpName <= smp.name;
+         if(smpName & " clip ")
+         {
+            if(!smpUIDs.contains(smp.unique_id))
+            {
+               io = smp.unique_id;
+               Global.Debug("queue delete sample uid="+smp.unique_id+"/$"+io.printf("%04x")+" name=\""+smp.name+"\"");
+               deleteSmpUIDs.add(smp.unique_id);
+               DeleteSamplePeaksByUniqueId(smp.unique_id);
+            }
+         }
+      }
+
+      SysEx.QueueSendSmpDelete(deleteSmpUIDs);
+      SysEx.WaitForSmpDelete();
+      int numDeleted = SysEx.queued_recv_smp_delete_num;
+
+      Global.Debug("AudioLiveRecForm::DeleteUnusedSamples: deleted "+numDeleted+"/"+deleteSmpUIDs.numElements+" unused sample(s)");
+
+      return numDeleted;
+   }
+
+   // <method_find.png>
+   public static FindTrackByDevIdxAndMidiCh(byte _devIdx, byte _midiCh) : SysExTrack {
+      SysExTrack *track;
+      foreach track in all_tracks
+      {
+         // trace "xxx FindTrackByDevIdxAndMidiCh: track.name=\""+track.name+"\" dev_idx="+track.dev_idx+" midi_ch="+track.midi_ch;
+         if(track.dev_idx == _devIdx)
+         {
+            if( (-1 == track.midi_ch) || (-1 == _midiCh) || (track.midi_ch == _midiCh) )
+               return track;
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public static GetSampleNamespaceNameById(short _nspId) : String {
+      return sample_namespace_names.get(_nspId);
+   }
+
+   // <method_find.png>
+   public static GetSampleNamespaceIdByName(String _nspName) : int {
+      return sample_namespace_names.indexOfObject(_nspName, 0);
+   }
+
+   // <ui_update.png>
+   public method updateInstanceOptions() {
+      local StringArray optInstances;
+      local IntArray optBGColors;
+      SysExSamplerInstance *lri;
+      int bg32LiveRec = app_lnf.getColor(AppLookAndFeel.COLOR_ARRANGER_LIVEREC_OPTION_TINT);
+      foreach lri in instances
+      {
+         local String t = "ModSample<"+lri.instance_id+">: vst_"+tcchar('a'+lri.dev_idx)+":"+((-1 == lri.midi_ch)?"*":(1+lri.midi_ch));
+         SysExSample sysSmp <= FindSampleByUniqueId(lri.unique_id);
+         if(null != sysSmp && sysSmp.namespace_id > 0)
+            t.append("\t ["+sample_namespace_names.get(sysSmp.namespace_id)+"]");
+         optInstances.add(t);
+         optBGColors.add( (lri.first_liverec_zone_idx >= 0) ? bg32LiveRec : 0 );
+      }
+      cm_instances.setOptions(optInstances);
+      cm_instances.setOptionBGColors(optBGColors);
+   }
+
+   // <ui_update.png>
+   public method updateWidgetsAfterQuery() {
+      updateInstanceOptions();
+
+      // Update namespace options
+      local StringArray optNSP;
+      String *nspName;
+      int nspIdx = 0;
+      foreach nspName in sample_namespace_names
+      {
+         optNSP.add(nspIdx+++": "+nspName);
+      }
+      cm_nsp.setOptions(optNSP);
+
+      // Update sample options
+      updateSampleOptions();
+      selectSampleByInstance(true/*bAllowEdit*/);
+
+      handleResizeParent();
+   }
+
+   // <ui_update.png>
+   protected method updateSampleOptions() {
+      String sFlt <= cf_flt.getSelectedOptionName();
+      int fltNSP = cm_nsp.getSelectedOption();
+      int smpIdx = 0;
+      SysExSample sysSmpCur <= filtered_samples.get(cm_samples.getSelectedOption());
+      String *s;
+      filtered_samples.free();
+      local StringArray opt;
+      foreach s in all_sample_options
+      {
+         SysExSample smp <= all_samples.get(smpIdx);
+         if(sFlt.isBlank() || (s & sFlt))
+         {
+            if( (0 == fltNSP) || (smp.namespace_id == fltNSP) )
+            {
+               opt.add(s);
+               filtered_samples.add(smp);
+            }
+         }
+         smpIdx++;
+      }
+      Global.Debug2("AudioLiveRecForm::updateSampleOptions: #opt="+opt.numElements);
+      cm_samples.setOptions(opt);
+
+      // Restore sample selection
+      if(null != sysSmpCur)
+         cm_samples.setSelectedOption(filtered_samples.indexOfPointer(sysSmpCur, 0));
+      else
+         cm_samples.setSelectedOption(-1);
+
+      handleResizeParent();
+   }
+
+   // <method_get.png>
+   public method getSampleOptions() : StringArray {
+      // called by NA_TimelineData::showComboBoxPopupPatternNrDialog()
+      return cm_samples.getOptions();
+   }
+
+   // <method.png>
+   public static GetFilteredSampleIndexByUniqueId(short _uid) : int {
+      // called by NA_TimelineData::showComboBoxPopupPatternNrDialog()
+      SysExSample *smp;
+      int idx = 0;
+      foreach smp in filtered_samples
+      {
+         if(smp.unique_id == _uid)
+            return idx;
+         idx++;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public static GetFilteredSampleByIndex(int _idx) : SysExSample {
+      // called by NA_TimelineData::showComboBoxPopupPatternNrDialog()
+      return filtered_samples.get(_idx);
+   }
+
+   // <ui_handle.png>
+   protected method handleSampleFilterChanged() {
+      sample_filters = cf_flt.getOptions();
+      if(!sample_filters.containsObject(""))
+         sample_filters.insert(0, "");
+      updateSampleOptions();
+      selectSampleByInstance(true/*bAllowEdit*/);
+
+      handleResizeParent();
+   }
+
+   // <ui_handle.png>
+   protected method handleShowInstanceTrack(boolean _bShowTrackPage) {
+      SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+      if(null != lri)
+      {
+         SysEx.QueueSendTrackShowByMIDIPort(lri.dev_idx, lri.midi_ch, _bShowTrackPage, false/*bEditFirstMod*/, -1/*noteIdxHint*/);
+         SysEx.WaitForTrackShow();
+      }
+   }
+
+   // <method.png>
+   public method selectInstanceById(int _instanceId, boolean _bAllowEdit) : boolean {
+      int instanceIdx = -1;
+      SysExSamplerInstance *lri;
+      // trace "xxx selectInstanceById: instanceId="+_instanceId;
+      foreach lri in instances
+      {
+         if(lri.instance_id == _instanceId)
+         {
+            cm_instances.setSelectedOption(instances.indexOfPointer(lri, 0));
+            handleInstanceChanged(_bAllowEdit);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleInstanceChanged(boolean _bAllowEdit) {
+      cf_flt.setSelectedOptionName("");
+      cm_nsp.setSelectedOption(0);
+      updateSampleOptions();
+      selectSampleByInstance(_bAllowEdit);
+      updateSampleOptions();
+      selectNamespaceBySample();
+      updateSampleOptions();
+      Global.Print("Instance is "+cm_instances.getSelectedOptionName());
+
+      if(_bAllowEdit && b_autoshow_track && !b_autoedit_sample)
+         handleShowInstanceTrack(true/*bShowTrackPage*/);
+   }
+
+   // <ui_update.png>
+   protected method updateLiveRecWidgetsFromSmp(SysExSample _smp) {
+      boolean bLiveRec = (_smp.first_liverec_zone_idx >= 0);
+      bt_norm_clear.setEditable(bLiveRec);
+      bt_record.setEditable(bLiveRec);
+      if(bLiveRec)
+      {
+         cb_monitor.setEditable(true);
+         cb_monitor.setSelected(_smp.liverec_monitor);
+      }
+      else
+      {
+         cb_monitor.setSelectedAndDisable(false);
+      }
+   }
+
+   // <method.png>
+   protected method selectSampleByInstance(boolean _bAllowEdit) {
+      SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+      if(null != lri)
+      {
+         SysExSample *smp;
+         int smpIdx = 0;
+         foreach smp in filtered_samples
+         {
+            // trace "xxx selectSampleByInstance: smp.unique_id="+smp.unique_id+" smp.namespace_id="+smp.namespace_id;
+            if(smp.unique_id == lri.unique_id)
+            {
+               Global.Debug2("AudioLiveRecForm::selectSampleByInstance: smp.unique_id="+smp.unique_id+" smp.namespace_id="+smp.namespace_id+" smpIdx="+smpIdx);
+               cm_samples.setSelectedOption(smpIdx);
+
+               updateLiveRecWidgetsFromSmp(smp);
+
+               SysExTrack track <= FindTrackByDevIdxAndMidiCh(lri.dev_idx, lri.midi_ch);
+               if(null != track)
+                  cb_force_stereo.setSelected(smp.b_stereo && !track.b_stereo_input);
+
+               if(_bAllowEdit && b_autoedit_sample)
+                  handleEdit(0/*selStartMS*/, -1/*selLenMS==keep*/);
+
+               return;
+            }
+            smpIdx++;
+         }
+      }
+      cm_samples.setSelectedOption(-1);
+   }
+
+   // <method.png>
+   protected method selectNamespaceBySample() {
+      SysExSample smp <= filtered_samples.get(cm_samples.getSelectedOption());
+      cm_nsp.setSelectedOption((null != smp) ? smp.namespace_id : 0);
+   }
+
+   // <method.png>
+   protected method selectNamespaceByName(String _name) {
+      int nspIdx = sample_namespace_names.indexOfObject(_name, 0);
+      cm_nsp.setSelectedOption(nspIdx);
+   }
+
+   // <method.png>
+   public method selectSampleByUniqueId(short   _uid,
+                                        boolean _bAllowEdit,
+                                        float   _selStartMS,
+                                        float   _selLenMS/*-1==keep*/,
+                                        boolean _bForceEdit
+                                        ) {
+      // trace "xxx AudioLiveRecForm::selectSampleByUniqueId: selStartMS="+_selStartMS;
+      SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+      if(null != lri)
+      {
+         SysExSample *sysSmp;
+         int smpIdx = 0;
+         foreach sysSmp in filtered_samples
+         {
+            // trace "xxx selectSampleByUniqueId: sysSmp.unique_id="+sysSmp.unique_id+" sysSmp.namespace_id="+sysSmp.namespace_id;
+            if(sysSmp.unique_id == _uid)
+            {
+               cm_samples.setSelectedOption(smpIdx);
+
+               updateLiveRecWidgetsFromSmp(sysSmp);
+
+               if(_bAllowEdit)
+               {
+                  if(b_autoedit_sample || _bForceEdit)
+                     handleEdit(_selStartMS, _selLenMS);
+               }
+
+               return;
+            }
+            smpIdx++;
+         }
+      }
+      cm_samples.setSelectedOption(-1);
+   }
+
+   // <ui_handle.png>
+   public method handleSampleChanged(boolean _bWait, boolean _bAllowEdit) {
+      // called when sample is cloned or selected via combobox (manually)
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+         if(null != lri)
+         {
+            if(lri.sendRPN_sync(90/*smp_uid*/, sysSmp.unique_id, _bWait))
+            {
+               lri.unique_id = sysSmp.unique_id;
+
+               updateInstanceOptions();
+
+               if(_bAllowEdit)
+               {
+                  if(b_autoedit_sample)
+                     handleEdit(0/*selStartMS*/, -1/*selLenMS==keep*/);
+
+                  if(b_docked_to_timeline)
+                     parent_timeline.handleAudioLiveRecFormSampleSelected(lri, sysSmp);
+               }
+
+               Global.Print("Select sample "+cm_samples.getSelectedOptionName());//+" (uid="+sysSmp.unique_id+")");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMonitorChanged() {
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         boolean bMon = cb_monitor.isSelected();
+         SysEx.QueueSendSmpLiveRecMonitor(sysSmp.unique_id, sysSmp.first_liverec_zone_idx, bMon);
+         sysSmp.liverec_monitor = bMon;
+
+         Global.Print("Live-Rec Monitor Mode is "+((false == bMon) ? "OFF" : (true == bMon) ? "REPLACE" : "MIX"));
+      }
+      else
+         Global.Error("Monitor: invalid sample");
+   }
+
+   // <method.png>
+   protected method tryLoadPanPreset() {
+      SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+      if(null != lri)
+      {
+         float pan = 0.0f;
+         if(cb_modulo_pan.isSelected())
+         {
+            int voiceIdx  = int(fp_modulo_voicenr.getFloatValue()) - 1;
+            int numVoices = int(fp_modulo_numvoices.getFloatValue());
+            PointerArray paPanPresets <= STConfig.liverec_voice_pan_presets;
+            if(numVoices > paPanPresets.numElements)
+               numVoices = paPanPresets.numElements;
+            voiceIdx = voiceIdx % numVoices;
+            FloatArray aPan <= paPanPresets.get(numVoices - 1);
+            if(null != aPan)
+            {
+               pan = aPan.get(voiceIdx);
+               Global.Debug2("AudioLiveRecForm::tryLoadPanPreset: voiceIdx="+voiceIdx+" num="+numVoices+" pan="+pan);
+               fp_input_pan.setValue(pan);
+            }
+         }
+         SysEx.QueueSendSingleRemoteParamUpdate(lri.instance_id, 67/*PARAM_LIVEREC_INPUT_PAN*/, (pan+1.0f)*0.5);
+      }
+
+   }
+
+   // <method.png>
+   protected method updateVoiceModulo() {
+      replay.configureVoiceModulo(cb_modulo.isSelected() ? (fp_modulo_voicenr.getFloatValue() - 1) : -1,
+                                  fp_modulo_numvoices.getFloatValue()
+                                  );
+   }
+
+   // <ui_handle.png>
+   protected method handleModuloEnableChanged() {
+      boolean bEnable = cb_modulo.isSelected();
+      Global.Print("Voice modulo is "+Utils.GetEnableString(bEnable));
+      updateVoiceModulo();
+   }
+
+   // <ui_handle.png>
+   protected method handleModuloVoiceNrChanged() {
+      int voiceNr = fp_modulo_voicenr.getFloatValue();
+      Global.Print("Voice modulo start voice is "+voiceNr);
+      updateVoiceModulo();
+      tryLoadPanPreset();
+   }
+
+   // <ui_handle.png>
+   protected method handleModuloNumVoicesChanged() {
+      int numVoices = fp_modulo_numvoices.getFloatValue();
+      Global.Print("Voice modulo num voices is "+numVoices);
+      updateVoiceModulo();
+      tryLoadPanPreset();
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableModuloPanChanged() {
+      Global.Print("Voice modulo panning is "+Utils.GetEnableString(cb_modulo_pan.isSelected()));
+      tryLoadPanPreset();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleInputPanChanged() {
+      float pan = fp_input_pan.getFloatValue();
+      local Float fo = int(pan * 100);
+      Global.Print("Input Panning is "+fo.printf("%3.2f")+"%");
+
+      SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+      if(null != lri)
+      {
+         // Global.Debug2("AudioLiveRecForm::handleInputPanChanged: send pan="+pan);
+         SysEx.QueueSendSingleRemoteParamUpdate(lri.instance_id, 67/*PARAM_LIVEREC_INPUT_PAN*/, (pan+1.0f)*0.5);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleExtra16thsChanged() {
+      int num = fp_extra_16ths.getFloatValue();
+      Global.Print("New Sample Extra 16ths is "+num);
+   }
+
+   // <method_get.png>
+   public method getExtra16ths() : int {
+      return fp_extra_16ths.getFloatValue();
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableForceStereoChanged() {
+      Global.Print("New Sample Force-Stereo is "+Utils.GetEnableString(cb_force_stereo.isSelected()));
+   }
+
+   // <method_get.png>
+   public method getEnableForceStereo() : boolean {
+      return cb_force_stereo.isSelected();
+   }
+
+   // <method.png>
+   protected method updatePeaksForSelectedSample() {
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         FindOrQuerySamplePeaksByUniqueId(sysSmp.unique_id, true/*bForce*/);
+
+         if(b_docked_to_timeline)
+         {
+            NodeArrangerEditor parentEditor <= parent_timeline.parent_editor;
+            parentEditor.rescheduleRedrawAllSlow();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEdit(float _selStartMS, float _selLenMS/*-1==keep*/) {
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+         if(null != lri)
+         {
+            // Set parent for sample editor
+            handleShowInstanceTrack(false/*bShowTrackPage*/);
+         }
+
+         Integer io = sysSmp.unique_id;
+         Global.Print("Edit sample uid="+sysSmp.unique_id+"($"+io.printf("%x")+") name=\""+sysSmp.name+"\"");
+         Global.Debug3("AudioLiveRecForm::handleEdit: sample uid="+sysSmp.unique_id+" name=\""+sysSmp.name+"\"");
+
+         SysEx.QueueSendSmpEdit(sysSmp.unique_id, (null != lri) ? lri.instance_id : -1,
+                                _selStartMS, _selLenMS,
+                                -1/*noteIdxHint*/
+                                );
+         SysEx.WaitForSmpEdit();
+      }
+      else
+         Global.Warning("Edit: invalid sample");
+   }
+
+   // <ui_handle.png>
+   public method handleClone(boolean _bAllowEdit) : short {
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         SysEx.QueueSendSmpClone(sysSmp.unique_id);
+         loop(SysEx.WAIT_REPLY_NUM_RETRIES)
+         {
+            if(SysEx.b_queued_recv_smp_clone)
+            {
+               short clonedSmpUID = SysEx.queued_recv_smp_clone_uid;
+
+               handleQuery();
+               selectSampleByUniqueId(clonedSmpUID,
+                                      _bAllowEdit/*bAllowEdit*/,
+                                      0/*selStartMS*/, -1/*selLenMS==keep*/,
+                                      false/*bForceEdit*/
+                                      );
+               handleSampleChanged(true/*bWait*/, _bAllowEdit);
+
+               return clonedSmpUID;
+            }
+            TKS.sleep(SysEx.WAIT_REPLY_SLEEP_MS);
+         }
+
+         Global.Error("Timeout while waiting for SMP_CLONE_REPLY");
+         Utils.Backtrace();
+      }
+      else
+         Global.Warning("Clone: invalid sample");
+      return -1;
+   }
+
+   // <ui_handle.png>
+   public method handleNormalize() {
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         SysEx.QueueSendSmpNormalize(sysSmp.unique_id);
+         Global.Print("Normalize sample uid="+sysSmp.unique_id+" name=\""+sysSmp.name+"\"");
+
+         updatePeaksForSelectedSample();
+      }
+      else
+         Global.Warning("Normalize: invalid sample");
+   }
+
+   // <ui_handle.png>
+   public method handleClear() {
+      fp_modulo_voicenr.setValue(1);
+      tryLoadPanPreset();
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         SysEx.QueueSendSmpClear(sysSmp.unique_id);
+         Global.Print("Clear sample uid="+sysSmp.unique_id+" name=\""+sysSmp.name+"\"");
+
+         updatePeaksForSelectedSample();
+      }
+      else
+         Global.Warning("Clear: invalid sample");
+   }
+
+   // <method.png>
+   protected method lazyQueryParams() : boolean {
+      // (note) params are the same for all (ModSample) instances
+      if(params.isEmpty())
+      {
+         int idx = cm_instances.getSelectedOption();
+         if(idx >= 0)
+         {
+            SysExSamplerInstance lri <= instances.get(idx);
+            if(null != lri)
+            {
+               SysEx.QueueSendRemoteQueryParams(lri.instance_id);
+
+               loop(SysEx.WAIT_REPLY_NUM_RETRIES)
+               {
+                  if(SysEx.b_queued_recv_remotereplyparams)
+                  {
+                     params = SysEx.queued_recv_remotereplyparams_params;
+                     return true;
+                  }
+                  TKS.sleep(SysEx.WAIT_REPLY_SLEEP_MS);
+               }
+               Global.Error("Timeout while waiting for remote params");
+               return false;
+            }
+         }
+      }
+      return true;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleRecord() {
+      SysExSample sysSmp <= filtered_samples.get(cm_samples.getSelectedOption());
+      if(null != sysSmp)
+      {
+         SysExSamplerInstance lri <= instances.get(cm_instances.getSelectedOption());
+         if(null != lri && lri.first_liverec_zone_idx >= 0)
+         {
+            // (note) assumes that replay was (or will be) started on bar boundary
+            //         (current_song.tick_nr is relative to replay start)
+            int ticksPerBar = current_song.getNumTicksPerBar();
+            int startTickNr = replay.b_playing ? current_song.tick_nr : 0;
+            if(startTickNr > 0)
+               startTickNr = (1 + (startTickNr / ticksPerBar)) * ticksPerBar;
+            float msPer16th = current_song.sixteenthToMilliSeconds(1.0);
+            int smp16th = int((sysSmp.millisecs / msPer16th)+0.5);
+            int ticksPer16th = current_song.getNumTicksPer16th();
+            int endTickNr = (ticksPer16th * smp16th);
+            if(endTickNr > 1)
+            {
+               endTickNr = (endTickNr - 0) + startTickNr;
+               replay.queued_liverec_start_ticks = startTickNr;
+               replay.queued_liverec_end_ticks   = endTickNr;
+               replay.queued_liverec_instance_id = lri.instance_id;
+               replay.queued_liverec_zone_idx    = lri.first_liverec_zone_idx;
+               Global.Debug("AudioLiveRecForm::handleRecord: queue liverec start="+startTickNr+" end="+endTickNr+" ("+smp16th+" 16ths) instanceID="+lri.instance_id+" zoneIdx="+lri.first_liverec_zone_idx);
+               Global.Print("Queue liverec start ("+smp16th+" 16ths)");
+
+               bt_record.setBackgroundTint(TINT32_QUEUED);
+               bt_record.redraw();
+               updateVoiceModulo();
+
+               if(b_docked_to_timeline)
+               {
+                  NA_State tstate <= parent_timeline.tstate;
+                  tstate.queued_record_audio_smp_uid = sysSmp.unique_id;
+               }
+            }
+            else
+               Global.Warning("Record: sample too small (smp16th="+smp16th+")");
+         }
+         else
+            Global.Warning("Record: invalid instance");
+      }
+      else
+         Global.Warning("Record: invalid sample");
+   }
+
+   // <method_handle.png>
+   public method instancePrev() {
+      cm_instances.selectPreviousOptionAction();
+   }
+
+   // <method_handle.png>
+   public method instanceNext() {
+      cm_instances.selectNextOptionAction();
+   }
+
+   // <method_handle.png>
+   public method smpPrev() {
+      cm_samples.selectPreviousOptionAction();
+   }
+
+   // <method_handle.png>
+   public method smpNext() {
+      cm_samples.selectNextOptionAction();
+   }
+
+   // <method.png>
+   protected method tryPreselectTrackerAudioPatternSample() {
+      if(root_form.isTrackerEditorVisible())
+      {
+         PageNode pgNode <= root_form.pg_node;
+         NodeTracker nodeTracker <= pgNode.script_node;
+         NodeTrackerEditor nodeTrackerEditor <= pgNode.editor;
+         NT_PatternView patternView <= nodeTrackerEditor.pattern_view;
+
+         NT_MetaPattern mpat <= nodeTracker.getCurrentEditMetaPattern();
+         if(null != mpat)
+         {
+            local Integer devIdx;
+            local Byte    midiCh;
+            int smpUID = patternView.findSmpUID(devIdx/*retDevIdxOrNull*/, midiCh/*retMidiChOrNull*/);
+            if(smpUID >= 0)
+            {
+               STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(devIdx);
+               if(null != outDev)
+               {
+                  byte vstDevIdx = outDev.getVSTDevIdx();
+                  if(vstDevIdx >= 0)
+                  {
+                     SysExSamplerInstance lri <= FindSamplerInstanceByDevIdxAndCh(vstDevIdx, midiCh);
+                     if(null != lri)
+                     {
+                        selectInstanceById(lri.instance_id, false/*bAllowEdit*/);
+                        selectSampleByUniqueId(smpUID,
+                                               false/*bAllowEdit*/,
+                                               0/*selStartMS*/, -1/*selLenMS=keep*/,
+                                               false/*bForceEdit*/
+                                               );
+                     }
+                     else
+                     {
+                        trace "[~~~] AudioLiveRecForm::tryPreselectTrackerAudioPatternSample: no SysExSamplerInstance found for devIdx="+devIdx+" midiCh="+midiCh;
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] AudioLiveRecForm::tryPreselectTrackerAudioPatternSample: outDev name="+outDev.getAliasOrDeviceName()+" does not map to a valid vstDevIdx";
+                  }
+               }
+               else
+               {
+                  trace "[~~~] AudioLiveRecForm::tryPreselectTrackerAudioPatternSample: outDev is NULL (devIdx="+devIdx+")";
+               }
+            }
+            else
+            {
+               trace "[~~~] AudioLiveRecForm::tryPreselectTrackerAudioPatternSample: findSmpUID() did not return a valid sample id";
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleAudioPatNrChanged() {
+      // called by NodeTrackerEditor::trySelectAudioSample()
+      tryPreselectTrackerAudioPatternSample();
+   }
+
+   // <ui_handle.png>
+   public method handleToggleAutoEditSample() {
+      bt_sample.toggleState();
+      b_autoedit_sample = bt_sample.getToggleStateRaw();
+      Global.Print("Auto-edit sample is "+Utils.GetEnableString(b_autoedit_sample));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleReplay() {
+      root_form.handleToggleReplay(false/*bSendMMC*/);
+
+      if(!replay.b_playing)
+         updatePeaksForSelectedSample();
+   }
+
+   // <method.png>
+   public method handleReplayToggled() {
+     // called via RootForm::handleToggleReplayEx()
+      if(replay.b_playing)
+         bt_replay.setCaption("Stop");
+      else
+      {
+         bt_replay.setBackgroundTint(0);
+         bt_replay.setCaption("Start");
+      }
+   }
+
+   // <method.png>
+   public method handleStopPlaying() {
+      // Called by RootForm::handleStopPlaying() while =replay= is locked
+      // // Global.Debug2("AudioLiveRecForm::handleStopPlaying: cb_modulo.isSelected()="+cb_modulo.isSelected());
+      if(cb_modulo.isSelected())
+      {
+         fp_modulo_voicenr.setValue( (int(fp_modulo_voicenr.getValue()-1+1) % int(fp_modulo_numvoices.getFloatValue())) + 1 );
+         tryLoadPanPreset();
+         Global.Debug2("AudioLiveRecForm::handleStopPlaying: new fp_modulo_voicenr="+fp_modulo_voicenr.getFloatValue());
+      }
+   }
+
+   // <method.png>
+   public method handleReplayTimer() {
+      // called from UI thread
+      if(b_last_seen_liverec_active ^ replay.b_liverec_active)
+      {
+         b_last_seen_liverec_active = replay.b_liverec_active;
+         bt_record.setBackgroundTint(b_last_seen_liverec_active ? TINT32_RECORD : 0);
+         bt_record.redraw();
+      }
+      // // trace "xxx AudioLiveRecForm::handleReplayTickUI: replay.b_liverec_active="+replay.b_liverec_active;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxxx AudioLiveRecForm::onKey: pressed="+_k.pressed+" name="+_k.name;
+      switch(_k.pressed)
+      {
+         default:
+            break;
+
+         // // case 'e':
+         // //    // (todo) remove (unreachable)
+         // //    // (note) handled in NA_TimelineForm instead
+         // //    if(_k.modCtrlOnly())
+         // //    {
+         // //       handleToggleAutoEditSample();
+         // //       return true;
+         // //    }
+         // //    break;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               UI.SetKeyboardFocus(cf_flt);
+            }
+            break;
+
+         case 'q':
+            if(_k.modCtrl())  // lctrl-q or lctrl-lshift-q
+            {
+               handleQuery();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               handleRecord();
+               return true;
+            }
+            break;
+
+         case 'w':
+            cb_monitor.toggleSelectionAction();
+            return true;
+
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(bt_instance):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               bt_instance.toggleState();
+               b_autoshow_track = bt_instance.getToggleStateRaw();
+               Global.Print("Auto-show track is "+Utils.GetEnableString(b_autoshow_track));
+            }
+            else
+            {
+               handleShowInstanceTrack(true/*bShowTrackPage*/);
+               Global.Print("Show instance track in Eureka");
+            }
+            return true;
+
+         case @(cm_instances):
+            handleInstanceChanged(true/*bAllowEdit*/);
+            return true;
+
+         case @(bt_clone):
+            handleClone(true/*bAllowEdit*/);
+            return true;
+
+         case @(bt_sample):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleToggleAutoEditSample();
+            }
+            else
+            {
+               handleEdit(0/*selStartMS*/, -1/*selLenMS==keep*/);
+               Global.Print("Edit sample in Eureka");
+            }
+            return true;
+
+         case @(cm_samples):
+            handleSampleChanged(false/*bWait*/, true/*bAllowEdit*/);
+            return true;
+
+         case @(bt_query):
+            handleQuery();
+            return true;
+
+         case @(bt_norm_clear):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleClear();
+            }
+            else
+            {
+               handleNormalize();
+            }
+            return true;
+
+         case @(bt_record):
+            handleRecord();
+            return true;
+
+         case @(bt_replay):
+            handleToggleReplay();
+            return true;
+
+         case @(bt_close):
+            dlg_audio_liverec.hide();
+            return true;
+
+         case @(cm_nsp):
+            handleSampleFilterChanged();
+            return true;
+
+         case @(cf_flt):
+            // switch(acName)
+            // {
+               // case ComboField.ACTION_OPTIONADDED:
+               // case ComboField.ACTION_OPTIONREMOVED:
+               // case ComboField.ACTION_OPTIONRENAMED:
+               // case ComboField.ACTION_OPTIONEDITED:
+                  handleSampleFilterChanged();
+            //       break;
+            // }
+            return true;
+
+         case @(cb_monitor):
+            handleMonitorChanged();
+            return true;
+
+         case @(cb_modulo):
+            handleModuloEnableChanged();
+            return true;
+
+         case @(fp_modulo_voicenr):
+            handleModuloVoiceNrChanged();
+            return true;
+
+         case @(fp_modulo_numvoices):
+            handleModuloNumVoicesChanged();
+            return true;
+
+         case @(cb_modulo_pan):
+            handleEnableModuloPanChanged();
+            return true;
+
+         case @(fp_input_pan):
+            handleInputPanChanged();
+            return true;
+
+         case @(fp_extra_16ths):
+            handleExtra16thsChanged();
+            return true;
+
+         case @(cb_force_stereo):
+            handleEnableForceStereoChanged();
+            return true;
+      }
+
+      return true;
+   }
+
+}

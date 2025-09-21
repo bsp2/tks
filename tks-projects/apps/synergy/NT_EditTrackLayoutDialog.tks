@@ -1,0 +1,1517 @@
+// ----
+// ---- file   : NT_EditTrackLayoutDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 22Oct2007, 23Oct2007, 06Nov2007, 04Aug2008, 20Sep2009, 09Jan2010, 17Jan2010
+// ----          18Jan2010, 27Jan2010, 29Jan2010, 06Feb2010, 29Apr2010, 12Jun2010, 26Sep2010
+// ----          19Oct2010, 06Feb2011, 12Feb2011, 28Feb2011, 02Apr2011, 20Apr2011, 03Feb2012
+// ----          19Feb2012, 20Feb2012, 21Feb2012, 24Feb2012, 25Feb2012, 24May2013, 27May2013
+// ----          05Jun2013, 17Jun2013, 23Jan2015, 24Jan2015, 26Jan2015, 01Feb2015, 07Feb2015
+// ----          29Apr2015, 24Oct2015, 06Nov2015, 10Jan2019, 12Jan2019, 07Oct2019, 20Feb2020
+// ----          04Oct2023, 30Oct2023, 22Mar2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_EditTrackLayoutDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_EditTrackLayoutColumn {
+   Button   *bt_name;
+   Button   *bt_bg_tint;
+   ComboBox *cm_ctl;
+   ComboBox *cm_style;
+   ComboBox *cm_range;
+   CheckBox *cb_vis;
+   Spacer   *sr_event;
+   Spacer   *sr_allevent;
+}
+
+
+// <class.png>
+class NT_EditTrackLayoutDialog extends Dialog {
+
+   NodeTrackerEditor *parent_editor;
+   NodeTracker *parent_node;
+   NT_PatternView *pattern_view;
+
+   define String ACTION_HIDE = "onHideDialog";
+
+   define String TA_REDRAW = "onRedrawTimer";
+
+   protected TimerAction *ta_redraw;
+
+   protected String xfm_src;
+   protected XMLForm *xfm;
+
+   protected ScrollPane *sp_cels;
+
+   protected Button    *bt_close;
+
+   protected PopupMenu *ctxmenu;
+
+   public NT_TEL *tel;
+   protected NT_EditTrackLayoutColumn columns[];
+   protected Layer *[] sr_allevent_array;
+
+   protected TimerAction updateSrStatusTimer;
+   protected boolean b_updatesrstatustimerscheduled;
+
+   protected int c32_entrycontextmenu_hl;
+   protected Label *ctxmenu_label;
+
+   // Dynamically created
+   protected StringArray all_ctl_infos;
+
+   protected boolean b_updatesr_kbdfocus;
+
+   static boolean b_replay_update_srstatus = true;
+
+   // Dialogs:
+   static NT_EditCelColorDialog *dlg_edit_cel_color;
+
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      // Overwrites Layer::isModal
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui_init.png>
+   public method init(NodeTrackerEditor _editor) : boolean {
+
+      parent_editor <= _editor;
+
+      initDialog();
+
+      ta_redraw <= TimerAction.New(TA_REDRAW, this, 500);
+
+      // Generate final .xfm
+      if(!genXFM())
+      {
+         trace "[---] NT_EditTrackLayoutDialog:init: genXFM() failed";
+         return false;
+      }
+
+      xfm <= XMLForm.New(xfm_src);
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      sp_cels  <= xfm.findLayerById("sp_cels");
+      bt_close <= xfm.findLayerById("bt_close");
+
+      // Get column widgets
+      columns.alloc(32);
+      columns.numElements = 32;
+      int i;
+      for(i=0; i<32; i++)
+      {
+         NT_EditTrackLayoutColumn e <= columns[i];
+         e.bt_name    <= xfm.findLayerById("bt_col"+(i+1)+"_name");
+         e.bt_bg_tint <= xfm.findLayerById("bt_col"+(i+1)+"_bg_tint");
+         e.cm_ctl     <= xfm.findLayerById("cm_col"+(i+1)+"_ctl");
+         e.cm_style   <= xfm.findLayerById("cm_col"+(i+1)+"_style");
+         e.cm_range   <= xfm.findLayerById("cm_col"+(i+1)+"_range");
+         e.cb_vis     <= xfm.findLayerById("cb_col"+(i+1)+"_vis");
+         e.sr_event   <= xfm.findLayerById("sr_col"+(i+1)+"_event");
+
+         // // e.bt_bg_tint.makeBackgroundColorSolid();
+         e.bt_bg_tint.setAlpha(255);
+         // // // e.cm_ctl.setOptions(parent_editor.keyJazzGetCtlNames());
+         e.cm_style.setOptions(NT_CEL.cel_style_names);
+         e.cm_range.setOptions(NT_CEL.cel_range_names);
+      }
+
+      // Get controller event status widgets
+      for(i = 0; i < NT_TrackPattern.CTL_NUM; i++)
+      {
+         sr_allevent_array[i] = xfm.findLayerById("sr_col"+(i+1)+"_allevent");
+      }
+
+      initWindow(xfm,
+                 "Edit track layout",
+                 120, 100,
+                 510*UI.font_scaling, 455*UI.font_scaling
+                 );
+
+      b_updatesrstatustimerscheduled = false;
+
+      if(initEditCelColorDialog())
+      {
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_init.png>
+   protected method initEditCelColorDialog() {
+      dlg_edit_cel_color <= new NT_EditCelColorDialog();
+      if(!dlg_edit_cel_color.init())
+      {
+         Global.Error("NT_EditCelColorDialog::init() failed");
+         return false;
+      }
+      return true;
+   }
+
+   // <ui_init.png>
+   protected method genXFM() : boolean {
+
+      String xfmCelTempl;
+      if(!xfmCelTempl.load("NT_EditTrackLayoutCelTemplate.xfm", true))
+      {
+         trace "[---] failed to load \"NT_EditTrackLayoutCelTemplate.xfm\".";
+         return false;
+      }
+
+      if(!xfm_src.load("NT_EditTrackLayoutDialog.xfm", true))
+      {
+         trace "[---] failed to load \"NT_EditTrackLayoutDialog.xfm\".";
+         return false;
+      }
+
+      String xfmCels;
+
+      String t;
+
+      // Gen cels
+      xfmCels.empty();
+      int celNr = 1;
+      loop(NT_TEL.NUM_CELS)
+      {
+         t = xfmCelTempl;
+         t.replace("$NR", String(celNr));
+
+         xfmCels.append(t);
+
+         // Next cel
+         celNr++;
+      }
+
+      xfm_src.replace("$CELS", xfmCels);
+
+      return true;
+   }
+
+   // <ui_handler.png>
+   public virtual onLookAndFeelChanged() {
+      Dialog::onLookAndFeelChanged();
+
+      // trace "xxx EditTrackLayoutDialog::onLookAndFeelChanged: lnf="+lnf.getName();
+
+      c32_entrycontextmenu_hl = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                              #ff113377,
+                                              0.4
+                                              );
+   }
+
+   // <method_set.png>
+   public method setEditor(NodeTrackerEditor _editor) {
+      parent_editor <= _editor;
+      parent_node <= parent_editor.tracker_node;
+      pattern_view <= parent_editor.pattern_view;
+   }
+
+   // <method_set.png>
+   public method setTrackLayout(NT_TEL _tel, int _trackNr) {
+
+      tel <= _tel;
+
+      // Set window title
+      String windowTitle = "Edit track#"+(_trackNr+1)+" layout";
+
+      // Copy basic controller infos (ctls 0..31)
+      all_ctl_infos = NT_TrackPattern.ctl_infos;
+      int usrCtlId = 0;
+
+      NT_Instrument ins <= parent_node.keyJazzGetInstrument();
+      if(null != ins)
+      {
+         windowTitle.append(" (instrument=\""+ins.name+"\")");
+
+         // Add controller infos
+         loop(NT_TrackPattern.CTL_NUMUSR)
+         {
+            all_ctl_infos.add("CTL_USR"+(usrCtlId+1)+": "+ins.getUsrCtlParamInfo(usrCtlId));
+            usrCtlId++;
+         }
+      }
+      else
+      {
+         loop(NT_TrackPattern.CTL_NUMUSR)
+         {
+            all_ctl_infos.add("CTL_USR"+(usrCtlId+1)+": #"+(usrCtlId+32));
+            usrCtlId++;
+         }
+      }
+
+      setWindowTitle(windowTitle);
+
+      // Update column widgets
+      updateAll();
+   }
+
+   // <ui_show.png>
+   public method showTrackLayout(NodeTrackerEditor _editor, NT_TEL _tel, int _trackNr) {
+      ////trace "xxx EditTrackLayout: showTrackLayout(tel="+#(_tel)+")";
+
+      setEditor(_editor);
+
+      setHideListener(parent_editor); // Dialog.ACTION_HIDE
+
+      setTrackLayout(_tel, _trackNr);
+
+      // // resizeToMinimum();
+
+      Dialog::showNearMouse(10,10);
+
+      // UI.SetKeyboardFocus(bt_close);
+
+      // hack to set keyboard focus to first current cel widget (after opening the dialog)
+      b_updatesr_kbdfocus = true;
+      updateSrStatus();
+
+      sp_cels.makeWidgetVisible(UI.GetKeyboardFocus());
+   }
+
+   // <ui_show.png>
+   public method showHidden(NodeTrackerEditor _editor, NT_TEL _tel, int _trackNr) {
+      // (note) called by importtrigseq method
+      setEditor(_editor);
+      setTrackLayout(_tel, _trackNr);
+   }
+
+   // <method.png>
+   public virtual preShow() {
+      if(!b_layer_postinit_done)
+      {
+         // resizeToMinimum();
+      }
+
+      Dialog::preShow();
+   }
+
+   // <ui_render.png>
+   public method queueRedraw() {
+      ta_redraw.schedule();
+   }
+
+   // <ui_render.png>
+   public method handleQueuedRedraw() {
+      updateColumnWidgets();
+      redraw();
+   }
+
+   // <ui_update.png>
+   public method updateAll() {
+      // also called by EditCelColorDialog
+
+      resetContextMenuLabel();
+      updateColumnWidgets();
+      tel.calcCursorExtents();
+      updateSrStatus();
+
+      pattern_view.handleTrackLayoutChanged();
+   }
+
+   // <ui_update.png>
+   public method updateColumnWidgets() {
+      int i;
+      StringArray allCtlNames <= parent_node.keyJazzGetCtlNames();
+      for(i=0; i<32; i++)
+      {
+         NT_CEL cel <= tel.ctl_layouts[i];
+         NT_EditTrackLayoutColumn e <= columns[i];
+
+         if(cel.b_visible)
+         {
+            if(0 != cel.bg_tint)
+               e.bt_bg_tint.setBackgroundTint((64<<24)|(cel.bg_tint&0x00FFFFFF));
+            else
+               e.bt_bg_tint.setBackgroundTint(0);
+         }
+         else
+         {
+            e.bt_bg_tint.setBackgroundTint(0);
+         }
+
+         e.cm_ctl.setOptions(allCtlNames);
+         e.cb_vis.setSelected(cel.b_visible);
+         e.cm_ctl.setSelectedOption(cel.ctl_id);
+         e.cm_style.setSelectedOption(cel.style);
+         e.cm_range.setSelectedOption(cel.range);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateSrStatus() {
+      // Update spacer status colors (have env, env has events, ..)
+
+      StringArray allCtlNames <= parent_node.keyJazzGetCtlNames();
+
+      int csrCtlMapId = tel.cursor_to_ctl_map[pattern_view.cursor_x] & NT_TEL.CTLID_MASK;
+      ////trace "xxx csrX="+pattern_view.cursor_x+" csrCtlMapId="+csrCtlMapId;
+
+      int c32Off = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                 #ff000000,
+                                 0.1
+                                 );
+      int c32OffVisible = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                        #ff007f00,
+                                        0.1
+                                        );
+      int c32OffOtherVisible = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                             #ff7f7f00,
+                                             0.4
+                                             );
+
+      int c32Dupe = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                  #ffe77b12,
+                                  1.0
+                                  );
+
+      int c32On  = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                 #ff00ff00,
+                                 0.2
+                                 );
+      int c32On2  = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                  #ff00ff00,
+                                  0.7
+                                  );
+
+      int c32OnInvisible  = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                          #ffff0000,
+                                          0.1
+                                          );
+      int c32On2Invisible  = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                           #ffff0000,
+                                           0.7
+                                           );
+      int c32OnOtherVisible  = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                             #ffffff00,
+                                             0.2
+                                             );
+      int c32On2OtherVisible  = UI.MixColor32(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG),
+                                              #ffffff00,
+                                              0.5
+                                              );
+
+      int i;
+      Spacer *sr;
+      Envelope *env;
+
+      // Update cel controller event status
+      IntArray haveCtlArray; // 2=visible, 1=invisible but have env, 3=visible+haveenv
+      haveCtlArray.allocAndFill(48, 0);
+
+      NT_CEL *cel;
+
+      // sweep pass: set ctlvisible flags
+      for(i=0; i<32; i++)
+      {
+         cel <= tel.ctl_layouts[i];
+         env <= pattern_view.getCurrentEnvelope(cel.ctl_id);
+         if(cel.b_visible)
+            haveCtlArray[cel.ctl_id] |= 2;
+      }
+
+      IntArray visCtlArray; // to highlight duplicate entries
+      visCtlArray.allocAndFill(48, false);
+
+      for(i=0; i<32; i++)
+      {
+         cel <= tel.ctl_layouts[i];
+         NT_EditTrackLayoutColumn e <= columns[i];
+         sr <= e.sr_event;
+         env <= pattern_view.getCurrentEnvelope(cel.ctl_id);
+
+         int csrTint32;
+         if(csrCtlMapId == i)
+         {
+            // Is cursor cel
+            if(b_updatesr_kbdfocus)
+            {
+               // UI.SetKeyboardFocus(e.cm_ctl);
+               UI.SetKeyboardFocus(e.bt_bg_tint); // button is also used to move to next/prev cel via kbd up/down
+               b_updatesr_kbdfocus = false;
+            }
+            csrTint32 = #30ffff00;
+         }
+         else
+         {
+            if(cel.b_visible)
+               csrTint32 = 0;
+            else
+               csrTint32 = #20000000;
+         }
+         e.cm_ctl  .setBackgroundTint(csrTint32);
+         e.cm_style.setBackgroundTint(csrTint32);
+         e.cm_range.setBackgroundTint(csrTint32);
+
+         e.cm_ctl.setToolTipCaptions(all_ctl_infos);
+
+
+         if(null != env)
+         {
+            if(env.numElements)
+            {
+               if(cel.b_visible)
+               {
+                  if(visCtlArray[cel.ctl_id])
+                  {
+                     sr.setBackgroundColor(c32Dupe);
+                     sr.setToolTipCaption("already visible / env / events");
+                  }
+                  else
+                  {
+                     sr.setBackgroundColor(c32On2);
+                     sr.setToolTipCaption("visible / env / events");
+                  }
+               }
+               else if(haveCtlArray[cel.ctl_id] & 2)
+               {
+                  sr.setBackgroundColor(c32On2OtherVisible);
+                  sr.setToolTipCaption("other visible / env / events");
+               }
+               else
+               {
+                  sr.setBackgroundColor(c32On2Invisible);
+                  sr.setToolTipCaption("invisible / env / events");
+               }
+            }
+            else
+            {
+               if(cel.b_visible)
+               {
+                  if(visCtlArray[cel.ctl_id])
+                  {
+                     sr.setBackgroundColor(c32Dupe);
+                     sr.setToolTipCaption("already visible / env / no events");
+                  }
+                  else
+                  {
+                     sr.setBackgroundColor(c32On);
+                     sr.setToolTipCaption("visible / env / no events");
+                  }
+               }
+               else if(haveCtlArray[cel.ctl_id] & 2)
+               {
+                  sr.setBackgroundColor(c32OnOtherVisible);
+                  sr.setToolTipCaption("other visible / env / no events");
+               }
+               else
+               {
+                  sr.setBackgroundColor(c32OnInvisible);
+                  sr.setToolTipCaption("invisible / env / no events");
+               }
+            }
+         }
+         else
+         {
+            if(cel.b_visible)
+            {
+               if(visCtlArray[cel.ctl_id])
+               {
+                  sr.setBackgroundColor(c32Dupe);
+                  sr.setToolTipCaption("already visible / no env / no events");
+               }
+               else
+               {
+                  sr.setBackgroundColor(c32OffVisible);
+                  sr.setToolTipCaption("visible / no env / no events");
+               }
+            }
+            else if(haveCtlArray[cel.ctl_id] & 2)
+            {
+               sr.setBackgroundColor(c32OffOtherVisible);
+               sr.setToolTipCaption("other visible / no env / no events");
+            }
+            else
+            {
+               sr.setBackgroundColor(c32Off);
+               sr.setToolTipCaption("invisible / no env / no events");
+            }
+         }
+
+         if(cel.b_visible)
+            visCtlArray[cel.ctl_id] = true;
+      }
+
+      // Update all controller event status
+      for(i = 0; i < NT_TrackPattern.CTL_NUM; i++)
+      {
+         sr <= sr_allevent_array[i];
+         String ttip = allCtlNames[i] + "\n";
+         sr.setToolTipCaption(allCtlNames[i]);
+         env <= pattern_view.getCurrentEnvelope(i);
+         int flags = haveCtlArray[i];
+         if(null != env)
+         {
+            flags |= 1;
+            if(env.numElements)
+               flags |= 4;
+         }
+
+         if(flags&2) // is ctl visible
+         {
+            if(flags&1) // have env
+            {
+               if(flags&4) // have event
+               {
+                  sr.setBackgroundColor(c32On2);
+                  ttip += "visible / env / events";
+               }
+               else
+               {
+                  sr.setBackgroundColor(c32On);
+                  ttip += "visible / env / no events";
+               }
+            }
+            else
+            {
+               sr.setBackgroundColor(c32OffVisible);
+               ttip += "visible / no env / no events";
+            }
+         }
+         else
+         {
+            if(flags&1)
+            {
+               if(flags&4)
+               {
+                  sr.setBackgroundColor(c32On2Invisible);
+                  ttip += "invisible / env / events";
+               }
+               else
+               {
+                  sr.setBackgroundColor(c32OnInvisible);
+                  ttip += "invisible / env / no events";
+               }
+            }
+            else
+            {
+               sr.setBackgroundColor(c32Off);
+               ttip += "invisible / no env / no events";
+            }
+         }
+         sr.setToolTipCaption(ttip);
+      }
+   }
+
+   // <method_get.png>
+   protected method getCelIdxByKeyboardFocus() : int {
+
+      Layer focus <= UI.GetKeyboardFocus();
+      int celNr = 0;
+      loop(32)
+      {
+         NT_EditTrackLayoutColumn c <= columns[celNr];
+
+         if(@(focus) == @(c.bt_bg_tint) ||
+            @(focus) == @(c.cm_ctl)     ||
+            @(focus) == @(c.cm_style)   ||
+            @(focus) == @(c.cm_range)   ||
+            @(focus) == @(c.cb_vis)
+            )
+         {
+            return celNr;
+         }
+
+         celNr++;
+      }
+
+      return -1;
+   }
+
+   // <ui_focus.png>
+   protected method moveKbdFocusUp() {
+      Layer focus <= UI.GetKeyboardFocus();
+      int celNr = 0;
+      loop(32)
+      {
+         NT_EditTrackLayoutColumn c <= columns[celNr];
+
+         switch(@(focus))
+         {
+            case @(c.bt_bg_tint):
+               if(celNr > 0)
+               {
+                  c <= columns[celNr - 1];
+                  UI.SetKeyboardFocus(c.bt_bg_tint);
+               }
+               return;
+
+            case @(c.cm_ctl):
+               if(celNr > 0)
+               {
+                  c <= columns[celNr - 1];
+                  UI.SetKeyboardFocus(c.cm_ctl);
+               }
+               return;
+
+            case @(c.cm_style):
+               if(celNr > 0)
+               {
+                  c <= columns[celNr - 1];
+                  UI.SetKeyboardFocus(c.cm_style);
+               }
+               return;
+
+            case @(c.cm_range):
+               if(celNr > 0)
+               {
+                  c <= columns[celNr - 1];
+                  UI.SetKeyboardFocus(c.cm_range);
+               }
+               return;
+
+            case @(c.cb_vis):
+               if(celNr > 0)
+               {
+                  c <= columns[celNr - 1];
+                  UI.SetKeyboardFocus(c.cb_vis);
+               }
+               return;
+         }
+
+         celNr++;
+      }
+   }
+
+   // <ui_focus.png>
+   protected method moveKbdFocusDown() {
+      Layer focus <= UI.GetKeyboardFocus();
+      int celNr = 0;
+      loop(32)
+      {
+         NT_EditTrackLayoutColumn c <= columns[celNr];
+
+         switch(@(focus))
+         {
+            case @(c.bt_bg_tint):
+               if(celNr < 31)
+               {
+                  c <= columns[celNr + 1];
+                  UI.SetKeyboardFocus(c.bt_bg_tint);
+               }
+               return;
+
+            case @(c.cm_ctl):
+               if(celNr < 31)
+               {
+                  c <= columns[celNr + 1];
+                  UI.SetKeyboardFocus(c.cm_ctl);
+               }
+               return;
+
+            case @(c.cm_style):
+               if(celNr < 31)
+               {
+                  c <= columns[celNr + 1];
+                  UI.SetKeyboardFocus(c.cm_style);
+               }
+               return;
+
+            case @(c.cm_range):
+               if(celNr < 31)
+               {
+                  c <= columns[celNr + 1];
+                  UI.SetKeyboardFocus(c.cm_range);
+               }
+               return;
+
+            case @(c.cb_vis):
+               if(celNr < 31)
+               {
+                  c <= columns[celNr + 1];
+                  UI.SetKeyboardFocus(c.cb_vis);
+               }
+               return;
+         }
+
+         celNr++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleShowCelColorEditor(NT_CEL _cel) {
+      if(null == _cel)
+      {
+         _cel <= pattern_view.getCurrentControllerLayout();
+      }
+      dlg_edit_cel_color.showCel(tel, _cel, this);
+   }
+
+   // <ui_cmd.png>
+   public method cmdOrderByVisibility() {
+      Global.Debug("EditTrackLayout::cmdOrderByVisibility");
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.orderByVisibility();
+
+      updateAll();
+
+      Global.Print("Order cels by visibility");
+   }
+
+   // <ui_cmd.png>
+   public method cmdGroupNoteVelDur() {
+      Global.Debug("EditTrackLayout::cmdGroupNoteVelDur");
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.groupNoteVelDur();
+
+      updateAll();
+
+      Global.Print("Group note,vel,dur");
+   }
+
+   // <ui_cmd.png>
+   public =replay= method cmdResetLayout() {
+      Global.Debug("EditTrackLayout::cmdResetLayout");
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.resetLayout();
+
+      updateAll();
+
+      Global.Print("Reset Layout (keep envelopes)");
+   }
+
+   // <ui_cmd.png>
+   public =replay= method cmdAutoLayout() {
+      Global.Debug("EditTrackLayout::cmdAutoLayout");
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      NT_PatternView pv <= parent_editor.pattern_view;
+      NT_Track track <= pv.getCurrentTrack();
+      NT_CEL *cel;
+      int numAdded = 0;
+      int ctlId = 0;
+      loop(NT_TrackPattern.CTL_NUM)
+      {
+         Envelope env <= pv.getCurrentEnvelope(ctlId);
+         if(null != env)
+         {
+            if(env.numElements > 0)
+            {
+               int style = NT_CEL.GetDefaultStyle(ctlId);
+               int range = NT_CEL.GetDefaultRange(ctlId);
+               numAdded += tel.lazyAddVisibleCelForCtlById(ctlId, style, range);
+            }
+         }
+
+         ctlId++;
+      }
+
+      updateAll();
+
+      Global.Print("Auto Layout (add "+numAdded+" cel"+Utils.GetPluralString(numAdded)+")");
+   }
+
+   // <ui_cmd.png>
+   public method cmdCelColsClear() {
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.orderByVisibility();
+
+      tel.clearCelBGColors();
+
+      updateAll();
+
+      Global.Print("Clear cel colors");
+   }
+
+   // <ui_cmd.png>
+   public method cmdCelColsGen() {
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.orderByVisibility();
+
+      tel.genCelBGColors(false);
+
+      updateAll();
+
+      Global.Print("Colorize cels");
+   }
+
+   // <ui_cmd.png>
+   public method cmdCelColsGenToggle() {
+
+      // // if(tel.doAllCelsHaveNoColor())
+      if(tel.doAllCelsHaveNoOrCustomColor())
+      {
+         // trace "xxx AllCelsHaveNoColor";
+         parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+         // Colorize using only the default colors
+         tel.genCelBGColors(true);
+
+         updateAll();
+      }
+      else
+      {
+         // // if(tel.doAllCelsHaveDefaultColors())
+         if(tel.doAllCelsHaveDefaultOrCustomColors())
+         {
+            // trace "xxx AllCelsHaveDefaultColors";
+
+            parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+            // Use full palette to colorize cels
+            tel.genCelBGColors(false);
+
+            updateAll();
+         }
+         else /////if(tel.doAllCelsHavePaletteColors())
+         {
+            // trace "xxx clearCelPaletteBGColors";
+
+            parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+            tel.clearCelPaletteBGColors();
+
+            updateAll();
+         }
+      }
+   }
+
+   // <ui_cmd.png>
+   public method cmdDelete(int _idx) {
+      Global.Debug("EditTrackLayout::cmdDelete: idx="+_idx);
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.deleteCEL(_idx);
+
+      updateAll();
+
+      Global.Print("Delete cel");
+   }
+
+   // <ui_cmd.png>
+   public method cmdInsert(int _idx) {
+      Global.Debug("EditTrackLayout::cmdInsert: idx="+_idx);
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      tel.insertCEL(_idx);
+
+      updateAll();
+
+      Global.Print("Insert cel");
+   }
+
+   // <ui_cmd.png>
+   public method cmdMoveUp(int _idx) {
+      Global.Debug("EditTrackLayout::cmdMoveUp: idx="+_idx);
+
+      if(_idx > 0)
+      {
+         int csrCtlMapId = tel.cursor_to_ctl_map[pattern_view.cursor_x] & NT_TEL.CTLID_MASK;
+
+         parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+         if(_idx == csrCtlMapId)
+            pattern_view.moveCursorToPreviousColumnGroup();
+
+         moveKbdFocusUp();
+         sp_cels.makeWidgetVisible(UI.GetKeyboardFocus());
+
+         tel.moveCelUp(_idx);
+
+         updateAll();
+
+         Global.Print("Move cel up");
+      }
+   }
+
+   // <ui_cmd.png>
+   public method cmdMoveDown(int _idx) {
+      Global.Debug("EditTrackLayout::cmdMoveDown: idx="+_idx);
+
+      if(_idx < (NT_TEL.NUM_CELS -1))
+      {
+         int csrCtlMapId = tel.cursor_to_ctl_map[pattern_view.cursor_x] & NT_TEL.CTLID_MASK;
+
+         parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+         if(_idx == csrCtlMapId)
+         {
+            pattern_view.moveCursorToNextColumnGroup();
+         }
+
+         moveKbdFocusDown();
+         sp_cels.makeWidgetVisible(UI.GetKeyboardFocus());
+
+         tel.moveCelDown(_idx);
+
+         updateAll();
+
+         Global.Print("Move cel down");
+      }
+   }
+
+   // <method.png>
+   protected method resetContextMenuLabel() {
+      if(null != ctxmenu_label)
+      {
+         ctxmenu_label.setBackgroundColor(UI.lnf.getColor(LookAndFeel.COLOR_WINDOW_BG));
+         ctxmenu_label <= null;
+      }
+   }
+
+   // <ui_timer.png>
+   protected method scheduleUpdateSrStatusTimer() {
+      if(!b_updatesrstatustimerscheduled)
+      {
+         // (TODO) redraw of background layer currently causes problems with "shade modal" UI feature
+         b_updatesrstatustimerscheduled = true;
+
+         updateSrStatusTimer.setActionConsumer(this);
+         ////updateSrStatusTimer.setActionProvider(this);
+         UI.CancelSchedule(updateSrStatusTimer);
+         updateSrStatusTimer.setActionName("updateSrStatusTimer");
+         updateSrStatusTimer.setTicks(500); // redraw 2 times per sec. max
+         UI.Schedule(updateSrStatusTimer);
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(MouseEvent _ev) {
+
+      PopupMenuButton *pmb;
+
+      // Create orderlist-entry popupmenu (clone, duplicate, delete, ..)
+      ctxmenu <= PopupMenu.New(this);
+
+      // Note: since this dialog is a window, the relative mouse position is simply the absolute mouse position minus the window position
+      //       since the layerAt2f() subtracts the widget position, we can simply copy the absolute coordinate.
+      _ev.mouse_rel_x = _ev.mouse_abs_x;
+      _ev.mouse_rel_y = _ev.mouse_abs_y;
+
+      Layer *l <= layerAt2f(_ev.mouse_rel_x, _ev.mouse_rel_y);
+
+      if(l instanceof Label)
+      {
+         NT_EditTrackLayoutColumn *col;
+         int r = -1;
+         int i = 0;
+         foreach col in columns
+         {
+            if(@(col.bt_name) == @(l))
+            {
+               r = i;
+               break;
+            }
+            i++;
+         }
+         if(-1 != r)
+         {
+            ctxmenu_label <= l;
+            ctxmenu_label.setBackgroundColor(c32_entrycontextmenu_hl);
+            ctxmenu_label.redraw();
+            if(r != 31)
+            {
+               pmb <= ctxmenu.addDefaultButton("Move up", "cmd_moveup"+r);
+               pmb.setAccelerators(null, "lctrl-up");
+               pmb <= ctxmenu.addDefaultButton("Move down", "cmd_movedown"+r);
+               pmb.setAccelerators(null, "lctrl-down");
+               ctxmenu.addSeparator();
+               ctxmenu.addDefaultButton("Insert/shift down", "cmd_insert"+r);
+               ctxmenu.addDefaultButton("Delete", "cmd_delete"+r);
+            }
+            else
+            {
+               pmb <= ctxmenu.addDefaultButton("Move up", "cmd_moveup"+r);
+               pmb.setAccelerators(null, "lctrl-up");
+            }
+
+            // Cel colors submenu
+            PopupMenu submenu <= PopupMenu.New(ctxmenu);
+            pmb <= submenu.addDefaultButton("Clear", "cmd_celcols_clear");
+            pmb.setAccelerators(null, "lctrl-x l");
+            submenu.addSeparator();
+            pmb <= submenu.addDefaultButton("Generate", "cmd_celcols_gen");
+            pmb.setAccelerators(null, "lctrl-x k");
+
+            ctxmenu.addSeparator();
+            ctxmenu.addMenu("Cel colors", submenu);
+
+            ctxmenu.addSeparator();
+            pmb <= ctxmenu.addDefaultButton("Auto Layout", "cmd_auto");
+            pmb.setAccelerators(null, "lctrl-x a");
+
+            ctxmenu.addSeparator();
+            pmb <= ctxmenu.addDefaultButton("Reset Layout (keep envs)", "cmd_reset");
+            pmb.setAccelerators(null, "lctrl-x r");
+
+            ctxmenu.addSeparator();
+            pmb <= ctxmenu.addDefaultButton("Group Note,Vel,Dur", "cmd_groupnoteveldur");
+            pmb.setAccelerators(null, "lctrl-x g");
+
+            ctxmenu.addSeparator();
+            pmb <= ctxmenu.addDefaultButton("Order by visibility", "cmd_order_by_visibility");
+            pmb.setAccelerators(null, "lctrl-x o");
+         }
+         else
+         {
+            return;
+         }
+      }
+      else
+      {
+         pmb <= ctxmenu.addDefaultButton("Auto Layout", "cmd_auto");
+         pmb.setAccelerators(null, "lctrl-x a");
+
+         ctxmenu.addSeparator();
+         pmb <= ctxmenu.addDefaultButton("Reset Layout (keep envs)", "cmd_reset");
+         pmb.setAccelerators(null, "lctrl-x r");
+
+         ctxmenu.addSeparator();
+         pmb <= ctxmenu.addDefaultButton("Group Note,Vel,Dur", "cmd_groupnoteveldur");
+         pmb.setAccelerators(null, "lctrl-x g");
+
+         ctxmenu.addSeparator();
+         pmb <= ctxmenu.addDefaultButton("Order by visibility", "cmd_order_by_visibility");
+         pmb.setAccelerators(null, "lctrl-x o");
+      }
+
+      // trace "l="+#(l)+" i="+i;
+      // trace "rel=("+_ev.mouse_rel_x+";"+_ev.mouse_rel_y+")";
+      // trace "xxx abs=("+_ev.mouse_abs_x+";"+_ev.mouse_abs_y+")";
+
+      ctxmenu.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            cmdAutoLayout();
+            return true;
+
+         case 'c':
+            hide();
+            return true;
+
+         case 'g':
+            cmdGroupNoteVelDur();
+            return true;
+
+         case 'k':
+            parent_editor.cmd_track_autocolorizecels();
+            return true;
+
+         case 'r':
+            cmdResetLayout();
+            return true;
+
+         case 's':
+            handleShowCelColorEditor(null);
+            return true;
+
+         case 'l':
+            cmdCelColsClear();
+            return true;
+
+         case 'o':
+            cmdOrderByVisibility();
+            return true;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Close dialog
+
+          g         :   Group Note,Velocity,Duration
+          k         :   Auto-colorize cels (preserves custom cel colors) (type multiple times to cycle through colorization modes)
+          l         :   Clear cel colors
+          o         :   Order by visibility
+          s         :   Edit current cel color
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+        case VKEY_ESCAPE:
+           hide();
+           return true;
+
+        case VKEY_F6:
+           if(_k.modShiftOnly())
+           {
+              hide();
+              return true;
+           }
+           break;
+
+         case VKEY_UP:
+            if(_k.mod == VMOD_LCTRL)
+               cmdMoveUp(getCelIdxByKeyboardFocus());
+            return true;
+
+         case VKEY_DOWN:
+            if(_k.mod == VMOD_LCTRL)
+               cmdMoveDown(getCelIdxByKeyboardFocus());
+            return true;
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu(_ev);
+      }
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      Dialog::onDraw();
+
+      if(b_replay_update_srstatus)
+      {
+         if(replay.b_playing)
+         {
+            scheduleUpdateSrStatusTimer();
+         }
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      KeyAction *kac;
+      Layer *kap;
+      Key *key;
+
+      if(TA_REDRAW == acName)
+      {
+         handleQueuedRedraw();
+         return true;
+      }
+
+      if(acName == "updateSrStatusTimer")
+      {
+         b_updatesrstatustimerscheduled = false;
+         updateSrStatus();
+         redraw();
+         return true;
+      }
+      else if("cmd_celcols_clear" == acName)
+      {
+         cmdCelColsClear();
+      }
+      else if("cmd_celcols_gen" == acName)
+      {
+         cmdCelColsGen();
+      }
+
+      if(@(ap) == @(ctxmenu))
+      {
+         if(acName <= "cmd_order_by_visibility")
+         {
+            cmdOrderByVisibility();
+         }
+         else if("cmd_groupnoteveldur" == acName)
+         {
+            cmdGroupNoteVelDur();
+         }
+         else if("cmd_reset" == acName)
+         {
+            cmdResetLayout();
+         }
+         else if("cmd_auto" == acName)
+         {
+            cmdAutoLayout();
+         }
+         else if(acName <= "cmd_delete")
+         {
+            acName.replace("cmd_delete", "");
+            cmdDelete(int(acName));
+         }
+         else if(acName <= "cmd_insert")
+         {
+            acName.replace("cmd_insert", "");
+            cmdInsert(int(acName));
+         }
+         else if(acName <= "cmd_moveup")
+         {
+            acName.replace("cmd_moveup", "");
+            cmdMoveUp(int(acName));
+         }
+         else if(acName <= "cmd_movedown")
+         {
+            acName.replace("cmd_movedown", "");
+            cmdMoveDown(int(acName));
+         }
+         else
+         {
+            // Cancel
+            resetContextMenuLabel();
+         }
+      }
+
+      if(ap == bt_close)
+      {
+         hide();
+         return true;
+      }
+
+      // Check if its one of the column widgets..
+      int i;
+      for(i=0; i<32; i++)
+      {
+         NT_EditTrackLayoutColumn e <= columns[i];
+         NT_CEL cel <= tel.ctl_layouts[i];
+
+         if(ap == e.bt_name)
+         {
+            if(cel.b_visible)
+            {
+               parent_editor.pattern_view.moveCursorToCel(i);
+               updateSrStatus();
+            }
+            UI.SetKeyboardFocus(e.cm_ctl);
+            sp_cels.makeWidgetVisible(e.cm_ctl);
+            return true;
+         }
+
+         if(ap == e.cb_vis)
+         {
+            if(CheckBox.ACTION_KEY == acName)
+            {
+               kac <= _action;
+               key <= kac.key;
+               kap <= ap;
+
+               switch(key.pressed)
+               {
+                  case VKEY_UP:
+                     if(i > 0)
+                     {
+                        e <= columns[i - 1];
+                        cel <= tel.ctl_layouts[i - 1];
+
+                        if(cel.b_visible)
+                        {
+                           parent_editor.pattern_view.moveCursorToCel(i - 1);
+                           updateSrStatus();
+                        }
+                        UI.SetKeyboardFocus(e.cb_vis);
+                        sp_cels.makeWidgetVisible(e.cb_vis);
+                     }
+                     return true;
+
+                  case VKEY_DOWN:
+                     if(i < (NT_TEL.NUM_CELS -1))
+                     {
+                        e <= columns[i + 1];
+                        cel <= tel.ctl_layouts[i + 1];
+
+                        if(cel.b_visible)
+                        {
+                           parent_editor.pattern_view.moveCursorToCel(i + 1);
+                           updateSrStatus();
+                        }
+                        UI.SetKeyboardFocus(e.cb_vis);
+                        sp_cels.makeWidgetVisible(e.cb_vis);
+                     }
+                     return true;
+
+                  case VKEY_LEFT:
+                     kap.focusPreviousTabCycleMember(false);
+                     return true;
+
+                  case VKEY_RIGHT:
+                     kap.focusNextTabCycleMember(false);
+                     return true;
+               }
+               return true;
+            }
+
+            parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+            boolean bNewVis = e.cb_vis.isSelected();
+
+            if(bNewVis || (tel.getNumVisibleCels() > 1))
+            {
+               cel.b_visible = bNewVis;
+               if(cel.b_visible)
+               {
+                  tel.handleCelAdded();
+               }
+               tel.calcCursorExtents();
+               updateSrStatus();
+               updateColumnWidgets();
+               redraw();
+
+               pattern_view.validateCursorX();
+               pattern_view.cursorTrackChanged();
+               pattern_view.verifyTrackShift(true);
+               pattern_view.redrawAll();
+            }
+            else
+            {
+               e.cb_vis.setSelected(true);
+               Global.Warning("Cannot hide last visible cel");
+            }
+            return true;
+         }
+         else if(ap == e.cm_style)
+         {
+            parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+            cel.style = e.cm_style.getSelectedOption();
+            tel.calcCursorExtents();
+            updateSrStatus();
+
+            pattern_view.cursorTrackChanged();
+            pattern_view.verifyTrackShift(true);
+            pattern_view.redrawAll();
+            return true;
+         }
+         else if(ap == e.cm_range)
+         {
+            parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+            cel.range = e.cm_range.getSelectedOption();
+            tel.calcCursorExtents();
+
+            pattern_view.cursorTrackChanged();
+            pattern_view.verifyTrackShift(true);
+            pattern_view.redrawAll();
+            return true;
+         }
+         else if(ap == e.cm_ctl)
+         {
+            parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+            cel.ctl_id = e.cm_ctl.getSelectedOption();
+
+            // Set default range/style
+            if(cel.ctl_id < NT_TrackPattern.CTL_USR)
+            {
+               cel.style = MNT_PatternView.default_ctl_styles[cel.ctl_id];
+               cel.range = MNT_PatternView.default_ctl_ranges[cel.ctl_id];
+            }
+            else
+            {
+               NT_Instrument ins <= parent_node.keyJazzGetInstrument();
+               if(null != ins)
+               {
+                  cel.style = ins.getUsrCtlParamLayoutStyle(cel.ctl_id - NT_TrackPattern.CTL_USR);
+                  cel.range = ins.getUsrCtlParamLayoutRange(cel.ctl_id - NT_TrackPattern.CTL_USR);
+               }
+            }
+            e.cm_style.setSelectedOption(cel.style);
+            e.cm_range.setSelectedOption(cel.range);
+
+            // Update pattern view
+            tel.calcCursorExtents();
+            updateSrStatus();
+
+            pattern_view.cursorTrackChanged();
+            pattern_view.verifyTrackShift(true);
+            pattern_view.redrawAll();
+
+            return true;
+         }
+         else if(ap == e.bt_bg_tint)
+         {
+            if(Button.ACTION_KEY == acName)
+            {
+               kac <= _action;
+               key <= kac.key;
+               kap <= ap;
+
+               switch(key.pressed)
+               {
+                  case VKEY_UP:
+                     if(i > 0)
+                     {
+                        e <= columns[i - 1];
+                        cel <= tel.ctl_layouts[i - 1];
+
+                        if(cel.b_visible)
+                        {
+                           parent_editor.pattern_view.moveCursorToCel(i - 1);
+                           updateSrStatus();
+                        }
+                        UI.SetKeyboardFocus(e.bt_bg_tint);
+                        sp_cels.makeWidgetVisible(e.bt_bg_tint);
+                     }
+                     return true;
+
+                  case VKEY_DOWN:
+                     if(i < (NT_TEL.NUM_CELS -1))
+                     {
+                        e <= columns[i + 1];
+                        cel <= tel.ctl_layouts[i + 1];
+
+                        if(cel.b_visible)
+                        {
+                           parent_editor.pattern_view.moveCursorToCel(i + 1);
+                           updateSrStatus();
+                        }
+                        UI.SetKeyboardFocus(e.bt_bg_tint);
+                        sp_cels.makeWidgetVisible(e.bt_bg_tint);
+                     }
+                     return true;
+
+                  case VKEY_LEFT:
+                     kap.focusPreviousTabCycleMember(false);
+                     return true;
+
+                  case VKEY_RIGHT:
+                     kap.focusNextTabCycleMember(false);
+                     return true;
+               }
+               return true;
+            }
+
+            handleShowCelColorEditor(cel);
+         }
+      }
+      return true;
+   }
+
+}

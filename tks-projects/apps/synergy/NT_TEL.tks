@@ -1,0 +1,1473 @@
+// ----
+// ---- file   : NT_TEL.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 21Oct2007, 21Jan2008, 27Jan2008, 18Sep2009, 21Sep2009, 16Jan2010, 02May2010
+// ----          20May2010, 26Jun2010, 02Jul2010, 06Feb2011, 20Apr2011, 07Feb2012, 10Feb2012
+// ----          12Feb2012, 13Feb2012, 20Feb2012, 24Feb2012, 25Feb2012, 22Dec2012, 27May2013
+// ----          10Jan2015, 11Jan2015, 15Feb2015, 02Mar2015, 08Mar2015, 29Apr2015, 28Jul2015
+// ----          25Nov2016, 05Feb2017, 04Mar2017, 05Mar2017, 01Jul2017, 04Jan2018, 24May2018
+// ----          10Jan2019, 12Jan2019, 13Jan2019, 17Jan2019, 18Jan2019, 20Sep2019, 01Nov2019
+// ----          20Feb2020, 25Apr2020, 15Nov2020, 20Jun2021, 19Apr2022, 17Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_TEL;
+
+use namespace st2;
+
+
+class NT_TEL : NT_Defs {
+
+   define int MSB_FLAG = 0x8000;  // 1st hex cel or 2nd PATNR cel
+   define int TSB_FLAG = 0x4000;  // first PATNR cel
+   define int CTLID_MASK = 31;
+
+   define int NUM_CELS = 32;
+
+   // Palette indices for genCelBGColors()
+   define int PAL_DEFAULT_A   =  0;
+   define int PAL_DEFAULT_B   =  1;
+   define int PAL_INSTR       =  2;
+   define int PAL_NOTE_A      =  3;
+   define int PAL_NOTE_B      =  4;
+   define int PAL_DUR_A       =  5;
+   define int PAL_DUR_B       =  6;
+   define int PAL_VEL_A       =  7;
+   define int PAL_VEL_B       =  8;
+   define int PAL_POLYAT_A    =  9;
+   define int PAL_POLYAT_B    = 10;
+   define int PAL_PC          = 11;
+   define int PAL_AT          = 12;
+   define int PAL_PB          = 13;
+   define int PAL_SLIDE       = 14;
+   define int PAL_DELAY       = 15;
+   define int PAL_RETRIG      = 16;
+   define int PAL_BPM         = 17;
+   define int PAL_MUTE        = 18;
+   define int PAL_SEEK        = 19;
+   define int PAL_USR_A       = 20;
+   define int PAL_USR_B       = 21;
+   define int PAL_GROOVE      = 22;
+
+   define int NUM_PAL_ENTRIES = 23;
+
+   public NT_CEL ctl_layouts[];
+
+   // The following fields are calc'd by calcCursorExtents()
+   public int      num_cursor_positions;
+   public IntArray cursor_extents;       // num_cursor_positions*2, offset;width pairs
+   public int      total_char_width;     // patternstepnr + controller fields + spacing (4 + n + 1)
+   public IntArray cursor_to_ctl_map;    // Maps cursor offset to controller layout id (or'd with MSB_FLAG)
+   public IntArray cursor_to_visctl_map; // Maps cursor offset to visible controller layout id (or'd with MSB_FLAG)
+
+   public NT_ManageColumnsFilter ui_filter; // NT_ManageColumnsDialog/TM cel/ctl/param table filter
+
+
+   public method copyFrom(NT_TEL _tel) {
+      // (todo) this method was written for debugging purposes. it should not be needed anymore
+
+      ctl_layouts.alloc(NUM_CELS);
+      ctl_layouts.useAll();
+
+      int celId = 0;
+      loop(NUM_CELS)
+      {
+         NT_CEL cel <= ctl_layouts[celId];
+         NT_CEL oCel <= _tel.ctl_layouts[celId];
+         // cel = oCel;
+
+         cel.b_visible = oCel.b_visible;  // Show/hide controller
+         cel.ctl_id    = oCel.ctl_id;     // NT_TrackPattern.CTL_xxx
+         cel.style     = oCel.style;      // STYLE_xxx
+         cel.alt_style = oCel.alt_style;
+         cel.range     = oCel.range;      // RANGE_xxx
+         cel.bg_tint   = oCel.bg_tint;    // 0=no tint, ARGB color otherwise
+
+         // Next cel
+         celId++;
+      }
+
+      num_cursor_positions = _tel.num_cursor_positions;
+      cursor_extents       = _tel.cursor_extents;
+      total_char_width     = _tel.total_char_width;
+      cursor_to_ctl_map    = _tel.cursor_to_ctl_map;
+      cursor_to_visctl_map = _tel.cursor_to_visctl_map;
+      ui_filter            = _tel.ui_filter;
+   }
+
+   public method init() {
+
+      ui_filter.init();
+
+      resetLayout();
+   }
+
+   public method resetLayout() {
+
+      ctl_layouts.alloc(NUM_CELS);
+      ctl_layouts.useAll();
+
+      _= ctl_layouts[ 0].init(true,  CTL_INSTR,      NT_CEL.STYLE_LETTER, 0);
+
+      _= ctl_layouts[ 1].init(true,  CTL_NOTE1,      NT_CEL.STYLE_NOTE,   NT_CEL.RANGE_0_127);
+      _= ctl_layouts[ 2].init(true,  CTL_VEL1,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[ 3].init(true,  CTL_DUR1,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+
+      _= ctl_layouts[ 4].init(false, CTL_NOTE2,      NT_CEL.STYLE_NOTE,   NT_CEL.RANGE_0_127);
+      _= ctl_layouts[ 5].init(false, CTL_VEL2,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[ 6].init(false, CTL_DUR2,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+
+      _= ctl_layouts[ 7].init(false, CTL_NOTE3,      NT_CEL.STYLE_NOTE,   NT_CEL.RANGE_0_127);
+      _= ctl_layouts[ 8].init(false, CTL_VEL3,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[ 9].init(false, CTL_DUR3,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+
+      _= ctl_layouts[10].init(false, CTL_NOTE4,      NT_CEL.STYLE_NOTE,   NT_CEL.RANGE_0_127);
+      _= ctl_layouts[11].init(false, CTL_VEL4,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[12].init(false, CTL_DUR4,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+
+      _= ctl_layouts[13].init(false, CTL_NOTE5,      NT_CEL.STYLE_NOTE,   NT_CEL.RANGE_0_127);
+      _= ctl_layouts[14].init(false, CTL_VEL5,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[15].init(false, CTL_DUR5,       NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+
+      _= ctl_layouts[16].init(false, CTL_PB,         NT_CEL.STYLE_HEX,    NT_CEL.RANGE_M64_P63);
+      _= ctl_layouts[17].init(false, CTL_SLIDE,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[18].init(false, CTL_DELAY,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[19].init(false, CTL_RETRIG,     NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[20].init(false, CTL_PC,         NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[21].init(false, CTL_BPM,        NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[22].init(false, CTL_AT,         NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+      _= ctl_layouts[23].init(false, CTL_POLYAT1,    NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_127);
+
+      _= ctl_layouts[24].init(false, CTL_USR+0,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[25].init(false, CTL_USR+1,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[26].init(false, CTL_USR+2,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[27].init(false, CTL_USR+3,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[28].init(false, CTL_USR+4,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[29].init(false, CTL_USR+5,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[30].init(false, CTL_USR+6,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+      _= ctl_layouts[31].init(false, CTL_USR+7,      NT_CEL.STYLE_HEX,    NT_CEL.RANGE_0_255);
+
+      // // int i;
+      // // for(i=ST_Pattern.CTL_USR; i<ST_Pattern.CTL_NUM; i++)
+      // // {
+      // //    _= ctl_layouts[i].init(false, i, NT_CEL.STYLE_HEX, NT_CEL.RANGE_0_255);
+      // // }
+
+      // Init cursor extents
+      cursor_extents.alloc(NUM_CELS*2*2);/////ST_Pattern.CTL_NUM*2*2);
+      cursor_extents.useAll();
+
+      cursor_to_ctl_map.alloc(NUM_CELS*2);/////ST_Pattern.CTL_NUM*2);
+      cursor_to_ctl_map.useAll();
+
+      cursor_to_visctl_map.alloc(NUM_CELS*2);////ST_Pattern.CTL_NUM*2);
+      cursor_to_visctl_map.useAll();
+
+      calcCursorExtents();
+   }
+
+   public method calcCursorExtents() {
+      explain "Calculate cursor position offsets + column widths. Must be called everytime the track layout changes.";
+
+      int i = 0; // ctl num
+      int visi = 0; // visible ctl num
+      int j = 0; // cursor_to_ctl_map array index (cursor position)
+      int k = 0; // cursor_extents array index
+      int off = 5; // char offset , initial = spacing (1) + Pattern step number (3 digits) + spacing (1)
+
+      for(i=0; i<NUM_CELS; i++)
+      {
+         NT_CEL cel <= ctl_layouts[i];
+         if(cel.b_visible)
+         {
+            switch(cel.style)
+            {
+               case NT_CEL.STYLE_NOTE:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 3;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  cel.num_x = 3;
+                  off += 3;
+                  break;
+
+               case NT_CEL.STYLE_LETTER:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  cel.num_x = 1;
+                  off++;
+                  break;
+
+               case NT_CEL.STYLE_HEX:
+                  // MSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi;
+                  cursor_to_ctl_map[j++] = i | MSB_FLAG;
+                  off++;
+                  // LSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  cel.num_x = 2;
+                  off++;
+                  break;
+
+               case NT_CEL.STYLE_PATNR2:
+                  // MSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi;
+                  cursor_to_ctl_map[j++] = i | MSB_FLAG;
+                  off++;
+                  // LSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off++;
+                  cel.num_x = 2;
+                  break;
+
+               case NT_CEL.STYLE_PATNR3:
+                  // TSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi;
+                  cursor_to_ctl_map[j++] = i | TSB_FLAG;
+                  off++;
+                  // MSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi;
+                  cursor_to_ctl_map[j++] = i | MSB_FLAG;
+                  off++;
+                  // LSB
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off++;
+                  cel.num_x = 3;
+                  break;
+
+               case NT_CEL.STYLE_BAR4:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 4;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off += 4;
+                  cel.num_x = 4;
+                  break;
+
+               case NT_CEL.STYLE_BAR8:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 8;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off += 8;
+                  cel.num_x = 8;
+                  break;
+
+               case NT_CEL.STYLE_BAR16:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 16;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off += 16;
+                  cel.num_x = 16;
+                  break;
+
+               case NT_CEL.STYLE_BAR32:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 32;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off += 32;
+                  cel.num_x = 32;
+                  break;
+
+               case NT_CEL.STYLE_COLOR:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 4;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  off += 4;
+                  cel.num_x = 4;
+                  break;
+
+               case NT_CEL.STYLE_HI_NIBBLE:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  cel.num_x = 1;
+                  off++;
+                  break;
+
+               case NT_CEL.STYLE_LO_NIBBLE:
+                  cursor_extents[k++] = off;
+                  cursor_extents[k++] = 1;
+                  cursor_to_visctl_map[j] = visi++;
+                  cursor_to_ctl_map[j++] = i;
+                  cel.num_x = 1;
+                  off++;
+                  break;
+            }
+         }
+      } // for(i..NUM_CELS)
+
+      num_cursor_positions = j;
+      total_char_width = off;
+   }
+
+   public method cloneFrom(NT_TEL _o) {
+
+      ctl_layouts = _o.ctl_layouts;
+   }
+
+   public method handleCelAdded() {
+      // Auto-colorize cels
+      if(STConfig.b_node_tracker_autocolorize_cels)
+      {
+         if(doAllCelsHaveDefaultColors())
+         {
+            // Colorize using only default colors
+            genCelBGColors(true);
+         }
+         else
+         {
+            // Colorize using full palette
+            genCelBGColors(false);
+         }
+      }
+   }
+
+   public method moveCelUp(int _idx) {
+      if(_idx > 0)
+      {
+         NT_CEL t;
+         NT_CEL *celc <= ctl_layouts[_idx];
+         t = celc;
+         NT_CEL *celp <= ctl_layouts[_idx - 1];
+         celc = celp;
+         celp = t;
+      }
+   }
+
+   public method moveCelDown(int _idx) {
+      if(_idx < (NUM_CELS -1))
+      {
+         NT_CEL t;
+         NT_CEL *celc <= ctl_layouts[_idx];
+         t = celc;
+         NT_CEL *celn <= ctl_layouts[_idx + 1];
+         celc = celn;
+         celn = t;
+      }
+   }
+
+   public method moveCelTo(int _which, int _to) {
+      // (note) assumes that cels are ordered by visibility
+
+      if(_which > _to)
+      {
+         while(_which > _to)
+         {
+            moveCelUp(_which);
+            _which--;
+         }
+      }
+      else if(_which < _to)
+      {
+         while(_which < _to)
+         {
+            moveCelDown(_which);
+            _which++;
+         }
+      }
+   }
+
+   public method getNumVisibleCels() : int {
+      int r = 0;
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            r++;
+         }
+      }
+      return r;
+   }
+
+   public method getIdxByCel(NT_CEL _cel) : int {
+      return ctl_layouts.indexOfPointer(_cel, 0);
+   }
+
+   public method getVisibleCelByIdx(int _idx) : NT_CEL {
+      int r = 0;
+      NT_CEL *cel;
+      foreach cel in ctl_layouts {
+         if(cel.b_visible)
+         {
+            if(r == _idx)
+            {
+               return cel;
+            }
+            r++;
+         }
+      }
+      return null;
+   }
+
+   public method getVisibleIdxForCel(NT_CEL _cel) : int {
+
+      int visIdx = 0;
+
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(@(cel) == @(_cel))
+            {
+               return visIdx;
+            }
+
+            visIdx++;
+         }
+      }
+
+      // Not visible
+      return -1;
+   }
+
+   public method getCtlIdByCelIdx(int _celIdx) : int {
+      NT_CEL cel <= ctl_layouts.get(_celIdx);
+      if(null != cel)
+      {
+         return cel.ctl_id;
+      }
+      return -1;
+   }
+
+   public method isCtlUniquelyVisible(int _ctlId) : boolean {
+      NT_CEL *cel;
+      int numVis = 0;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(cel.ctl_id == _ctlId)
+            {
+               numVis++;
+            }
+         }
+      }
+      return (numVis == 1);
+   }
+
+   public method calcCursorXByCelIdx(int _idx) : int {
+      int i = 0;
+      int r = 0;
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(i == _idx)
+            {
+               break;
+            }
+            switch(cel.style)
+            {
+               case NT_CEL.STYLE_NOTE:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_LETTER:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_HEX:
+                  r += 2;
+                  break;
+               case NT_CEL.STYLE_BAR4:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_BAR8:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_BAR16:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_BAR32:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_PATNR3:
+                  r += 3;
+                  break;
+               case NT_CEL.STYLE_PATNR2:
+                  r += 2;
+                  break;
+               case NT_CEL.STYLE_HI_NIBBLE:
+                  r += 1;
+                  break;
+               case NT_CEL.STYLE_LO_NIBBLE:
+                  r += 1;
+                  break;
+            }
+            i++;
+         }
+      }
+      return r;
+   }
+
+   public method findNextVisibleNoteCel(NT_CEL _curCel) : NT_CEL {
+      // (note) _curCel must be a note cel
+      int idx = ctl_layouts.indexOfPointer(_curCel, 0);
+      if(-1 != idx)
+      {
+         for(;;)
+         {
+            idx++;
+            if(idx >= ctl_layouts.numElements)
+            {
+               idx = 0;
+            }
+            NT_CEL cel <= ctl_layouts[idx];
+            if(NT_CEL.STYLE_NOTE == cel.style)
+            {
+               if(cel.b_visible)
+               {
+                  return cel;
+               }
+            }
+         }
+      }
+
+      return null;
+   }
+
+   public method findVisibleNoteCelByIdx(local int _idx) : NT_CEL {
+      local int noteCelIdx = 0;
+      local NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(NT_CEL.STYLE_NOTE == cel.style)
+            {
+               if(noteCelIdx == _idx)
+               {
+                  return cel;
+               }
+               else
+               {
+                  noteCelIdx++;
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public method findIdxByVisibleNoteCel(NT_CEL _cel) : int {
+      local int noteCelIdx = 0;
+      local NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(NT_CEL.STYLE_NOTE == cel.style)
+            {
+               if(@(cel) == @(_cel))
+               {
+                  return noteCelIdx;
+               }
+               else
+               {
+                  noteCelIdx++;
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public method getNumVisibleNoteCels() : int {
+      local int r = 0;
+      local NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(NT_CEL.STYLE_NOTE == cel.style)
+            {
+               r++;
+            }
+         }
+      }
+      return r;
+   }
+
+   public method findVisibleUsrCelWithNameSubstring(NT_Instrument _ins, String _s) :  NT_CEL {
+      if(null != _ins)
+      {
+         NT_CEL *cel;
+
+         foreach cel in ctl_layouts
+         {
+            if(cel.b_visible)
+            {
+               if(CTL_USR <= cel.ctl_id < (CTL_USR + CTL_NUMUSR))
+               {
+                  NT_MIDIParam param <= _ins.getUsrCtlParam(cel.ctl_id - CTL_USR);
+                  if(null != param)
+                  {
+                     if((param.name.toLower()) & _s)
+                     {
+                        return cel;
+                     }
+                  }
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public method insertCEL(int _idx) {
+      int i = 31;
+      NT_CEL *celc <= ctl_layouts[i];
+
+      i--;
+      while(i >= _idx)
+      {
+         NT_CEL *celp <= ctl_layouts[i];
+         celc = celp;
+         celc <= celp;
+         i--;
+      }
+   }
+
+   public method deleteCEL(int _idx) {
+      int i = _idx;
+      NT_CEL *celc <= ctl_layouts[i];
+
+      i++;
+      while(i < 32)
+      {
+         NT_CEL *celn <= ctl_layouts[i];
+         celc = celn;
+         celc <= celn;
+         i++;
+      }
+   }
+
+   public method hideCelsByCtlId(int _ctlId) {
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.ctl_id == _ctlId)
+         {
+            cel.b_visible = false;
+         }
+      }
+   }
+
+   public method orderByVisibility() {
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+      int i = 0;
+      foreach cel in ca
+      {
+         if !(cel.b_visible)
+         {
+            NT_CEL *t;
+            int j = i;
+            while(j < ca.numElements)
+            {
+               t <= ca[j];
+               if(t.b_visible)
+               {
+                  ca.swap(i, j);
+                  break;
+               }
+               j++;
+            }
+            if(j == NUM_CELS)
+            {
+               Global.Debug4("NT_TEL:orderByVisibility: no more invisible cels, aborting sort.");
+               return;
+            }
+         }
+         i++;
+      }
+   }
+
+   public method findCelForCtlById(int _ctlId) : NT_CEL {
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         // trace "xxx findCelForCtlById: ctlId="+_ctlId+" cel.ctl_id="+cel.ctl_id+" cel="+#(cel);
+         if(cel.ctl_id == _ctlId)
+         {
+            return cel;
+         }
+      }
+      return null;
+   }
+
+   public method findVisibleCelForCtlById(local int _ctlId) : NT_CEL {
+      local NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(cel.ctl_id == _ctlId)
+            {
+               return cel;
+            }
+         }
+      }
+      return null;
+   }
+
+   public method findFirstInvisibleCel() : NT_CEL {
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(!cel.b_visible)
+         {
+            return cel;
+         }
+      }
+      return null;
+   }
+
+   public method findVisibleDurCel(int _noteIdx) : NT_CEL {
+      NT_CEL durCel <= findVisibleCelForCtlById(NT_TrackPattern.CTL_DUR1 + _noteIdx);
+      if(null == durCel)
+      {
+         // Find previous DUR cel (inherited)
+         loop(_noteIdx)
+         {
+            durCel <= findVisibleCelForCtlById(NT_TrackPattern.CTL_DUR1 + --_noteIdx);
+            if(null != durCel)
+               break;
+         }
+      }
+      return durCel;
+   }
+
+   public method canAddNoteCel() : boolean {
+
+      int numNotes = 0;
+      int numCtls = 0;
+
+      IntArray uniqueNotes;
+      uniqueNotes.empty();
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(CTL_NOTE1 <= cel.ctl_id <= CTL_NOTE5)
+            {
+               if(!uniqueNotes.contains(cel.ctl_id))
+               {
+                  uniqueNotes.add(cel.ctl_id);
+                  numNotes++;
+               }
+            }
+            numCtls++;
+         }
+      }
+
+      return (numCtls < 32) && (numNotes < 5);
+   }
+
+   public method findLastNoteCtlCelIdx(int _ctlOff, int _ctlRel) : int {
+      // Used for finding last CTL_VELn / CTL_DURn cel
+      //
+      // (note) orderByVisibility() must be called first
+
+      int lastNoteCelExisting = -1; // cel idx
+      NT_CEL *cel;
+      int celIdx = 0;
+
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(_ctlOff <= cel.ctl_id < (_ctlOff + NUM_NOTESLOTS))
+            {
+               if(cel.ctl_id == (_ctlOff + _ctlRel))
+               {
+                  // Cel already exists
+                  return -1;
+               }
+
+               if(celIdx > lastNoteCelExisting)
+               {
+                  lastNoteCelExisting = celIdx;
+               }
+            }
+         }
+         celIdx++;
+      }
+
+      if((NUM_CELS - 1) == lastNoteCelExisting)
+      {
+         // Cannot add cel after last
+         return -1;
+      }
+
+      return lastNoteCelExisting;
+   }
+
+   public method addNoteCel() : int {
+      // (note) may only be called when canAddNoteCel() returned true
+
+      orderByVisibility();
+
+      int lastNoteCtlExisting = -1; // cel idx
+      int noteCtlId = CTL_NOTE1;
+      int unusedNoteCtlId = -1;
+      NT_CEL *cel;
+      loop(NUM_NOTESLOTS)
+      {
+         int celIdx = 0;
+         boolean bUsed = false;
+         foreach cel in ctl_layouts
+         {
+            if(cel.b_visible)
+            {
+               if(cel.ctl_id == noteCtlId)
+               {
+                  // Note ctl exists
+                  if(celIdx > lastNoteCtlExisting)
+                  {
+                     lastNoteCtlExisting = celIdx;
+                  }
+                  bUsed = true;
+               }
+            }
+            celIdx++;
+         }
+         if(!bUsed)
+         {
+            if(-1 == unusedNoteCtlId)
+            {
+               unusedNoteCtlId = noteCtlId;
+            }
+         }
+         noteCtlId++;
+      }
+
+      // noteCtlId is currently unused
+      if(-1 == lastNoteCtlExisting)
+      {
+         // No note-ctls used so far
+         lastNoteCtlExisting = 0;
+      }
+
+      insertCEL(lastNoteCtlExisting);
+
+      cel <= ctl_layouts[lastNoteCtlExisting+1];
+      cel.b_visible = true;
+      cel.ctl_id    = unusedNoteCtlId;
+      cel.bg_tint   = 0;
+      cel.style     = NT_CEL.STYLE_NOTE;
+      cel.range     = NT_CEL.RANGE_0_127;
+
+      handleCelAdded();
+
+      return lastNoteCtlExisting+1;
+   }
+
+   public method doAllCelsHaveNoColor() : boolean {
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      boolean bAllZero = true;
+
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            bAllZero = bAllZero && (0 == cel.bg_tint);
+         }
+      }
+
+      return bAllZero;
+   }
+
+   public method doAllCelsHaveNoOrCustomColor() : boolean {
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      boolean bAllZero = true;
+
+      IntArray pal <= app_lnf.nt_celcolor_palette;
+
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            int palIdx = pal.indexOf(cel.bg_tint, 0);
+            bAllZero = bAllZero && ( (0 == cel.bg_tint) || (-1 == palIdx) );
+         }
+      }
+
+      return bAllZero;
+   }
+
+   public method doAllCelsHaveDefaultColors() : boolean {
+      // Check if all cels have (non-0) default colors
+      IntArray pal <= app_lnf.nt_celcolor_palette;
+
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      boolean bAllDefault = true;
+
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            int palIdx = pal.indexOf(cel.bg_tint, 0);
+            bAllDefault = bAllDefault && (0 <= palIdx <= 1);
+         }
+      }
+
+      return bAllDefault;
+   }
+
+   public method doAllCelsHaveDefaultOrCustomColors() : boolean {
+      IntArray pal <= app_lnf.nt_celcolor_palette;
+
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      boolean bAllDefaultOrCustom = true;
+
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            int palIdx = pal.indexOf(cel.bg_tint, 0);
+            bAllDefaultOrCustom = bAllDefaultOrCustom && ( (0 <= palIdx <= 1) || (-1 == palIdx) );
+         }
+      }
+
+      return bAllDefaultOrCustom;
+   }
+
+
+   public method doAllCelsHavePaletteColors() : boolean {
+      // Check if all cels have (non-0) default colors
+      IntArray pal <= app_lnf.nt_celcolor_palette;
+
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      boolean bAllZero = true;
+      boolean bAllDefault = true;
+
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            if(0 != cel.bg_tint)
+            {
+               bAllZero = false;
+               bAllDefault = bAllDefault && pal.contains(cel.bg_tint);
+            }
+         }
+      }
+
+      return !bAllZero && bAllDefault;
+   }
+
+   public method genCelBGColors(boolean _bForceDefault) {
+      // Assign bg colors ("auto colorize")
+      //  (note) called by NT_EditTrackLayoutDialog::cmdCelColsGenToggle()
+
+      IntArray pal <= app_lnf.nt_celcolor_palette;
+
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      int visi = 0;
+      int numUsr = 0;
+
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            // keep custom colors (only overwrite palette colors)
+            if(pal.contains(cel.bg_tint))
+            {
+               if(_bForceDefault)
+               {
+                  cel.bg_tint = 0;
+               }
+               else
+               {
+                  switch(cel.ctl_id)
+                  {
+                     default:
+                        if(cel.ctl_id >= CTL_USR)
+                        {
+                           cel.bg_tint = pal.get(PAL_USR_A + (numUsr & 1));
+                           // // trace "xxx usr cel.bg_tint="+cel.bg_tint+" numUsr="+numUsr;
+                           numUsr++;
+                        }
+                        else
+                        {
+                           cel.bg_tint = 0;
+                        }
+                        break;
+
+                     case CTL_INSTR:
+                        cel.bg_tint = pal.get(PAL_INSTR);
+                        break;
+
+                     case CTL_NOTE1:
+                     case CTL_NOTE2:
+                     case CTL_NOTE3:
+                     case CTL_NOTE4:
+                     case CTL_NOTE5:
+                        cel.bg_tint = pal.get(PAL_NOTE_A + (cel.ctl_id & 1));
+                        break;
+
+                     case CTL_DUR1:
+                     case CTL_DUR2:
+                     case CTL_DUR3:
+                     case CTL_DUR4:
+                     case CTL_DUR5:
+                        cel.bg_tint = pal.get(PAL_DUR_A + ((cel.ctl_id - CTL_DUR1) & 1));
+                        break;
+
+                     case CTL_VEL1:
+                     case CTL_VEL2:
+                     case CTL_VEL3:
+                     case CTL_VEL4:
+                     case CTL_VEL5:
+                        cel.bg_tint = pal.get(PAL_VEL_A + ((cel.ctl_id - CTL_VEL1) & 1));
+                        break;
+
+                     case CTL_POLYAT1:
+                     case CTL_POLYAT2:
+                     case CTL_POLYAT3:
+                     case CTL_POLYAT4:
+                     case CTL_POLYAT5:
+                        cel.bg_tint = pal.get(PAL_POLYAT_A + ((cel.ctl_id - CTL_POLYAT1) & 1));
+                        break;
+
+                     case CTL_PC:
+                        cel.bg_tint = pal.get(PAL_PC);
+                        break;
+
+                     case CTL_AT:
+                        cel.bg_tint = pal.get(PAL_AT);
+                        break;
+
+                     case CTL_PB:
+                        cel.bg_tint = pal.get(PAL_PB);
+                        break;
+
+                     case CTL_SLIDE:
+                        cel.bg_tint = pal.get(PAL_SLIDE);
+                        break;
+
+                     case CTL_DELAY:
+                        cel.bg_tint = pal.get(PAL_DELAY);
+                        break;
+
+                     case CTL_RETRIG:
+                        cel.bg_tint = pal.get(PAL_RETRIG);
+                        break;
+
+                     case CTL_BPM:
+                     case CTL_BPM_MUL:
+                        cel.bg_tint = pal.get(PAL_BPM);
+                        break;
+
+                     case CTL_MUTE:
+                        cel.bg_tint = pal.get(PAL_MUTE);
+                        break;
+
+                     case CTL_SEEK:
+                        cel.bg_tint = pal.get(PAL_SEEK);
+                        break;
+
+                     case CTL_GROOVE:
+                        cel.bg_tint = pal.get(PAL_GROOVE);
+                        break;
+                  }
+
+               } // if bForceDefault
+
+               if(0 == cel.bg_tint)
+               {
+                  if(visi & 1)
+                  {
+                     cel.bg_tint = pal.get(PAL_DEFAULT_B);
+                  }
+                  else
+                  {
+                     cel.bg_tint = pal.get(PAL_DEFAULT_A);
+                  }
+               }
+
+               visi++;
+            } // if is auto-colorized
+
+         } // if cel visible
+
+      } // foreach cel
+   }
+
+   public method clearCelBGColors() {
+
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      int i = 0;
+      foreach cel in ca
+      {
+         cel.bg_tint = 0;
+      }
+   }
+
+   public method clearCelPaletteBGColors() {
+
+      IntArray pal <= app_lnf.nt_celcolor_palette;
+
+      NT_CEL *cel;
+      ClassArray ca <= ctl_layouts;
+
+      int i = 0;
+      foreach cel in ca
+      {
+         if(cel.b_visible)
+         {
+            if(pal.contains(cel.bg_tint))
+            {
+               cel.bg_tint = 0;
+            }
+         }
+      }
+   }
+
+   public method lazyAddVisibleCelForCtlById(int _ctlId, int _style, int _range) : boolean {
+      // Returns true if cel was added, false if it already existed
+
+      if(null == findVisibleCelForCtlById(_ctlId))
+      {
+         NT_CEL *cel;
+         foreach cel in ctl_layouts
+         {
+            if(!cel.b_visible)
+            {
+               cel.b_visible = true;
+               cel.ctl_id = _ctlId;
+               cel.style  = _style;
+               cel.range  = _range;
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   public method lazyAddOrUpdateCelForCtlById(int _ctlId, int _style, int _range) : boolean {
+
+      NT_CEL cel <= findVisibleCelForCtlById(_ctlId);
+      if(null == cel)
+      {
+         foreach cel in ctl_layouts
+         {
+            if(!cel.b_visible)
+            {
+               cel.b_visible = true;
+               cel.ctl_id = _ctlId;
+               cel.style  = _style;
+               cel.range  = _range;
+               return true;
+            }
+         }
+      }
+      else
+      {
+         cel.style = _style;
+         cel.range = _range;
+      }
+
+      return false;
+   }
+
+   public =replay= method toggleVelDurStyles(boolean bBar, boolean bNibble) : boolean {
+
+      local IntArray ctlIdDone;
+
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(!ctlIdDone.contains(cel.ctl_id))
+            {
+               if(CTL_VEL1 <= cel.ctl_id <= CTL_VEL5)
+               {
+                  if(maybe == bBar)
+                  {
+                     bBar = (NT_CEL.STYLE_BAR4 != cel.style);
+                  }
+
+                  if(bBar)
+                  {
+                     cel.style     = NT_CEL.STYLE_BAR4;
+                     cel.alt_style = NT_CEL.STYLE_HEX;
+                  }
+                  else
+                  {
+                     cel.style     = NT_CEL.STYLE_HEX;
+                     cel.alt_style = NT_CEL.STYLE_BAR4;
+                  }
+
+                  ctlIdDone.add(cel.ctl_id);
+               }
+
+               if(CTL_DUR1 <= cel.ctl_id <= CTL_DUR5)
+               {
+                  if(maybe == bNibble)
+                  {
+                     bNibble = (NT_CEL.STYLE_HI_NIBBLE != cel.style);
+                  }
+
+                  if(bNibble)
+                  {
+                     cel.style     = NT_CEL.STYLE_HI_NIBBLE;
+                     cel.alt_style = NT_CEL.STYLE_HEX;
+                  }
+                  else
+                  {
+                     cel.style     = NT_CEL.STYLE_HEX;
+                     cel.alt_style = NT_CEL.STYLE_HI_NIBBLE;
+                  }
+
+                  ctlIdDone.add(cel.ctl_id);
+               }
+            }
+         }
+      }
+
+      calcCursorExtents();
+      return bBar;
+   }
+
+   public =replay= method groupNoteVelDur() {
+      // Rearrange cels into note,vel,dur groups
+
+      int numNoteSlots = NUM_NOTESLOTS;
+
+      // Find first note cel
+      NT_CEL *cel;
+      int firstNoteIdx = 0;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(cel.ctl_id >= CTL_NOTE1)
+            {
+               break;
+            }
+         }
+         firstNoteIdx++;
+      }
+
+      // // trace "xxx groupNoteVelDur: firstNoteIdx="+firstNoteIdx;
+
+      if(firstNoteIdx != ctl_layouts.numElements)
+      {
+         if((firstNoteIdx + numNoteSlots/*note*/ + numNoteSlots/*vel*/ + numNoteSlots/*dur*/) <= ctl_layouts.numElements)
+         {
+            local NT_CEL old[] = ctl_layouts;
+            local IntArray ctlIdDone;
+            int newIdx = firstNoteIdx;
+            NT_CEL *celNew;
+            foreach celNew in ctl_layouts
+               celNew.b_visible = false;
+            int idx;
+            int ctlId;
+
+            // INSTR
+            idx = 0;
+            ctlId = CTL_INSTR;
+            while(idx < ctl_layouts.numElements)
+            {
+               cel <= old[idx];
+               if(cel.b_visible)
+               {
+                  if(ctlId == cel.ctl_id)
+                  {
+                     if(!ctlIdDone.contains(ctlId))
+                     {
+                        celNew <= ctl_layouts[newIdx];
+                        celNew = cel;
+                        ctlIdDone.add(ctlId);
+                        newIdx++;
+                        break;
+                     }
+                  }
+               }
+               idx++;
+            }
+
+            // Notes
+            int subIdx = 0;
+            loop(numNoteSlots)
+            {
+               // Note
+               idx = firstNoteIdx;
+               ctlId = CTL_NOTE1 + subIdx;
+               while(idx < ctl_layouts.numElements)
+               {
+                  cel <= old[idx];
+                  if(cel.b_visible)
+                  {
+                     if(ctlId == cel.ctl_id)
+                     {
+                        if(!ctlIdDone.contains(ctlId))
+                        {
+                           celNew <= ctl_layouts[newIdx];
+                           celNew = cel;
+                           ctlIdDone.add(ctlId);
+                           newIdx++;
+                           break;
+                        }
+                     }
+                  }
+                  idx++;
+               }
+
+               // Vel
+               idx = firstNoteIdx;
+               ctlId = CTL_VEL1 + subIdx;
+               while(idx < ctl_layouts.numElements)
+               {
+                  cel <= old[idx];
+                  if(cel.b_visible)
+                  {
+                     if(ctlId == cel.ctl_id)
+                     {
+                        if(!ctlIdDone.contains(ctlId))
+                        {
+                           celNew <= ctl_layouts[newIdx];
+                           celNew = cel;
+                           ctlIdDone.add(ctlId);
+                           newIdx++;
+                           break;
+                        }
+                     }
+                  }
+                  idx++;
+               }
+
+               // Dur
+               idx = firstNoteIdx;
+               ctlId = CTL_DUR1 + subIdx;
+               while(idx < ctl_layouts.numElements)
+               {
+                  cel <= old[idx];
+                  if(cel.b_visible)
+                  {
+                     if(ctlId == cel.ctl_id)
+                     {
+                        if(!ctlIdDone.contains(ctlId))
+                        {
+                           celNew <= ctl_layouts[newIdx];
+                           celNew = cel;
+                           ctlIdDone.add(ctlId);
+                           newIdx++;
+                           break;
+                        }
+                     }
+                  }
+                  idx++;
+               }
+
+               subIdx++;
+            }
+
+            // Add remaining cels
+            idx = firstNoteIdx;
+            while(idx < ctl_layouts.numElements)
+            {
+               cel <= old[idx];
+               if(cel.b_visible)
+               {
+                  if(!ctlIdDone.contains(cel.ctl_id))
+                  {
+                     celNew <= ctl_layouts[newIdx];
+                     celNew = cel;
+                     ctlIdDone.add(cel.ctl_id);
+                     newIdx++;
+                  }
+               }
+               idx++;
+            }
+
+         }
+      }
+
+      calcCursorExtents();
+   }
+
+   public =replay= method toggleAltStyles() {
+      local IntArray ctlIdDone;
+
+      NT_CEL *cel;
+      foreach cel in ctl_layouts
+      {
+         if(cel.b_visible)
+         {
+            if(!ctlIdDone.contains(cel.ctl_id))
+            {
+               Global.Debug4("toggleAltStyle: cel.ctl_id="+cel.ctl_id+" style="+cel.style+" alt_style="+cel.alt_style);
+               if(-1 == cel.alt_style)
+               {
+                  cel.initDefaultAltStyle();
+               }
+               if(-1 != cel.alt_style)
+               {
+                  int t = cel.style;
+                  cel.style = cel.alt_style;
+                  cel.alt_style = t;
+                  ctlIdDone.add(cel.ctl_id);
+               }
+               else  // [15Nov2020] fallback: copy style
+               {
+                  cel.alt_style = cel.style;
+               }
+            }
+         }
+      }
+
+      calcCursorExtents();
+   }
+
+}

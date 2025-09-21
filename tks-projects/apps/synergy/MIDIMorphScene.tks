@@ -1,0 +1,1110 @@
+// ----
+// ---- file   : MIDIMorphScene.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 19Aug2014
+// ----
+// ---- changed: 20Aug2014, 21Aug2014, 31Aug2014, 17Oct2014, 11Feb2015, 21Feb2015, 11Mar2015
+// ----          20Mar2015, 24Sep2015, 29Oct2015, 29Jan2016, 21Mar2016, 23May2017, 01Jul2017
+// ----          17Aug2017, 23Oct2017, 02Nov2017, 04May2018, 22May2018, 04Jun2018, 06Jun2018
+// ----          11Jan2019, 27Jan2019, 14Oct2019, 24Feb2020, 10Nov2020, 16Nov2020, 13Dec2021
+// ----          17Dec2021, 18Dec2021, 20Dec2021, 23Dec2021, 31Dec2021, 18Mar2022, 24Apr2022
+// ----          10Oct2022, 24Nov2022, 13Jun2023, 28Jul2023, 24Sep2023, 11Apr2024, 13Apr2024
+// ----          14Mar2025, 09Jun2025, 11Sep2025
+// ----
+// ----
+// ----
+
+module MMIDIMorphScene;
+
+use namespace st2;
+
+
+// <class.png>
+class MIDIMorphScene : MIDIMapDefs {
+
+   define int NUM_GROUPS            = 8;  // A..H
+   define int NUM_SCENES_PER_GROUP  = 16;
+   define int NUM_MULTIS            = 16;
+
+   static MIDIMorphScene *clipboard;
+
+   String mms_name;
+
+   MIDIMapEvent *[] mms_entries;  // MIDIMapEvent instances
+
+   int last_selected_row_idx;  // last selected row
+
+   static int last_changed_group;
+
+   protected static PointerArray scene_groups;   // array of PointerArray instances (midi_morph_scenes) (A..H)
+   namespace static IntArray     scene_indices;  // current scene (per group) (1..16)
+
+   namespace static MIDIMorphMulti *[] multis;  // MIDIMorphMulti instances
+   static int last_selected_multi;
+   static MIDIMorphMulti *multi_clipboard;
+
+   static StringArray all_group_names = ["a", "b", "c", "d", "e", "f", "g", "h"];
+
+   static StringArray all_scene_names = [
+      "a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12", "a13", "a14", "a15", "a16",
+      "b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8", "b9", "b10", "b11", "b12", "b13", "b14", "b15", "b16",
+      "c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8", "c9", "c10", "c11", "c12", "c13", "c14", "c15", "c16",
+      "d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15", "d16",
+      "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9", "e10", "e11", "e12", "e13", "e14", "e15", "e16",
+      "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10", "f11", "f12", "f13", "f14", "f15", "f16",
+      "g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9", "g10", "g11", "g12", "g13", "g14", "g15", "g16",
+      "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11", "h12", "h13", "h14", "h15", "h16"
+                                     ];
+
+
+   // <init.png>
+   static AllocScenes() {
+
+      scene_groups.free();
+      scene_indices.free();
+
+      int groupIdx = 0;
+
+      loop(NUM_GROUPS)
+      {
+         scene_groups.add(#(new PointerArray));
+         scene_indices.add(0);
+
+         PointerArray scenes <= scene_groups.get(groupIdx);
+         scenes.free();
+
+         int mmsNr = 1;
+
+         loop(NUM_SCENES_PER_GROUP)
+         {
+            MIDIMorphScene mms <= new MIDIMorphScene;
+            mms.init("Scene "+tcchar(65 + groupIdx)+"-"+mmsNr);
+
+            scenes.add(#(deref mms));
+
+            // Next scene
+            mmsNr++;
+         }
+        
+         // Next group
+         groupIdx++;
+      }
+
+      // Init multi presets
+      loop(NUM_MULTIS)
+      {
+         MIDIMorphMulti multi <= new MIDIMorphMulti;
+         multi.init();
+         multis.add(#(deref multi));
+      }
+      last_selected_multi = 0;
+   }
+
+   // <method_init.png>
+   public method init(String _name) {
+      mms_name = _name;
+   }
+
+   // <method.png>
+   public =replay= method clear() {
+      mms_entries.free();
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      mms_name = _name;
+   }
+
+   // <method.png>
+   public =replay= method copyFrom(MIDIMorphScene _o) {
+      mms_name = _o.mms_name;
+
+      mms_entries.free();
+
+      MIDIMapEvent *oev;
+      MIDIMapEvent *ev;
+
+      foreach oev in _o.mms_entries
+      {
+         ev <= new MIDIMapEvent;
+         ev.copyMMSEntry(oev);
+         mms_entries.add(#(deref ev));
+      }
+   }
+
+   // <method.png>
+   public method copyToClipboard() {
+      if(null == clipboard)
+         clipboard <= new MIDIMorphScene;
+
+      clipboard.copyFrom(this);
+   }
+
+   // <method.png>
+   public method copyFromClipboard() {
+      if(null != clipboard)
+         copyFrom(clipboard);
+   }
+
+   // <method_get.png>
+   public static GetCGrp() : int {
+      return last_changed_group;
+   }
+
+   // <method_get.png>
+   public static GetLastChangedSceneGroup() : PointerArray {
+      PointerArray scenes <= scene_groups.get(last_changed_group);
+      return scenes;
+   }
+
+   // <method_get.png>
+   public static GetCurrentScene(int _groupIdx) : MIDIMorphScene {
+      if(_groupIdx < 0)
+         _groupIdx = last_changed_group;
+
+      int sceneIdx = scene_indices.get(_groupIdx);
+      PointerArray morphScenes <= scene_groups.get(_groupIdx);
+      return morphScenes.get(sceneIdx);
+   }
+
+   // <method_get.png>
+   public static GetCurrentSceneIdx(int _groupIdx) : int {
+      if(_groupIdx < 0)
+         _groupIdx = last_changed_group;
+
+      int sceneIdx = scene_indices.get(_groupIdx);
+      return sceneIdx;
+   }
+
+   // <method_get.png>
+   public static GetSceneArray(int _groupIdx) : PointerArray {
+      if(_groupIdx < 0)
+         _groupIdx = last_changed_group;
+
+      PointerArray morphScenes <= scene_groups.get(_groupIdx);
+      return morphScenes;
+   }
+
+   // <method_get.png>
+   public static GetSceneByIdx(int _groupIdx, int _sceneIdx) : MIDIMorphScene {
+      PointerArray morphScenes <= scene_groups.get(_groupIdx);
+      return morphScenes.get(_sceneIdx);
+   }
+
+   // <method_select.png>
+   public =replay= static SelectSceneByIdx(int _groupIdx, int _sceneNr) {
+      if(Configuration.debugLevel > 1)
+         Global.Debug2("SelectSceneByIdx: groupIdx="+_groupIdx+" sceneNr="+_sceneNr);
+
+      if(_groupIdx < 0)
+         _groupIdx = last_changed_group;
+      else
+         last_changed_group = _groupIdx;
+
+      PointerArray morphScenes <= scene_groups.get(_groupIdx);
+
+      if(STConfig.b_scene_wrap)
+      {
+         if(_sceneNr < 0)
+            _sceneNr = morphScenes.numElements - 1;
+         else if(_sceneNr >= morphScenes.numElements)
+            _sceneNr = 0;
+      }
+      else
+      {
+         if(_sceneNr < 0)
+            _sceneNr = 0;
+         else if(_sceneNr >= morphScenes.numElements)
+            _sceneNr = morphScenes.numElements - 1;
+      }
+
+      scene_indices[_groupIdx] = _sceneNr;
+
+      // Update FaderPort labels
+      Global.BidiHandleSelectOrEditScene();
+
+      // // trace "xxx SelectSceneByIdx: END: groupIdx="+_groupIdx+" sceneNr="+GetCurrentSceneIdx(_groupIdx);
+      // // trace "xxx GetCurrentSceneIdx("+_groupIdx+")="+GetCurrentSceneIdx(_groupIdx);
+   }
+
+   // <method_select.png>
+   public =replay= static SelectSceneNext(int _groupIdx) {
+      int sceneIdx = GetCurrentSceneIdx(_groupIdx);
+      SelectSceneByIdx(_groupIdx, sceneIdx + 1);
+   }
+
+   // <method_select.png>
+   public =replay= static SelectScenePrev(int _groupIdx) {
+      int sceneIdx = GetCurrentSceneIdx(_groupIdx);
+      SelectSceneByIdx(_groupIdx, sceneIdx - 1);
+   }
+
+   // <method.png>
+   public =replay= static TransformEvent(MIDIMapEvent _evRec) {
+      int groupIdx = 0;
+      loop(NUM_GROUPS)
+      {
+         MIDIMorphScene mms <= GetCurrentScene(groupIdx);
+         if(mms.transformEvent(_evRec))
+            return true;
+         groupIdx++;
+      }
+   }
+
+   // <method_update.png>
+   public =replay= method updateAllSrcDevs(int _devIdx, int _origDevIdx) {
+      MIDIMapEvent *ev;
+      STX_MIDIInDevice inDev <= MIDI.GetMIDIInDeviceByIndex(_devIdx);
+      if(null != inDev)
+      {
+         foreach ev in mms_entries
+         {
+            if(ev.getDevIdx() == _origDevIdx)
+               ev.dev <= inDev;
+         }
+      }
+   }
+
+   // <method_update.png>
+   public =replay= method updateAllSrcCh(int _midiCh, int _origDevIdx, int _origCh) {
+      MIDIMapEvent *ev;
+      foreach ev in mms_entries
+      {
+         if((ev.getDevIdx() == _origDevIdx) && (ev.dev_ch == _origCh))
+         {
+            ev.b_morph_all_ch = (-1 == _midiCh);
+            ev.dev_ch = _midiCh;
+         }
+      }
+   }
+
+   // <method_update.png>
+   public =replay= method updateAllFaderPortBanks(int _origBank, int _newBank) {
+      MIDIMapEvent *ev;
+      foreach ev in mms_entries
+      {
+         if( (@(ev.dev) == @(faderport.in_dev)) &&
+             (MIDIMapDefs.TYPE_NRPN == ev.type) &&
+             (0 <= ev.ext_type < (FaderPort.NUM_BANKS*FaderPort.NUM_FADERS_PER_BANK))
+             )
+         {
+            if( (ev.ext_type / FaderPort.NUM_FADERS_PER_BANK/*16*/) == _origBank )
+            {
+               ev.ext_type = (ev.ext_type & 15) + (_newBank * 16);
+            }
+         }
+      }
+   }
+
+   // // <method_update.png>
+   // public =replay= method updateAllMFTwisterBanks(int _origBank, int _newBank) {
+   //    // (todo)
+   //    MIDIMapEvent *ev;
+   //    foreach ev in mms_entries
+   //    {
+   //       if( (@(ev.dev) == @(mf_twister.in_dev)) &&
+   //           (MIDIMapDefs.TYPE_NRPN == ev.type) &&
+   //           (0 <= ev.ext_type < (MFTwister.NUM_BANKS*MFTwister.NUM_ROTARIES_PER_BANK))
+   //           )
+   //       {
+   //          if( (ev.ext_type / MFTwister.NUM_ROTARIES_PER_BANK/*16*/) == _origBank )
+   //          {
+   //             ev.ext_type = (ev.ext_type & 15) + (_newBank * 16);
+   //          }
+   //       }
+   //    }
+   // }
+
+   // <method_update.png>
+   public =replay= method updateAllDstDevs(int _devIdx, int _origDevIdx) {
+      MIDIMapEvent *ev;
+      STX_MIDIInDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+      if(null != outDev)
+      {
+         foreach ev in mms_entries
+         {
+            if(null != ev.morph_target)
+            {
+               ev <= ev.morph_target;
+
+               // // trace "xxx updateAllDstDevs: ev.getDevIdx()="+ev.getDevIdx();
+
+               if(ev.getDevIdx() == _origDevIdx)
+                  ev.dev <= outDev;
+            }
+         }
+      }
+   }
+
+   // <method_update.png>
+   public =replay= method updateAllDstCh(int _midiCh, int _origDevIdx, int _origCh) {
+      MIDIMapEvent *ev;
+      foreach ev in mms_entries
+      {
+         if(null != ev.morph_target)
+         {
+            ev <= ev.morph_target;
+            if((ev.getDevIdx() == _origDevIdx) && (ev.dev_ch == _origCh))
+            {
+               ev.dev_ch = _midiCh;
+            }
+         }
+      }
+   }
+
+   // <method_add.png>
+   public =replay= method mmsAddEntry(MIDIMapEvent _src, MIDIMapEvent _dst, int _rowIdx) : MIDIMapEvent {
+      local MIDIMapEvent en;
+
+      local MIDIMapEvent target;
+
+      en.dev     <= _src.dev;
+      en.dev_ch   = _src.dev_ch;
+      en.type     = _src.type;
+      en.ext_type = _src.ext_type;
+
+      target.dev     <= _dst.dev;
+      target.dev_ch   = _dst.dev_ch;
+      target.type     = _dst.type;
+      target.ext_type = _dst.ext_type;
+
+      en.b_morph_enable = true;
+
+      en.morph_target <= deref target;
+
+      en.b_morph_note_onoff = _src.b_morph_note_onoff;
+      en.b_morph_all_ch = _src.b_morph_all_ch;
+      en.b_morph_all_types = _src.b_morph_all_types;
+      en.b_morph_all_subtypes = _src.b_morph_all_subtypes;
+
+      en.morph_type = _src.morph_type;
+      en.morph_arg1 = _src.morph_arg1;
+      en.morph_arg2 = _src.morph_arg2;
+
+      target.morph_type = _dst.morph_type;
+      target.morph_arg1 = _dst.morph_arg1;
+      target.morph_arg2 = _dst.morph_arg2;
+
+      target.b_morph_all_ch = _dst.b_morph_all_ch;
+      target.b_morph_all_types = _dst.b_morph_all_types;
+      target.b_morph_all_subtypes = _dst.b_morph_all_subtypes;
+
+      if(0 <= _rowIdx <= mms_entries.numElements)
+         mms_entries.insert(_rowIdx, #(deref en));
+      else
+         mms_entries.add(#(deref en));
+
+      return en;
+   }
+
+   // <method_remove.png>
+   public =replay= method mmsRemoveEntry(int _idx) {
+      mms_entries.delete(_idx);
+   }
+
+   // <method_build.png>
+   public method mmsBuildTMEntries(PointerArray _entries) {
+
+      // Create display objects for MIDI morph scene table
+
+      MIDIMorphSceneTMEntry *entry;
+      _entries.free();
+
+      MIDIMapEvent *srcEv;
+
+      foreach srcEv in mms_entries
+      {
+         MIDIMapEvent dstEv <= srcEv.morph_target;
+
+         entry <= new MIDIMorphSceneTMEntry;
+         entry.src_dev  = srcEv.getAliasOrDeviceNameForDO();
+         entry.label    = srcEv.getMorphLabel();
+         entry.b_enable = srcEv.b_morph_enable;
+
+         if(srcEv.b_morph_all_ch)
+            entry.src_ch = "*";
+         else
+            entry.src_ch = srcEv.dev_ch + 1;
+
+         if(srcEv.b_morph_all_types)
+         {
+            entry.src_type = "*";
+         }
+         else
+         {
+            if( (TYPE_NOTE_OFF == srcEv.type) || (TYPE_NOTE_ON == srcEv.type) )
+            {
+               if(srcEv.b_morph_note_onoff)
+               {
+                  entry.src_type = "Note On + Off";
+               }
+               else if(TYPE_NOTE_ON == srcEv.type)
+               {
+                  entry.src_type = "Note On";
+               }
+               else if(TYPE_NOTE_OFF == srcEv.type)
+               {
+                  entry.src_type = "Note Off";
+               }
+
+               switch(srcEv.morph_type)
+               {
+                  case SRC_FLT_OFF:
+                     break;
+
+                  case SRC_FLT_RANGE:
+                     entry.src_type = entry.src_type+"  "+(MIDI.midi_notes.get(srcEv.morph_arg1))+".."+(MIDI.midi_notes.get(srcEv.morph_arg2));
+                     break;
+                  case SRC_FLT_RANGE_CLIP:
+                     entry.src_type = entry.src_type+"  "+(MIDI.midi_notes.get(srcEv.morph_arg1))+".."+(MIDI.midi_notes.get(srcEv.morph_arg2));
+                     break;
+                  case SRC_FLT_CLIP_MIN:
+                     entry.src_type = entry.src_type+"  "+(MIDI.midi_notes.get(srcEv.morph_arg1))+"..";
+                     break;
+                  case SRC_FLT_CLIP_MAX:
+                     entry.src_type = entry.src_type+"  .."+(MIDI.midi_notes.get(srcEv.morph_arg2));
+                     break;
+                  case SRC_FLT_MATCH:
+                     entry.src_type = entry.src_type+"  "+(MIDI.midi_notes.get(srcEv.morph_arg1));
+                     break;
+                  case SRC_FLT_SPLIT_START:
+                     entry.src_type = entry.src_type+"  >="+(MIDI.midi_notes.get(srcEv.morph_arg1));
+                     break;
+                  case SRC_FLT_SPLIT_END:
+                     entry.src_type = entry.src_type+"  <"+(MIDI.midi_notes.get(srcEv.morph_arg2));
+                     break;
+               }
+            }
+            else
+            {
+               ////entry.src_type = srcEv.getFullTypeName();
+               entry.src_type = srcEv.getExtTypeName();
+
+               switch(srcEv.morph_type)
+               {
+                  case SRC_FLT_OFF:
+                     break;
+
+                  case SRC_FLT_RANGE:
+                     entry.src_type = entry.src_type+"  "+srcEv.morph_arg1+".."+srcEv.morph_arg2;
+                     break;
+                  case SRC_FLT_RANGE_CLIP:
+                     entry.src_type = entry.src_type+"  "+srcEv.morph_arg1+".."+srcEv.morph_arg2;
+                     break;
+                  case SRC_FLT_CLIP_MIN:
+                     entry.src_type = entry.src_type+"  "+srcEv.morph_arg1+"..";
+                     break;
+                  case SRC_FLT_CLIP_MAX:
+                     entry.src_type = entry.src_type+"  .."+srcEv.morph_arg2;
+                     break;
+                  case SRC_FLT_MATCH:
+                     entry.src_type = entry.src_type+"  "+srcEv.morph_arg1;
+                     break;
+                  case SRC_FLT_SPLIT_START:
+                     entry.src_type = entry.src_type+"  >="+srcEv.morph_arg1;
+                     break;
+                  case SRC_FLT_SPLIT_END:
+                     entry.src_type = entry.src_type+"  <"+srcEv.morph_arg2;
+                     break;
+               }
+            }
+         }
+
+         entry.dst_dev  = dstEv.getAliasOrDeviceNameForDO();
+         if(dstEv.b_morph_all_ch)
+         {
+            entry.dst_ch = "*";
+         }
+         else
+         {
+            entry.dst_ch = dstEv.dev_ch + 1;
+         }
+
+         if(dstEv.b_morph_all_types)
+         {
+            entry.dst_type = "*";
+         }
+         else
+         {
+            if( (TYPE_NOTE_OFF == dstEv.type) || (TYPE_NOTE_ON == dstEv.type) )
+            {
+               if(srcEv.b_morph_note_onoff)
+               {
+                  entry.dst_type = "Note On + Off";
+               }
+               else if(TYPE_NOTE_ON == dstEv.type)
+               {
+                  entry.dst_type = "Note On";
+               }
+               else if(TYPE_NOTE_OFF == dstEv.type)
+               {
+                  entry.dst_type = "Note Off";
+               }
+            }
+            else
+            {
+               entry.dst_type = dstEv.getExtTypeName();
+            }
+         }
+
+         entry.src_ev <= srcEv;
+         entry.dst_ev <= dstEv;
+
+         _entries.add(#(deref entry));
+      }
+
+   }
+
+   // <method.png>
+   public method transformEvent(local MIDIMapEvent ev) : boolean {
+      // // trace "xxx try transform ev.type="+ev.type+" ev.arg1="+ev.arg1+" ev.ext_type="+ev.ext_type;
+
+      if((STConfig.push_mode != Push.MODE_KBD) && ev.pushIsEvent())
+      {
+         // Never transform incoming push events if push is not in keyboard mode
+         return false;
+      }
+
+      if(ev.b_xformed)
+         return true; // Already transformed, e.g. by Linnstrument script
+
+      local MIDIMapEvent *mev;
+
+      foreach mev in mms_entries
+      {
+         // // trace "xxx try match mev.type="+mev.type;
+
+         if(mev.b_morph_enable && mev.matchMorphTypeOf(ev))
+         {
+            local MIDIMapEvent mevDst <= mev.morph_target;
+
+            // // trace "xxx =====> matches mev, mms_name=\""+mms_name+"\" dstDev="+#(mevDst.dev)+" mev.b_morph_all_types="+mev.b_morph_all_types;
+            ev.b_xformed = true;
+            ev.b_dont_send = false;
+
+            ev.dev <= mevDst.dev;
+            // // trace "xxx transformEvent: ev.dev="+#(ev.dev);
+
+            if(!mevDst.b_morph_all_ch)
+               ev.dev_ch = mevDst.dev_ch;
+            // else: Keep MIDI channel
+
+            mev.last_morph_src_arg1 = ev.arg1;
+
+            if(mev.b_morph_all_types && mevDst.b_morph_all_types)
+            {
+               // Just update device (and channel)
+               return true;
+            }
+
+            boolean bTypeAssign = !mevDst.b_morph_all_types;
+
+            if(mev.b_morph_note_onoff)
+            {
+               if(TYPE_NOTE_ON == ev.type || TYPE_NOTE_OFF == ev.type)
+               {
+                  if(mevDst.b_morph_all_types || TYPE_NOTE_ON == mevDst.type || TYPE_NOTE_OFF == mevDst.type)
+                  {
+                     bTypeAssign = false; // keep incoming event type (on or off)
+                  }
+               }
+            }
+
+            // // trace "xxx bTypeAssign="+bTypeAssign;
+            if(bTypeAssign)
+            {
+               ev.type = mevDst.type;
+               if(MIDIMapDefs.IsSystemEvent(ev.type))
+                  ev.invalidate();
+            }
+
+            // // trace "xxx bTypeAssign="+bTypeAssign+" ev.type="+ev.type+" mevDst.type="+mevDst.type;
+            // // trace "xxx mevDst.b_morph_all_subtypes="+mevDst.b_morph_all_subtypes+" ev.ext_type="+ev.ext_type+" mevDst.ext_type="+mevDst.ext_type;
+
+            if(!(mevDst.b_morph_all_subtypes || mevDst.b_morph_all_types))
+            {
+               ev.ext_type = mevDst.ext_type;  // (note) overwrites/resets notenr (fixed later on, see below)
+            }
+
+            local float f;
+            local float srcArg1;
+            local float srcArg2;
+
+            // // trace "xxx mevDst.morph_type="+mevDst.morph_type;
+            switch(mevDst.morph_type)
+            {
+               case DST_OP_DEFAULT:
+                  if(mev.type != mevDst.type)
+                  {
+                     switch(mev.type)
+                     {
+                        case TYPE_NOTE_OFF:
+                        case TYPE_NOTE_ON:
+                        case TYPE_CC:
+                        case TYPE_PROGRAM_CHANGE:
+                           switch(mevDst.type)
+                           {
+                              case TYPE_PITCHBEND:
+                                 ev.arg1 = (ev.arg1 * 16383) / 127;
+                                 // // trace "xxx OP_DEFAULT: 1 mval="+ev.arg1;
+                                 break;
+
+                              case TYPE_RPN:
+                              case TYPE_NRPN:
+                                 if(MIDI_DATAENTRYMODE_MSB == mevDst.getDevParamMode())  // e.g. Novation Peak
+                                 {
+                                    ev.arg1 = ev.arg1;  // MSB only (store in LSB)
+                                 }
+                                 else
+                                 {
+                                    ev.arg1 = (ev.arg1 * 16383) / 127;
+                                 }
+                                 // // trace "xxx OP_DEFAULT: 1 mval="+ev.arg1;
+                                 break;
+
+                                 // TYPE_CC: notenumber => cc value (keep arg1)
+                           }
+                           break;
+
+                        case TYPE_POLY_PRESSURE:
+                           switch(mevDst.type)
+                           {
+                              case TYPE_CC:
+                              case TYPE_CHANNEL_PRESSURE:
+                              case TYPE_PROGRAM_CHANGE:
+                                 ev.arg1 = ev.arg2;
+                                 break;
+                           }
+                           break;
+
+                        case TYPE_PITCHBEND:
+                        case TYPE_RPN:
+                        case TYPE_NRPN:
+                           switch(mevDst.type)
+                           {
+                              case TYPE_NOTE_OFF:
+                              case TYPE_NOTE_ON:
+                              case TYPE_CC:
+                              case TYPE_PROGRAM_CHANGE:
+                                 ev.arg1 = (ev.arg1 * 127) / 16383;
+                                 // // trace "xxx OP_DEFAULT: 1 mval="+ev.arg1;
+                                 break;
+                           }
+                           break;
+                     }
+                  }
+                  break;
+
+               case DST_OP_TRANSPOSE:
+                  switch(mev.type)
+                  {
+                     case TYPE_NOTE_OFF:
+                     case TYPE_NOTE_ON:
+                     case TYPE_CC:
+                     case TYPE_PROGRAM_CHANGE:
+                     case TYPE_CHANNEL_PRESSURE:
+                     case TYPE_POLY_PRESSURE:
+                        switch(mevDst.type)
+                        {
+                           default:
+                              ev.arg1 = ev.arg1 + mevDst.morph_arg1;
+                              if(ev.arg1 < 0) ev.arg1 = 0;
+                              else if(ev.arg1 > 127) ev.arg1 = 127;
+                              // // trace "xxx OP_TRANSPOSE: 1 mval="+ev.arg1;
+                              break;
+
+                           case TYPE_PITCHBEND:
+                           case TYPE_RPN:
+                           case TYPE_NRPN:
+                              ev.arg1 = (ev.arg1 * 16383) / 127;
+                              ev.arg1 = ev.arg1 + mevDst.morph_arg1;
+                              if(ev.arg1 < 0) ev.arg1 = 0;
+                              else if(ev.arg1 > 16383) ev.arg1 = 16383;
+                              // // trace "xxx OP_TRANSPOSE: 2 mval="+ev.arg1;
+                              break;
+                        }
+                        break;
+
+                     case TYPE_PITCHBEND:
+                     case TYPE_RPN:
+                     case TYPE_NRPN:
+                        switch(mevDst.type)
+                        {
+                           default:
+                              ev.arg1 = ev.arg1 + mevDst.morph_arg1;
+                              if(ev.arg1 < 0) ev.arg1 = 0;
+                              else if(ev.arg1 > 16383) ev.arg1 = 16383;
+                              // // trace "xxx OP_TRANSPOSE: 3 mval="+ev.arg1;
+                              break;
+
+                           case TYPE_NOTE_OFF:
+                           case TYPE_NOTE_ON:
+                           case TYPE_CC:
+                           case TYPE_PROGRAM_CHANGE:
+                              ev.arg1 = (ev.arg1 * 127) / 16383;
+                              ev.arg1 = ev.arg1 + mevDst.morph_arg1;
+                              if(ev.arg1 < 0) ev.arg1 = 0;
+                              else if(ev.arg1 > 127) ev.arg1 = 127;
+                              // // trace "xxx OP_TRANSPOSE: 4 mval="+ev.arg1;
+                              break;
+                        }
+                        break;
+                  }
+                  break;
+
+               case DST_OP_REMAP:
+                  if(SRC_FLT_OFF == mev.morph_type)
+                  {
+                     // Default CC/(N)RPN/PrgChg/.. range
+                     srcArg1 = 0;
+                     srcArg2 = mev.getMaxValue();
+                  }
+                  else
+                  {
+                     // FLT_RANGE, ..
+                     srcArg1 = mev.morph_arg1;
+                     srcArg2 = mev.morph_arg2;
+                  }
+                  if(TYPE_POLY_PRESSURE == mev.type)
+                     f = ev.arg2 - srcArg1;
+                  else
+                     f = ev.arg1 - srcArg1;
+                  f = f / (srcArg2 - srcArg1);
+                  // // trace "xxx remap: srcRange=("+srcArg1+";"+srcArg2+") dstRange=("+mevDst.morph_arg1+";"+mevDst.morph_arg2+") mevDst="+#(mevDst);
+                  if(TYPE_POLY_PRESSURE == ev.type)
+                     ev.arg2 = mevDst.morph_arg1 + f * (mevDst.morph_arg2 - mevDst.morph_arg1);
+                  else
+                     ev.arg1 = mevDst.morph_arg1 + f * (mevDst.morph_arg2 - mevDst.morph_arg1);
+                  // // trace "xxx remap: out ev.arg1="+ev.arg1+" f="+f;
+                  break;
+
+               case DST_OP_REPLACE:
+                  if(TYPE_POLY_PRESSURE == ev.type)
+                     ev.arg2 = mevDst.morph_arg1;
+                  else
+                     ev.arg1 = mevDst.morph_arg1;
+                  // // trace "xxx OP_REPLACE: mval="+ev.arg1;
+                  break;
+
+               case DST_OP_DISCARD:
+                  // // trace "xxx OP_DISCARD: type="+ev.type+" arg1="+ev.arg1;
+                  ev.type = TYPE_SYSRT_FD; // unused rt type
+                  break;
+
+               case DST_OP_DISCARD_YAMAHA_BULK:  // $F0 $43 $1x
+                  if(TYPE_SYSEX == ev.type)
+                  {
+                     if(null != ev.sysex_buffer)
+                     {
+                        local Buffer syx <= ev.sysex_buffer;
+                        // syx.hexdump(0, 3);
+                        if($43 == syx.peekI8(0) &&        // Yamaha vendor id
+                           $00 == (syx.peekI8(1) & 0xF0)  // bulk dump (e.g. Montage 7)
+                           )
+                        {
+                           ev.type = TYPE_SYSRT_FD; // unused rt type
+                        }
+                     }
+                  }
+                  break;
+            }
+
+            if(TYPE_NOTE_ON == ev.type || TYPE_NOTE_OFF == ev.type)
+               ev.ext_type = ev.arg1;
+
+            // // trace "xxx LEAVE transform ev.type="+ev.type+" ev.arg1="+ev.arg1+" ev.ext_type="+ev.ext_type;
+
+            return true;
+
+         } // if match
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method transformEvents(local ClassArray _events) {
+      // called from replay and UI threads
+      local MIDIMapEvent *ev;
+      foreach ev in _events
+      {
+         transformEvent(ev);
+      }
+   }
+
+   // <method.png>
+   public static TransformEvents(local ClassArray _events) {
+      // called from replay and UI threads
+
+      MIDIMorphScene mms0 <= GetCurrentScene(0);  // A
+      MIDIMorphScene mms1 <= GetCurrentScene(1);  // B
+      MIDIMorphScene mms2 <= GetCurrentScene(2);  // C
+      MIDIMorphScene mms3 <= GetCurrentScene(3);  // D
+
+      MIDIMorphScene mms4 <= GetCurrentScene(4);  // E
+      MIDIMorphScene mms5 <= GetCurrentScene(5);  // F
+      MIDIMorphScene mms6 <= GetCurrentScene(6);  // G
+      MIDIMorphScene mms7 <= GetCurrentScene(7);  // H
+
+      local MIDIMapEvent *ev;
+
+      foreach ev in _events
+      {
+         if(mms0.transformEvent(ev) ||
+            mms1.transformEvent(ev) ||
+            mms2.transformEvent(ev) ||
+            mms3.transformEvent(ev) ||
+            mms4.transformEvent(ev) ||
+            mms5.transformEvent(ev) ||
+            mms6.transformEvent(ev) ||
+            mms7.transformEvent(ev)
+            )
+         {
+         }
+         // else
+         // {
+         //    // trace "xxx xform failed";
+         // }
+      }
+   }
+
+   // <save.png>
+   public static SaveStateMultis(Stream ofs) {
+      // Ver
+      ofs.i16 = 2;
+
+      // Write num multis
+      ofs.i8 = multis.numElements;
+      MIDIMorphMulti *multi;
+      foreach multi in multis
+      {
+         multi.saveState(ofs);
+      }
+
+      // Write last selected multi
+      ofs.i8 = last_selected_multi;
+   }
+
+   // <load.png>
+   public static LoadStateMultis(Stream ifs) : boolean {
+      // Ver
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         int numMultis = ifs.u8;
+
+         multis.alloc(numMultis);
+         MIDIMorphMulti *multi;
+         int multiIdx = 0;
+
+         loop(numMultis)
+         {
+            multi <= new MIDIMorphMulti;
+            multi.init();
+
+            if(!multi.loadState(ifs))
+            {
+               trace "[---] MIDIMorphScene::LoadStateMultis: failed to load multi "+(multiIdx+1)+"/"+numMultis;
+               return false;
+            }
+
+            multis.add(#(deref multi));
+            multiIdx++;
+         }
+
+         if(ver >= 2)
+         {
+            // Read last selected multi
+            last_selected_multi = ifs.u8 % multis.numElements;
+         }
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public static SelectMultiByIdx(int _multiIdx) {
+      MIDIMorphMulti multi <= multis.get(_multiIdx);
+
+      int groupIdx = 0;
+      loop(multi.scene_indices.numElements)
+      {
+         // // trace "xxx selectmulti: multi.scene_indices="+#(multi.scene_indices);
+         int sceneIdx = multi.scene_indices.get(groupIdx);
+         if(sceneIdx >= 0)
+         {
+            SelectSceneByIdx(groupIdx, sceneIdx);
+            root_form.rootHandleSceneChanged(groupIdx, false/*bOverlay*/); // update push, ..
+         }
+
+         groupIdx++;
+      }
+
+      last_selected_multi = _multiIdx;
+   }
+
+   // <method_get.png>
+   public static GetMultiByIdx(int _multiIdx) : MIDIMorphMulti {
+      return multis.get(_multiIdx);
+   }
+
+   // <method.png>
+   public =replay= static SwapGroups(int _groupIdxA, int _groupIdxB) {
+      scene_groups.swap(_groupIdxA, _groupIdxB);
+      scene_indices.swap(_groupIdxA, _groupIdxB);
+   }
+
+   // <method.png>
+   public =replay= static SwapScenes(int _groupIdxA, int _sceneIdxA, int _groupIdxB, int _sceneIdxB) {
+      PointerArray groupA <= scene_groups.get(_groupIdxA);
+      PointerArray groupB <= scene_groups.get(_groupIdxB);
+      PointerArray sceneA <= groupA.getDeref(_sceneIdxA);
+      PointerArray sceneB <= groupB.getDeref(_sceneIdxB);
+      groupA[_sceneIdxA] = deref sceneB;
+      groupB[_sceneIdxB] = deref sceneA;
+   }
+
+   // <method.png>
+   public static FindAllSceneNames() : StringArray {
+      // (note) used by NodeTrigSeq for HW interface scene selection
+      int groupIdx = 0;
+      int k = 0;
+      local StringArray r;
+      loop(NUM_GROUPS)
+      {
+         int sceneIdx = 0;
+         PointerArray scenes <= scene_groups[groupIdx];
+         loop(NUM_SCENES_PER_GROUP)
+         {
+            MIDIMorphScene scene <= scenes[sceneIdx];
+            local String opt = all_scene_names[k++];
+            opt.append(": "+scene.mms_name);
+            r.add(opt);
+            // Next scene
+            sceneIdx++;
+         }
+         // Next group
+         groupIdx++;
+      }
+      return deref r;
+   }
+
+   // <method.png>
+   public method updateLabelsFromRemoteCtlTargetsOrMSPAliases(PointerArray _vstDevs, IntArray _selRows, PointerArray _ctlTargets) : int {
+      // called when Eureka VST host is connected
+
+      int numUpdated = 0;
+
+      int selRowIdx;
+      MIDIMapEvent *srcEv;
+      MIDIMapEvent *dstEv;
+
+      // Reset auto labels
+      foreach selRowIdx in _selRows
+      {
+         srcEv <= mms_entries.get(selRowIdx);
+         srcEv.setMorphAutoLabel(null);
+         // // trace "xxx reset autoMorphLabel: srcEv.getMorphLabel()=\""+srcEv.getMorphLabel()+"\"";
+      }
+
+      SysExRemoteCtlTarget *rct;
+      foreach rct in _ctlTargets
+      {
+         MIDIMapEvent rctEv;
+         if(rctEv.initFromSysExRemoteCtlTarget(_vstDevs, rct))
+         {
+            foreach selRowIdx in _selRows
+            {
+               srcEv <= mms_entries.get(selRowIdx);
+               dstEv <= srcEv.morph_target;
+               if(null != dstEv)
+               {
+                  if(-1 == rct.midi_ch)
+                     rctEv.dev_ch = dstEv.dev_ch;
+
+                  if(dstEv.matchTypeOfIgnoreClass(rctEv))
+                  {
+                     srcEv.setMorphAutoLabelKeepFlags(rct.param_name.substring(0, MIDIMapEvent.MAX_MORPH_LABEL_LEN));
+                     // // trace "xxx new lb from remotectltarget: \""+srcEv.getMorphLabel()+"\"";
+                     numUpdated++;
+                  }
+               }
+               // Next selected row
+            }
+         }
+         // Next remote ctl target
+      }
+
+      // Try MIDI synth profile ctl names
+      foreach selRowIdx in _selRows
+      {
+         srcEv <= mms_entries.get(selRowIdx);
+         if(null == srcEv.morph_auto_label)
+         {
+            dstEv <= srcEv.morph_target;
+            if(null != dstEv)
+            {
+               String s <= dstEv.getExtTypeName();
+               if(null != s)
+               {
+                  srcEv.setMorphAutoLabelKeepFlags(s.substring(0, MIDIMapEvent.MAX_MORPH_LABEL_LEN));
+                  numUpdated++;
+               }
+            }
+         }
+      }
+
+      return numUpdated;
+   }
+
+   // <method.png>
+   public method updateLabelsFromMSPAliases(IntArray _selRows) : int {
+      // called when Eureka VST host is not connected
+
+      int numUpdated = 0;
+
+      int selRowIdx;
+      MIDIMapEvent *srcEv;
+      MIDIMapEvent *dstEv;
+
+      // Reset auto labels
+      foreach selRowIdx in _selRows
+      {
+         srcEv <= mms_entries.get(selRowIdx);
+         srcEv.setMorphAutoLabel(null);
+         // // trace "xxx reset autoMorphLabel: srcEv.getMorphLabel()=\""+srcEv.getMorphLabel()+"\"";
+      }
+
+      // Auto-assign MIDI synth profile ctl names
+      foreach selRowIdx in _selRows
+      {
+         srcEv <= mms_entries.get(selRowIdx);
+         // // trace "xxx srcEv.morph_auto_label="+#(srcEv.morph_auto_label);
+
+         if(null == srcEv.morph_auto_label)
+         {
+            dstEv <= srcEv.morph_target;
+            if(null != dstEv)
+            {
+               String s <= dstEv.getExtTypeName();
+               // // trace "xxx  dstEv.getExtTypeName()=\""+s+"\"";
+               if(null != s)
+               {
+                  srcEv.setMorphAutoLabelKeepFlags(s.substring(0, MIDIMapEvent.MAX_MORPH_LABEL_LEN));
+                  numUpdated++;
+               }
+            }
+         }
+      }
+
+      return numUpdated;
+   }
+
+}

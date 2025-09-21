@@ -1,0 +1,3778 @@
+// ----
+// ---- file   : SongFileReader.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 04Nov2007, 05Nov2007, 08Nov2007, 09Nov2007, 10Nov2007, 12Nov2007, 13Jan2008
+// ----          15Jan2008, 21Jan2008, 27Jan2008, 01Aug2008, 07Aug2008, 10Aug2008, 11Aug2008
+// ----          13Aug2008, 21Sep2009, 23Sep2009, 27Dec2009, 28Dec2009, 02Jan2010, 07Jan2010
+// ----          13Jan2010, 15Jan2010, 07Feb2010, 08Feb2010, 09Feb2010, 15Feb2010, 20Feb2010
+// ----          21Feb2010, 25Feb2010, 01Mar2010, 29Apr2010, 13Jun2010, 29Jun2010, 01Jul2010
+// ----          02Jul2010, 07Jul2010, 12Jul2010, 13Jul2010, 19Jul2010, 03Sep2010, 04Sep2010
+// ----          05Sep2010, 08Sep2010, 14Sep2010, 15Sep2010, 21Sep2010, 27Sep2010, 10Oct2010
+// ----          13Oct2010, 16Oct2010, 17Oct2010, 24Oct2010, 21Nov2010, 03Feb2011, 17Feb2011
+// ----          18Feb2011, 24Feb2011, 26Feb2011, 09Mar2011, 17Mar2011, 18Mar2011, 20Mar2011
+// ----          28Mar2011, 04Apr2011, 06Apr2011, 22Apr2011, 23Apr2011, 26Jun2011, 05Jan2012
+// ----          07Jan2012, 15Jan2012, 07Feb2012, 13Feb2012, 19Feb2012, 26Jun2012, 06Dec2012
+// ----          08Jan2013, 09Jan2013, 11Jan2013, 25Mar2013, 01Apr2013, 02Apr2013, 06Apr2013
+// ----          08Apr2013, 09Apr2013, 14Apr2013, 17Apr2013, 19Apr2013, 22Apr2013, 08May2013
+// ----          09May2013, 10May2013, 14May2013, 20May2013, 23May2013, 24May2013, 25May2013
+// ----          05Jun2013, 02Feb2014, 20Apr2014, 09Aug2014, 11Aug2014, 18Aug2014, 19Aug2014
+// ----          20Aug2014, 21Aug2014, 22Aug2014, 09Sep2014, 13Sep2014, 14Sep2014, 16Sep2014
+// ----          19Sep2014, 21Sep2014, 27Sep2014, 28Sep2014, 29Sep2014, 17Oct2014, 11Feb2015
+// ----          14Feb2015, 17Feb2015, 18Feb2015, 21Feb2015, 23Feb2015, 01Mar2015, 09Mar2015
+// ----          17May2015, 26Sep2015, 27Sep2015, 03Oct2015, 17Oct2015, 14Nov2015, 15Nov2015
+// ----          23Dec2015, 08Jan2016, 19Mar2016, 08Apr2016, 12Mar2017, 02Nov2017, 10Nov2017
+// ----          04Jan2018, 07Mar2018, 22May2018, 08Dec2018, 02Mar2019, 18May2019, 29Aug2019
+// ----          21Sep2019, 20Feb2020, 12Nov2020, 10Feb2021, 19Jul2021, 13Dec2021, 17Dec2021
+// ----          20Dec2021, 12Aug2022, 22Oct2022, 24Nov2022, 22Apr2023, 24Sep2023, 13Oct2023
+// ----          14Mar2025
+// ----
+// ----
+// ----
+module MSongFileReader;
+
+use namespace st2;
+use namespace ui;
+
+
+// MIDI output device aliases (or names) as seen when the song file was written
+//  this is used to remap e.g. MIDIPipeFrame event device indices
+StringArray piperoot_devnames;
+IntArray piperoot_outdevidxmap;    // map saved dev idx to current dev idx
+IntArray piperoot_outdevusecount;  // count dev usage (index=saved dev idx)
+
+
+
+// <class.png>
+class SongFileReader : SongFile {
+
+   define String EMPTY_DEV_NAME = "!!empty DEVNAME!!";
+
+
+   // <method.png>
+   static InitOutDevIdxMapAndUseCount() {
+      MIDI.SongFileReader_BuildOutDevIdxMap(piperoot_devnames, piperoot_outdevidxmap);
+
+      piperoot_outdevusecount.allocAndFill(piperoot_outdevidxmap.numElements, 0);
+   }
+
+   // <method.png>
+   static InitPipeRootDevNamesIdentity() {
+      // Called before InitOutDevIdxMapAndUseCount() / when loading streams internally (e.g. copy'n'paste nodes)
+      piperoot_devnames.empty();
+
+      // Also see SongFileWrite.WritePipeRootDevMap()
+      STX_MIDIOutDevice *outDev;
+
+      foreach outDev in MIDI.out_devices
+      {
+         piperoot_devnames.add(outDev.getAliasOrDeviceName());
+      }
+
+      // // trace "xxx piperoot_devnames="+#(piperoot_devnames);
+   }
+
+   // <method.png>
+   static InitIdentityOutDevIdxMap() {
+      InitPipeRootDevNamesIdentity();
+      InitOutDevIdxMapAndUseCount();
+   }
+
+   // <method_handle.png>
+   static protected HandleUnknownChunk(String _methodName, Stream _in, Integer _chunkHeader, Integer _chunkDataSize) {
+      trace "[~~~] SongFileReader::"+_methodName+": unknown chunk "+_chunkHeader.printf("0x%08x")+" (size="+_chunkDataSize+"), skipping..";
+      TKS.sleep(250);
+      _in.seek(_chunkDataSize, SEEK_CUR);
+   }
+
+   // <method_read.png>
+   static public method ReadChunkHeader(Stream _in, Integer _chunkHeaderRet, Integer _chunkSizeRet) {
+      _chunkHeaderRet = _in.i32;
+      _chunkSizeRet   = _in.i32;
+   }
+
+   // <method_read.png>
+   static protected method ReadString(Stream _in, String _s) : int {
+      int startOff = _in.offset;
+      _in.deserialize(_s, false);
+      //trace "xxx read string \""+_s+"\".";
+      return _in.offset - startOff;
+   }
+
+   // <method_read.png>
+   static protected method ReadScriptObject(Stream _in, Object _o) : int {
+      int startOff = _in.offset;
+      _in.deserialize(_o, true);
+      return _in.offset - startOff;
+   }
+
+   // <method_read.png>
+   static protected method ReadEnvelope(Stream _in, int _chunkDataSize, Envelope _env) : int {
+      int startOff = _in.offset;
+      if(_chunkDataSize >= (4+4))
+      {
+         int envDataType = _in.i32;
+         _env.interpolation = _in.i32;
+         // todo: check envDataType when calculating numElements
+         int numElements = (_chunkDataSize - 4 - 4) / 4;
+         if(numElements > 0)
+         {
+            if(_env.alloc(numElements))
+            {
+               _env.numElements = numElements;
+               int i = 0;
+               switch(envDataType)
+               {
+                  default:
+                     trace "[---] SongFileReader::ReadEnvelope: unknown data type <"+envDataType+">.";
+                     return 0;
+
+                  case 0: // float 32 bit
+                     loop(numElements)
+                     {
+                        _env[i++] = _in.f32;
+                     }
+                     ////trace "xxx ReadEnvelope: finished, env="+#(_env);
+                     ////trace "xxx ReadEnvelope: numread="+(_in.offset - startOff);
+                     return _in.offset - startOff;
+               }
+            }
+            else
+            {
+               trace "[---] SongFileReader::ReadEnvelope: failed to allocate envelope elements (num="+numElements+").";
+            }
+         }
+         else
+         {
+            //trace "[~~~] SongFileReader::ReadEnvelope: warning, envelope is empty.";
+            return _in.offset - startOff;
+         }
+      }
+      else
+      {
+         trace "[---] SongFileReader::ReadEnvelope: invalid chunk size ("+_chunkDataSize+").";
+      }
+      return 0;
+   }
+
+   // <method_read.png>
+   static protected method ReadFloatArray(Stream _in, int _chunkDataSize, FloatArray _fa) : int {
+      //
+      // return number of bytes read or -1 in case an error occured
+      //
+      int startOff = _in.offset;
+      _fa.free();
+      if(_chunkDataSize >= 0)
+      {
+         int numElements = (_chunkDataSize / 4);
+         if(numElements > 0)
+         {
+            if(_fa.alloc(numElements))
+            {
+               _fa.useAll();
+               int i = 0;
+               // read 32 bit floats
+               loop(numElements)
+               {
+                  _fa[i++] = _in.f32;
+               }
+               ////trace "xxx ReadFloatArray: finished, fa="+#(_fa);
+               ////trace "xxx ReadFloatArray: numread="+(_in.offset - startOff);
+               return _in.offset - startOff;
+            }
+            else
+            {
+               trace "[---] SongFileReader::ReadFloatArray: failed to allocate array elements (num="+numElements+").";
+               return -1;
+            }
+         }
+         else
+         {
+            //trace "[~~~] SongFileReader::ReadFloatArray: warning, array is empty.";
+            return _in.offset - startOff;
+         }
+      }
+      else
+      {
+         trace "[---] SongFileReader::ReadFloatArray: invalid chunk size ("+_chunkDataSize+").";
+      }
+      return -1;
+   }
+
+   // <method_read.png>
+   static protected method ReadIntArray(Stream _in, int _chunkDataSize, IntArray _ia) : int {
+      //
+      // return number of bytes read or -1 in case an error occured
+      //
+      int startOff = _in.offset;
+      _ia.free();
+      if(_chunkDataSize >= 0)
+      {
+         int numElements = (_chunkDataSize / 4);
+         if(numElements > 0)
+         {
+            if(_ia.alloc(numElements))
+            {
+               _ia.useAll();
+               int i = 0;
+               // read 32 bit integers
+               loop(numElements)
+               {
+                  _ia[i++] = _in.i32;
+               }
+               ////trace "xxx ReadIntArray: finished, ia="+#(_ia);
+               ////trace "xxx ReadIntArray: numread="+(_in.offset - startOff);
+               return _in.offset - startOff;
+            }
+            else
+            {
+               trace "[---] SongFileReader::ReadIntArray: failed to allocate array elements (num="+numElements+").";
+               return -1;
+            }
+         }
+         else
+         {
+            //trace "[~~~] SongFileReader::ReadIntArray: warning, array is empty.";
+            return _in.offset - startOff;
+         }
+      }
+      else
+      {
+         trace "[---] SongFileReader::ReadIntArray: invalid chunk size ("+_chunkDataSize+").";
+      }
+      return -1;
+   }
+
+   // <method_read.png>
+   static protected method ReadStringArray(Stream _in, int _chunkDataSize, StringArray _sa) : int {
+      //
+      // return number of bytes read or -1 in case an error occured
+      //
+      int startOff = _in.offset;
+
+      _sa.free();
+
+      if(_chunkDataSize >= 0)
+      {
+         int numElements = _in.i32;
+
+         _sa.alloc(numElements);
+         _sa.useAll();
+
+         String *s;
+
+         foreach s in _sa
+         {
+            _in.deserialize(s, false);
+         }
+
+         return _in.offset - startOff;
+      }
+      else
+      {
+         trace "[---] SongFileReader::ReadStringArray: invalid chunk size ("+_chunkDataSize+").";
+      }
+      return -1;
+   }
+
+   // <method_read.png>
+   static protected method ReadPipeRootDevMap(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadPipeRootDevMap: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadPipeRootDevMap: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadPipeRootDevMap", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_PIPEROOTDEVMAP_DEVNAME:
+                  DP("[...] SongFileReader::ReadPipeRootDevMap: found chunk FOURCC_PIPEROOTDEVMAP_DEVNAME, chunkDataSize="+chunkDataSize);
+                  String devName;
+                  devName.empty();
+
+                  if(chunkDataSize > 0)
+                  {
+                     if(!ReadString(_in, devName))
+                     {
+                        trace "[---] SongFileReader::ReadPipeRootDevMap: failed to read chunk FOURCC_PIPEROOTDEVMAP_DEVNAME.";
+                        _bytesLeft = -1;
+                     }
+                     else
+                     {
+                        piperoot_devnames.add(devName);
+                     }
+                  }
+                  else
+                  {
+                     // (note) This is a bug that somehow crept in: sometimes the devname is empty, resulting in a 0 chunkDataSize
+                     //         The device in question is not actually used. Must be some leftovers from a device that was
+                     //         selected, then deselected (????!)
+                     //         => Just ignore
+                     piperoot_devnames.add(EMPTY_DEV_NAME); // "!!empty DEVNAME!!"
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadPipeRootDevMap: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadPipeRootDevMap: chunk complete.");
+
+            InitOutDevIdxMapAndUseCount();
+
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMIDIDevCfg(Stream _in, int _bytesLeft, boolean _bOut, boolean _bAllowUpdate) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMIDIDevCfg: chunk is empty.");
+         return true;
+      }
+
+      String devName = "";
+      String alias = "";
+      byte nextProfileCh = -1;
+      String profileId = "";
+
+      StringArray profileIds;
+      profileIds.alloc(16);
+      profileIds.useAll();
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMIDIDevCfg: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMIDIDevCfg", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MIDIDEVCFG_DEVNAME:
+                  DP("[...] SongFileReader::ReadMIDIDevCfg: found chunk FOURCC_MIDIDEVCFG_DEVNAME.");
+                  if(!ReadString(_in, devName))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIDevCfg: failed to read chunk FOURCC_MIDIDEVCFG_DEVNAME.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIDEVCFG_ALIAS:
+                  DP("[...] SongFileReader::ReadMIDIDevCfg: found chunk FOURCC_MIDIDEVCFG_ALIAS.");
+                  if(!ReadString(_in, alias))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIDevCfg: failed to read chunk FOURCC_MIDIDEVCFG_ALIAS.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIDEVCFG_PROFILE_CH:
+                  DP("[...] SongFileReader::ReadMIDIDevCfg: found chunk FOURCC_MIDIDEVCFG_PROFILE_CH.");
+                  if(1 == chunkDataSize)
+                  {
+                     nextProfileCh = _in.i8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMIDIDevCfg: chunk FOURCC_MIDIDEVCFG_PROFILE_CH has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIDEVCFG_PROFILE_ID:
+                  DP("[...] SongFileReader::ReadMIDIDevCfg: found chunk FOURCC_MIDIDEVCFG_PROFILE_ID.");
+                  if(!ReadString(_in, profileId))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIDevCfg: failed to read chunk FOURCC_MIDIDEVCFG_PROFILE_ID.";
+                     _bytesLeft = -1;
+                  }
+                  else
+                  {
+                     if(-1 != nextProfileCh)
+                     {
+                        profileIds[nextProfileCh & 15] = profileId;
+                        nextProfileCh = -1;
+                     }
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMIDIDevCfg: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMIDIDevCfg: chunk complete.");
+
+            STX_MIDIDevice *dev;
+
+            // trace "xxx readmididevcfg: devName=\""+devName+"\", alias=\""+alias+"\".";
+
+            if(_bOut)
+            {
+               dev <= MIDI.GetMIDIOutDeviceByAliasOrName(devName);
+
+               // trace "xxx  ==> dev="+#(dev);
+
+               if(null == dev)
+               {
+                  dev <= MIDI.AddUnavailOutDevice(devName);
+                  _bAllowUpdate = true;
+               }
+            }
+            else
+            {
+               dev <= MIDI.GetMIDIInDeviceByAliasOrName(devName);
+            }
+
+            if(null != dev)
+            {
+               // trace "xxx    ==> dev.getDeviceName()=\""+dev.getDeviceName()+"\", dev.getAlias()=\""+dev.getAlias()+"\", dev.getGlobalAlias()=\""+dev.getGlobalAlias()+"\".";
+
+               // (note) do NOT allow update when loading pipe or node presets
+               if(_bAllowUpdate)
+               {
+                  // Set project-specific flag
+                  dev.setProjectSpecific(true);
+
+                  // Update alias
+                  dev.updateDeviceAlias(alias);
+
+                  // Set channel profile ids
+                  byte ch = 0;
+                  String *id;
+                  foreach id in profileIds
+                  {
+                     if(!id.isBlank())
+                     {
+                        dev.setProfileId(ch, id);
+                     }
+                     ch++;
+                  }
+               }
+
+               // trace "xxx   ====> dev.getDeviceName()=\""+dev.getDeviceName()+"\", dev.getAlias()=\""+dev.getAlias()+"\", dev.getGlobalAlias()=\""+dev.getGlobalAlias()+"\".";
+            }
+
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMIDIDevCfgs(Stream _in, int _bytesLeft, boolean _bOut, boolean _bAllowUpdate) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMIDIDevCfgs: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMIDIDevCfgs: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMIDIDevCfgs", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MIDIDEVCFG:
+                  DP("[...] SongFileReader::ReadMIDIDevCfgs: found chunk FOURCC_MIDIDEVCFG.");
+                  if(!ReadMIDIDevCfg(_in, chunkDataSize, _bOut, _bAllowUpdate))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIDevCfgs: failed to read chunk FOURCC_MIDIDEVCFG.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMIDIDevCfgs: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMIDIDevCfgs: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // // <method_read.png>
+   // static protected method ReadWaveform(Stream _in, int _bytesLeft) : boolean {
+   //    boolean bRet = false;
+
+   //    if(0 == _bytesLeft)
+   //    {
+   //       DP("[...] SongFileReader::ReadWaveform: chunk is empty.");
+   //       return true;
+   //    }
+
+   //    int        wfType        = 0;
+   //    String     wfName        = "";
+   //    int        wfNumChannels = 1;
+   //    int        wfLoopOffset  = 0;
+   //    int        wfLoopLen     = 0;
+   //    float      wfSampleRate  = 44100.0;
+   //    float      wfBaseFreq    =   440.0;
+   //    float      wfUIOffset    = 0.0f;
+   //    float      wfUIZoom      = 1.0f;
+   //    FloatArray wfData; wfData.free();
+   //    int        wfProcSize    = 0;
+   //    String     wfUIPathName  = "";
+
+
+   //    while(_bytesLeft > 0)
+   //    {
+   //       Integer chunkHeaderRet;
+   //       Integer chunkSizeRet;
+
+   //       ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+   //       DP("[...] SongFileReader::ReadWaveform: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+   //       int chunkDataSize = chunkSizeRet - 8;
+
+   //       if(chunkSizeRet <= _bytesLeft)
+   //       {
+   //          switch(chunkHeaderRet)
+   //          {
+   //             default:
+   //                trace "[~~~] SongFileReader::ReadWaveform: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+   //                _in.seek(chunkDataSize, SEEK_CUR);
+   //                break;
+
+   //             case FOURCC_WAVEFORM_TYPE:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_TYPE.");
+   //                if(chunkDataSize == 1)
+   //                {
+   //                   wfType = _in.i8; // see Waveform.TYPE_xxx
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_TYPE has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_NAME:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_NAME.");
+   //                if(ReadString(_in, wfName) != chunkDataSize)
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_NAME has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_NUMCHANNELS:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_NUMCHANNELS.");
+   //                if(chunkDataSize == 1)
+   //                {
+   //                   wfNumChannels = _in.i8;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_NUMCHANNELS has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_LOOPOFF:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_LOOPOFF.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfLoopOffset = _in.i32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_LOOPOFF has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_LOOPLEN:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_LOOPLEN.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfLoopLen = _in.i32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_LOOPLEN has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_BASEFREQ:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_BASEFREQ.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfBaseFreq = _in.f32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_BASEFREQ has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_SAMPLERATE:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_SAMPLERATE.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfSampleRate = _in.f32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_SAMPLERATE has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_UIOFFSET:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_UIOFFSET.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfUIOffset = _in.f32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_UIOFFSET has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_UIZOOM:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_UIZOOM.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfUIZoom = _in.f32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_UIZOOM has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_UIPATHNAME:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_UIPATHNAME.");
+   //                if(ReadString(_in, wfUIPathName) != chunkDataSize)
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_UIPATHNAME has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_DATA:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_DATA.");
+   //                if(-1 == ReadFloatArray(_in, chunkDataSize, wfData))
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: failed to read chunk FOURCC_WAVEFORM_DATA.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //             case FOURCC_WAVEFORM_PROCSIZE:
+   //                DP("[...] SongFileReader::ReadWaveform: found chunk FOURCC_WAVEFORM_PROCSIZE.");
+   //                if(chunkDataSize == 4)
+   //                {
+   //                   wfProcSize = _in.i32;
+   //                }
+   //                else
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveform: chunk FOURCC_WAVEFORM_PROCSIZE has wrong size.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+
+   //          }
+
+   //          _bytesLeft -= chunkSizeRet;
+   //       }
+   //       else
+   //       {
+   //          trace "[---] SongFileReader::ReadWaveform: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+   //          break;
+   //       }
+
+   //       if(0 == _bytesLeft)
+   //       {
+   //          DP("[...] SongFileReader::ReadWaveform: chunk complete.");
+
+   //          // Create and initialize waveform
+   //          StWaveform wf <= new StWaveform;
+
+   //          wf.uiSetType(wfType);
+
+   //          FloatArray *smpData;
+
+   //          if(Waveforms.TYPE_PROCEDURAL == wf.uiGetType())
+   //          {
+   //             // Alloc and initialize procedural sample data
+   //             if(wf.alloc(wfNumChannels, wfProcSize))
+   //             {
+   //                smpData <= wf.sampleData;
+   //                smpData.fill(0.0f);
+   //             }
+   //          }
+   //          else if(Waveforms.TYPE_EMBEDDED == wf.uiGetType())
+   //          {
+   //             // Copy sample data from temporary buffer
+   //             if(wf.alloc(wfNumChannels, wfData.numElements / wfNumChannels))
+   //             {
+   //                smpData <= wf.sampleData;
+   //                smpData = wfData;
+   //             }
+   //             wfData.free();
+   //          }
+   //          else if(Waveforms.IsExternal(wf))
+   //          {
+   //             wf.uiSetPathName(wfUIPathName);
+
+   //             Waveforms.CreateFromUIPathName(wf);
+   //          }
+
+   //          wf.name          = wfName;
+   //          wf.loopOffset    = wfLoopOffset;
+   //          wf.loopLen       = wfLoopLen;
+   //          wf.baseFrequency = wfBaseFreq;
+   //          wf.sampleRate    = wfSampleRate;
+
+   //          wf.uiSetOffset(wfUIOffset);
+   //          wf.uiSetZoom  (wfUIZoom);
+
+   //          // Add waveform
+   //          Waveforms.Add(deref wf);
+
+   //          bRet = true;
+   //       }
+
+   //    } // while _bytesLeft > 0
+
+   //    return bRet;
+   // }
+
+   // // <method_read.png>
+   // static protected method ReadWaveforms(Stream _in, int _bytesLeft) : boolean {
+   //    boolean bRet = false;
+
+   //    if(0 == _bytesLeft)
+   //    {
+   //       DP("[...] SongFileReader::ReadWaveforms: chunk is empty.");
+   //       return true;
+   //    }
+
+   //    while(_bytesLeft > 0)
+   //    {
+   //       Integer chunkHeaderRet;
+   //       Integer chunkSizeRet;
+
+   //       ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+   //       DP("[...] SongFileReader::ReadWaveforms: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+   //       int chunkDataSize = chunkSizeRet - 8;
+
+   //       if(chunkSizeRet <= _bytesLeft)
+   //       {
+   //          switch(chunkHeaderRet)
+   //          {
+   //             default:
+   //                HandleUnknownChunk("ReadWaveforms", _in, chunkHeaderRet, chunkDataSize);
+   //                break;
+
+   //             case FOURCC_WAVEFORM:
+   //                DP("[...] SongFileReader::ReadWaveforms: found chunk FOURCC_WAVEFORM.");
+   //                if(!ReadWaveform(_in, chunkDataSize))
+   //                {
+   //                   trace "[---] SongFileReader::ReadWaveforms: failed to read chunk FOURCC_WAVEFORM.";
+   //                   _bytesLeft = -1;
+   //                }
+   //                break;
+   //          }
+
+   //          _bytesLeft -= chunkSizeRet;
+   //       }
+   //       else
+   //       {
+   //          trace "[---] SongFileReader::ReadWaveforms: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+   //          break;
+   //       }
+
+   //       if(0 == _bytesLeft)
+   //       {
+   //          DP("[...] SongFileReader::ReadWaveforms: chunk complete.");
+   //          bRet = true;
+   //       }
+
+   //    } // while _bytesLeft > 0
+
+   //    return bRet;
+   // }
+
+   // <method_read.png>
+   static protected method ReadSongCtlTagEntry(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadSongCtlTagEntry: chunk is empty.");
+         return true;
+      }
+
+      PointerArray entries <= current_song.ctltag_entries;
+
+      CtlTagEntry en <= new CtlTagEntry;
+      en.b_name_edited = true;  // for earlier projects that don't have CTLTAG_ENTRY_NAME_EDITED
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               case FOURCC_SONG_CTLTAG_ENTRY_NAME:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_NAME.");
+
+                  if(!ReadString(_in, en.tag_name))
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: failed to read chunk FOURCC_SONG_CTLTAG_ENTRY_NAME.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_NAME_EDITED:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_NAME_EDITED.");
+
+                  if(chunkDataSize == 1)
+                  {
+                     en.b_name_edited = _in.b8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_NAME_EDITED has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_GROUP:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_GROUP.");
+                  if(chunkDataSize == 1)
+                  {
+                     en.group_idx = _in.u8 & 7;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_GROUP has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD.");
+                  if(chunkDataSize == 1)
+                  {
+                     en.push_pad_idx = _in.s8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_COLOR:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_COLOR.");
+                  if(chunkDataSize == 1)
+                  {
+                     en.push_color = _in.u8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_COLOR has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_TYPE:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_TYPE.");
+                  if(chunkDataSize == 1)
+                  {
+                     en.push_type = _in.u8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_TYPE has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_A:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_A.");
+                  if(chunkDataSize == 2)
+                  {
+                     en.val_a = _in.s16;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_A has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_B:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_B.");
+                  if(chunkDataSize == 2)
+                  {
+                     en.val_b = _in.s16;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_B has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD_STATE:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD_STATE.");
+                  if(chunkDataSize == 1)
+                  {
+                     en.pad_state = _in.u8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD_STATE has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_PUSH_LAST_SENT:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_LAST_SENT.");
+                  if(chunkDataSize == 2)
+                  {
+                     en.last_sent_val = _in.s16;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_PUSH_LAST_SENT has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_SEND_RESET:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_SEND_RESET.");
+                  if(chunkDataSize == 1)
+                  {
+                     en.b_send_reset = _in.b8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_SEND_RESET has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY_RESET_VALUE:
+                  DP("[...] SongFileReader::ReadSongCtlTagEntry: found chunk FOURCC_SONG_CTLTAG_ENTRY_RESET_VALUE.");
+                  if(chunkDataSize == 2)
+                  {
+                     en.reset_value = _in.i16 & 16383;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTagEntry: chunk FOURCC_SONG_CTLTAG_ENTRY_RESET_VALUE has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               default:
+                  boolean bRead = TryReadMIDIMapEventType(_in, chunkHeaderRet, chunkDataSize, en.mm_event);
+                  if(maybe == bRead)
+                  {
+                     bRead = TryReadMIDIMapEvent(_in, chunkHeaderRet, chunkDataSize, en.mm_event, true/*outDev*/);
+                  }
+                  if(true != bRead)
+                  {
+                     HandleUnknownChunk("ReadSongCtlTagEntry", _in, chunkHeaderRet, chunkDataSize);
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadSongCtlTagEntry: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            current_song.ctltag_entries.add(#(deref en));
+
+            DP("[...] SongFileReader::ReadSongCtlTagEntry: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadSongCtlTags(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadSongCtlTags: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadSongCtlTags: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadSongCtlTags", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_SONG_CTLTAG_ENTRY:
+                  DP("[...] SongFileReader::ReadSongCtlTags: found chunk FOURCC_SONG_CTLTAG_ENTRY.");
+
+                  if(!ReadSongCtlTagEntry(_in, chunkDataSize))
+                  {
+                     trace "[---] SongFileReader::ReadSongCtlTags: failed to read CtlTag entry.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadSongCtlTags: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadSongCtlTags: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadSongCursorPos(Stream _in) : int {
+      byte ver = _in.i8; // version
+
+      // current_song.ui_song_offset = _in.i32;
+      current_song.song_offset = _in.i32;
+
+      return 5;
+   }
+
+   // <method_read.png>
+   static protected method ReadSongAttributes(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         trace "[---] SongFileReader::ReadSongAttributes: chunk is empty.";
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+         ST_Song song <= current_song;
+         // // PatternView pv <= Global.pattern_view;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadSongAttributes: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            int chunkDataSize = chunkSizeRet - 8;
+            switch(chunkHeaderRet)
+            {
+               default:
+                  trace "[~~~] SongFileReader::ReadSongAttributes: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+                  _in.seek(chunkDataSize, SEEK_CUR);
+                  break;
+
+               case FOURCC_SONG_NAME:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_NAME chunk.");
+                  if(ReadString(_in, song.song_name) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_NAME chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_SUBNAME:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_SUBNAME chunk.");
+                  if(ReadString(_in, song.sub_name) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_SUBNAME chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_AUTHOR:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_AUTHOR chunk.");
+                  if(ReadString(_in, song.author_name) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_AUTHOR chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_COMMENT:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_COMMENT chunk.");
+                  if(ReadString(_in, song.author_comment) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_COMMENT chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_SMFEXPORTPATH:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_SMFEXPORTPATH chunk.");
+                  if(ReadString(_in, song.smf_export_pathname) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_SMFEXPORTPATH chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_BPM:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_BPM chunk.");
+                  if(chunkDataSize == 4)
+                  {
+                     song.bpm = _in.f32;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_BPM chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_PPQ:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_PPQ chunk.");
+                  if(chunkDataSize == 4)
+                  {
+                     song.ppq = _in.i32;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_PPQ chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_SIG_BEATS:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_SIG_BEATS chunk.");
+                  if(chunkDataSize == 1)
+                  {
+                     song.sig_beats = _in.i8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_SIG_BEATS chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_SIG_NOTELEN:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_SIG_NOTELEN chunk.");
+                  if(chunkDataSize == 1)
+                  {
+                     song.sig_notelen = _in.i8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_SIG_BEATS chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_AUDIOMASTERVOL:
+                  DP("[...] SongFileReader::ReadSongAttributes: reading FOURCC_SONG_AUDIOMASTERVOL chunk.");
+                  if(chunkDataSize == 4)
+                  {
+                     // obsolete
+                     _in.getF32();
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_AUDIOMASTERVOL chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_WAVID:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_WAVID.");
+                  if(chunkDataSize == 4)
+                  {
+                     // obsolete
+                     _in.getI32(); // songWavId
+                     int songWavId = _in.i32;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_WAVID has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_WAVAREA:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_WAVAREA.");
+                  if(chunkDataSize == 8)
+                  {
+                     // obsolete
+                     _in.getI32();  // off
+                     _in.getI32();  // len
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_WAVAREA has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_WAVREALTIME:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_WAVREALTIME.");
+                  if(chunkDataSize == 1)
+                  {
+                     // obsolete
+                     _in.getI8();
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_WAVREALTIME has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_WAVNORMALIZE:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_WAVNORMALIZE.");
+                  if(chunkDataSize == 1)
+                  {
+                     // obsolete
+                     _in.getI8();
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_WAVNORMALIZE has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_WAVCLEAR:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_WAVCLEAR.");
+                  if(chunkDataSize == 1)
+                  {
+                     // obsolete
+                     _in.getI8();
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_WAVCLEAR has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_WAVNUMTAKES:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_WAVNUMTAKES.");
+                  if(chunkDataSize == 1)
+                  {
+                     // obsolete
+                     _in.getI8();
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_WAVNUMTAKES has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_MARKERS:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_MARKERS.");
+                  if(-1 == ReadIntArray(_in, chunkDataSize, song.song_markers))
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: failed to read chunk FOURCC_SONG_MARKERS.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_MARKER_LABELS:
+                  DP("[...] SongFileReader::ReadSongAttributes: found chunk FOURCC_SONG_MARKER_LABELS.");
+                  if(-1 == ReadStringArray(_in, chunkDataSize, song.song_marker_labels))
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: failed to read chunk FOURCC_SONG_MARKER_LABELS.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CURSORPOS:
+                  if(chunkDataSize != ReadSongCursorPos(_in))
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: failed to read chunk FOURCC_SONG_CURSORPOS.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CYCLELENGTH:
+                  if(2 == chunkDataSize)
+                  {
+                     song.cycle_length = _in.s16;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_CYCLELENGTH has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CYCLEENABLE:
+                  if(1 == chunkDataSize)
+                  {
+                     song.b_cycle = _in.i8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_CYCLEENABLE has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_PIPENODE_AB:
+                  if(4 == chunkDataSize)
+                  {
+                     root_form.pg_node.loadPipeNodeAB(_in);
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_PIPENODE_AB has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_PIPENODE_GID_MAX:
+                  if(4 == chunkDataSize)
+                  {
+                     song.nodeSetMaxGID(_in.i32);
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: chunk FOURCC_SONG_PIPENODE_GID_MAX has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_PIPEROOT:
+                  int pipeRootOff = _in.offset;
+
+                  if(!PipeIO.PipeRoot_LoadState(_in, piperoot_outdevidxmap, piperoot_outdevusecount))
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: failed to read chunk FOURCC_SONG_PIPEROOT.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_SAMPLE_PREFIXES:
+                  int recOff = _in.offset;
+                  StringArray aPrefixes <= AudioRecordDialog.name_prefix_history;
+                  aPrefixes << _in;
+                  int recNumRead = _in.offset - recOff;
+                  if(recNumRead != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_SAMPLE_PREFIXES has wrong chunk size (have="+recNumRead+" expect="+chunkDataSize+")";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_SAMPLE_FILTERS:
+                  int fltOff = _in.offset;
+                  StringArray aFlt <= AudioLiveRecForm.sample_filters;
+                  aFlt << _in;
+                  int fltNumRead = _in.offset - fltOff;
+                  if(fltNumRead != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SONG_SAMPLE_FILTERS has wrong chunk size (have="+fltNumRead+" expect="+chunkDataSize+")";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAGS:
+                  if(!ReadSongCtlTags(_in, chunkDataSize))
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: failed to read CtlTags.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG_CTLTAGS_STATE:
+                  if(! (root_form.pg_ctltag.loadState(_in)))
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: failed to read CTLTAGS_STATE.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadSongAttributes: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadSongAttributes: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method TryReadMIDIMapEventType(Stream _in,
+                                                   Integer chunkHeaderRet,
+                                                   int chunkDataSize,
+                                                   MIDIMapEventType en
+                                                   ) {
+
+      switch(chunkHeaderRet)
+      {
+         default:
+            return maybe;
+
+         case FOURCC_MMC_ENTRY_TYPE:
+            DP("[...] SongFileReader::TryReadMIDIMapEventType: found chunk FOURCC_MMC_ENTRY_TYPE.");
+
+            if(chunkDataSize == 1)
+            {
+               en.type = _in.s8;
+               // trace "xxx read MMC_ENTRY_TYPE="+en.type;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEventType: chunk FOURCC_MMC_ENTRY_TYPE has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMC_ENTRY_EXT_TYPE:
+            DP("[...] SongFileReader::TryReadMIDIMapEventType: found chunk FOURCC_MMC_ENTRY_EXT_TYPE.");
+
+            if(chunkDataSize == 1)
+            {
+               // a bug in pre 18Feb2015 versions, chunk was not saved as short. (nrpn) overflow!
+               _in.getI8();
+               en.ext_type = -1;
+               return true;
+            }
+            else if(chunkDataSize == 2)
+            {
+               en.ext_type = _in.s16;
+               // trace "xxx read MMC_ENTRY_EXT_TYPE="+en.ext_type;
+               if(en.ext_type == 65535) // xxx fix for old file versions
+                  en.ext_type = -1;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEventType: chunk FOURCC_MMC_ENTRY_EXT_TYPE has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMC_ENTRY_CLASS_TYPE:
+            DP("[...] SongFileReader::TryReadMIDIMapEventType: found chunk FOURCC_MMC_ENTRY_CLASS_TYPE.");
+
+            if(chunkDataSize == 1)
+            {
+               en.class_type = _in.i8;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEventType: chunk FOURCC_MMC_ENTRY_CLASS_TYPE has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMC_ENTRY_SYN_TYPE:
+            DP("[...] SongFileReader::TryReadMIDIMapEventType: found chunk FOURCC_MMC_ENTRY_SYN_TYPE.");
+
+            if(chunkDataSize == 1)
+            {
+               en.syn_type = _in.i8;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEventType: chunk FOURCC_MMC_ENTRY_SYN_TYPE has wrong size.";
+               return false;
+            }
+            break;
+
+      }
+   }
+
+   // <method_read.png>
+   static protected method TryReadMIDIMapEvent(Stream _in,
+                                               Integer chunkHeaderRet,
+                                               int chunkDataSize,
+                                               MIDIMapEvent en,
+                                               boolean _bOutDev
+                                               ) {
+
+      switch(chunkHeaderRet)
+      {
+         default:
+            return TryReadMIDIMapEventType(_in, chunkHeaderRet, chunkDataSize, en);
+
+         case FOURCC_MMC_ENTRY_DEV:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMC_ENTRY_DEV chunkDataSize="+chunkDataSize);
+
+            String devAliasOrName;
+            devAliasOrName.empty();
+
+            if(chunkDataSize > 0)
+            {
+               if(ReadString(_in, devAliasOrName) != chunkDataSize)
+               {
+                  trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMC_ENTRY_DEV has wrong size.";
+                  return false;
+               }
+               else
+               {
+                  if(_bOutDev)
+                  {
+                     en.dev <= MIDI.GetMIDIOutDeviceByAliasOrName(devAliasOrName);
+                  }
+                  else
+                  {
+                     en.dev <= MIDI.GetMIDIInDeviceByAliasOrName(devAliasOrName);
+                  }
+
+                  if(null == en.dev)
+                  {
+                     if(STConfig.b_debug_mididev_unavail)
+                        TraceOnce("[~~~] SongFileReader::TryReadMIDIMapEvent: device \""+devAliasOrName+"\" is currently not available.");
+                     en.unavail_devname <= String(devAliasOrName);
+                  }
+
+                  return true;
+               }
+            }
+            else
+            {
+               // Empty chunk (after "remove_unused_out_devs" minishell cmd)
+               en.dev <= null;
+               return true;
+            }
+            break;
+
+         case FOURCC_MMC_ENTRY_CH:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMC_ENTRY_CH.");
+
+            if(chunkDataSize == 1)
+            {
+               en.dev_ch = _in.i8 & 15;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMC_ENTRY_CH has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_TYPE:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_TYPE.");
+
+            if(chunkDataSize == 2)
+            {
+               en.morph_type = _in.i16;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_TYPE has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_ARG1:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_ARG1.");
+
+            if(chunkDataSize == 2)
+            {
+               en.morph_arg1 = _in.i16;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_ARG1 has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_ARG2:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_ARG2.");
+
+            if(chunkDataSize == 2)
+            {
+               en.morph_arg2 = _in.i16;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_ARG2 has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_NOTE_ONOFF:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_NOTE_ONOFF.");
+
+            if(chunkDataSize == 1)
+            {
+               en.b_morph_note_onoff = _in.i8;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_NOTE_ONOFF has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_LABEL:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_LABEL.");
+
+            if(chunkDataSize > 0)
+            {
+               local String morphLabel;
+               if(!ReadString(_in, morphLabel))
+               {
+                  trace "[---] SongFileReader::TryReadMIDIMapEvent: failed to read chunk FOURCC_MMS_ENTRY_MORPH_LABEL.";
+                  return false;
+               }
+               else
+               {
+                  en.setMorphLabel(morphLabel);
+                  return true;
+               }
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_LABEL has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_AUTO_LABEL:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_AUTO_LABEL.");
+
+            if(chunkDataSize > 0)
+            {
+               local String morphAutoLabel;
+               if(!ReadString(_in, morphAutoLabel))
+               {
+                  trace "[---] SongFileReader::TryReadMIDIMapEvent: failed to read chunk FOURCC_MMS_ENTRY_MORPH_AUTO_LABEL.";
+                  return false;
+               }
+               else
+               {
+                  en.setMorphAutoLabel(morphAutoLabel);
+                  return true;
+               }
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_AUTO_LABEL has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_LASTARG1:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_LASTARG1.");
+
+            if(chunkDataSize == 2)
+            {
+               en.last_morph_src_arg1 = _in.u16;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_LASTARG1 has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_ALL_CH:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_ALL_CH.");
+
+            if(chunkDataSize == 1)
+            {
+               en.b_morph_all_ch = _in.i8;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_ALL_CH has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_ALL_TYPES:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_ALL_TYPES.");
+
+            if(chunkDataSize == 1)
+            {
+               en.b_morph_all_types = _in.i8;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_ALL_TYPES has wrong size.";
+               return false;
+            }
+            break;
+
+         case FOURCC_MMS_ENTRY_MORPH_ALL_SUBTYPES:
+            DP("[...] SongFileReader::TryReadMIDIMapEvent: found chunk FOURCC_MMS_ENTRY_MORPH_ALL_SUBTYPES.");
+
+            if(chunkDataSize == 1)
+            {
+               en.b_morph_all_subtypes = _in.i8;
+               return true;
+            }
+            else
+            {
+               trace "[---] SongFileReader::TryReadMIDIMapEvent: chunk FOURCC_MMS_ENTRY_MORPH_ALL_SUBTYPES has wrong size.";
+               return false;
+            }
+            break;
+
+      }
+   }
+
+   // <method_read.png>
+   static protected method ReadMMCEntry(Stream _in, int _bytesLeft, MIDIMapContext mmc) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMMCEntry: chunk is empty.");
+         return true;
+      }
+
+      local MIDIMapEvent en;
+      boolean bEntryValid = true;
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMMCEntry: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            boolean bReadEvent = TryReadMIDIMapEvent(_in, chunkHeaderRet, chunkDataSize, en, false/*outDev*/);
+
+            if(false != bReadEvent)
+            {
+               if(maybe == bReadEvent)
+               {
+                  switch(chunkHeaderRet)
+                  {
+                     default:
+                        HandleUnknownChunk("ReadMMCEntry", _in, chunkHeaderRet, chunkDataSize);
+                        bEntryValid = false;
+                        break;
+
+                     case FOURCC_MMC_ENTRY_TARGET:
+                        DP("[...] SongFileReader::ReadMMCEntry: found chunk FOURCC_MMC_ENTRY_TARGET.");
+                        String targetName;
+                        targetName.empty();
+                        if(ReadString(_in, targetName) != chunkDataSize)
+                        {
+                           trace "[---] SongFileReader::ReadMMCEntry: chunk FOURCC_MMC_ENTRY_TARGET has wrong size.";
+                           _bytesLeft = -1;
+                           bEntryValid = false;
+                        }
+                        else
+                        {
+                           // trace "xxx MMC_ENTRY_TARGET=\""+targetName+"\".";
+
+                           // // xxx compatibility hack, to be removed in future releases
+                           // // if(targetName.startsWith("MMT_GLOBAL_SCENE_"))
+                           // // {
+                           // //    if(!targetName.startsWith("MMT_GLOBAL_SCENE_A_"))
+                           // //    {
+                           // //       targetName.replace("MMT_GLOBAL_SCENE_", "MMT_GLOBAL_SCENE_A_");
+                           // //    }
+                           // // }
+
+                           MIDIMapTarget target <= mmc.mmcGetTargetByName(targetName);
+
+                           if(null != target)
+                           {
+                              en.bound_target <= target;
+                           }
+                           else
+                           {
+                              trace "[~~~] SongFileReader::ReadMMCEntry: invalid target \""+targetName+"\", skipping..";
+                              bEntryValid = false;
+                           }
+                        }
+                        break;
+                  }
+               }
+               // else: chunk read by TryRead*()
+            }
+            else
+            {
+               _bytesLeft = -1;
+               bEntryValid = false;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMMCEntry: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            bEntryValid = false;
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMMCEntry: chunk complete.");
+            bRet = true;
+
+            if(bEntryValid)
+            {
+               mmc.mmc_entries.add(#(deref en));
+            }
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMMC(Stream _in, int _bytesLeft, MIDIMapContext mmc) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMMC: chunk is empty.");
+         return true;
+      }
+
+      String mmcName;
+      mmcName.empty();
+
+      PointerArray entries <= mmc.mmc_entries;
+      entries.free();
+
+      mmc.midimorph_group_idx = -1;
+      mmc.midimorph_scene_idx = -1;
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMMC: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMMC", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MMC_NAME:
+                  DP("[...] SongFileReader::ReadMMC: found chunk FOURCC_MMC_NAME.");
+                  if(ReadString(_in, mmcName) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadMMC: chunk FOURCC_MMC_NAME has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  else
+                  {
+                     if(mmcName != mmc.mmc_name)
+                     {
+                        trace "[~~~] SongFileReader::ReadMMC: MMC_NAME != mmc.name (\""+mmcName+"\" != \""+mmc.mmc_name+"\")";
+                     }
+                  }
+                  break;
+
+               case FOURCC_MMC_MIDIMORPH_GROUP:
+                  DP("[...] SongFileReader::ReadMMC: found chunk FOURCC_MMC_MIDIMORPH_GROUP.");
+
+                  if(chunkDataSize == 1)
+                  {
+                     mmc.midimorph_group_idx = _in.u8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMMC: chunk FOURCC_MMC_MIDIMORPH_GROUP has wrong size.";
+                     return false;
+                  }
+                  break;
+
+               case FOURCC_MMC_MIDIMORPH_SCENE:
+                  DP("[...] SongFileReader::ReadMMC: found chunk FOURCC_MMC_MIDIMORPH_SCENE.");
+
+                  if(chunkDataSize == 1)
+                  {
+                     mmc.midimorph_scene_idx = _in.u8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMMC: chunk FOURCC_MMC_MIDIMORPH_SCENE has wrong size.";
+                     return false;
+                  }
+                  break;
+
+               case FOURCC_MMC_PUSH_BGCOLS:
+                  DP("[...] SongFileReader::ReadMMC: found chunk FOURCC_MMC_PUSH_BGCOLS.");
+                  if(ReadIntArray(_in, chunkDataSize, mmc.push_pad_colors_inactive) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadMMC: chunk FOURCC_MMC_PUSH_BGCOLS has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MMC_PUSH_FGCOLS:
+                  DP("[...] SongFileReader::ReadMMC: found chunk FOURCC_MMC_PUSH_FGCOLS.");
+                  if(ReadIntArray(_in, chunkDataSize, mmc.push_pad_colors_active) != chunkDataSize)
+                  {
+                     trace "[---] SongFileReader::ReadMMC: chunk FOURCC_MMC_PUSH_FGCOLS has wrong size.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MMC_ENTRY:
+                  DP("[...] SongFileReader::ReadMMC: found chunk FOURCC_MMC_ENTRY.");
+
+                  if(!ReadMMCEntry(_in, chunkDataSize, mmc))
+                  {
+                     trace "[---] SongFileReader::ReadMMC: failed to read MMC entry.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMMC: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMMC: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static public method ReadMMCHeader(Stream _in, int _bytesLeft, MIDIMapContext mmc) : boolean {
+      // aka "ReadMIDIMap"
+      //  (note) also called by Global.LazyAccessNodeClass() when reading stashed MMC data
+      boolean bRet = false;
+
+      byte viewId = -1;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMMCHeader: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMMCHeader: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMMCHeader", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MMC:
+                  DP("[...] SongFileReader::ReadMMCHeader: found chunk FOURCC_MMC.");
+
+                  MIDIMapContext *mmcRead;
+
+                  if(-1 == viewId)
+                  {
+                     // Read 'master' MMC
+                     mmcRead <= mmc;
+                  }
+                  else
+                  {
+                     // Read sub-view MMC
+                     mmcRead <= mmc.mmcViewGetById(viewId);
+                  }
+
+                  if(null != mmcRead)
+                  {
+                     if(!ReadMMC(_in, chunkDataSize, mmcRead))
+                     {
+                        trace "[---] SongFileReader::ReadMMCHeader: failed to read MMC (viewId="+viewId+").";
+                        _bytesLeft = -1;
+                     }
+                  }
+                  else
+                  {
+                     // Invalid view ID or MMC View does not exist anymore, skip
+                     trace "[~~~] SongFileReader::ReadMMCHeader: invalid view ID ("+viewId+"), skipping MMC chunk..";
+                     _in.seek(chunkDataSize, SEEK_CUR);
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_VIEWID:
+                  DP("[...] SongFileReader::ReadMMCHeader: found chunk FOURCC_MIDIMAP_VIEWID.");
+
+                  if(1 == chunkDataSize)
+                  {
+                     viewId = _in.i8;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMMCHeader: chunk FOURCC_MIDIMAP_VIEWID has wrong size.";
+                     _bytesLeft = -1;
+                  }
+
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMMCHeader: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMMCHeader: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMIDIMaps(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      String nextNodeClassName;
+      nextNodeClassName.empty();
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMIDIMaps: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMIDIMaps: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMIDIMaps", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MIDIMAP_GLOBAL:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_GLOBAL.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_GLOBAL.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGSTART:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGSTART.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_start))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGSTART.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGMORPH:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGMORPH.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_editmidimorph))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGMORPH.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGPIPEROOT:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGPIPEROOT.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_piperoot))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGPIPEROOT.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGPIPE:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGPIPE.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_pipe))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGPIPE.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGPIPEMAP:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGPIPEMAP.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_pipemap))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGPIPEMAP.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGPROJECT:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGPROJECT.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_project))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGPROJECT.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_PGCTLTAG:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_PGCTLTAG.");
+
+                  if(!ReadMMCHeader(_in, chunkDataSize, root_form.pg_ctltag))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_PGCTLTAG.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_NODEEDITOR_CLASSNAME:
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_NODEEDITOR_CLASSNAME.");
+
+                  nextNodeClassName.empty();
+
+                  if(!ReadString(_in, nextNodeClassName))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: failed to read chunk FOURCC_MIDIMAP_NODEEDITOR_CLASSNAME.";
+                     _bytesLeft = -1;
+                  }
+                  else
+                  {
+                     // renamed on 17Oct2015
+                     nextNodeClassName.replace("NodeMultiSeqEditor", "NodeBufferEditor");
+                  }
+                  break;
+
+               case FOURCC_MIDIMAP_NODEEDITOR_DATA:
+
+                  if(!nextNodeClassName.isBlank())
+                  {
+                     Object clazz <= TKS.findScriptClass(null/*nsp*/, nextNodeClassName);
+
+                     if(clazz instanceof Node)
+                     {
+                        Value ret;
+                        if(TKS.evalMethodByName(clazz, "nodeGetEditor", null/*args*/, ret))
+                        {
+                           // trace "xxx ret.objectVal="+#(ret.objectValue);
+
+                           MIDIMapContext mmc <= ret.objectValue;
+
+                           if(mmc instanceof MIDIMapContext)
+                           {
+                              if(!ReadMMCHeader(_in, chunkDataSize, mmc))
+                              {
+                                 trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_NODEEDITOR_DATA.";
+                                 _bytesLeft = -1;
+                              }
+                           }
+                           else
+                           {
+                              trace "[---] SongFileReader::ReadMIDIMaps: node class \""+nextNodeClassName+"\" editor not a MIDIMapContext. skipping data..";
+                              _in.seek(chunkDataSize, SEEK_CUR);
+                           }
+                        }
+                        else
+                        {
+                           trace "[---] SongFileReader::ReadMIDIMaps: node class \""+nextNodeClassName+"\" nodeGetEditor() failed. skipping data..";
+                           _in.seek(chunkDataSize, SEEK_CUR);
+                        }
+                     }
+                     else
+                     {
+                        // Stash data for currently unloaded editor class
+                        Global.Debug2("SongFileReader::ReadMIDIMaps: stash MMC for editor_class=\""+nextNodeClassName+"\"");
+                        Buffer bufMMC <= new Buffer;
+                        g_stashed_raw_project_node_mmc_data[nextNodeClassName] = deref bufMMC;
+                        _in.readBuffer(bufMMC,
+                                       0/*off*/,
+                                       chunkDataSize,
+                                       true/*bResize*/
+                                       );
+
+                        // // trace "[---] SongFileReader::ReadMIDIMaps: node class \""+nextNodeClassName+"\" not found or not a Node. skipping data..";
+                        // // _in.seek(chunkDataSize, SEEK_CUR);
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMaps: NODEEDITOR_DATA before NODEEDITOR_CLASSNAME. skipping data..";
+                     _in.seek(chunkDataSize, SEEK_CUR);
+                  }
+
+                  nextNodeClassName.empty();
+                  break;
+
+               case FOURCC_MIDIMAP_NTSEQCTX:
+                  // [29Aug2019] removed
+                  DP("[...] SongFileReader::ReadMIDIMaps: found chunk FOURCC_MIDIMAP_NTSEQCTX (SKIP).");
+                  _in.seek(chunkDataSize, SEEK_CUR);
+
+                  // // NodeTracker nt <= NodeTracker;
+                  // // NodeTrackerEditor ntEditor <= nt.nodeGetEditor();
+
+                  // // if(!ReadMMCHeader(_in, chunkDataSize, ntEditor.mmc_seq))
+                  // // {
+                  // //    trace "[---] SongFileReader::ReadMIDIMaps: failed to read MIDIMAP_NTSEQCTX.";
+                  // //    _bytesLeft = -1;
+                  // // }
+                  break;
+
+
+            } // switch chunkHeaderRet
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMIDIMaps: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMIDIMaps: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMMSEntryMorphTarget(Stream _in, int _bytesLeft, MIDIMapEvent mt) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMMSMorphTarget: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMMSMorphTarget: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            boolean bReadEvent = TryReadMIDIMapEvent(_in, chunkHeaderRet, chunkDataSize, mt, true/*bOutDev*/);
+
+            if(false != bReadEvent)
+            {
+               if(maybe == bReadEvent)
+               {
+                  switch(chunkHeaderRet)
+                  {
+                     default:
+                        HandleUnknownChunk("ReadMMSMorphTarget", _in, chunkHeaderRet, chunkDataSize);
+                        break;
+                  }
+               }
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMMSMorphTarget: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMMSMorphTarget: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMMSEntry(Stream _in, int _bytesLeft, MIDIMorphScene mms) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMMSEntry: chunk is empty.");
+         return true;
+      }
+
+      local MIDIMapEvent en;
+      boolean bEntryValid = true;
+      en.b_morph_enable = true;
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMMCEntry: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            boolean bReadEvent = TryReadMIDIMapEvent(_in, chunkHeaderRet, chunkDataSize, en, false/*bOutDev*/);
+
+            if(false != bReadEvent)
+            {
+               if(maybe == bReadEvent)
+               {
+                  switch(chunkHeaderRet)
+                  {
+                     default:
+                        HandleUnknownChunk("ReadMMSEntry", _in, chunkHeaderRet, chunkDataSize);
+                        bEntryValid = false;
+                        break;
+
+                     case FOURCC_MMS_ENTRY_MORPH_TARGET:
+                        local MIDIMapEvent mt;
+                        en.morph_target <= deref mt;
+
+                        if(!ReadMMSEntryMorphTarget(_in, chunkDataSize, mt))
+                        {
+                           trace "[---] SongFileReader::ReadMMSEntry: failed to read morph target.";
+                           _bytesLeft = -1;
+                        }
+                        break;
+
+                     case FOURCC_MMS_ENTRY_MORPH_ENABLE:
+                        if(1 == chunkDataSize)
+                        {
+                           en.b_morph_enable = _in.b8;
+                        }
+                        else
+                        {
+                           trace "[---] SongFileReader::ReadMMSEntry: chunk FOURCC_MMS_ENTRY_MORPH_ENABLE has wrong size.";
+                           _bytesLeft = -1;
+                        }
+                        break;
+                  }
+               }
+            }
+            else
+            {
+               _bytesLeft = -1;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMMSEntry: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            bEntryValid = false;
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMMSEntry: chunk complete.");
+            bRet = true;
+
+            if(bEntryValid)
+            {
+               mms.mms_entries.add(#(deref en));
+            }
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMMS(Stream _in, int _bytesLeft, MIDIMorphScene _mmsOrNull) : boolean {
+      // 'mmsOrNull': when !null, read entries to previously created scene. when null, find scene by groupId/mmsId stored in stream.
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMMS: chunk is empty.");
+         return true;
+      }
+
+      int groupId;
+      int mmsId = -1;
+      int mmsLastRow = 0;
+      MIDIMorphScene mms <= _mmsOrNull;
+
+      PointerArray *entries;
+      if(null != mms)
+      {
+         // when loading MIDIMorphScene preset
+         entries <= mms.mms_entries;
+         entries.free();
+      }
+      else
+      {
+         // when loading project file (has FOURCC_MMS_ID chunk)
+         entries <= null;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMMS: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMMS", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MMS_NAME:
+                  DP("[...] SongFileReader::ReadMMS: found chunk FOURCC_MMS_NAME.");
+                  if(null != mms)
+                  {
+                     if(ReadString(_in, mms.mms_name) != chunkDataSize)
+                     {
+                        trace "[---] SongFileReader::ReadMMS: chunk FOURCC_MMS_NAME has wrong size.";
+                        _bytesLeft = -1;
+                     }
+                  }
+                  else
+                  {
+                     // No valid scene, skip..
+                     _in.offset = _in.offset + chunkSizeRet;
+                  }
+                  break;
+
+               case FOURCC_MMS_ID:
+                  // (note) chunk not used in exported MIDIMorphScene preset files
+                  if(chunkDataSize == 2)
+                  {
+                     mmsId = _in.u16;
+                     groupId = (mmsId >> 8) & 255;
+                     mmsId = mmsId & 255;
+
+                     // trace "xxx SongFileReader: FOURCC_MMS_ID: mmsId="+mmsId+" groupId="+groupId;
+
+                     if(null == _mmsOrNull)
+                     {
+                        // trace "xxx read mmsId="+mmsId;
+                        mms <= MIDIMorphScene.GetSceneByIdx(groupId, mmsId);
+                     }
+                     // else: load single MIDIMorphScene from separate file (target=existing scene)
+
+                     if(null != mms)
+                     {
+                        // ok, continue reading
+                        entries <= mms.mms_entries;
+                        entries.free();
+                     }
+                     else
+                     {
+                        trace "[~~~] SongFileReader::ReadMIDIMorphScenes: max #scenes exceeded, skipping..";
+                     }
+
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMMS: FOURCC_MMS_ID chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MMS_LASTROW:
+                  // (note) chunk not used in exported MIDIMorphScene preset files
+                  if(chunkDataSize == 2)
+                  {
+                     mmsLastRow = _in.u16;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMMS: FOURCC_MMS_LASTROW chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MMS_ENTRY:
+                  DP("[...] SongFileReader::ReadMMS: found chunk FOURCC_MMS_ENTRY.");
+
+                  if(null != mms)
+                  {
+                     if(!ReadMMSEntry(_in, chunkDataSize, mms))
+                     {
+                        trace "[---] SongFileReader::ReadMMS: failed to read MMS entry.";
+                        _bytesLeft = -1;
+                     }
+                  }
+                  else
+                  {
+                     // No valid scene, skip..
+                     _in.offset = _in.offset + chunkSizeRet;
+                  }
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMMS: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMMS: chunk complete.");
+            if(null != mms)
+            {
+               mms.last_selected_row_idx = mmsLastRow;
+            }
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadMIDIMorphScenes(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadMIDIMorphScenes: chunk is empty.");
+         return true;
+      }
+
+      MIDIMorphScene.AllocScenes();
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadMIDIMorphScenes: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadMIDIMorphScenes", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_MMS:
+                  DP("[...] SongFileReader::ReadMIDIMorphScenes: found chunk FOURCC_MMS.");
+
+                  if(!ReadMMS(_in, chunkDataSize, null/*mmsOrNull*/))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMorphScenes: failed to read MMS.";
+                     _bytesLeft = -1;
+                  }
+
+                  break;
+
+               case FOURCC_MORPHSCENES_CURRENT:
+                  DP("[...] SongFileReader::ReadMIDIMorphScenes: found chunk FOURCC_MORPHSCENES_CURRENT.");
+                  if(chunkDataSize >= 5)
+                  {
+                     MIDIMorphScene.SelectSceneByIdx(0/*A*/, _in.i8);
+                     MIDIMorphScene.SelectSceneByIdx(1/*B*/, _in.i8);
+                     MIDIMorphScene.SelectSceneByIdx(2/*C*/, _in.i8);
+                     MIDIMorphScene.SelectSceneByIdx(3/*D*/, _in.i8);
+                     if(chunkDataSize >= 9)
+                     {
+                        // [22May2018] added scenes E..H
+                        MIDIMorphScene.SelectSceneByIdx(4/*E*/, _in.i8);
+                        MIDIMorphScene.SelectSceneByIdx(5/*F*/, _in.i8);
+                        MIDIMorphScene.SelectSceneByIdx(6/*G*/, _in.i8);
+                        MIDIMorphScene.SelectSceneByIdx(7/*H*/, _in.i8);
+                     }
+                     MIDIMorphScene.last_changed_group = _in.u8 % MIDIMorphScene.NUM_GROUPS;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMorphScenes: FOURCC_MORPHSCENES_CURRENT chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_MORPHSCENES_MULTIS:
+                  DP("[...] SongFileReader::ReadMIDIMorphScenes: found chunk FOURCC_MORPHSCENES_MULTIS.");
+                  // Read multi presets
+                  if(!MIDIMorphScene.LoadStateMultis(_in))
+                  {
+                     trace "[---] SongFileReader::ReadMIDIMorphScenes: failed to read MORPHSCENES_MULTIS.";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadMIDIMorphScenes: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadMIDIMorphScenes: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadFaderPort(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadFaderPort: chunk is empty.");
+         return true;
+      }
+
+      int readStartOff = _in.offset;
+
+      if(faderport.loadState(_in))
+      {
+         int numRead = _in.offset - readStartOff;
+
+         if(numRead == _bytesLeft)
+         {
+            // Succeeded
+            bRet = true;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadFaderPort: numRead="+numRead+" != bytesLeft="+_bytesLeft;
+         }
+      }
+      else
+      {
+         trace "[---] SongFileReader::ReadFaderPort: faderport.loadState() failed.";
+         bRet = false;
+      }
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadConsole1(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadConsole1: chunk is empty.");
+         return true;
+      }
+
+      int readStartOff = _in.offset;
+
+      if(console1.loadState(_in))
+      {
+         int numRead = _in.offset - readStartOff;
+
+         if(numRead == _bytesLeft)
+         {
+            // Succeeded
+            bRet = true;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadConsole1: numRead="+numRead+" != bytesLeft="+_bytesLeft;
+         }
+      }
+      else
+      {
+         trace "[---] SongFileReader::ReadConsole1: console1.loadState() failed.";
+         bRet = false;
+      }
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadProfileData(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadProfileData: chunk is empty.");
+         return true;
+      }
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadProfileData: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadProfileData", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_PROFILEDATA_ENTRY:
+                  DP("[...] SongFileReader::ReadProfileData: found chunk FOURCC_PROFILEDATA_ENTRY.");
+
+                  int entryOff = _in.offset;
+
+                  String profileId = "";
+                  Utils.ReadString(_in, profileId);
+
+                  MIDISynthProfileData data <= MIDI.GetMIDISynthProfileData(profileId);
+
+                  if(null != data)
+                  {
+                     // Can load the profile data right away
+                     //  (note) some editors (e.g. Prophet12) require its EditForm to be initialized before the data can be loaded
+                     MIDI.LazyInitSynthEditorProjectProfileDataByProfileId(profileId);
+                     Global.Debug("SongFileReader::ReadProfileData: read project profileData id="+profileId+" sz="+chunkDataSize+" bytes");
+                     if(!data.loadProjectMIDIProfileData(_in))
+                     {
+                        trace "[~~~] SongFileReader::ReadProfileData: loadProjectMIDIProfileData() failed (profile=\""+profileId+"\"), skipping "+chunkDataSize+" bytes..)";
+                        _in.seek(entryOff + chunkDataSize, SEEK_SET);
+                     }
+                  }
+                  else
+                  {
+                     // Synth editor (TSL) has not been loaded, yet. => post-pone until it is actually needed
+                     //  (profile data is read to "stash" for later use)
+                     Global.Debug2("SongFileReader::ReadProfileData: stash profile_id=\""+profileId+"\"");
+                     Buffer bufProfileData <= new Buffer;
+                     g_stashed_raw_project_midiprofiledata[profileId] = deref bufProfileData;
+                     _in.readBuffer(bufProfileData,
+                                    0/*off*/,
+                                    chunkDataSize - (_in.offset - entryOff)/*skip profile id string*/,
+                                    true/*bResize*/
+                                    );
+                     // // trace "[~~~] SongFileReader::ReadProfileData: unknown profile \""+profileId+"\", skipping "+chunkDataSize+" bytes..";
+                     // // _in.seek(entryOff + chunkDataSize, SEEK_SET);
+                  }
+
+                  break;
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadProfileData: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadProfileData: chunk complete.");
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <method_read.png>
+   static protected method ReadSubSongs(Stream _in, int _bytesLeft) : boolean {
+      boolean bRet = false;
+
+      if(0 == _bytesLeft)
+      {
+         DP("[...] SongFileReader::ReadSubSongs: chunk is empty.");
+         return true;
+      }
+
+      int defSongIdx = 0;
+
+      int cSongIdx = 0;
+
+      while(_bytesLeft > 0)
+      {
+         Integer chunkHeaderRet;
+         Integer chunkSizeRet;
+
+         ReadChunkHeader(_in, chunkHeaderRet, chunkSizeRet);
+         DP("[...] SongFileReader::ReadSubSongs: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+         int chunkDataSize = chunkSizeRet - 8;
+
+         if(chunkSizeRet <= _bytesLeft)
+         {
+            switch(chunkHeaderRet)
+            {
+               default:
+                  HandleUnknownChunk("ReadSubSongs", _in, chunkHeaderRet, chunkDataSize);
+                  break;
+
+               case FOURCC_SUBSONGS_DEFAULT:
+                  DP("[...] SongFileReader::ReadSubSongs: reading FOURCC_SUBSONGS_DEFAULT chunk.");
+                  if(chunkDataSize == 2)
+                  {
+                     defSongIdx = _in.i16;
+                  }
+                  else
+                  {
+                     trace "[---] SongFileReader::ReadSongAttributes: FOURCC_SUBSONGS_DEFAULT chunk has wrong size!";
+                     _bytesLeft = -1;
+                  }
+                  break;
+
+               case FOURCC_SONG:
+                  DP("[...] SongFileReader::SubSongs: reading FOURCC_SONG chunk.");
+
+                  // (note) the first sub-song has already been created
+                  if(cSongIdx > 0)
+                  {
+                     Global.NewSubSong();
+                     Global.SelectSubSongByIdx(cSongIdx, false, false/*bViaUI*/);
+                  }
+
+                  if(!ReadSongAttributes(_in, chunkDataSize))
+                  {
+                     trace "[---] SongFileReader::SubSongs: failed to read song attributes.";
+                     _bytesLeft = -1;
+                     break;
+                  }
+
+                  cSongIdx++;
+
+                  break;
+
+            }
+
+            _bytesLeft -= chunkSizeRet;
+         }
+         else
+         {
+            trace "[---] SongFileReader::ReadSubSongs: current chunk size > bytesLeft ("+chunkSizeRet+" > "+_bytesLeft+").";
+            break;
+         }
+
+         if(0 == _bytesLeft)
+         {
+            DP("[...] SongFileReader::ReadSubSongs: chunk complete.");
+
+            Global.SelectSubSongByIdx(defSongIdx, false, false/*bViaUI*/);
+
+            bRet = true;
+         }
+
+      } // while _bytesLeft > 0
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method Load(String _fileName) : boolean {
+
+      TraceOnceBegin();
+
+      local File f;
+      if(f.openLocal(_fileName, IOS_IN))
+      {
+         local Integer chunkHeaderRet;
+         local Integer chunkSizeRet;
+         int bytesLeft;
+         f.byteOrder = LITTLE_ENDIAN;
+         boolean bRet = false;
+
+         piperoot_devnames.empty();
+
+         // Read header
+         ReadChunkHeader(f, chunkHeaderRet, chunkSizeRet);
+         if(chunkHeaderRet == FOURCC_SONG_FILEHEADER)
+         {
+            bytesLeft = chunkSizeRet - 8;
+
+            while(bytesLeft > 0)
+            {
+               ReadChunkHeader(f, chunkHeaderRet, chunkSizeRet);
+               DP("[...] SongFileReader::Load: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+               int chunkDataSize = chunkSizeRet - 8;
+
+               if(chunkSizeRet <= bytesLeft)
+               {
+                  switch(chunkHeaderRet)
+                  {
+                     default:
+                        trace "[~~~] SongFileReader::Load: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+                        f.seek(chunkDataSize, SEEK_CUR);
+                        break;
+
+                     case FOURCC_PIPEROOTDEVMAP:
+                        DP("[...] SongFileReader::Load: reading FOURCC_PIPEROOTDEVMAP chunk.");
+                        if(!ReadPipeRootDevMap(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read PIPEROOTDEVMAP.";
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_MIDIINDEVCFGS:
+                        DP("[...] SongFileReader::Load: reading FOURCC_MIDIINDEVCFGS chunk.");
+                        if(!ReadMIDIDevCfgs(f, chunkDataSize, false/*bIn*/, true/*bAllowUpdate*/))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read MIDIINDEVCFGS.";
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_MIDIOUTDEVCFGS:
+                        DP("[...] SongFileReader::Load: reading FOURCC_MIDIOUTDEVCFGS chunk.");
+                        if(!ReadMIDIDevCfgs(f, chunkDataSize, true/*bOut*/, true/*bAllowUpdate*/))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read MIDIOUTDEVCFGS.";
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_WAVEFORMS:
+                        DP("[...] SongFileReader::Load: reading FOURCC_WAVEFORMS chunk (skipping).");
+                        f.seek(chunkDataSize, SEEK_CUR);
+                        // // if(!ReadWaveforms(f, chunkDataSize))
+                        // // {
+                        // //    trace "[---] SongFileReader::Load: failed to read waveforms.";
+                        // //    break;
+                        // // }
+                        break;
+
+                     case FOURCC_SUBSONGS:
+                        DP("[...] SongFileReader::Load: reading FOURCC_SUBSONGS chunk.");
+                        if(!ReadSubSongs(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read subsongs chunk.";
+                           bytesLeft = -1;
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_MIDIMAPS:
+                        DP("[...] SongFileReader::Load: reading FOURCC_MIDIMAPS chunk.");
+                        if(!ReadMIDIMaps(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read midimaps chunk.";
+                           bytesLeft = -1;
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_MORPHSCENES:
+                        DP("[...] SongFileReader::Load: reading FOURCC_MORPHSCENES chunk.");
+                        if(!ReadMIDIMorphScenes(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read morph scenes chunk.";
+                           bytesLeft = -1;
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_FADERPORT:
+                        DP("[...] SongFileReader::Load: reading FOURCC_FADERPORT chunk.");
+                        if(!ReadFaderPort(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read FaderPort chunk.";
+                           bytesLeft = -1;
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_CONSOLE1:
+                        DP("[...] SongFileReader::Load: reading FOURCC_CONSOLE1 chunk.");
+                        if(!ReadConsole1(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read Console1 chunk.";
+                           bytesLeft = -1;
+                           break;
+                        }
+                        break;
+
+                     case FOURCC_PROFILEDATA:
+                        DP("[...] SongFileReader::Load: reading FOURCC_PROFILEDATA chunk.");
+                        if(!ReadProfileData(f, chunkDataSize))
+                        {
+                           trace "[---] SongFileReader::Load: failed to read profile data chunk.";
+                           bytesLeft = -1;
+                           break;
+                        }
+                        break;
+                  }
+
+                  bytesLeft -= chunkSizeRet;
+               }
+               else
+               {
+                  trace "[---] SongFileReader::Load: current chunk size > bytesLeft ("+chunkSizeRet+" > "+bytesLeft+").";
+                  break;
+               }
+
+               if(0 == bytesLeft)
+               {
+                  DP("[...] SongFileReader::Load: load complete.");
+                  bRet = true;
+
+                  root_form.transportCycle(current_song.b_cycle);
+
+                  MIDI.FindAutoDevDevices();  // update autodev_a/b
+               }
+
+            } // while bytesLeft > 0
+
+         }
+         else
+         {
+            trace "[---] SongFileReader::Load: FOURCC_SONG_FILEHEADER chunk not found.";
+         }
+
+         f.close();
+
+         TraceOnceEnd();
+
+         return bRet;
+      }
+      else
+      {
+         trace "[---] SongFileReader::Load: failed to open file \""+_fileName+"\".";
+
+         TraceOnceEnd();
+
+         return false;
+      }
+   }
+
+   // <load.png>
+   static public =replay= method LoadSubSongStream(Stream _ifs, ST_Song _song) : boolean {
+      boolean bRet = false;
+
+      int cSubSongIdx = Global.GetSubSongIdx();
+      int idx = all_songs.indexOfPointer(_song, 0);
+      Global.SelectSubSongByIdx(idx, false/*bSaveUI*/, false/*bViaUI*/);
+      _song.init();
+
+      TraceOnceBegin();
+
+      piperoot_devnames.empty();
+
+      // Read header
+      Integer chunkHeaderRet;
+      Integer chunkSizeRet;
+      ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+      if(chunkHeaderRet == FOURCC_SUBSONG_FILEHEADER)
+      {
+         int bytesLeft;
+         bytesLeft = chunkSizeRet - 8;
+
+         while(bytesLeft > 0)
+         {
+            ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+            DP("[...] SongFileReader::LoadSubSongStream: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+            int chunkDataSize = chunkSizeRet - 8;
+
+            if(chunkSizeRet <= bytesLeft)
+            {
+               switch(chunkHeaderRet)
+               {
+                  default:
+                     trace "[~~~] SongFileReader::LoadSubSongStream: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+                     _ifs.seek(chunkDataSize, SEEK_CUR);
+                     break;
+
+                  case FOURCC_MIDIINDEVCFGS:
+                     DP("[...] SongFileReader::LoadSubSongStream: reading FOURCC_MIDIINDEVCFGS chunk.");
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, false/*bIn*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadSubSongStream: failed to read MIDIINDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_MIDIOUTDEVCFGS:
+                     DP("[...] SongFileReader::LoadSubSongStream: reading FOURCC_MIDIOUTDEVCFGS chunk.");
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, true/*bOut*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadSubSongStream: failed to read MIDIOUTDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_PIPEROOTDEVMAP:
+                     DP("[...] SongFileReader::LoadSubSongStream: reading FOURCC_PIPEROOTDEVMAP chunk.");
+                     if(!ReadPipeRootDevMap(_ifs, chunkDataSize))
+                     {
+                        trace "[---] SongFileReader::LoadSubSongStream: failed to read PIPEROOTDEVMAP.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_SONG:
+                     DP("[...] SongFileReader::LoadSubSongStream: reading FOURCC_SONG chunk.");
+                     if(!ReadSongAttributes(_ifs, chunkDataSize))
+                     {
+                        trace "[---] SongFileReader::LoadSubSongStream: failed to read chunk FOURCC_SONG.";
+                        bytesLeft = -1;
+                     }
+                     break;
+               }
+
+               bytesLeft -= chunkSizeRet;
+            }
+            else
+            {
+               trace "[---] SongFileReader::LoadSubSongStream: current chunk size > bytesLeft ("+chunkSizeRet+" > "+bytesLeft+").";
+               break;
+            }
+
+            if(0 == bytesLeft)
+            {
+               DP("[...] SongFileReader::LoadSubSongStream: load complete.");
+               bRet = true;
+            }
+
+         } // while bytesLeft > 0
+
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadSubSongStream: FOURCC_SUBSONG_FILEHEADER chunk not found.";
+      }
+
+      TraceOnceEnd();
+
+      Global.SelectSubSongByIdx(cSubSongIdx, false/*bSaveUI*/, false/*bViaUI*/);
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadSubSongFile(String _fileName, ST_Song _song) : boolean {
+      boolean bRet = false;
+
+      Global.Debug("SongFileReader::LoadSubSongFile: fileName=\""+_fileName+"\".");
+      local String nativePathName <= Utils.ToNativePathName(_fileName);
+
+      local File f;
+      if(f.openLocal(nativePathName, IOS_IN))
+      {
+         if(LoadSubSongStream(f, _song))
+         {
+            bRet = true;
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadSubSongFile: failed to open file \""+nativePathName+"\".";
+      }
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadPipeStream(Stream _ifs, MIDIPipe _p) : boolean {
+      boolean bRet = false;
+
+      TraceOnceBegin();
+
+      piperoot_devnames.empty();
+
+      // Read header
+      Integer chunkHeaderRet;
+      Integer chunkSizeRet;
+      ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+      if(chunkHeaderRet == FOURCC_PIPE_FILEHEADER)
+      {
+         int bytesLeft;
+         bytesLeft = chunkSizeRet - 8;
+
+         while(bytesLeft > 0)
+         {
+            ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+            DP("[...] SongFileReader::LoadPipeStream: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+            int chunkDataSize = chunkSizeRet - 8;
+
+            if(chunkSizeRet <= bytesLeft)
+            {
+               switch(chunkHeaderRet)
+               {
+                  default:
+                     trace "[~~~] SongFileReader::LoadPipeStream: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+                     _ifs.seek(chunkDataSize, SEEK_CUR);
+                     break;
+
+                  case FOURCC_MIDIINDEVCFGS:
+                     DP("[...] SongFileReader::LoadPipeStream: reading FOURCC_MIDIINDEVCFGS chunk.");
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, false/*bIn*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadPipeStream: failed to read MIDIINDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_MIDIOUTDEVCFGS:
+                     DP("[...] SongFileReader::LoadPipeStream: reading FOURCC_MIDIOUTDEVCFGS chunk.");
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, true/*bOut*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadPipeStream: failed to read MIDIOUTDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_PIPEROOTDEVMAP:
+                     DP("[...] SongFileReader::LoadPipeStream: reading FOURCC_PIPEROOTDEVMAP chunk.");
+                     if(!ReadPipeRootDevMap(_ifs, chunkDataSize))
+                     {
+                        trace "[---] SongFileReader::LoadPipeStream: failed to read PIPEROOTDEVMAP.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_PSTREAM_PIPE:
+                     DP("[...] SongFileReader::LoadPipeStream: reading FOURCC_PSTREAM_PIPE chunk.");
+                     short pipeVer = _ifs.i16;
+                     if(!PipeIO.Pipe_LoadState(_p, _ifs, pipeVer, piperoot_outdevidxmap, piperoot_outdevusecount))
+                     {
+                        trace "[---] SongFileReader::LoadPipeStream: failed to read chunk FOURCC_PSTREAM_PIPE.";
+                        bytesLeft = -1;
+                     }
+                     break;
+               }
+
+               bytesLeft -= chunkSizeRet;
+            }
+            else
+            {
+               trace "[---] SongFileReader::LoadPipeStream: current chunk size > bytesLeft ("+chunkSizeRet+" > "+bytesLeft+").";
+               break;
+            }
+
+            if(0 == bytesLeft)
+            {
+               DP("[...] SongFileReader::LoadPipeStream: load complete.");
+               _p.reset(false/*bSoft*/);
+               bRet = true;
+            }
+
+         } // while bytesLeft > 0
+
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadPipeStream: FOURCC_PIPE_FILEHEADER chunk not found.";
+      }
+
+      TraceOnceEnd();
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadPipeFile(String _fileName, MIDIPipe _p) : boolean {
+      boolean bRet = false;
+
+      Global.Debug("SongFileReader::LoadPipeFile: fileName=\""+_fileName+"\".");
+      local String nativePathName <= Utils.ToNativePathName(_fileName);
+
+      local File f;
+      if(f.openLocal(nativePathName, IOS_IN))
+      {
+         if(LoadPipeStream(f, _p))
+         {
+            bRet = true;
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadPipeFile: failed to open file \""+nativePathName+"\".";
+      }
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadNodeStream(Stream _ifs, Node _n) : boolean {
+      boolean bRet = false;
+
+      TraceOnceBegin();
+
+      piperoot_devnames.empty();
+
+      // Read header
+      local Integer chunkHeaderRet;
+      local Integer chunkSizeRet;
+      ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+      if(chunkHeaderRet == FOURCC_NODE_FILEHEADER)
+      {
+         int bytesLeft;
+         bytesLeft = chunkSizeRet - 8;
+
+         while(bytesLeft > 0)
+         {
+            ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+            DP("[...] SongFileReader::LoadNodeStream: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+            int chunkDataSize = chunkSizeRet - 8;
+
+            if(chunkSizeRet <= bytesLeft)
+            {
+               switch(chunkHeaderRet)
+               {
+                  default:
+                     trace "[~~~] SongFileReader::LoadNodeStream: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+                     _ifs.seek(chunkDataSize, SEEK_CUR);
+                     break;
+
+                  case FOURCC_MIDIINDEVCFGS:
+                     DP("[...] SongFileReader::LoadNodeStream: reading FOURCC_MIDIINDEVCFGS chunk.");
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, false/*bIn*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadNodeStream: failed to read MIDIINDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_MIDIOUTDEVCFGS:
+                     DP("[...] SongFileReader::LoadNodeStream: reading FOURCC_MIDIOUTDEVCFGS chunk.");
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, true/*bOut*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadNodeStream: failed to read MIDIOUTDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_PIPEROOTDEVMAP:
+                     DP("[...] SongFileReader::LoadNodeStream: reading FOURCC_PIPEROOTDEVMAP chunk.");
+                     if(!ReadPipeRootDevMap(_ifs, chunkDataSize))
+                     {
+                        trace "[---] SongFileReader::LoadNodeStream: failed to read PIPEROOTDEVMAP.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_NSTREAM_NODE:
+                     DP("[...] SongFileReader::LoadNodeStream: reading FOURCC_NSTREAM_NODE chunk.");
+                     int nodeStartOffset = _ifs.offset;
+                     if(!PipeIO.PipeNode_LoadState(_n.parent_pipe, _ifs,
+                                                   piperoot_outdevidxmap, piperoot_outdevusecount,
+                                                   _n,
+                                                   null/*catClassOrNull*/
+                                                   )
+                        )
+                     {
+                        if(STConfig.b_ignore_node_load_error)
+                        {
+                           trace "[~~~] SongFileReader::LoadNodeStream: failed to read chunk FOURCC_NSTREAM_NODE, skipping "+chunkSizeRet+" bytes..";
+                           _ifs.seek(nodeStartOffset + chunkSizeRet, SEEK_SET);
+                        }
+                        else
+                        {
+                           trace "[---] SongFileReader::LoadNodeStream: failed to read chunk FOURCC_NSTREAM_NODE.";
+                           bytesLeft = -1;
+                        }
+                     }
+                     break;
+               }
+
+               bytesLeft -= chunkSizeRet;
+            }
+            else
+            {
+               trace "[---] SongFileReader::LoadNodeStream: current chunk size > bytesLeft ("+chunkSizeRet+" > "+bytesLeft+").";
+               break;
+            }
+
+            if(0 == bytesLeft)
+            {
+               DP("[...] SongFileReader::LoadNodeStream: load complete.");
+               _n.nodeReset(false/*bSoft*/);
+
+               if(replay.b_playing)
+               {
+                  _n.nodeSeek(current_song.getSongOffset());
+               }
+
+               bRet = true;
+            }
+
+         } // while bytesLeft > 0
+
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadNodeStream: FOURCC_NODE_FILEHEADER chunk not found.";
+      }
+
+      TraceOnceEnd();
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadNodeFile(String _fileName, Node _n) : boolean {
+      boolean bRet = false;
+
+      Global.Debug("SongFileReader::LoadNodeFile: fileName=\""+_fileName+"\".");
+      local String nativePathName <= Utils.ToNativePathName(_fileName);
+
+      local File f;
+      if(f.openLocal(nativePathName, IOS_IN))
+      {
+         if(LoadNodeStream(f, _n))
+         {
+            bRet = true;
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadNodeFile: failed to open file \""+nativePathName+"\".";
+      }
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadMIDIMorphSceneStream(Stream _ifs, MIDIMorphScene _mms) : boolean {
+      boolean bRet = false;
+
+      TraceOnceBegin();
+
+      piperoot_devnames.empty();
+
+      // Read header
+      Integer chunkHeaderRet;
+      Integer chunkSizeRet;
+      ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+      if(chunkHeaderRet == FOURCC_MMS_FILEHEADER)
+      {
+         int bytesLeft;
+         bytesLeft = chunkSizeRet - 8;
+
+         while(bytesLeft > 0)
+         {
+            ReadChunkHeader(_ifs, chunkHeaderRet, chunkSizeRet);
+            DP("[...] SongFileReader::LoadMIDIMorphSceneStream: found chunk "+chunkHeaderRet.printf("0x%08x")+" size="+chunkSizeRet+" bytes.");
+
+            int chunkDataSize = chunkSizeRet - 8;
+
+            if(chunkSizeRet <= bytesLeft)
+            {
+               switch(chunkHeaderRet)
+               {
+                  default:
+                     trace "[~~~] SongFileReader::LoadMIDIMorphSceneStream: unknown chunk "+chunkHeaderRet.printf("0x%08x")+", skipping..";
+                     _ifs.seek(chunkDataSize, SEEK_CUR);
+                     break;
+
+                  case FOURCC_MIDIINDEVCFGS:
+                     DP("[...] SongFileReader::LoadMIDIMorphSceneStream: reading FOURCC_MIDIINDEVCFGS chunk.");
+                     // lazy-create unavail devices, don't update existing ones
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, false/*bIn*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadMIDIMorphSceneStream: failed to read MIDIINDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_MIDIOUTDEVCFGS:
+                     DP("[...] SongFileReader::LoadMIDIMorphSceneStream: reading FOURCC_MIDIOUTDEVCFGS chunk.");
+                     // lazy-create unavail devices, don't update existing ones
+                     if(!ReadMIDIDevCfgs(_ifs, chunkDataSize, true/*bOut*/, false/*bAllowUpdate*/))
+                     {
+                        trace "[---] SongFileReader::LoadMIDIMorphSceneStream: failed to read MIDIOUTDEVCFGS.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_PIPEROOTDEVMAP:
+                     DP("[...] SongFileReader::LoadMIDIMorphSceneStream: reading FOURCC_PIPEROOTDEVMAP chunk.");
+                     if(!ReadPipeRootDevMap(_ifs, chunkDataSize))
+                     {
+                        trace "[---] SongFileReader::LoadMIDIMorphSceneStream: failed to read PIPEROOTDEVMAP.";
+                        break;
+                     }
+                     break;
+
+                  case FOURCC_MMS:
+                     DP("[...] SongFileReader::LoadMIDIMorphSceneStream: reading FOURCC_MMS chunk.");
+                     if(!ReadMMS(_ifs, chunkDataSize, _mms/*mmsOrNull*/))
+                     {
+                        trace "[---] SongFileReader::LoadMIDIMorphSceneStream: failed to read chunk FOURCC_MMS.";
+                        bytesLeft = -1;
+                     }
+                     break;
+               }
+
+               bytesLeft -= chunkSizeRet;
+            }
+            else
+            {
+               trace "[---] SongFileReader::LoadMIDIMorphSceneStream: current chunk size > bytesLeft ("+chunkSizeRet+" > "+bytesLeft+").";
+               break;
+            }
+
+            if(0 == bytesLeft)
+            {
+               DP("[...] SongFileReader::LoadMIDIMorphSceneStream: load complete.");
+               bRet = true;
+            }
+
+         } // while bytesLeft > 0
+
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadMIDIMorphSceneStream: FOURCC_MMS_FILEHEADER chunk not found.";
+      }
+
+      TraceOnceEnd();
+
+      return bRet;
+   }
+
+   // <load.png>
+   static public =replay= method LoadMIDIMorphSceneFile(String _fileName, MIDIMorphScene _mms) : boolean {
+      boolean bRet = false;
+
+      Global.Debug("SongFileReader::LoadMIDIMorphSceneFile: fileName=\""+_fileName+"\".");
+      local String nativePathName <= Utils.ToNativePathName(_fileName);
+
+      local File f;
+      if(f.openLocal(nativePathName, IOS_IN))
+      {
+         if(LoadMIDIMorphSceneStream(f, _mms))
+         {
+            bRet = true;
+         }
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] SongFileReader::LoadMIDIMorphSceneFile: failed to open file \""+nativePathName+"\".";
+      }
+
+      return bRet;
+   }
+
+}

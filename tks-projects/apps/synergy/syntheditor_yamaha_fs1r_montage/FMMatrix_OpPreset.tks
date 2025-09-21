@@ -1,0 +1,244 @@
+// ----
+// ---- file   : FMMatrix_OpPreset.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 11Nov2022
+// ---- changed: 12Nov2022, 24Sep2023
+// ----
+// ----
+// ----
+
+module MFMMatrix_OpPreset;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class FMMatrix_OpPreset_Op {
+   byte shape;
+   byte b_keysync;
+   byte skirt;
+   byte res;
+   byte level;
+   byte b_fixed_ratio;
+   byte freq_coarse;
+   byte freq_fine;
+   byte detune;
+   byte fmt_transpose;  // FS1R only
+
+   byte aeg_l_1;  // used by AEG Scl (not saved to preset file)
+   byte aeg_l_2;
+   byte aeg_l_3;
+   byte aeg_l_4;
+
+   byte aeg_t_1;
+   byte aeg_t_2;
+   byte aeg_t_3;
+   byte aeg_t_4;
+}
+
+// <class.png>
+class FMMatrix_OpPreset {
+   static String OPPRESET_FILE = "$(ROOT)/fmmatrix_op_presets.txt";
+
+   String name;
+   FMMatrix_OpPreset_Op *[] ops;
+
+   static FMMatrix_OpPreset *[] all_presets;
+
+
+   // <method_add.png>
+   public method addOp() : FMMatrix_OpPreset_Op {
+      local FMMatrix_OpPreset_Op op;
+      ops.add(#(deref op));
+      return op;
+   }
+
+   // <method_get.png>
+   public method getNumOps() : int {
+      return ops.numElements;
+   }
+
+   // <method_get.png>
+   public method getOpByIdx(int _opIdx) : FMMatrix_OpPreset_Op {
+      return ops.get(_opIdx);
+   }
+
+   // <method.png>
+   public method clearOps() {
+      ops.free();
+   }
+
+   // <load.png>
+   static LoadPresets() {
+
+      all_presets.free();
+
+      local String pathName <= Utils.ToNativePathName(OPPRESET_FILE);
+      local String buf;
+      local String nextPresetName;
+      local FMMatrix_OpPreset *p;
+
+      if(buf.loadLocal(pathName, true/*bRemoveCR*/))
+      {
+         local StringArray lines <= buf.splitChar('\n');
+         local String *line;
+         int lineNr = 1;
+         foreach line in lines
+         {
+            line.trim();
+            if(!(line <= "#") && !line.isBlank())
+            {
+               if(line <= "[")
+               {
+                  // [my preset name]
+                  int idxNameEnd = line.indexOf("]", 0);
+                  if(-1 != idxNameEnd)
+                  {
+                     line.substring(1, idxNameEnd-1) => nextPresetName;
+                     // trace "xxx set nextPresetName=\""+nextPresetName+"\"";
+                     p <= null;
+                  }
+               }
+               else if(!nextPresetName.isBlank())
+               {
+                  if(line & ":")
+                  {
+                     // SH:0 KS:1 SK:0 RS:0 LV:99 FR:0 FC:1 FF:0 DT:0 FT:0
+                     line.toLower();
+
+                     if(null == p)
+                     {
+                        p <= AddPreset(nextPresetName);
+                     }
+
+                     FMMatrix_OpPreset_Op op <= p.addOp();
+
+                     // nr <name> <cat> <subcat>
+                     local StringArray words <= line.splitSpace(true);
+                     String *w;
+                     foreach w in words
+                     {
+                        if(w <= "sh:")
+                        {
+                           op.shape = w.replace("sh:", "");
+                        }
+                        else if(w <= "ks:")
+                        {
+                           op.b_keysync = w.replace("ks:", "");
+                        }
+                        else if(w <= "sk:")
+                        {
+                           op.skirt = w.replace("sk:", "");
+                        }
+                        else if(w <= "rs:")
+                        {
+                           op.res = w.replace("rs:", "");
+                        }
+                        else if(w <= "lv:")
+                        {
+                           op.level = w.replace("lv:", "");
+                        }
+                        else if(w <= "fr:")
+                        {
+                           op.b_fixed_ratio = w.replace("fr:", "");
+                        }
+                        else if(w <= "fc:")
+                        {
+                           op.freq_coarse = w.replace("fc:", "");
+                        }
+                        else if(w <= "ff:")
+                        {
+                           op.freq_fine = w.replace("ff:", "");
+                        }
+                        else if(w <= "dt:")
+                        {
+                           op.detune = w.replace("dt:", "");
+                        }
+                        else if(w <= "ft:")
+                        {
+                           op.fmt_transpose = w.replace("ft:", "");
+                        }
+
+                     } // foreach w
+
+                  } // if line & ":"
+               } // if nextPresetName
+            } // if ! comment or blank
+         } // foreach line
+      } // if buf load
+
+      Global.Debug("FMMatrix_OpPreset::LoadPresets: parsed "+all_presets.numElements+" presets");
+   }
+
+   // <load.png>
+   static SavePresets() {
+      FMMatrix_OpPreset *p;
+      local String buf;
+      foreach p in all_presets
+      {
+         buf.append("\n["+p.name+"]\n");
+         FMMatrix_OpPreset_Op *op;
+         foreach op in p.ops
+         {
+            buf.append(" SH:"+op.shape);
+            buf.append(" KS:"+op.b_keysync);
+            buf.append(" SK:"+op.skirt);
+            buf.append(" RS:"+op.res);
+            buf.append(" LV:"+op.level);
+            buf.append(" FR:"+op.b_fixed_ratio);
+            buf.append(" FC:"+op.freq_coarse);
+            buf.append(" FF:"+op.freq_fine);
+            buf.append(" DT:"+op.detune);
+            buf.append(" FT:"+op.fmt_transpose);
+            buf.append("\n");
+         }
+      }
+
+      local String pathName <= Utils.ToNativePathName(OPPRESET_FILE);
+      buf.saveLocal(pathName);
+
+      Global.Debug("FMMatrix_OpPreset::SavePresets: wrote pathName=\""+pathName+"\"");
+   }
+
+   // <method.png>
+   public static FilterPresetsByNumOps(int _numOps, StringArray _retOpt) {
+      FMMatrix_OpPreset *p;
+      foreach p in all_presets
+      {
+         // trace "xxx FilterPresetByNumOps: p.name=\""+p.name+"\" _numOps="+_numOps+" p.getNumOps()="+p.getNumOps();
+         if(p.getNumOps() == _numOps)
+         {
+            _retOpt.add(p.name);
+         }
+      }
+   }
+
+   // <method_find.png>
+   public static FindPresetByNameAndNumOps(String _name, int _numOps) : FMMatrix_OpPreset {
+      FMMatrix_OpPreset *p;
+      foreach p in all_presets
+      {
+         if(p.getNumOps() == _numOps)
+            if(p.name == _name)
+               return p;
+      }
+      return null;
+   }
+
+   // <method_add.png>
+   public static AddPreset(String _name) : FMMatrix_OpPreset {
+      Global.Debug3("FMMatrix_OpPreset::AddPreset("+_name+")");
+      local FMMatrix_OpPreset p;
+      p.name = _name;
+      all_presets.add(#(deref p));
+      return p;
+   }
+
+}

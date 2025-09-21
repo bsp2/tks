@@ -1,0 +1,371 @@
+// ----
+// ---- file   : NodesTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 04Sep2014, 05Sep2014, 10Sep2014, 11Sep2014, 14Sep2014, 19Sep2014, 27Sep2014
+// ----          28Apr2015, 12Jul2016, 14Jul2017, 30Jul2017, 02Dec2018, 21Sep2019, 18Mar2023
+// ----          06Oct2023, 19Oct2023, 22Mar2024
+// ----
+// ----
+// ----
+
+module MNodesTM;
+
+use namespace ui;
+use namespace st2;
+
+
+class NodesTM : TableModel {
+
+   define int COL_ID          = 0;
+   define int COL_SOLO        = 1;
+   define int COL_MUTE        = 2;
+   define int COL_NAME        = 3;
+   define int COL_AUTO        = 4;
+   define int COL_ICON        = 5;
+
+   public MIDIPipe *pipe;
+
+   protected Button bt_solo_render;
+   protected Button bt_solo_edit;
+
+   protected Button bt_mute_render;
+   protected Button bt_mute_edit;
+
+   static StringArray solo_state_names = ["", "", "Solo"];
+   static StringArray mute_state_names = ["Play", "Mute", "Play"];
+
+   static StringArray state_names = ["Play", "Mute", "Solo"];
+
+
+   public virtual getNumColumns() : int {
+      return 6;
+   }
+
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id", "Solo", "Mute", "Name", "Auto", "Icon"] [_col];
+   }
+
+   public virtual getNumRows() : int {
+      if(null != pipe)
+         return pipe.numNodes;
+      else
+         return 0;
+   }
+
+   public virtual handleCursorIndexChanged() {
+      if(-1 != cursor_index)
+      {
+         MIDIPipeNode *node;
+
+         if(null != pipe)
+         {
+            node <= pipe.getNodeByIdx(cursor_index);
+
+            if(null != node)
+            {
+               bt_solo_edit.setCaption       (solo_state_names.get(node.state));
+               bt_solo_edit.setBackgroundTint(app_lnf.tv_pipeornode_solo_state_bgtints.get(node.state));
+               bt_solo_edit.setCaptionTint   (app_lnf.tv_pipeornode_solo_state_fgtints.get(node.state));
+
+               bt_mute_edit.setCaption       (mute_state_names.get(node.state));
+               bt_mute_edit.setBackgroundTint(app_lnf.tv_pipeornode_mute_state_bgtints.get(node.state));
+               bt_mute_edit.setCaptionTint   (app_lnf.tv_pipeornode_mute_state_fgtints.get(node.state));
+            }
+         }
+      }
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+
+      MIDIPipeNode *node;
+
+      if(null != pipe)
+         node <= pipe.getNodeByIdx(_row);
+      else
+         node <= null;
+
+      Button *bt;
+
+      if(COL_SOLO == _col)
+      {
+         if(_row != cursor_index)
+         {
+            bt <= bt_solo_render;
+            bt.setCaption       (solo_state_names.get(node.state));
+            bt.setBackgroundTint(app_lnf.tv_pipeornode_solo_state_bgtints.get(node.state));
+            bt.setCaptionTint   (app_lnf.tv_pipeornode_solo_state_fgtints.get(node.state));
+         }
+         else
+         {
+            // Row is possibly being edited (at least it is selected..)
+            bt <= bt_solo_edit;
+         }
+
+         bt.setInnerPadTop(1.0f);
+         return bt;
+      }
+      else if(COL_MUTE == _col)
+      {
+         if(_row != cursor_index)
+         {
+            bt <= bt_mute_render;
+            bt.setCaption       (mute_state_names.get(node.state));
+            bt.setBackgroundTint(app_lnf.tv_pipeornode_mute_state_bgtints.get(node.state));
+            bt.setCaptionTint   (app_lnf.tv_pipeornode_mute_state_fgtints.get(node.state));
+         }
+         else
+         {
+            // Row is possibly being edited (at least it is selected..)
+            bt <= bt_mute_edit;
+         }
+
+         bt.setInnerPadTop(1.0f);
+         return bt;
+      }
+
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+
+      if(COL_ID == _col)
+      {
+         lb.setFontByName("big6");
+      }
+      else if(COL_NAME == _col)
+      {
+         lb.setFontByName("big4");
+      }
+      else if(COL_AUTO == _col)
+      {
+         lb.setFontByName("big9");
+      }
+      else if(COL_ICON == _col)
+      {
+         if(node instanceof MIDIPipeNodeScriptProxy)
+         {
+            MIDIPipeNodeScriptProxy nsp <= node;
+            Node n <= nsp.sci;
+            if(n instanceof Node)
+            {
+               lb.setIcon(n.nodeGetIcon());
+               lb.setInnerPadding4f(0,10*UI.icon_scaling,0,0);
+            }
+         }
+      }
+
+      return lb;
+   }
+
+   public virtual getCellCaption(int _col, _row) : String {
+
+      if(null != pipe)
+      {
+         MIDIPipeNode node <= pipe.getNodeByIdx(_row);
+
+         Integer io;
+
+         switch(_col)
+         {
+            case COL_ID:
+               io = (_row + 1);
+               return io.printf("%2d");
+
+            case COL_NAME:
+               if(null != node)
+                  return node.name;
+               return "-";
+
+            case COL_AUTO:
+               if(null != node)
+               {
+                  if(node instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     MIDIPipeNodeScriptProxy nsp <= node;
+                     if(null != nsp.sci)
+                     {
+                        Node sci <= nsp.sci;
+                        return (sci.getAutoPortString().replace(" B:", "\nB:"))+(sci.getEnableNodeClassShow() ? ("\nArranger="+sci.getNodeClassShowInGIDString()) : "");
+                     }
+                     else
+                     {
+                        return "<broken proxy>";
+                     }
+                  }
+               }
+               return "-";
+
+            case COL_ICON:
+               return "";
+         }
+      }
+      return "-";
+   }
+
+   public method toggleNodeSoloState(int _row) {
+      MIDIPipeNode *node;
+
+      if(null != pipe)
+      {
+         node <= pipe.getNodeByIdx(_row);
+
+         if(null != node)
+         {
+            Node.ToggleNodeSoloState(node);
+
+            Global.Print(state_names.get(node.state)+" node "+(node.nodeIdx+1)+"/"+pipe.numNodes+" \""+node.name+"\".");
+
+            bt_solo_edit.setCaption       (solo_state_names.get(node.state));
+            bt_solo_edit.setBackgroundTint(app_lnf.tv_pipeornode_solo_state_bgtints.get(node.state));
+            bt_solo_edit.setCaptionTint   (app_lnf.tv_pipeornode_solo_state_fgtints.get(node.state));
+
+            bt_mute_edit.setCaption       (mute_state_names.get(node.state));
+            bt_mute_edit.setBackgroundTint(app_lnf.tv_pipeornode_mute_state_bgtints.get(node.state));
+            bt_mute_edit.setCaptionTint   (app_lnf.tv_pipeornode_mute_state_fgtints.get(node.state));
+         }
+      }
+   }
+
+   public method toggleNodeMuteState(int _row) {
+      MIDIPipeNode *node;
+
+      if(null != pipe)
+      {
+         node <= pipe.getNodeByIdx(_row);
+
+         if(null != node)
+         {
+            Node.ToggleNodeMuteState(node);
+
+            Global.Print(state_names.get(node.state)+" node "+(node.nodeIdx+1)+"/"+pipe.numNodes+" \""+node.name+"\".");
+
+            bt_solo_edit.setCaption       (solo_state_names.get(node.state));
+            bt_solo_edit.setBackgroundTint(app_lnf.tv_pipeornode_solo_state_bgtints.get(node.state));
+            bt_solo_edit.setCaptionTint   (app_lnf.tv_pipeornode_solo_state_fgtints.get(node.state));
+
+            bt_mute_edit.setCaption       (mute_state_names.get(node.state));
+            bt_mute_edit.setBackgroundTint(app_lnf.tv_pipeornode_mute_state_bgtints.get(node.state));
+            bt_mute_edit.setCaptionTint   (app_lnf.tv_pipeornode_mute_state_fgtints.get(node.state));
+         }
+      }
+   }
+
+   public method toggleNodeArrangerState(int _row) {
+      MIDIPipeNodeScriptProxy *node;
+
+      if(null != pipe)
+      {
+         node <= pipe.getNodeByIdx(_row);
+
+         if(node instanceof MIDIPipeNodeScriptProxy)
+         {
+            Node sci <= node.sci;
+            boolean bEnable = !sci.getEnableNodeClassShow();
+            sci.setEnableNodeClassShow(bEnable);
+            table_view.redraw();
+            Global.Print("Show-in-arranger is "+Utils.GetEnableString(bEnable));
+         }
+      }
+   }
+
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+
+      if(COL_SOLO == _col)
+      {
+         if(bt_solo_edit.onMouse(_ev))
+         {
+            if(bt_solo_edit.hasKeyboardFocus())
+            {
+               if(_ev.leftButtonUp())
+                  toggleNodeSoloState(_row);
+            }
+
+            return true;
+         }
+      }
+      else if(COL_MUTE == _col)
+      {
+         if(bt_mute_edit.onMouse(_ev))
+         {
+            if(bt_mute_edit.hasKeyboardFocus())
+            {
+               if(_ev.leftButtonUp())
+                  toggleNodeMuteState(_row);
+            }
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 80 * STConfig.font_scaling;
+
+         case COL_SOLO:
+            return 90 * STConfig.font_scaling;
+
+         case COL_MUTE:
+            return 90 * STConfig.font_scaling;
+
+         case COL_NAME:
+            return 300;
+
+         case COL_AUTO:
+            return 250;
+
+         case COL_ICON:
+            return 80;//68;
+      }
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 80 * STConfig.font_scaling;
+
+         case COL_SOLO:
+            return 90 * STConfig.font_scaling;
+
+         case COL_MUTE:
+            return 90 * STConfig.font_scaling;
+
+         case COL_NAME:
+            return 2000;
+
+         case COL_AUTO:
+            return 400;
+
+         case COL_ICON:
+            return 80;//68;
+      }
+   }
+
+   protected method initButton(Button bt) {
+      bt.initButton();
+      bt.setInnerPadTop(0.0f);
+      bt.setPadTop(0.0f);
+      bt.setPadRight(14.0f);
+      bt.setFontByName("big6");
+   }
+
+   public virtual initTableModel() {
+
+      initButton(bt_solo_render);
+      initButton(bt_solo_edit);
+
+      initButton(bt_mute_render);
+      initButton(bt_mute_edit);
+
+      TableModel::initTableModel();
+   }
+
+}

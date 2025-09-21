@@ -1,0 +1,1528 @@
+// ----
+// ---- file   : NodeScript.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 16Sep2017
+// ---- changed: 17Sep2017, 21Sep2017, 02Nov2017, 09Nov2017, 04Jan2018, 07Mar2018, 02May2018
+// ----          05May2018, 23May2018, 27May2018, 08Jun2018, 17Jun2018, 02Oct2019, 14Oct2019
+// ----          15Oct2019, 19Oct2019, 07Nov2019, 06Apr2020, 26Oct2020, 30Oct2020, 09Nov2020
+// ----          10Nov2020, 12Aug2021, 01Jan2022, 12Jun2023, 17Jun2023, 18Jun2023, 09Jul2023
+// ----          29Jul2023, 24Sep2023, 03Dec2023, 03Feb2024, 14Mar2025
+// ----
+// ----
+// ----
+
+module MNodeScript;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeScriptParam {
+   define int TYPE_NONE  = 0;
+   define int TYPE_INT   = 1;
+   define int TYPE_FLOAT = 2;
+   int type;
+
+   String name;
+
+   int   int_value;
+   float float_value;
+
+
+   // <method.png>
+   public method updateValue(Value _val) {
+      switch(type)
+      {
+         case TYPE_INT:
+            int_value = _val.intValue;
+            break;
+
+         case TYPE_FLOAT:
+            float_value = _val.floatValue;
+            break;
+      }
+   }
+
+   // <method_get.png>
+   public method getIntValue() : int {
+      switch(type)
+      {
+         case TYPE_INT:
+            return int_value;
+
+         case TYPE_FLOAT:
+            return float_value;
+      }
+
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getFloatValue() : float {
+      // trace "xxx NodeScriptParam::getFloatValue: type="+type+" int_value="+int_value+" float_value="+float_value;
+      switch(type)
+      {
+         case TYPE_INT:
+            return int_value;
+
+         case TYPE_FLOAT:
+            return float_value;
+      }
+
+      return 0;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      ofs.i16 = 1; // Version
+
+      ofs.i8 = type;
+      Utils.WriteString(ofs, name);
+      ofs.i32 = int_value;
+      ofs.f32 = float_value;
+
+      // Global.Debug2("NodeScriptParam::saveState: param name="+name+" type="+type+" int_value="+int_value+" float_value="+float_value);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Type
+         type = ifs.u8;
+
+         // Name
+         Utils.ReadString(ifs, name);
+
+         // int value
+         int_value = ifs.i32;
+
+         // float value
+         float_value = ifs.f32;
+
+         // Global.Debug2("NodeScriptParam::loadState: param name="+name+" type="+type+" int_value="+int_value+" float_value="+float_value);
+
+         return true;
+      }
+   }
+}
+
+
+// <class.png>
+class NodeScriptPattern : NodePattern {
+
+   NodeScriptParam *[] params;  // NodeScriptParam instances, in order of var declarations
+
+
+   // <method_init.png>
+   public virtual patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+   }
+
+   // <method.png>
+   public virtual patCopyFrom(NodeScriptPattern _o, boolean _bClear) {
+      NodePattern::patCopyFrom(_o, _bClear);
+
+      patCopyFromGeneric(_o);
+   }
+
+   // <replay.png>
+   module method seek(int _ticks) {
+   }
+
+   // <method.png>
+   public method updateParamDecls(PointerArray _vars) {
+      Variable *v;
+
+      boolean bFound;
+      int varIdx = 0;
+
+      local PointerArray newParams;
+      NodeScriptParam *param;
+      int paramIdx;
+
+      int numUpdated = 0;
+      int numAdded = 0;
+
+      foreach v in _vars
+      {
+         // Try to update existing param
+         paramIdx = 0;
+         bFound = false;
+
+         foreach param in params
+         {
+            if(param.name == v.name)
+            {
+               // Re-use existing param
+               param <= params.getDeref(paramIdx);
+               if(param.type != v.type)
+               {
+                  // Type changed
+                  float oldVal = param.getFloatValue();
+                  param.type = v.type;
+                  param.updateValue(#(oldVal));
+               }
+               newParams.add(#(deref param));
+               trace "[dbg] NodeScript: param["+paramIdx+"]=\""+param.name+"\"";
+
+               bFound = true;
+               numUpdated++;
+               break;
+            }
+
+            paramIdx++;
+         }
+
+         if(!bFound)
+         {
+            // Add new param
+            param <= new NodeScriptParam;
+            param.type = v.type;
+            param.name = v.name;
+            param.int_value = int(v);  // usually 0 at this point
+            param.float_value = float(v);
+            newParams.add(#(deref param));
+            numAdded++;
+         }
+
+         varIdx++;
+      }
+
+      int numRemoved = params.numElements - newParams.numElements;
+      if(numRemoved < 0)
+         numRemoved = 0;
+
+      params <= deref newParams;
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("NodeScriptPattern::updateParamDecls: pat_nr="+pat_nr+": "+numUpdated+" updated, "+numAdded+" added, "+numRemoved+" removed.");
+   }
+
+   // <method.png>
+   public method updateParamValue(String _name, Value _value) {
+      NodeScriptParam *param;
+
+      foreach param in params
+      {
+         // trace "xxx updateParamValue: param.name="+param.name;
+         if(param.name == _name)
+         {
+            if(Configuration.debugLevel >= 2)
+               Global.Debug2("NodeScriptPattern::updateParamValue: param name=\""+_name+"\" value="+#(_value));
+            param.updateValue(_value);
+         }
+      }
+   }
+
+   // <save.png>
+   public virtual patSaveState(Stream ofs) {
+
+      NodePattern::patSaveState(ofs);
+
+      ofs.i16 = 2; // Version
+
+      // Save params (v2+)
+      NodeScriptParam *param;
+      ofs.i16 = params.numElements;
+
+      foreach param in params
+      {
+         param.saveState(ofs);
+      }
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            // Read params (v2+)
+            if(ver >= 2)
+            {
+               NodeScriptParam *param;
+               int numParams = ifs.u16;
+
+               params.free();
+               int paramIdx = 0;
+
+               loop(numParams)
+               {
+                  param <= new NodeScriptParam;
+
+                  if(!param.loadState(ifs))
+                  {
+                     trace "[---] NodeScriptPattern::patLoadState: failed to load param "+(paramIdx+1)+"/"+numParams;
+                     return false;
+                  }
+
+                  params.add(#(deref param));
+
+                  paramIdx++;
+               }
+            }
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class NodeScript : Node {
+   // upper limit is max number of script namespaces (128)
+   define int MAX_INSTANCES = 32;
+
+   define int RPN_SCRIPT_PARAM_0_ABS  = RPN_SCRIPT_BASE +  0;
+   define int RPN_SCRIPT_PARAM_0_REL  = RPN_SCRIPT_BASE +  1;
+   define int RPN_SCRIPT_PARAM_1_ABS  = RPN_SCRIPT_BASE +  2;
+   define int RPN_SCRIPT_PARAM_1_REL  = RPN_SCRIPT_BASE +  3;
+   define int RPN_SCRIPT_PARAM_2_ABS  = RPN_SCRIPT_BASE +  4;
+   define int RPN_SCRIPT_PARAM_2_REL  = RPN_SCRIPT_BASE +  5;
+   define int RPN_SCRIPT_PARAM_3_ABS  = RPN_SCRIPT_BASE +  6;
+   define int RPN_SCRIPT_PARAM_3_REL  = RPN_SCRIPT_BASE +  7;
+   define int RPN_SCRIPT_PARAM_4_ABS  = RPN_SCRIPT_BASE +  8;
+   define int RPN_SCRIPT_PARAM_4_REL  = RPN_SCRIPT_BASE +  9;
+   define int RPN_SCRIPT_PARAM_5_ABS  = RPN_SCRIPT_BASE + 10;
+   define int RPN_SCRIPT_PARAM_5_REL  = RPN_SCRIPT_BASE + 11;
+   define int RPN_SCRIPT_PARAM_6_ABS  = RPN_SCRIPT_BASE + 12;
+   define int RPN_SCRIPT_PARAM_6_REL  = RPN_SCRIPT_BASE + 13;
+   define int RPN_SCRIPT_PARAM_7_ABS  = RPN_SCRIPT_BASE + 14;
+   define int RPN_SCRIPT_PARAM_7_REL  = RPN_SCRIPT_BASE + 15;
+   define int NUM_RPN_SCRIPT_PARAMS   = RPN_SCRIPT_BASE + 16 - RPN_SCRIPT_BASE;
+
+   static NodeScriptEditor *editor;
+
+   PointerArray patterns;  // NodeScriptPattern instances
+
+   int tick_nr;  // resets when arp reset is enabled (and in nodeReset/nodeSeek)
+
+   DeviceIOPort *in_1;
+   DeviceIOPort *in_2;
+   DeviceIOPort *in_3;
+   DeviceIOPort *in_4;
+
+   DeviceIOPort *out_1;
+   DeviceIOPort *out_2;
+   DeviceIOPort *out_3;
+   DeviceIOPort *out_4;
+
+   String script_source;
+   String xfm_source;
+
+   String script_watchfile_name;
+   String xfm_watchfile_name;
+   boolean b_script_watchfile;
+   boolean b_xfm_watchfile;
+
+   int script_cursor_x;
+   int script_cursor_y;
+   int xfm_cursor_x;
+   int xfm_cursor_y;
+
+   Script *script;
+   Function *fxn_onreset;
+   Function *fxn_onsongselect;
+   Function *fxn_onseek;
+   Function *fxn_onprocess;
+   Function *fxn_onaction;
+   Function *fxn_onsavestate;
+   Function *fxn_onloadstate;
+   Function *fxn_onuiinit;
+   Function *fxn_onuiupdate;
+   PointerArray tagged_vars;  // Variable references
+
+   FloatArray param_rpn_mods;  // param 0..7 relative modifier (-0x2000..0x1fff)
+
+   MIDIPipeFrame queued_ui_frame_out;
+
+   static boolean b_editor_visible;
+
+   static IntArray namespace_alloc_flags;   // 1=in use
+
+   int nsp_idx = -1;
+
+   int script_header_num_lines;
+   int script_last_error_line_idx;
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(Node.NUM_PATTERNS);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      in_1 <= new DeviceIOPort;
+      in_2 <= new DeviceIOPort;
+      in_3 <= new DeviceIOPort;
+      in_4 <= new DeviceIOPort;
+
+      out_1 <= new DeviceIOPort;
+      out_2 <= new DeviceIOPort;
+      out_3 <= new DeviceIOPort;
+      out_4 <= new DeviceIOPort;
+
+      script <= new Script;
+
+      script_watchfile_name = STConfig.node_script_default_script_watchfile_name;
+      xfm_watchfile_name = STConfig.node_script_default_xfm_watchfile_name;
+      b_script_watchfile = false;
+      b_xfm_watchfile = false;
+
+      param_rpn_mods.alloc(8);
+      param_rpn_mods.useAll();
+
+      if(namespace_alloc_flags.isEmpty())
+         namespace_alloc_flags.allocAndFill(MAX_INSTANCES, false);
+
+      nsp_idx = namespace_alloc_flags.indexOf(false, 0);
+      if(-1 == nsp_idx)
+      {
+         trace "[---] NodeScript::nodeInit: maximum number of namespaces exceeded !!! (reduce number of instances !!)";
+         return false;
+      }
+      else
+         namespace_alloc_flags[nsp_idx] = true;
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("NodeScript::nodeInit: alloc nsp_idx="+nsp_idx);
+
+      script.setClassNamespace("nodescript_"+nsp_idx);
+
+      script_last_error_line_idx = -2;
+
+      return true;
+   }
+
+   // <method_exit.png>
+   public virtual nodeFinalize() {
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("NodeScript::nodeFinalize: free nsp_idx="+nsp_idx);
+
+      if(-1 != nsp_idx)
+         namespace_alloc_flags[nsp_idx] = false;  // "free" namespace
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+      local NodeScriptPattern pat;
+
+      Node::nodeUIInit();
+
+      // Allocate first pattern
+      pat.patInit(this, 0);
+
+      nodeSetPattern(0, deref pat);
+
+      in_1.var_name = "in_1";
+      in_2.var_name = "in_2";
+      in_3.var_name = "in_3";
+      in_4.var_name = "in_4";
+
+      out_1.var_name = "out_1";
+      out_2.var_name = "out_2";
+      out_3.var_name = "out_3";
+      out_4.var_name = "out_4";
+
+      script_source = "//\n// <insert description here>\n//\n\nint tick_nr;\n\nfunction OnReset() {\n   \n}\n\nfunction OnSeek(int ticks) {\n   tick_nr = ticks;\n}\n\nfunction OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {\n   \n}\n\nfunction OnProcess(MIDIPipeFrame framePlay,\n                   MIDIPipeFrame frameRec,\n                   boolean       bMuted,\n                   boolean       bPlaySeq\n                   ) {\n   if(bPlaySeq)\n   {\n      tick_nr++;\n   }\n}\n";
+
+      xfm_source = "<SizeGroupX id=sgx_lb/>\n";
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeScriptEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_script_mono");
+      else
+         return UI.GetIcon("node_script");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NodeScriptPattern";
+   }
+
+   // <method_get.png>
+   public static IsEditorVisible() : boolean {
+      return b_editor_visible;
+   }
+
+   // <replay.png>
+   public virtual nodeRestart() {
+      nodeSetLastPatternStartSongOffset(current_song.song_offset);
+
+      nodeSeek(nodeGetLastPatternStartSongOffset() + 0);
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+      Node::nodeReset(_bSoft);
+
+      param_rpn_mods.fill(0.0f);
+      updateScriptVarsFromPlayPatternParams();
+
+      if(null != fxn_onreset)
+      {
+         if(STConfig.b_node_script_exec)
+         {
+            try
+            {
+               b_editor_visible = nodeIsEditorVisible();
+               fxn_onreset.eval(null);
+            }
+            catch(Error e)
+            {
+               trace "[---] NodeScript::nodeReset: caught exception name="+e.name+", message=\""+e.message+"\"";
+            }
+         }
+      }
+
+      nodeSeek(0);
+   }
+
+   // <replay.png>
+   public virtual nodeSongSelect() {
+      // called when =replay= mutex is locked
+      Node::nodeSongSelect();
+
+      if(null != fxn_onsongselect)
+      {
+         if(STConfig.b_node_script_exec)
+         {
+            try
+            {
+               b_editor_visible = nodeIsEditorVisible();
+               fxn_onsongselect.eval(null);
+            }
+            catch(Error e)
+            {
+               trace "[---] NodeScript::nodeSongSelect: caught exception name="+e.name+", message=\""+e.message+"\"";
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+
+      tick_nr = _ticks - nodeGetLastPatternStartSongOffset();
+
+      if(null != fxn_onseek)
+      {
+         if(STConfig.b_node_script_exec)
+         {
+            try
+            {
+               b_editor_visible = nodeIsEditorVisible();
+               fxn_onseek.eval([tick_nr]);
+            }
+            catch(Error e)
+            {
+               trace "[---] NodeScript::nodeSeek: caught exception name="+e.name+", message=\""+e.message+"\"";
+            }
+         }
+      }
+
+      NodeScriptPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(tick_nr);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      NodeScriptPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(tick_nr);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPattern(int _startOff) : int {
+      int patIdx = patterns.indexOfPointer(null, _startOff);
+
+      return patIdx;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NodeScriptPattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NodeScriptPattern {
+      NodeScriptPattern pat <= patterns.get(edit_pattern_nr);
+
+      if(null == pat)
+      {
+         pat <= new NodeScriptPattern;
+         pat.patInit(this, edit_pattern_nr);
+         patterns[edit_pattern_nr] = deref pat;
+      }
+
+      return pat;
+   }
+
+   // <method.png>
+   public =replay= method insertEmptyPatternSlotAt(int _idx) {
+      patterns.insert(_idx, null); // may inc patcnt > 128 (so deleting the slot gets back the last pat)
+   }
+
+   // <method.png>
+   public =replay= method deletePatternSlotAt(int _idx) {
+      patterns.delete(_idx);
+      patterns.insert(127, null);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NodeScriptPattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NodeScriptPattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NodeScriptPattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <method_update.png>
+   public =replay= method tryUpdateParamValue(String _name, Value _val, boolean _bUpdateEditPattern) {
+      // trace "xxx NodeScript::tryUpdateParamValue: name="+_name+" val="+_val;
+
+      Variable *v;
+
+      foreach v in tagged_vars
+      {
+         if(v.name == _name)
+         {
+            // trace "xxx   store v.type="+v.type+" _val.type="+_val.type+" _val.floatValue="+_val.floatValue;
+            v.assign(_val);
+            v.store();
+
+            if(_bUpdateEditPattern)
+            {
+               NodeScriptPattern pat <= nodeGetCurrentEditPattern();
+
+               if(null != pat)
+               {
+                  pat.updateParamValue(_name, _val);
+               }
+            }
+
+         }
+      }
+   }
+
+   // <method_update.png>
+   public =replay= method updateScriptAuto() {
+      if(null != script)
+      {
+         Variable *v;
+
+         v <= script.findVariable("auto_dev_a");
+         if(null != v)
+         {
+            if(b_auto_filter_a)
+            {
+               v = auto_dev_filter_a;
+            }
+            else
+            {
+               v = 999998;
+            }
+            v.store();
+         }
+
+         v <= script.findVariable("auto_ch_a");
+         if(null != v)
+         {
+            v = auto_ch_filter_a;
+            v.store();
+         }
+
+         v <= script.findVariable("auto_dev_b");
+         if(null != v)
+         {
+            if(b_auto_filter_b)
+            {
+               v = auto_dev_filter_b;
+            }
+            else
+            {
+               v = 999998;
+            }
+            v.store();
+         }
+
+         v <= script.findVariable("auto_ch_b");
+         if(null != v)
+         {
+            v = auto_ch_filter_b;
+            v.store();
+         }
+      }
+   }
+
+   // <method_update.png>
+   public =replay= virtual nodeHandleAutoDevChanged() {
+      updateScriptAuto();
+   }
+
+   // <method.png>
+   public =replay= method updatePatternParamDecls() {
+      NodeScriptPattern *pat;
+
+      foreach pat in patterns
+      {
+         if(null != pat)
+         {
+            pat.updateParamDecls(tagged_vars);
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateScriptVarsFromPlayPatternParams() {
+      // Called when play pattern has changed
+      NodeScriptPattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         // (note) the mapping between params and script vars is actually 1:1
+         NodeScriptParam *param;
+         int paramIdx = 0;
+
+         foreach param in pat.params
+         {
+            Value v;
+            v.initVoid();
+
+            float relMod;
+
+            if(paramIdx < 8)
+            {
+               relMod = param_rpn_mods.get(paramIdx);
+            }
+            else
+            {
+               relMod = 0;
+            }
+
+            switch(param.type)
+            {
+               case NodeScriptParam.TYPE_INT:
+                  v.intValue = param.getIntValue() + relMod;
+                  break;
+
+               case NodeScriptParam.TYPE_FLOAT:
+                  v.floatValue = param.getFloatValue() + relMod;
+                  break;
+            }
+
+            if(YAC_TYPE_VOID != v.type)
+            {
+               // Update script variable
+               tryUpdateParamValue(param.name/*varname*/, v, false/*bUpdateEditPattern*/);
+            }
+
+            paramIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method recompileScript(boolean _bQuiet) : boolean {
+
+      // Try to preserve node state so that e.g. changing an I/O port (or editing the script) does not reset it
+      local Buffer *bufState;
+      if(STConfig.b_node_script_exec)
+      {
+         if(null != script)
+         {
+            if(null != fxn_onsavestate && null != fxn_onloadstate)
+            {
+               // Save
+               try
+               {
+                  DummyStream ds;
+                  ds.offset = 0;
+                  ds.size = 0;
+                  fxn_onsavestate.eval([ds]);  // Determine required size
+                  if(ds.offset > 0)
+                  {
+                     bufState <= new Buffer;
+                     bufState.size = ds.offset;
+                     fxn_onsavestate.eval([bufState]);
+                     trace "[...] NodeScript::recompileScript: script state saved ("+bufState.offset+" bytes written)";
+                  }
+               }
+               catch(Error e)
+               {
+                  trace "[---] NodeScript::recompileScript: OnSaveState: caught exception name="+e.name+", message=\""+e.message+"\"";
+               }
+            }
+         }
+      }
+
+      fxn_onsongselect <= null;
+      fxn_onreset      <= null;
+      fxn_onseek       <= null;
+      fxn_onprocess    <= null;
+      fxn_onaction     <= null;
+      fxn_onsavestate  <= null;
+      fxn_onloadstate  <= null;
+      fxn_onuiinit     <= null;
+      fxn_onuiupdate   <= null;
+
+      script_last_error_line_idx = -2;
+
+      try
+      {
+         String src; src.empty();
+         src.append("use namespace nodescript_"+nsp_idx+";\n\n");
+
+         in_1.appendSource(src);
+         in_2.appendSource(src);
+         in_3.appendSource(src);
+         in_4.appendSource(src);
+
+         out_1.appendSource(src);
+         out_2.appendSource(src);
+         out_3.appendSource(src);
+         out_4.appendSource(src);
+
+         src.append("\n");
+         src.append("int auto_dev_a;\n");
+         src.append("int auto_ch_a;\n");
+         src.append("\n");
+         src.append("int auto_dev_b;\n");
+         src.append("int auto_ch_b;\n");
+
+         src.append("\n");
+
+         script_header_num_lines = src.numIndicesOf("\n");
+
+         src.append(script_source);
+
+         tagged_vars.free();
+
+         if(script.load(src))
+         {
+            fxn_onsongselect <= script.findFunction("OnSongSelect");
+            fxn_onreset      <= script.findFunction("OnReset");
+            fxn_onseek       <= script.findFunction("OnSeek");
+            fxn_onprocess    <= script.findFunction("OnProcess");
+            fxn_onaction     <= script.findFunction("OnAction");
+            fxn_onsavestate  <= script.findFunction("OnSaveState");
+            fxn_onloadstate  <= script.findFunction("OnLoadState");
+            fxn_onuiinit     <= script.findFunction("OnUIInit");
+            fxn_onuiupdate   <= script.findFunction("OnUIUpdate");
+
+            if(!_bQuiet)
+            {
+               if(STConfig.b_node_script_exec)
+               {
+                  Global.SuccessShort("Recompile script");
+               }
+               else
+               {
+                  Global.SuccessShort("Recompile script (script exec is disabled, see prefs)");
+               }
+            }
+
+            int tagIdx = 0;
+            for(;;)
+            {
+               Variable v <= script.findTaggedVariableByIndex(tagIdx);
+
+               if(null != v)
+               {
+                  if(Configuration.debugLevel > 1)
+                     Global.Debug2("NodeScript::recompile: param "+tagIdx+" name=\""+v.name+"\" type="+v.type);
+                  tagged_vars.add(#(deref v));
+               }
+               else
+               {
+                  break;
+               }
+               tagIdx++;
+            }
+
+            if(Configuration.debugLevel > 1)
+               Global.Debug2("NodeScript::recompile: script has "+tagged_vars.numElements+" parameter(s)");
+
+            updatePatternParamDecls();
+
+            updateScriptAuto();
+
+            updateScriptVarsFromPlayPatternParams();
+
+            // Run initializers and global statements
+            if(STConfig.b_node_script_exec)
+            {
+               b_editor_visible = nodeIsEditorVisible();
+               script.eval();
+
+               if(null != fxn_onreset)
+               {
+                  fxn_onreset.eval(null);
+               }
+
+               if(null != fxn_onsongselect)
+               {
+                  fxn_onsongselect.eval(null);
+               }
+
+               if(null != fxn_onseek)
+               {
+                  fxn_onseek.eval([tick_nr]);
+               }
+            }
+
+            if(null != bufState && null != fxn_onloadstate)
+            {
+               bufState.offset = 0;
+
+               // Reload state
+               try
+               {
+                  fxn_onloadstate.eval([bufState]);
+                  Global.Debug2("NodeScript::recompileScript: script state restored ("+bufState.offset+" bytes read)");
+               }
+               catch(Error e)
+               {
+                  trace "[---] NodeScript::recompileScript: OnLoadState: caught exception name="+e.name+", message=\""+e.message+"\"";
+               }
+            }
+
+            return true;
+         }
+         else
+         {
+            script_last_error_line_idx = script.lastErrorLineIndex - script_header_num_lines;
+            if(script_last_error_line_idx < 1)
+               script_last_error_line_idx = -2;
+            // trace "xxx 1 last_error_line_nr="+script_last_error_line_idx;
+            if(!_bQuiet)
+               Global.Error("Parse error in line "+(script_last_error_line_idx+1));
+         }
+      }
+      catch(Error e)
+      {
+         Global.Error("NodeScript: caught exception "+e.name+", message=\""+e.message+"\")");
+         script_last_error_line_idx = script.lastErrorLineIndex - script_header_num_lines;
+         if(script_last_error_line_idx < 1)
+            script_last_error_line_idx = -2;
+         // trace "xxx 2 last_error_line_nr="+script_last_error_line_idx;
+      }
+
+      return false;
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 5; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // Input ports
+      in_1.saveState(ofs);
+      in_2.saveState(ofs);
+      in_3.saveState(ofs);
+      in_4.saveState(ofs);
+
+      // Output ports
+      out_1.saveState(ofs);
+      out_2.saveState(ofs);
+      out_3.saveState(ofs);
+      out_4.saveState(ofs);
+
+      // Script source
+      Utils.WriteString(ofs, script_source);
+
+      // UI source (v3+)
+      Utils.WriteString(ofs, xfm_source);
+
+      // Script watchfile name (v2+)
+      Utils.WriteString(ofs, script_watchfile_name);
+
+      // UI watchfile name (v3+)
+      Utils.WriteString(ofs, xfm_watchfile_name);
+
+      // Cursor position (v4+)
+      ofs.i32 = script_cursor_x;
+      ofs.i32 = script_cursor_y;
+      ofs.i32 = xfm_cursor_x;
+      ofs.i32 = xfm_cursor_y;
+
+      // Patterns
+      NodeScriptPattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+
+      // Script save-state (v5+)
+      int scriptStateOff = ofs.offset;
+      ofs.i32 = 0;  // size, place holder
+      if(null != fxn_onsavestate)
+      {
+         if(STConfig.b_node_script_exec)
+         {
+            try
+            {
+               b_editor_visible = nodeIsEditorVisible();
+               fxn_onsavestate.eval([ofs]);
+            }
+            catch(Error e)
+            {
+               trace "[---] NodeScript::nodeSaveState: OnSaveState: caught exception name="+e.name+", message=\""+e.message+"\"";
+            }
+         }
+      }
+      Utils.FixChunkSize(ofs, scriptStateOff);
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // Input ports
+         if(!in_1.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         if(!in_2.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         if(!in_3.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         if(!in_4.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         // Output ports
+         if(!out_1.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         if(!out_2.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         if(!out_3.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         if(!out_4.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            return false;
+
+         // Script source
+         Utils.ReadString(ifs, script_source);
+
+         if(ver >= 3)
+         {
+            // UI source
+            Utils.ReadString(ifs, xfm_source);
+         }
+
+         if(ver >= 2)
+         {
+            // Script watchfile name (v2+)
+            Utils.ReadString(ifs, script_watchfile_name);
+         }
+
+         if(ver >= 3)
+         {
+            // UI watchfile name (v3+)
+            Utils.ReadString(ifs, xfm_watchfile_name);
+         }
+
+         if(ver >= 4)
+         {
+            // Cursor position (v4+)
+            script_cursor_x = ifs.i32;
+            script_cursor_y = ifs.i32;
+            xfm_cursor_x    = ifs.i32;
+            xfm_cursor_y    = ifs.i32;
+         }
+
+         // Patterns
+         int patIdx;
+         NodeScriptPattern *pat;
+         boolean bPatUsed;
+
+         patIdx = 0;
+         loop(128)
+         {
+            bPatUsed = ifs.i8;
+            if(bPatUsed)
+            {
+               pat <= new NodeScriptPattern;
+               pat.patInit(this, patIdx);
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeScript::loadState: patLoadState failed (patIdx="+patIdx+")";
+                  return false;
+               }
+            }
+
+            // Next pattern
+            patIdx++;
+         }
+
+         // (note) [21Jun2021] moved to Node base class
+         edit_pattern_nr = ifs.u8;
+         play_pattern_nr = ifs.u8;
+
+         Buffer stateBuf;
+         stateBuf.size = 0;
+         stateBuf.byteOrder = LITTLE_ENDIAN;
+
+         // Script save-state (v5+)
+         if(ver >= 5)
+         {
+            int stateSz = ifs.i32 - 4;
+            if(stateSz > 0)
+            {
+               if(Configuration.debugLevel >= 2)
+                  Global.Debug2("NodeScript: user save-state sz="+stateSz);
+               ifs.readBuffer(stateBuf, 0, stateSz, true/*resize*/);
+               stateBuf.offset = 0;
+            }
+         }
+
+         if(!recompileScript(true/*bQuiet*/))
+         {
+            trace "[~~~] NodeScript::loadState: failed to compile user script.\n";
+         }
+         else
+         {
+            if(STConfig.b_node_script_exec)
+            {
+               if(null != fxn_onloadstate)
+               {
+                  try
+                  {
+                     b_editor_visible = nodeIsEditorVisible();
+                     fxn_onloadstate.eval([stateBuf]);
+                  }
+                  catch(Error e)
+                  {
+                     trace "[---] NodeScript::nodeLoadState: OnLoadState: caught exception name="+e.name+", message=\""+e.message+"\"";
+                  }
+               }
+            }
+         }
+
+         // trace "xxx NodeScript::loadState: leave OK";
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method.png>
+   public virtual nodeSupportsHWInterface(int _outDevIdx, byte _midiCh) : boolean {
+      return
+         (out_1.b_enable && (out_1.dev_idx == _outDevIdx)) ||
+         (out_2.b_enable && (out_2.dev_idx == _outDevIdx)) ||
+         (out_3.b_enable && (out_3.dev_idx == _outDevIdx)) ||
+         (out_4.b_enable && (out_4.dev_idx == _outDevIdx)) ;
+   }
+
+   // <method.png>
+   public virtual =replay= nodeOnGlobalNotification(local Node _src, local String _id, local String _action) {
+
+      if(null != fxn_onaction)
+      {
+         MIDIPipeFrame frOut;
+         frOut.empty();
+
+         if(STConfig.b_node_script_exec)
+         {
+            try
+            {
+               fxn_onaction.eval([null, _id, _action, frOut]);
+
+               if(frOut.hasEvents())
+               {
+                  queueUIFrameOut(frOut);
+               }
+            }
+            catch(Error e)
+            {
+               trace "[---] NodeScript::nodeOnGlobalNotification<"+nodeGetName()+">: caught exception name="+e.name+", message=\""+e.message+"\"";
+            }
+         }
+      }
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     updateScriptVarsFromPlayPatternParams();
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeScript: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     updateScriptVarsFromPlayPatternParams();
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeScript: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         updateScriptVarsFromPlayPatternParams();
+         Events.SendPlayPat();
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseRPN(MIDIPipeFrame _frame, int _fltDev, int _fltCh) {
+      int numEv = _frame.getNumEventsRPNByFlt(_fltDev, _fltCh);
+      int evIdx = 0;
+
+      loop(numEv)
+      {
+         MIDIPipeEvent ev;
+
+         if(_frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_RPN, _fltDev, _fltCh))
+         {
+            if(RPN_SCRIPT_PARAM_0_ABS <= ev.rpn <= RPN_SCRIPT_PARAM_7_REL)
+            {
+               int paramIdx = (ev.rpn - RPN_SCRIPT_PARAM_0_ABS);
+               boolean bRel = paramIdx & 1;
+               paramIdx = paramIdx >> 1;
+
+               short rpnVal = ev.rpnValue;
+
+               if(bRel)
+               {
+                  rpnVal -= 0x2000;
+                  rpnVal /= 64.0f;
+                  param_rpn_mods[paramIdx] = rpnVal;
+               }
+
+               NodeScriptPattern pat <= nodeGetCurrentPlayPattern();
+               if(null != pat)
+               {
+                  NodeScriptParam param <= pat.params.get(paramIdx);
+                  if(null != param)
+                  {
+                     Value v;
+                     v.initVoid();
+
+                     switch(param.type)
+                     {
+                        case NodeScriptParam.TYPE_INT:
+                           if(bRel)
+                           {
+                              v.intValue = param.getIntValue() + rpnVal;
+                           }
+                           else
+                           {
+                              v.intValue = rpnVal;
+                           }
+                           break;
+
+                        case NodeScriptParam.TYPE_FLOAT:
+                           if(bRel)
+                           {
+                              v.floatValue = param.getFloatValue() + rpnVal;
+                           }
+                           else
+                           {
+                              v.floatValue = rpnVal;
+                           }
+                           break;
+                     }
+                  }
+
+                  if(YAC_TYPE_VOID != v.type)
+                  {
+                     tryUpdateParamValue(param.name/*varname*/, v, false/*bUpdateEditPattern*/);
+                  }
+               }
+            }
+         }
+
+         evIdx++;
+      }
+   }
+
+   // <replay.png>
+   public =replay= method queueUIFrameOut(MIDIPipeFrame _out) {
+      // Called from UI thread after processing "onAction" callback
+      queued_ui_frame_out.mergeFrame(_out);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [
+         // RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+         // RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+         RPN_COMMON_UI_PRGCHG,
+         RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+         RPN_COMMON_MUTE_TEMP_TOGGLE,
+         // RPN_COMMON_MUTE_TEMP_1_8,
+         // RPN_COMMON_MUTE_TEMP_9_16,
+         // RPN_COMMON_SOLO_TEMP_1_8,
+         // RPN_COMMON_SOLO_TEMP_9_16,
+         RPN_COMMON_UI_NODE_MUTE,
+         RPN_COMMON_UI_NODE_SOLO,
+         RPN_COMMON_UI_PIPE_MUTE,
+         RPN_COMMON_UI_PIPE_SOLO,
+
+         // RPN_COMMON_TRANSPOSE,  // nodeParseRPN_Transpose
+
+         // RPN_COMMON_VELOCITY_OFF,  // nodeParseRPN_Vel_Dur_Speed
+         // RPN_COMMON_VELOCITY_SCL,
+         // RPN_COMMON_DURATION_OFF,
+         // RPN_COMMON_DURATION_SCL,
+         // RPN_COMMON_SPEED,
+         // RPN_COMMON_POSITION,
+         // RPN_COMMON_SPEEDSYNCRATE,
+
+         // RPN_COMMON_PROB_ALL_REL,  // nodeParseRPN_Probability
+         // RPN_COMMON_PROB_TRACK_1,
+         // RPN_COMMON_PROB_TRACK_2,
+         // RPN_COMMON_PROB_TRACK_3,
+         // RPN_COMMON_PROB_TRACK_4,
+         // RPN_COMMON_PROB_TRACK_5,
+         // RPN_COMMON_PROB_TRACK_6,
+         // RPN_COMMON_PROB_TRACK_7,
+         // RPN_COMMON_PROB_TRACK_8,
+         // RPN_COMMON_PROB_TRACK_9,
+         // RPN_COMMON_PROB_TRACK_10,
+         // RPN_COMMON_PROB_TRACK_11,
+         // RPN_COMMON_PROB_TRACK_12,
+         // RPN_COMMON_PROB_TRACK_13,
+         // RPN_COMMON_PROB_TRACK_14,
+         // RPN_COMMON_PROB_TRACK_15,
+         // RPN_COMMON_PROB_TRACK_16,
+
+         // RPN_COMMON_RESET,
+         // RPN_COMMON_RUN,
+         // RPN_COMMON_LENGTH,
+         // RPN_COMMON_OFFSET,
+         // RPN_COMMON_RESTART,
+         // RPN_COMMON_OFFSET_ADD,
+         // RPN_COMMON_SEEK_OFFSET,
+         // RPN_COMMON_SEEK_REL_PRE,
+         // RPN_COMMON_GATE,
+         // RPN_COMMON_SEEK_REL_POST,
+
+         RPN_SCRIPT_PARAM_0_ABS,
+         RPN_SCRIPT_PARAM_0_REL,
+         RPN_SCRIPT_PARAM_1_ABS,
+         RPN_SCRIPT_PARAM_1_REL,
+         RPN_SCRIPT_PARAM_2_ABS,
+         RPN_SCRIPT_PARAM_2_REL,
+         RPN_SCRIPT_PARAM_3_ABS,
+         RPN_SCRIPT_PARAM_3_REL,
+         RPN_SCRIPT_PARAM_4_ABS,
+         RPN_SCRIPT_PARAM_4_REL,
+         RPN_SCRIPT_PARAM_5_ABS,
+         RPN_SCRIPT_PARAM_5_REL,
+         RPN_SCRIPT_PARAM_6_ABS,
+         RPN_SCRIPT_PARAM_6_REL,
+         RPN_SCRIPT_PARAM_7_ABS,
+         RPN_SCRIPT_PARAM_7_REL,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      if(bAllowSeekPrgChgAndMute)
+      {
+         handlePrgChg(_framePlay);
+         handlePrgChg(_frameRec);
+      }
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         if(b_auto_filter_a)
+         {
+            parseRPN(_framePlay, auto_dev_filter_a, auto_ch_filter_a);
+            parseRPN(_frameRec, auto_dev_filter_a, auto_ch_filter_a);
+         }
+
+         if(b_auto_filter_b)
+         {
+            parseRPN(_framePlay, auto_dev_filter_b, auto_ch_filter_b);
+            parseRPN(_frameRec, auto_dev_filter_b, auto_ch_filter_b);
+         }
+
+         short t;
+
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // Handle MUTE_TEMP_*, MUTE_TEMP_TOGGLE, MUTE_SOLO_*
+            nodeParseRPN_Mute(_framePlay, _frameRec);
+         }
+      }
+
+      if(bAllowSeekPrgChgAndMute)
+         _bMuted |= nodeHandleQueuedMuteTemp();
+
+      if(null != fxn_onprocess)
+      {
+         if(STConfig.b_node_script_exec)
+         {
+            try
+            {
+               b_editor_visible = nodeIsEditorVisible();
+               fxn_onprocess.eval([_framePlay, _frameRec, _bMuted, _bPlaySeq]);
+            }
+            catch(Error e)
+            {
+               trace "[---] NodeScript::nodeProcessFrame: caught exception name="+e.name+", message=\""+e.message+"\"";
+            }
+         }
+      }
+
+      // Merge events from UI thread
+      _framePlay.mergeFrame(queued_ui_frame_out);
+      queued_ui_frame_out.empty();
+
+      if(_bPlaySeq)
+         tick_nr++;
+   }
+
+}

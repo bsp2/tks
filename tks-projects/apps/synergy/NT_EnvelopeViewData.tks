@@ -1,0 +1,1915 @@
+// ----
+// ---- file   : NT_EnvelopeViewData.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- changed: 20Mar2017, 21Mar2017, 29Mar2017, 04Apr2017, 07Apr2017, 26May2017, 04Jan2018
+// ----          27Nov2018, 02Dec2018, 26May2019, 28Apr2020, 04Jan2022, 06Oct2023, 11Nov2023
+// ----          24Mar2024, 28Feb2025, 02Apr2025, 11Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MNT_EnvelopeViewData;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_EnvelopeViewData : Control {
+   NT_EnvelopeView   *parent;
+   NodeTrackerEditor *parent_editor;
+   NT_PatternView    *pattern_view;
+   NodeTracker       *parent_node;
+
+   define int EDIT_SELECT = 0;
+   define int EDIT_DRAW   = 1;
+   define int EDIT_LINES  = 2;
+   define int EDIT_CURVES = 3;
+
+   static StringArray edit_mode_names = [
+      "Select",
+      "Draw",
+      "Lines",
+      "Curves"
+      // "Scale/Offset",
+      // "Compress",
+      // "Expand",
+      // "Quantize",
+      // "TimeScale"
+                                         ];
+
+   define int ZOOM_BLOCKPAT = 0;
+   define int ZOOM_PATTERN  = 1;
+   define int ZOOM_1BEAT    = 2;
+   define int ZOOM_2BEATS   = 3;
+   define int ZOOM_3BEATS   = 4;
+   define int ZOOM_1BAR     = 5;
+   define int ZOOM_2BARS    = 6;
+   define int ZOOM_3BARS    = 7;
+   define int ZOOM_CUSTOM   = 8;
+
+   static StringArray zoom_mode_names = [
+      "Block/Pattern",
+      "Pattern",
+      "1 Beat",
+      "2 Beat",
+      "3 Beats",
+      "1 Bar",
+      "2 Bars",
+      "3 Bars",
+      "Custom"
+                                         ];
+
+   define int BLOCK_GRID_TICK = 0;
+   define int BLOCK_GRID_64   = 1;
+   define int BLOCK_GRID_32   = 2;
+   define int BLOCK_GRID_16   = 3;
+   define int BLOCK_GRID_8    = 4;
+   define int BLOCK_GRID_4    = 5;
+   define int BLOCK_GRID_2    = 6;
+   define int BLOCK_GRID_1    = 7;
+   define int BLOCK_GRID_BEAT = 8;
+   define int BLOCK_GRID_BAR  = 9;
+
+   static StringArray block_grid_names = [
+      "Tick",  // 0
+      "1/64",  // 1
+      "1/32",  // 2
+      "1/16",  // 3
+      "1/8",   // 4
+      "1/4",   // 5
+      "1/2",   // 6
+      "1/1",   // 7
+      "Beat",  // 8
+      "Bar"    // 9
+                                          ];
+
+   define int DRAG_MODE_NONE        = 0;
+   define int DRAG_MODE_DRAW        = 1;
+   define int DRAG_MODE_BLOCK       = 2;
+   define int DRAG_MODE_LINE_START  = 3;
+   define int DRAG_MODE_LINE_END    = 4;
+   define int DRAG_MODE_CURVE_START = 5;
+   define int DRAG_MODE_CURVE_END   = 6;
+   protected int drag_mode;
+   protected int drag_last_ticks;
+   protected float drag_last_value;
+
+   protected int current_line_idx;  // 0=start, 1=end
+
+   protected int   line_start_ticks;
+   protected float line_start_value;
+   protected int   line_end_ticks;
+   protected float line_end_value;
+
+   protected int   curve_end_ticks;
+   protected float curve_end_value;
+   protected int   curve_center_ticks;
+   protected float curve_center_value;
+
+   protected int block_start_indicator_ticks;
+   protected int block_end_indicator_ticks;
+   protected float block_start_indicator_py;
+   protected float block_end_indicator_py;
+   protected int block_start_ticks; // unsorted (during drag)
+   protected int block_end_ticks;
+   protected int block_start_ticks_sorted;
+   protected int block_end_ticks_sorted;
+
+
+   // <method_init.png>
+   public method init(NT_EnvelopeView _parent) {
+      parent        <= _parent;
+      parent_editor <= _parent.parent_editor;
+      pattern_view  <= _parent.pattern_view;
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeTracker _node) {
+      parent_node <= _node;
+
+      current_line_idx = 0;
+      block_start_indicator_ticks = -1;
+      block_end_indicator_ticks = -1;
+      block_start_indicator_py = -1;
+      block_end_indicator_py = -1;
+      selectNone();
+   }
+
+   // <ui_hide.png>
+   public method leaveNode() {
+      parent_node <= null;
+   }
+
+   // <method_get.png>
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   // <method_set.png>
+   public method setZoomMode(int _zoomMode) {
+      parent_node.envelope_view_zoom_mode = _zoomMode;
+      redraw();
+   }
+
+   // <method.png>
+   public method setEditMode(int _editMode) {
+
+      lazyUndoCurve();
+
+      parent_node.envelope_view_edit_mode = _editMode;
+      current_line_idx = 0;
+   }
+
+   // <method.png>
+   protected method lazyUndoCurve() {
+      if(EDIT_CURVES == parent_node.envelope_view_edit_mode)
+      {
+         if(2 == current_line_idx)
+         {
+            // Cancel curve
+            parent_node.undoEndCond("env_view_draw");
+            parent_editor.cmd_edit_undo();
+
+            current_line_idx = 0;
+            showBlockStartIndicatorForMouseX(-1);
+            showBlockEndIndicatorForMouseX(-1);
+            showBlockStartValueIndicatorForMouseY(-1);
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectNone() {
+      block_start_ticks = -1;
+      block_end_ticks = 0;
+   }
+
+   // <method.png>
+   public method haveSelection() : boolean {
+      return (-1 != block_start_ticks);
+   }
+
+   // <method.png>
+   public method sortSelection() {
+      if(block_start_ticks > block_end_ticks)
+      {
+         block_start_ticks_sorted = block_end_ticks;
+         block_end_ticks_sorted = block_start_ticks;
+      }
+      else
+      {
+         block_start_ticks_sorted = block_start_ticks;
+         block_end_ticks_sorted = block_end_ticks;
+      }
+   }
+
+   // <method.png>
+   public method getVisTicks() : int {
+      int ret = 0;
+
+      if(null != parent_node)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            int numTicksPerNote = current_song.ppq * 4;
+            float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+            float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+            switch(parent_node.envelope_view_zoom_mode)
+            {
+               case ZOOM_BLOCKPAT:
+                  ret = mpat.num_ticks;
+                  break;
+
+               case ZOOM_PATTERN:
+                  ret = mpat.num_ticks;
+                  break;
+
+               case ZOOM_1BEAT:
+                  ret = numTicksPerBeat;
+                  break;
+
+               case ZOOM_2BEATS:
+                  ret = numTicksPerBeat * 2;
+                  break;
+
+               case ZOOM_3BEATS:
+                  ret = numTicksPerBeat * 3;
+                  break;
+
+               case ZOOM_1BAR:
+                  ret = numTicksPerBar * 1;
+                  break;
+
+               case ZOOM_2BARS:
+                  ret = numTicksPerBar * 2;
+                  break;
+
+               case ZOOM_3BARS:
+                  ret = numTicksPerBar * 3;
+                  break;
+
+               case ZOOM_CUSTOM:
+                  ret = parent_node.envelope_view_custom_vis_ticks;
+                  break;
+            }
+         }
+      }
+
+      parent_node.envelope_view_custom_vis_ticks = ret;
+
+      return ret;
+   }
+
+   // <method.png>
+   public method getBlockTicks() : float {
+      int numTicksPerNote = current_song.ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+      switch(parent_node.envelope_view_block_grid_mode)
+      {
+         case BLOCK_GRID_TICK:
+            return 1;
+
+         case BLOCK_GRID_64:
+            return numTicksPerNote / 64.0f;
+
+         case BLOCK_GRID_32:
+            return numTicksPerNote / 32.0f;
+
+         case BLOCK_GRID_16:
+            return numTicksPerNote / 16.0f;
+
+         case BLOCK_GRID_8:
+            return numTicksPerNote / 8.0f;
+
+         case BLOCK_GRID_4:
+            return numTicksPerNote / 4.0f;
+
+         case BLOCK_GRID_2:
+            return numTicksPerNote / 2.0f;
+
+         case BLOCK_GRID_1:
+            return numTicksPerNote;
+
+         case BLOCK_GRID_BEAT:
+            return numTicksPerBeat;
+
+         case BLOCK_GRID_BAR:
+            return numTicksPerBar;
+      }
+
+      return 1; // should not be reachable
+   }
+
+   // <method.png>
+   protected method getTickOffsetForPx(int _px) : int {
+      float sx = getSizeX() - 2*2;
+      float pixPerTick = sx / getVisTicks();
+      int ret = ((_px-2) / pixPerTick) + parent_node.envelope_view_tick_offset;
+      return ret;
+   }
+
+   // <method.png>
+   protected method getEditGridAlignedTickOffsetForPx(int _px) : int {
+      int ret = getTickOffsetForPx(_px);
+      ret = (ret / parent_node.envelope_view_edit_grid_size) * parent_node.envelope_view_edit_grid_size;
+      return ret;
+   }
+
+   // <method.png>
+   protected method getBlockGridAlignedTickOffsetForPx(int _px) : int {
+      int ret = getTickOffsetForPx(_px);
+      float blockTicks = getBlockTicks();
+      ret = int( (ret + blockTicks/2) / blockTicks) * blockTicks;
+      return ret;
+   }
+
+   // <method.png>
+   protected method getBlockGridLeftAlignedTickOffsetForPx(int _px) : int {
+      // for onMouseDoubleClick
+      int ret = getTickOffsetForPx(_px);
+      float blockTicks = getBlockTicks();
+      ret = int(ret / blockTicks) * blockTicks;
+      return ret;
+   }
+
+   // <method.png>
+   protected method getPatternGridAlignedTickOffsetForPx(int _px) : int {
+      int ret = getTickOffsetForPx(_px);
+      ret = (ret / parent_node.pv_step_resolution) * parent_node.pv_step_resolution;
+      return ret;
+   }
+
+   // <method.png>
+   protected method getPixelToValueScaleY() : float {
+      if(null != parent_node)
+      {
+         float sy = getSizeY() - 2*2 - 16*UI.font_scaling;
+
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            NT_CEL cel <= pattern_view.getCurrentControllerLayout();
+
+            if(null != cel)
+            {
+               return cel.getMaxValEdit() / sy;
+            }
+         }
+      }
+      return 0;
+   }
+
+   // <method.png>
+   protected method getValueForPy(int _py) : int {
+      if(null != parent_node)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            NT_CEL cel <= pattern_view.getCurrentControllerLayout();
+
+            if(null != cel)
+            {
+               float sy = getSizeY() - 2*2 - 16*UI.font_scaling;
+
+               _py = _py - 2*2 - 16*UI.font_scaling;
+
+               if(_py >= 0)
+               {
+                  float pyScale = cel.getMaxValEdit() / sy;
+                  // trace "xxx py="+_py+" sy="+sy+" pyScale="+pyScale;
+                  int ret = ((sy - _py) * pyScale);
+                  if(ret < 0)
+                     ret = 0;
+                  return ret;
+               }
+               else
+               {
+                  return cel.getMaxValEdit();
+               }
+            }
+         }
+      }
+      return 0;
+   }
+
+   // <method.png>
+   protected method freeDrawValues(int _startTicks, float _startVal, int _endTicks, float _endVal, boolean _bClear) {
+      // // trace "xxx freeDrawValues: start=("+_startTicks+";"+_startVal+") end=("+_endTicks+";"+_endVal+") bClear="+_bClear;
+
+      if(null != parent_node)
+      {
+         NT_CEL cel <= pattern_view.getCurrentControllerLayout();
+
+         if(_startTicks > _endTicks)
+         {
+            int t = _startTicks;
+            _startTicks = _endTicks;
+            _endTicks = t;
+            float tf = _startVal;
+            _startVal = _endVal;
+            _endVal = tf;
+         }
+
+         int res = parent_node.envelope_view_edit_grid_size;
+         if(res < 1)
+            res = 1;
+
+         int ticks = _startTicks;
+         float value = _startVal;
+         float valueDelta = (_endVal - _startVal) / ( (_endTicks - _startTicks) / res );
+
+         if(_bClear)
+         {
+            parent_node.removeTrackEventAtRes(cel.ctl_id, ticks, res);
+            parent_node.shiftTrackEventsAtRes(cel.ctl_id, ticks, res);
+         }
+         else
+         {
+            if(parent_node.b_envelope_view_replace)
+            {
+               parent_node.insertReplaceExistingTrackEventAtRes(cel.ctl_id, value, ticks, res);
+            }
+            else
+            {
+               parent_node.insertReplaceTrackEventAtRes(cel.ctl_id, value, ticks, res);
+            }
+         }
+
+         ticks += res;
+         value += valueDelta;
+
+         while(ticks <= _endTicks)
+         {
+            if(_bClear)
+            {
+               parent_node.removeTrackEventAtRes(cel.ctl_id, ticks, res);
+               parent_node.shiftTrackEventsAtRes(cel.ctl_id, ticks, res);
+            }
+            else
+            {
+               if(parent_node.b_envelope_view_replace)
+               {
+                  parent_node.insertReplaceExistingTrackEventAtRes(cel.ctl_id, value, ticks, res);
+               }
+               else
+               {
+                  parent_node.insertReplaceTrackEventAtRes(cel.ctl_id, value, ticks, res);
+               }
+            }
+
+            ticks += res;
+            value += valueDelta;
+         }
+      }
+
+   }
+
+   // <method.png>
+   protected method curveDrawValues() {
+      // // trace "xxx curveDrawValues: tStart="+line_start_ticks+" tEnd="+curve_end_ticks;
+
+      if(null != parent_node)
+      {
+         NT_CEL cel <= pattern_view.getCurrentControllerLayout();
+
+         int res = parent_node.envelope_view_edit_grid_size;
+         if(res < 1)
+            res = 1;
+
+         int ticks = line_start_ticks;
+
+         FloatArray points;
+         points.empty();
+
+         points.bezierCubicDeCasteljau2d(line_start_ticks, line_start_value,       // p1
+                                         curve_center_ticks, curve_center_value,   // c1
+                                         curve_center_ticks , curve_center_value,  // c2
+                                         curve_end_ticks, curve_end_value,         // p2
+                                         1.0, 1.0, // scale x/y
+                                         6,        // recursion limit
+                                         0.0005,   // bendiness threshold
+                                         0.2,      // distance threshold
+                                         null
+                                         );
+
+         // // trace "xxx points.numElements="+points.numElements;
+         // // trace "xxx points="+#(points);
+
+         if(points.numElements > 4)
+         {
+            // Points to envelope
+            Envelope env;
+            env.alloc(points.numElements);
+
+            float tLast = line_start_ticks;
+            int pIdx = 0;
+            loop(points.numElements / 2)
+            {
+               float tNew = points[pIdx + 0];
+               env.add(tNew - tLast);
+               env.add(points[pIdx + 1]);
+               tLast = tNew;
+               pIdx += 2;
+            }
+
+            // // trace "xxx tNew="+tNew+" tEnd="+curve_end_ticks+" env[0]="+env[0];
+            // // trace "xxx env="+#(env);
+
+            // // env.speed = float(curve_end_ticks - line_start_ticks) / res;
+            env.speed = res;
+            env.time = 0;
+            env.interpolation = ENV_LINEAR;
+
+            // // float t = 0.0;
+            // // float tStep = points.
+
+            while(ticks <= curve_end_ticks)
+            {
+               if(parent_node.b_envelope_view_replace)
+               {
+                  parent_node.insertReplaceExistingTrackEventAtRes(cel.ctl_id, env.get(), ticks, res);
+               }
+               else
+               {
+                  parent_node.insertReplaceTrackEventAtRes(cel.ctl_id, env.get(), ticks, res);
+               }
+
+               ticks += res;
+               env.tickPrecise(1.0);
+            }
+
+            env.free();
+         }
+
+         points.free();
+      }
+
+   }
+
+   // <method.png>
+   protected method showBlockEndIndicatorForMouseX(float _x) {
+      if(_x >= 0)
+      {
+         int oldTicks = block_end_indicator_ticks;
+         block_end_indicator_ticks = getBlockGridAlignedTickOffsetForPx(_x);
+
+         if(block_end_indicator_ticks != oldTicks)
+         {
+            compositeAll();
+         }
+      }
+      else
+      {
+         if(-1 != block_end_indicator_ticks)
+         {
+            block_end_indicator_ticks = -1;
+            compositeAll();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method showBlockStartValueIndicatorForMouseY(float _y) {
+      // // trace "xxx showBlockStartValueIndicatorForMouseY("+_y+")";
+      if(-1 != _y)
+         _y = mathClampf(_y, 16*UI.font_scaling+2*2, (getSizeY()-2));
+
+      if(_y != block_start_indicator_py)
+      {
+         block_start_indicator_py = _y;
+         compositeAll();
+      }
+   }
+
+   // <method.png>
+   protected method showBlockEndValueIndicatorForMouseY(float _y) {
+      if(-1 != _y)
+         _y = mathClampf(_y, 16*UI.font_scaling+2*2, (getSizeY()-2));
+
+      if(_y != block_end_indicator_py)
+      {
+         block_end_indicator_py = _y;
+         compositeAll();
+      }
+   }
+
+   // <method.png>
+   public method zoomIn(float _px) {
+      if(null != parent_node)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            int ticksAtPx = getTickOffsetForPx(_px);
+            int visTicks = getVisTicks();
+
+            if(visTicks > 16)
+            {
+               visTicks *= 0.85;
+
+               if(visTicks < 16)
+               {
+                  visTicks = 16;
+               }
+
+               float sx = getSizeX() - 2*2;
+               float ticksPerPix = visTicks / sx;
+
+               parent_node.envelope_view_custom_vis_ticks = visTicks;
+
+               if(_px >= (sx*0.85))////ticksAtPix >= (mpat.num_ticks/2))
+               {
+                  // Align right
+                  parent_node.envelope_view_tick_offset = (ticksAtPx + visTicks*0.15) - ((_px-2) * ticksPerPix);
+                  if( (parent_node.envelope_view_tick_offset + visTicks) > mpat.num_ticks )
+                     parent_node.envelope_view_tick_offset = mpat.num_ticks - visTicks;
+               }
+               else if(_px < (sx*0.15))
+               {
+                  // Align left
+                  parent_node.envelope_view_tick_offset = (ticksAtPx - visTicks*0.15) - ((_px-2) * ticksPerPix);
+                  if(parent_node.envelope_view_tick_offset < 0)
+                     parent_node.envelope_view_tick_offset = 0;
+               }
+               else
+               {
+                  // Align center
+                  parent_node.envelope_view_tick_offset = ticksAtPx - ((_px-2) * ticksPerPix);
+               }
+
+               parent_node.envelope_view_zoom_mode = ZOOM_CUSTOM;
+
+               parent.redraw();
+               parent.b_update_knob_size = true;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method zoomOut(float _px) {
+      if(null != parent_node)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            int ticksAtPx = getTickOffsetForPx(_px);
+            int visTicks = getVisTicks();
+
+            if(visTicks < mpat.num_ticks)
+            {
+               visTicks *= 1.15;
+
+               // // trace "xxx visTicks="+visTicks+" mpat.num_ticks="+mpat.num_ticks;
+
+               if(visTicks > mpat.num_ticks)
+               {
+                  visTicks = mpat.num_ticks;
+                  parent_node.envelope_view_custom_vis_ticks = visTicks;
+                  parent_node.envelope_view_tick_offset = 0;
+                  parent_node.envelope_view_zoom_mode = ZOOM_PATTERN;
+               }
+               else
+               {
+                  float sx = getSizeX() - 2*2;
+                  float ticksPerPix = visTicks / sx;
+
+                  parent_node.envelope_view_custom_vis_ticks = visTicks;
+
+                  if(_px >= (sx*0.85))////ticksAtPix >= (mpat.num_ticks/2))
+                  {
+                     // Align right
+                     parent_node.envelope_view_tick_offset = (ticksAtPx + visTicks*0.15) - ((_px-2) * ticksPerPix);
+                     if( (parent_node.envelope_view_tick_offset + visTicks) > mpat.num_ticks )
+                        parent_node.envelope_view_tick_offset = mpat.num_ticks - visTicks;
+                  }
+                  else if(_px < (sx*0.15))
+                  {
+                     // Align left
+                     parent_node.envelope_view_tick_offset = (ticksAtPx - visTicks*0.15) - ((_px-2) * ticksPerPix);
+                     if(parent_node.envelope_view_tick_offset < 0)
+                        parent_node.envelope_view_tick_offset = 0;
+                  }
+                  else
+                  {
+                     // Align center
+                     parent_node.envelope_view_tick_offset = ticksAtPx - ((_px-2) * ticksPerPix);
+                  }
+
+                  // // parent_node.envelope_view_tick_offset = ticksAtPx - ((_px-2) * ticksPerPix);
+
+                  if(parent_node.envelope_view_tick_offset < 0)
+                     parent_node.envelope_view_tick_offset = 0;
+                  else if( (parent_node.envelope_view_tick_offset + visTicks) > mpat.num_ticks )
+                     parent_node.envelope_view_tick_offset = mpat.num_ticks - visTicks;
+                  // trace "xxx new visTicks="+visTicks+" tick_offset="+parent_node.envelope_view_tick_offset;
+                  parent_node.envelope_view_zoom_mode = ZOOM_CUSTOM;
+               }
+
+               parent.redraw();
+               parent.b_update_knob_size = true;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method makeRegionVisible(int _startTicks, int _numTicks) {
+      int visTicks = getVisTicks();
+
+      int curViewOff = parent_node.envelope_view_tick_offset;
+
+      if(_startTicks < curViewOff)
+      {
+         // Align left
+         parent_node.envelope_view_tick_offset = _startTicks;
+      }
+      else if( (_startTicks + _numTicks) > (curViewOff + visTicks) )
+      {
+         // Align right
+         if(_numTicks <= visTicks)
+         {
+            parent_node.envelope_view_tick_offset = _startTicks - (visTicks - _numTicks);
+         }
+         else
+         {
+            parent_node.envelope_view_tick_offset = _startTicks;
+         }
+
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+         if(null != mpat)
+         {
+            if( (parent_node.envelope_view_tick_offset + visTicks) > mpat.num_ticks )
+            {
+               parent_node.envelope_view_tick_offset = mpat.num_ticks - visTicks;
+            }
+         }
+
+         if(parent_node.envelope_view_tick_offset < 0)
+            parent_node.envelope_view_tick_offset = 0;
+      }
+
+      parent.autoEnableDataScroll();
+   }
+
+   // <ui_render.png>
+   public virtual onDrawOverlays() {
+      if(null != parent_node)
+      {
+         // trace "xxx EnvelopeView::onDrawOverlays";
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            NT_CEL cel <= pattern_view.getCurrentControllerLayout();
+
+            if(null != cel)
+            {
+               float sx = getSizeX();
+               float sy = getSizeY();
+
+               Point2f abspos;
+               calcAbsolutePositionFBO(abspos);
+
+               sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+               sdvg_EnableScissor();
+
+               sx -= 2*2;
+               sy -= 2*2;
+
+               int tickOffset = parent_node.envelope_view_tick_offset;
+               int visTicks = getVisTicks();
+
+               int c32;
+
+               if(visTicks > 0)
+               {
+                  UIRenderer.EnableBlending();
+
+                  int numTicksPerNote = current_song.ppq * 4;
+                  float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+                  float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+                  float pixPerTick = sx / visTicks;
+                  float pixPerValue = (sy - 16*UI.font_scaling) / cel.getMaxValEdit();
+                  // // int valueWidth = int(0.5 + parent_node.envelope_view_edit_grid_size * pixPerTick);
+                  float valueWidth = parent_node.envelope_view_edit_grid_size * pixPerTick;
+
+                  if(valueWidth < 4)
+                     valueWidth = int(0.5 + valueWidth);
+                  if(valueWidth < 1)
+                     valueWidth = 1;
+
+                  float px;
+                  float py;
+                  float nx;
+                  float shiftX = 2 + 2;
+                  float shiftY = 2 + 2 + 16*UI.font_scaling;
+
+                  // Draw block end indicator
+                  if(-1 != block_end_indicator_ticks)
+                  {
+                     px = (block_end_indicator_ticks - tickOffset) * pixPerTick;
+
+                     c32 = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_BLOCK_END_INDICATOR_BG);
+                     UIRenderer.DrawFilledRectangle(px + shiftX, shiftY, valueWidth, (sy-16*UI.font_scaling), c32);
+
+                     if(-1 != block_end_indicator_py)
+                     {
+                        if(shiftY <= block_end_indicator_py < (sy + 2*2))
+                        {
+                           c32 = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_BLOCK_END_INDICATOR_DOT_Y_FG);
+                           UIRenderer.DrawRoundDot(px + shiftX, block_end_indicator_py, 7*UI.font_scaling/*sz*/, c32);
+                        }
+                     }
+                  }
+
+                  // Draw block start indicator
+                  // // trace "xxx drawovl: block_start_indicator_ticks="+block_start_indicator_ticks;
+                  if(-1 != block_start_indicator_ticks)
+                  {
+                     px = (block_start_indicator_ticks - tickOffset) * pixPerTick;
+
+                     c32 = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_BLOCK_START_INDICATOR_BG);
+                     UIRenderer.DrawFilledRectangle(px + shiftX, shiftY, valueWidth, (sy-16*UI.font_scaling), c32);
+
+                     if(-1 != block_start_indicator_py)
+                     {
+                        if(shiftY <= block_start_indicator_py < (sy + 2*2))
+                        {
+                           c32 = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_BLOCK_START_INDICATOR_DOT_Y_FG);
+                           UIRenderer.DrawRoundDot(px + shiftX, block_start_indicator_py, 7*UI.font_scaling/*sz*/, c32);
+                        }
+                     }
+                  }
+
+                  // Draw edit position marker
+                  int editOffset = (parent_node.pv_pat_offset / parent_node.envelope_view_edit_grid_size) * parent_node.envelope_view_edit_grid_size;
+                  px = (editOffset - tickOffset) * pixPerTick;
+
+                  if((px + valueWidth) >= 0)
+                  {
+                     if(px < sx)
+                     {
+                        UIRenderer.DrawRectangle(px + shiftX, shiftY, valueWidth, (sy-16*UI.font_scaling),
+                                                 2,
+                                                 pattern_view.isEditable()
+                                                 ? pattern_view.b_insdel_shiftall_mode
+                                                   ? app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_EDIT_POS_EDIT_FG)
+                                                   : app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_EDIT_POS_EDIT_RELSHIFT_FG)
+                                                 : app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_EDIT_POS_DEF_FG)
+                                                 );
+                     }
+                  }
+
+                  // Draw play position marker
+                  if(replay.b_playing)
+                  {
+                     int playOffset = parent_node.jam_current_ticks;
+
+                     px = (playOffset - tickOffset) * pixPerTick;
+
+                     if((px + valueWidth) >= 0)
+                     {
+                        if(px < sx)
+                        {
+                           UIRenderer.DrawFilledRectangle(px + shiftX, shiftY, valueWidth, (sy-16*UI.font_scaling),
+                                                          app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_PLAY_POS_BG)
+                                                          );
+                        }
+                     }
+                  }
+
+                  if(haveSelection())
+                  {
+                     sortSelection();
+
+                     // // trace "xxx onDrawOverlays: block_ticks_sorted=("+block_start_ticks_sorted+";"+block_end_ticks_sorted+")";
+                     float pxLeft = (block_start_ticks_sorted - tickOffset) * pixPerTick;
+
+                     if(pxLeft < sx)
+                     {
+                        float pxRight = (block_end_ticks_sorted - tickOffset) * pixPerTick;
+
+                        if(pxRight >= 0)
+                        {
+                           c32 = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_OVERLAY_SELECTION_BG);
+                           UIRenderer.DrawFilledRectangle(pxLeft+shiftX, 2, (pxRight - pxLeft), (16*UI.font_scaling), c32);
+                        }
+                     }
+
+                  }
+
+                  UIRenderer.DisableBlending();
+               }
+
+               sdvg_PopScissor();
+               sdvg_DisableScissor();
+            }
+         }
+      }
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      float sx = getSizeX();
+      float sy = getSizeY();
+      UIRenderer.DrawDefaultBackground(0, 0, sx, sy);
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, sx, sy);
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      sdvg_PushScissor(abspos.x+0.5+2, abspos.y+0.5, size_x+0.5-2, size_y+0.5);
+      sdvg_EnableScissor();
+
+      if(null != parent_node)
+      {
+         // // trace "xxx EnvelopeView::onDraw: tickOffset="+parent_node.envelope_view_tick_offset;
+         sx -= 2*2;
+         sy -= 2*2;
+
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            NT_CEL cel <= pattern_view.getCurrentControllerLayout();
+
+            if(null != cel)
+            {
+               int tickOffset = parent_node.envelope_view_tick_offset;
+               int visTicks = getVisTicks();
+
+               if(visTicks > 0)
+               {
+                  int numTicksPerNote = current_song.ppq * 4;
+                  float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+                  float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+                  float pixPerTick = sx / visTicks;
+                  float pixPerValue = (sy - 16*UI.font_scaling) / cel.getMaxValEdit();
+                  // // int valueWidth = int(0.5 + parent_node.envelope_view_edit_grid_size * pixPerTick);
+                  float valueWidth = parent_node.envelope_view_edit_grid_size * pixPerTick;
+
+                  if(valueWidth < 4)
+                     valueWidth = int(0.5 + valueWidth);
+                  if(valueWidth < 1)
+                     valueWidth = 1;
+
+                  int t;
+                  float ct;
+
+                  // Draw background
+                  float px = ((-tickOffset) % parent_node.envelope_view_edit_grid_size) * pixPerTick;
+                  int gridIdx = -tickOffset / parent_node.envelope_view_edit_grid_size;
+
+                  // // int c32BgE = UI.GetTintedColor(LookAndFeel.COLOR_WINDOW_BG, 0xdf1f183f);
+                  // // int c32BgO = UI.GetTintedColor(LookAndFeel.COLOR_WINDOW_BG, 0xdf2f284f);
+
+                  int c32BgE = lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG,
+                                                 app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_BG_EVEN_TINT)
+                                                 );
+                  int c32BgO = lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG,
+                                                 app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_BG_ODD_TINT)
+                                                 );
+
+                  int c32Tick = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_TICK);
+
+                  while(px < sx)
+                  {
+                     float nx = px + pixPerTick * parent_node.envelope_view_edit_grid_size;
+                     int c32Bg = (gridIdx&1) ? c32BgO : c32BgE;
+                     UIRenderer.DrawFilledRectangle(px + 2, 2+16*UI.font_scaling, nx - px, (sy-16*UI.font_scaling), c32Bg);
+                     // // if(gridIdx&1)
+                     // // {
+                     // // UIRenderer.DrawFilledRectangle(px + 2, 2+15, nx - px, 1, c32Tick);
+                     UIRenderer.DrawFilledRectangle(px + 2, 2+14*UI.font_scaling, 1, 2*UI.font_scaling, c32Tick);
+                     // // }
+                     px = nx;
+                     gridIdx++;
+                  }
+
+                  // Draw beat marker
+                  int c32Beat = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_BEAT_MARKER);
+                  int c32BeatLabel = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_BEAT_LABEL);
+                  boolean bDrawBeatLabel = (visTicks < (numTicksPerBeat * 16));
+                  int beatModulo = (sx / (numTicksPerBeat * pixPerTick)) / 40;
+                  if(beatModulo < 1)
+                     beatModulo = 1;
+                  else if(beatModulo & 1)
+                     beatModulo++;
+                  Font barFont <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+                  int beatIdx;
+                  UIRenderer.SetLineWidth(2.0f);
+                  // glLineStipple(2.0f, 0xaaaa);
+                  // glEnable(GL_LINE_STIPPLE);
+
+                  if(bDrawBeatLabel)
+                  {
+                     beatIdx = int((tickOffset + numTicksPerBeat - 1) / numTicksPerBeat);
+                     t = beatIdx * numTicksPerBeat;
+                     ct = (t - tickOffset);
+                     px = ct * pixPerTick;
+                     while(px < sx)
+                     {
+                        if(0 == (beatIdx % beatModulo))
+                        {
+                           if(px >= 0)
+                           {
+                              UIRenderer.DrawLine(px+2, 2, px+2, 2+sy, c32Beat);
+                              String beatLabel = (1 + (beatIdx / current_song.sig_beats))+"."+(1 + (beatIdx % current_song.sig_beats));
+                              float beatLabelWidth = 2 + barFont.stringWidth(beatLabel);
+                              UIRenderer.EnableBlending();
+                              // // UIRenderer.DrawFilledRectangle(px + 4, 2, barLabelWidth, 2 + 14, #bfafafaf);
+                              UIRenderer.DrawText(beatLabel, barFont, c32BeatLabel, c32BeatLabel, px + 4 + 1, 2, 0/*availW*/, 0/*align*/);
+                              UIRenderer.DisableBlending();
+                           }
+                        }
+                        ct += numTicksPerBeat;
+                        px = ct * pixPerTick;
+                        beatIdx++;
+                     }
+                  }
+                  else
+                  {
+                     // No labels
+                     t = int((tickOffset + numTicksPerBeat - 1) / numTicksPerBeat) * numTicksPerBeat;
+                     ct = (t - tickOffset);
+                     px = ct * pixPerTick;
+                     while(px < sx)
+                     {
+                        if(0 == (beatIdx % beatModulo))
+                        {
+                           if(px >= 0)
+                           {
+                              UIRenderer.DrawLine(px+2, 2, px+2, 2+sy, c32Beat);
+                           }
+                        }
+                        ct += numTicksPerBeat;
+                        px = ct * pixPerTick;
+                        beatIdx++;
+                     }
+                  }
+                  // glDisable(GL_LINE_STIPPLE);
+
+                  // Draw bar marker
+                  // // int c32Bar = #ff000000;
+                  int barModulo = (sx / (numTicksPerBar * pixPerTick)) / 10;
+                  if(barModulo < 1)
+                     barModulo = 1;
+                  else if(barModulo & 1)
+                     barModulo++;
+
+                  int c32Bar = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_BAR_MARKER);
+                  int c32BarLabel = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_BAR_LABEL);
+                  int barIdx = int((tickOffset + numTicksPerBar - 1) / numTicksPerBar);
+                  t = barIdx * numTicksPerBar;
+                  ct = (t - tickOffset);
+                  px = ct * pixPerTick;
+
+                  int c32WinBG = lnf_colors.get(LookAndFeel.COLOR_WINDOW_BG);
+                  float numPixPerBeat = numTicksPerBeat * pixPerTick;
+
+                  while(px < sx)
+                  {
+                     boolean bRenderBarLabel = (0 == (barIdx % barModulo));
+                     barIdx++;
+                     if(bRenderBarLabel && (px >= 0))
+                     {
+                        UIRenderer.DrawLine(px + 2, 2, px + 2, 2+sy, c32Bar);
+                        float barLabelWidth = 2 + barFont.stringWidth(String(barIdx));
+                        // UIRenderer.DrawFilledRectangle(px + 4, 2, barLabelWidth, 2 + 14, #bfafafaf);
+                        if(!bDrawBeatLabel)
+                        {
+                           if(numPixPerBeat < 40)
+                              UIRenderer.DrawFilledRectangle(px + 4, 2, barLabelWidth, 2 + 12*UI.font_scaling, c32WinBG); // #bfafafaf
+                           UIRenderer.EnableBlending();
+                           UIRenderer.DrawText(String(barIdx), barFont, c32BarLabel, c32BarLabel, px + 4 + 1, 2, 0/*availW*/, 0/*align*/);
+                           UIRenderer.DisableBlending();
+                        }
+                     }
+                     ct += numTicksPerBar;
+                     px = ct * pixPerTick;
+                  }
+
+                  UIRenderer.SetLineWidth(1.0f);
+
+                  // Draw values
+                  Envelope env <= pattern_view.getCurrentEnvelope(cel.ctl_id);
+
+                  if(null != env)
+                  {
+                     int envIdx = env.timeToIndex(tickOffset);
+                     // trace "xxx NTEV: envIdx="+envIdx;
+
+                     if(-1 != envIdx)
+                     {
+                        // // if(-2 != envIdx)
+                        // // {
+                        // //    if(envIdx > 0)
+                        // //       envIdx--;
+                        // //    t = env.indexToTime(envIdx);
+                        // //    // trace "xxx NTEV: t="+t;
+                        // //    envIdx *= 2;
+                        // // }
+                        // // else
+                        // // {
+                        // //    // before first event
+                        // //    envIdx = 0;
+                        // //    t = 0;
+                        // // }
+
+                        envIdx = 0;
+                        t = 0;
+
+                        sdvg_PushScissor(abspos.x+0.5 + 3,
+                                         abspos.y+0.5 + 2 + 16*UI.font_scaling,
+                                         size_x+0.5-3,
+                                         size_y+0.5 -2-16*UI.font_scaling
+                                         );
+
+                        // (todo) cel bias (e.g. M64_P63)
+                        float minVal = 0;
+                        float maxVal = cel.getMaxValEdit();
+
+                        UIRenderer.EnableBlending();
+
+                        int c32LineTop = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_LINE_TOP);
+                        int c32LineBot = app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_LINE_BOTTOM);
+
+                        int c32TopO = lnfGetTintedColorAlpha(LookAndFeel.COLOR_WINDOW_BG,
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_ODD_TOP),
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_ALPHA_TOP)
+                                                             );
+                        int c32TopE = lnfGetTintedColorAlpha(LookAndFeel.COLOR_WINDOW_BG,
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_EVEN_TOP),
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_ALPHA_TOP)
+                                                             );
+                        int c32BotO = lnfGetTintedColorAlpha(LookAndFeel.COLOR_WINDOW_BG,
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_ODD_BOTTOM),
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_ALPHA_BOTTOM)
+                                                             );
+                        int c32BotE = lnfGetTintedColorAlpha(LookAndFeel.COLOR_WINDOW_BG,
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_EVEN_BOTTOM),
+                                                             app_lnf.getColor(AppLookAndFeel.COLOR_NT_EV_VALUE_BG_ALPHA_BOTTOM)
+                                                             );
+
+                        float valueBias = cel.getValueBias();
+                        float yCtr = (2 + 16*UI.font_scaling) + ( (sy-16*UI.font_scaling) * 0.5);
+
+                        while(envIdx < env.numElements)
+                        {
+                           t += env[envIdx + 0];
+
+                           px = (t - tickOffset) * pixPerTick;
+
+                           if((px+valueWidth) >= 0)
+                           {
+                              if(px < sx)
+                              {
+                                 float val = mathClampf(env[envIdx + 1], minVal, maxVal);
+                                 float y = val * pixPerValue;
+
+                                 if(y > sy)
+                                    y = sy;
+                                 else if(y < 3)
+                                    y = 3;
+
+                                 gridIdx = t / parent_node.envelope_view_edit_grid_size;
+
+                                 int c32Top = (gridIdx&1) ? c32TopO : c32TopE;
+                                 int c32Bot = (gridIdx&1) ? c32BotO : c32BotE;
+
+                                 float yTop = 2 + sy - y;  // y == height
+
+                                 float ySz;
+                                 float yPos;
+                                 float yMarker;
+
+                                 if(valueBias > 0)
+                                 {
+                                    if(val >= valueBias)
+                                    {
+                                       // From pos to center
+                                       ySz = (yCtr - yTop);
+                                       yPos = yTop;
+                                       yMarker = yTop;
+                                    }
+                                    else
+                                    {
+                                       // From center to pos
+                                       ySz = (yTop - yCtr);
+                                       yPos = yCtr;
+                                       yMarker = yTop - 1;
+                                    }
+                                 }
+                                 else
+                                 {
+                                    // From pos to bottom
+                                    yPos = yTop;
+                                    ySz = y;
+                                    yMarker = yTop;
+                                 }
+
+                                 UIRenderer.DrawGradientFilledRectangle(px+2, yPos,
+                                                                        valueWidth,
+                                                                        ySz,
+                                                                        c32Top, c32Top,
+                                                                        c32Bot, c32Bot
+                                                                        );
+
+                                 UIRenderer.DrawFilledRectangle(px+2, yMarker,
+                                                                valueWidth, 1,
+                                                                c32LineTop
+                                                                );
+
+                                 UIRenderer.DrawFilledRectangle(px+2, yMarker + 1,
+                                                                valueWidth, 1,
+                                                                c32LineBot
+                                                                );
+                              }
+                              else
+                              {
+                                 break;
+                              }
+                           }
+
+                           envIdx += 2;
+                        }
+
+                        sdvg_PopScissor();
+                        sdvg_DisableScissor();
+
+                        UIRenderer.DisableBlending();
+                     } // if -1 != envIdx (after last event)
+
+                  }
+               }
+            }
+         }
+      }
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+   }
+
+   // <method.png>
+   protected method showBlockStartIndicatorForMouseX(float _x) {
+      // trace "xxx showBlockStartIndicatorForMouseX("+_x+")";
+      if(_x >= 0)
+      {
+         int oldTicks = block_start_indicator_ticks;
+         block_start_indicator_ticks = getBlockGridAlignedTickOffsetForPx(_x);
+
+         if(block_start_indicator_ticks != oldTicks)
+         {
+            compositeAll();
+         }
+      }
+      else
+      {
+         if(-1 != block_start_indicator_ticks)
+         {
+            block_start_indicator_ticks = -1;
+            compositeAll();
+         }
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            parent_editor.toggleEnvelopeView(false);
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual wantOnMouseClickAfterOnMouseWasHandled() : boolean {
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      if(null != parent_node)
+      {
+         if(_ev.isWheel())
+         {
+            if(_ev.wheelUp())
+            {
+               if(VMOD_LSHIFT == UI.GetKeyMod())
+               {
+                  parent.scrollLeft();
+               }
+               else
+               {
+                  zoomIn(_ev.mouse_rel_x);
+               }
+            }
+            else if(_ev.wheelDown())
+            {
+               if(VMOD_LSHIFT == UI.GetKeyMod())
+               {
+                  parent.scrollRight();
+               }
+               else
+               {
+                  zoomOut(_ev.mouse_rel_x);
+               }
+            }
+         }
+         else
+         {
+            if(EDIT_LINES == parent_node.envelope_view_edit_mode)
+            {
+               if(0 == current_line_idx)
+               {
+                  showBlockStartIndicatorForMouseX(_ev.mouse_rel_x);
+               }
+               else
+               {
+                  showBlockEndIndicatorForMouseX(_ev.mouse_rel_x);
+               }
+            }
+            else if(EDIT_CURVES == parent_node.envelope_view_edit_mode)
+            {
+               if(0 == current_line_idx)
+               {
+                  showBlockStartIndicatorForMouseX(_ev.mouse_rel_x);
+               }
+               else if(1 == current_line_idx)
+               {
+                  showBlockEndIndicatorForMouseX(_ev.mouse_rel_x);
+               }
+               else
+               {
+                  curve_center_ticks = getTickOffsetForPx(_ev.mouse_rel_x);
+                  curve_center_value = getValueForPy(_ev.mouse_rel_y);
+                  curveDrawValues();
+                  pattern_view.queueRedrawAll();
+
+                  Global.Print("Update curve, center=("+curve_center_ticks+";"+curve_center_value+")");
+               }
+            }
+            else
+            {
+               showBlockStartIndicatorForMouseX(-1);
+               showBlockEndIndicatorForMouseX(-1);
+               showBlockStartValueIndicatorForMouseY(-1);
+               showBlockEndValueIndicatorForMouseY(-1);
+            }
+         }
+      }
+
+      return true;
+   }
+
+   // <method.png>
+   protected method setPatternEditPositionToPx(float _px) {
+      if(!replay.b_playing || !parent_node.doAutoScroll())
+      {
+         // Set edit position
+         int ticks = getPatternGridAlignedTickOffsetForPx(_px);
+         pattern_view.gotoPatPosition(ticks, true/*bClip*/);
+      }
+   }
+
+   // <method_set.png>
+   protected method setLineStartFromEv(MouseEvent _ev) {
+      float value = getValueForPy(_ev.mouse_rel_y);
+      int ticks = getBlockGridAlignedTickOffsetForPx(_ev.mouse_rel_x);
+      line_start_ticks = ticks;
+      line_start_value = value;
+      showBlockStartValueIndicatorForMouseY(_ev.mouse_rel_y);
+      Global.Print("Set line start ("+line_start_ticks+";"+line_start_value+")");
+   }
+
+   // <method_set.png>
+   protected method setLineEndFromEv(MouseEvent _ev) {
+      float value = getValueForPy(_ev.mouse_rel_y);
+      int ticks = getBlockGridAlignedTickOffsetForPx(_ev.mouse_rel_x);
+      line_end_ticks = ticks;
+      line_end_value = value;
+      showBlockEndValueIndicatorForMouseY(_ev.mouse_rel_y);
+      Global.Print("Set line end ("+line_end_ticks+";"+line_end_value+")");
+   }
+
+   // <method.png>
+   protected method execDrawLines() {
+      parent_node.undoBeginCond("env_view_draw");
+      // // ticks = getBlockGridAlignedTickOffsetForPx(_ev.mouse_rel_x);
+
+      int t;
+      float tf;
+
+      if(line_end_ticks < line_start_ticks)
+      {
+         t = line_start_ticks;
+         line_start_ticks = line_end_ticks;
+         line_end_ticks = t;
+         tf = line_start_value;
+         line_start_value = line_end_value;
+         line_end_value = tf;
+      }
+
+      if(line_end_ticks != line_start_ticks)
+      {
+         line_end_ticks -= parent_node.envelope_view_edit_grid_size;
+
+         freeDrawValues(line_start_ticks, line_start_value, line_end_ticks, line_end_value, false/*bClear*/);
+      }
+      else
+      {
+         freeDrawValues(line_start_ticks, line_start_value, line_end_ticks, line_end_value, false/*bClear*/);
+      }
+
+      parent_node.undoEndCond("env_view_draw");
+      pattern_view.queueRedrawAll();
+      showBlockStartIndicatorForMouseX(-1);
+      showBlockEndIndicatorForMouseX(-1);
+      showBlockStartValueIndicatorForMouseY(-1);
+      showBlockEndValueIndicatorForMouseY(-1);
+      Global.Print("Line from ("+line_start_ticks+";"+line_start_value+") to ("+line_end_ticks+";"+line_end_value+")");
+      current_line_idx = 0;
+   }
+
+   // <method_set.png>
+   protected method setCurveStartFromEv(MouseEvent _ev) {
+      int ticks = getBlockGridAlignedTickOffsetForPx(_ev.mouse_rel_x);
+      float value = getValueForPy(_ev.mouse_rel_y);
+      line_start_ticks = ticks;
+      line_start_value = value;
+      showBlockStartValueIndicatorForMouseY(_ev.mouse_rel_y);
+      Global.Print("Set curve start ("+line_start_ticks+";"+line_start_value+")");
+   }
+
+   // <method_set.png>
+   protected method setCurveEndFromEv(MouseEvent _ev) {
+      int ticks = getBlockGridAlignedTickOffsetForPx(_ev.mouse_rel_x);
+      float value = getValueForPy(_ev.mouse_rel_y);
+      curve_end_ticks = ticks;
+      curve_end_value = value;
+      showBlockEndValueIndicatorForMouseY(_ev.mouse_rel_y);
+      Global.Print("Set curve end ("+curve_end_ticks+";"+curve_end_value+")");
+   }
+
+   // <method.png>
+   protected method beginCurve() {
+      if(line_start_ticks > curve_end_ticks)
+      {
+         Global.Print("Init curve from ("+line_start_ticks+";"+line_start_value+") to ("+curve_end_ticks+";"+curve_end_value+")");
+         int t = line_start_ticks;
+         line_start_ticks = curve_end_ticks;
+         curve_end_ticks = t;
+         float tf = line_start_value;
+         line_start_value = curve_end_value;
+         curve_end_value = tf;
+      }
+      else
+      {
+         Global.Print("Init curve from ("+line_start_ticks+";"+line_start_value+") to ("+curve_end_ticks+";"+curve_end_value+")");
+      }
+
+      curve_end_ticks -= parent_node.envelope_view_edit_grid_size;
+
+      curve_center_ticks = curve_end_ticks;
+      curve_center_value = curve_end_value;
+
+      parent_node.undoBeginCond("env_view_draw");
+      curveDrawValues();
+      pattern_view.queueRedrawAll();
+      // // showBlockStartValueIndicatorForMouseY(-1);
+      current_line_idx = 2;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      UI.SetKeyboardFocus(this);
+
+      if(null != parent_node)
+      {
+         if(_ev.mouse_rel_y < 16*UI.font_scaling)
+         {
+            setPatternEditPositionToPx(_ev.mouse_rel_x);
+            selectNone();
+            compositeAll();
+            return true;
+         }
+         else
+         {
+            int ticks  = getEditGridAlignedTickOffsetForPx(_ev.mouse_rel_x);
+            float value = getValueForPy(_ev.mouse_rel_y);
+
+            int t;
+            float tf;
+
+            if(EDIT_DRAW == parent_node.envelope_view_edit_mode)
+            {
+               parent_node.undoBeginCond("env_view_draw");
+               freeDrawValues(ticks, value, ticks, value, _ev.rightButtonUp()/*bClear*/);
+               parent_node.undoEndCond("env_view_draw");
+               pattern_view.queueRedrawAll();
+            }
+            else if(EDIT_LINES == parent_node.envelope_view_edit_mode)
+            {
+               if(_ev.isLeftButton())
+               {
+                  if(0 == current_line_idx)
+                  {
+                     // Start point
+                     setLineStartFromEv(_ev);
+                     current_line_idx = 1;
+                  }
+                  else
+                  {
+                     // End point (draw line)
+                     setLineEndFromEv(_ev);
+
+                     execDrawLines();
+                  }
+               }
+               else
+               {
+                  if(0 == current_line_idx)
+                  {
+                     // Clear
+                     parent_node.undoBeginCond("env_view_draw");
+                     freeDrawValues(ticks, value, ticks, value, true/*bClear*/);
+                     parent_node.undoEndCond("env_view_draw");
+                     pattern_view.queueRedrawAll();
+                  }
+                  else
+                  {
+                     // Cancel line
+                     current_line_idx = 0;
+                     showBlockStartIndicatorForMouseX(-1);
+                     showBlockEndIndicatorForMouseX(-1);
+                     showBlockStartValueIndicatorForMouseY(-1);
+                     Global.Print("Cancel line");
+                  }
+               }
+            }
+            else if(EDIT_CURVES == parent_node.envelope_view_edit_mode)
+            {
+               if(_ev.isLeftButton())
+               {
+                  if(0 == current_line_idx)
+                  {
+                     // Start point
+                     setCurveStartFromEv(_ev);
+                     current_line_idx = 1;
+                  }
+                  else if(1 == current_line_idx)
+                  {
+                     // End point (init curve / draw line)
+                     setCurveEndFromEv(_ev);
+
+                     beginCurve(); // starts undo. next: set center value (mouse move)
+                  }
+                  else
+                  {
+                     // Finalize curve
+                     current_line_idx = 0;
+                     parent_node.undoEndCond("env_view_draw");
+                     Global.Print("Finalize curve");
+                     showBlockStartIndicatorForMouseX(-1);
+                     showBlockEndIndicatorForMouseX(-1);
+                     showBlockStartValueIndicatorForMouseY(-1);
+                     showBlockEndValueIndicatorForMouseY(-1);
+                  }
+               }
+               else
+               {
+                  if(0 == current_line_idx)
+                  {
+                     // Clear
+                     parent_node.undoBeginCond("env_view_draw");
+                     freeDrawValues(ticks, value, ticks, value, true/*bClear*/);
+                     parent_node.undoEndCond("env_view_draw");
+                     pattern_view.queueRedrawAll();
+                  }
+                  else
+                  {
+                     // Cancel curve
+                     if(2 == current_line_idx)
+                     {
+                        // Curve already initialized, revert
+                        parent_node.undoEndCond("env_view_draw");
+                        parent_editor.cmd_edit_undo();
+                     }
+                     current_line_idx = 0;
+                     showBlockStartIndicatorForMouseX(-1);
+                     showBlockEndIndicatorForMouseX(-1);
+                     showBlockStartValueIndicatorForMouseY(-1);
+                     Global.Print("Cancel curve");
+                  }
+               }
+            }
+         }
+      }
+
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+
+      if(_ev.mouse_rel_y < 16*UI.font_scaling)
+      {
+         lazyUndoCurve();
+
+         showBlockStartIndicatorForMouseX(-1);
+         showBlockEndIndicatorForMouseX(-1);
+         showBlockStartValueIndicatorForMouseY(-1);
+         showBlockEndValueIndicatorForMouseY(-1);
+
+         setPatternEditPositionToPx(_ev.mouse_rel_x);
+         block_start_ticks = getBlockGridLeftAlignedTickOffsetForPx(_ev.mouse_rel_x);
+         block_end_ticks = block_start_ticks + getBlockTicks();
+
+         if(block_start_ticks_sorted != block_end_ticks_sorted)
+         {
+            pattern_view.blockBeginAt(block_start_ticks_sorted, false/*bAllowSelectNone*/);
+            pattern_view.blockEndAt(block_end_ticks_sorted - parent_node.pv_step_resolution, false/*bAllowCancel*/);
+         }
+
+         sortSelection();
+         compositeAll();
+         return true;
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      // // trace "xxx onMouseBeginDrag current_line_idx="+current_line_idx;
+      if(null != parent_node)
+      {
+         lazyUndoCurve();
+
+         if((EDIT_LINES != parent_node.envelope_view_edit_mode) &&
+            (EDIT_CURVES != parent_node.envelope_view_edit_mode)
+            )
+         {
+            showBlockStartIndicatorForMouseX(-1);
+            showBlockEndIndicatorForMouseX(-1);
+            showBlockStartValueIndicatorForMouseY(-1);
+            showBlockEndValueIndicatorForMouseY(-1);
+         }
+
+         if(_ev.mouse_rel_y < 16*UI.font_scaling)
+         {
+            drag_last_ticks = getBlockGridAlignedTickOffsetForPx(_dragStart.mouse_rel_x);
+            block_start_ticks = drag_last_ticks;
+            // trace "xxx block_start_ticks="+block_start_ticks;
+            setPatternEditPositionToPx(_ev.mouse_rel_x);
+            // // pattern_view.blockBeginAt(block_start_ticks, false/*bAllowSelectNone*/);
+            drag_mode = DRAG_MODE_BLOCK;
+            return true;
+         }
+         else
+         {
+            boolean bDraw =
+               (EDIT_DRAW == parent_node.envelope_view_edit_mode) ||
+               ((EDIT_LINES == parent_node.envelope_view_edit_mode) && _ev.isRightButtonDown()) ||
+               ((EDIT_CURVES == parent_node.envelope_view_edit_mode) && _ev.isRightButtonDown())
+               ;
+
+            // trace "xxx bDraw="+bDraw+" current_line_idx="+current_line_idx;
+
+            if(bDraw)
+            {
+               drag_last_ticks = getEditGridAlignedTickOffsetForPx(_dragStart.mouse_rel_x);
+               drag_last_value = getValueForPy(_dragStart.mouse_rel_y);
+
+               current_line_idx = 0;
+
+               // // trace "xxx drag start=("+drag_last_ticks+";"+drag_last_value+")";
+               drag_mode = DRAG_MODE_DRAW;
+
+               parent_node.undoBeginCond("env_view_draw");
+
+               return true;
+            }
+            else if(EDIT_LINES == parent_node.envelope_view_edit_mode)
+            {
+               if(0 == current_line_idx)
+               {
+                  drag_mode = DRAG_MODE_LINE_START;
+                  showBlockStartIndicatorForMouseX(_dragStart.mouse_rel_x);
+                  setLineStartFromEv(_ev);
+               }
+               else if(1 == current_line_idx)
+               {
+                  drag_mode = DRAG_MODE_LINE_END;
+                  showBlockEndIndicatorForMouseX(_dragStart.mouse_rel_x);
+                  setLineEndFromEv(_ev);
+               }
+               return true;
+            }
+            else if(EDIT_CURVES == parent_node.envelope_view_edit_mode)
+            {
+               if(0 == current_line_idx)
+               {
+                  drag_mode = DRAG_MODE_CURVE_START;
+                  showBlockStartIndicatorForMouseX(_dragStart.mouse_rel_x);
+                  setCurveStartFromEv(_ev);
+               }
+               else if(1 == current_line_idx)
+               {
+                  // // trace "xxx start DRAG_MODE_CURVE_END current_line_idx="+current_line_idx;
+                  drag_mode = DRAG_MODE_CURVE_END;
+                  showBlockEndIndicatorForMouseX(_dragStart.mouse_rel_x);
+                  setCurveEndFromEv(_ev);
+               }
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return false;////isMouseFocusLocked();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      int ticks;
+
+      if(DRAG_MODE_DRAW == drag_mode)
+      {
+         ticks = getEditGridAlignedTickOffsetForPx(_currentEv.mouse_rel_x);
+         float value = getValueForPy(_currentEv.mouse_rel_y);
+
+         // // trace "xxx drag to=("+ticks+";"+value+")";
+
+         if(_currentEv.isAnyButtonDown())
+         {
+            freeDrawValues(drag_last_ticks, drag_last_value, ticks, value, _currentEv.isRightButtonDown()/*bClear*/);
+         }
+
+         drag_last_ticks = ticks;
+         drag_last_value = value;
+
+         pattern_view.queueRedrawAll();
+
+         return true;
+      }
+      else if(DRAG_MODE_BLOCK == drag_mode)
+      {
+         drag_last_ticks = getBlockGridAlignedTickOffsetForPx(_currentEv.mouse_rel_x);
+         int oldBlockEndTicks = block_end_ticks;
+         block_end_ticks = drag_last_ticks;
+         // // trace "xxx block_end_ticks="+block_end_ticks;
+         sortSelection();
+         if(block_start_ticks_sorted != block_end_ticks_sorted)
+         {
+            pattern_view.blockBeginAt(block_start_ticks_sorted, false/*bAllowSelectNone*/);
+            pattern_view.blockEndAt(block_end_ticks_sorted - parent_node.pv_step_resolution, false/*bAllowCancel*/);
+         }
+         if(block_end_ticks != oldBlockEndTicks)
+         {
+            compositeAll();
+         }
+
+         if(_currentEv.mouse_rel_x >= (getSizeX() - 32*UI.font_scaling))
+         {
+            if(parent.scrollRightEditGrid())
+            {
+               parent.redraw();
+            }
+         }
+         else if(_currentEv.mouse_rel_x < 32*UI.font_scaling)
+         {
+            if(parent.scrollLeftEditGrid())
+            {
+               parent.redraw();
+            }
+         }
+
+         return true;
+      }
+      else if(DRAG_MODE_LINE_START == drag_mode)
+      {
+         setLineStartFromEv(_currentEv);
+         return true;
+      }
+      else if(DRAG_MODE_LINE_END == drag_mode)
+      {
+         setLineEndFromEv(_currentEv);
+         return true;
+      }
+      else if(DRAG_MODE_CURVE_START == drag_mode)
+      {
+         setCurveStartFromEv(_currentEv);
+         return true;
+      }
+      else if(DRAG_MODE_CURVE_END == drag_mode)
+      {
+         setCurveEndFromEv(_currentEv);
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      if(DRAG_MODE_DRAW == drag_mode)
+      {
+         parent_node.undoEndCond("env_view_draw");
+         drag_mode = DRAG_MODE_NONE;
+      }
+      else if(DRAG_MODE_LINE_START == drag_mode)
+      {
+         drag_mode = DRAG_MODE_NONE;
+         current_line_idx = 1;
+      }
+      else if(DRAG_MODE_LINE_END == drag_mode)
+      {
+         showBlockStartIndicatorForMouseX(-1);
+         showBlockEndIndicatorForMouseX(-1);
+         showBlockStartValueIndicatorForMouseY(-1);
+         showBlockEndValueIndicatorForMouseY(-1);
+         drag_mode = DRAG_MODE_NONE;
+         execDrawLines();
+      }
+      else if(DRAG_MODE_CURVE_START == drag_mode)
+      {
+         drag_mode = DRAG_MODE_NONE;
+         current_line_idx = 1;
+      }
+      else if(DRAG_MODE_CURVE_END == drag_mode)
+      {
+         drag_mode = DRAG_MODE_NONE;
+         beginCurve(); // starts undo. next: set center value (mouse move)
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      if(DRAG_MODE_DRAW == drag_mode)
+      {
+         parent_node.undoEndCond("env_view_draw");
+         drag_mode = DRAG_MODE_NONE;
+         parent_editor.cmd_edit_undo();
+      }
+      else if(DRAG_MODE_BLOCK == drag_mode)
+      {
+         selectNone();
+         compositeAll();
+      }
+      else if(DRAG_MODE_LINE_START == drag_mode)
+      {
+         showBlockStartIndicatorForMouseX(-1);
+         showBlockEndIndicatorForMouseX(-1);
+         showBlockStartValueIndicatorForMouseY(-1);
+         showBlockEndValueIndicatorForMouseY(-1);
+         drag_mode = DRAG_MODE_NONE;
+      }
+      else if(DRAG_MODE_LINE_END == drag_mode)
+      {
+         showBlockEndIndicatorForMouseX(-1);
+         showBlockEndValueIndicatorForMouseY(-1);
+         drag_mode = DRAG_MODE_NONE;
+      }
+      else if(DRAG_MODE_CURVE_START == drag_mode)
+      {
+         showBlockStartIndicatorForMouseX(-1);
+         showBlockEndIndicatorForMouseX(-1);
+         showBlockStartValueIndicatorForMouseY(-1);
+         showBlockEndValueIndicatorForMouseY(-1);
+         drag_mode = DRAG_MODE_NONE;
+      }
+      else if(DRAG_MODE_CURVE_END == drag_mode)
+      {
+         showBlockEndIndicatorForMouseX(-1);
+         showBlockEndValueIndicatorForMouseY(-1);
+         drag_mode = DRAG_MODE_NONE;
+      }
+   }
+}

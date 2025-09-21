@@ -1,0 +1,5346 @@
+// ----
+// ---- file   : NodeMonitorEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 20Jan2017
+// ---- changed: 21Jan2017, 22Jan2017, 23Jan2017, 27Jan2017, 28Jan2017, 29Jan2017, 05Feb2017
+// ----          06Feb2017, 09Feb2017, 10Feb2017, 10Mar2017, 18Mar2017, 24Mar2017, 16Jun2017
+// ----          18Jun2017, 02Jul2017, 14Jul2017, 15Aug2017, 18Aug2017, 01Sep2017, 12Oct2017
+// ----          13Oct2017, 21Dec2017, 22Dec2017, 23Dec2017, 24Dec2017, 04Jan2018, 16Jun2018
+// ----          17Jun2018, 27Nov2018, 01Dec2018, 07Dec2018, 12Jan2019, 17Jan2019, 30May2019
+// ----          25Jun2019, 28Aug2019, 08Sep2019, 10Sep2019, 14Sep2019, 15Sep2019, 20Sep2019
+// ----          03Oct2019, 05Oct2019, 18Oct2019, 20Oct2019, 08Nov2019, 26Oct2020, 07Nov2020
+// ----          11Nov2020, 12Nov2020, 13May2021, 11Feb2023, 23Jun2023, 02Sep2023, 21Sep2023
+// ----          03Oct2023, 20Oct2023, 21Oct2023, 11Nov2023, 06Oct2024, 31Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNodeMonitorEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeMonitorEditor extends NodeEditor, ActionProvider, MIDIMapDefs {
+
+   define String MMT_CLEAR;
+   define String MMT_CLEAR_AND_RECORD;
+   define String MMT_FREEZE_FILTER;
+   define String MMT_PLAY_REC_TOGGLE;
+   define String MMT_SCRUB_TOGGLE;
+   define String MMT_FRAME_PREV;
+   define String MMT_FRAME_NEXT;
+   define String MMT_FRAME_PLAY;
+   define String MMT_REPLAY_TOGGLE;
+   define String MMT_REPLAY_TOGGLE_RTS;
+   define String MMT_MARKER_SET;
+   define String MMT_MARKER_CLEAR;
+   define String MMT_MARKER_CLEAR_ALL;
+   define String MMT_MARKER_QUEUE_OR_TOGGLE;
+   define String MMT_PUNCH_IN;
+   define String MMT_PUNCH_OUT;
+   define String MMT_PUNCH_INOUT;
+   define String MMT_PUNCH_TRIM;
+   define String MMT_TRIM_TO_LAST_MARKER_AND_GO_TO_NEXT_PAT;
+   define String MMT_TRIM_TO_LAST_MARKER_AND_GO_TO_NEXT_PAT_SUB;
+   define String MMT_TRIM_TO_LAST_MARKER_AND_CLONE_TO_NEXT_PAT;  // preserves out_xform and input_filter
+   define String MMT_TRIM_TO_LAST_MARKER_AND_CLONE_TO_NEXT_PAT_SUB;
+
+   define String TA_REDRAW;
+   define String TA_REBUILD_PATCHVIEW;
+   define String TA_SYSEX_CHECK;
+
+   protected int sysex_check_count;
+
+   protected TimerAction *ta_redraw;
+   protected TimerAction *ta_rebuild_patchview;
+   protected TimerAction *ta_sysex_check;
+
+   define int TAB_PATTERN  = 0;
+   define int TAB_MONITOR  = 1;
+   define int TAB_PLAY     = 2;
+
+   define int SEEK_MODE_FRAMES  = 0;
+   define int SEEK_MODE_SECONDS = 1;
+   define int SEEK_MODE_MINUTES = 2;
+   define int SEEK_MODE_MARKER  = 3;
+   define int SEEK_MODE_NOTE    = 4;
+
+   public NodeMonitor *mon;
+
+   protected TabSwitch *ts_groups;
+
+   // Pattern:
+   protected ComboBox   *cm_pattern_nr;
+   protected Label      *lb_pattern_nr;
+   protected TextField  *tf_pattern_name;
+
+   protected ComboBox  *cm_pattern_output_transform_dev;
+   protected CheckBox  *cb_pattern_output_transform_enable;
+   protected ComboBox  *cm_pattern_output_transform_ch;
+
+   protected ComboBox  *cm_pattern_input_filter_dev;
+   protected CheckBox  *cb_pattern_input_filter_enable;
+   protected ComboBox  *cm_pattern_input_filter_ch;
+
+   protected TextField *tf_pattern_syxreq;
+   protected Button    *bt_pattern_syxreq_preset;
+
+   protected Button    *bt_pattern_alloc;
+   protected Button    *bt_pattern_tools;
+   protected PopupMenu *pm_pattern_tools;
+   protected Button    *bt_pattern_free;
+
+   // Monitor:
+   protected Panel    *pn_flt_note_off;
+   protected CheckBox *cb_flt_note_off;
+   protected Panel    *pn_flt_note_on;
+   protected CheckBox *cb_flt_note_on;
+   protected Panel    *pn_flt_poly_pressure;
+   protected CheckBox *cb_flt_poly_pressure;
+   protected Panel    *pn_flt_cc;
+   protected CheckBox *cb_flt_cc;
+   protected Panel    *pn_flt_program_change;
+   protected CheckBox *cb_flt_program_change;
+   protected Panel    *pn_flt_channel_pressure;
+   protected CheckBox *cb_flt_channel_pressure;
+   protected Panel    *pn_flt_pitchbend;
+   protected CheckBox *cb_flt_pitchbend;
+   protected Panel    *pn_flt_sysex;
+   protected CheckBox *cb_flt_sysex;
+   protected Panel    *pn_flt_rpn;
+   protected CheckBox *cb_flt_rpn;
+   protected Panel    *pn_flt_nrpn;
+   protected CheckBox *cb_flt_nrpn;
+
+   protected Button                 *bt_patchview;
+   protected CheckBox               *cb_patchview_clickplay;
+   protected NM_PatchViewTM         *tm_patches;
+   protected TableView              *tv_patches;
+   protected NM_PatchViewTMEntry *[] patchview_entries;
+   protected Button                 *bt_patchview_remove;
+   protected Button                 *bt_patchview_add;
+   protected CheckBox               *cb_patchview_sub;
+   protected CheckBox               *cb_patchview_chorddetect;
+   protected Button                 *bt_patchview_moveup;
+   protected Button                 *bt_patchview_movedown;
+   protected PopupMenu              *pm_patchview;
+
+   protected PianoWidget *piano;
+
+   protected Button   *bt_clear;
+   protected ComboBox *cm_mode;
+
+   protected LayerSwitch *ls_dpy;
+
+   protected FrameForm *f_frame;
+
+   protected PopupMenu *pm_context;
+
+   // Monitor<MODE_REPLAY>:
+   protected LayerSwitch *ls_mode;
+   protected ComboBox    *cm_seek_mode;
+   protected Button      *bt_replay_frame_prev;
+   protected Panel       *pn_replay_frame;
+   protected Slider      *sl_replay_frame;
+   protected Button      *bt_replay_frame_next;
+   protected FloatParam  *fp_replay_frame;
+   protected CheckBox    *cb_replay_scrub;
+   protected Button      *bt_replay;
+   protected FloatParam  *fp_replay_shift_ms;
+   protected Button      *bt_tools;
+   protected PopupMenu   *pm_tools;
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected CheckBox *cb_play_dynamic_trigger_note_duration;
+   protected ComboBox *cm_play_trigger_note_velocity;
+
+   protected CheckBox *cb_play_restart_pattern;
+   protected CheckBox *cb_play_sync;
+
+   protected CheckBox *cb_play_followarr;
+
+   protected int last_seen_num_frames;  // for ToolTipCaption update
+
+   protected TextInputDialog *dlg_merge_millisec;
+   protected TextInputDialog *dlg_fixduration_millisec;
+   protected TextInputDialog *dlg_fixvelocity;
+   protected TextInputDialog *dlg_automarker_threshold_ms;
+   protected NM_FitBPMDialog *dlg_fitbpm;
+
+   Dialog_DeletePattern *dlg_deletepattern;
+
+   protected int punch_in_out_state;  // 0=next is in, 1=next is out
+   protected boolean b_merge_frames_marker;
+
+   define String SYSEX_PRESET_FILE = "sysex_requests.txt";
+   static StringArray syx_preset_strings;
+   static StringArray syx_preset_names;
+   protected ComboBoxPopup *syx_preset_popup;
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeMonitorEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            f_autodev.initAutoDeviceForm();
+            f_frame.initFrameForm();
+
+            // Pattern:
+            cm_pattern_nr.setOptions(Node.patnr_options);
+
+            initMMC();
+
+            initTimers();
+
+            onLookAndFeelChanged();
+
+            recursiveSetEnableCursorKeyTabCycling(false);
+
+            ts_groups.setActiveTabIndex(TAB_MONITOR);
+
+            tm_patches <= new NM_PatchViewTM;
+            // tm_patches.parent_editor <= this;
+            tm_patches.entries <= patchview_entries;
+            tm_patches.initTableModel();
+            tv_patches.setTableModel(tm_patches);
+
+            if(initDialogs())
+            {
+               return true;
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <ui.png>
+   protected virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      int c32 = app_lnf.getColor(AppLookAndFeel.COLOR_MONITOR_FILTER_LABEL_TINT);
+
+      pn_flt_note_off        .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(0), c32));
+      pn_flt_note_on         .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(1), c32));
+      pn_flt_poly_pressure   .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(2), c32));
+      pn_flt_cc              .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(3), c32));
+      pn_flt_program_change  .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(4), c32));
+      pn_flt_channel_pressure.setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(5), c32));
+      pn_flt_pitchbend       .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(6), c32));
+      pn_flt_sysex           .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(7), c32));
+      pn_flt_rpn             .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(8), c32));
+      pn_flt_nrpn            .setPanelAlphaAndTint(255, UI.TintColor32(STConfig.node_monitor_event_colors.get(9), c32));
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_redraw            <= TimerAction.New(TA_REDRAW, this, 1000.0/20);
+      ta_rebuild_patchview <= TimerAction.New(TA_REBUILD_PATCHVIEW, this, 1000.0/10);
+      ta_sysex_check       <= TimerAction.New(TA_SYSEX_CHECK, this, STConfig.node_monitor_sysex_check_interval);
+   }
+
+   // <ui_init.png>
+   protected method initDialogs() : boolean {
+      dlg_fitbpm <= new NM_FitBPMDialog;
+      return dlg_fitbpm.init();
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeMonitorEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+
+      mmcAddTarget(MMT_CLEAR,                  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_CLEAR_AND_RECORD,       CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_FREEZE_FILTER,          CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PLAY_REC_TOGGLE,        CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SCRUB_TOGGLE,           CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_FRAME_PREV,             CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_FRAME_NEXT,             CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_FRAME_PLAY,             CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_REPLAY_TOGGLE,          CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_REPLAY_TOGGLE_RTS,      CLASS_BUTTON, SYN_BUTTON_CLICK);  // Return to start
+      mmcAddTarget(MMT_MARKER_SET,             CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MARKER_CLEAR,           CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MARKER_CLEAR_ALL,       CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MARKER_QUEUE_OR_TOGGLE, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PUNCH_IN,               CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PUNCH_OUT,              CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PUNCH_INOUT,            CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PUNCH_TRIM,             CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_TRIM_TO_LAST_MARKER_AND_GO_TO_NEXT_PAT,     CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_TRIM_TO_LAST_MARKER_AND_GO_TO_NEXT_PAT_SUB, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_TRIM_TO_LAST_MARKER_AND_CLONE_TO_NEXT_PAT,     CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_TRIM_TO_LAST_MARKER_AND_CLONE_TO_NEXT_PAT_SUB, CLASS_BUTTON, SYN_BUTTON_CLICK);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      // trace "xxx NodeMonitorEditor::mmcHandleEvent";
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+
+            case MMT_CLEAR:
+               handleDeleteEvents();
+               return true;
+
+            case MMT_CLEAR_AND_RECORD:
+               clearAndRestartRecording();
+               return true;
+
+            case MMT_FREEZE_FILTER:
+               freezeReplayFilter();
+               return true;
+
+            case MMT_PLAY_REC_TOGGLE:
+               handleToggleRecMode();
+               return true;
+
+            case MMT_SCRUB_TOGGLE:
+               cb_replay_scrub.toggleSelection();
+               return true;
+
+            case MMT_FRAME_PREV:
+               handleReplayFrameIncDec(-1);
+               return true;
+
+            case MMT_FRAME_NEXT:
+               handleReplayFrameIncDec(1);
+               return true;
+
+            case MMT_FRAME_PLAY:
+               handleRepeatPlayCurrentFrame(true/*bAlways*/);
+               return true;
+
+            case MMT_REPLAY_TOGGLE:
+               handleToggleReplay(false/*bReturnToStart*/, false/*bAutoStopReplay*/);
+               return true;
+
+            case MMT_REPLAY_TOGGLE_RTS:
+               handleToggleReplay(true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+               return true;
+
+            case MMT_MARKER_SET:
+               handleMarkerSet();
+               return true;
+
+            case MMT_MARKER_CLEAR:
+               handleMarkerClear();
+               return true;
+
+            case MMT_MARKER_CLEAR_ALL:
+               handleMarkerClearAll();
+               return true;
+
+            case MMT_MARKER_QUEUE_OR_TOGGLE:
+               handleMarkerQueueOrToggle();
+               return true;
+
+            case MMT_PUNCH_IN:
+               handlePunchInOut(false/*bOut*/);
+               return true;
+
+            case MMT_PUNCH_OUT:
+               handlePunchInOut(true/*bOut*/);
+               return true;
+
+            case MMT_PUNCH_INOUT:
+               handlePunchInOut(maybe/*bOut*/);
+               return true;
+
+            case MMT_PUNCH_TRIM:
+               handlePunchTrim();
+               return true;
+
+            case MMT_TRIM_TO_LAST_MARKER_AND_GO_TO_NEXT_PAT:
+               handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, false/*bClone*/);
+               return true;
+
+            case MMT_TRIM_TO_LAST_MARKER_AND_GO_TO_NEXT_PAT_SUB:
+               handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, false/*bClone*/);
+               return true;
+
+            case MMT_TRIM_TO_LAST_MARKER_AND_CLONE_TO_NEXT_PAT:
+               handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, true/*bClone*/);
+               return true;
+
+            case MMT_TRIM_TO_LAST_MARKER_AND_CLONE_TO_NEXT_PAT_SUB:
+               handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, true/*bClone*/);
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             cm_pattern_nr,
+                             tf_pattern_name,
+                             bt_pattern_alloc,
+                             bt_pattern_tools,
+                             bt_pattern_free,
+
+                             cm_pattern_output_transform_dev,
+                             cb_pattern_output_transform_enable,
+                             cm_pattern_output_transform_ch,
+
+                             cm_pattern_input_filter_dev,
+                             cb_pattern_input_filter_enable,
+                             cm_pattern_input_filter_ch,
+
+                             tf_pattern_syxreq,
+                           ]
+                          );
+            break;
+
+         case TAB_MONITOR:
+
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cb_flt_note_off,
+                             cb_flt_note_on,
+                             cb_flt_poly_pressure,
+                             cb_flt_cc,
+                             cb_flt_program_change,
+                             cb_flt_channel_pressure,
+                             cb_flt_pitchbend,
+                             cb_flt_sysex,
+                             cb_flt_rpn,
+                             cb_flt_nrpn,
+
+                             bt_clear,
+                             cm_mode
+                           ]
+                          );
+
+            if(mon.b_ui_patchview)
+            {
+               layers.add(tv_patches);
+            }
+
+            if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+            {
+               layers.joinRR(layers,
+                             [
+                                cm_seek_mode,
+                                bt_replay_frame_prev,
+                                sl_replay_frame,
+                                fp_replay_frame,
+                                bt_replay_frame_next,
+                                cb_replay_scrub,
+                                bt_replay,
+                                fp_replay_shift_ms,
+                                bt_tools
+                              ]
+                             );
+            }
+            break;
+
+         case TAB_PLAY:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cm_node_class,
+                             cb_node_class_show,
+                             cm_node_class_show_in,
+
+                             cb_play_restart_pattern,
+
+                             cb_play_dynamic_trigger_note_duration,
+                             cm_play_trigger_note_velocity,
+
+                             cb_play_sync,
+                             cb_play_followarr,
+                           ]
+                          );
+            f_autodev.addTabCycleOverrides(layers);
+            return layers;
+      }
+
+      return layers;
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeMonitor _mon) {
+      // Global.Debug("NodeMonitorEditor::showNode: mon="+#(_mon));
+
+      mon <= _mon;
+
+      updatePatternNrComboBox();
+      cm_pattern_nr.setSelectedOption(mon.nodeGetCurrentEditPatternNr());
+
+      StringArray devAll;
+      IntArray bgcolorsAll;
+
+      // Pattern:
+      devAll.join(["-"], MIDI.out_device_names_sorted);
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      cm_pattern_output_transform_dev.setOptions(devAll);
+      cm_pattern_output_transform_dev.setOptionBGColors(bgcolorsAll);
+
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      cm_pattern_input_filter_dev.setOptions(devAll);
+      cm_pattern_input_filter_dev.setOptionBGColors(bgcolorsAll);
+
+      // Monitor:
+      bt_patchview.setToggleState(mon.b_ui_patchview);
+
+      cb_patchview_clickplay.setSelected(mon.b_ui_click_autoplay);
+      cb_patchview_chorddetect.setSelected(mon.b_chord_autoclear ? maybe : mon.b_ui_chorddetect);
+
+      cm_mode.setSelectedOption(mon.getMonitorMode());
+      updateReplaySyncIndicator();
+      handleMonitorModeChanged(true/*bQuiet*/, false/*bForceRebuild*/);  // Calls handlePatternChanged() / updateReplayFrameWidgets()
+
+      updateLockCurrentFrame(); // cm_mode tint (yellow=locked)
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(mon);
+
+      f_autodev.showNode(mon, devAll, bgcolorsAll);
+
+      // Play:
+      boolean bEnable;
+
+      cb_play_dynamic_trigger_note_duration.setSelected(mon.b_dynamic_trigger_note_duration);
+      cm_play_trigger_note_velocity.setSelectedOption(mon.trigger_velocity_mode);
+
+      cb_play_restart_pattern.setSelected(mon.b_restart_pattern);
+      cb_play_sync.setSelected(mon.b_replay_sync);
+
+      cb_play_followarr.setSelected(STConfig.b_node_monitor_edit_pattern_follows_replay_pattern);
+
+      last_seen_num_frames = -1;
+
+      punch_in_out_state = 0;
+
+      // trace "xxx restore seek mode "+mon.ui_seek_mode;
+      cm_seek_mode.setSelectedOption(mon.ui_seek_mode);
+
+      rebuildPatchViewEntries();
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+      // trace "xxx NodeMonitorEditor::showNodePost";
+      updatePatchViewVisibility();
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         refocusDefault();
+      }
+   }
+
+   // <ui_show.png>
+   public virtual showNodePostPage() {
+      // trace "xxx NodeMonitorEditor: showNodePostPage: ts_groups.size="+ts_groups.getSizeString();
+
+      relayout();
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         refocusDefault();
+      }
+
+      handleViewEnter();
+
+      updateDisplayedFrame(false/*bForceRebuild*/);
+
+      ta_redraw.schedule();
+
+      // // // fix slider after pattern copy'n'paste in patternmgr:
+      // // handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+      selectPatchViewRowByEditPattern();
+   }
+
+   // <ui_update.png>
+   protected method handlePianoNotesChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.findPlayedNotes(piano.pressed_notes, -1/*fltDev*/, -1/*fltCh*/);
+         // trace "xxx pressed_notes="+#(piano.pressed_notes);
+      }
+      else
+         piano.pressed_notes.empty();
+
+      piano.redraw();
+   }
+
+   // <ui_update.png>
+   protected method rebuildPatchViewEntries() {
+      // trace "xxx NodeMonitor::rebuildPatchViewEntries";
+
+      patchview_entries.empty();
+      int patIdx = 0;
+
+      loop(Node.NUM_PATTERNS)
+      {
+         if(!mon.nodeIsPatternEmpty(patIdx))
+         {
+            NM_Pattern pat <= mon.patterns.get(patIdx);
+            NM_PatchViewTMEntry en <= new NM_PatchViewTMEntry;
+
+            MIDIPipeFrame fr <= pat.getReplayFrameByIdx(0);
+            if(null != fr)
+            {
+               local MIDIPipeEvent pev;
+               fr.getEventByIdx(0, pev, -1/*evFltType*/);
+               en.first_frame_dev = MIDI.GetDeviceChString(pev.devIdx, pev.midiCh, true/*bEnable*/);
+               en.first_frame_dev_idx = pev.devIdx;
+               en.first_frame_midi_ch = pev.midiCh;
+            }
+            else
+            {
+               en.first_frame_dev = "-";
+               en.first_frame_dev_idx = -1;
+               en.first_frame_midi_ch = -1;
+            }
+
+            en.pat       <= pat;
+            en.pat_idx    = patIdx;
+            en.nr         = Node.patnr_options.get(patIdx);
+            en.name       = pat.pat_name;
+            en.num_frames = pat.getNumFrames();
+            en.out_xform  = pat.getOutputTransformString();
+            en.in_flt     = pat.getInputFilterString();
+            patchview_entries.add(#(deref en));
+         }
+
+         // Next pattern / patch
+         patIdx++;
+      }
+
+      tv_patches.tableModelChanged();
+
+      bt_patchview_remove.setEditable(!patchview_entries.isEmpty());
+
+      // Global.Debug("NodeMonitorEditor: added "+(patchview_entries.numElements)+" patchview entries");
+   }
+
+   // <ui_timer.png>
+   protected method queueRebuildPatchViewEntries() {
+      ta_rebuild_patchview.schedule();
+   }
+
+   // <method.png>
+   protected method fixMonitorLayout() {
+      ts_groups.setActiveTabIndex(TAB_MONITOR);
+      handleViewEnter();
+      refocusDefaultFromTabSelection();
+   }
+
+   // <method.png>
+   protected method selectPatchViewRowByEditPattern() {
+      NM_Pattern pat <= mon.nodeGetCurrentEditPattern();
+      NM_PatchViewTMEntry *en;
+      int rowIdx = 0;
+      foreach en in patchview_entries
+      {
+         if(@(en.pat) == @(pat))
+         {
+            tv_patches.moveCursorToRowNoAction(rowIdx);
+            break;
+         }
+         rowIdx++;
+      }
+   }
+
+   // <method_get.png>
+   protected method getSelectedPatchViewEntry() : NM_PatchViewTMEntry {
+      int rowIdx = tm_patches.getCursorIndex();
+      return patchview_entries.get(rowIdx);
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPatternByPatchViewTable() {
+      NM_PatchViewTMEntry en <= getSelectedPatchViewEntry();
+      if(null != en)
+      {
+         cm_pattern_nr.setSelectedOption(en.pat_idx);
+         handleSelectPattern();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRemovePatchViewPattern() {
+      handlePatternFree2();
+      handleSelectPatternByPatchViewTable();
+   }
+
+   // <ui_handle.png>
+   protected method handleAddPatchViewPattern() {
+      handlePatternAlloc(cb_patchview_sub.isSelected());
+   }
+
+   // <ui_handle.png>
+   protected method handleClonePatchViewPattern() {
+      handlePatternClone(cb_patchview_sub.isSelected());
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchViewPatternMoveUp() {
+      int rowIdx = tm_patches.getCursorIndex();
+      if(rowIdx > 0)
+      {
+         NM_PatchViewTMEntry enCur <= patchview_entries.get(rowIdx);
+         NM_PatchViewTMEntry enPrev <= patchview_entries.get(rowIdx - 1);
+         mon.nodeSwapPatterns(enCur.pat_idx, enPrev.pat_idx);
+         rebuildPatchViewEntries();
+         redraw();
+         tv_patches.moveCursorToRow(rowIdx - 1);
+         Global.Print("Move pattern up");
+      }
+      else
+      {
+         Global.Warning("Cannot move first pattern up");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchViewPatternMoveDown() {
+      int rowIdx = tm_patches.getCursorIndex();
+      if(rowIdx < (patchview_entries.numElements - 1))
+      {
+         NM_PatchViewTMEntry enCur <= patchview_entries.get(rowIdx);
+         NM_PatchViewTMEntry enPrev <= patchview_entries.get(rowIdx + 1);
+         mon.nodeSwapPatterns(enCur.pat_idx, enPrev.pat_idx);
+         rebuildPatchViewEntries();
+         redraw();
+         tv_patches.moveCursorToRow(rowIdx + 1);
+         Global.Print("Move pattern down");
+      }
+      else
+      {
+         Global.Warning("Cannot move last pattern down");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchViewSetInputFilterFromFirstEvent() {
+      NM_Pattern pat <= mon.nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         NM_PatchViewTMEntry en <= getSelectedPatchViewEntry();
+         if(null != en)
+         {
+            if(-1 != en.first_frame_dev_idx)
+            {
+               pat.setInputFilterDevIdx(en.first_frame_dev_idx);
+               pat.setInputFilterCh(en.first_frame_midi_ch);
+               pat.setEnableInputFilter(true);
+               rebuildPatchViewEntries();
+               updateInputFilterWidgets(pat);
+               redraw();
+               Global.Print("Set input filter from first frame event");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchViewChordDetectChanged() {
+      mon.b_ui_chorddetect = (false != cb_patchview_chorddetect.isSelected());
+      mon.setEnableChordAutoClear(maybe == cb_patchview_chorddetect.isSelected());
+      Global.Print("Auto-Detect Chords is "+Utils.GetEnableString(cb_patchview_chorddetect.isSelected())+(mon.b_chord_autoclear ? " (auto-clear)":""));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method sendSysExRequest(boolean _bRec) {
+      NM_Pattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         if(null != pat.buf_sysex_req)
+         {
+            if(pat.b_output_transform && (-1 != pat.output_transform_dev_idx))
+            {
+               STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(pat.output_transform_dev_idx);
+               if((null != outDev) && !outDev.isUnavail())
+               {
+                  if(_bRec)
+                  {
+                     // Clear pattern
+                     handleDeleteEvents();
+
+                     // Select record mode (play+rec or rec)
+                     if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+                     {
+                        handleToggleRecMode();
+                     }
+                     if(NodeMonitor.MODE_MONITOR_FRAMEPLAY == mon.getMonitorMode())
+                     {
+                        handleSelectNextMode();
+                     }
+                  }
+
+                  sysex_check_count = 0;
+                  ta_sysex_check.reschedule();
+                  outDev.sysExRaw(pat.buf_sysex_req);
+
+                  Global.Print("SyxReq: sent "+(pat.buf_sysex_req.offset)+" bytes to dev "+outDev.getAliasOrDeviceName());
+               }
+               else
+                  Global.Warning("SyxReq: Output Transform device not present");
+            }
+            else
+               Global.Warning("SyxReq: Output Transform device not configured or enabled");
+         }
+         else
+            Global.Warning("SyxReq: invalid message");
+      }
+   }
+
+   // <method.png>
+   protected method handleSysExCheck() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         MIDIPipeFrame fr <= pat.getReplayFrameByIdx(0);
+         if(null != fr)
+         {
+            if(fr.numEventsSysEx > 0)
+            {
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+                  fixMonitorLayout();
+                  tv_patches.centerRow();
+               }
+
+               local MIDIPipeEvent pev;
+               if(fr.getEventByIdx(0, pev, MIDIPIPE_EVENT_TYPE_SYSEX))
+               {
+                  local Buffer sysExBuf <= pev.sysExBuffer;
+                  Global.Print("SyxReq: Received SysEx dump ("+sysExBuf.offset+" bytes)");
+                  Global.Debug("NodeMonitor::handleSysExCheck: SyxReq received buffer:");
+                  Utils.HexDump(sysExBuf, 0, sysExBuf.offset);
+                  return;
+               }
+            }
+         }
+
+         if(++sysex_check_count < STConfig.node_monitor_sysex_max_checks)
+         {
+            ta_sysex_check.reschedule();
+         }
+         else
+         {
+            Global.Warning("SyxReq: Time-Out after "+(STConfig.node_monitor_sysex_check_interval*STConfig.node_monitor_sysex_max_checks)+" ms");
+         }
+
+      }
+   }
+
+   // <ui_show.png>
+   protected method showPatchViewContextMenu(boolean _bFocusFirst) {
+
+      pm_patchview <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_patchview;
+
+      pmb <= pm.addDefaultButton("Set input filter from first frame event",
+                                 "patchview_setinputfilterfromfirstframeevent"
+                                 );
+      pmb.setAccelerators("", "f");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Detect chord and update pattern name",
+                                 "patchview_chorddetect"
+                                 );
+      pmb.setAccelerators("", "c");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Send SysEx query",
+                                 "patchview_syxreq"
+                                 );
+      pmb.setAccelerators("", "q");
+      pmb.setToolTipCaption("Send SysEx query\n\n (note) SysEx message is configured in Pattern tab\n\n (note) requires valid Output Transform device (also in Pattern tab)");
+
+      pmb <= pm.addDefaultButton("Clear + Rec + Send SysEx query + Wait",
+                                 "patchview_syxreq_rec"
+                                 );
+      pmb.setAccelerators("", "lctrl-q");
+      pmb.setToolTipCaption("Clear pattern, enable record mode, send SysEx query, wait for msg (or timeout), then revert to play mode\n\n (note) SysEx message is configured in Pattern tab\n\n (note) requires valid Output Transform device (also in Pattern tab)");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show pattern table context menu.");
+   }
+
+   // <ui_update.png>
+   protected method updatePatchViewVisibility() {
+      if(mon.b_ui_patchview)
+      {
+         ls_dpy.switchToLayerNr(1);
+      }
+      else
+      {
+         ls_dpy.switchToLayerNr(0);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTogglePatchView() {
+
+      mon.b_ui_patchview = bt_patchview.getToggleState();
+
+      updatePatchViewVisibility();
+
+      if(TAB_MONITOR != ts_groups.getActiveTabIndex())
+      {
+         ts_groups.setActiveTabIndex(TAB_MONITOR);
+      }
+
+      relayout();
+      refocusDefault();
+   }
+
+   // <method.png>
+   protected method togglePatchView() {
+      bt_patchview.toggleState();
+      handleTogglePatchView();
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      // trace "xxx NodeMonitorEditor::refocusDefault NodeEditor.b_lock_kbdfocus="+NodeEditor.b_lock_kbdfocus;
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         if(TAB_MONITOR == ts_groups.getActiveTabIndex())
+         {
+            if(mon.b_ui_patchview)
+            {
+               UI.SetKeyboardFocus(tv_patches);
+            }
+            else
+            {
+               if(NodeMonitor.MODE_REPLAY == mon.monitor_mode)
+               {
+                  UI.SetKeyboardFocus(sl_replay_frame);
+               }
+               else
+               {
+                  UI.SetKeyboardFocus(bt_clear);  // cm_mode
+               }
+            }
+         }
+         else
+         {
+            UI.SetKeyboardFocus(ts_groups);
+         }
+         handleViewEnter();
+      }
+   }
+
+   // <ui_focus.png>
+   public method refocusDefaultFromTabSelection() {
+      // '1', '2', '3'
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+            UI.SetKeyboardFocus(tf_pattern_name);
+            break;
+
+         case TAB_MONITOR:
+            if(mon.b_ui_patchview)
+            {
+               UI.SetKeyboardFocus(tv_patches);
+            }
+            else if(NodeMonitor.MODE_REPLAY == mon.monitor_mode)
+            {
+               UI.SetKeyboardFocus(sl_replay_frame);
+            }
+            else
+            {
+               UI.SetKeyboardFocus(bt_clear); // cm_mode);
+            }
+            break;
+
+         case TAB_PLAY:
+            f_autodev.refocusDefault();
+            break;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrComboBox() {
+      local StringArray patNrOptionsShort;
+      local StringArray patNrOptionsLong;
+      local IntArray patNrColors;
+      Node.CalcPatNrOptions(mon, patNrOptionsShort, patNrOptionsLong, patNrColors);
+      cm_pattern_nr.setOptions(patNrOptionsShort);
+      cm_pattern_nr.setOptionsLong(patNrOptionsLong);
+      cm_pattern_nr.setOptionBGColors(patNrColors);
+   }
+
+   // <method_get.png>
+   public method getEditPattern() : NM_Pattern {
+      if(null != mon)
+      {
+         NM_Pattern pat <= mon.nodeGetCurrentEditPattern();
+         return pat;
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   public virtual nodeHandleEditPatternChanged() {
+      handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+      selectPatchViewRowByEditPattern();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternChanged(boolean _bFromUI, boolean _bForceRebuild) {
+      NM_Pattern pat <= getEditPattern();
+
+      // trace "xxx NodeMonitorEditor::handlePatternChanged: bForceRebuild="+_bForceRebuild;
+
+      updatePatternNrLabel();
+
+      if(null != pat)
+      {
+         tf_pattern_name.setText(pat.pat_name);
+         tf_pattern_name.setEditable(true);
+
+         cm_pattern_output_transform_dev   .setSelectedOption(MIDI.UnsortedToSortedDevIdx(pat.output_transform_dev_idx) + 1);
+         cm_pattern_output_transform_ch    .setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(pat.output_transform_dev_idx, null/*firstOptionOrNull*/));
+         cm_pattern_output_transform_ch    .setSelectedOption(pat.output_transform_ch);
+         cb_pattern_output_transform_enable.setSelected(pat.b_output_transform);
+
+         cm_pattern_output_transform_dev   .setEditable(true);
+         cm_pattern_output_transform_ch    .setEditable(true);
+         cb_pattern_output_transform_enable.setEditable(true);
+
+         updateInputFilterWidgets(pat);
+
+         tf_pattern_syxreq.setEditable(true);
+         tf_pattern_syxreq.setText(pat.s_sysex_req);
+         updateSysExRequestTint(pat);
+
+         NM_Filter flt <= pat.getCurrentFilter();  // Record or Replay filter, depending on monitor_mode
+
+         cb_flt_note_off        .setSelectedAndEditable(flt.b_flt_note_off);
+         cb_flt_note_on         .setSelectedAndEditable(flt.b_flt_note_on);
+         cb_flt_poly_pressure   .setSelectedAndEditable(flt.b_flt_poly_pressure);
+         cb_flt_cc              .setSelectedAndEditable(flt.b_flt_cc);
+         cb_flt_program_change  .setSelectedAndEditable(flt.b_flt_program_change);
+         cb_flt_channel_pressure.setSelectedAndEditable(flt.b_flt_channel_pressure);
+         cb_flt_pitchbend       .setSelectedAndEditable(flt.b_flt_pitchbend);
+         cb_flt_sysex           .setSelectedAndEditable(flt.b_flt_sysex);
+         cb_flt_rpn             .setSelectedAndEditable(flt.b_flt_rpn);
+         cb_flt_nrpn            .setSelectedAndEditable(flt.b_flt_nrpn);
+
+         // xxxxxxxxx 07Nov2020: comment out
+         // pn_events_tint.setPanelAlphaAndTint(255, #20000000);  // (todo) does this have any effect at all ?
+
+      }
+      else
+      {
+         tf_pattern_name.setEditable(false);
+
+         cm_pattern_output_transform_dev   .setSelectedOption(0);
+         cm_pattern_output_transform_ch    .setSelectedOption(0);
+         cb_pattern_output_transform_enable.setSelected(false);
+
+         cm_pattern_output_transform_dev   .setEditable(false);
+         cm_pattern_output_transform_ch    .setEditable(false);
+         cb_pattern_output_transform_enable.setEditable(false);
+
+         cm_pattern_input_filter_dev   .setSelectedOption(0);
+         cm_pattern_input_filter_ch    .setSelectedOption(0);
+         cb_pattern_input_filter_enable.setSelected(false);
+
+         cm_pattern_input_filter_dev   .setEditable(false);
+         cm_pattern_input_filter_ch    .setEditable(false);
+         cb_pattern_input_filter_enable.setEditable(false);
+
+         tf_pattern_syxreq.setEditable(false);
+         tf_pattern_syxreq.setText("");
+         tf_pattern_syxreq.setBackgroundTint(0);
+
+         cb_flt_note_off        .setEditable(false);
+         cb_flt_note_on         .setEditable(false);
+         cb_flt_poly_pressure   .setEditable(false);
+         cb_flt_cc              .setEditable(false);
+         cb_flt_program_change  .setEditable(false);
+         cb_flt_channel_pressure.setEditable(false);
+         cb_flt_pitchbend       .setEditable(false);
+         cb_flt_sysex           .setEditable(false);
+         cb_flt_rpn             .setEditable(false);
+         cb_flt_nrpn            .setEditable(false);
+
+         // xxxxxxxxx 07Nov2020: comment out
+         // pn_events_tint.setPanelAlphaAndTint(255, #60000000);
+      }
+
+      root_form.pg_node.handleEditPatternChanged();
+
+      // // updateReplayNumMarkers();
+      updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+
+      updateDisplayedFrame(_bForceRebuild);
+
+      piano.last_notes.fill(0);
+      handlePianoNotesChanged();
+
+      last_seen_num_frames = -1;
+   }
+
+   // <ui_update.png>
+   protected method updateInputFilterWidgets(NM_Pattern pat) {
+      cm_pattern_input_filter_dev   .setSelectedOption(MIDI.UnsortedToSortedDevIdx(pat.input_filter_dev_idx) + 1);
+      cm_pattern_input_filter_ch    .setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(pat.input_filter_dev_idx, "*"/*firstOptionOrNull*/));
+      cm_pattern_input_filter_ch    .setSelectedOption(pat.input_filter_ch + 1);
+      cb_pattern_input_filter_enable.setSelected(pat.b_input_filter);
+
+      cm_pattern_input_filter_dev   .setEditable(true);
+      cm_pattern_input_filter_ch    .setEditable(true);
+      cb_pattern_input_filter_enable.setEditable(true);
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+
+      handleViewLeave();
+
+      ta_redraw.cancel();
+      ta_rebuild_patchview.cancel();
+      ta_sysex_check.cancel();
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      mon <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(mon.getNodeClassId());
+      cb_node_class_show.setSelected(mon.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      mon.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+mon.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      mon.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(mon.getEnableNodeClassShow()));
+   }
+
+   // // // <ui_update.png>
+   // // protected method updateReplayNumMarkers() {
+   // //    int numMarkers = mon.findNumMarkers();
+   // // }
+
+   // <ui_update.png>
+   protected method updateDisplayedFrame(boolean _bForceRebuild) {
+
+      NM_Pattern pat <= getEditPattern();
+      // trace "xxx NodeMonitorEditor::updateDisplayedFrame: pat="+#(pat)+" bForceRebuild="+_bForceRebuild;
+
+      MIDIPipeFrame fr <= null;
+      boolean bRebuild = _bForceRebuild;
+
+      if(null != pat)
+      {
+         switch(mon.getMonitorMode())
+         {
+            case NodeMonitor.MODE_REPLAY:
+               fr <= pat.uiGetCurrentDisplayFrame();
+               bRebuild = true;
+               break;
+
+            case NodeMonitor.MODE_MONITOR_FRAMEREC:
+            case NodeMonitor.MODE_MONITOR_FRAMEPLAY:
+            case NodeMonitor.MODE_MONITOR_FRAMERECANDPLAY:
+               if(mon.b_ui_freeze)
+               {
+                  return;
+               }
+               fr <= pat.getLastRecordedFrameDataAndReset();
+               break;
+         }
+      }
+
+      f_frame.updateDisplayedFrame(bRebuild, fr);
+   }
+
+   // <ui_update.png>
+   protected =replay= method updateReplayFrameWidgets(boolean _bUpdateSlider, boolean _bUpdateFloatParam) {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int curFrameIdx = pat.uiGetCurrentDisplayFrameIdx();
+         if(curFrameIdx < 0)
+            return; // when stopping replay
+         _bUpdateSlider = _bUpdateSlider;
+         int maxFrameIdx = pat.getNumFrames() - 1;
+         if(maxFrameIdx < 0)
+            maxFrameIdx = 0;
+
+         Integer maxMillisec;
+         int curMillisec;
+
+         switch(cm_seek_mode.getSelectedOption())
+         {
+            default:
+            case SEEK_MODE_FRAMES:
+               if(_bUpdateSlider)
+               {
+                  sl_replay_frame.setRange(0, maxFrameIdx);
+                  sl_replay_frame.setValue(curFrameIdx);
+                  sl_replay_frame.setStepCoarse(1);
+               }
+               if(_bUpdateFloatParam)
+               {
+                  fp_replay_frame.setMinMaxValues(0, maxFrameIdx);
+                  fp_replay_frame.setValue(curFrameIdx);
+                  fp_replay_frame.setStep(1);
+               }
+               break;
+
+            case SEEK_MODE_SECONDS:
+               curMillisec = pat.findReplayMillisec(maxMillisec);
+               Integer maxSec = (maxMillisec / 1000) + 1;
+               int curSec = (curMillisec / 1000);
+               if(_bUpdateSlider)
+               {
+                  sl_replay_frame.setRange(0, maxSec);
+                  sl_replay_frame.setValue(curSec);
+                  sl_replay_frame.setStepCoarse(1);
+               }
+               if(_bUpdateFloatParam)
+               {
+                  fp_replay_frame.setMinMaxValues(0, maxSec);
+                  fp_replay_frame.setValue(curSec);
+                  fp_replay_frame.setStep(1);
+               }
+               break;
+
+            case SEEK_MODE_MINUTES:
+               curMillisec = pat.findReplayMillisec(maxMillisec);
+               Integer maxMin = (maxMillisec / (1000 * 60)) + 1;
+               int curMin = (curMillisec / (1000 * 60));
+               if(_bUpdateSlider)
+               {
+                  sl_replay_frame.setRange(0, maxMin);
+                  sl_replay_frame.setValue(curMin);
+                  sl_replay_frame.setStepCoarse(1);
+               }
+               if(_bUpdateFloatParam)
+               {
+                  fp_replay_frame.setMinMaxValues(0, maxMin);
+                  fp_replay_frame.setValue(curMin);
+                  fp_replay_frame.setStep(1);
+               }
+               break;
+
+            case SEEK_MODE_MARKER:
+               int numMarkers = pat.findNumMarkers();
+               int curMarkerIdx = pat.findMarkerIdxNearCurrentReplayFrame();
+               if(_bUpdateSlider)
+               {
+                  sl_replay_frame.setRange(0, numMarkers);
+                  sl_replay_frame.setValue(curMarkerIdx);
+                  sl_replay_frame.setStepCoarse(1);
+               }
+               if(_bUpdateFloatParam)
+               {
+                  fp_replay_frame.setMinMaxValues(0, numMarkers);
+                  fp_replay_frame.setValue(curMarkerIdx);
+                  fp_replay_frame.setStep(1);
+               }
+               break;
+
+            case SEEK_MODE_NOTE:
+               int numNoteOnFrames = pat.findNumNoteOnFrames();
+               int curNoteOnIdx = pat.findNoteOnIdxNearCurrentReplayFrame();
+               if(_bUpdateSlider)
+               {
+                  sl_replay_frame.setRange(0, numNoteOnFrames);
+                  sl_replay_frame.setValue(curNoteOnIdx);
+                  sl_replay_frame.setStepCoarse(1);
+               }
+               if(_bUpdateFloatParam)
+               {
+                  fp_replay_frame.setMinMaxValues(0, numNoteOnFrames);
+                  fp_replay_frame.setValue(curNoteOnIdx);
+                  fp_replay_frame.setStep(1);
+               }
+               break;
+         }
+
+         fp_replay_shift_ms.setValue(current_song.milliSecondsTo16th(pat.replay_shift_ms));
+
+         sl_replay_frame     .setEditable(true);
+         fp_replay_frame     .setEditable(true);
+         cm_seek_mode        .setEditable(true);
+         bt_replay_frame_prev.setEditable(true);
+         bt_replay_frame_next.setEditable(true);
+         cb_replay_scrub     .setEditable(true);
+         bt_replay           .setEditable(true);
+         fp_replay_shift_ms  .setEditable(true);
+         bt_tools            .setEditable(true);
+      }
+      else
+      {
+         // No pattern
+         sl_replay_frame     .setEditable(false);
+         fp_replay_frame     .setEditable(false);
+         cm_seek_mode        .setEditable(false);
+         bt_replay_frame_prev.setEditable(false);
+         bt_replay_frame_next.setEditable(false);
+         cb_replay_scrub     .setEditable(false);
+         bt_replay           .setEditable(false);
+         fp_replay_shift_ms  .setValue(0);
+         fp_replay_shift_ms  .setEditable(false);
+         bt_tools            .setEditable(false);
+      }
+
+      updateReplayFrame();
+   }
+
+   // <ui_update.png>
+   protected method updateReplayFrame() {
+      NM_Pattern pat <= mon.nodeGetCurrentEditPattern();
+
+      int c32 = 0;
+
+      if(null != pat)
+      {
+
+         MIDIPipeFrame fr <= pat.uiGetCurrentDisplayFrame();
+
+         if(null != fr)
+         {
+            if(0 != fr.marker)
+            {
+               if(NM_Pattern.MARKER_PUNCH_IN == fr.marker)
+               {
+                  c32 = #28007f00;
+               }
+               else if(NM_Pattern.MARKER_PUNCH_OUT == fr.marker)
+               {
+                  c32 = #285f7f00;
+               }
+               else
+               {
+                  // // c32 = #38ffff00;
+                  c32 = #28007f7f;
+               }
+            }
+         }
+      }
+
+      pn_replay_frame.setPanelAlphaAndTint(255, c32);
+      pn_replay_frame.redraw();
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrLabel() {
+      Integer io = mon.nodeGetCurrentEditPatternNr();
+      lb_pattern_nr.setCaption("Pattern:\n  ("+io.printf("0x%02x")+")");
+      lb_pattern_nr.redraw();
+   }
+
+   // <ui_handle.png>
+   module =replay= method handlePatternAlloc(boolean _bSub) : NM_Pattern {
+      local NM_Pattern p;
+
+      p.patInit(mon, 0/*patNr placeholder*/);
+
+      int patIdx;
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(true == _bSub)
+         {
+            // Find unused A..D sub pattern
+            patIdx = mon.nodeFindFirstUnusedPatternSub(mon.nodeGetCurrentEditPatternNr());
+         }
+         else
+         {
+            // Find unused 1..32 pattern group
+            patIdx = mon.nodeFindFirstUnusedPatternGroup(mon.nodeGetCurrentEditPatternNr());
+         }
+         // // patIdx = mon.findFirstUnusedPattern(mon.nodeGetCurrentEditPatternNr());
+
+         if(-1 == patIdx)
+         {
+            patIdx = mon.findFirstUnusedPattern(0);
+         }
+      }
+      else
+      {
+         patIdx = mon.nodeGetCurrentEditPatternNr();
+      }
+
+      // trace "xxx findFirstUnusedPattern: patIdx="+patIdx+" currentEditNr="+mon.nodeGetCurrentEditPatternNr();
+
+      if(-1 != patIdx)
+      {
+         p.pat_nr = patIdx;
+         mon.nodeSetPattern(patIdx, deref p);
+
+         mon.nodeSetCurrentEditPatternNr(patIdx);
+         mon.nodeSetCurrentPlayPatternNr(patIdx);
+
+         cm_pattern_nr.setSelectedOption(patIdx);
+
+         selectPatternByIdx(patIdx);
+
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+         rebuildPatchViewEntries();
+         selectPatchViewRowByEditPattern();
+
+         Global.SuccessShort("New: Allocate pattern "+cm_pattern_nr.getSelectedOptionName()+" ("+(patIdx+1)+").");
+         return p;
+      }
+      else
+      {
+         Global.Error("New: All patterns in use.");
+         return null;
+      }
+   }
+
+   // <ui_show.png>
+   protected method showPatternToolsMenu(boolean _bFocusFirst) {
+
+      pm_pattern_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_pattern_tools;
+
+      NM_Pattern pat <= mon.nodeGetCurrentEditPattern();
+      boolean bHavePat = (null != pat);
+
+      pmb <= pm.addDefaultButton("Copy pattern", "copy");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= pm.addDefaultButton("Paste pattern", "paste");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lctrl-v", "");
+
+      if(bHavePat)
+      {
+         pmb.setActive(null != pat.patGetClipboard());
+      }
+      else
+      {
+         pmb.setActive(false);
+      }
+
+      pmb <= pm.addDefaultButton("Clone pattern", "clone");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("Clone pattern (sub)", "clone_sub");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lshift-lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("New pattern (sub)", "new_sub");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lshift-lctrl-n", "");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_pattern_tools);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show pattern tools menu.");
+   }
+
+   // <ui_handle.png>
+   module method handlePatternCopy() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      // trace "xxx nkm: handlePatternCopy: pat="+#(pat);
+
+      if(null != pat)
+      {
+         pat.patCopyToClipboard();
+         int numEv = pat.getTotalNumEvents();
+         int numFr = pat.getNumFrames();
+         Global.Print("Pattern copied to clipboard ("+numEv+" event"+Utils.GetPluralString(numEv)+" in "+numFr+" frame"+Utils.GetPluralString(numFr)+")");
+      }
+   }
+
+   // <ui_handle.png>
+   module method handlePatternPaste() {
+      NM_Pattern pat <= getEditPattern();
+
+      // trace "xxx nkm: handlePatternPaste: pat="+#(pat);
+
+      if(null == pat)
+      {
+         handlePatternAlloc(false/*bSub*/);
+         pat <= getEditPattern();
+      }
+
+      if(null != pat)
+      {
+         if(pat.patCopyFromClipboard())
+         {
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+            updatePatternNrComboBox();
+            rebuildPatchViewEntries();
+
+            Global.SuccessShort("Clipboard pasted to pattern.");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   module =replay= method handlePatternClone(boolean _bSub) {
+      NM_Pattern patSrc <= getEditPattern();
+
+      if(null != patSrc)
+      {
+         if(null != handlePatternAlloc(_bSub))
+         {
+            NM_Pattern pat <= getEditPattern();
+
+            pat.patCopyFrom(patSrc, false/*bClear*/);
+            pat.patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+            updatePatternNrComboBox();
+
+            rebuildPatchViewEntries();
+            selectPatchViewRowByEditPattern();
+
+            Global.SuccessShort("Pattern cloned to "+cm_pattern_nr.getSelectedOptionName()+".");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   module method handlePatternFree() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         dlg_deletepattern <= new Dialog_DeletePattern;
+         dlg_deletepattern.run(this, pat.pat_name);
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handlePatternFree2() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         mon.nodeSetPattern(mon.edit_pattern_nr, null);
+
+         pat <= null;
+
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+         updatePatternNrComboBox();
+
+         rebuildPatchViewEntries();
+         selectPatchViewRowByEditPattern();
+
+         Global.Print("Delete pattern");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPattern() {
+
+      // trace "xxx cm_pattern_nr.getSelectedOption()="+cm_pattern_nr.getSelectedOption();
+      int patNr = cm_pattern_nr.getSelectedOption();
+
+      mon.nodeSetCurrentEditPatternNr(patNr);
+      mon.nodeSetCurrentPlayPatternNr(patNr);
+
+      mon.nodeQueuePrgChgOut(patNr);
+      // // replay.handleNodeStateChangedUI(mon, -1/*active*/, patNr/*pat*/);
+
+      handlePatternChanged(true/*bFromUI*/, true/*bForceRebuild*/);
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(!lazyRestartReplay())
+      {
+         if(null != pat)
+         {
+            Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" \""+pat.pat_name+"\".");
+         }
+         else
+         {
+            Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" <empty>.");
+         }
+      }
+   }
+
+   // <method.png>
+   public virtual selectPatternByIdx(int _idx) {
+
+      cm_pattern_nr.setSelectedOption(_idx);
+
+      handleSelectPattern();
+      selectPatchViewRowByEditPattern();
+   }
+
+   // <method.png>
+   public virtual selectPatternByUsedIdx(int _idx) {
+      if(_idx >= 0)
+      {
+         int patNr = mon.nodeGetPatternNrByUsedIdx(_idx);
+
+         if(-1 != patNr)
+         {
+            selectPatternByIdx(patNr);
+         }
+      }
+      else
+      {
+         selectPatternByIdx(127); // --/
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectPreviousPattern() {
+      byte patNr = mon.nodeGetCurrentEditPatternNr();
+
+      if(patNr > 0)
+      {
+         patNr--;
+
+         mon.nodeSetCurrentEditPatternNr(patNr);
+         mon.nodeSetCurrentPlayPatternNr(patNr);
+
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+         selectPatchViewRowByEditPattern();
+
+         mon.nodeQueuePrgChgOut(patNr);
+         // // replay.handleNodeStateChangedUI(mon, -1/*active*/, patNr/*pat*/);
+
+         lazyRestartReplay();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectNextPattern() {
+      byte patNr = mon.nodeGetCurrentEditPatternNr();
+
+      if(patNr < 127)
+      {
+         patNr++;
+
+         mon.nodeSetCurrentEditPatternNr(patNr);
+         mon.nodeSetCurrentPlayPatternNr(patNr);
+
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+         selectPatchViewRowByEditPattern();
+
+         mon.nodeQueuePrgChgOut(patNr);
+         // // replay.handleNodeStateChangedUI(mon, -1/*active*/, patNr/*pat*/);
+
+         lazyRestartReplay();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPreviousUsedPattern() {
+      int patIdx = mon.nodeGetCurrentEditPatternNr();
+      patIdx = mon.nodeFindPreviousPatternNrByUsedIdxWithOffset(patIdx-1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextUsedPattern() {
+      int patIdx = mon.nodeGetCurrentEditPatternNr();
+      patIdx = mon.nodeFindNextPatternNrByUsedIdxWithOffset(patIdx+1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNameChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pattern_name.getText();
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <method.png>
+   protected method calcPatternNameFromDetectedChord() {
+      NM_Pattern pat <= mon.nodeGetCurrentEditPattern();
+
+      if(null != pat)
+      {
+         int numFrames = pat.getNumFrames();
+         if(numFrames > 0)
+         {
+            local IntArray activeNotes;
+            // // local IntArray ia;
+
+            // Find unique notes
+            int frameIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numFrames)
+            {
+               MIDIPipeFrame fr <= pat.getReplayFrameByIdx(frameIdx);
+               int numNoteOn = fr.getNumEventsNoteOn();
+               if(numNoteOn > 0)
+               {
+                  int evIdx = 0;
+                  loop(numNoteOn)
+                  {
+                     if(fr.getEventByIdx(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON))
+                     {
+                        if(!activeNotes.contains(pev.note))
+                           activeNotes.add(pev.note);
+                     }
+
+                     // Next frame event
+                     evIdx++;
+                  }
+               }
+
+               // Next frame
+               frameIdx++;
+            }
+
+            // // // Sort notes
+            // // // activeNotes.sortByValue(ia);
+            // // // activeNotes.rearrange(ia);
+
+            local ActiveNoteState ans;
+            ans.setActiveNotes(activeNotes);
+
+            local Integer chordBaseNote;
+            int chordIndex = ans.findChordIndexAndBase(chordBaseNote);
+            if(-1 != chordIndex)
+            {
+               if(chordBaseNote < 0) chordBaseNote+=12;
+               // trace "xxx chordBaseNote="+chordBaseNote+" chordIndex="+chordIndex;
+               local String name;
+               name.append(MIDI.base_note_names.get(chordBaseNote % 12));
+               name.append(Chord.chord_names_short.get(chordIndex));
+               pat.patSetName(name);
+               Global.Print("Chord detection: set pattern name to \""+name+"\"");
+            }
+            else
+            {
+               pat.patSetName("-");
+               // Global.Warning("Chord detection failed.");
+            }
+            rebuildPatchViewEntries();
+            tf_pattern_name.setText(pat.pat_name);
+            redraw();
+         }
+         else
+         {
+            // Global.Warning("Chord detection failed: pattern has no events");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleOutputTransformDevChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.setOutputTransformDevIdx(MIDI.SortedToUnsortedDevIdx(cm_pattern_output_transform_dev.getSelectedOption() - 1));
+
+         cm_pattern_output_transform_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(pat.output_transform_dev_idx, null/*firstOptionOrNull*/));
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Output transform device is "+cm_pattern_output_transform_dev.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleOutputTransformChChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.setOutputTransformCh(cm_pattern_output_transform_ch.getSelectedOption());
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Output transform channel is "+cm_pattern_output_transform_ch.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleOutputTransformEnableChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.setEnableOutputTransform(cb_pattern_output_transform_enable.isSelected());
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Output transform is "+Utils.GetEnableString(pat.b_output_transform));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputFilterDevChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.setInputFilterDevIdx(MIDI.SortedToUnsortedDevIdx(cm_pattern_input_filter_dev.getSelectedOption() - 1));
+
+         cm_pattern_input_filter_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(pat.input_filter_dev_idx, "*"/*firstOptionOrNull*/));
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Input filter device is "+cm_pattern_input_filter_dev.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputFilterChChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.setInputFilterCh(cm_pattern_input_filter_ch.getSelectedOption() - 1);
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Input filter channel is "+cm_pattern_input_filter_ch.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleInputFilterEnableChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.setEnableInputFilter(cb_pattern_input_filter_enable.isSelected());
+
+         rebuildPatchViewEntries();
+
+         Global.Print("Input filter is "+Utils.GetEnableString(pat.b_input_filter));
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateSysExRequestTint(NM_Pattern _pat) {
+      if((null != _pat.buf_sysex_req) || (_pat.s_sysex_req.isBlank()))
+      {
+         tf_pattern_syxreq.setBackgroundTint(0);
+      }
+      else
+      {
+         // Failed to parse
+         tf_pattern_syxreq.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_MONITOR_SYSEX_ERROR_TINT));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSysExRequestChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.s_sysex_req = tf_pattern_syxreq.getText();
+         pat.parseSysExRequest();
+
+         updateSysExRequestTint(pat);
+
+         if(null != pat.buf_sysex_req)
+         {
+            Global.Print("SysEx Request buffer size is "+(pat.buf_sysex_req.offset)+" bytes");
+         }
+         else if(pat.s_sysex_req.isBlank())
+         {
+            Global.Print("Unset SysEx Request");
+         }
+         else
+         {
+            Global.Warning("Failed to parse SysEx Request string");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showSysExRequestPresetList() {
+      syx_preset_strings.empty();
+      syx_preset_names.empty();
+
+      local String buf;
+      local String nativePathName <= Utils.ToNativePathName(STConfig.rootpath+"/"+SYSEX_PRESET_FILE);
+      if(buf.loadLocal(nativePathName, true/*bRemoveCR*/))
+      {
+         local StringArray lines <= buf.splitChar('\n');
+         // trace "xxx lines="+#(lines);
+         String *line;
+         int selOption = -1;
+         local String curStr <= tf_pattern_syxreq.getText().trim();
+         foreach line in lines
+         {
+            line.trim();
+            // trace "xxx line=\""+line+"\"";
+            if(!line.isBlank() && !(line <= "#"))
+            {
+               if(line == curStr)
+                  selOption = syx_preset_strings.numElements;
+               syx_preset_strings.add(line);
+               int idx = line.charsetIndexOf(";#/-", 0);
+               if(-1 != idx)
+                  line <= line.substring(idx+1, -1);
+               line.trim();
+               syx_preset_names.add(line);
+            }
+         }
+
+         Global.Debug("NodeMonitorEditor::showSysExRequestPresetList: syx_preset_names="+#(syx_preset_names));
+
+         if(!syx_preset_names.isEmpty())
+         {
+            syx_preset_popup <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                               null/*fontOrNull*/,
+                                                               syx_preset_names,
+                                                               null/*options_long*/,
+                                                               selOption/*selected_option*/,
+                                                               240/*prefSx*/,
+                                                               null/*tooltip_captions*/,
+                                                               null/*option_bgcolors*/,
+                                                               null/*option_fgtints*/
+                                                               );
+            syx_preset_popup.showNearLayer(bt_pattern_syxreq_preset);
+            syx_preset_popup.focusFirstTabCycleMember();
+         }
+      }
+      else
+      {
+         Global.Warning("Failed to read \""+SYSEX_PRESET_FILE+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSysExRequestPresetSelected(int _optionIdx) {
+      String s <= syx_preset_strings.get(_optionIdx);
+      if(null != s)
+      {
+         tf_pattern_syxreq.setText(s);
+
+         handleSysExRequestChanged();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMonitorModeChanged(boolean _bQuiet, boolean _bForceRebuild) {
+
+      punch_in_out_state = 0;
+
+      int selOpt = cm_mode.getSelectedOption();
+
+      mon.setMonitorMode(selOpt);
+
+      if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+      {
+         if(mon.b_ui_auto_convert_note_offs_to_duration)
+         {
+            handleNoteOffsToDuration();
+         }
+
+         if(mon.b_ui_auto_merge_and_set_fixed_duration)
+         {
+            if(!mon.b_lock_current_frame)
+            {
+               handleMergeFrames3(false/*bMarker*/);
+            }
+            handleFixDuration3();
+         }
+
+         ls_mode.switchToLayerNr(0);
+      }
+      else
+      {
+         ls_mode.switchToLayerNr(1);
+      }
+
+      handlePatternChanged(!_bQuiet, _bForceRebuild); // Calls updateReplayFrameWidgets()
+
+      ls_mode.recursiveSetEnableCursorKeyTabCycling(false);
+
+      updateReplaySyncIndicator();
+
+      relayout();
+      redraw();
+
+      if(!_bQuiet)
+      {
+         Global.Print("Monitor mode is "+cm_mode.getSelectedOptionName());
+         fixMonitorLayout();
+         relayout();
+         tv_patches.centerRow();
+      }
+
+      // trace "xxx handleMonitorModeChanged: UI.GetKeyboardFocus()="+#(UI.GetKeyboardFocus());
+      if(null == UI.GetKeyboardFocus())
+      {
+         refocusDefault();  // focus "Clear" button
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextMode() {
+      cm_mode.selectNextOptionCycle();
+      handleMonitorModeChanged(false/*bQuiet*/, true/*bForceRebuild*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleFltNoteOffChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltNoteOff(cb_flt_note_off.isSelected());
+         Global.Print(flt.name+": Note Off events are is "+(flt.b_flt_note_off ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltNoteOnChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltNoteOn(cb_flt_note_on.isSelected());
+         Global.Print(flt.name+": Note On events are "+(flt.b_flt_note_on ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltPolyPressureChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltPolyPressure(cb_flt_poly_pressure.isSelected());
+         Global.Print(flt.name+": Poly Pressure events are "+(flt.b_flt_poly_pressure ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltCCChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltCC(cb_flt_cc.isSelected());
+         Global.Print(flt.name+": CC events are "+(flt.b_flt_cc ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltProgramChangeChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltProgramChange(cb_flt_program_change.isSelected());
+         Global.Print(flt.name+": Program Change events are "+(flt.b_flt_program_change ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltChannelPressureChanged() {
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+      if(null != flt)
+      {
+         flt.setEnableFltChannelPressure(cb_flt_channel_pressure.isSelected());
+         Global.Print(flt.name+": Channel Pressure events are "+(flt.b_flt_channel_pressure ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltPitchbendChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltPitchbend(cb_flt_pitchbend.isSelected());
+         Global.Print(flt.name+": Pitchbend events are "+(flt.b_flt_pitchbend ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltSysExChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltSysEx(cb_flt_sysex.isSelected());
+         Global.Print(flt.name+": SysEx events are "+(flt.b_flt_sysex ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltRPNChanged() {
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+      if(null != flt)
+      {
+         flt.setEnableFltRPN(cb_flt_rpn.isSelected());
+         Global.Print(flt.name+": RPN events are "+(flt.b_flt_rpn ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFltNRPNChanged() {
+
+      NM_Filter flt <= mon.getCurrentEditPatternFilter();
+
+      if(null != flt)
+      {
+         flt.setEnableFltNRPN(cb_flt_nrpn.isSelected());
+         Global.Print(flt.name+": NRPN events are "+(flt.b_flt_nrpn ? "enabled" : "disabled"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleFreeze() {
+      mon.b_ui_freeze = !mon.b_ui_freeze;
+
+      Global.Print("Freeze display is "+Utils.GetEnableString(mon.b_ui_freeze));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleHex() {
+      STConfig.b_node_monitor_hex = !STConfig.b_node_monitor_hex;
+
+      f_frame.updateDisplayNotation();
+
+      Global.Print("Display bytes/shorts in "+(STConfig.b_node_monitor_hex ? "hexadecimal" : "decimal")+" notation");
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleDur() {
+      STConfig.b_node_monitor_dur_millisec = !STConfig.b_node_monitor_dur_millisec;
+
+      f_frame.updateDisplayNotation();
+
+      Global.Print("Display duration in "+(STConfig.b_node_monitor_dur_millisec ? "milliseconds" : "ticks"));
+   }
+
+   // <ui_handle.png>
+   protected method handleDeleteEvents() {
+
+      // trace "xxx handleDeleteEvents";
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int numRemoved = pat.deleteAllFrames();
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+         Global.Print("Clear all events (deleted "+numRemoved+" frames)");
+      }
+
+      punch_in_out_state = 0;
+
+      queueRebuildPatchViewEntries();
+   }
+
+   // <ui_handle.png>
+   protected method handleReplaySeekModeChanged() {
+
+      mon.ui_seek_mode = cm_seek_mode.getSelectedOption();
+      // trace "xxx save seek mode "+mon.ui_seek_mode;
+
+      updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+
+      Global.Print("Replay seek mode is "+cm_seek_mode.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleReplayFrameChanged(boolean _bFromSlider, boolean _bFromFloatParam) {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         float offset = fp_replay_frame.getFloatValue();
+         int newFrameIdx = 0;
+
+         switch(cm_seek_mode.getSelectedOption())
+         {
+            default:
+            case SEEK_MODE_FRAMES:
+               newFrameIdx = offset;
+               break;
+
+            case SEEK_MODE_SECONDS:
+               newFrameIdx = pat.findReplayFrameIdxNearMillisec(offset * 1000);
+               break;
+
+            case SEEK_MODE_MINUTES:
+               newFrameIdx = pat.findReplayFrameIdxNearMillisec(offset * 1000 * 60);
+               break;
+
+            case SEEK_MODE_MARKER:
+               newFrameIdx = mathMaxi(0, pat.findReplayFrameIdxForMarkerIdx(offset));
+               break;
+
+            case SEEK_MODE_NOTE:
+               newFrameIdx = pat.findReplayFrameIdxForNoteOnIdx(offset);
+               break;
+         }
+
+         // trace "xxx handleReplayFrameChanged: newFrameIdx="+newFrameIdx;
+
+         pat.setCurrentReplayFrameIdx(newFrameIdx, !mon.isPlaying()/*bUpdateStart*/);
+
+         mon.queueRedraw();
+
+         updateReplayFrameWidgets(!_bFromSlider/*bUpdateSlider*/, !_bFromFloatParam/*bUpdateFloatParam*/);
+
+         updateDisplayedFrame(true/*bForceRebuild*/);
+
+         restartReplayIfActive(newFrameIdx);
+
+         // Global.Print("Replay offset is "+offset+" (frame "+newFrameIdx+")");
+         Global.Print("Select frame "+newFrameIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRepeatPlayCurrentFrame(boolean _bAlways) {
+      if(_bAlways || cb_replay_scrub.isSelected())
+      {
+         mon.queueScrubFrame(true/*bForce*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleReplayFrameSliderChanged() {
+      fp_replay_frame.setValue(sl_replay_frame.getValue());
+      fp_replay_frame.redraw();
+      handleReplayFrameChanged(true/*bFromSlider*/, false/*bFromFloatParam*/);
+
+      if(cb_replay_scrub.isSelected())
+      {
+         mon.queueScrubFrame(false/*bForce*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleReplayFrameFloatParamChanged() {
+      sl_replay_frame.setValue(fp_replay_frame.getFloatValue());
+      sl_replay_frame.redraw();
+      handleReplayFrameChanged(false/*bFromSlider*/, true/*bFromFloatParam*/);
+
+      if(cb_replay_scrub.isSelected())
+      {
+         mon.queueScrubFrame(false/*bForce*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleReplayFrameSet(NM_Pattern pat, int _frameIdx) {
+      int maxFrameIdx = pat.getNumFrames() - 1;
+      if(maxFrameIdx < 0)
+         maxFrameIdx = 0;
+
+      if(_frameIdx < 0)
+         _frameIdx = 0;
+      if(_frameIdx > maxFrameIdx)
+         _frameIdx = maxFrameIdx;
+
+      pat.setCurrentReplayFrameIdx(_frameIdx, true);///!mon.isPlaying()/*bUpdateStart*/);
+
+      mon.queueRedraw();
+      handleRepeatPlayCurrentFrame(false/*bAlways*/);
+      updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+      updateDisplayedFrame(true/*bForceRebuild*/);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleReplayFrameIncDec(int _dir) {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int newFrameIdx = pat.uiGetCurrentDisplayFrameIdx() + _dir;
+         handleReplayFrameSet(pat, newFrameIdx);
+         Global.Print("Select frame "+newFrameIdx);
+      }
+   }
+
+   // <method.png>
+   public =replay= method gotoMarkerPrev() {
+      // go to previous marker or start
+      NM_Pattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         int curMarkerIdx = pat.findMarkerIdxNearCurrentReplayFrame();
+         Global.Debug2("NodeMonitorEditor::gotoMarkerPrev: curMarkerIdx="+curMarkerIdx);
+         if(curMarkerIdx >= 0)
+         {
+            int curFrameIdx = pat.getCurrentReplayFrameIdx();
+            int newFrameIdx = pat.findReplayFrameIdxForMarkerIdx(curMarkerIdx);
+            if((newFrameIdx >= curFrameIdx) && (curMarkerIdx > 0))
+            {
+               curMarkerIdx--;
+               newFrameIdx = pat.findReplayFrameIdxForMarkerIdx(curMarkerIdx);
+            }
+            else if(newFrameIdx == curFrameIdx)
+               newFrameIdx = -1;
+
+            if(-1 != newFrameIdx)
+            {
+               handleReplayFrameSet(pat, newFrameIdx);
+               Global.Print("Go to marker "+(curMarkerIdx+1)+", frame "+newFrameIdx);
+            }
+            else if(curFrameIdx > 0)
+            {
+               newFrameIdx = 0;  // start
+               handleReplayFrameSet(pat, newFrameIdx);
+               Global.Print("Go to start (frame "+newFrameIdx+")");
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method gotoMarkerNext() {
+      // go to next marker or end
+      NM_Pattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         int numFrames = pat.getNumFrames();
+         int curFrameIdx = pat.getCurrentReplayFrameIdx();
+         if( (curFrameIdx+1) == numFrames )
+            return;
+         int numMarkers = pat.findNumMarkers();
+         int curMarkerIdx = pat.findMarkerIdxNearCurrentReplayFrame();
+         Global.Debug2("NodeMonitorEditor::gotoMarkerNext: curMarkerIdx="+curMarkerIdx+" num="+numMarkers);
+         if(curMarkerIdx >= 0)
+         {
+            int newFrameIdx = pat.findReplayFrameIdxForMarkerIdx(curMarkerIdx);
+            if((newFrameIdx <= curFrameIdx) && ((curMarkerIdx+1) < numMarkers))
+            {
+               curMarkerIdx++;
+               newFrameIdx = pat.findReplayFrameIdxForMarkerIdx(curMarkerIdx);
+            }
+            else if(newFrameIdx == curFrameIdx)
+               newFrameIdx = -1;
+
+            if(newFrameIdx > curFrameIdx)
+            {
+               handleReplayFrameSet(pat, newFrameIdx);
+               Global.Print("Go to marker "+(curMarkerIdx+1)+" / "+numMarkers+", frame "+newFrameIdx);
+            }
+            else if((curFrameIdx+1) < numFrames)
+            {
+               newFrameIdx = numFrames - 1;
+               handleReplayFrameSet(pat, newFrameIdx);
+               Global.Print("Go to end (frame "+newFrameIdx+")");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleStartOrStopReplay(boolean _bHoldClick) {
+      if(_bHoldClick)
+      {
+         if(mon.isPlaying())
+         {
+            // Stop at current frame and set new start pos
+            NM_Pattern pat <= getEditPattern();
+            if(null != pat)
+               pat.setStartToCurrentReplayFrameIdx();
+
+            handleToggleReplay(false/*bReturnToStart*/, false/*bAutoStopReplay*/);
+         }
+         else
+         {
+            forceRestartReplay(false/*bAutoStopReplay*/);
+         }
+      }
+      else
+      {
+         if(mon.isPlaying())
+         {
+            handleToggleReplay(true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+
+            if(mon.doReplaySync())
+            {
+               // Rewind
+               int syncRewindPos = mon.nodeGetLastPatternStartSongOffset();
+               // trace "xxx syncRewindPos="+syncRewindPos;
+               current_song.seek(syncRewindPos);
+            }
+         }
+         else
+         {
+            if(mon.doReplaySync())
+            {
+               mon.nodeSetLastPatternStartSongOffset(current_song.getBeatQuantizedOffset());
+            }
+
+            forceRestartReplay(true/*bAutoStopReplay*/);
+         }
+      }
+
+      if(mon.doReplaySync())
+      {
+         // trace "xxx mon.isPlaying()="+mon.isPlaying()+" replay.b_playing="+replay.b_playing;
+         if(mon.isPlaying() ^ replay.b_playing)
+         {
+            replay.toggleReplay(false/*bAllowPanic*/);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleReplay(boolean _bReturnToStart, boolean _bAutoStopReplay) {
+
+      mon.setEnableLockCurrentFrame(false);
+      updateLockCurrentFrame();
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.invalidateLastPlayedFrameIdx();
+      }
+
+      mon.setEnableReplay(!mon.isPlaying(), _bReturnToStart, _bAutoStopReplay);
+
+      updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+      updateDisplayedFrame(true/*bForceRebuild*/);
+
+      updateReplayButton();
+
+      Global.Print((mon.isPlaying() ? "Start" : "Stop") + " replay");
+   }
+
+   // <ui_update.png>
+   protected method updateReplayButton() {
+      if(mon.isPlaying())
+      {
+         bt_replay.setIcon(UI.GetIcon("stop_sm_gray"));
+      }
+      else
+      {
+         bt_replay.setIcon(UI.GetIcon("transport_play"));
+      }
+      bt_replay.redraw();
+   }
+
+   // <method.png>
+   protected method restartReplayIfActive(int _startFrameIdx) {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(mon.isPlaying())
+         {
+            boolean bAutoStopReplay = mon.b_queue_autostop_replay;
+
+            // Stop
+            mon.setEnableReplay(false/*bEnabled*/, false/*bReturnToStart*/,
+                                false/*bAutoStopReplay*/
+                                );
+
+            // Start
+            pat.setCurrentReplayFrameIdx(_startFrameIdx, true/*bUpdateStart*/);
+
+            mon.setEnableReplay(true/*bEnabled*/, false/*bReturnToStart*/, bAutoStopReplay);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method lazyRestartReplay() : boolean {
+
+      if(mon.isPlaying())
+      {
+         restartReplayIfActive(0/*startFrameIdx*/);
+
+         Global.Print("Restart replay after pattern change ("+mon.nodeGetCurrentPlayPatternNrString()+")");
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method forceRestartReplay(boolean _bAutoStopReplay) {
+      // Called when dbl-clicking in patch view table
+      // // if(!mon.isPlaying())
+      // // {
+      Global.Debug2("NodeMonitorEditor::forceRestartReplay bAutoStopReplay="+_bAutoStopReplay);
+      mon.setEnableReplay(false/*bEnabled*/, true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+      handleToggleReplay(true/*bReturnToStart*/, _bAutoStopReplay);
+      // // }
+      // // else
+      // // {
+      // //    restartReplayIfActive(0/*startFrameIdx*/);
+      // // }
+   }
+
+   // <method.png>
+   protected =replay= method clearAndRestartRecording() {
+      if(mon.isPlaying())
+         mon.setEnableReplay(false/*bEnabled*/, true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+
+      if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+      {
+         handleToggleRecMode();
+      }
+
+      handleDeleteEvents();
+
+      if(mon.doReplaySync())
+      {
+         if(!replay.b_playing)
+         {
+            replay.toggleReplay(false/*bPanic*/);
+         }
+      }
+
+      Global.Print("Clear + Restart recording");
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleRecMode() {
+      if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+      {
+         cm_mode.setSelectedOption(mon.last_selected_record_mode);
+      }
+      else
+      {
+         cm_mode.setSelectedOption(NodeMonitor.MODE_REPLAY);
+      }
+      handleMonitorModeChanged(true/*bQuiet*/, true/*bForceRebuild*/);
+      Global.Print("Mode is "+cm_mode.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoteOffsToDuration() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int num = pat.noteOffsToDuration();
+
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+         queueRebuildPatchViewEntries();
+
+         // // updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+         // // updateDisplayedFrame(true/*bForceRebuild*/);
+
+         Global.Print("Note-offs to duration: converted "+num+" event(s)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleNoteOffsToDuration() {
+      mon.b_ui_auto_convert_note_offs_to_duration = !mon.b_ui_auto_convert_note_offs_to_duration;
+
+      if(mon.b_ui_auto_convert_note_offs_to_duration)
+      {
+         handleNoteOffsToDuration();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleAutoMergeAndSetFixedDuration() {
+      mon.b_ui_auto_merge_and_set_fixed_duration = !mon.b_ui_auto_merge_and_set_fixed_duration;
+
+      if(mon.b_ui_auto_merge_and_set_fixed_duration)
+      {
+         handleMergeFrames3(false/*bMarker*/);
+         handleFixDuration3();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleCalcReplayShiftMS() {
+      mon.setEnableCalcReplayShiftMS(!mon.b_trim_marker_calc_replay_shift_ms);
+      Global.Print("Calc replay shift MS is "+Utils.GetEnableString(mon.b_trim_marker_calc_replay_shift_ms));
+   }
+
+   // <ui_update.png>
+   protected method updateLockCurrentFrame() {
+      if(mon.b_lock_current_frame)
+      {
+         fp_replay_frame.setBackgroundTint(#38ffff00);  // (todo) AppLookAndFeel
+      }
+      else
+      {
+         fp_replay_frame.setBackgroundTint(0);
+      }
+      fp_replay_frame.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleLockCurrentFrame() {
+      mon.setEnableLockCurrentFrame(!mon.b_lock_current_frame);
+
+      updateLockCurrentFrame();
+
+      Global.Print("Lock-current-frame is "+Utils.GetEnableString(mon.b_lock_current_frame));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMergeFrames1(boolean _bMarker) {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(null == dlg_merge_millisec)
+         {
+            dlg_merge_millisec <= TextInputDialog.New("Merge frames",
+                                                      "Enter millisecond threshold",
+                                                      "Merge",
+                                                      "Cancel",
+                                                      String(mon.ui_last_merge_millisec),
+                                                      8/*maxCols*/, 16,
+                                                      this/*recipient*/
+                                                      );
+         }
+
+         b_merge_frames_marker = _bMarker;
+
+         if(_bMarker)
+            dlg_merge_millisec.setDefaultText(String(mon.ui_last_merge_millisec_marker));
+         else
+            dlg_merge_millisec.setDefaultText(String(mon.ui_last_merge_millisec));
+
+         dlg_merge_millisec.showNearMouse(-150, -50);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMergeFrames2() {
+
+      int numMillisec = dlg_merge_millisec.getText();
+
+      if(1 <= numMillisec < 60000)
+      {
+         if(b_merge_frames_marker)
+            mon.ui_last_merge_millisec_marker = numMillisec;
+         else
+            mon.ui_last_merge_millisec = numMillisec;
+
+         handleMergeFrames3(b_merge_frames_marker/*bMergeFramesMarker*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMergeFrames3(boolean _bMergeFramesMarker) {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int numMillisec;
+
+         if(_bMergeFramesMarker)
+            numMillisec = mon.ui_last_merge_millisec_marker;
+         else
+            numMillisec = mon.ui_last_merge_millisec;
+
+         if(1 <= numMillisec < 60000)
+         {
+            int num = pat.mergeFrames(numMillisec, _bMergeFramesMarker);
+
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+            // // updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+
+            queueRebuildPatchViewEntries();
+
+            Global.Print("Merge frames: merged "+num+" frame(s)"+ (b_merge_frames_marker ? " (marker only)" : ""));
+         }
+      }
+   }
+
+   // <method.png>
+   protected method freezeReplayFilter() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int numDeleted = pat.freezeReplayFilter();
+
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+         queueRebuildPatchViewEntries();
+
+         Global.Print("Freeze replay filter: Deleted "+numDeleted+" frame(s). Num frames is now "+pat.getNumFrames());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFixDuration1() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(null == dlg_fixduration_millisec)
+         {
+            dlg_fixduration_millisec <= TextInputDialog.New("Fixed note duration",
+                                                            "Enter note duration in milliseconds",
+                                                            "Update notes",
+                                                            "Cancel",
+                                                            "100",
+                                                            8/*maxCols*/, 16,
+                                                            this/*recipient*/
+                                                            );
+         }
+
+         dlg_fixduration_millisec.setDefaultText(String(mon.ui_last_fixed_duration));
+         dlg_fixduration_millisec.showNearMouse(-150, -50);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFixDuration2() {
+
+      int numMillisec = dlg_fixduration_millisec.getText();
+
+      if(1 <= numMillisec < 60000)
+      {
+         mon.ui_last_fixed_duration = numMillisec;
+
+         handleFixDuration3();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFixDuration3() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int numMillisec = mon.ui_last_fixed_duration;
+
+         if(1 <= numMillisec < 60000)
+         {
+            int num = pat.setFixedNoteDuration(numMillisec);
+
+            updateDisplayedFrame(true/*bForceRebuild*/);
+
+            Global.Print("Fixed note duration: update "+num+" events(s)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFixVelocity1() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(null == dlg_fixvelocity)
+         {
+            dlg_fixvelocity <= TextInputDialog.New("Fixed note on velocity",
+                                                   "Enter note on velocity (1..127)",
+                                                   "Update notes",
+                                                   "Cancel",
+                                                   "100",
+                                                   8/*maxCols*/, 16,
+                                                   this/*recipient*/
+                                                   );
+         }
+
+         dlg_fixvelocity.setDefaultText(String(mon.ui_last_fixed_velocity));
+         dlg_fixvelocity.showNearMouse(-150, -50);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFixVelocity2() {
+
+      int vel = dlg_fixvelocity.getText();
+
+      if(1 <= vel <= 127)
+      {
+         mon.ui_last_fixed_velocity = vel;
+
+         handleFixVelocity3();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAutoMarkerThreshold1() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(null == dlg_automarker_threshold_ms)
+         {
+            dlg_automarker_threshold_ms <= TextInputDialog.New("Auto-marker threshold (milliseconds)",
+                                                               "Enter auto-marker threshold (500..30000 milliseconds)",
+                                                               "Ok",
+                                                               "Cancel",
+                                                               "100",
+                                                               8/*maxCols*/, 16,
+                                                               this/*recipient*/
+                                                               );
+         }
+
+         dlg_automarker_threshold_ms.setDefaultText(String(mon.automarker_threshold_ms));
+         dlg_automarker_threshold_ms.showNearMouse(-150, -50);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoMarkerThreshold2() {
+
+      int ms = dlg_automarker_threshold_ms.getText();
+
+      ms = mathClampi(ms, 500, 30000);
+
+      mon.setAutoMarkerThresholdMS(ms);
+
+      Global.Print("Auto-marker threshold is "+ms+" milliseconds");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFixVelocity3() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int vel = mon.ui_last_fixed_velocity;
+
+         if(1 <= vel <= 127)
+         {
+            int num = pat.setFixedNoteOnVelocity(vel);
+
+            updateDisplayedFrame(true/*bForceRebuild*/);
+
+            Global.Print("Fixed note on velocity: update "+num+" events(s)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDeleteFrame() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.getNumFrames() > 0)
+         {
+            int curFrameIdx = pat.uiGetCurrentDisplayFrameIdx();
+
+            pat.deleteFrame();
+
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+            // // updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+            // // updateDisplayedFrame(true/*bForceRebuild*/);
+
+            if(cb_replay_scrub.isSelected())
+            {
+               mon.queueScrubFrame(false/*bForce*/);
+            }
+
+            queueRebuildPatchViewEntries();
+
+            Global.Print("Delete frame "+curFrameIdx);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClearFrame() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.getNumFrames() > 0)
+         {
+            int curFrameIdx = pat.uiGetCurrentDisplayFrameIdx();
+
+            pat.clearFrame();
+
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+            Global.Print("Clear frame "+curFrameIdx);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDeleteFramesBeforeCurrent() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.getNumFrames() > 0)
+         {
+            int curFrameIdx = pat.uiGetCurrentDisplayFrameIdx();
+
+            loop(curFrameIdx)
+            {
+               pat.deleteFrameByIdx(0);
+            }
+
+            pat.removeEmptyFrames();
+
+            pat.setCurrentReplayFrameIdx(0, true/*bUpdateStart*/);
+
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+            if(cb_replay_scrub.isSelected())
+            {
+               mon.queueScrubFrame(false/*bForce*/);
+            }
+
+            queueRebuildPatchViewEntries();
+
+            Global.Print("Delete "+curFrameIdx+" frame(s) before current");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDeleteFramesBeforeLastMarker() : int {
+      // Returns new #frames
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.getNumFrames() > 0)
+         {
+            int lastMarkerFrameIdx = -1;
+            int curFrameIdx = 0;
+            MIDIPipeFrame *fr;
+            loop(pat.getNumFrames())
+            {
+               fr <= pat.getReplayFrameByIdx(curFrameIdx);
+               if(0 != fr.marker)
+               {
+                  lastMarkerFrameIdx = curFrameIdx;
+               }
+               curFrameIdx++;
+            }
+
+            if(-1 != lastMarkerFrameIdx)
+            {
+               curFrameIdx = pat.uiGetCurrentDisplayFrameIdx();
+               int numDel = 0;
+
+               loop(lastMarkerFrameIdx)
+               {
+                  fr <= pat.getReplayFrameByIdx(0);
+                  pat.deleteFrameByIdx(0);
+                  numDel++;
+               }
+
+               pat.removeEmptyFrames();
+
+               pat.setCurrentReplayFrameIdx(0, true/*bUpdateStart*/);
+
+               handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+               if(cb_replay_scrub.isSelected())
+               {
+                  mon.queueScrubFrame(false/*bForce*/);
+               }
+
+               Global.Print("Delete "+numDel+" frame(s) before last marker");
+
+               if(mon.b_trim_marker_calc_replay_shift_ms)
+               {
+                  handleAutoCalcReplayTimeShiftMS();
+               }
+
+               queueRebuildPatchViewEntries();
+
+               return pat.getNumFrames();
+            }
+            else
+            {
+               Global.Warning("Delete frames before last marker: no marker found");
+            }
+         }
+      }
+      return 0;
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoCalcReplayTimeShiftMS() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.getNumFrames() > 0)
+         {
+            MIDIPipeFrame fr <= pat.getReplayFrameByIdx(0);
+            int ticks = fr.timeStampTmp;
+            ticks = ticks % current_song.getNumTicksPerBar();
+            pat.setReplayShiftMS(current_song.ticksToMilliSeconds(ticks));
+            Global.Debug("mon: auto-calc replay_shift_ms: ticks="+ticks+" ms="+pat.replay_shift_ms);
+            float num16th = current_song.milliSecondsTo16th(pat.replay_shift_ms);
+
+            if(STConfig.b_node_monitor_trim_marker_calc_replay_shift_ms_quantize_last_16th)
+            {
+               int num16thPerBar = current_song.getNum16thPerBar();
+               if(int(num16th) == (num16thPerBar-1))
+               {
+                  if(frac(num16th) >= 0.5)
+                  {
+                     // avoid shifts of e.g. 15.75 (when first note starts shortly before bar)
+                     num16th = 0;
+                     pat.setReplayShiftMS(0);
+                  }
+               }
+            }
+
+            fp_replay_shift_ms.setValue(num16th);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(boolean _bSub, boolean _bClone) {
+      NM_Pattern *pat;
+
+      if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+      {
+         handleToggleRecMode();  // may trigger auto-merge, ..
+      }
+
+      // // while(NodeMonitor.MODE_MONITOR_FRAMEREC != mon.getMonitorMode())
+      // // {
+         handleToggleRecMode();
+      // // }
+
+      if(handleDeleteFramesBeforeLastMarker() > 0)  // any frames left or is pattern empty ?
+      {
+         if(_bClone)
+         {
+            handlePatternClone(_bSub);
+            handleDeleteEvents();
+            mon.queueSetRecordMarker(true/*bQuiet*/);
+            pat <= mon.nodeGetCurrentEditPattern();
+            pat.patSetName("");
+            tf_pattern_name.setText(pat.pat_name);
+            Global.Print("Clone to next pattern"+(_bSub?" (sub)":""));
+         }
+         else
+         {
+            int patNr = mon.nodeGetCurrentEditPatternNr();
+            int prevPatNr = patNr;
+            if(_bSub)
+            {
+               patNr = patNr + 1;
+            }
+            else
+            {
+               patNr = (patNr & ~3) + 4;
+            }
+
+            if(patNr <= 124)
+            {
+               mon.nodeSetCurrentEditPatternNr(patNr);
+               mon.nodeSetCurrentPlayPatternNr(patNr);
+               pat <= getEditPattern();
+               if(null == pat)
+               {
+                  handlePatternAlloc(_bSub);
+                  handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+                  Global.Print("Go to next pattern (alloc)");
+               }
+               else
+               {
+                  handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+                  handleDeleteEvents();
+                  Global.Print("Go to next pattern (clear)");
+               }
+               mon.queueSetRecordMarker(true/*bQuiet*/);
+            }
+            else
+            {
+               Global.Warning("Can't go to pattern "+(Node.patnr_options.get(patNr)));
+            }
+         }
+      }
+
+      pat <= getEditPattern();
+      if(null == pat)
+      {
+         handlePatternAlloc(_bSub);
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+         Global.Print("Go to next pattern (alloc current)");
+         mon.queueSetRecordMarker(true/*bQuiet*/);
+      }
+      else
+      {
+         Global.Print("Go to next pattern (use current since it's empty)");
+         mon.queueSetRecordMarker(true/*bQuiet*/);
+      }
+
+      queueRebuildPatchViewEntries();
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveFrameLeft() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.moveFrameLeft())
+         {
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+            handleReplayFrameIncDec(-1);
+
+            Global.Print("Move frame left");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveFrameRight() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.moveFrameRight())
+         {
+            handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+            handleReplayFrameIncDec(1);
+
+            Global.Print("Move frame right");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMarkerClearAll() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         int numDeleted = pat.clearAllMarkers();
+         updateReplayFrame();
+         queueRebuildPatchViewEntries();
+         Global.Print("Delete "+numDeleted+" marker(s)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMarkerClear() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.clearMarker())
+         {
+            updateReplayFrame();
+            queueRebuildPatchViewEntries();
+            Global.Print("Clear marker (frame "+pat.uiGetCurrentDisplayFrameIdx()+")");
+         }
+         else
+         {
+            Global.Warning("No marker set for current frame ("+pat.uiGetCurrentDisplayFrameIdx()+")");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMarkerSet() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.setMarker())
+         {
+            updateReplayFrame();
+            queueRebuildPatchViewEntries();
+            Global.Print("Set marker (frame "+pat.uiGetCurrentDisplayFrameIdx()+")");
+         }
+         else
+         {
+            Global.Warning("Failed to set marker for current frame ("+pat.uiGetCurrentDisplayFrameIdx()+")");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMarkerToggle() {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.toggleMarker())
+         {
+            updateReplayFrame();
+            queueRebuildPatchViewEntries();
+            Global.Print("Toggle marker (frame "+pat.uiGetCurrentDisplayFrameIdx()+")");
+         }
+         else
+         {
+            Global.Warning("Failed to toggle marker for current frame ("+pat.uiGetCurrentDisplayFrameIdx()+")");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoMarkerToggle() {
+      mon.setEnableAutoMarker(!mon.b_automarker);
+      Global.Print("Auto-marker is "+Utils.GetEnableString(mon.b_automarker));
+   }
+
+   // <ui_handle.png>
+   protected method handleMarkerQueueOrToggle() {
+      if(NodeMonitor.MODE_REPLAY == mon.monitor_mode)
+      {
+         if(mon.isPlaying())
+         {
+            mon.queueSetPlayMarker();
+         }
+         else
+         {
+            handleMarkerToggle();
+         }
+      }
+      else
+      {
+         mon.queueSetRecordMarker(false/*bQuiet*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePunchInOut(boolean _bOut) {
+
+      if(NodeMonitor.MODE_REPLAY != mon.monitor_mode)
+      {
+         NM_Pattern pat <= getEditPattern();
+
+         if(null != pat)
+         {
+            if(maybe == _bOut)
+            {
+               if(0 == punch_in_out_state)
+               {
+                  punch_in_out_state = 1;
+                  _bOut = false;
+               }
+               else
+               {
+                  punch_in_out_state = 0;
+                  _bOut = true;
+               }
+            }
+
+            if(pat.setPunchInOut(_bOut))
+            {
+               updateReplayFrame();
+               Global.Print("Set punch "+(_bOut ? "out" : "in")+" marker (frame "+pat.uiGetCurrentDisplayFrameIdx()+")");
+            }
+            else
+            {
+               Global.Warning("Failed to set punch "+(_bOut ? "out" : "in")+" for current frame ("+pat.uiGetCurrentDisplayFrameIdx()+")");
+            }
+         }
+      }
+      else
+      {
+         Global.Warning("Punch in/out: please select FrameRec/FramePlay mode");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePunchTrim() {
+
+      if(NodeMonitor.MODE_REPLAY == mon.monitor_mode)
+      {
+         NM_Pattern pat <= getEditPattern();
+
+         if(null != pat)
+         {
+            if(STConfig.b_node_monitor_trim_auto_merge_markers)
+            {
+               pat.mergeFrames(STConfig.node_monitor_merge_marker_threshold, true/*bMarker*/);
+            }
+
+            if(STConfig.b_node_monitor_trim_auto_stop_replay)
+            {
+               if(replay.b_playing)
+                  replay.toggleReplay(true/*bAllowPanic*/);
+            }
+
+            int numFrames = pat.getNumFrames();
+
+            if(numFrames > 0)
+            {
+               // Find punch in
+               int punchInIdx = 0;
+               MIDIPipeFrame *fr;
+
+               loop(numFrames)
+               {
+                  fr <= pat.getReplayFrameByIdx(punchInIdx);
+
+                  if(NM_Pattern.MARKER_PUNCH_IN == fr.marker)
+                  {
+                     // Found it
+                     break;
+                  }
+
+                  punchInIdx++;
+               }
+
+               int punchOutIdx = punchInIdx + 1;
+
+               while(punchOutIdx < numFrames)
+               {
+                  fr <= pat.getReplayFrameByIdx(punchOutIdx);
+
+                  if(NM_Pattern.MARKER_PUNCH_OUT == fr.marker)
+                  {
+                     // Found it
+                     break;
+                  }
+
+                  punchOutIdx++;
+               }
+
+               // trace "xxx Monitor::handlePunchTrim: inIdx="+punchInIdx+" outIdx="+punchOutIdx;
+
+               loop(punchInIdx)
+               {
+                  pat.deleteFrameByIdx(0);
+               }
+
+               punchOutIdx -= punchInIdx;
+               numFrames = pat.getNumFrames();
+
+               // trace "xxx Monitor::handlePunchTrim: outIdx="+punchOutIdx+" numFrames="+numFrames;
+
+               pat.truncateFramesRight(numFrames - punchOutIdx - 1);
+
+               pat.setCurrentReplayFrameIdx(0, true/*bUpdateStart*/);
+               pat.removeEmptyFrames();
+
+               handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+
+               if(cb_replay_scrub.isSelected())
+               {
+                  mon.queueScrubFrame(false/*bForce*/);
+               }
+
+               queueRebuildPatchViewEntries();
+
+               Global.Print("Trim punch in/out ("+(punchOutIdx - punchInIdx)+" frame(s))");
+            }
+         }
+      }
+      else
+      {
+         Global.Warning("Punch in/out: please select Replay mode");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleReplayShiftMSChanged() {
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         float num16th = fp_replay_shift_ms.getFloatValue();
+         pat.setReplayShiftMS(current_song.sixteenthToMilliSeconds(num16th));
+
+         Global.Print("Replay shift is "+pat.replay_shift_ms+" milliseconds ("+current_song.milliSecondsTo16th(pat.replay_shift_ms)+" 16ths)");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showToolsMenu(boolean _bFocusFirst) {
+
+      NM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pm_tools <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_tools;
+         PopupMenu *spm;
+
+         bool bHaveMarker = false;
+         bool bHaveFrame  = false;
+
+         // // if(!mon.isPlaying())
+         {
+            MIDIPipeFrame fr <= pat.uiGetCurrentDisplayFrame();
+            if(null != fr)
+            {
+               bHaveFrame = true;
+               bHaveMarker = fr.marker;
+            }
+         }
+
+         pmb <= pm.addCheckButton("Convert Note Offs to Duration", mon.b_ui_auto_convert_note_offs_to_duration, "noteofftodur_toggle");
+         pmb.setToolTipCaption("When checked, automatically convert note off events to note on durations (and delete off events) when REPLAY mode is selected");
+
+         pmb <= pm.addCheckButton("Auto-merge and set Fixed Duration", mon.b_ui_auto_merge_and_set_fixed_duration, "automergefixdur_toggle");
+         pmb.setToolTipCaption("When checked, automatically merge events and set fixed duration when REPLAY mode is selected\n\n (note) this is mostly useful for chord recording");
+
+         pmb <= pm.addCheckButton("Calc replay shift when deleting frames before last marker", mon.b_trim_marker_calc_replay_shift_ms, "calcreplayshift_toggle");
+         pmb.setToolTipCaption("When checked, automatically calc replay shift when deleting frames before last marker\n\n (note) shift is calculated in relation to bar start\n\n (note) only works when replay was running during event recording");
+
+         pmb <= pm.addCheckButton("Lock/overdub current frame", mon.b_lock_current_frame, "lockcurrentframe_toggle");
+         pmb.setToolTipCaption("When checked, don't advance to next frame when recording events\n\n (note) new note-ons will be recorded with fixed durations, note-offs will be skipped\n\n (note) replay-mode recording will temporarily be enabled while lock is active (\"rec\" frames)");
+         pmb.setAccelerators(null, "d");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Freeze replay filter", "freezereplayfilter");
+         pmb.setToolTipCaption("Permanently apply replay filter to all recorded frames");
+         pmb.setAccelerators("lctrl-w", "");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Fixed note duration", "fixduration");
+         pmb.setToolTipCaption("Set fixed note duration");
+         pmb.setAccelerators("f", "");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Fixed velocity", "fixvelocity");
+         pmb.setToolTipCaption("Set fixed note on velocity");
+         pmb.setAccelerators("v", "");
+
+         // Frame menu
+         pm.addSeparator();
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Frame", deref spm);
+
+         pmb <= spm.addDefaultButton("Clear frame", "clearframe");
+         pmb.setToolTipCaption("Clear current frame");
+         pmb.setAccelerators("BACKSPACE", "");
+
+         spm.addSeparator();
+
+         pmb <= spm.addDefaultButton("Delete frame", "deleteframe");
+         pmb.setToolTipCaption("Delete current frame");
+         pmb.setAccelerators("DELETE", "");
+
+         pmb <= spm.addDefaultButton("Delete frames before current", "deleteframesbeforecurrent");
+         pmb.setToolTipCaption("Delete all frames before current frame");
+         pmb.setAccelerators("lctrl-DELETE", "");
+
+         pmb <= spm.addDefaultButton("Delete frames before last marker", "deleteframesbeforelastmarker");
+         pmb.setToolTipCaption("Delete all frames before last marker");
+         pmb.setAccelerators("lctrl-x DELETE", "l");
+
+         pmb <= spm.addDefaultButton("Delete frames before last marker and go to next pattern", "deleteframesbeforelastmarkerandgotonext");
+         pmb.setToolTipCaption("Delete all frames before last marker and go to next pattern");
+         pmb.setAccelerators(null, "h");
+
+         pmb <= spm.addDefaultButton("Delete frames before last marker and go to next pattern (sub)", "deleteframesbeforelastmarkerandgotonext_sub");
+         pmb.setToolTipCaption("Delete all frames before last marker and go to next pattern (sub)");
+         pmb.setAccelerators(null, "lshift-h");
+
+         pmb <= spm.addDefaultButton("Delete frames before last marker and clone to next pattern", "deleteframesbeforelastmarkerandclonetonext");
+         pmb.setToolTipCaption("Delete all frames before last marker and clone to next pattern");
+         pmb.setAccelerators("n", "INSERT");
+
+         pmb <= spm.addDefaultButton("Delete frames before last marker and clone to next pattern (sub)", "deleteframesbeforelastmarkerandclonetonext_sub");
+         pmb.setToolTipCaption("Delete all frames before last marker and clone to next pattern (sub)");
+         pmb.setAccelerators("lalt-n", "lctrl-INSERT");
+
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Move frame left", "moveframe_left");
+         pmb.setToolTipCaption("Move frame left");
+         pmb.setAccelerators("lshift-LEFT", "");
+
+         pmb <= spm.addDefaultButton("Move frame right", "moveframe_right");
+         pmb.setToolTipCaption("Move frame right");
+         pmb.setAccelerators("lshift-RIGHT", "");
+
+         // Marker menu
+         pm.addSeparator();
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Marker", deref spm);
+
+         pmb <= spm.addDefaultButton("Clear all markers", "marker_clearall");
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Clear marker", "marker_clear");
+         pmb.setActive(bHaveFrame && bHaveMarker);
+
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Set marker", "marker_set");
+         pmb.setActive(bHaveFrame && !bHaveMarker);
+         pmb.setToolTipCaption("Set marker. The area around the frame slider will be highlighted when the selected frame has a marker.");
+         pmb <= spm.addDefaultButton("Toggle or Queue marker", "marker_toggle");
+         pmb.setActive(bHaveFrame && !bHaveMarker);
+         pmb.setToolTipCaption("Toggle marker. The area around the frame slider will be highlighted when the selected frame has a marker.\n\n (note) in record mode, set marker when next event is recorded (queue)\n\n (note) when replay is active, set marker when next event is played (queue)");
+         pmb.setAccelerators("t", "");
+
+         spm.addSeparator();
+         pmb <= spm.addCheckButton("Auto-marker", mon.b_automarker, "automarker_toggle");
+         pmb.setToolTipCaption("When checked, automatically set marker when next event is recorded after <n> milliseconds of silence, or when replay is started");
+         pmb.setAccelerators(null, "lctrl-x a");
+
+         pmb <= spm.addDefaultButton("Set automarker threshold..", "automarker_threshold");
+         pmb.setToolTipCaption("Set auto-marker threshold");
+
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Go to previous marker or start", "marker_prev");
+         pmb.setAccelerators("", "lctrl-LEFT");
+
+         pmb <= spm.addDefaultButton("Go to next marker or end", "marker_next");
+         pmb.setAccelerators("", "lctrl-RIGHT");
+
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Punch in", "punch_in");
+         pmb.setToolTipCaption("Set punch in marker.");
+
+         pmb <= spm.addDefaultButton("Punch out", "punch_out");
+         pmb.setToolTipCaption("Set punch out marker.");
+
+         pmb <= spm.addDefaultButton("Punch in/out", "punch_inout");
+         pmb.setToolTipCaption("Set punch in or out marker.\n\n (note) state resets when mode is changed or pattern is cleared");
+         pmb.setAccelerators("p", "");
+
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Trim to punch in/out", "punch_trim");
+         pmb.setToolTipCaption("Trim to punch in / out.\n\n (note) Discards all events before the punch in marker, and after the punch out marker");
+         pmb.setAccelerators("k", "");
+
+         spm.addSeparator();
+         pmb <= spm.addDefaultButton("Fit BPM to sequence..", "fit_bpm");
+         pmb.setToolTipCaption("Change BPM to fit \'n\' bars");
+         pmb.setAccelerators("b", "");
+
+
+         // Capture submenu
+         pm.addSeparator();
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Capture", deref spm);
+
+         pmb <= spm.addDefaultButton("Start output capture", "capture_start");
+         pmb.setAccelerators("", "lctrl-x c");
+         pmb.setToolTipCaption("Start output capture\n\n (note) stops when replay is stopped\n\n (note) result can be pasted via lctrl-x v");
+
+         pmb <= spm.addDefaultButton("Paste output capture", "capture_paste");
+         pmb.setAccelerators("", "lctrl-x v");
+         pmb.setToolTipCaption("Paste output capture buffer\n\n (note) capture buffer is shared between all nodes");
+
+         pmb <= spm.addCheckButton("Use ticks instead of millisec", STConfig.b_node_monitor_capture_tick_timebase, "capture_ticks");
+         pmb.setToolTipCaption("When enabled, use ticks instead of millisec as capture timebase.\n\n (note) ticks are (slightly) more precise\n (note) millisec capture timing modulations");
+
+         pm.addSeparator();
+         pmb <= pm.addDefaultButton("Merge frames..", "mergeframes");
+         pmb.setToolTipCaption("Merge frames according to time threshold");
+         pmb.setAccelerators("e", "");
+
+         pmb <= pm.addDefaultButton("Merge frames (marker)..", "mergeframes_marker");
+         pmb.setToolTipCaption("Merge frames according to time threshold. Only merge marker frames.");
+         pmb.setAccelerators("j", "");
+
+         pm.resizeToMinimum();
+
+         pm.showAboveLayer(bt_tools);
+         if(_bFocusFirst)
+            pm.focusNextMenuItem();
+
+         Global.Print("Show tools menu.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEvNoteOnClick(NMO_NoteOnEventLabel _lb) {
+      MIDIPipeFrame fr <= mon.ui_extra_events;
+
+      fr.noteOn(true/*bSet*/, _lb.dev_idx, _lb.midi_ch, _lb.note, _lb.vel, mathClampi(_lb.dur, 1, current_song.ppq));
+
+      Global.Print("Play Note On: note="+_lb.note+" vel="+_lb.vel+" dur="+_lb.dur);
+   }
+
+   // <ui_handle.png>
+   protected method handleFitBPM() {
+      if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+      {
+         NM_Pattern pat <= getEditPattern();
+
+         if(null != pat)
+         {
+            dlg_fitbpm.setRecipient(this);
+            dlg_fitbpm.setMilliseconds(pat.getMilliseconds());
+            dlg_fitbpm.show();
+         }
+      }
+      else
+      {
+         Global.Warning("FitBPM: please select Replay mode");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFitBPM2() {
+      if(NodeMonitor.MODE_REPLAY == mon.getMonitorMode())
+      {
+         float bpm = dlg_fitbpm.getBPM();
+         current_song.setBPM(bpm);
+         root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+         Global.Print("BPM is "+bpm+". "+PageProject.GetBarDurationString());
+         MIDI.RestartMIDITimer();  // (note) UpdateMIDITimer() causes lags
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePlayFollowArrChanged() {
+      STConfig.b_node_monitor_edit_pattern_follows_replay_pattern = cb_play_followarr.isSelected();
+      Global.Print("Edit pattern follows replay is "+(STConfig.b_node_monitor_edit_pattern_follows_replay_pattern ? "enabled (follow arranger)" : "disabled"));
+   }
+
+   // <ui_handle.png>
+   protected method handleViewEnter() {
+
+      if(TAB_MONITOR == ts_groups.getActiveTabIndex())
+         rebuildPatchViewEntries();
+
+      // // if(UI.b_fbo)
+      // // {
+      // //    root_form.removeOverlay(grid);
+      // // }
+   }
+
+   // <ui_handle.png>
+   protected method handleViewLeave() {
+      // // if(TAB_MONITOR == ts_groups.getActiveTabIndex())
+      // // {
+      // //    if(UI.b_fbo)
+      // //    {
+      // //       root_form.removeOverlay(grid);
+      // //    }
+      // // }
+   }
+
+   // <ui_handle.png>
+   public virtual handlePlayPatChanged() {
+      // // trace "xxx handlePlayPatChanged";
+
+      // // called when EV_PLAYPAT is received
+      // // trace "xxx handlePlayPatChanged";
+
+      // // (note) don't change edit pattern when play pattern has changed [18Jun2017]
+      // // if(false)
+      // // {
+      // //    last_seen_num_frames = -1;
+      // //    handlePatternChanged(false/*bFromUI*/);
+      // // }
+      if(STConfig.b_node_monitor_edit_pattern_follows_replay_pattern)
+      {
+         // Edit pattern changed, too
+         nodeHandleEditPatternChanged();
+      }
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+      // // // mon.nodeCopyLastPatternStartSongOffsetFromEditor();
+      // // ta_replay.schedule();
+      punch_in_out_state = 0;
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+      // // // mon.nodeCopyLastPatternStartSongOffsetFromEditor();
+      punch_in_out_state = 0;
+
+      if(mon.doReplaySync())
+      {
+         handleToggleReplay(true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+      }
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+      mon.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+
+      PopupMenuButton *pmb;
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addCheckButton("Freeze", mon.b_ui_freeze, "context_freeze_toggle");
+      pmb.setAccelerators("lctrl-f", "");
+
+      pm.addSeparator();
+
+      pmb <= pm.addCheckButton("Display bytes/shorts as hex", STConfig.b_node_monitor_hex, "context_hex_toggle");
+      // pmb.setToolTipCaption("");
+
+      pm.addSeparator();
+
+      pmb <= pm.addCheckButton("Display durations in milliseconds", STConfig.b_node_monitor_dur_millisec, "context_dur_toggle");
+
+      pm_context.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+   }
+
+   // <method.png>
+   public =replay= method beginOutputCapture() {
+      // (note) capture stops when replay is stopped
+      mon_capture.captureBegin();
+      mon.b_capture = true;
+      Global.Print("Start output capture");
+   }
+
+   // <method.png>
+   public =replay= method pasteOutputCapture() {
+      // Lazy-stop replay
+      if(replay.b_playing)
+         root_form.handleToggleReplay(false/*bSendMMC*/);
+
+      NM_Pattern patMon <= mon_capture.nodeGetCurrentEditPattern();
+      patMon.noteOffsToDuration();
+
+      if(patMon.b_tick_timebase)
+      {
+         // convert ticks to milliseconds (if necessary)
+         patMon.ticksToMilliSeconds();
+      }
+
+      // copy to edit pattern
+      NM_Pattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         pat.patCopyFrom(patMon, false/*bClear__ignored*/);
+         handlePatternChanged(false/*bFromUI*/, true/*bForceRebuild*/);
+      }
+   }
+
+   // <method.png>
+   public method toggleOutputCaptureTicks() {
+      STConfig.b_node_monitor_capture_tick_timebase = !STConfig.b_node_monitor_capture_tick_timebase;
+      Global.Print("Output-Capture time base is "+(STConfig.b_node_monitor_capture_tick_timebase?"ticks":"milliseconds"));
+   }
+
+   // <ui_update.png>
+   protected method updateReplaySyncIndicator() {
+      if(mon.doReplaySync())
+         cm_mode.setBackgroundTint(#40ffff00); // (todo) AppLookAndFeel
+      else
+         cm_mode.setBackgroundTint(0);
+      cm_mode.redraw();
+   }
+
+   // <method.png>
+   protected method handleReplaySyncChanged(boolean _bEnable) {
+      mon.setEnableReplaySync(_bEnable);
+      updateReplaySyncIndicator();
+      Global.Print("Replay Sync is "+Utils.GetEnableStringMixed(mon.b_replay_sync, "disabled", "enabled", "auto-enabled(PLAY) / auto-disabled(REC)"));
+   }
+
+   // <method.png>
+   protected method handleCycleReplaySync() {
+      boolean bEnable;
+      if(false == mon.b_replay_sync)
+         bEnable = true;
+      else if(true == mon.b_replay_sync)
+         bEnable = maybe;
+      else
+         bEnable = false;
+      handleReplaySyncChanged(bEnable);
+      cb_play_sync.setSelected(mon.b_replay_sync);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         if(TAB_MONITOR == ts_groups.getActiveTabIndex())
+         {
+            showContextMenu(false/*bFocusFirst*/);
+            return true;
+         }
+      }
+      else
+         refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyHome(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectNextUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            handleSelectNextPattern();
+            handleSelectNextPattern();
+            handleSelectNextPattern();
+         }
+         handleSelectNextPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyEnd(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectPreviousUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            handleSelectPreviousPattern();
+            handleSelectPreviousPattern();
+            handleSelectPreviousPattern();
+         }
+         handleSelectPreviousPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          a         :   Toggle auto-marker mode
+          c         :   Begin output capture (stops when replay is stopped)
+          d         :   Toggle pattern manager
+          e         :   Clear (same as lshift-BACKSPACE)
+          f         :   Delete frames before last marker
+          o         :   Toggle chord detection mode (update pat name)
+          s         :   Select next seek mode
+          u         :   Focus node name widget
+          v         :   Paste output capture buffer
+          z         :   Switch between pipenodes A/B
+          RCTRL     :   Toggle sync-with-global-replay
+          F3        :   Delete current pattern
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "xxx NodeMonitorEditor::onTriadKey: _k.name="+_k.name;
+
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case VKEY_F3:
+               handlePatternFree();
+               return true;
+
+            case 'a':
+               handleAutoMarkerToggle();
+               return true;
+
+            case 'c':
+               beginOutputCapture();
+               return true;
+
+            case 'e':
+               handleDeleteEvents();
+               return true;
+
+            case 'f':
+               // Delete frames before last marker
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+               }
+               handleDeleteFramesBeforeLastMarker();
+               refocusDefault();
+               return true;
+
+            case 'o':
+               cb_patchview_chorddetect.toggleSelection();
+               handlePatchViewChordDetectChanged();
+               return true;
+
+            case 's':
+               cm_seek_mode.selectNextOptionCycle();
+               handleReplaySeekModeChanged();
+               return true;
+
+            case 'v':
+               pasteOutputCapture();
+               return true;
+
+            case VKEY_RCTRL:
+               handleCycleReplaySync();
+               return true;
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "xxx NodeMonitorEditor::onKey: k.pressed="+_k.pressed+" k.mod="+_k.mod+" k.name="+_k.name;
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(TAB_MONITOR != ts_groups.getActiveTabIndex())
+            {
+               ts_groups.setActiveTabIndex(TAB_MONITOR);
+               return true;
+            }
+            break;
+      }
+
+      if(mon.b_ui_patchview)
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_ESCAPE:
+               if(STConfig.b_node_monitor_autohide_patternview_on_esc)
+               {
+                  bt_patchview.toggleSelectionAction();
+                  return true;
+               }
+               // let PageNode handle it
+               break;
+
+            case VKEY_INSERT:
+               if(_k.modCtrl())
+               {
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, true/*bClone*/);
+               }
+               else if(_k.modNone())
+               {
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, true/*bClone*/);
+               }
+               return true;
+
+            case VKEY_UP:
+               if(_k.modCtrl())
+               {
+                  handlePatchViewPatternMoveUp();
+                  return true;
+               }
+               break;
+
+            case VKEY_DOWN:
+               if(_k.modCtrl())
+               {
+                  handlePatchViewPatternMoveDown();
+                  return true;
+               }
+               break;
+
+            case 'f':
+               if(_k.modNone())
+               {
+                  handlePatchViewSetInputFilterFromFirstEvent();
+                  return true;
+               }
+               break;
+
+            case 'c':
+               if(_k.modNone())
+               {
+                  calcPatternNameFromDetectedChord();
+                  return true;
+               }
+               break;
+
+            case 'q':
+               if(_k.modNone())
+               {
+                  sendSysExRequest(false/*bRec*/);
+                  return true;
+               }
+               else if(_k.modCtrl())
+               {
+                  sendSysExRequest(true/*bRec*/);
+                  return true;
+               }
+               break;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_END:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyHome(_k.mod);
+            else
+               handlePatternKeyEnd(_k.mod);
+            refocusDefault();
+            return true;
+
+         case VKEY_HOME:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyEnd(_k.mod);
+            else
+               handlePatternKeyHome(_k.mod);
+            refocusDefault();
+            return true;
+
+         case 'n':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternAlloc(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternAlloc(false/*bSub*/);
+               }
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATTERN);
+               handleViewEnter();
+               tf_pattern_name.onTabFocus();
+               return true;
+            }
+            else
+            {
+               if(_k.modAlt())
+               {
+                  // (note) same as lctrl-INSERT
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, true/*bClone*/);
+               }
+               else
+               {
+                  // (note) same as INSERT
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, true/*bClone*/);
+               }
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternClone(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternClone(false/*bSub*/);
+               }
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               handleToggleReplay(true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               handleToggleReplay(false/*bReturnToStart*/, false/*bAutoStopReplay*/);
+               return true;
+            }
+            break;
+
+         case VKEY_SPACE:
+            if(_k.modShift() && _k.modCtrl() && !_k.modAlt())
+            {
+               cb_play_followarr.toggleSelectionAction();
+               return true;
+            }
+
+            handleStartOrStopReplay(_k.modCtrl()/*bHoldClick*/);
+            // // // (note) not always available, e.g. Buttons consume SPACE, too
+            // // if(_k.modNone())
+            // // {
+            // //    handleToggleReplay(true/*bReturnToStart*/, false/*bAutoStopReplay*/);
+            // //    return true;
+            // // }
+            // // else if(_k.modCtrl())
+            // // {
+            // //    handleToggleReplay(false/*bReturnToStart*/, false/*bAutoStopReplay*/);
+            // //    return true;
+            // // }
+            break;
+
+         case 'c':
+            if( (_k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste)) && !_k.modShift())
+            {
+               handlePatternCopy();
+               return true;
+            }
+            break;
+
+         case 'd':
+            if(_k.modNone())
+            {
+               handleToggleLockCurrentFrame();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               handleToggleFreeze();
+               return true;
+            }
+            break;
+
+         case 'h':
+            if(_k.modShift())
+            {
+               handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, false/*bClone*/);
+            }
+            else
+            {
+               handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, false/*bClone*/);
+            }
+            refocusDefault();
+            return true;
+
+         case 'u':
+            if(_k.modNone())
+            {
+               clearAndRestartRecording();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternPaste();
+               return true;
+            }
+            break;
+
+
+         case VKEY_BACKSPACE:
+            if(_k.modNone())
+            {
+               if(mon.b_lock_current_frame)
+               {
+                  handleClearFrame();
+                  return true;
+               }
+            }
+            break;
+
+         case VKEY_LEFT:
+            if(_k.modNone())
+            {
+               if(mon.b_lock_current_frame)
+               {
+                  handleReplayFrameIncDec(-1);
+                  return true;
+               }
+            }
+            else if(_k.modCtrlOnly())
+            {
+               gotoMarkerPrev();
+               return true;
+            }
+            break;
+
+         case VKEY_RIGHT:
+            if(_k.modNone())
+            {
+               if(mon.b_lock_current_frame)
+               {
+                  handleReplayFrameIncDec(1);
+                  return true;
+               }
+            }
+            else if(_k.modCtrlOnly())
+            {
+               gotoMarkerNext();
+               return true;
+            }
+            break;
+
+         case '1':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATTERN);
+               handleViewEnter();
+               refocusDefaultFromTabSelection();
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(TAB_MONITOR);
+               handleViewEnter();
+               refocusDefaultFromTabSelection();
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(TAB_PLAY);
+               handleViewEnter();
+               refocusDefaultFromTabSelection();
+               return true;
+            }
+            break;
+      }
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_BACKSPACE:
+               handleDeleteEvents();
+               return true;
+         }
+      }
+      else if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_DELETE:
+               handleDeleteFramesBeforeCurrent();
+               return true;
+
+            case VKEY_TAB:
+               togglePatchView();
+               return true;
+         }
+      }
+      else if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_PAGEUP:
+               cm_mode.selectPreviousOptionAction();
+               refocusDefault();
+               return true;
+
+            case VKEY_PAGEDOWN:
+               cm_mode.selectNextOptionAction();
+               refocusDefault();
+               return true;
+         }
+      }
+
+
+      if(NodeMonitor.MODE_REPLAY == mon.monitor_mode)
+      {
+         if(_k.modNone())
+         {
+            switch(_k.pressed)
+            {
+               case VKEY_DELETE:
+                  if(mon.b_ui_patchview)
+                  {
+                     handlePatternFree();
+                  }
+                  else
+                  {
+                     handleDeleteFrame();
+                  }
+                  return true;
+
+               case VKEY_BACKSPACE:
+                  handleClearFrame();
+                  return true;
+
+               case VKEY_LEFT:
+                  handleReplayFrameIncDec(-1);
+                  return true;
+
+               case VKEY_RIGHT:
+                  handleReplayFrameIncDec(1);
+                  return true;
+
+               case VKEY_UP:
+                  fp_replay_frame.incCoarse();
+                  return true;
+
+               case VKEY_DOWN:
+                  fp_replay_frame.decCoarse();
+                  return true;
+
+               case 'a':
+                  showToolsMenu(true/*bFocusFirst*/);
+                  return true;
+
+               case 'e':
+                  handleMergeFrames1(false/*bMarker*/);
+                  return true;
+
+               case 'j':
+                  handleMergeFrames1(true/*bMarker*/);
+                  return true;
+
+               case 'f':
+                  handleFixDuration1();
+                  return true;
+
+               case 'v':
+                  handleFixVelocity1();
+                  return true;
+
+               case 'w':
+                  handleRepeatPlayCurrentFrame(true/*bAlways*/);
+                  return true;
+
+               case 's':
+                  cb_replay_scrub.toggleSelection();
+                  return true;
+
+               case 't':
+                  handleMarkerQueueOrToggle();
+                  return true;
+
+               case 'k':
+                  handlePunchTrim();
+                  return true;
+
+               case 'l':
+                  handleDeleteFramesBeforeLastMarker();
+                  return true;
+
+               case 'b':
+                  handleFitBPM();
+                  return true;
+            }
+         }
+         else
+         {
+            switch(_k.pressed)
+            {
+               case VKEY_LEFT:
+                  if(_k.modShift() && !_k.modCtrl())
+                  {
+                     handleMoveFrameLeft();
+                     return true;
+                  }
+                  break;
+
+               case VKEY_RIGHT:
+                  if(_k.modShift() && !_k.modCtrl())
+                  {
+                     handleMoveFrameRight();
+                     return true;
+                  }
+                  break;
+
+               case 'w':
+                  if(VMOD_LCTRL == _k.mod)
+                  {
+                     freezeReplayFilter();
+                     return true;
+                  }
+                  break;
+            }
+         }
+      }
+      else
+      {
+         // Record mode
+         switch(_k.pressed)
+         {
+            case VKEY_DELETE:
+               handleDeleteEvents();
+               return true;
+
+            case 'i':
+               handlePunchInOut(false/*bOut*/);
+               return true;
+
+            case 'o':
+               handlePunchInOut(true/*bOut*/);
+               return true;
+
+            case 'p':
+               handlePunchInOut(maybe/*bOut*/);
+               return true;
+
+            case 'e':
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+                  refocusDefault();
+               }
+               handleMergeFrames1(false/*bMarker*/);
+               refocusDefault();
+               return true;
+
+            case 'j':
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+                  refocusDefault();
+               }
+               handleMergeFrames1(true/*bMarker*/);
+               refocusDefault();
+               return true;
+
+            case 'f':
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+               }
+               handleFixDuration1();
+               refocusDefault();
+               return true;
+
+            case 'v':
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+               }
+               handleFixVelocity1();
+               refocusDefault();
+               return true;
+
+            case 'k':
+               // Convenience: automatically switch to replay mode before trimming to punch in/out
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+               }
+               handlePunchTrim();
+               refocusDefault();
+               return true;
+
+            case 'l':
+               // Delete frames before last marker
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+               {
+                  handleToggleRecMode();
+               }
+               handleDeleteFramesBeforeLastMarker();
+               refocusDefault();
+               return true;
+
+            case 't':
+               handleMarkerQueueOrToggle();
+               return true;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_RCTRL:
+            if(_k.modNone())
+            {
+               handleToggleRecMode();
+
+               refocusDefault();
+
+               // layout hack
+               fixMonitorLayout();
+               tv_patches.centerRow();
+
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               handleSelectNextMode();
+
+               refocusDefault();
+
+               // layout hack
+               fixMonitorLayout();
+
+               return true;
+            }
+
+            break;
+
+         case VKEY_RSHIFT:
+            clearAndRestartRecording();
+            return true;
+      }
+
+      if(trySelectPatternByUsedIdx(_k))
+         return true;
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      IntAction *iac;
+
+      // trace "xxx kbdfocus="+#(UI.GetKeyboardFocus())+" tv_patches.getCursorRow()="+tv_patches.getCursorRow();
+
+      if(TA_REDRAW == acName)
+      {
+         // trace "xxx TA_REDRAW";
+
+         if(mon.getQueuedRedrawAndReset())
+         {
+            // trace "xxx TA_REDRAW: updateDisplayFrame";
+            updateDisplayedFrame(false/*bForceRebuild*/);
+            updateReplayFrameWidgets(true/*bUpdateSlider*/, true/*bUpdateFloatParam*/);
+            updateReplayButton();  // for auto-stop
+            redraw();
+         }
+
+         if(mon.getQueuedRebuildAfterRecAndReset())
+         {
+            // #frames changed
+            queueRebuildPatchViewEntries();
+         }
+
+         if(STConfig.node_monitor_autoremove_timeout > 0)
+         {
+            if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+            {
+               if(!mon.b_ui_freeze)
+               {
+                  f_frame.handleAutoRemoveEvents();
+               }
+            }
+         }
+
+         NM_Pattern pat <= getEditPattern();
+
+         if(null != pat)
+         {
+            if(pat.getNumFrames() != last_seen_num_frames)
+            {
+               last_seen_num_frames = pat.getNumFrames();
+               bt_clear.setToolTipCaption(((0 != last_seen_num_frames) ? ("Delete "+last_seen_num_frames+" event"+((last_seen_num_frames>1)?"s":"")) : "No events to delete")+" (max="+pat.getMaxFrames()+")" + "\n\n (note) lshift-BACKSPACE or lctrl-x e\n\n (note) press RSHIFT to clear events and select last used recording mode");
+               bt_clear.setEditable(last_seen_num_frames > 0);
+
+               if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+                  if(cb_patchview_chorddetect.isSelected())
+                     calcPatternNameFromDetectedChord();
+            }
+         }
+         else
+         {
+            // Pattern not allocated
+            last_seen_num_frames = 0;
+            bt_clear.setToolTipCaption("No pattern, no events to delete\n\n (note) lshift-BACKSPACE or lctrl-x e\n\n (note) press RSHIFT to clear events and select last used recording mode");
+            bt_clear.setEditable(false);
+         }
+
+         // Update last played / recorded notes in case it changed
+         if(mon.getUILastNoteStateAndReset(piano.last_notes))
+            piano.redraw();
+
+         ta_redraw.schedule();
+
+         return true;
+      }
+      else if(TA_REBUILD_PATCHVIEW == acName)
+      {
+         rebuildPatchViewEntries();
+
+         handlePianoNotesChanged();
+
+         return true;
+      }
+      else if(TA_SYSEX_CHECK == acName)
+      {
+         handleSysExCheck();
+         return true;
+      }
+
+      if(NM_FitBPMDialog.ACTION_FIT_OK == acName)
+      {
+         handleFitBPM2();
+         return true;
+      }
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            if(Button.ACTION_CLICK == acName)
+            {
+               if(ap instanceof NMO_NoteOnEventLabel)
+               {
+                  handleEvNoteOnClick(ap);
+                  return true;
+               }
+            }
+            break;
+
+         case @(ts_groups):
+            Global.Print("Active tab is \""+ts_groups.getActiveViewCaption()+"\".");
+
+            handleViewEnter();
+            return true;
+
+
+            // Pattern:
+         case @(bt_pattern_alloc):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handlePatternClone(false/*bSub*/);
+            }
+            else
+            {
+               handlePatternAlloc(false/*bSub*/);
+            }
+            return true;
+
+         case @(bt_pattern_tools):
+            showPatternToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_pattern_tools):
+            Global.Debug2("mon: pm_pattern_tools acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close pattern tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handlePatternCopy();
+                  return true;
+
+               case "paste":
+                  handlePatternPaste();
+                  return true;
+
+               case "clone":
+                  handlePatternClone(false/*bSub*/);
+                  return true;
+
+               case "clone_sub":
+                  handlePatternClone(true/*bSub*/);
+                  return true;
+
+               case "new_sub":
+                  handlePatternAlloc(true/*bSub*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_pattern_free):
+            handlePatternFree();
+            return true;
+
+         case @(cm_pattern_nr):
+            handleSelectPattern();
+            return true;
+
+         case @(tf_pattern_name):
+            handlePatternNameChanged();
+            updatePatternNrComboBox();
+
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+
+            return true;
+
+         case @(cm_pattern_output_transform_dev):
+            handleOutputTransformDevChanged();
+            return true;
+
+         case @(cm_pattern_output_transform_ch):
+            handleOutputTransformChChanged();
+            return true;
+
+         case @(cb_pattern_output_transform_enable):
+            handleOutputTransformEnableChanged();
+            return true;
+
+         case @(cm_pattern_input_filter_dev):
+            handleInputFilterDevChanged();
+            return true;
+
+         case @(cm_pattern_input_filter_ch):
+            handleInputFilterChChanged();
+            return true;
+
+         case @(cb_pattern_input_filter_enable):
+            handleInputFilterEnableChanged();
+            return true;
+
+         case @(tf_pattern_syxreq):
+            handleSysExRequestChanged();
+
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+         case @(bt_pattern_syxreq_preset):
+            showSysExRequestPresetList();
+            return true;
+
+         case @(syx_preset_popup):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               iac <= _action;
+               handleSysExRequestPresetSelected(iac.getIntValue());
+            }
+            refocusDefault();
+            return true;
+
+
+            // Monitor:
+         case @(tv_patches):
+            // trace "xxx tv_patches acName="+acName;
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               if(mon.b_ui_click_autoplay)
+               {
+                  // (note) restarts pattern when row is already selected
+                  // (note) starts replay in case it's not already active
+                  //         (replay stops after sequence finished, if it wasn't already running)
+                  if(NodeMonitor.MODE_REPLAY != mon.getMonitorMode())
+                  {
+                     handleToggleRecMode();
+                  }
+                  forceRestartReplay(!mon.isPlaying() || mon.b_queue_autostop_replay/*bAutoStop*/);
+               }
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleSelectPatternByPatchViewTable();
+               if(mon.b_ui_click_autoplay)
+               {
+                  lazyRestartReplay();   // play from the beginning if replay is already running
+               }
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showPatchViewContextMenu(tv_patches.b_contextmenu_kbd);
+            }
+            return true;
+
+         case @(bt_patchview_remove):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleRemovePatchViewPattern();
+            }
+            else
+            {
+               Global.Warning("Hold-click to actually remove pattern");
+            }
+            return true;
+
+         case @(bt_patchview_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleClonePatchViewPattern();
+            }
+            else
+            {
+               handleAddPatchViewPattern();
+            }
+            return true;
+
+         case @(bt_patchview_moveup):
+            handlePatchViewPatternMoveUp();
+            return true;
+
+         case @(bt_patchview_movedown):
+            handlePatchViewPatternMoveDown();
+            return true;
+
+         case @(cb_patchview_sub):
+            Global.Print("Allocate / clone "+((cb_patchview_sub.isSelected()?"sub":"main"))+" patterns");
+            return true;
+
+         case @(cb_patchview_chorddetect):
+            handlePatchViewChordDetectChanged();
+            return true;
+
+
+         case @(cb_flt_note_off):
+            handleFltNoteOffChanged();
+            return true;
+
+         case @(cb_flt_note_on):
+            handleFltNoteOnChanged();
+            return true;
+
+         case @(cb_flt_poly_pressure):
+            handleFltPolyPressureChanged();
+            return true;
+
+         case @(cb_flt_cc):
+            handleFltCCChanged();
+            return true;
+
+         case @(cb_flt_program_change):
+            handleFltProgramChangeChanged();
+            return true;
+
+         case @(cb_flt_channel_pressure):
+            handleFltChannelPressureChanged();
+            return true;
+
+         case @(cb_flt_pitchbend):
+            handleFltPitchbendChanged();
+            return true;
+
+         case @(cb_flt_sysex):
+            handleFltSysExChanged();
+            return true;
+
+         case @(cb_flt_rpn):
+            handleFltRPNChanged();
+            return true;
+
+         case @(cb_flt_nrpn):
+            handleFltNRPNChanged();
+            return true;
+
+         case @(bt_patchview):
+            handleTogglePatchView();
+            return true;
+
+         case @(cb_patchview_clickplay):
+            mon.b_ui_click_autoplay = cb_patchview_clickplay.isSelected();
+            Global.Print("Click-Autoplay sequence is "+Utils.GetEnableString(mon.b_ui_click_autoplay));
+            return true;
+
+         case @(pm_patchview):
+            Global.Debug("pm_patchview acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close patchview context menu.");
+                  refocusDefault();
+                  return true;
+
+               case "patchview_setinputfilterfromfirstframeevent":
+                  handlePatchViewSetInputFilterFromFirstEvent();
+                  refocusDefault();
+                  return true;
+
+               case "patchview_chorddetect":
+                  calcPatternNameFromDetectedChord();
+                  return true;
+
+               case "patchview_syxreq":
+                  sendSysExRequest(false/*bRec*/);
+                  return true;
+
+               case "patchview_syxreq_rec":
+                  sendSysExRequest(true/*bRec*/);
+                  return true;
+            }
+            return true;
+
+
+         case @(bt_clear):
+            handleDeleteEvents();
+            return true;
+
+         case @(cm_mode):
+            handleMonitorModeChanged(false/*bQuiet*/, true/*bForceRebuild*/);
+            return true;
+
+         case @(pm_context):
+            Global.Debug2("mon: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "context_freeze_toggle":
+                  handleToggleFreeze();
+                  return true;
+
+               case "context_hex_toggle":
+                  handleToggleHex();
+                  return true;
+
+               case "context_dur_toggle":
+                  handleToggleDur();
+                  return true;
+            }
+            return true;
+
+            // Monitor<MODE_REPLAY>
+         case @(bt_replay):
+            handleStartOrStopReplay((Button.ACTION_HOLD_CLICK == acName)/*bHoldClick*/);
+            return true;
+
+         case @(cm_seek_mode):
+            handleReplaySeekModeChanged();
+            return true;
+
+         case @(sl_replay_frame):
+            handleReplayFrameSliderChanged();
+            return true;
+
+         case @(fp_replay_frame):
+            handleReplayFrameFloatParamChanged();
+            return true;
+
+         case @(bt_replay_frame_prev):
+            handleReplayFrameIncDec(-1);
+            return true;
+
+         case @(bt_replay_frame_next):
+            handleReplayFrameIncDec(1);
+            return true;
+
+         case @(fp_replay_shift_ms):
+            handleReplayShiftMSChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+         case @(bt_tools):
+            showToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_tools):
+            Global.Debug2("mon: pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  refocusDefault();
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "noteofftodur":
+                  handleNoteOffsToDuration();
+                  refocusDefault();
+                  return true;
+
+               case "noteofftodur_toggle":
+                  handleToggleNoteOffsToDuration();
+                  refocusDefault();
+                  return true;
+
+               case "automergefixdur_toggle":
+                  handleToggleAutoMergeAndSetFixedDuration();
+                  refocusDefault();
+                  return true;
+
+               case "calcreplayshift_toggle":
+                  handleToggleCalcReplayShiftMS();
+                  refocusDefault();
+                  return true;
+
+               case "lockcurrentframe_toggle":
+                  handleToggleLockCurrentFrame();
+                  refocusDefault();
+                  return true;
+
+               case "capture_start":
+                  beginOutputCapture();
+                  return true;
+
+               case "capture_paste":
+                  pasteOutputCapture();
+                  return true;
+
+               case "capture_ticks":
+                  toggleOutputCaptureTicks();
+                  return true;
+
+               case "mergeframes":
+                  handleMergeFrames1(false/*bMarker*/);
+                  refocusDefault();
+                  return true;
+
+               case "mergeframes_marker":
+                  handleMergeFrames1(true/*bMarker*/);
+                  refocusDefault();
+                  return true;
+
+               case "freezereplayfilter":
+                  freezeReplayFilter();
+                  return true;
+
+               case "fixduration":
+                  handleFixDuration1();
+                  // // refocusDefault();
+                  return true;
+
+               case "fixvelocity":
+                  handleFixVelocity1();
+                  // // refocusDefault();
+                  return true;
+
+               case "deleteframe":
+                  handleDeleteFrame();
+                  refocusDefault();
+                  return true;
+
+               case "deleteframesbeforecurrent":
+                  handleDeleteFramesBeforeCurrent();
+                  refocusDefault();
+                  return true;
+
+               case "deleteframesbeforelastmarker":
+                  handleDeleteFramesBeforeLastMarker();
+                  refocusDefault();
+                  return true;
+
+               case "deleteframesbeforelastmarkerandgotonext":
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, false/*bClone*/);
+                  refocusDefault();
+                  return true;
+
+               case "deleteframesbeforelastmarkerandgotonext_sub":
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, false/*bClone*/);
+                  refocusDefault();
+                  return true;
+
+               case "deleteframesbeforelastmarkerandclonetonext":
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(false/*bSub*/, true/*bClone*/);
+                  refocusDefault();
+                  return true;
+
+               case "deleteframesbeforelastmarkerandclonetonext_sub":
+                  handleDeleteFramesBeforeLastMarkerAndGoToNextPattern(true/*bSub*/, true/*bClone*/);
+                  refocusDefault();
+                  return true;
+
+               case "moveframe_left":
+                  handleMoveFrameLeft();
+                  refocusDefault();
+                  return true;
+
+               case "moveframe_right":
+                  handleMoveFrameRight();
+                  refocusDefault();
+                  return true;
+
+               case "marker_clearall":
+                  handleMarkerClearAll();
+                  refocusDefault();
+                  return true;
+
+               case "marker_clear":
+                  handleMarkerClear();
+                  refocusDefault();
+                  return true;
+
+               case "marker_set":
+                  handleMarkerSet();
+                  refocusDefault();
+                  return true;
+
+               case "marker_toggle":
+                  handleMarkerQueueOrToggle();
+                  refocusDefault();
+                  return true;
+
+               case "automarker_toggle":
+                  handleAutoMarkerToggle();
+                  refocusDefault();
+                  return true;
+
+               case "automarker_threshold":
+                  handleAutoMarkerThreshold1();
+                  return true;
+
+               case "marker_prev":
+                  gotoMarkerPrev();
+                  refocusDefault();
+                  return true;
+
+               case "marker_next":
+                  gotoMarkerNext();
+                  refocusDefault();
+                  return true;
+
+               case "punch_in":
+                  handlePunchInOut(false/*bOut*/);
+                  refocusDefault();
+                  return true;
+
+               case "punch_out":
+                  handlePunchInOut(true/*bOut*/);
+                  refocusDefault();
+                  return true;
+
+               case "punch_inout":
+                  handlePunchInOut(maybe/*bOut*/);
+                  refocusDefault();
+                  return true;
+
+               case "punch_trim":
+                  handlePunchTrim();
+                  refocusDefault();
+                  return true;
+
+               case "fit_bpm":
+                  handleFitBPM();
+                  refocusDefault();
+                  return true;
+
+            }
+            return true;
+
+         case @(dlg_merge_millisec):
+            if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED != acName)
+            {
+               handleMergeFrames2();
+            }
+            return true;
+
+         case @(dlg_fixduration_millisec):
+            if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED != acName)
+            {
+               handleFixDuration2();
+            }
+            return true;
+
+         case @(dlg_fixvelocity):
+            if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED != acName)
+            {
+               handleFixVelocity2();
+            }
+            return true;
+
+         case @(dlg_automarker_threshold_ms):
+            if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED != acName)
+            {
+               handleAutoMarkerThreshold2();
+            }
+            return true;
+
+
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(mon);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+         case @(cb_play_dynamic_trigger_note_duration):
+            mon.setEnableDynamicTriggerNoteDuration(cb_play_dynamic_trigger_note_duration.isSelected());
+            Global.Print("Dynamic trigger note duration is "+Utils.GetEnableString(mon.b_dynamic_trigger_note_duration));
+            return true;
+
+         case @(cm_play_trigger_note_velocity):
+            mon.setTriggerVelocityMode(cm_play_trigger_note_velocity.getSelectedOption());
+            Global.Print("Trigger velocity mode is "+cm_play_trigger_note_velocity.getSelectedOptionName());
+            return true;
+
+         case @(cb_play_restart_pattern):
+            mon.setEnableRestartPattern(cb_play_restart_pattern.isSelected());
+            Global.Print("Auto-Restart pattern is "+Utils.GetEnableString(mon.b_restart_pattern));
+            return true;
+
+         case @(cb_play_sync):
+            handleReplaySyncChanged(cb_play_sync.isSelected());
+            return true;
+
+         case @(cb_play_followarr):
+            handlePlayFollowArrChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,275 @@
+// ----
+// ---- file   : NT_QuantizeDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2022-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 06May2022
+// ---- changed: 28Jul2023, 04Oct2023, 30Oct2023, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_QuantizeDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_QuantizeDialog extends Dialog, RemoteEventListener {
+
+   NodeTrackerEditor *editor;
+   NT_PatternView    *pattern_view;
+   NodeTracker       *parent_node;
+
+   protected XMLForm *xfm;
+
+   protected FloatParam *fp_forced;
+   protected FloatParam *fp_min;
+   protected FloatParam *fp_amount;
+   protected CheckBox   *cb_wrap;
+
+   protected Button     *bt_apply_close;
+   protected Button     *bt_apply;
+   protected Button     *bt_revert;
+   protected Button     *bt_close;
+
+   protected boolean b_have_undo;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NT_QuantizeDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Advanced Quantization",
+                 100, 100,
+                 640, 240
+                 );
+
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showQuantizeDialog(NodeTrackerEditor _editor,
+                                    NT_PatternView    _patternView,
+                                    NodeTracker       _parentNode
+                                    ) {
+      editor       <= _editor;
+      pattern_view <= _patternView;
+      parent_node  <= _parentNode;
+
+      Global.Print("Show Quantization Dialog");
+      STConfig.node_tracker_quantization_last_method = 0;
+
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      if(null != mpat)
+      {
+         if(!mpat.patIsEmpty())
+         {
+            b_have_undo = false;
+            bt_revert.setEditable(false);
+
+            fp_forced .setValue    (STConfig.node_tracker_quantization_forced_range_ticks);
+            fp_min    .setValue    (STConfig.node_tracker_quantization_min_threshold_ticks);
+            fp_amount .setValue    (STConfig.node_tracker_quantization_amount);
+            cb_wrap   .setSelected (STConfig.b_node_tracker_quantization_wrap_around);
+
+            showCenteredFirst();
+         }
+         else
+         {
+            Global.Warning("QuantizeDialog: pattern is empty");
+         }
+      }
+
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      resizeToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_apply_close);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       fp_forced,
+                       fp_min,
+                       fp_amount,
+                       cb_wrap,
+
+                       bt_apply_close,
+                       bt_apply,
+                       bt_revert,
+                       bt_close,
+                     ]
+                    );
+
+      return layers;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxxx NT_QuantizeDialog::onKey: pressed="+_k.pressed+" name="+_k.name;
+      switch(_k.pressed)
+      {
+         default:
+            break;
+
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case '1':
+            UI.SetKeyboardFocus(fp_forced);
+            return true;
+
+         case '2':
+            UI.SetKeyboardFocus(fp_min);
+            return true;
+
+         case '3':
+            UI.SetKeyboardFocus(fp_amount);
+            return true;
+
+         case '4':
+            cb_wrap.toggleSelectionAction();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleApply() {
+
+      if(!b_have_undo)
+         parent_node.undoEnable();
+      else
+         parent_node.undoDisable();
+
+      int numQuantizedEv = pattern_view.blockQuantizeEx(STConfig.node_tracker_quantization_forced_range_ticks,
+                                                        STConfig.node_tracker_quantization_min_threshold_ticks,
+                                                        STConfig.node_tracker_quantization_amount,
+                                                        STConfig.b_node_tracker_quantization_wrap_around,
+                                                        !b_have_undo
+                                                        );
+
+      parent_node.undoEnable();
+
+      if(numQuantizedEv > 0)
+      {
+         Global.Print("Quantized "+numQuantizedEv+" event"+Utils.GetPluralString(numQuantizedEv));
+         b_have_undo = true;
+         bt_revert.setEditable(true);
+      }
+      else
+      {
+         Global.Print("Quantize: pattern not changed");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRevert() {
+      if(b_have_undo)
+      {
+         editor.cmd_edit_undo();
+         bt_revert.setEditable(false);
+         b_have_undo = false;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(fp_forced):
+            STConfig.node_tracker_quantization_forced_range_ticks = fp_forced.getFloatValue();
+            Global.Print("Forced tick threshold is "+STConfig.node_tracker_quantization_forced_range_ticks);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_min):
+            STConfig.node_tracker_quantization_min_threshold_ticks = fp_min.getFloatValue();
+            Global.Print("Min tick threshold is "+STConfig.node_tracker_quantization_min_threshold_ticks);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_amount):
+            STConfig.node_tracker_quantization_amount = fp_amount.getFloatValue();
+            Global.Print("Min tick threshold is "+STConfig.node_tracker_quantization_amount);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cb_wrap):
+            STConfig.b_node_tracker_quantization_wrap_around = cb_wrap.isSelected();
+            Global.Print("Wrap-around is "+Utils.GetEnableString(STConfig.b_node_tracker_quantization_wrap_around));
+            return true;
+
+         case @(bt_apply_close):
+            handleApply();
+            hide();
+            return true;
+
+         case @(bt_apply):
+            handleApply();
+            return true;
+
+         case @(bt_revert):
+            handleRevert();
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return true;
+   }
+
+}

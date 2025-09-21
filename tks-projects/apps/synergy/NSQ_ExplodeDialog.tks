@@ -1,0 +1,243 @@
+// ----
+// ---- file   : NSQ_ExplodeDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26Apr2020
+// ---- changed: 28Apr2020, 28Jul2023, 04Oct2023, 30Oct2023, 01Nov2023, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNSQ_ExplodeDialog;
+
+use namespace ui;
+namespace st2;
+
+
+// <class.png>
+class NSQ_ExplodeDialog extends Dialog, ActionProvider, MMTListener {
+
+   define String ACTION_EXPLODE;
+   define String ACTION_CANCEL;
+
+   protected XMLForm *xfm;
+
+   NodeSeqEditor *parent_editor;
+
+   protected NSQ_ExplodeTrackForm *[] track_forms;
+
+   protected CheckBox *cb_subsong;
+   protected CheckBox *cb_unique;
+   protected CheckBox *cb_arr;
+
+   protected Button *bt_explode;
+   protected Button *bt_cancel;
+
+
+   // <ui_init.png>
+   public method init(NodeSeqEditor _editor) : boolean {
+
+      parent_editor <= _editor;
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NSQ_ExplodeDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      int trackNr = 1;
+      loop(12)
+      {
+         NSQ_ExplodeTrackForm tf <= xfm.findLayerById("f_"+trackNr);
+         tf.init(this, _editor, trackNr);
+         track_forms.add(#(deref tf));
+         trackNr++;
+      }
+
+      initWindow(xfm,
+                 "Explode to Sub-Song",
+                 100, 100,
+                 640, 240
+                 );
+
+      return true;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_EXPLODE, ACTION_CANCEL];
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      NSQ_ExplodeTrackForm *tf;
+      foreach tf in track_forms
+         tf.addTabCycleOverrides(layers);
+
+      layers.add(cb_subsong);
+      layers.add(cb_unique);
+      layers.add(cb_arr);
+
+      layers.add(bt_explode);
+      layers.add(bt_cancel);
+
+      return layers;
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      return getTabCycleOverridesDef();
+   }
+
+   // <ui_kbd.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(bt_explode);
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      if(!b_layer_postinit_done)
+         resizeToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <ui_show.png>
+   public method showPattern(NSQ_Pattern _pat) {
+
+      _pat.lazyExplodeAutoSelect(true/*bForce*/);
+
+      NewTrackDialog dlgNewTrack <= root_form.pg_pipemap.dlg_new_track;
+      dlgNewTrack.prepareNewTrackDialog();  // category names, auto device names+ch
+
+      NSQ_ExplodeTrackForm *tf;
+      int trackIdx = 0;
+      foreach tf in track_forms
+      {
+         NSQ_Track track <= _pat.getTrackByIdx(trackIdx);
+         tf.showTrack(_pat, track, dlgNewTrack.track_categories);
+         trackIdx++;
+      }
+
+      showCentered();
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      StringAction ac <= Action.New(getProvidedActionAlias(ACTION_CANCEL), this);
+      parent_editor.consumeAction(ac);
+      // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+   }
+
+   // <ui_handle.png>
+   protected method handleExplode() {
+      hide();
+
+      StringAction ac <= Action.New(getProvidedActionAlias(ACTION_EXPLODE), this);
+      parent_editor.consumeAction(ac);
+      // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+   }
+
+   // <method_get.png>
+   public method doSubSong() : boolean {
+      return cb_subsong.isSelected();
+   }
+
+   // <method_get.png>
+   public method doUniquePatterns() : boolean {
+      return cb_unique.isSelected();
+   }
+
+   // <method_get.png>
+   public method doArranger() : boolean {
+      return cb_arr.isSelected();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleExplode();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String name=_ac.getActionName();
+
+      switch(name)
+      {
+         case "ok":
+            handleExplode();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(cb_subsong):
+            Global.Print("Create-Sub-Song is "+Utils.GetEnableString(cb_subsong.isSelected()));
+            return true;
+
+         case @(cb_unique):
+            Global.Print("Unique patterns are "+Utils.GetEnableString(cb_unique.isSelected()));
+            return true;
+
+         case @(cb_arr):
+            Global.Print("Create-Arranger is "+Utils.GetEnableString(cb_arr.isSelected()));
+            return true;
+
+         case @(bt_explode):
+            handleExplode();
+            return true;
+
+         case @(bt_cancel):
+            handleCancel();
+            return true;
+      }
+
+      return true;
+   }
+
+}

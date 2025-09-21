@@ -1,0 +1,875 @@
+// ----
+// ---- file   : MIDIMapContext.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 14Aug2014
+// ----
+// ---- changed: 15Aug2014, 19Aug2014, 14Sep2014, 16Sep2014, 19Sep2014, 22Sep2014, 23Sep2014
+// ----          29Sep2014, 16Nov2014, 25Nov2014, 27Sep2015, 10Oct2015, 15Nov2015, 16Jun2017
+// ----          02Mar2019, 29Aug2019, 20Feb2020, 18Dec2021, 28Jul2023, 11Apr2024
+// ----
+// ----
+// ----
+
+module MMIDIMapContext;
+
+use namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class MIDIMapContext : MIDIMapDefs {
+
+   public String mmc_name;
+
+   public MIDIMapTarget *[] mmc_targets;  // MIDIMapTarget instances. public so song i/o can access it.
+   public MIDIMapEvent  *[] mmc_entries;  // MIDIMapEvent instances. public so song i/o can access it.
+
+   public IntArray push_pad_colors_active;   // public so song i/o can access it.
+   public IntArray push_pad_colors_inactive; // public so song i/o can access it.
+
+   protected MIDIMapContext *mmc_active_view; // null or reference to active view
+
+   public static int push_mmt_pad_filter_lb = -1;
+   public static int push_mmt_pad_filter_rt;
+
+   public int midimorph_group_idx;  // 0..7 => A..H  (auto-select scene when context is activated). -1=none.
+   public int midimorph_scene_idx;  // 0..15
+
+   public int restore_midimorph_group_idx;  // in mmcLeave()  -1=none
+   public int restore_midimorph_scene_idx;  // in mmcLeave()
+
+
+   // <midi.png>
+   public method mmcInit(String _name) {
+
+      mmc_name = _name;
+
+      push_pad_colors_active.allocAndFill(8 * 8, 255);
+      push_pad_colors_inactive.allocAndFill(8 * 8, 255);
+
+      mmc_active_view <= null;
+
+      midimorph_group_idx = -1;
+      midimorph_scene_idx = -1;
+
+      restore_midimorph_group_idx = -1;
+      restore_midimorph_scene_idx = -1;
+   }
+
+   // <midi.png>
+   public method mmcLeave() : MIDIMapContext {
+      Global.Debug2("mmcHandleAutoSelectMorphScene::mmcLeave: this="+#(this)+" restore_midimorph_group_idx="+restore_midimorph_group_idx+" restore_midimorph_scene_idx="+restore_midimorph_scene_idx);
+      if(-1 != restore_midimorph_group_idx)
+      {
+         MIDIMorphScene.SelectSceneByIdx(restore_midimorph_group_idx, restore_midimorph_scene_idx);
+         root_form.rootHandleSceneChanged(restore_midimorph_group_idx, false/*bOverlay*/); // update push, ..
+         restore_midimorph_group_idx = -1;
+         restore_midimorph_scene_idx = -1;
+      }
+   }
+
+   // <midi.png>
+   public method mmcProxyGet() : MIDIMapContext {
+      return null;
+   }
+
+   // <midi.png>
+   public method mmcViewGetNum() : int {
+      explain "Returns >0 if views exist beside 'master' MMC";
+      return 0;
+   }
+
+   // <midi.png>
+   public method mmcViewGetById(int _viewId) : MIDIMapContext {
+      explain "viewId in the range 0..mmcViewGetNum()";
+      return null;
+   }
+
+   // <midi.png>
+   public method mmcViewSetActive(int _viewId) {
+      if(_viewId >= 0)
+      {
+         mmc_active_view <= mmcViewGetById(_viewId);
+      }
+      else
+      {
+         mmc_active_view <= null;
+      }
+   }
+
+   // <midi.png>
+   public method mmcGetTargets() : PointerArray /* mmc_targets */ {
+      if(null != mmc_active_view)
+      {
+         return mmc_active_view.mmc_targets;
+      }
+      else
+      {
+         return mmc_targets;
+      }
+   }
+
+   // <midi.png>
+   public method mmcGetEntries() : PointerArray /* mmc_entries */ {
+      if(null != mmc_active_view)
+      {
+         return mmc_active_view.mmc_entries;
+      }
+      else
+      {
+         return mmc_entries;
+      }
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetPadColorsActive() : IntArray {
+      if(null != mmc_active_view)
+      {
+         return mmc_active_view.push_pad_colors_active;
+      }
+      else
+      {
+         return push_pad_colors_active;
+      }
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetPadColorActiveByIdx(int _colIdx) : int {
+      IntArray pal <= mmcPushGetPadColorsActive();
+      return pal.get(_colIdx);
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetPadColorsInactive() : IntArray {
+      if(null != mmc_active_view)
+      {
+         return mmc_active_view.push_pad_colors_inactive;
+      }
+      else
+      {
+         return push_pad_colors_inactive;
+      }
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetPadColorInactiveByIdx(int _colIdx) : int {
+      IntArray pal <= mmcPushGetPadColorsInactive();
+      return pal.get(_colIdx);
+   }
+
+   // <ui_midi.png>
+   protected method mmcAddTarget(String _name, byte _classType, byte _synType) : MIDIMapTarget {
+      local MIDIMapTarget mmt;
+
+      mmt.target_name = _name;
+      mmt.class_type  = _classType;
+
+      if(CLASS_DELTA == _classType)
+      {
+         mmt.delta_mod = (STConfig.mmt_force_encoder_delta_mod >= 1) ? STConfig.mmt_force_encoder_delta_mod : _synType;
+      }
+      else
+      {
+         mmt.syn_type    = _synType;
+      }
+
+      mmt.short_name = _name.substring(4, 17);
+      mmt.long_name  = _name;
+      mmt.dpy_type   = DPY_DEFAULT;
+
+      mmc_targets.add(#(deref mmt));
+
+      return mmt;
+   }
+
+   // <midi.png>
+   protected method mmcAddTargetEx(String _name, byte _classType, byte _synType,
+                                   String _shortName, String _longName, int _dpyType
+                                   ) : MIDIMapTarget {
+
+      MIDIMapTarget mmt <= mmcAddTarget(_name, _classType, _synType);
+
+      mmt.short_name = _shortName;
+
+      if(null == mmt.long_name)
+      {
+         mmt.long_name  = _shortName;
+      }
+      else
+      {
+         mmt.long_name  = _longName;
+      }
+
+      mmt.dpy_type   = _dpyType;
+
+      return mmt;
+   }
+
+   // <ui_midi.png>
+   protected method mmcAddTargetExO(String _name, byte _classType, byte _synType,
+                                    String _shortName, String _longName, int _dpyType,
+                                    Object _linkedObject
+                                    ) : MIDIMapTarget {
+
+      MIDIMapTarget mmt <= mmcAddTargetEx(_name, _classType, _synType, _shortName, _longName, _dpyType);
+
+      mmt.linked_object <= _linkedObject;
+
+      return mmt;
+   }
+
+   // <ui_midi.png>
+   protected method mmcAddTargetButton(Button _bt, String _name) : MIDIMapTarget {
+      return mmcAddTargetExO(_name, CLASS_BUTTON, SYN_BUTTON_CLICK,
+                             _bt.getCaption().trim().abbrev(8),
+                             _bt.getCaption().trim(),
+                             DPY_DEFAULT,
+                             _bt
+                             );
+   }
+
+   // <ui_midi.png>
+   protected method mmcAddTargetExOValueLayer(Object _linkedObject,
+                                              String _shortName,
+                                              String _longName,
+                                              String _mmtPrefix,
+                                              int    _deltaMod
+                                              ) {
+      mmcAddTargetExO(_mmtPrefix, CLASS_VALUE, SYN_NONE,
+                      _shortName, _longName, DPY_DEFAULT, _linkedObject
+                      );
+      mmcAddTargetExO(_mmtPrefix+"_INV", CLASS_VALUE, SYN_NONE,
+                      _shortName, _longName, DPY_DEFAULT, _linkedObject
+                      );
+      mmcAddTargetExO(_mmtPrefix+"_DELTA", CLASS_DELTA, _deltaMod,
+                      _shortName, _longName, DPY_DEFAULT, _linkedObject
+                      );
+      mmcAddTargetExO(_mmtPrefix+"_INC", CLASS_BUTTON, SYN_BUTTON_REPEAT,
+                      _shortName, _longName, DPY_DEFAULT, _linkedObject
+                      );
+      mmcAddTargetExO(_mmtPrefix+"_DEC", CLASS_BUTTON, SYN_BUTTON_REPEAT,
+                      _shortName, _longName, DPY_DEFAULT, _linkedObject
+                      );
+   }
+
+   // <ui_midi.png>
+   public method mmcTryHandleExOValueLayer(String _mmtPrefix, MIDIMapTarget _mmt, MIDIMapEvent _ev) : boolean {
+      if(_mmt.target_name <= _mmtPrefix)
+      {
+         if(_mmt.target_name >= "_INC")
+         {
+            MMTListener.MMTHandleLayerInc(_mmt.linked_object);
+            return true;
+         }
+         else if(_mmt.target_name >= "_DEC")
+         {
+            MMTListener.MMTHandleLayerDec(_mmt.linked_object);
+            return true;
+         }
+         else if(_mmt.target_name >= "_INV")
+         {
+            // Inverted value
+            MMTListener.MMTHandleLayerEvent(_mmt.linked_object, _ev, true/*bInv*/);
+            return true;
+         }
+         else
+         {
+            // Value or delta
+            MMTListener.MMTHandleLayerEvent(_mmt.linked_object, _ev, false/*bInv*/);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <midi.png>
+   public method mmcTryHandleButton(String _mmtName, MIDIMapTarget _target, MIDIMapEvent _ev) : boolean {
+      if(_target.target_name == _mmtName)
+      {
+         Button bt <= _target.linked_object;
+
+         if(bt.isEditable())
+         {
+            UI.SetKeyboardFocus(bt);
+
+            if(@(UI.keyboard_layer) == @(bt))
+            {
+               root_form.queueSynKeyTyped(VKEY_RETURN, 0/*mod*/);
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <midi.png>
+   public method mmcGetTargetByName(String _name) : MIDIMapTarget {
+      MIDIMapTarget *target;
+
+      foreach target in mmc_targets
+      {
+         if(target.target_name == _name)
+         {
+            return target;
+         }
+      }
+
+      return null;
+   }
+
+   // <midi.png>
+   public method mmcBindEvent(MIDIMapTarget _target, MIDIMapEvent _ev) : MIDIMapEvent {
+      local MIDIMapEvent bindEv = _ev;
+
+      switch(_target.syn_type)
+      {
+         case SYN_BUTTON_MOD:
+            bindEv.syn_type = SYN_BUTTON_MOD;
+            break;
+
+         case SYN_BUTTON_HOLD_BEGIN:
+            bindEv.syn_type = SYN_BUTTON_HOLD_BEGIN;
+            break;
+
+         case SYN_BUTTON_KEYREPEAT:
+            bindEv.syn_type = SYN_BUTTON_KEYREPEAT;
+            break;
+
+         case SYN_BUTTON_REPEAT:
+            bindEv.syn_type = SYN_BUTTON_REPEAT;
+            break;
+      }
+
+      bindEv.bound_target <= _target;
+
+      PointerArray mmcEntries <= mmcGetEntries();
+      mmcEntries.add(#(deref bindEv));
+
+      return bindEv;
+   }
+
+   // <midi.png>
+   public method mmcUnbindByEvent(MIDIMapTarget _target, MIDIMapEvent _ev) {
+      MIDIMapEvent *boundEv;
+
+      int entryIdx = 0;
+
+      PointerArray mmcEntries <= mmcGetEntries();
+
+      foreach boundEv in mmcEntries
+      {
+         if(@(boundEv.bound_target) == @(_target))
+         {
+            if(boundEv.matchBindTypeOf(_ev))
+            {
+               mmcEntries.delete(entryIdx);
+               return;
+            }
+         }
+
+         entryIdx++;
+      }
+   }
+
+   // <midi.png>
+   public method mmcIsBindableEvent(_ev) : boolean {
+      return _ev.mmcIsBindableEvent();
+   }
+
+   // <midi.png>
+   public method mmcGetBindingByEvent(MIDIMapEvent _ev) : MIDIMapEvent {
+      MIDIMapEvent *boundEv;
+
+      PointerArray mmcEntries <= mmcGetEntries();
+
+      foreach boundEv in mmcEntries
+      {
+         if(boundEv.matchBindTypeOf(_ev))
+         {
+            if(CLASS_DELTA == boundEv.class_type)
+            {
+               // Only trigger every nth encoder tick ?
+               // trace "xxx MIDIMapEvent.delta_count="+MIDIMapEvent.delta_count+" mod="+(boundEv.bound_target.delta_mod)+" curMod="+(MIDIMapEvent.delta_count % (boundEv.bound_target.delta_mod));
+               if(0 != (boundEv.bound_target.delta_mod))
+               {
+                  if(0 != (MIDIMapEvent.delta_count % (boundEv.bound_target.delta_mod)))
+                  {
+                     // Set delta count to 0
+                     _ev.arg1 = 0;
+                  }
+               }
+               return boundEv;
+            }
+            else
+            {
+               if(CLASS_BUTTON == boundEv.class_type)
+               {
+                  if(SYN_BUTTON_REPEAT == _ev.syn_type)
+                  {
+                     if(SYN_BUTTON_CLICK == (boundEv.bound_target.syn_type))
+                     {
+                        // Target is not repeatable
+                        if(_ev.class_type_ext == 0) // up ?
+                        {
+                           // trace "xxx pushActivePadTimeoutByMMT: 1 name=\""+(boundEv.bound_target.target_name)+"\".";
+                           // // root_form.pushActivePadTimeoutByMMT(boundEv.bound_target.target_name);
+                        }
+                        return null;
+                     }
+                     else if(SYN_BUTTON_SELECT == (boundEv.bound_target.syn_type))
+                     {
+                        // Target is not repeatable
+                        return null;
+                     }
+                  }
+
+                  // trace "xxx start button timeout class_type_ext="+_ev.class_type_ext;
+                  if((_ev.class_type_ext == 0) || (SYN_BUTTON_REPEAT == _ev.syn_type)) // up ?
+                  {
+                     if(SYN_BUTTON_SELECT != (boundEv.bound_target.syn_type))
+                     {
+                        // trace "xxx pushActivePadTimeoutByMMT: 2 name=\""+(boundEv.bound_target.target_name)+"\".";
+                        // // root_form.pushActivePadTimeoutByMMT(boundEv.bound_target.target_name);
+                     }
+                  }
+
+               }
+
+               // trace "xxx mmcGetBindingByEvent: found entry";
+
+               return boundEv;
+            }
+         }
+      }
+
+      // Not bound
+      return null;
+   }
+
+   // <midi.png>
+   public method mmcMatchFuzzy(MIDIMapEvent _ev) : boolean {
+      MIDIMapEvent *boundEv;
+
+      PointerArray mmcEntries <= mmcGetEntries();
+
+      foreach boundEv in mmcEntries
+      {
+         if(boundEv.matchTypeOf(_ev)) // not considering e.g. up/down states
+         {
+            return true;
+         }
+      }
+
+      // No match
+      return false;
+   }
+
+   // <midi.png>
+   public method mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      return false;
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetEncValueStringByTarget(MIDIMapTarget _target) : String {
+      // for custom linked objects or "virtual" / procedural value strings
+      // (note) overrides linked objects
+      return null;
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetEncValueStringByEvent(MIDIMapEvent _ev, Integer retEncIdx) : String {
+
+      //
+      // Called if event was handled and a value has possibly been modified.
+      //
+      //  Update corresponding LCD cell under encoder with new value (string)
+      //
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      return mmcPushGetEncValueStringByBoundEvent(boundEv, retEncIdx);
+   }
+
+   // <midi_push.png>
+   public method mmcPushGetEncValueStringByBoundEvent(MIDIMapEvent _ev, Integer retEncIdx) : String {
+
+      // trace "xxx mmcPushGetEncValueStringByBoundEvent _ev="+#(_ev);
+
+      if(null != _ev)
+      {
+         if(@(_ev.dev) == @(push.indev))
+         {
+            if(TYPE_CC == _ev.type)
+            {
+               if(0x47 <= _ev.ext_type <= 0x4E)
+               {
+                  // Encoder 1..8
+                  retEncIdx = (_ev.ext_type - 0x47);
+
+                  String s <= mmcPushGetEncValueStringByTarget(_ev.bound_target);
+
+                  if(null != s)
+                  {
+                     // trace "xxx mmcPushGetEncValueStringByBoundEvent: s=\""+s+"\"";
+                     return deref s;
+                  }
+                  else
+                  {
+                     Object linkedObject <= _ev.bound_target.linked_object;
+
+                     ComboBox cm <= linkedObject;
+                     if(cm instanceof ComboBox)
+                     {
+                        return cm.getSelectedOptionName();
+                     }
+
+                     FloatParam fp <= linkedObject;
+                     if(fp instanceof FloatParam)
+                     {
+                        return fp.getText();
+                     }
+
+                     CheckBox cb <= linkedObject;
+                     if(cb instanceof CheckBox)
+                     {
+                        return cb.isSelected() ? "Yes" : "No";
+                     }
+
+                     TableView tv <= linkedObject;
+                     if(tv instanceof TableView)
+                     {
+                        TableModel tm <= tv.getTableModel();
+                        if(tm.getNumRows() > 0)
+                        {
+                           int row = tm.getCursorIndex();
+                           return (row >= 0) ? ((row+1)+"/"+tm.getNumRows()) : "-";
+                        }
+                        else
+                        {
+                           return "-";
+                        }
+                     }
+
+                     Float fo <= linkedObject;
+                     if(fo instanceof Float)
+                     {
+                        return fo.string;
+                     }
+
+                     Integer io <= linkedObject;
+                     if(io instanceof Integer)
+                     {
+                        return io.string;
+                     }
+
+                     // // return mmcPushGetEncValueStringByTarget(_ev.bound_target);
+                     return "?";
+                  }
+               }
+            }
+         }
+      }
+
+      return null;
+   }
+
+   // <midi_push.png>
+   public method mmcPushTryEncValueUpdate(MIDIMapEvent _ev) {
+      if(mmcPushMayUpdate())
+      {
+         Integer encIdx;
+         String encValStr <= mmcPushGetEncValueStringByEvent(_ev, encIdx);
+
+         if(null != encValStr)
+         {
+            push.lcdTextEncCell(1, encIdx, encValStr);
+
+            push.updateLCD();
+         }
+      }
+   }
+
+   // <midi_push.png>
+   public mmcPushMayUpdate() : boolean {
+      return (STConfig.b_push && ( !(b_mmc_force_ctltag_push || (RootForm.PAGE_CTLTAG == root_form.getCurrentPageNr())) | b_mmc_force_global));
+   }
+
+   // <midi_push.png>
+   public method mmcPushUpdateEncoderValues() {
+
+      if(push.isModeMMC() && mmcPushMayUpdate())
+      {
+         // trace "xxx default mmcPushUpdateEncoderValues mayUpdate="+mmcPushMayUpdate();
+         // trace "xxx b_mmc_force_ctltag_push="+b_mmc_force_ctltag_push+" b_mmc_force_global="+b_mmc_force_global;
+         MIDIMapEvent *mev;
+
+         PointerArray mmcEntries <= mmcGetEntries();
+
+         foreach mev in mmcEntries
+         {
+            if(@(mev.dev) == @(push.indev))
+            {
+               if(TYPE_CC == mev.type)
+               {
+                  if(0x47 <= mev.ext_type <= 0x4E)
+                  {
+                     Integer encIdx;
+                     String s <= mmcPushGetEncValueStringByBoundEvent(mev, encIdx);
+
+                     if(@(this) == @(push.getOwnerByEncIdx(encIdx)))
+                     {
+                        // trace "xxx mmcPushUpdateEncoderValues: encIdx="+encIdx+" s=\""+s+"\".";
+
+                        if(null != s)
+                        {
+                           // Encoder 1..8
+                           push.lcdTextEncCell(1, encIdx, s);
+                        }
+                     }
+                     else
+                     {
+                        // Encoder owned/overidden by other map context
+                     }
+
+                  }
+               }
+            }
+         }
+
+         push.updateLCD();
+      }
+   }
+
+   // <midi.png>
+   public method mmcFilterRepeatEvent(MIDIMapEvent _ev) : boolean {
+      if(CLASS_BUTTON == _ev.class_type)
+      {
+         return mmcMatchFuzzy(_ev);
+      }
+      return false;
+   }
+
+   // <midi.png>
+   public method mmcBuildTMEntries(PointerArray _entries) {
+
+      // Create display objects for MIDI map context table
+
+      MIDIMapContextTMEntry *entry;
+
+      _entries.free();
+
+      MIDIMapTarget *target;
+      MIDIMapEvent *ev;
+
+      PointerArray mmcTargets <= mmcGetTargets();
+
+      foreach target in mmcTargets
+      {
+         int numMapped = 0;
+
+         PointerArray mmcEntries <= mmcGetEntries();
+
+         foreach ev in mmcEntries
+         {
+            if(@(ev.bound_target) == @(target))
+            {
+               entry <= new MIDIMapContextTMEntry;
+
+               entry.target      = (target.target_name).replace("MMT_", "");
+               entry.target_type = target.getTargetTypeName();
+               entry.bound_dev   = ev.getAliasOrDeviceNameForDO();
+               entry.bound_ch    = ev.dev_ch + 1;
+               entry.bound_type  = ev.getFullTypeName();
+
+               entry.mm_target <= target;
+               entry.mm_event  <= ev;
+
+               _entries.add(#(deref entry));
+
+               numMapped++;
+            }
+         }
+
+         if(0 == numMapped)
+         {
+            entry <= new MIDIMapContextTMEntry;
+
+            entry.target      = (target.target_name).replace("MMT_", "");
+            entry.target_type = target.getTargetTypeName();
+            entry.bound_dev   = "-";
+            entry.bound_ch    = "-";
+            entry.bound_type  = "-";
+
+            entry.mm_target <= target;
+            entry.mm_event  <= null;
+
+            _entries.add(#(deref entry));
+         }
+      }
+
+   }
+
+   // <midi_push.png>
+   public mmcPushUpdateEncoderLabels() {
+      if(push.isModeMMC() && mmcPushMayUpdate())
+      {
+         MIDIMapEvent *mev;
+
+         // trace "xxx mmcPushUpdateEncoderLabel: this="+#(this);
+
+         boolean bFirst = true;
+
+         PointerArray mmcEntries <= mmcGetEntries();
+
+         foreach mev in mmcEntries
+         {
+            if(@(mev.dev) == @(push.indev))
+            {
+               if(TYPE_CC == mev.type)
+               {
+                  if(0x47 <= mev.ext_type <= 0x4E)
+                  {
+                     // Encoder 1..8 (resp. 0..7)
+                     int encIdx = mev.ext_type - 0x47;
+
+                     if(bFirst)
+                     {
+                        bFirst = false;
+
+                        push.lcdBlankRow(0);
+                        push.lcdBlankRow(1);
+                     }
+
+                     MIDIMapTarget t <= mev.bound_target;
+                     push.lcdTextEncCellLabel(encIdx, t.short_name, this/*owner*/);
+                  }
+               }
+            }
+         }
+
+         push.updateLCD();
+      }
+   }
+
+   // <midi_push.png>
+   public method mmcPushColorizePads() {
+      // // if(push.isModeMMC() && mmcPushMayUpdate())
+      // // {
+      // //    MIDIMapContext m <= mmcProxyGet();
+
+      // //    if(null == m)
+      // //    {
+      // //       m <= this;
+      // //    }
+      // //    // trace "xxx mmcPushColorizePads: this="+#(this)+" m="+#(m);
+
+      // //    push.clearPadStates();
+      // //    push.mergePadColors(root_form.push_pad_colors_inactive, root_form/*owner*/);
+
+      // //    root_form.mmcPushUpdateEncoderLabels();
+      // //    root_form.mmcPushUpdateEncoderValues();
+
+      // //    root_form.pushUpdatePadColorOverlays(); // scene/page/marker/cyclelen/play
+
+      // //    if(@(m) != @(root_form))
+      // //    {
+      // //       // trace "xxx mergePadColors m="+#(m);
+      // //       push.mergePadColors(m.mmcPushGetPadColorsInactive(), m/*owner*/);
+      // //    }
+
+      // //    push.updatePads();
+
+      // //    mmcPushUpdateEncoderLabels();
+
+      // //    mmcPushUpdateEncoderValues();
+      // // }
+   }
+
+   // // // <midi_push.png>
+   // // public method mmcPushFindPadIdxByName(String _name, Integer r) : MIDIMapContext {
+   // //    MIDIMapEvent *ev;
+
+   // //    PointerArray mmcEntries <= mmcGetEntries();
+
+   // //    foreach ev in mmc_entries
+   // //    {
+   // //       if(@(ev.dev) == @(push.indev))
+   // //       {
+   // //          if( (ev.bound_target.target_name) == _name)
+   // //          {
+   // //             if((TYPE_NOTE_ON == ev.type) || (TYPE_NOTE_OFF == ev.type))
+   // //             {
+   // //                // trace "xxx mmcPushFindPadIdxByName: name match ev.type="+ev.type+" ext="+ev.ext_type;
+
+   // //                if(0x24 <= ev.ext_type <= (0x24 + 8*8))
+   // //                {
+   // //                   r = ev.ext_type - 0x24;
+
+   // //                   // Filter out rectangular pad area
+   // //                   if(-1 != push_mmt_pad_filter_lb)
+   // //                   {
+   // //                      if( (push_mmt_pad_filter_lb <= r <= push_mmt_pad_filter_rt) )
+   // //                      {
+   // //                         r = -1;
+   // //                         return null;
+   // //                      }
+   // //                   }
+
+   // //                   return this;
+   // //                }
+   // //             }
+   // //          }
+   // //       }
+   // //    }
+
+   // //    // Not found
+   // //    r = -1;
+   // //    return null;
+   // // }
+
+   // // // <midi_push.png>
+   // // public method mmcOwnPadByMMT(String _mmtName) : boolean {
+   // //    if(push.isModeMMC())
+   // //    {
+   // //       Integer pushPadIdx;
+   // //       MIDIMapContext m <= mmcPushFindPadIdxByName(_mmtName, pushPadIdx);
+
+   // //       if(-1 != pushPadIdx)
+   // //       {
+   // //          // trace "xxx mmcOwnPadByMMT: mmtName="+_mmtName+" pushPadIdx="+pushPadIdx+ " this="+#(this);
+   // //          return (@(this) == @(push.getOwnerByPadIdx(pushPadIdx)));
+   // //       }
+   // //    }
+   // //    return false;
+   // // }
+
+   // <midi.png>
+   public method mmcHandleAutoSelectMorphScene() {
+      if((-1 != midimorph_group_idx) && (-1 != midimorph_scene_idx))
+      {
+         Global.Debug2("mmcHandleAutoSelectMorphScene: grp="+midimorph_group_idx+" scene="+midimorph_scene_idx);
+
+         int cGroup = MIDIMorphScene.last_changed_group;
+         int cScene = MIDIMorphScene.scene_indices.get(restore_midimorph_group_idx);
+         Global.Debug2("mmcHandleAutoSelectMorphScene: cGroup="+cGroup+" cScene="+cScene);
+
+         if(cGroup != midimorph_group_idx || cScene != midimorph_scene_idx)
+         {
+            restore_midimorph_group_idx = cGroup;
+            restore_midimorph_scene_idx = cScene;
+            Global.Debug2("mmcHandleAutoSelectMorphScene: save restore grp="+restore_midimorph_group_idx+" scene="+restore_midimorph_scene_idx);
+         }
+
+         MIDIMorphScene.SelectSceneByIdx(midimorph_group_idx, midimorph_scene_idx);
+
+         root_form.rootHandleSceneChanged(midimorph_group_idx, false/*bOverlay*/); // update push, ..
+      }
+   }
+
+}

@@ -1,0 +1,406 @@
+// ----
+// ---- file   : NT_EnvelopeView.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- changed: 20Mar2017, 21Mar2017, 29Mar2017, 04Apr2017, 07Apr2017, 26May2017, 04Jan2018
+// ----          27Nov2018, 02Dec2018, 26May2019, 28Apr2020, 04Jan2022, 06Oct2023, 11Nov2023
+// ----          24Mar2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_EnvelopeView;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_EnvelopeView : XMLForm, ActionProvider {
+
+   NodeTrackerEditor *parent_editor;
+   NT_PatternView *pattern_view;
+   NodeTracker *parent_node;
+
+   NT_EnvelopeViewData *data;
+   protected LayerSwitch *ls_data_scroll;
+   protected Slider *sl_data_scroll;
+
+   protected ComboBox   *cm_edit;
+   protected ComboBox   *cm_zoom;
+   protected CheckBox   *cb_edit_replace;
+   protected ComboBox   *cm_block_grid;
+   protected FloatParam *fp_edit_grid;
+   protected Label      *lb_edit_grid;
+
+   boolean b_update_knob_size;
+
+
+   // <init.png>
+   public method init(NodeTrackerEditor _parentEditor) : boolean {
+
+      parent_editor <= _parentEditor;
+      pattern_view <= parent_editor.pattern_view;
+
+      if(initPakFile("NT_EnvelopeView.xfm"))
+      {
+         if(!autoResolveIds(this))
+            return false;
+
+         // trace "xxx NT_EnvelopeView: data="+#(data);
+         data.init(this);
+
+         // // sl_data_scroll.setEnableAdaptiveKnobSize(true);
+
+         cm_edit.setOptions(NT_EnvelopeViewData.edit_mode_names);
+         cm_zoom.setOptions(NT_EnvelopeViewData.zoom_mode_names);
+         cm_block_grid.setOptions(NT_EnvelopeViewData.block_grid_names);
+
+         initTimers();
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+   }
+
+   // <ui_kbd.png>
+   public method addMMTFocusLayers(PointerArray layers) {
+      layers.add(cm_edit);
+      layers.add(cm_zoom);
+      layers.add(cm_block_grid);
+      layers.add(cb_edit_replace);
+      layers.add(fp_edit_grid);
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeTracker _node) {
+      parent_node <= _node;
+      data.showNode(_node);
+
+      cm_edit.setSelectedOption(_node.envelope_view_edit_mode);
+      cm_zoom.setSelectedOption(_node.envelope_view_zoom_mode);
+      cb_edit_replace.setSelected(_node.b_envelope_view_replace);
+      cm_block_grid.setSelectedOption(_node.envelope_view_block_grid_mode);
+      fp_edit_grid.setValue(_node.envelope_view_edit_grid_size);
+      lb_edit_grid.setCaption(getEditGridSizeNoteLen());
+
+      b_update_knob_size = true;  // (note) widget size is not available, yet
+   }
+
+   // <ui_hide.png>
+   public method leaveNode() {
+      parent_node <= null;
+      data.leaveNode();
+   }
+
+   // <method.png>
+   public method cancelAllTimers() {
+   }
+
+   // <ui.png>
+   public method autoEnableDataScroll() {
+      boolean bShow = false;
+      float relKnobSize = 1.0;
+
+      // // trace "xxx autoEnableDataScroll";
+
+      NT_MetaPattern mpat <= null;
+      int visTicks = 0;
+
+      if(null != parent_node)
+      {
+         mpat <= parent_node.getCurrentEditMetaPattern();
+         visTicks = data.getVisTicks();
+      }
+
+      if(null != mpat)
+      {
+         if(mpat.num_ticks > visTicks)
+         {
+            bShow = true;
+            sl_data_scroll.setRange(0, 100 * (mpat.num_ticks - visTicks));
+            // // //sl_data_scroll.setStepSize(100 * parent_node.envelope_view_edit_grid_size);
+            sl_data_scroll.setStepCoarse(100 * data.getBlockTicks());
+            relKnobSize = float(visTicks) / mpat.num_ticks;
+            // // trace "xxx autoEnableDataScroll: rel knob size="+relKnobSize;
+            sl_data_scroll.redraw();
+         }
+      }
+
+      if(bShow != ls_data_scroll.getCurrentChildNr())
+      {
+         ls_data_scroll.switchToLayerNr(bShow);
+         _= getParent().relayout();
+      }
+
+      if(bShow)
+      {
+         sl_data_scroll.setRelativeKnobSize(relKnobSize);
+         sl_data_scroll.setValue(parent_node.envelope_view_tick_offset*100.0);
+         // // trace "xxx sl_data_scroll.getSizeX()="+sl_data_scroll.getSizeX();
+      }
+   }
+
+   // <method.png>
+   public method focusEditMode() {
+      UI.SetKeyboardFocus(cm_edit);
+      cm_edit.redraw();
+   }
+
+   // <method_handle.png>
+   public method handlePositionChanged() {
+      // When cursor position has changed in pattern view
+      data.redraw();
+      // // autoEnableDataScroll();
+      if(null != parent_node)
+         data.makeRegionVisible(parent_node.pv_pat_offset, data.getBlockTicks());//parent_node.envelope_view_edit_grid_size
+   }
+
+   // <ui_handle.png>
+   protected method handleEditModeChanged() {
+      if(null != parent_node)
+      {
+         data.setEditMode(cm_edit.getSelectedOption());
+         Global.Print("Edit mode is "+cm_edit.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleZoomChanged() {
+      if(null != parent_node)
+      {
+         data.setZoomMode(cm_zoom.getSelectedOption());
+
+         autoEnableDataScroll();
+         b_update_knob_size = true;
+
+         Global.Print("Zoom is "+cm_zoom.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleReplaceChanged() {
+      if(null != parent_node)
+      {
+         parent_node.b_envelope_view_replace = cb_edit_replace.isSelected();
+
+         Global.Print("Replace mode is "+Utils.GetEnableString(parent_node.b_envelope_view_replace));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleBlockGridChanged() {
+      if(null != parent_node)
+      {
+         parent_node.envelope_view_block_grid_mode = cm_block_grid.getSelectedOption();
+         autoEnableDataScroll();
+         b_update_knob_size = true;
+         Global.Print("Block grid size is "+cm_block_grid.getSelectedOptionName());
+      }
+   }
+
+   // <method_get.png>
+   public method getEditGridSizeNoteLen() : String {
+      String sNoteLen;
+
+      float noteLen = ((current_song.ppq * 4.0) / parent_node.envelope_view_edit_grid_size);
+
+      if(noteLen > 1.0)
+      {
+         sNoteLen = "1/"+int(noteLen);
+
+         if(int(noteLen) != noteLen)
+            sNoteLen = "~"+sNoteLen;
+      }
+      else
+      {
+         noteLen = 1.0 / noteLen;
+         sNoteLen = int(noteLen)+"/1";
+
+         if(int(noteLen) != noteLen)
+            sNoteLen = "~"+sNoteLen;
+      }
+
+      return sNoteLen;
+   }
+
+   // <ui_handle.png>
+   protected method handleEditGridChanged() {
+      if(null != parent_node)
+      {
+         parent_node.envelope_view_edit_grid_size = fp_edit_grid.getFloatValue();
+
+         lb_edit_grid.setCaption(getEditGridSizeNoteLen());
+         lb_edit_grid.redraw();
+
+         Global.Print("Edit grid size is "+parent_node.envelope_view_edit_grid_size+" ticks ("+getEditGridSizeNoteLen()+")");
+         data.redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDataScrollChanged() {
+      if(null != parent_node)
+      {
+         parent_node.envelope_view_tick_offset = sl_data_scroll.getValue() / 100;
+         data.redraw();
+      }
+   }
+
+   // <method.png>
+   public method scrollLeft() {
+      if(1 == ls_data_scroll.getCurrentChildNr())
+         sl_data_scroll.decCoarse();
+   }
+
+   // <method.png>
+   public method scrollRight() {
+      if(1 == ls_data_scroll.getCurrentChildNr())
+         sl_data_scroll.incCoarse();
+   }
+
+   // <method.png>
+   public method scrollLeftEditGrid() {
+
+      int oldTickOffset = parent_node.envelope_view_tick_offset;
+
+      // when autoscrolling near window borders during block selection
+      parent_node.envelope_view_tick_offset -= parent_node.envelope_view_edit_grid_size;
+
+      if(parent_node.envelope_view_tick_offset < 0)
+         parent_node.envelope_view_tick_offset = 0;
+
+      if(1 == ls_data_scroll.getCurrentChildNr())
+      {
+         sl_data_scroll.setValue(parent_node.envelope_view_tick_offset * 100);
+      }
+
+      return (oldTickOffset != parent_node.envelope_view_tick_offset);
+   }
+
+   // <method.png>
+   public method scrollRightEditGrid() : boolean {
+
+      if(null != parent_node)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+         if(null != mpat)
+         {
+            int oldTickOffset = parent_node.envelope_view_tick_offset;
+
+            // when autoscrolling near window borders during block selection
+            parent_node.envelope_view_tick_offset += parent_node.envelope_view_edit_grid_size;
+
+            int visTicks = data.getVisTicks();
+
+            if( (parent_node.envelope_view_tick_offset + visTicks) > mpat.num_ticks)
+               parent_node.envelope_view_tick_offset = mpat.num_ticks - visTicks;
+
+            if(1 == ls_data_scroll.getCurrentChildNr())
+            {
+               sl_data_scroll.setValue(parent_node.envelope_view_tick_offset * 100);
+            }
+
+            return (oldTickOffset != parent_node.envelope_view_tick_offset);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      if(b_update_knob_size)
+      {
+         b_update_knob_size = false;
+         autoEnableDataScroll();
+      }
+
+      XMLForm::onDraw();
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      UI.SetKeyboardFocusQuiet(pattern_view);
+      return pattern_view.onBeginTriadKeyMode();
+   }
+
+   // <ui_kbd.png>
+   public virtual onEndTriadKeyMode(Key _k) : boolean {
+      return pattern_view.onEndTriadKeyMode(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      return pattern_view.onTriadKeyTimeout();
+   }
+
+   // <ui_kbd.png>
+   protected virtual wantTriadKeyRepeat(Key _k) : boolean {
+      return pattern_view.wantTriadKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      return pattern_view.onTriadKey(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      return pattern_view.onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction *sac;
+
+      // // trace "[>>>] NT_EnvelopeView::consumeAction: acName="+acName+" ap="+#(ap);
+
+      switch(@(ap))
+      {
+         case @(cm_edit):
+            handleEditModeChanged();
+            return true;
+
+         case @(cm_zoom):
+            handleZoomChanged();
+            return true;
+
+         case @(cb_edit_replace):
+            handleReplaceChanged();
+            return true;
+
+         case @(cm_block_grid):
+            handleBlockGridChanged();
+            return true;
+
+         case @(fp_edit_grid):
+            handleEditGridChanged();
+            return true;
+
+         case @(sl_data_scroll):
+            handleDataScrollChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

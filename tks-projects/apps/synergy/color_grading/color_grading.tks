@@ -1,0 +1,186 @@
+
+// created: 07Nov2019
+// changed: 22Feb2022
+
+use tksdl;
+use tkopengl;
+
+class ColorGrading {
+   Texture img;
+   Texture gradient;
+
+   public method usage() {
+      trace "Usage: color_grading add|get|compose <screenshotfile.png>";
+      trace "        add: add identity gradient (256x16) and write \"image_with_gradient_256x16.png\"";
+      trace "        get: extract gradient (256x16) to \"gradient_256x16.png\"";
+      trace "        compose: compose the given screenshot files into one big \"compose.png\" and add identity gradient";
+   }
+
+   protected method loadImage(String _pathName) : boolean {
+      if(img.loadLocalImage(_pathName, 0, 0, 4))
+      {
+         if(img.sx >= (16*16))
+         {
+            if(img.sy >= 16)
+            {
+               return true;
+            }
+            else
+               trace "[---] image height is < 16";
+         }
+         else
+            trace "[---] image width is < 256";
+      }
+      else
+      {
+         trace "[---] failed to load image \""+_pathName+"\"";
+      }
+      return false;
+   }
+
+   protected method addIdentityGradient() {
+      int px = img.sx - 256;
+      int py = img.sy - 16;
+      float step = 1.0 / (16 - 1);
+      float b = 0;
+      loop(16)
+      {
+         int iy = 0;
+         float g = 0.0f;
+         loop(16)
+         {
+            int ix = 0;
+            float r = 0.0f;
+            loop(16)
+            {
+               img.setXY32(px+ix, py+iy, argb(255, 255*r, 255*g, 255*b));
+               r += step;
+               ix++;
+            }
+            iy++;
+            g += step;
+         }
+         px += 16;
+         b += step;
+      }
+   }
+
+   protected method extractGradient() {
+      gradient.alloc(256, 16, 4);
+      gradient.copyRegion(img, img.sx - 256, img.sy - 16, 256, 16, 0, 0);
+   }
+
+   public method run(StringArray args) : int {
+      if(args.numElements < 2)
+      {
+         usage();
+      }
+      else
+      {
+         if("add" == args[0])
+         {
+            loadImage(args[1]);
+            addIdentityGradient();
+            img.saveImage("image_with_gradient_256x16.png");
+            trace "[...] wrote \"image_with_gradient_256x16.png\"";
+            return 0;
+         }
+         else if("get" == args[0])
+         {
+            loadImage(args[1]);
+            extractGradient();
+            String extractFileName;
+            if((args.numElements >= 3) && (args[2].endsWith(".png")))
+               extractFileName = args[2];
+            else
+               extractFileName = "gradient_256x16.png";
+            gradient.saveImage(extractFileName);
+            trace "[...] wrote \""+extractFileName+"\"";
+            return 0;
+         }
+         else if("compose" == args[0])
+         {
+            int argIdx = 1;
+            int imgW = -1;
+            int imgH;
+            int imgGridW;
+            int imgGridH;
+            int imgGridX = 0;
+            int imgGridY = 0;
+            int numImages = args.numElements - 1;
+            loop(numImages)
+            {
+               Texture imgTmp;
+               if(imgTmp.loadLocalImage(args[argIdx], 0, 0, 4))
+               {
+                  if(-1 == imgW)
+                  {
+                     imgW = imgTmp.sx;
+                     imgH = imgTmp.sy;
+
+                     if(numImages < 2)
+                     {
+                        imgGridW = 1;
+                        imgGridH = 1;
+                     }
+                     else if(2 == numImages)
+                     {
+                        imgGridW = 2;
+                        imgGridH = 1;
+                     }
+                     else if(numImages <= 4)
+                     {
+                        imgGridW = 2;
+                        imgGridH = 2;
+                     }
+                     else if(numImages <= 6)
+                     {
+                        imgGridW = 3;
+                        imgGridH = 2;
+                     }
+                     else if(numImages <= 9)
+                     {
+                        imgGridW = 3;
+                        imgGridH = 3;
+                     }
+                     else if(numImages <= 12)
+                     {
+                        imgGridW = 4;
+                        imgGridH = 3;
+                     }
+                     else if(numImages <= 16)
+                     {
+                        imgGridW = 4;
+                        imgGridH = 4;
+                     }
+                     else
+                        die "too many images ("+numImages+" > 16)";
+                     img.alloc(imgW * imgGridW, imgH * imgGridH, 4);
+                     img.clear(#ff000000);
+                  }
+                  img.copyRegion(imgTmp, 0, 0, imgW, imgH, (imgGridX*imgW), (imgGridY*imgH));
+                  imgGridX++;
+                  if(imgGridX >= imgGridW)
+                  {
+                     imgGridX = 0;
+                     imgGridY++;
+                  }
+               }
+               else
+                  die "failed to load image \""+args[argIdx]+"\"";
+               argIdx++;
+            }
+
+            addIdentityGradient();
+            img.saveImage("composed_image_with_gradient_256x16.png");
+            trace "[...] wrote \"composed_image_with_gradient_256x16.png\". size=("+(imgW*imgGridW)+"x"+(imgH*imgGridH);
+            return 0;
+         }
+      }
+      return 10;
+   }
+
+}
+
+ColorGrading cg;
+exit(cg.run(Arguments));

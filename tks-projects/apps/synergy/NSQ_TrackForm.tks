@@ -1,0 +1,407 @@
+// ----
+// ---- file   : NSQ_TrackForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 07Apr2020
+// ---- changed: 08Apr2020, 11Apr2020, 14Apr2020, 15Apr2020, 17Apr2020, 13May2020, 02Jun2021
+// ----          17Jun2021, 24Jun2022, 12Jun2023, 28Jul2023, 03Oct2023, 10Nov2023, 22Mar2024
+// ----          24Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNSQ_TrackForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NSQ_TrackForm extends XMLForm, ActionProvider {
+
+   define int SIZE_Y = 24;
+
+   protected NodeSeqEditor *parent_editor;
+
+   protected NodeSeq *seq;
+   protected NSQ_Track *track;
+   protected DeviceIOPort *port;
+
+   protected Label      *lb_tracknr;
+   protected Button     *bt_mute;
+   protected Button     *bt_solo;
+   public    FloatParam *fp_quant_amount;
+   protected ComboBox   *cm_quant_note;
+   protected Button     *bt_focus;
+   protected TextField  *tf_name;
+   protected CheckBox   *cb_rec;
+   protected Panel      *pn_separator;
+
+   protected NSQ_ActivityLED *led_in;
+   protected NSQ_ActivityLED *led_out;
+
+
+   // <init.png>
+   public method init(NodeSeqEditor _parentEditor, int _trackNr) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      if(!initPakFile("NSQ_TrackForm.xfm"))
+      {
+         trace "[---] failed to parse \"NSQ_TrackForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+         return false;
+
+      lb_tracknr.setCaption(_trackNr+":");
+
+      // Set quantization note options
+      local StringArray opt;
+      int noteLen;
+      foreach noteLen in NSQ_Track.quant_note_options
+         opt.add("1/"+noteLen);
+      cm_quant_note.setOptions(opt);
+
+      fp_quant_amount.setPresetOptions(
+         [0.0, 0.25, 0.5, 0.75, 1.0],
+         ["0%", "25%", "50%", "75%", "100%"]
+                                       );
+
+      led_in .initLED(_parentEditor, _trackNr-1);
+      led_out.initLED(_parentEditor, _trackNr-1);
+      led_out.b_out = true;
+
+      if(UI.IsLight())
+         cb_rec.b_ignore_icon_name_suffix = true; // [23Jan2025]
+
+      pn_separator.setPanelTint(1?#24000000:#8f000000);
+
+      setRequiredSizeY(GetTrackSizeY());
+
+      recursiveBuildTabCycleLists();
+
+      return true;
+   }
+
+   public static GetTrackSizeY() : int {
+      return SIZE_Y * UI.font_scaling;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       bt_mute,
+                       bt_solo,
+                       cm_quant_note,
+                       fp_quant_amount,
+                       bt_focus,
+                       tf_name,
+                       cb_rec,
+                     ]
+                    );
+   }
+
+   // <method_set.png>
+   public method showTrack(NodeSeq _seq, NSQ_Track _track) {
+      seq <= _seq;
+      track <= _track;
+
+      boolean bEditable = (null != track);
+
+      bt_mute        .setEditable(bEditable);
+      bt_solo        .setEditable(bEditable);
+      cm_quant_note  .setEditable(bEditable);
+      fp_quant_amount.setEditable(bEditable);
+      bt_focus       .setEditable(bEditable);
+      tf_name        .setEditable(bEditable);
+      cb_rec         .setEditable(bEditable);
+
+      if(bEditable)
+      {
+         port <= seq.out_ports.get(track.track_idx);
+
+         cm_quant_note  .setSelectedOption(track.quant_note);
+         fp_quant_amount.setValue(track.quant_amount);
+         tf_name        .setText(port.info);
+         cb_rec         .setSelected(track.b_rec);
+         // // bt_mute        .setToggleState(track.b_mute);
+         // // bt_focus       .setToggleState(track.track_idx == seq.input_focus_idx);
+      }
+      else
+      {
+         port <= null;
+
+         cm_quant_note  .setSelectedOption(-1);
+         fp_quant_amount.setValue(0);
+         tf_name        .setText("-");
+         cb_rec         .setSelected(false);
+         // // bt_mute        .setToggleState(false);
+         // // bt_focus       .setToggleState(false);
+      }
+
+   }
+
+   // <ui_update.png>
+   public method updateMuteSoloState() {
+      int c32;
+      if(null != track)
+      {
+         if(NSQ_Track.STATE_MUTE == track.play_state)
+         {
+            bt_mute.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_MUTE_MUTE));
+            bt_mute.setEditable(true);
+            bt_solo.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_MUTE_SOLO));
+         }
+         else if(NSQ_Track.STATE_SOLO == track.play_state)
+         {
+            bt_mute.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_SOLO_MUTE));
+            bt_solo.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_SOLO_SOLO));
+            bt_mute.setEditable(false);
+         }
+         else
+         {
+            bt_mute.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_PLAY_MUTE));
+            bt_mute.setEditable(true);
+            bt_solo.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_PLAY_SOLO));
+         }
+         bt_mute.redraw();
+         bt_solo.redraw();
+      }
+   }
+
+   // <ui_update.png>
+   public method updateFocusState() {
+      boolean bFocus = false;
+      if(null != track)
+         bFocus = (track.track_idx == seq.input_focus_idx);
+      if(bFocus)
+         bt_focus.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_FOCUS));
+      else
+         bt_focus.setBackgroundTint(0);
+      bt_focus.redraw();
+   }
+
+   // <ui_update.png>
+   public method updateRecIcon() {
+      if(null != track)
+      {
+         if(!seq.b_rec && track.b_rec)
+            cb_rec.setForceIconNameSelected("record_1_0"+(cb_rec.b_ignore_icon_name_suffix?"":lnf.checkbox_icon_suffix));
+         else
+            cb_rec.setForceIconNameSelected(null);
+         cb_rec.redraw();
+      }
+   }
+
+   // <ui_update.png>
+   public method updateRecStateAndIcon() {
+      if(null != track)
+      {
+         cb_rec.setSelected(track.b_rec);
+         updateRecIcon();
+      }
+   }
+
+   // <ui_update.png>
+   public method updateTrackName() {
+      if(null != port)
+         tf_name.setText(port.info);
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      port.info = tf_name.getText();
+      Global.Print("Port Name is \""+port.info+"\"");
+      parent_editor.updatePortNameByIdx(track.track_idx);
+   }
+
+   // <ui_handle.png>
+   protected method handleQuantAmountChanged() {
+      local Float fo = fp_quant_amount.getFloatValue();
+
+      if(VMOD_LALT == UI.GetKeyMod())
+      {
+         // Update all tracks
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         NSQ_Track *t;
+         foreach t in pat.tracks
+            t.setQuantAmount(fo);
+         parent_editor.updateTrackForms(pat);
+      }
+      else
+      {
+         track.setQuantAmount(fo);
+      }
+
+      fo *= 100;
+      Global.Print("Quantization Amount is "+fo.printf("%3.2f"));
+   }
+
+   // <ui_handle.png>
+   protected method handleQuantNoteChanged() {
+      int noteLen = cm_quant_note.getSelectedOption();
+
+      if(VMOD_LALT == UI.GetKeyMod())
+      {
+         // Update all tracks
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         NSQ_Track *t;
+         int qNoteLen;
+         foreach t in pat.tracks
+         {
+            t.setQuantNote(noteLen);
+            qNoteLen = t.getQuantNoteLen();
+         }
+         parent_editor.updateTrackForms(pat);
+         Global.Print("Quantization Note Length is 1/"+qNoteLen+" (update "+(pat.tracks.numElements)+" tracks)");
+      }
+      else
+      {
+         track.setQuantNote(noteLen);
+         Global.Print("Quantization Note Length is 1/"+track.getQuantNoteLen());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRecChanged() {
+      boolean bRec = cb_rec.isSelected();
+      track.setEnableRec(bRec);
+      Global.Print(bRec ? "Arm Track for recording" : "Disarm Track");
+      if(seq.ui_b_auto_rec_focus)
+         parent_editor.autoRecFocus(false/*bFromFocus*/, track.track_idx);
+   }
+
+   // <ui_handle.png>
+   public method handleToggleRec() {
+      cb_rec.toggleSelectionAction();
+   }
+
+   // <ui_handle.png>
+   public method handleToggleMute() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         pat.toggleMuteState(track.track_idx);
+         Global.Print((NSQ_Track.STATE_MUTE == track.play_state) ? "Mute Track" : "Play Track");
+         parent_editor.updateMuteSoloStates();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleToggleSolo() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         pat.toggleSoloState(track.track_idx);
+         Global.Print((NSQ_Track.STATE_SOLO == track.play_state) ? "Solo Track" : (NSQ_Track.STATE_MUTE == track.play_state) ? "Mute Track" : "Play Track");
+         parent_editor.updateMuteSoloStates();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleToggleFocus() {
+      boolean bFocus = (track.track_idx != seq.input_focus_idx);
+      seq.setInputFocusIdx(bFocus ? track.track_idx : -1);
+      Global.Print(bFocus ? "Set Input Focus to track" : "Unfocus track");
+      parent_editor.updateFocusStates();
+      if(seq.ui_b_auto_rec_focus)
+         parent_editor.autoRecFocus(true/*bFromFocus*/, -1/*preferTrackIdx*/);
+   }
+
+   // <ui_render.png>
+   public method redrawActivityLEDs() {
+      led_in.redraw();
+      led_out.redraw();
+   }
+
+   // <ui_kbd.png>
+   public method focusTrackName() {
+      UI.SetKeyboardFocus(tf_name);
+      tf_name.selectAll();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case 'q':
+            if(_k.modNone())
+            {
+               parent_editor.refocusDefault();
+               return true;
+            }
+            break;
+      }
+
+      return XMLForm::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(tf_name):
+            handleNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)  // return ?
+            {
+               parent_editor.refocusDefault();
+            }
+            else if(TextField.ACTION_CURSORUP == acName)
+            {
+               parent_editor.trackFormFocusPreviousTrackName(this);
+            }
+            else if(TextField.ACTION_CURSORDOWN == acName)
+            {
+               parent_editor.trackFormFocusNextTrackName(this);
+            }
+            return true;
+
+         case @(fp_quant_amount):
+            handleQuantAmountChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)  // return ?
+               parent_editor.refocusDefault();
+            return true;
+
+         case @(cm_quant_note):
+            handleQuantNoteChanged();
+            return true;
+
+         case @(cb_rec):
+            handleRecChanged();
+            return true;
+
+         case @(bt_mute):
+            handleToggleMute();
+            return true;
+
+         case @(bt_solo):
+            handleToggleSolo();
+            return true;
+
+         case @(bt_focus):
+            handleToggleFocus();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

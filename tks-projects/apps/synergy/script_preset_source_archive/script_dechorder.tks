@@ -1,0 +1,155 @@
+//
+//    file: script_dechorder.tks
+//  author: bsp
+//    info: dechorder script
+//           (note) this is meant to be used with _two_ keyboards / MIDI ports
+//           (note) port1<in> : note pool (chord buffer, up to 16 notes)
+//           (note) port2<in> : play note from pool (white keys C-4..D-6 select note)
+//           (note) port3<out>: target port for played notes
+//           (note) velocity randomization (among other things) can be configured in the "Param" tab)
+//
+// created: 05Sep2023
+// changed: 
+//
+//
+
+use namespace st2;
+
+// boolean b_debug = true;
+boolean b_debug = false;
+
+int trig_base_note = 4*12;  // note selection base note [4*12=C-4]
+
+
+// --------------------------------------------------------------------------
+// no configuration options below this point (just code -- here be dragons !)
+// --------------------------------------------------------------------------
+
+// (note) the initial values must line up with the XFM widget defaults
+tag float p_vel_rand = 0.25;
+
+ActiveNoteState ans_chord;  // records/buffers incoming chord notes
+ActiveNoteState ans_trig;   // tracks incoming trigger notes
+
+IntArray chord_notes;
+IntArray active_trig_note_nrs;
+
+MIDIPipeFrame frEmit;
+
+
+delegate ActiveNoteState:ProcessChordNoteOff(int _activeNoteIdx, byte _note, float _vel) {
+   // frame_tmp.noteOff(true/*bSet*/, io_dev, cur_ch, _note + transpose, _vel);
+   if(b_debug) trace "xxx noteoff: ans.numActive before off is "+ans_chord.getNumActiveNotes();
+}
+
+delegate ActiveNoteState:ProcessChordNoteOnPre(byte _note, int _duration, float _vel) {
+}
+
+delegate ActiveNoteState:ProcessChordNoteOn(int _activeNoteIdx, byte _note, int _duration, float _vel) {
+
+   if(b_debug) trace "xxx noteon: ans.numActive after on is "+ans_chord.getNumActiveNotes();
+   // ans_chord.getActiveNotesSorted(last_noteon_sorted_notes);
+   // if(b_debug) trace "xxx last_noteon_sorted_notes="+#(last_noteon_sorted_notes);
+
+   // if(0 == ans_chord.getNumActiveNotes())
+   //    chord_notes.empty();
+
+   ans_chord.getActiveNotes(chord_notes);
+}
+
+delegate ActiveNoteState:ProcessTrigNoteOff(int _activeNoteIdx, byte _note, float _vel) {
+   // frame_tmp.noteOff(true/*bSet*/, io_dev, cur_ch, _note + transpose, _vel);
+   if(b_debug) trace "xxx noteoff: ans.numActive before off is "+ans_trig.getNumActiveNotes();
+
+   int idx = Scale.WhiteToIndex(_note, trig_base_note);
+   if(b_debug) trace "xxx ProcessTrigNoteOff: idx="+idx;
+
+   int curNote = active_trig_note_nrs.get(idx);
+   if(curNote > 0)
+   {
+      frEmit.noteOff(true/*bSet*/, trig_out_dev, trig_out_ch, curNote, 0/*vel*/);
+      active_trig_note_nrs[idx] = -1;
+   }
+}
+
+delegate ActiveNoteState:ProcessTrigNoteOnPre(byte _note, int _duration, float _vel) {
+}
+
+delegate ActiveNoteState:ProcessTrigNoteOn(int _activeNoteIdx, byte _note, int _duration, float _vel) {
+
+   if(b_debug) trace "xxx noteon: ans.numActive after on is "+ans_trig.getNumActiveNotes();
+   // ans_chord.getActiveNotesSorted(last_noteon_sorted_notes);
+   // if(b_debug) trace "xxx last_noteon_sorted_notes="+#(last_noteon_sorted_notes);
+
+   int idx = Scale.WhiteToIndex(_note, trig_base_note);
+   if(b_debug) trace "xxx ProcessTrigNoteOn: idx="+idx;
+
+   int curNote = active_trig_note_nrs.get(idx);
+   if(curNote > 0)
+   {
+      // force note-off
+      frEmit.noteOff(true/*bSet*/, trig_out_dev, trig_out_ch, curNote, 0/*vel*/);
+      active_trig_note_nrs[idx] = -1;
+   }
+
+   if(idx < chord_notes.numElements)
+   {
+      curNote = chord_notes.get(idx);
+      float v = rand(p_vel_rand * 2.0f) - p_vel_rand;
+      v = mathClampf(_vel + v * _vel, 1, 127);
+      frEmit.noteOn(true/*bSet*/, trig_out_dev, trig_out_ch, curNote, v, _duration);
+      active_trig_note_nrs[idx] = curNote;
+   }
+
+}
+
+function OnReset() {
+   // // delegate ans_chord:"note_on_pre"  = ProcessChordNoteOnPre;
+   delegate ans_chord:"note_on"      = ProcessChordNoteOn;
+   // delegate ans_chord:"note_off"     = ProcessChordNoteOff;
+   ans_chord.reset();
+
+   delegate ans_trig:"note_on"      = ProcessTrigNoteOn;
+   delegate ans_trig:"note_off"     = ProcessTrigNoteOff;
+   ans_trig.reset();
+
+   chord_notes.empty();
+   active_trig_note_nrs.allocAndFill(16, -1);
+}
+
+function ProcessTrigs(MIDIPipeFrame _frIO) {
+   // MIDIPipeEvent pev;
+   // int evIdx;
+   // int idx;
+   // int curNote;
+
+   frEmit.empty();
+
+   ans_trig.process(_frIO, trig_in_dev, trig_in_ch);
+
+   _frIO.deleteNoteOnsByFlt (trig_in_dev, trig_in_ch);
+   _frIO.deleteNoteOffsByFlt(trig_in_dev, trig_in_ch);
+   _frIO.mergeFrame(frEmit);
+}
+
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(!bMuted)
+   {
+      ans_chord.process(framePlay, chord_in_dev, chord_in_ch);
+      ans_chord.process(frameRec,  chord_in_dev, chord_in_ch);
+
+      framePlay.deleteNoteOnsByFlt (chord_in_dev, chord_in_ch);
+      framePlay.deleteNoteOffsByFlt(chord_in_dev, chord_in_ch);
+      frameRec .deleteNoteOnsByFlt (chord_in_dev, chord_in_ch);
+      frameRec .deleteNoteOffsByFlt(chord_in_dev, chord_in_ch);
+
+      ProcessTrigs(framePlay);
+      ProcessTrigs(frameRec);
+   }
+
+}

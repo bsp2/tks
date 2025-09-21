@@ -1,0 +1,780 @@
+// ----
+// ---- file   : script_ptfx.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020 by bsp 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : Protracker-like Controller Effect Processor (4 cmds per channel * 4 channels = 16 cmds/ctls)
+// ----           - slide, LFO, and lag per cmd/ctl
+// ----
+// ---- created: 26Mar2020
+// ---- changed: 27Mar2020, 31Mar2020, 02Apr2020, 04Apr2020
+// ----
+// ----
+// ----
+
+/*
+Commands:
+========
+ $1xx: slide up
+ $2xx: slide down
+ $3xx: lag-process and set lag amount (0..$FF)
+ $4xy: process LFO and set LFO speed (x) and depth (y)
+ $5xx: lag-process + set target value to $xx
+ $6xy: process LFO + slide up (x) or down (y)
+ $7xx: process LFO and set LFO speed to $xx
+ $8xx: process LFO and set LFO depth to $xx
+ $9xx: lag-process + process LFO and set LFO speed (x) and depth (y)
+ $Axy: slide up (x) or down (y)
+ $Cxx: set value (0..$7F)
+ $Exy: process and configure LFO.
+        $x=waveform (0=sine, 1=tri, 2=rect, 3=saw (down), 4=rnd s&h)
+        $y=reset mode (0=free, 1=reset when RPN#91 trig is received)
+ $Fxy: immediately stop slide, LFO, and/or lag-process
+        (y&1: stop slide, y&2: stop LFO, y&4: stop lag. e.g. F01=stop slide, or F07=stop all)
+ */
+
+
+int RPN_RESET = 91;  // RPN #91 is reset-value trigger (should be sent when instrument is selected in tracker node)
+int RPN_CMD   = 92;  // RPN #92 sets cmd 1, RPN #94 sets cmd 2, RPN #96 sets cmd 3, RPN #98 sets cmd 4
+int RPN_ARG   = 93;  // RPN #93 sets arg 1, RPN #95 sets arg 2, RPN #97 sets arg 3, RPN #99 sets arg 4
+
+// (note) CMD1 is hardcoded to pitchbend
+// (note) CMD2 defaults to CC [def=CC#7 (volume)]
+// (note) CMD3 defaults to CC [def=CC#11 (expr)]
+// (note) CMD4 defaults to CC [def=CC#2 (breathcontrol)]
+
+// (note) for a different mapping, either change the source or process the output with a modmatrix node
+
+// (note) keep in mind that all controller values are internally handled as floats (e.g. for fine-slides)
+
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+int NUM_CH  = 4;  // don't change this (there are only 4 MIDI I/O args per script pattern)
+int NUM_CMD = 4;  // don't change this (hardcoded RPNs)
+
+int tick_nr;
+
+// editable via UI:
+tag int   p_tick_modulo = 4;       // limits processing speed (every 'nth' tick)  (persistent parameter)
+tag int   p_autoreset_ticks = 48;  // auto-reset speed to 0 after 'n' ticks. 48=1/16 note @ ppq 192
+tag float p_slide_speed_scl_pb = 1.0;
+tag float p_slide_speed_scl_cc = 1.0;
+tag float p_lag_amount_scl = 1.0;
+tag float p_lfo_speed_scl = 1.0;
+tag float p_lfo_depth_scl = 1.0;
+tag float p_pb_scl = 32;           // scaling factor for mapping 7bit controller value to 14bit pitchbend
+tag int   p_cc_2 = 7;              // CC target for cmd2 (def=CC#007: Volume)
+tag int   p_cc_3 = 11;             // CC target for cmd3 (def=CC#011: Expression Pedal)
+tag int   p_cc_4 = 2;              // CC target for cmd4 (def=CC#002: Breath Control)
+tag float p_cmd1_ch1_reset = 0.0;
+tag float p_cmd1_ch2_reset = 0.0;
+tag float p_cmd1_ch3_reset = 0.0;
+tag float p_cmd1_ch4_reset = 0.0;
+tag float p_cmd2_ch1_reset = 127.0;
+tag float p_cmd2_ch2_reset = 127.0;
+tag float p_cmd2_ch3_reset = 127.0;
+tag float p_cmd2_ch4_reset = 127.0;
+tag float p_cmd3_ch1_reset = 0.0;
+tag float p_cmd3_ch2_reset = 0.0;
+tag float p_cmd3_ch3_reset = 0.0;
+tag float p_cmd3_ch4_reset = 0.0;
+tag float p_cmd4_ch1_reset = 0.0;
+tag float p_cmd4_ch2_reset = 0.0;
+tag float p_cmd4_ch3_reset = 0.0;
+tag float p_cmd4_ch4_reset = 0.0;
+tag float p_cmd1_ch1_lfo = 0.0;
+tag float p_cmd1_ch2_lfo = 0.0;
+tag float p_cmd1_ch3_lfo = 0.0;
+tag float p_cmd1_ch4_lfo = 0.0;
+tag float p_cmd2_ch1_lfo = 127.0;
+tag float p_cmd2_ch2_lfo = 127.0;
+tag float p_cmd2_ch3_lfo = 127.0;
+tag float p_cmd2_ch4_lfo = 127.0;
+tag float p_cmd3_ch1_lfo = 0.0;
+tag float p_cmd3_ch2_lfo = 0.0;
+tag float p_cmd3_ch3_lfo = 0.0;
+tag float p_cmd3_ch4_lfo = 0.0;
+tag float p_cmd4_ch1_lfo = 0.0;
+tag float p_cmd4_ch2_lfo = 0.0;
+tag float p_cmd4_ch3_lfo = 0.0;
+tag float p_cmd4_ch4_lfo = 0.0;
+
+boolean b_double_saw = false;  // true= 2 saw cycles, false= 1 saw cycle
+
+float LAG_MIN = 0.001;
+float INVALID_VALUE = -999999;
+
+IntArray   cur_cmds;
+FloatArray cur_values;
+FloatArray cur_lag_amounts;  // 1=immediate (no lag)
+FloatArray cur_lag_values;   // interpolated values 
+FloatArray cur_speeds;
+IntArray   cur_autoreset_countdown_speed;
+IntArray   cur_autoreset_countdown_lfo;
+IntArray   cur_autoreset_countdown_lag;
+FloatArray cur_lfo_depths;
+FloatArray cur_lfo_speeds;
+FloatArray cur_lfo_phases;
+IntArray   cur_lfo_resets; // 1=reset when RPN#91 trig is received
+IntArray   cur_lfo_waves;  // 0=sine, 1=tri, 2=rect, 3=saw (down), 4=rand
+FloatArray cur_lfo_sh_val;
+
+float LFO_DEPTH = 16.0;
+float LFO_SPEED = 1.0 / 6.0;
+
+function OnReset() {
+   cur_cmds       .allocAndFill(NUM_CH*NUM_CMD, -1);
+   cur_values     .allocAndFill(NUM_CH*NUM_CMD, INVALID_VALUE);
+   cur_lag_amounts.allocAndFill(NUM_CH*NUM_CMD, 1.0);
+   cur_lag_values .allocAndFill(NUM_CH*NUM_CMD, 1.0);
+   cur_speeds     .allocAndFill(NUM_CH*NUM_CMD, 0);
+   cur_lfo_depths .allocAndFill(NUM_CH*NUM_CMD, LFO_DEPTH * 0.5);
+   cur_lfo_speeds .allocAndFill(NUM_CH*NUM_CMD, LFO_SPEED * 0.5);
+   cur_lfo_resets .allocAndFill(NUM_CH*NUM_CMD, true);
+   cur_lfo_waves  .allocAndFill(NUM_CH*NUM_CMD, 0);
+   cur_lfo_sh_val .allocAndFill(NUM_CH*NUM_CMD, 0.0);
+
+   cur_autoreset_countdown_speed.allocAndFill(NUM_CH*NUM_CMD, 0);
+   cur_autoreset_countdown_lfo  .allocAndFill(NUM_CH*NUM_CMD, 0);
+   cur_autoreset_countdown_lag  .allocAndFill(NUM_CH*NUM_CMD, 0);
+}
+
+function OnSeek(int ticks) {
+   tick_nr = ticks;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+}
+
+function GetResetValue(byte ch, byte cmdIdx) : float {
+   switch(cmdIdx)
+   {
+      case 0:
+         switch(ch)
+         {
+            case 0:  /* cmd1 ch1 */  return p_cmd1_ch1_reset;
+            case 1:  /* cmd1 ch2 */  return p_cmd1_ch2_reset;
+            case 2:  /* cmd1 ch3 */  return p_cmd1_ch3_reset;
+            case 3:  /* cmd1 ch4 */  return p_cmd1_ch4_reset;
+         }
+         break;
+
+      case 1:
+         switch(ch)
+         {
+            case 0:  /* cmd2 ch1 */  return p_cmd2_ch1_reset;
+            case 1:  /* cmd2 ch2 */  return p_cmd2_ch2_reset;
+            case 2:  /* cmd2 ch3 */  return p_cmd2_ch3_reset;
+            case 3:  /* cmd2 ch4 */  return p_cmd2_ch4_reset;
+         }
+         break;
+
+      case 2:
+         switch(ch)
+         {
+            case 0:  /* cmd3 ch1 */  return p_cmd3_ch1_reset;
+            case 1:  /* cmd3 ch2 */  return p_cmd3_ch2_reset;
+            case 2:  /* cmd3 ch3 */  return p_cmd3_ch3_reset;
+            case 3:  /* cmd3 ch4 */  return p_cmd3_ch4_reset;
+         }
+         break;
+
+      case 3:
+         switch(ch)
+         {
+            case 0:  /* cmd4 ch1 */  return p_cmd4_ch1_reset;
+            case 1:  /* cmd4 ch2 */  return p_cmd4_ch2_reset;
+            case 2:  /* cmd4 ch3 */  return p_cmd4_ch3_reset;
+            case 3:  /* cmd4 ch4 */  return p_cmd4_ch4_reset;
+         }
+         break;
+   }
+   return -1;
+}
+
+function GetLFODepth(byte ch, byte cmdIdx) : float {
+   switch(cmdIdx)
+   {
+      case 0:
+         switch(ch)
+         {
+            case 0:  /* cmd1 ch1 */  return p_cmd1_ch1_lfo;
+            case 1:  /* cmd1 ch2 */  return p_cmd1_ch2_lfo;
+            case 2:  /* cmd1 ch3 */  return p_cmd1_ch3_lfo;
+            case 3:  /* cmd1 ch4 */  return p_cmd1_ch4_lfo;
+         }
+         break;
+
+      case 1:
+         switch(ch)
+         {
+            case 0:  /* cmd2 ch1 */  return p_cmd2_ch1_lfo;
+            case 1:  /* cmd2 ch2 */  return p_cmd2_ch2_lfo;
+            case 2:  /* cmd2 ch3 */  return p_cmd2_ch3_lfo;
+            case 3:  /* cmd2 ch4 */  return p_cmd2_ch4_lfo;
+         }
+         break;
+
+      case 2:
+         switch(ch)
+         {
+            case 0:  /* cmd3 ch1 */  return p_cmd3_ch1_lfo;
+            case 1:  /* cmd3 ch2 */  return p_cmd3_ch2_lfo;
+            case 2:  /* cmd3 ch3 */  return p_cmd3_ch3_lfo;
+            case 3:  /* cmd3 ch4 */  return p_cmd3_ch4_lfo;
+         }
+         break;
+
+      case 3:
+         switch(ch)
+         {
+            case 0:  /* cmd4 ch1 */  return p_cmd4_ch1_lfo;
+            case 1:  /* cmd4 ch2 */  return p_cmd4_ch2_lfo;
+            case 2:  /* cmd4 ch3 */  return p_cmd4_ch3_lfo;
+            case 3:  /* cmd4 ch4 */  return p_cmd4_ch4_lfo;
+         }
+         break;
+   }
+   return -1;
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+
+   int  outDevIdx;
+   int  outCh;
+   byte midiCh;
+   int  chIdx;
+
+   // Forward <scratch> (input) events to output ports (notes+ctls)
+   if(!bMuted)
+   {
+      midiCh = cmd_ch;
+      chIdx = 0;
+
+      loop(NUM_CH)
+      {
+         switch(chIdx)
+         {
+            case 0:
+               outDevIdx = out_1_dev;
+               outCh     = out_1_ch;
+               break;
+
+            case 1:
+               outDevIdx = out_2_dev;
+               outCh     = out_2_ch;
+               break;
+
+            case 2:
+               outDevIdx = out_3_dev;
+               outCh     = out_3_ch;
+               break;
+
+            case 3:
+               outDevIdx = out_4_dev;
+               outCh     = out_4_ch;
+               break;
+         }
+
+         framePlay.mergeFrameFltDst(frameRec,  cmd_dev, midiCh, outDevIdx, outCh, true/*bMergeNotes*/, true/*bMergeRPN*/);
+         framePlay.mergeFrameFltDst(framePlay, cmd_dev, midiCh, outDevIdx, outCh, true/*bMergeNotes*/, true/*bMergeRPN*/);
+
+         // Next channel
+         chIdx++;
+         midiCh++;
+      }
+   }
+
+   if(bPlaySeq)
+   {
+      boolean bProcess = (0 == (tick_nr % mathClampi(p_tick_modulo, 1, 65536)));
+
+      MIDIPipeFrame fr <= framePlay;
+
+      midiCh = cmd_ch;
+      float t;
+      int i = 0;
+
+      chIdx = 0;
+
+      loop(NUM_CH)
+      {
+         int cmdIdx = 0;
+
+         boolean bResetTrigger = false;
+
+         switch(chIdx)
+         {
+            case 0:
+               outDevIdx = out_1_dev;
+               outCh     = out_1_ch;
+               break;
+
+            case 1:
+               outDevIdx = out_2_dev;
+               outCh     = out_2_ch;
+               break;
+
+            case 2:
+               outDevIdx = out_3_dev;
+               outCh     = out_3_ch;
+               break;
+
+            case 3:
+               outDevIdx = out_4_dev;
+               outCh     = out_4_ch;
+               break;
+         }
+
+         // Get reset trigger
+         t = fr.getFilteredRPN(cmd_dev, midiCh, RPN_RESET);
+         if(-1 != t)
+         {
+            bResetTrigger = true;
+         }
+
+         loop(NUM_CMD)
+         {
+            // Get new cmd
+            t = fr.getFilteredRPN(cmd_dev, midiCh, RPN_CMD+(cmdIdx*2));
+            if(-1 != t)
+            {
+               // trace "xxx set midiCh="+midiCh+" cmd="+t;
+               // New command
+               cur_cmds[i] = t;
+               // trace "xxx set cmd="+t;
+               switch(t)
+               {
+                  case 0x1:  // slide up
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x2:  // slide down
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x3:  // lag amount (glide)
+                     cur_autoreset_countdown_lag[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x4:  // LFO speed/depth
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x5:  // set value + continue lag processing
+                     cur_autoreset_countdown_lag[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x6:  // lfo+slide
+                     cur_autoreset_countdown_lfo[i]   = p_autoreset_ticks;
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x7:  // LFO speed
+                  case 0x8:  // LFO depth
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x9:  // lag+LFO speed/depth
+                     cur_autoreset_countdown_lag[i] = p_autoreset_ticks;
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0xA:  // slide
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0xC:  // set value
+                     break;
+
+                  case 0xE:  // LFO ctl ($xy = wave select, $7x = reset mode)
+                     cur_autoreset_countdown_lfo[i]   = p_autoreset_ticks;
+                     break;
+
+                  case 0xF:  // immediately stop slide, LFO, and/or lag-processing
+                     break;
+               }
+            }
+
+            boolean bForceSendVal = false;
+
+            if(bResetTrigger)
+            {
+               float resetVal = GetResetValue(chIdx, cmdIdx);
+               if(resetVal >= 0)
+               {
+                  bForceSendVal = true;
+
+                  if(0 == cmdIdx)
+                  {
+                     // Pitchbend
+                     if(resetVal >= 64)
+                        cur_values[i] = ((resetVal - 64) * (8191.0/63.0)) / p_pb_scl;
+                     else
+                        cur_values[i] = ((resetVal - 64) * (8192.0/64.0)) / p_pb_scl;
+                  }
+                  else
+                  {
+                     // CC
+                     cur_values[i] = resetVal;
+                  }
+               }
+
+               if(cur_lfo_resets[i])
+                  cur_lfo_phases[i] = 0.0f;
+            }
+
+
+            // Get new arg
+            t = fr.getFilteredRPN(cmd_dev, midiCh, RPN_ARG+(cmdIdx*2));
+            if(-1 != t)
+            {
+               // New arg
+               switch(cur_cmds[i])
+               {
+                  case 0x1:  // slide up
+                     if(t > 0)
+                     {
+                        cur_speeds[i] = t / 4.0;
+                     }
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x2:  // slide down
+                     if(t > 0)
+                     {
+                        cur_speeds[i] = t / -4.0;
+                     }
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x3:  // lag amount (glide)
+                     if(t > 0)
+                     {
+                        // float lagAmt = mathClampf(1.0 - ((t-1) / 254.0), 0.0, 1.0);
+                        float lagAmt = mathClampf(((t-1) / 254.0), 0.0, 1.0);
+                        // trace "xxx set 1 lagAmt="+lagAmt+" t="+t;
+                        // lagAmt = 1.0 - (lagAmt * lagAmt);
+                        lagAmt *= lagAmt;
+                        // trace "xxx set 2 lagAmt="+lagAmt;
+                        cur_lag_amounts[i] = mathLerpf(LAG_MIN, 1.0, lagAmt);
+                     }
+                     cur_autoreset_countdown_lag[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x9: // lag + LFO speed+depth
+                     cur_autoreset_countdown_lag[i] = p_autoreset_ticks;
+                     // run into case 0x4:
+                  case 0x4:
+                     if( (t&15) > 0 )
+                     {
+                        cur_lfo_depths[i] = ((t&15) / 15.0) * LFO_DEPTH;
+                        // trace "xxx cur_lfo_depths[i]="+cur_lfo_depths[i];
+                     }
+                     if( (t >> 4) > 0 )
+                     {
+                        cur_lfo_speeds[i] = ((t >> 4) / 15.0) * LFO_SPEED;
+                     }
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x7:
+                     if( (t&255) > 0 )
+                     {
+                        cur_lfo_speeds[i] = (t / 255.0) * LFO_SPEED;
+                     }
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x8:
+                     if( (t&255) > 0 )
+                     {
+                        cur_lfo_depths[i] = (t / 255.0) * LFO_DEPTH;
+                     }
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0x5:  // set value + continue lag processing (glide)
+                     cur_autoreset_countdown_lag[i] = p_autoreset_ticks;
+                     // run into case 0xC
+                  case 0xC:  // set value
+                     if(0 == cmdIdx)
+                     {
+                        // Pitchbend
+                        if(t >= 64)
+                           cur_values[i] = ((t - 64) * (8191.0/63.0)) / p_pb_scl;
+                        else
+                           cur_values[i] = ((t - 64) * (8192.0/64.0)) / p_pb_scl;
+                     }
+                     else
+                     {
+                        // CC
+                        cur_values[i] = t;
+                     }
+                     bForceSendVal = true;
+                     break;
+
+                  case 0x6:  // LFO+slide
+                     cur_autoreset_countdown_lfo[i] = p_autoreset_ticks;
+                     // run into case 0xA
+                  case 0xA:  // slide up or down
+                     // trace "xxx 0xA: t="+t+" chIdx="+chIdx;
+                     if(0 != (t&15))
+                     {
+                        // Slide down
+                        cur_speeds[i] = ((t&15) * 16.0) / -4.0;
+                     }
+                     else if(t >= 16)
+                     {
+                        // Slide up
+                        cur_speeds[i] = (t&0xF0) / 4.0;
+                     }
+                     cur_autoreset_countdown_speed[i] = p_autoreset_ticks;
+                     break;
+
+                  case 0xE:  // LFO control
+                     cur_lfo_resets[i] = (0 != (t&15));
+                     cur_lfo_waves[i] = (t >> 4) & 15;
+                     cur_autoreset_countdown_lfo[i]   = p_autoreset_ticks;
+                     break;
+
+                  case 0xF:  // immediately stop slide, LFO, and/or lag-processing
+                     if(t & 1)
+                        cur_autoreset_countdown_speed[i] = 0;
+                     if(t & 2)
+                        cur_autoreset_countdown_lfo[i] = 0;
+                     if(t & 4)
+                        cur_autoreset_countdown_lag[i] = 0;
+                     break;
+               }
+            }
+
+            // New pb/CC value override ? (e.g. due to instr and/or note reset value)
+            int outVal;
+
+            switch(cmdIdx)
+            {
+               case 0:
+                  t = fr.getFilteredPitchbend(outDevIdx, outCh);
+                  if(-1 != t)
+                  {
+                     cur_values[i] = (t-8192.0) / p_pb_scl;
+                     // trace "xxx reset pb to "+cur_values[i];
+                  }
+                  break;
+
+               case 1:
+                  t = fr.getFilteredCC(outDevIdx, outCh, p_cc_2);
+                  // trace "xxx outCh="+outCh+" p_cc_2="+p_cc_2+" => t="+t;
+                  if(-1 != t)
+                  {
+                     cur_values[i] = t;
+                     // trace "xxx reset CC#7 to "+t+" chIdx="+chIdx;
+                  }
+                  break;
+
+               case 2:
+                  t = fr.getFilteredCC(outDevIdx, outCh, p_cc_3);
+                  if(-1 != t)
+                     cur_values[i] = t;
+                  break;
+
+               case 3:
+                  t = fr.getFilteredCC(outDevIdx, outCh, p_cc_4);
+                  if(-1 != t)
+                     cur_values[i] = t;
+                  break;
+            }
+
+
+            // Process 
+            if(bProcess || bForceSendVal)
+            {
+               outVal = INVALID_VALUE;
+
+               if(cur_values[i] > INVALID_VALUE)
+               {
+                  if(bForceSendVal)
+                     outVal = cur_values[i];
+
+                  // Process slide up / down
+                  if((0.0 != cur_speeds[i]) && (cur_autoreset_countdown_speed[i] > 0))
+                  {
+                     outVal = cur_values[i];
+                     cur_values[i] = mathClampf(cur_values[i] + cur_speeds[i] * ((0 == cmdIdx)?p_slide_speed_scl_pb:p_slide_speed_scl_cc), -8192, 16383.0);
+                  }
+
+                  // Process LFO
+                  if(cur_autoreset_countdown_lfo[i] > 0)
+                  {
+                     float lfoVal;
+                     boolean bSkipLFOAdv = false;
+
+                     switch(cur_lfo_waves[i])
+                     {
+                        default:
+                        case 0: // sin
+                           lfoVal = sin(cur_lfo_phases[i] * 2PI);
+                           break;
+
+                        case 1: // tri
+                           float triPhase = mathWrapf(cur_lfo_phases[i]+0.25, 0.0, 1.0);
+                           if(triPhase < 0.5)
+                              lfoVal = -1.0 + triPhase*4;
+                           else
+                              lfoVal = 1.0 - ((triPhase-0.5)*4);
+                           break;
+
+                        case 2: // rect
+                           lfoVal = (cur_lfo_phases[i] >= 0.5) ? -1.0 : 1.0;
+                           break;
+
+                        case 3: // saw (ramp down)
+                           float sawPhase = mathWrapf(cur_lfo_phases[i]+0.25, 0.0, 1.0);
+                           if(b_double_saw)
+                           {
+                              // Double saw
+                              if(sawPhase < 0.5)
+                                 lfoVal = 1.0 - sawPhase*4;
+                              else
+                                 lfoVal = 1.0 - ((sawPhase-0.5)*4);
+                           }
+                           else
+                           {
+                              // Single saw
+                              lfoVal = 1.0 - sawPhase*2;
+                           }
+                           break;
+
+                        case 4: // rnd (sample+hold)
+                           if(cur_lfo_phases[i] <= 0.0)
+                           {
+                              lfoVal = rand(2.0) - 1.0;
+                              // trace "xxx new rnd s&h lfoVal="+lfoVal;
+                              cur_lfo_sh_val[i] = lfoVal;
+                              cur_lfo_phases[i] = cur_lfo_phases[i] + 1.0;
+                           }
+                           else
+                              lfoVal = cur_lfo_sh_val[i];
+                           bSkipLFOAdv = true;
+                           cur_lfo_phases[i] -=  cur_lfo_speeds[i] * p_lfo_speed_scl * 2.0;
+                           break;
+                     }
+
+                     outVal = cur_values[i] + (cur_lfo_depths[i] * p_lfo_depth_scl * GetLFODepth(chIdx, cmdIdx) * lfoVal);
+
+                     if(!bSkipLFOAdv)
+                        cur_lfo_phases[i] = mathWrapf(cur_lfo_phases[i] + cur_lfo_speeds[i] * p_lfo_speed_scl, 0.0, 1.0);
+                  }
+
+                  // Process lag
+                  if((1.0 != cur_lag_amounts[i]) && (cur_autoreset_countdown_lag[i] > 0))
+                  {
+                     if(outVal > INVALID_VALUE)
+                     {
+                        if(cur_lag_values[i] > INVALID_VALUE)
+                        {
+                           cur_lag_values[i] = mathLerpf(cur_lag_values[i], outVal, cur_lag_amounts[i] * p_lag_amount_scl);
+                           outVal = cur_lag_values[i];
+                           // trace "xxx lag outVal="+outVal;
+                        }
+                        else
+                        {
+                           cur_lag_values[i] = outVal;
+                        }
+                     }
+                     else
+                     {
+                        // trace "xxx cur_lag_values[i]="+cur_lag_values[i]+" cur_values[i]="+cur_values[i];
+                        if(cur_lag_values[i] > INVALID_VALUE)
+                        {
+                           cur_lag_values[i] = mathLerpf(cur_lag_values[i], cur_values[i], cur_lag_amounts[i] * p_lag_amount_scl);
+                           outVal = cur_lag_values[i];
+                        }
+                        else
+                        {
+                           cur_lag_values[i] = cur_values[i];
+                        }
+                     }
+                  }
+                  else
+                  {
+                     if(outVal > INVALID_VALUE)
+                     {
+                        cur_lag_values[i] = outVal;
+                     }
+                     else
+                     {
+                        cur_lag_values[i] = cur_values[i];
+                     }
+                  }
+                  
+                  if((outVal > INVALID_VALUE) && !bMuted)
+                  {
+                     switch(cmdIdx)
+                     {
+                        case 0:
+                           // trace "xxx pb outVal="+outVal+" sped="+cur_speeds[i];
+                           framePlay.pitchbend(true/*bSet*/, outDevIdx, outCh, (outVal*p_pb_scl) + 8192); 
+                           break;
+
+                        case 1:
+                           // trace "xxx tick["+tick_nr+"]: send cc2 outVal="+outVal;
+                           framePlay.cc(true/*bSet*/, outDevIdx, outCh, p_cc_2, outVal); 
+                           break;
+
+                        case 2:
+                           framePlay.cc(true/*bSet*/, outDevIdx, outCh, p_cc_3, outVal); 
+                           break;
+
+                        case 3:
+                           framePlay.cc(true/*bSet*/, outDevIdx, outCh, p_cc_4, outVal); 
+                           break;
+                     }
+                  }
+               }
+            }
+
+            // Auto-reset speed
+            if(cur_autoreset_countdown_speed[i] > 0)
+            {
+               cur_autoreset_countdown_speed[i] = cur_autoreset_countdown_speed[i] - 1;
+            }
+
+            // Auto-reset lfo
+            if(cur_autoreset_countdown_lfo[i] > 0)
+            {
+               cur_autoreset_countdown_lfo[i] = cur_autoreset_countdown_lfo[i] - 1;
+            }
+
+            // Auto-reset lag
+            if(cur_autoreset_countdown_lag[i] > 0)
+            {
+               // trace "xxx cur_autoreset_countdown_lag["+i+"]="+cur_autoreset_countdown_lag[i];
+               cur_autoreset_countdown_lag[i] = cur_autoreset_countdown_lag[i] - 1;
+            }
+
+            // Next cmd
+            cmdIdx++;
+            i++;
+         } // loop NUM_CMD
+
+         // Next channel
+         midiCh++;
+         chIdx++;
+      } // loop NUM_CH
+
+      tick_nr++;
+
+   } // if bPlaySeq
+}

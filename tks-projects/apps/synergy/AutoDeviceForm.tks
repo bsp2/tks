@@ -1,0 +1,564 @@
+// ----
+// ---- file   : AutoDeviceForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 26Oct2020
+// ---- changed: 30Oct2020, 27Jan2021, 13May2021, 02Jan2022, 28Jul2023, 21Sep2023, 15Oct2023
+// ----          22Mar2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MAutoDeviceForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class AutoDeviceForm extends Form, ActionProvider {
+
+   protected Node *node;
+
+   protected XMLForm *xfm;
+
+   protected Panel    *pn_a;
+   protected CheckBox *cb_play_auto_enable_filter_a;
+   protected ComboBox *cm_play_auto_dev_filter_a;
+   protected ComboBox *cm_play_auto_ch_filter_a;
+   protected Button   *bt_adv_a;
+   protected Button   *bt_autodev_a;
+
+   protected Panel    *pn_b;
+   protected CheckBox *cb_play_auto_enable_filter_b;
+   protected ComboBox *cm_play_auto_dev_filter_b;
+   protected ComboBox *cm_play_auto_ch_filter_b;
+   protected Button   *bt_adv_b;
+   protected Button   *bt_autodev_b;
+
+   protected static AutoDeviceDialog *dlg_adv;
+
+   protected PopupMenu *pm_context;
+   protected boolean b_ctxmenu_b;
+
+
+   // <ui_init.png>
+   public method initAutoDeviceForm() : boolean {
+
+      initForm();
+
+      xfm <= XMLForm.New_PakFile("AutoDeviceForm.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      addLayer(xfm, Layout.CENTER);
+
+      if(null == dlg_adv)
+      {
+         dlg_adv <= new AutoDeviceDialog;
+         if(!dlg_adv.init())
+         {
+            Global.Error("AutoDeviceDialog::init() failed");
+            return false;
+         }
+      }
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       bt_autodev_a,
+                       cm_play_auto_dev_filter_a,
+                       cb_play_auto_enable_filter_a,
+                       cm_play_auto_ch_filter_a,
+                       bt_adv_a,
+
+                       bt_autodev_b,
+                       cm_play_auto_dev_filter_b,
+                       cb_play_auto_enable_filter_b,
+                       cm_play_auto_ch_filter_b
+                       bt_adv_b,
+                     ]
+                    );
+   }
+
+   // <ui_show.png>
+   public method showNode(Node _node, StringArray _devAll, StringArray _bgColorsAll) {
+      node <= _node;
+
+      cm_play_auto_dev_filter_a.setOptions(_devAll);
+      cm_play_auto_dev_filter_a.setOptionBGColors(_bgColorsAll);
+      cm_play_auto_dev_filter_b.setOptions(_devAll);
+      cm_play_auto_dev_filter_b.setOptionBGColors(_bgColorsAll);
+
+      boolean bEnable = node.getEnableAutoFilterA();
+      cb_play_auto_enable_filter_a.setSelected(bEnable);
+      cm_play_auto_dev_filter_a.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterA()) + 1);
+      cm_play_auto_dev_filter_a.setEditable(bEnable);
+      cm_play_auto_ch_filter_a.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(node.getAutoDevFilterA(), "*"/*firstOptionOrNull*/));
+      cm_play_auto_ch_filter_a.setSelectedOption(node.getAutoChFilterA() + 1);
+      cm_play_auto_ch_filter_a.setEditable(bEnable);
+
+      bEnable = node.getEnableAutoFilterB();
+      cb_play_auto_enable_filter_b.setSelected(bEnable);
+      cm_play_auto_dev_filter_b.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterB()) + 1);
+      cm_play_auto_dev_filter_b.setEditable(bEnable);
+      cm_play_auto_ch_filter_b.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(node.getAutoDevFilterB(), "*"/*firstOptionOrNull*/));
+      cm_play_auto_ch_filter_b.setSelectedOption(node.getAutoChFilterB() + 1);
+      cm_play_auto_ch_filter_b.setEditable(bEnable);
+
+      bt_autodev_a.setBackgroundTint(node.b_ui_auto_filter_a_autoassign ? app_lnf.getColor(AppLookAndFeel.COLOR_AUTODEVICEFORM_BT_TINT) : 0);
+      bt_autodev_b.setBackgroundTint(node.b_ui_auto_filter_b_autoassign ? #30ffffff : 0);
+
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, false/*bB*/);
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+
+      updateCustomSettingsIndicators();
+   }
+
+   // <ui_hide.png>
+   public method leaveNode() {
+      node <= null;
+   }
+
+   // <ui_hide.png>
+   public method unsetNode() {
+      node <= null;
+   }
+
+   // <ui_focus.png>
+   public method refocusDefault() {
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         UI.SetKeyboardFocus(cb_play_auto_enable_filter_a);
+      }
+   }
+
+   // <ui_update.png>
+   public method updateCustomSettingsIndicators() {
+
+      if(node.nodeHaveCustomAutoDeviceSettings(false/*bB*/))
+         bt_adv_a.setFontByName("big9");
+      else
+         bt_adv_a.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+      if(node.nodeHaveCustomAutoDeviceSettings(true/*bB*/))
+         bt_adv_b.setFontByName("big9");
+      else
+         bt_adv_b.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+      redraw();
+   }
+
+
+   // <ui_handle.png>
+   public method handleNodeClassShowChanged() {
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, false/*bB*/);
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayAutoEnableFilterAChanged() {
+      boolean bEnable = cb_play_auto_enable_filter_a.isSelected();
+      node.setEnableAutoFilterA(bEnable);
+      cm_play_auto_dev_filter_a.setEditable(bEnable);
+      cm_play_auto_dev_filter_a.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterA()) + 1); // may now be default dev
+      cm_play_auto_ch_filter_a.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(node.getAutoDevFilterA(), "*"/*firstOptionOrNull*/));
+      cm_play_auto_ch_filter_a.setEditable(bEnable);
+      node.nodeHandleAutoDevChanged();
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, false/*bB*/);
+      Global.Print("Auto filter A is "+Utils.GetEnableString(node.getEnableAutoFilterA()));
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayAutoDevFilterAChanged() {
+      node.setAutoDevFilterA(MIDI.SortedToUnsortedDevIdx(cm_play_auto_dev_filter_a.getSelectedOption() - 1));
+      node.nodeHandleAutoDevChanged();
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, false/*bB*/);
+      cm_play_auto_ch_filter_a.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(node.getAutoDevFilterA(), "*"/*firstOptionOrNull*/));
+      node.b_ui_auto_filter_a_autoassign = false;
+      bt_autodev_a.setBackgroundTint(0);
+      bt_autodev_a.redraw();
+
+      Global.Print("Auto device filter A is "+cm_play_auto_dev_filter_a.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayAutoChFilterAChanged() {
+      node.setAutoChFilterA(cm_play_auto_ch_filter_a.getSelectedOption() - 1);
+      node.nodeHandleAutoDevChanged();
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, false/*bB*/);
+      node.b_ui_auto_filter_a_autoassign = false;
+      bt_autodev_a.setBackgroundTint(0);
+      bt_autodev_a.redraw();
+
+      Global.Print("Auto channel filter A is "+cm_play_auto_ch_filter_a.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayAutoEnableFilterBChanged() {
+      boolean bEnable = cb_play_auto_enable_filter_b.isSelected();
+      node.setEnableAutoFilterB(bEnable);
+      node.nodeHandleAutoDevChanged();
+      cm_play_auto_dev_filter_b.setEditable(bEnable);
+      cm_play_auto_dev_filter_b.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterB()) + 1); // may now be default dev
+      cm_play_auto_ch_filter_b.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(node.getAutoDevFilterB(), "*"/*firstOptionOrNull*/));
+      cm_play_auto_ch_filter_b.setEditable(bEnable);
+
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+
+      Global.Print("Auto filter B is "+Utils.GetEnableString(node.getEnableAutoFilterB()));
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayAutoDevFilterBChanged() {
+      node.setAutoDevFilterB(MIDI.SortedToUnsortedDevIdx(cm_play_auto_dev_filter_b.getSelectedOption() - 1));
+      node.nodeHandleAutoDevChanged();
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+      cm_play_auto_ch_filter_b.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(node.getAutoDevFilterB(), "*"/*firstOptionOrNull*/));
+      node.b_ui_auto_filter_b_autoassign = false;
+      bt_autodev_b.setBackgroundTint(0);
+      bt_autodev_b.redraw();
+
+      Global.Print("Auto device filter B is "+cm_play_auto_dev_filter_b.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayAutoChFilterBChanged() {
+      node.setAutoChFilterB(cm_play_auto_ch_filter_b.getSelectedOption() - 1);
+      node.nodeHandleAutoDevChanged();
+      node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+      node.b_ui_auto_filter_b_autoassign = false;
+      bt_autodev_b.setBackgroundTint(0);
+      bt_autodev_b.redraw();
+
+      Global.Print("Auto channel filter B is "+cm_play_auto_ch_filter_b.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   public =replay= method autoAssignPortFromClass(boolean _bB) {
+      String className <= STConfig.node_class_names.get(node.getNodeClassId());
+      if(null != className)
+      {
+         PagePipeMap pgPipeMap <= root_form.pg_pipemap;
+         local Integer autoCh;
+         boolean bOldEnable = _bB ? node.b_auto_filter_b : node.b_auto_filter_a;
+         if(_bB) node.setEnableAutoFilterB(false); else node.setEnableAutoFilterA(false);
+         STX_MIDIOutDevice autoDev <= pgPipeMap.findUniqueAutoDevByCategoryName(className, autoCh);
+         if(null != autoDev)
+         {
+            // trace "xxx autoDev="+#(autoDev)+" autoDevIdx="+autoDev.dev_idx+" autoCh="+autoCh;
+            if(_bB)
+            {
+               if( bOldEnable &&
+                   node.b_ui_auto_filter_b_autoassign &&
+                   (node.auto_dev_filter_b == autoDev.dev_idx) &&
+                   (node.auto_ch_filter_b  == autoCh)
+                   )
+               {
+                  node.setEnableAutoFilterB(true);
+               }
+               else
+               {
+                  node.setAutoDevFilterB(autoDev.dev_idx);
+                  node.setAutoChFilterB(autoCh);
+                  node.setEnableAutoFilterB(true);
+                  node.b_ui_auto_filter_b_autoassign = true;
+               }
+            }
+            else
+            {
+               if( bOldEnable &&
+                   node.b_ui_auto_filter_a_autoassign &&
+                   (node.auto_dev_filter_a == autoDev.dev_idx) &&
+                   (node.auto_ch_filter_a  == autoCh)
+                   )
+               {
+                  node.setEnableAutoFilterA(true);
+               }
+               else
+               {
+                  node.setAutoDevFilterA(autoDev.dev_idx);
+                  node.setAutoChFilterA(autoCh);
+                  node.setEnableAutoFilterA(true);
+                  node.b_ui_auto_filter_a_autoassign = true;
+               }
+            }
+            showNode(node,
+                     cm_play_auto_dev_filter_a.options/*devAll*/,
+                     cm_play_auto_dev_filter_a.option_bgcolors
+                     );
+            Global.Print("Auto-assign ["+tcchar('A'+_bB)+"] class="+className+" dev="+autoDev.getAliasOrDeviceName()+" ch="+(autoCh+1));
+         }
+         else
+         {
+            if(_bB) node.setEnableAutoFilterB(bOldEnable); else node.setEnableAutoFilterA(bOldEnable);
+            Global.Warning("Failed to auto-assign autodev ["+tcchar('A'+_bB)+"] from class="+className);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleNodeClassChanged() {
+      if(node.b_ui_auto_filter_a_autoassign)
+         autoAssignPortFromClass(false/*bB*/);
+      else if(node.b_ui_auto_filter_b_autoassign)
+         autoAssignPortFromClass(true/*bB*/);
+   }
+
+   // <ui_handle.png>
+   protected method showAdvancedDialog(boolean _bB) {
+      dlg_adv.showNode(this, node, _bB);
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtl(boolean _bFltB, boolean _bClipboardB, short _rpn) {
+      local String msg <= "copyctl<"+(_bClipboardB?"B":"A")+"><port "+(_bFltB?"B":"A")+">: ";
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      if(_bFltB)
+      {
+         cb.initFromCopiedCtl(node.auto_dev_filter_b, node.auto_ch_filter_b,
+                              NMM_Arg.TYPE_RPN, 0/*ccNr*/, _rpn, 0/*nrpnNr*/
+                              );
+      }
+      else
+      {
+         cb.initFromCopiedCtl(node.auto_dev_filter_a, node.auto_ch_filter_a,
+                              NMM_Arg.TYPE_RPN, 0/*ccNr*/, _rpn, 0/*nrpnNr*/
+                              );
+      }
+      msg.append("dev="+cb.getClipboardPortString());
+      if(_rpn > 0)
+         msg.append(" RPN="+_rpn);
+      Global.Print(msg);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteCtl(boolean _bFltB, boolean _bClipboardB) {
+      local String msgPrefix <= "pastectl<"+(_bClipboardB?"B":"A")+"><port "+(_bFltB?"B":"A")+">: ";
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      if(_bFltB)
+      {
+         node.auto_dev_filter_b = cb.dev_idx;
+         node.auto_ch_filter_b  = cb.dev_ch;
+         cm_play_auto_dev_filter_b.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterB()) + 1);
+         cm_play_auto_ch_filter_b.setSelectedOption(node.getAutoChFilterB() + 1);
+
+         node.nodeHandleAutoDevChanged();
+         node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+      }
+      else
+      {
+         node.auto_dev_filter_a = cb.dev_idx;
+         node.auto_ch_filter_a  = cb.dev_ch;
+         cm_play_auto_dev_filter_a.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterA()) + 1);
+         cm_play_auto_ch_filter_a.setSelectedOption(node.getAutoChFilterA() + 1);
+
+         node.nodeHandleAutoDevChanged();
+         node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, false/*bB*/);
+      }
+
+      Global.Print(msgPrefix+"dev="+cb.getClipboardPortString());
+   }
+
+   // <method.png>
+   protected =replay= method initFromCtlTagEntry(int _idx) {
+      CtlTagEntry en <= current_song.getCtlTagEntryByIdx(_idx);
+      MIDIMapEvent ev <= en.mm_event;
+      if(b_ctxmenu_b)
+      {
+         node.auto_dev_filter_b = ev.dev.dev_idx;
+         node.auto_ch_filter_b  = ev.dev_ch;
+         cm_play_auto_dev_filter_b.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterB()) + 1);
+         cm_play_auto_ch_filter_b.setSelectedOption(node.getAutoChFilterB() + 1);
+         node.nodeHandleAutoDevChanged();
+         node.updateChFilterUniqueness(cm_play_auto_ch_filter_b, true/*bB*/);
+      }
+      else
+      {
+         node.auto_dev_filter_a = ev.dev.dev_idx;
+         node.auto_ch_filter_a  = ev.dev_ch;
+         cm_play_auto_dev_filter_a.setSelectedOption(MIDI.UnsortedToSortedDevIdx(node.getAutoDevFilterA()) + 1);
+         cm_play_auto_ch_filter_a.setSelectedOption(node.getAutoChFilterA() + 1);
+         node.nodeHandleAutoDevChanged();
+         node.updateChFilterUniqueness(cm_play_auto_ch_filter_a, true/*bB*/);
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_context;
+
+      local String sPort = b_ctxmenu_b ? "AutoDev B" : "AutoDev A";
+
+      // RPNs
+      PopupMenu *spm;
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Copy "+sPort+" RPN to Ctl.Clipboard A..", deref spm);
+      node.nodeAddSupportedRPNsToPopupMenu(spm, "rpn2a_", node.nodeGetSupportedRPNSubMenus());
+
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Copy "+sPort+" RPN to Ctl.Clipboard B..", deref spm);
+      node.nodeAddSupportedRPNsToPopupMenu(spm, "rpn2b_", node.nodeGetSupportedRPNSubMenus());
+
+      pm.addSeparator();
+
+      // Ctl.Clipboard
+      pmb <= pm.addDefaultButton("Copy "+sPort+" to Ctl.Clipboard A", "copyctl_a");
+      pmb.setToolTipCaption("Copy "+sPort+" port+type to Ctl.Clipboard A");
+
+      pmb <= pm.addDefaultButton("Copy "+sPort+" to Ctl.Clipboard B", "copyctl_b");
+      pmb.setToolTipCaption("Copy "+sPort+" port+type to Ctl.Clipboard B");
+
+      pm.addSeparator();
+
+      local String info <= mmarg_clipboard_a.getPortStringForClipboardMenu();
+      info <= info.isBlank()?"":(" ("+info+")");
+      pmb <= pm.addDefaultButton("Paste "+sPort+" from Ctl.Clipboard A"+info, "pastectl_a");
+      pmb.setToolTipCaption("Paste "+sPort+" port+type from Ctl.Clipboard A");
+      pmb.setActive(mmarg_clipboard_a.isValidClipboardArg());
+
+      info <= mmarg_clipboard_b.getPortStringForClipboardMenu();
+      info <= info.isBlank()?"":(" ("+info+")");
+      pmb <= pm.addDefaultButton("Paste "+sPort+" from Ctl.Clipboard B"+info, "pastectl_b");
+      pmb.setToolTipCaption("Paste "+sPort+" port+type from Ctl.Clipboard B");
+      pmb.setActive(mmarg_clipboard_b.isValidClipboardArg());
+
+      MIDI.AppendCtlTagSubMenu(pm, "CtlTag");
+
+      // Present
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show AutoDevice context menu.");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         b_ctxmenu_b = pn_b.isMouseOverWithin();
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      // StringAction *sac;
+
+      switch(@(ap))
+      {
+            // Port A
+         case @(bt_autodev_a):
+            autoAssignPortFromClass(false/*bB*/);
+            return true;
+
+         case @(cb_play_auto_enable_filter_a):
+            handlePlayAutoEnableFilterAChanged();
+            return true;
+
+         case @(cm_play_auto_dev_filter_a):
+            handlePlayAutoDevFilterAChanged();
+            return true;
+
+         case @(cm_play_auto_ch_filter_a):
+            handlePlayAutoChFilterAChanged();
+            return true;
+
+         case @(bt_adv_a):
+            showAdvancedDialog(false/*bB*/);
+            return true;
+
+
+            // Port B
+         case @(bt_autodev_b):
+            autoAssignPortFromClass(true/*bB*/);
+            return true;
+
+         case @(cb_play_auto_enable_filter_b):
+            handlePlayAutoEnableFilterBChanged();
+            return true;
+
+         case @(cm_play_auto_dev_filter_b):
+            handlePlayAutoDevFilterBChanged();
+            return true;
+
+         case @(cm_play_auto_ch_filter_b):
+            handlePlayAutoChFilterBChanged();
+            return true;
+
+         case @(bt_adv_b):
+            showAdvancedDialog(true/*bB*/);
+            return true;
+
+
+         case @(pm_context):
+            Global.Debug2("AutoDeviceForm::consumeAction: pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(acName <= "ctltagentry_")
+            {
+               initFromCtlTagEntry(int(acName.replace("ctltagentry_", "")));
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  if(acName <= "rpn2a_")
+                  {
+                     handleCopyCtl(b_ctxmenu_b, false/*bClipboardB*/, acName.replace("rpn2a_", "")/*rpn*/);
+                  }
+                  else if(acName <= "rpn2b_")
+                  {
+                     handleCopyCtl(b_ctxmenu_b, true/*bClipboardB*/, acName.replace("rpn2b_", "")/*rpn*/);
+                  }
+                  else
+                     Global.Print("Select: "+acName);
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtl(b_ctxmenu_b, false/*bClipboardB*/, 0/*rpn*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtl(b_ctxmenu_b, true/*bClipboardB*/, 0/*rpn*/);
+                  return true;
+
+               case "pastectl_a":
+                  handlePasteCtl(b_ctxmenu_b, false/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_b":
+                  handlePasteCtl(b_ctxmenu_b, true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+      }
+
+      return Form::consumeAction(_action);
+   }
+
+}

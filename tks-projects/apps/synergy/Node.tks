@@ -1,0 +1,4107 @@
+// ----
+// ---- file   : Node.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 05Sep2014, 07Sep2014, 08Sep2014, 09Sep2014, 13Sep2014, 20Sep2014, 21Sep2014
+// ----          22Sep2014, 23Sep2014, 27Sep2014, 08Feb2015, 14Feb2015, 16Feb2015, 22Feb2015
+// ----          06Mar2015, 08Mar2015, 14Mar2015, 14Apr2015, 17Apr2015, 19Apr2015, 20Apr2015
+// ----          21Apr2015, 28Apr2015, 04May2015, 11May2015, 04Jul2015, 03Oct2015, 04Oct2015
+// ----          08Oct2015, 11Oct2015, 12Oct2015, 20Oct2015, 24Oct2015, 25Oct2015, 30Oct2015
+// ----          11Nov2015, 16Nov2015, 21Dec2015, 22Jan2016, 13Mar2016, 09Apr2016, 08Jul2016
+// ----          09Jul2016, 10Jul2016, 12Jul2016, 21Jul2016, 08Sep2016, 30Sep2016, 15Oct2016
+// ----          28Jan2017, 04Feb2017, 05Feb2017, 09Feb2017, 12Feb2017, 03Mar2017, 10Mar2017
+// ----          18Mar2017, 24Mar2017, 05Apr2017, 12Apr2017, 13Apr2017, 17Apr2017, 19Apr2017
+// ----          25Apr2017, 07May2017, 06Jun2017, 15Jul2017, 30Jul2017, 10Aug2017, 01Sep2017
+// ----          03Sep2017, 16Sep2017, 12Oct2017, 29Oct2017, 03Jan2018, 04Jan2018, 05Jan2018
+// ----          07Mar2018, 05Apr2018, 01May2018, 27May2018, 06Jun2018, 17Jun2018, 24Jun2018
+// ----          16Sep2018, 25Nov2018, 08Dec2018, 07Apr2019, 08Sep2019, 14Sep2019, 21Sep2019
+// ----          23Sep2019, 05Oct2019, 14Oct2019, 15Oct2019, 19Oct2019, 31Oct2019, 02Nov2019
+// ----          08Nov2019, 20Feb2020, 06Mar2020, 28Apr2020, 18May2020, 26Oct2020, 30Oct2020
+// ----          09Nov2020, 10Nov2020, 27Jan2021, 10May2021, 13May2021, 23May2021, 03Jun2021
+// ----          20Jul2021, 21Jul2021, 24Jul2021, 25Jul2021, 27Dec2021, 28Dec2021, 01Jan2022
+// ----          02Jan2022, 04Jan2022, 04Feb2022, 11Feb2022, 18Mar2022, 08Apr2022, 25Nov2022
+// ----          28Jul2023, 25Sep2023, 14Oct2023, 01Dec2023, 02Dec2023, 03Dec2023, 03Feb2024
+// ----          11Apr2024, 13Apr2024, 02Oct2024, 05Oct2024, 06Oct2024, 23Jan2025, 28Feb2025
+// ----          08Mar2025, 14Mar2025, 19Mar2025
+// ----
+// ----
+// ----
+
+module MNode;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Node {
+
+   define int NUM_PATTERNS    = 128;
+   define int SCRATCH_PAT_NR  = 125; // scr / 32B
+   define int TMP_PAT_NR      = 126; // tmp / 32C
+   define int EMPTY_PAT_NR    = 127; // 32D / ---
+
+   define int RPN_PARAMSET_1 = 70;  // audio
+   define int RPN_PARAMSET_2 = 71;  // audio
+   define int RPN_PARAMSET_3 = 72;  // audio
+   define int RPN_PARAMSET_4 = 73;  // audio
+   define int RPN_PARAMSET_5 = 74;  // audio
+
+   define int RPN_PARAMSET_SMOOTH_1 = 75;  // audio
+   define int RPN_PARAMSET_SMOOTH_2 = 76;  // audio
+   define int RPN_PARAMSET_SMOOTH_3 = 77;  // audio
+   define int RPN_PARAMSET_SMOOTH_4 = 78;  // audio
+   define int RPN_PARAMSET_SMOOTH_5 = 79;  // audio
+
+   define int RPN_LANE_FADE_MASK = 85;  // audio
+   define int RPN_LANE_FADE_NR   = 86;  // audio
+
+   define int RPN_SMP_PEAK    = 87;  // audio
+   define int RPN_SMPOFFMS_LO = 88;  // audio
+   define int RPN_SMPOFFMS_HI = 89;  // audio
+   define int RPN_SMP_UID     = 90;  // audio
+
+   define int RPN_PTFX_RESET = 91;  // ptfx script
+   define int RPN_PTFX_CMD_1 = 92;  //
+   define int RPN_PTFX_ARG_1 = 93;  //
+   define int RPN_PTFX_CMD_2 = 94;  //
+   define int RPN_PTFX_ARG_2 = 95;  //
+   define int RPN_PTFX_CMD_3 = 96;  //
+   define int RPN_PTFX_ARG_3 = 97;  //
+   define int RPN_PTFX_CMD_4 = 98;  //
+   define int RPN_PTFX_ARG_4 = 99;  //
+
+   // Context-dependent 14bit 'hires' controllers
+   //  - NodeTracker maps framePlay/frameRec autodevice events to CTL_USR1..16
+   //  - NodeTracker maps <editfocus> events to (current column) non-empty steps 1..16
+   //  - NodeTrigSeq maps autodevice RPN_CTL_0..15 events to track 1..16 mod1
+   //  - NodeTrigSeq maps autodevice RPN_CTL_16..31 events to track 1..16 mod2
+   //  - NodeCtlMorph maps autodevice (or any, when editor is visible) RPN_CTL_0..99 events to current pat/group entry 't'
+   //  - NodeModular maps autodevice RPN_CTL_0..n events to matching AutoRPNSlider modules
+   //  - NodeModular maps <editfocus> RPN_CTL_0..n events to currently focused module param 1..n
+   //  - Audio host ("Eureka") auto-allocates RPN_CTL_0..n as default module modmatrix sources
+   define int RPN_CTL_BASE        =   100;
+   define int RPN_CTL_NUM         =   100;  // 100..199
+
+   define int RPN_CTL_0  = RPN_CTL_BASE + 0;  // 100 ctls
+   define int RPN_CTL_1  = RPN_CTL_BASE + 1;
+   define int RPN_CTL_2  = RPN_CTL_BASE + 2;
+   define int RPN_CTL_3  = RPN_CTL_BASE + 3;
+   define int RPN_CTL_4  = RPN_CTL_BASE + 4;
+   define int RPN_CTL_5  = RPN_CTL_BASE + 5;
+   define int RPN_CTL_6  = RPN_CTL_BASE + 6;
+   define int RPN_CTL_7  = RPN_CTL_BASE + 7;
+   define int RPN_CTL_8  = RPN_CTL_BASE + 8;
+   define int RPN_CTL_9  = RPN_CTL_BASE + 9;
+   define int RPN_CTL_10 = RPN_CTL_BASE + 10;
+   define int RPN_CTL_11 = RPN_CTL_BASE + 11;
+   define int RPN_CTL_12 = RPN_CTL_BASE + 12;
+   define int RPN_CTL_13 = RPN_CTL_BASE + 13;
+   define int RPN_CTL_14 = RPN_CTL_BASE + 14;
+   define int RPN_CTL_15 = RPN_CTL_BASE + 15;
+   define int RPN_CTL_31 = RPN_CTL_BASE + 31;
+   define int RPN_CTL_47 = RPN_CTL_BASE + 47;
+   define int RPN_CTL_63 = RPN_CTL_BASE + 63;
+   define int RPN_CTL_79 = RPN_CTL_BASE + 79;
+   define int RPN_CTL_99 = RPN_CTL_BASE + 99;
+
+   define int RPN_PRE_DRUMPADSELECT    = 400;  // sent by NodeTrigSeq in OUT_MULTICH_DRUMPADSELECT output mode
+   define int RPN_PRE_MULTISCENESELECT = 410;  // sent by RootForm when selecting multi-scene
+   define int RPN_PRE_SCENESELECT_A    = 411;  // value: scene#
+   define int RPN_PRE_SCENESELECT_B    = 412;
+   define int RPN_PRE_SCENESELECT_C    = 413;
+   define int RPN_PRE_SCENESELECT_D    = 414;
+   define int RPN_PRE_SCENESELECT_E    = 415;
+   define int RPN_PRE_SCENESELECT_F    = 416;
+   define int RPN_PRE_SCENESELECT_G    = 417;
+   define int RPN_PRE_SCENESELECT_H    = 418;
+   define int RPN_PRE_SCENETARGET_A    = 421;  // value: scene#  (sent on target port of first morph scene entry)
+   define int RPN_PRE_SCENETARGET_B    = 422;
+   define int RPN_PRE_SCENETARGET_C    = 423;
+   define int RPN_PRE_SCENETARGET_D    = 424;
+   define int RPN_PRE_SCENETARGET_E    = 425;
+   define int RPN_PRE_SCENETARGET_F    = 426;
+   define int RPN_PRE_SCENETARGET_G    = 427;
+   define int RPN_PRE_SCENETARGET_H    = 428;
+
+   define int RPN_COMMON_BASE     =   500;
+   define int RPN_COMMON_REL_CLIP_TICKS = 561;
+   define int RPN_COMMON_REL_CLIP_16TH  = 562;
+   define int RPN_COMMON_REL_CLIP_01    = 563;
+
+   define int RPN_STEPSEQ_BASE    =  1000;
+   define int RPN_TRACKER_BASE    =  2000;
+   define int RPN_AUTO_BASE       =  3000;
+   define int RPN_MONOPOLY_BASE   =  4000;
+   define int RPN_ARRANGER_BASE   =  5000;
+   define int RPN_BUFFER_BASE     =  6000;
+   define int RPN_MODMATRIX_BASE  =  7000;
+   define int RPN_ANALOGRYTM_BASE =  8000;
+   define int RPN_CTLMORPH_BASE   =  9000;
+   define int RPN_TRIGSEQ_BASE    = 10000;
+   define int RPN_KEYMAP_BASE     = 11000;
+   define int RPN_MONITOR_BASE    = 12000;
+   define int RPN_DELAY_BASE      = 13000;
+   define int RPN_PROXY_BASE      = 14000;
+   define int RPN_SCRIPT_BASE     = 15000;
+
+   // clock signal. advance in pattern/sequence when recv'd.
+   define int RPN_COMMON_RESET            = RPN_COMMON_BASE + 0;
+   define int RPN_COMMON_RUN              = RPN_COMMON_BASE + 1;
+   define int RPN_COMMON_CLOCKGATE        = RPN_COMMON_BASE + 2;
+   define int RPN_COMMON_CLOCK            = RPN_COMMON_BASE + 3;
+   define int RPN_COMMON_GATE             = RPN_COMMON_BASE + 4;
+   define int RPN_COMMON_GATETIME         = RPN_COMMON_BASE + 5;
+   define int RPN_COMMON_GATETIME_MUL     = RPN_COMMON_BASE + 6;
+   define int RPN_COMMON_GATETIME_DIV     = RPN_COMMON_BASE + 7;
+   define int RPN_COMMON_RETRIG           = RPN_COMMON_BASE + 8;
+   define int RPN_COMMON_RESTART          = RPN_COMMON_BASE + 9;  // set last_pattern_start_song_offset + seek to 0
+   // // define int RPN_COMMON_MUTE             = RPN_COMMON_BASE + 10;  // [19Oct2019] removed
+   define int RPN_COMMON_TRANSPOSE        = RPN_COMMON_BASE + 11;
+
+   define int RPN_COMMON_MUTE_TEMP        = RPN_COMMON_BASE + 12;
+   // // define int RPN_COMMON_MUTE_TOGGLE      = RPN_COMMON_BASE + 13;  // [19Oct2019] removed
+   define int RPN_COMMON_MUTE_TEMP_TOGGLE = RPN_COMMON_BASE + 14;
+
+   define int RPN_COMMON_MUTE_TEMP_1_8    = RPN_COMMON_BASE + 15;
+   define int RPN_COMMON_MUTE_TEMP_9_16   = RPN_COMMON_BASE + 16;
+   define int RPN_COMMON_SOLO_TEMP_1_8    = RPN_COMMON_BASE + 17;
+   define int RPN_COMMON_SOLO_TEMP_9_16   = RPN_COMMON_BASE + 18;
+
+   define int RPN_COMMON_UI_NODE_MUTE     = RPN_COMMON_BASE + 20;
+   define int RPN_COMMON_UI_NODE_SOLO     = RPN_COMMON_BASE + 21;
+   define int RPN_COMMON_UI_PIPE_MUTE     = RPN_COMMON_BASE + 22;
+   define int RPN_COMMON_UI_PIPE_SOLO     = RPN_COMMON_BASE + 23;
+   define int RPN_COMMON_UI_PRGCHG        = RPN_COMMON_BASE + 24;
+
+   define int RPN_COMMON_OFFLEN_SCALE    = RPN_COMMON_BASE + 50;   // in raw seq. ticks
+   define int RPN_COMMON_OFFLEN_MUL      = RPN_COMMON_BASE + 51;   // in raw seq. ticks
+   define int RPN_COMMON_OFFLEN_DIV      = RPN_COMMON_BASE + 52;
+   define int RPN_COMMON_OFFSET          = RPN_COMMON_BASE + 53;   // permanent base offset
+   define int RPN_COMMON_LENGTH          = RPN_COMMON_BASE + 54;
+   define int RPN_COMMON_SEEK_OFFSET     = RPN_COMMON_BASE + 55;   // temporary offset (e.g. pat start via arranger)
+   define int RPN_COMMON_SEEK_REL_PRE    = RPN_COMMON_BASE + 56;   // 0=prev, 1=next, >=2 = val - 0x80. seek before play.
+   define int RPN_COMMON_SEEK_REL_POST   = RPN_COMMON_BASE + 57;   // 0=prev, 1=next, >=2 = val - 0x80. seek after play.
+   define int RPN_COMMON_OFFSET_ADD      = RPN_COMMON_BASE + 58;   // relative to base offset
+   define int RPN_COMMON_OFFSET_QUEUED   = RPN_COMMON_BASE + 59;   // applied when seq loops
+   define int RPN_COMMON_LENGTH_QUEUED   = RPN_COMMON_BASE + 60;   // applied when seq loops
+
+   define int RPN_COMMON_EXTCLK          = RPN_COMMON_BASE + 70;   // external clock on/off
+
+   define int RPN_COMMON_SIG_BEATS       = RPN_COMMON_BASE + 80;
+   define int RPN_COMMON_SIG_NOTELEN     = RPN_COMMON_BASE + 81;
+   define int RPN_COMMON_SPEED           = RPN_COMMON_BASE + 82;   // scale tick frequency
+   define int RPN_COMMON_POSITION        = RPN_COMMON_BASE + 83;   // scale play head
+   define int RPN_COMMON_SPEEDSYNCRATE   = RPN_COMMON_BASE + 84;
+
+   define int RPN_COMMON_VELOCITY_SCL    = RPN_COMMON_BASE + 90;
+   define int RPN_COMMON_VELOCITY_OFF    = RPN_COMMON_BASE + 91;
+   define int RPN_COMMON_DURATION_SCL    = RPN_COMMON_BASE + 92;
+   define int RPN_COMMON_DURATION_OFF    = RPN_COMMON_BASE + 93;
+
+   define int RPN_COMMON_POLY_STEP_1     = RPN_COMMON_BASE + 100; // 600 (..650)
+   define int RPN_COMMON_POLY_STEP_2     = RPN_COMMON_BASE + 101;
+   define int RPN_COMMON_POLY_STEP_3     = RPN_COMMON_BASE + 102;
+   define int RPN_COMMON_POLY_STEP_4     = RPN_COMMON_BASE + 103;
+   define int RPN_COMMON_POLY_STEP_5     = RPN_COMMON_BASE + 104;
+   define int RPN_COMMON_POLY_STEP_6     = RPN_COMMON_BASE + 105;
+   define int RPN_COMMON_POLY_STEP_7     = RPN_COMMON_BASE + 106;
+   define int RPN_COMMON_POLY_STEP_8     = RPN_COMMON_BASE + 107;
+   define int RPN_COMMON_POLY_STEP_9     = RPN_COMMON_BASE + 108;
+   define int RPN_COMMON_POLY_STEP_10    = RPN_COMMON_BASE + 109;
+   define int RPN_COMMON_POLY_STEP_11    = RPN_COMMON_BASE + 110;
+   define int RPN_COMMON_POLY_STEP_12    = RPN_COMMON_BASE + 111;
+   define int RPN_COMMON_POLY_STEP_13    = RPN_COMMON_BASE + 112;
+   define int RPN_COMMON_POLY_STEP_14    = RPN_COMMON_BASE + 113;
+   define int RPN_COMMON_POLY_STEP_15    = RPN_COMMON_BASE + 114;
+   define int RPN_COMMON_POLY_STEP_16    = RPN_COMMON_BASE + 115;
+   define int RPN_COMMON_POLY_PAT_1      = RPN_COMMON_BASE + 116;
+   define int RPN_COMMON_POLY_PAT_2      = RPN_COMMON_BASE + 117;
+   define int RPN_COMMON_POLY_PAT_3      = RPN_COMMON_BASE + 118;
+   define int RPN_COMMON_POLY_PAT_4      = RPN_COMMON_BASE + 119;
+   define int RPN_COMMON_POLY_PAT_5      = RPN_COMMON_BASE + 120;
+   define int RPN_COMMON_POLY_PAT_6      = RPN_COMMON_BASE + 121;
+   define int RPN_COMMON_POLY_PAT_7      = RPN_COMMON_BASE + 122;
+   define int RPN_COMMON_POLY_PAT_8      = RPN_COMMON_BASE + 123;
+   define int RPN_COMMON_POLY_PAT_9      = RPN_COMMON_BASE + 124;
+   define int RPN_COMMON_POLY_PAT_10     = RPN_COMMON_BASE + 125;
+   define int RPN_COMMON_POLY_PAT_11     = RPN_COMMON_BASE + 126;
+   define int RPN_COMMON_POLY_PAT_12     = RPN_COMMON_BASE + 127;
+   define int RPN_COMMON_POLY_PAT_13     = RPN_COMMON_BASE + 128;
+   define int RPN_COMMON_POLY_PAT_14     = RPN_COMMON_BASE + 129;
+   define int RPN_COMMON_POLY_PAT_15     = RPN_COMMON_BASE + 130;
+   define int RPN_COMMON_POLY_PAT_16     = RPN_COMMON_BASE + 131;
+   define int RPN_COMMON_POLY_TRACK_1    = RPN_COMMON_BASE + 132;
+   define int RPN_COMMON_POLY_TRACK_2    = RPN_COMMON_BASE + 133;
+   define int RPN_COMMON_POLY_TRACK_3    = RPN_COMMON_BASE + 134;
+   define int RPN_COMMON_POLY_TRACK_4    = RPN_COMMON_BASE + 135;
+   define int RPN_COMMON_POLY_TRACK_5    = RPN_COMMON_BASE + 136;
+   define int RPN_COMMON_POLY_TRACK_6    = RPN_COMMON_BASE + 137;
+   define int RPN_COMMON_POLY_TRACK_7    = RPN_COMMON_BASE + 138;
+   define int RPN_COMMON_POLY_TRACK_8    = RPN_COMMON_BASE + 139;
+   define int RPN_COMMON_POLY_TRACK_9    = RPN_COMMON_BASE + 140;
+   define int RPN_COMMON_POLY_TRACK_10   = RPN_COMMON_BASE + 141;
+   define int RPN_COMMON_POLY_TRACK_11   = RPN_COMMON_BASE + 142;
+   define int RPN_COMMON_POLY_TRACK_12   = RPN_COMMON_BASE + 143;
+   define int RPN_COMMON_POLY_TRACK_13   = RPN_COMMON_BASE + 144;
+   define int RPN_COMMON_POLY_TRACK_14   = RPN_COMMON_BASE + 145;
+   define int RPN_COMMON_POLY_TRACK_15   = RPN_COMMON_BASE + 146;
+   define int RPN_COMMON_POLY_TRACK_16   = RPN_COMMON_BASE + 147; // 647
+
+   define int RPN_COMMON_PROB_ALL_REL    = RPN_COMMON_BASE + 200;  // added to per-track probability (0..255 => -128..+127)
+   define int RPN_COMMON_PROB_TRACK_1    = RPN_COMMON_BASE + 201;  // 0..127 => 0..100%
+   define int RPN_COMMON_PROB_TRACK_2    = RPN_COMMON_BASE + 202;
+   define int RPN_COMMON_PROB_TRACK_3    = RPN_COMMON_BASE + 203;
+   define int RPN_COMMON_PROB_TRACK_4    = RPN_COMMON_BASE + 204;
+   define int RPN_COMMON_PROB_TRACK_5    = RPN_COMMON_BASE + 205;
+   define int RPN_COMMON_PROB_TRACK_6    = RPN_COMMON_BASE + 206;
+   define int RPN_COMMON_PROB_TRACK_7    = RPN_COMMON_BASE + 207;
+   define int RPN_COMMON_PROB_TRACK_8    = RPN_COMMON_BASE + 208;
+   define int RPN_COMMON_PROB_TRACK_9    = RPN_COMMON_BASE + 209;
+   define int RPN_COMMON_PROB_TRACK_10   = RPN_COMMON_BASE + 210;
+   define int RPN_COMMON_PROB_TRACK_11   = RPN_COMMON_BASE + 211;
+   define int RPN_COMMON_PROB_TRACK_12   = RPN_COMMON_BASE + 212;
+   define int RPN_COMMON_PROB_TRACK_13   = RPN_COMMON_BASE + 213;
+   define int RPN_COMMON_PROB_TRACK_14   = RPN_COMMON_BASE + 214;
+   define int RPN_COMMON_PROB_TRACK_15   = RPN_COMMON_BASE + 215;
+   define int RPN_COMMON_PROB_TRACK_16   = RPN_COMMON_BASE + 216;
+
+   define int RPN_COMMON_VEL_SCL_TRACK_1  = RPN_COMMON_BASE + 300;
+   define int RPN_COMMON_VEL_SCL_TRACK_2  = RPN_COMMON_BASE + 301;
+   define int RPN_COMMON_VEL_SCL_TRACK_3  = RPN_COMMON_BASE + 302;
+   define int RPN_COMMON_VEL_SCL_TRACK_4  = RPN_COMMON_BASE + 303;
+   define int RPN_COMMON_VEL_SCL_TRACK_5  = RPN_COMMON_BASE + 304;
+   define int RPN_COMMON_VEL_SCL_TRACK_6  = RPN_COMMON_BASE + 305;
+   define int RPN_COMMON_VEL_SCL_TRACK_7  = RPN_COMMON_BASE + 306;
+   define int RPN_COMMON_VEL_SCL_TRACK_8  = RPN_COMMON_BASE + 307;
+   define int RPN_COMMON_VEL_SCL_TRACK_9  = RPN_COMMON_BASE + 308;
+   define int RPN_COMMON_VEL_SCL_TRACK_10 = RPN_COMMON_BASE + 309;
+   define int RPN_COMMON_VEL_SCL_TRACK_11 = RPN_COMMON_BASE + 310;
+   define int RPN_COMMON_VEL_SCL_TRACK_12 = RPN_COMMON_BASE + 311;
+   define int RPN_COMMON_VEL_SCL_TRACK_13 = RPN_COMMON_BASE + 312;
+   define int RPN_COMMON_VEL_SCL_TRACK_14 = RPN_COMMON_BASE + 313;
+   define int RPN_COMMON_VEL_SCL_TRACK_15 = RPN_COMMON_BASE + 314;
+   define int RPN_COMMON_VEL_SCL_TRACK_16 = RPN_COMMON_BASE + 315;
+
+   define int RPN_COMMON_DUR_SCL_TRACK_1  = RPN_COMMON_BASE + 332;
+   define int RPN_COMMON_DUR_SCL_TRACK_2  = RPN_COMMON_BASE + 333;
+   define int RPN_COMMON_DUR_SCL_TRACK_3  = RPN_COMMON_BASE + 334;
+   define int RPN_COMMON_DUR_SCL_TRACK_4  = RPN_COMMON_BASE + 335;
+   define int RPN_COMMON_DUR_SCL_TRACK_5  = RPN_COMMON_BASE + 336;
+   define int RPN_COMMON_DUR_SCL_TRACK_6  = RPN_COMMON_BASE + 337;
+   define int RPN_COMMON_DUR_SCL_TRACK_7  = RPN_COMMON_BASE + 338;
+   define int RPN_COMMON_DUR_SCL_TRACK_8  = RPN_COMMON_BASE + 339;
+   define int RPN_COMMON_DUR_SCL_TRACK_9  = RPN_COMMON_BASE + 340;
+   define int RPN_COMMON_DUR_SCL_TRACK_10 = RPN_COMMON_BASE + 341;
+   define int RPN_COMMON_DUR_SCL_TRACK_11 = RPN_COMMON_BASE + 342;
+   define int RPN_COMMON_DUR_SCL_TRACK_12 = RPN_COMMON_BASE + 343;
+   define int RPN_COMMON_DUR_SCL_TRACK_13 = RPN_COMMON_BASE + 344;
+   define int RPN_COMMON_DUR_SCL_TRACK_14 = RPN_COMMON_BASE + 345;
+   define int RPN_COMMON_DUR_SCL_TRACK_15 = RPN_COMMON_BASE + 346;
+   define int RPN_COMMON_DUR_SCL_TRACK_16 = RPN_COMMON_BASE + 347;
+
+   // dummy event used when importing (empty) NodeSeq block to temporary pattern
+   //  (=> force instrument creation so that re-exported buffer is not empty)
+   define int RPN_IMPORT_DUMMY = 16383;
+
+   // relocated from NodeProxy when moving proxy code to node_proxy/
+   define int RPN_PROXY_BANKSELECT         = RPN_PROXY_BASE +  0;
+   define int RPN_PROXY_PROGRAMCHANGE      = RPN_PROXY_BASE +  1;
+   define int RPN_PROXY_BANKSELECT_DST     = RPN_PROXY_BASE +  2;
+   define int RPN_PROXY_PROGRAMCHANGE_DST  = RPN_PROXY_BASE +  3;
+   define int RPN_PROXY_AMOUNT_DST         = RPN_PROXY_BASE +  4;
+   define int RPN_PROXY_MULTI_MORPH_OFFSET = RPN_PROXY_BASE + 20; // P12: Bank P17, Patch n..m
+   define int RPN_PROXY_MULTI_MORPH_RANGE  = RPN_PROXY_BASE + 21;
+   define int RPN_PROXY_MULTI_MORPH_POS    = RPN_PROXY_BASE + 22;
+   define int RPN_PROXY_LAYER_1_PRGCHG     = RPN_PROXY_BASE + 100;
+   define int RPN_PROXY_LAYER_2_PRGCHG     = RPN_PROXY_BASE + 101;
+   define int RPN_PROXY_LAYER_3_PRGCHG     = RPN_PROXY_BASE + 102;
+   define int RPN_PROXY_LAYER_4_PRGCHG     = RPN_PROXY_BASE + 103;
+   define int RPN_PROXY_LAYER_5_PRGCHG     = RPN_PROXY_BASE + 104;
+   define int RPN_PROXY_LAYER_6_PRGCHG     = RPN_PROXY_BASE + 105;
+   define int RPN_PROXY_LAYER_7_PRGCHG     = RPN_PROXY_BASE + 106;
+   define int RPN_PROXY_LAYER_8_PRGCHG     = RPN_PROXY_BASE + 107;
+   define int RPN_PROXY_LAYER_9_PRGCHG     = RPN_PROXY_BASE + 108;
+   define int RPN_PROXY_LAYER_10_PRGCHG    = RPN_PROXY_BASE + 109;
+   define int RPN_PROXY_LAYER_11_PRGCHG    = RPN_PROXY_BASE + 110;
+   define int RPN_PROXY_LAYER_12_PRGCHG    = RPN_PROXY_BASE + 111;
+   define int RPN_PROXY_LAYER_13_PRGCHG    = RPN_PROXY_BASE + 112;
+   define int RPN_PROXY_LAYER_14_PRGCHG    = RPN_PROXY_BASE + 113;
+   define int RPN_PROXY_LAYER_15_PRGCHG    = RPN_PROXY_BASE + 114;
+   define int RPN_PROXY_LAYER_16_PRGCHG    = RPN_PROXY_BASE + 115;
+
+   public MIDIPipe     *parent_pipe;
+   public MIDIPipeNode *parent_pipenode;
+
+   protected boolean ui_b_node_pattern_changed;
+
+   protected NodeEditor *parent_editor;  // !=null while node is being edited in the UI
+
+   byte edit_pattern_nr;
+   byte play_pattern_nr;
+
+   boolean b_auto_filter_a;
+   int auto_dev_filter_a;  // -1= listen to all devs
+   int auto_ch_filter_a;   // -1= listen on all channels
+   boolean b_ui_auto_filter_a_edited;
+   boolean b_ui_auto_filter_a_autoassign;  // true=port was auto-assigned. auto-update when class changes (in UI)
+
+   boolean b_auto_filter_b;
+   int auto_dev_filter_b;
+   int auto_ch_filter_b;
+   boolean b_ui_auto_filter_b_edited;
+   boolean b_ui_auto_filter_b_autoassign;  // true=port was auto-assigned. auto-update when class changes (in UI)
+
+   // true=send prgchg when pattern is changed in UI
+   boolean b_auto_send_prgchg_a;
+   boolean b_auto_send_prgchg_b;
+
+   // true=recv prgchg and change pattern
+   boolean b_auto_recv_prgchg_a;
+   boolean b_auto_recv_prgchg_b;
+
+   boolean b_node_ignore_seek_prgchg_mute;   // toggle via lctrl-x BACKSPACE or node contextmenu on PagePipeMap. "*i" indicates ignore state)
+
+   int node_queued_prgchg_out; // -1=none, 0..127. set by editor when program is changed manually
+
+   // when starting the replay from the tracker editor, this is used to keep the pattern replay
+   //  in sync relative to the song replay
+   // this is set by the editor (when a song position is selected)
+   // xxxxxxxxxxxxxxxx this is set by the editor (when the replay is started)
+   // see: nodeCopyLastPatternStartSongOffsetToEditor()
+   public int last_pattern_start_editor_song_offset; // song offset of local pat offset "0"
+
+   // xxxxxxxxxxxxxxxx This is set when replay is started from the Node Editor or a pattern is selected via PrgChg
+   // This is set when a node is reset (copied from last_pattern_start_editor_song_offset)
+   //  or when RPN_COMMON_RESTART is recv'd (copied from current song_offset)
+   // see: nodeCopyLastPatternStartSongOffsetFromEditor()
+   protected int last_pattern_start_song_offset;
+
+   public float rpn_com_dur_scl;
+   public float rpn_com_dur_off;
+
+   public FloatArray rpn_com_dur_scl_track;  // 16 entries
+
+   public float rpn_com_vel_scl;
+   public float rpn_com_vel_off;
+
+   public FloatArray rpn_com_vel_scl_track;  // 16 entries
+
+   public float rpn_com_speed_scl;
+   public float rpn_com_speed_scl_reset_val;
+
+   public float rpn_com_pos_scl;
+   public float rpn_com_speed_sync_rate;
+
+   public byte rpn_com_transpose;
+
+   protected int node_class_id;  // see STConfig.node_class_names
+   protected int node_class_color;  // extended color (push palette offset) (added to default node class color) (see Arranger node)
+   protected boolean b_node_class_show;  // true=show in arranger
+   protected int node_class_show_in_gid;  // -1 or arranger GID
+
+   protected int node_gid;  // global unique id
+
+   // protected
+   int node_queued_com_seek_off; // for nodeQueuePattern()
+
+   // Used by e.g. Arranger to temporarily mute nodes. See also: MIDIPipeNodeScriptClassProxy
+   protected boolean node_b_mute_temp;
+   protected boolean node_queued_b_mute_temp;
+   protected boolean b_node_queued_b_mute_temp_custom_handler; // true if Node handles node_queued_b_mute_temp in script code
+
+   public int node_mute_temp_track_mask;   // mute track when bit is set. bit0=track0, bit1=track1, ..
+   public int node_solo_temp_track_mask;
+   public int queued_node_mute_temp_track_mask_1_8;   // temporary after parsing RPNs. -1=no change queued.
+   public int queued_node_mute_temp_track_mask_9_16;  // temporary after parsing RPNs. -1=no change queued.
+
+   // pattern-nr / program change options:
+   public static StringArray patnr_options;        // xxA/0xff
+   public static StringArray patnr_options_short;  // xxA
+   public static StringArray patnr_group_options;
+   public static StringArray patnr_sub_options = ["A", "B", "C", "D"];
+   public static IntArray patnr_colors;
+
+   public static StringArray patnr_options_dec0;   // 0..127
+   public static StringArray patnr_options_dec1;   // 1..128
+   public static StringArray patnr_options_hex0;   // 00..7F
+   public static StringArray patnr_options_hex1;   // 01..80
+   public static StringArray patnr_options_rol64;  // A11..B88
+
+   // (note) polystep / nodes are not recursive, so the data for this is static
+   public static int polystep_max;  // maximum polystep index+1 available in current tick (0..16)
+   public static IntArray polystep_stepnr;   // (up to) 16 step offsets (0..n). -1=unused entry
+   public static IntArray polystep_patnr;    // (up to) 16 pattern numbers (0..127).
+   public static IntArray polystep_tracknr;  // (up to) 16 (sub-)track numbers (0..n).
+
+   public static boolean b_force_new_gid; // used during load/clone. when true, allocate new GIDs
+   public static IntArray force_new_gid_map;  // old/new gid pairs
+
+   public int edit_clip_start_ticks;    // when editing node from arranger (override last pattern start offset). or -1.
+   public int edit_clip_start_offset;   // when editing node from arranger. or -1.
+   public int edit_clip_parent_arranger_gid;
+
+   define int MAX_REC_UNDO_STATE_SIZE = 8*1024*1024;
+   public Buffer rec_undo_state;  // valid when "offset" is > 0
+
+   public float rpn_com_prob_all_rel;
+   public FloatArray rpn_com_prob_track;  // 16 entries
+
+   define int MAX_FIND_PAT_STATE_SIZE = 1024*1024;
+
+   public boolean b_capture;  // true while output-capture is active (mon_capture node)
+
+   public Object *last_editfocus;
+
+
+   // <method.png>
+   public static StartClone() {
+      b_force_new_gid = true;
+      force_new_gid_map.free();
+   }
+
+   // <method.png>
+   public static EndClone() {
+      b_force_new_gid = false;
+      force_new_gid_map.free();
+   }
+
+   // <method.png>
+   public =replay= static UpdateClonedGIDs() {
+      int i = 0;
+
+      loop(force_new_gid_map.numElements / 2)
+      {
+         int oldGID = force_new_gid_map[i + 0];
+         int newGID = force_new_gid_map[i + 1];
+
+         Node node <= current_song.findNodeByGID(newGID);
+
+         if(null != node)
+            node.nodeUpdateClonedGIDs(force_new_gid_map);
+
+         i += 2;
+      }
+   }
+
+   // <ui_init.png>
+   static InitPatNrOptions() {
+      patnr_options.empty();
+      patnr_options_short.empty();
+      patnr_group_options.empty();
+      patnr_colors.empty();
+      Integer io = 1;
+      Integer ioz = 0;
+      loop(32)
+      {
+         patnr_colors.add(#2000af30);
+         patnr_colors.add(0);
+         patnr_colors.add(0);
+
+         patnr_group_options.add(io.printf("%02d"));
+
+         patnr_options.add(io.printf("%02dA")+ioz.printf("/0x%02x"));
+         patnr_options_short.add(io.printf("%02dA"));
+         ioz++;
+
+         if(SCRATCH_PAT_NR/*125*/ == ioz)
+         {
+            patnr_options.add(io.printf("scr")+ioz.printf("/0x%02x"));
+            patnr_options_short.add("scr");
+         }
+         else
+         {
+            patnr_options.add(io.printf("%02dB")+ioz.printf("/0x%02x"));
+            patnr_options_short.add(io.printf("%02dB"));
+         }
+         ioz++;
+
+         if(TMP_PAT_NR/*126*/ == ioz)
+         {
+            patnr_options.add(io.printf("tmp")+ioz.printf("/0x%02x"));
+            patnr_options_short.add("tmp");
+         }
+         else
+         {
+            patnr_options.add(io.printf("%02dC")+ioz.printf("/0x%02x"));
+            patnr_options_short.add(io.printf("%02dC"));
+         }
+         ioz++;
+
+         if(127 == ioz)
+         {
+            patnr_options.add(io.printf("--/")+ioz.printf("/0x%02x"));
+            patnr_options_short.add("--/");
+            patnr_colors.add(#20000000);
+         }
+         else
+         {
+            patnr_options.add(io.printf("%02dD")+ioz.printf("/0x%02x"));
+            patnr_options_short.add(io.printf("%02dD"));
+            patnr_colors.add(0);
+         }
+         ioz++;
+         io++;
+      }
+
+      io = 1;
+      ioz = 0;
+      patnr_options_dec0.empty();
+      patnr_options_dec1.empty();
+      patnr_options_hex0.empty();
+      patnr_options_hex1.empty();
+      patnr_options_rol64.empty();
+      loop(128)
+      {
+         patnr_options_dec0.add(ioz.printf("%u"));
+         patnr_options_dec1.add(io .printf("%u"));
+
+         patnr_options_hex0.add(ioz.printf("%02x"));
+         patnr_options_hex1.add(io .printf("%02x"));
+
+         int ioMod = (int(ioz) & 7) + 1;
+         int ioDiv = ((int(ioz) & 63) >> 3) + 1;
+         patnr_options_rol64.add(((ioz >= 64)?"B":"A")+ioDiv+""+ioMod);
+
+         io++;
+         ioz++;
+      }
+   }
+
+   // <method_get.png>
+   static GetNodeTypeName(Object o) : String {
+      String name;
+      Node *n;
+
+      // trace "xxx GetNodeTypeName: o="+#(o);
+      if(o instanceof MIDIPipeNode)
+      {
+         // Native
+         if!(o instanceof MIDIPipeNodeScriptProxy)
+         {
+            name <= o.yacClassName().replace("MIDIPipeNode", "");
+            // trace "xxx name="+#(name);
+            if(!name.isBlank())
+               return name;
+         }
+         else
+         {
+            MIDIPipeNodeScriptProxy nsp <= o;
+            n <= nsp.sci;
+            if(n instanceof Node)
+            {
+               name <= n.nodeGetTypeNameOverride();
+               if(null == name)
+                  return n.yacMetaClassName().replace("Node", "");
+               else
+                  return name;
+            }
+         }
+      }
+      else if(o instanceof Node)
+      {
+         // Script
+         n <= o;
+         name <= n.nodeGetTypeNameOverride();
+         if(null == name)
+         {
+            name <= o.yacMetaClassName().replace("Node", "");
+            if(!name.isBlank())
+               return name;
+         }
+         else
+            return name;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   static GetNodeShortTypeName(Object o) : String {
+      // Used for building default node instance names
+      String name = GetNodeTypeName(o);
+      name.toLower();
+      return name;
+   }
+
+   // <method_get.png>
+   static GetNodePatternNrString(Object o, boolean _bPlay) : String {
+      String name;
+
+      if(o instanceof MIDIPipeNode)
+      {
+         if(o instanceof MIDIPipeNodeScriptProxy)
+         {
+            MIDIPipeNodeScriptProxy nsp <= o;
+            Node sn <= nsp.sci;
+
+            if(sn instanceof Node)
+            {
+               Integer io = _bPlay ? sn.nodeGetCurrentPlayPatternNr() : sn.nodeGetCurrentEditPatternNr();
+               return patnr_options_short.get(io);////(((io >> 2)+1).printf("%02d"))+(tcchar("ABCD".getc(io & 3)));
+            }
+         }
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   static GetNodeEditPatternNrString(Object o) : String {
+      return GetNodePatternNrString(o, false/*bPlay*/);
+   }
+
+   // <method_get.png>
+   static GetNodePlayPatternNrString(Object o) : String {
+      return GetNodePatternNrString(o, true/*bPlay*/);
+   }
+
+   // <method_delete.png>
+   public method nodeFreePatternClipboard() {
+      String className <= nodeGetPatternClassName();
+      if(null != className)
+         NodePattern.PatFreeClipboardForClass(className);
+   }
+
+   // <method_init.png>
+   public method nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+      parent_pipe <= _pipe;
+      parent_pipenode <= _node;
+
+      // // last_pattern_start_song_offset        = 999999999; // seek clamps to 0
+      last_pattern_start_song_offset        = 0;
+      last_pattern_start_editor_song_offset = 0;
+
+      rpn_com_speed_scl_reset_val = 1;
+
+      node_class_id = 0;
+      node_class_color = 0;
+      b_node_class_show = false;
+      node_class_show_in_gid = -1;
+
+      b_ui_auto_filter_a_edited = true;
+      b_ui_auto_filter_b_edited = true;
+
+      b_ui_auto_filter_a_autoassign = true;
+      b_ui_auto_filter_b_autoassign = false;
+
+      b_auto_send_prgchg_a = true;
+      b_auto_send_prgchg_b = true;
+
+      b_auto_recv_prgchg_a = true;
+      b_auto_recv_prgchg_b = true;
+
+      polystep_stepnr .allocAndFill(16, -1);
+      polystep_patnr  .allocAndFill(16, -1);
+      polystep_tracknr.allocAndFill(16, -1);
+
+      rpn_com_prob_track.allocAndFill(16, 1.0);
+
+      rpn_com_vel_scl_track.allocAndFill(16, 1.0);
+      rpn_com_dur_scl_track.allocAndFill(16, 1.0);
+
+      nodeInvalidateEditClip();
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public method nodeUIInit() {
+      // Called after new node was created via the UI (not via SongLoad!)
+
+      /////int off = current_song.getBeatQuantizedOffset();
+      int off = current_song.getBarQuantizedOffset();
+
+      off = 0; // (note) [10Jul2016] it seems more convenient to start with a 0 offset
+      nodeSetLastPatternStartEditorSongOffset(off);
+      nodeSetLastPatternStartSongOffset(off);
+
+      b_node_class_show = false;
+
+      node_gid = current_song.nodeAllocGID();
+
+      b_ui_auto_filter_a_edited = false;
+      b_ui_auto_filter_b_edited = false;
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("Node::nodeUIInit: this="+#(this)+" GID="+node_gid);
+   }
+
+   // <method_exit.png>
+   public method nodeFinalize() {
+      // called immediately before object is deleted
+      //  - see MIDIPipeNodeScriptProxy::freeSCI()
+      //  - used (only) by NodeScript to free script namespace
+   }
+
+   // <method_get.png>
+   public method nodeGetName() : String {
+      if(null != parent_pipenode)
+         return parent_pipenode.name;
+      return null;
+   }
+
+   // <method_get.png>
+   public method nodeSetName(String _name) {
+      if(null != parent_pipenode)
+         parent_pipenode.name = _name;
+   }
+
+   // <method_get.png>
+   public method nodeGetTypeName() : String {
+      return GetNodeTypeName(parent_pipenode);
+   }
+
+   // <method_get.png>
+   public method nodeGetTypeNameOverride() : String {
+      return null;
+   }
+
+   // <method_get.png>
+   public method nodeGetTypeNameShort() : String {
+      return nodeGetTypeName().substring(0, 3);
+   }
+
+   // <method.png>
+   public method nodeIsSequencer() : boolean {
+      StringArray nodeTypes <= STConfig.newtrackdialog_node_types_instr;
+      return (-1 != nodeTypes.indexOfObject(nodeGetTypeName(), 0));
+   }
+
+   // <method_get.png>
+   public method nodeGetPipeName() : String {
+      if(null != parent_pipenode)
+      {
+         if(null != parent_pipenode.parent)
+            return parent_pipenode.parent.name;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method nodeGetIcon() : Icon {
+   }
+
+   // <method_get.png>
+   public method nodeGetEditor() : NodeEditor {
+      // (note) must return non-deletable Layer. Editor _must_ be a singleton!!
+   }
+
+   // <method_get.png>
+   public method nodeGetEditorIfExists() : NodeEditor {
+      return null;
+   }
+
+   // <method_set.png>
+   public method nodeStartEditing(NodeEditor _editor) {
+      parent_editor <= _editor;
+   }
+
+   // <method_set.png>
+   public method nodeStopEditing() {
+      parent_editor <= null;
+      nodeSetLastEditFocus(null);
+   }
+
+   // <method.png>
+   public method nodeInvalidateEditClip() {
+      // called when leaving node editor via ESC
+      edit_clip_start_ticks         = -1;
+      edit_clip_start_offset        = -1;
+      edit_clip_parent_arranger_gid = -1;
+   }
+
+   // <method_get.png>
+   public method nodeIsEditorVisible() : boolean {
+      return (null != parent_editor);
+   }
+
+   // <method.png>
+   public method nodeGetPatternClassName() : String {
+      return null;
+   }
+
+   // <method_handle.png>
+   public method nodeHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+      // Called via MIDIPipeNodeScriptProxy when PPQ/BPM changed
+
+      int patNr = 0;
+
+      loop(128)
+      {
+         NodePattern pat <= nodeGetPatternByIdx(patNr);
+
+         if(pat instanceof NodePattern)
+            pat.patHandleSongSpeedChanged(_bPPQ, _bBPM);
+
+         // Next pattern
+         patNr++;
+      }
+   }
+
+   // <replay.png>
+   abstract public method nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                           MIDIPipeFrame _frameRec,
+                                           boolean       _bMuted,
+                                           boolean       _bPlaySeq
+                                           ) {
+      // implemented by derived classes, called by MIDIPipeRoot::processAllPipesAndEmit()
+   }
+
+   // <method.png>
+   public method nodeCalcRelativeTicks(int _ticks) : int {
+      // Default implementation, does not work with nodes that have polymetric tracks (e.g. NodeAuto, NodeTrigSeq)
+      //  (to be precise: it works but it breaks the polymetric aspect)
+      int scaledTicks = (_ticks - nodeGetLastPatternStartSongOffset());  // do _not_ scale by speed
+      int relTicks;
+      int patLenTicks = nodeGetCurrentPlayPatternNumTicks(); // _not_ speed scaled
+
+      if(patLenTicks > 0)
+      {
+         if(scaledTicks < 0)
+         {
+            relTicks = patLenTicks - (-scaledTicks % patLenTicks);
+            relTicks = relTicks % patLenTicks;
+         }
+         else
+         {
+            relTicks = scaledTicks % patLenTicks;
+         }
+      }
+      else
+      {
+         // (note) some nodes don't have defined pattern lengths, can't modulo
+         relTicks = scaledTicks;
+      }
+
+      if(relTicks < 0)
+         relTicks = 0;
+
+      return relTicks;
+   }
+
+   // <replay.png>
+   abstract public method nodeSeek(int _ticks) {
+      // (note) must be called _before_ replay starts so that synced_tick_nr gets aligned to tick_nr
+      //         (see NodeTracker+NodeSeq nodeSeek())
+   }
+
+   // <replay.png>
+   public method nodeGetCurrentTickOffset() : int {
+      return -1;
+   }
+
+   // <replay.png>
+   public method nodeGetCurrentCommonOffset() : int {
+      // to be scaled by RPN_COMMON_OFFLEN_SCALE
+      return -1;
+   }
+
+   // <replay.png>
+   public method nodeSongSelect() {
+      // called when (sub-song) selection has changed
+      //  (note) implemented by NodeScript (Linnstrument Arranger script)
+      //  (note) do not emit MIDI here (may be called from UI thread while =replay= is locked)
+   }
+
+   // <replay.png>
+   public method nodeReset(boolean _bSoft) {
+      // (note) bSoft:
+      //          - true when RPN_COMMON_RESET was used.
+      //          - false when replay stops (hard reset).
+      //          - maybe when playStep() finished
+
+      rpn_com_vel_off = 0.0;
+      rpn_com_vel_scl = 1.0;
+      rpn_com_vel_scl_track.fill(1.0);
+
+      rpn_com_dur_off = 0.0;
+      rpn_com_dur_scl = 1.0;
+      rpn_com_dur_scl_track.fill(1.0);
+
+      rpn_com_speed_scl = rpn_com_speed_scl_reset_val;
+
+      rpn_com_pos_scl = 1.0;
+      rpn_com_speed_sync_rate = 0.0;
+
+      rpn_com_transpose = 0;
+
+      node_queued_com_seek_off = -1;
+
+      node_mute_temp_track_mask = 0;
+      node_solo_temp_track_mask = 0;
+      queued_node_mute_temp_track_mask_1_8  = -1;
+      queued_node_mute_temp_track_mask_9_16 = -1;
+
+      node_b_mute_temp = false;
+      node_queued_b_mute_temp = -1;
+
+      node_queued_prgchg_out = -1;
+
+      rpn_com_prob_all_rel = 0;
+      rpn_com_prob_track.fill(1.0);
+
+      // // // nodeCopyLastPatternStartSongOffsetFromEditor();
+   }
+
+   // <replay.png>
+   public method nodeRestart() {
+   }
+
+   // <method_get.png>
+   public method nodeIsMaster() : boolean {
+      if(null != parent_pipe)
+         return (0 == parent_pipe.pipeUsedIdx);
+      return false;
+   }
+
+   // <method_set.png>
+   public method nodeSetQueuedSeekOff(int _off) {
+      // Called by NodeTracker CTL_SEEK
+      node_queued_com_seek_off = _off;
+   }
+
+   // <method_set.png>
+   public method nodeSetLastPatternStartSongOffset(int _off) {
+      // if(this instanceof NodeSeq)
+      //    trace "xxx this="+#(this)+" NodeSeq::nodeSetLastPatternStartSongOffset("+_off+") nodeIsMaster="+nodeIsMaster();
+      if(nodeIsMaster())
+      {
+         last_pattern_start_song_offset = 0;
+      }
+      else
+      {
+         if(STConfig.b_ignore_last_pattern_start_song_offset)
+         {
+            last_pattern_start_song_offset = 0;
+         }
+         else
+         {
+            last_pattern_start_song_offset = _off;
+         }
+
+         // // (note) can be negative, e.g. when starting arranger clip at songpos=0 and clipOffset>0
+         // // if(last_pattern_start_song_offset < 0)
+         // // {
+         // //    // trace "[---] Node::nodeSetLastPatternStartSongOffset: "+last_pattern_start_song_offset;
+         // //    last_pattern_start_song_offset = 0;
+         // // }
+
+         // // if(this instanceof NodeSeq)
+         // //    trace "xxx =======> NodeSeq::nodeSetLastPatternStartSongOffset("+_off+") nodeIsMaster="+nodeIsMaster();
+      }
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("Node<"+nodeGetName()+">: update lastPatternStartEditorSongOffset to "+last_pattern_start_song_offset);
+   }
+
+   // <method_get.png>
+   public method nodeGetLastPatternStartSongOffset() : int {
+      return last_pattern_start_song_offset;
+   }
+
+   // <method_set.png>
+   public =replay= method nodeSetLastPatternStartEditorSongOffset(int _off) {
+      // // if(1 && (nodeGetName() == "bassstr"))
+      // // {
+      // //    trace "xxx nodeSetLastPatternStartEditorSongOffset("+_off+") this="+#(this);
+      // // }
+      if(nodeIsMaster())
+         last_pattern_start_editor_song_offset = 0;
+      else
+         last_pattern_start_editor_song_offset = _off;
+      // trace "xxx nodeSetLastPatternStartEditorSongOffset: last_pattern_start_editor_song_offset="+last_pattern_start_editor_song_offset;
+   }
+
+   // <method_set.png>
+   public =replay= method nodeSetRelativeEditOffset(int _off) {
+      // Called by arranger to position cursor on offset start position
+   }
+
+   // <method_get.png>
+   public method nodeGetLastPatternStartEditorSongOffset() : int {
+      // trace "xxx nodeGetLastPatternStartEditorSongOffset: return "+NodeArranger.edit_clip_start_ticks;
+      return last_pattern_start_editor_song_offset;
+   }
+
+   // <method.png>
+   public =replay= method nodeCopyLastPatternStartSongOffsetFromEditor() {
+      // trace "xxx copyLastPatternStartSongOffsetFromEditor: off="+last_pattern_start_editor_song_offset;
+      if(STConfig.b_ignore_last_pattern_start_song_offset)
+         last_pattern_start_song_offset = 0;
+      else
+         last_pattern_start_song_offset = last_pattern_start_editor_song_offset;
+   }
+
+   // <method.png>
+   public =replay= method nodeCopyLastPatternStartSongOffsetToEditor() {
+      // (note) (should be) unused
+      // trace "xxx copyLastPatternStartSongOffsetToEditor: off="+last_pattern_start_song_offset;
+      last_pattern_start_editor_song_offset = nodeGetLastPatternStartSongOffset();
+   }
+
+   // <method.png>
+   public =replay= method checkResetNodePatternChanged() : boolean {
+      boolean r = ui_b_node_pattern_changed;
+
+      ui_b_node_pattern_changed = false;
+
+      return r;
+   }
+
+   // <method_set.png>
+   public =replay= method nodeSetCurrentEditPatternNr(int _patNr) {
+      edit_pattern_nr = _patNr;
+   }
+
+   // <method_get.png>
+   public =replay= method nodeGetCurrentEditPatternNr() : int {
+      return edit_pattern_nr;
+   }
+
+   // <method_set.png>
+   public =replay= method nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      play_pattern_nr = _patNr;
+
+      // (note) UI must call nodeQueuePattern() instead so that pattern is correctly queued and
+      //         pattern play length is updated when pattern is actually changed (e.g. NodeTracker)
+
+      PagePipeMap.b_pattern_changed = true;
+   }
+
+   // <method_get.png>
+   public =replay= method nodeGetCurrentPlayPatternNr() : int {
+      return play_pattern_nr;
+   }
+
+   // <method_get.png>
+   public method nodeGetCurrentPlayPatternNrString() : int {
+      int patNr = nodeGetCurrentPlayPatternNr();
+      return patnr_options.get(patNr);
+   }
+
+   // <replay.png>
+   public method nodeQueuePattern(int _patNr, int _seekOff, boolean _bMuteTemp) {
+      // Called from replay thread
+
+      // Same as sending PRGCHG and RPN_COMMON_SEEK_OFFSET
+      //  (note) used by NodeArranger when node has no play device(s) assigned
+
+      // Default (fallback) implementation:
+      nodeSetCurrentPlayPatternNr(_patNr);
+
+      if(-1 != _seekOff)
+         nodeSeek(_seekOff);
+
+      node_b_mute_temp = _bMuteTemp;
+   }
+
+   // <replay.png>
+   public =replay= method nodeQueuePatternUI(int _patNr, int _seekOff, boolean _bMuteTemp) {
+      // Called from UI thread
+
+      // Default (fallback) implementation:
+      nodeQueuePattern(_patNr, _seekOff, _bMuteTemp);
+   }
+
+   // <replay.png>
+   public =replay= method nodeQueuePrgChgOut(int _patNr) {
+      // Called from UI thread when editor pattern changes or initial pattern selection is sent when replay starts
+      // trace "xxx nodeQueuePrgChgOut: patNr="+_patNr;
+      node_queued_prgchg_out = _patNr;
+   }
+
+   // <replay.png>
+   public =replay= method nodeSendQueuedPrgChgOut(MIDIPipeFrame _frame) {
+
+      // Wait until precount has finished (e.g. for arranger clip recording)
+      if(replay.precount_tick_countdown > 0)
+         return;
+
+      if(-1 != node_queued_prgchg_out)
+      {
+         if(b_auto_filter_a && b_auto_send_prgchg_a)
+         {
+            if((-1 != auto_dev_filter_a) && (-1 != auto_ch_filter_a))
+            {
+               // trace "xxx nodeSendQueuedPrgChgOut A patNr="+node_queued_prgchg_out;
+               _frame.prgChg(true/*bSet*/, auto_dev_filter_a, auto_ch_filter_a, node_queued_prgchg_out&127);
+            }
+         }
+
+         if(b_auto_filter_b && b_auto_send_prgchg_b)
+         {
+            if((-1 != auto_dev_filter_b) && (-1 != auto_ch_filter_b))
+            {
+               _frame.prgChg(true/*bSet*/, auto_dev_filter_b, auto_ch_filter_b, node_queued_prgchg_out&127);
+            }
+         }
+
+         // Add UI prgchg for arranger recording (see Replay::handleNodeStateChangedUI())
+         replay.addUIPrgChgEntry(getNodeGID(), node_queued_prgchg_out);
+
+         node_queued_prgchg_out = -1;
+      }
+   }
+
+   // <replay.png>
+   public =replay= method nodeMuteTemp(boolean _bMuteTemp) {
+      node_b_mute_temp = _bMuteTemp;
+   }
+
+   // <replay.png>
+   public =replay= method nodeGetMuteTemp() : boolean {
+      return node_b_mute_temp;
+   }
+
+   // <method_get.png>
+   public method nodeGetPatternByIdx(int _idx) : NodePattern {
+   }
+
+   // <method_get.png>
+   public method nodeGetCurrentPlayPattern() : NodePattern {
+      return nodeGetPatternByIdx(nodeGetCurrentPlayPatternNr());
+   }
+
+   // <method_get.png>
+   public method nodeGetCurrentEditPattern() : NodePattern {
+      return nodeGetPatternByIdx(nodeGetCurrentEditPatternNr());
+   }
+
+   // <method.png>
+   public method nodeGetPatternNameByIdx(int _idx) : String {
+      // (note) default implementation, e.g. NodeArranger in timeline mode does not store the names in NodePattern objects
+      NodePattern pat <= nodeGetPatternByIdx(_idx);
+
+      if(null != pat)
+         return pat.pat_name;
+      else
+         return "";
+   }
+
+   // <method_get.png>
+   public method nodeGetCurrentPlayPatternName() : String {
+      return nodeGetPatternNameByIdx(nodeGetCurrentPlayPatternNr());
+   }
+
+   // <method_get.png>
+   public method nodeGetCurrentEditPatternName() : String {
+      return nodeGetPatternNameByIdx(nodeGetCurrentEditPatternNr());
+   }
+
+   // <method_set.png>
+   public method nodeSetCurrentEditPatternName(String _name) : String {
+      return nodeSetPatternNameByIdx(nodeGetCurrentEditPatternNr(), deref _name);
+   }
+
+   // <method.png>
+   public method nodeSetPatternNameByIdx(int _idx, String _name) {
+      // (note) default implementation, e.g. NodeArranger in timeline mode does not store the names in NodePattern objects
+      NodePattern pat <= nodeGetPatternByIdx(_idx);
+
+      if(null != pat)
+         pat.pat_name = _name;
+   }
+
+   // <method_get.png>
+   public method nodeIsPatternEmpty(int _patNr) : boolean {
+      // Query if pattern exists and is not marked as unused
+      //  (todo) "empty" is the wrong term here. an "empty" tracker pattern has 0 steps, for example.
+      return true;
+   }
+
+   // <method_get.png>
+   public method nodeGetTotalNumPatternEvents(int _patNr) : int {
+   }
+
+   // <method_get.png>
+   public method nodeGetPatternNrByUsedIdx(int _usedPatNr) : int {
+      int usedIdx = 0;
+      int patIdx = 0;
+
+      loop(NUM_PATTERNS)
+      {
+         if(!nodeIsPatternEmpty(patIdx))
+         {
+            if(usedIdx == _usedPatNr)
+            {
+               return patIdx;
+            }
+
+            usedIdx++;
+         }
+
+         patIdx++;
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method nodeFindPreviousPatternNrByUsedIdxWithOffset(int _absStartPatIdx, int _usedPatNr) : int {
+      int usedIdx = 0;
+      int patIdx = _absStartPatIdx;
+
+      if(patIdx >= 0)
+      {
+         loop(_absStartPatIdx + 1)
+         {
+            if(!nodeIsPatternEmpty(patIdx))
+            {
+               if(usedIdx == _usedPatNr)
+                  return patIdx;
+
+               usedIdx++;
+            }
+
+            patIdx--;
+         }
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method nodeFindNextPatternNrByUsedIdxWithOffset(int _absStartPatIdx, int _usedPatNr) : int {
+      int usedIdx = 0;
+      int patIdx = _absStartPatIdx;
+
+      if(patIdx < NUM_PATTERNS)
+      {
+         loop(NUM_PATTERNS - _absStartPatIdx)
+         {
+            if(!nodeIsPatternEmpty(patIdx))
+            {
+               if(usedIdx == _usedPatNr)
+                  return patIdx;
+
+               usedIdx++;
+            }
+
+            patIdx++;
+         }
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method nodeGetNumUsedPatterns() : int {
+      int r = 0;
+      int patIdx = 0;
+
+      loop(128)
+      {
+         if(!nodeIsPatternEmpty(patIdx))
+            r++;
+
+         patIdx++;
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method nodeFindFirstUnusedPattern(int _startOff) : int {
+      int patIdx = 0;
+      loop(128)
+      {
+         if(nodeIsPatternEmpty(patIdx))
+            return patIdx;
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method nodeFindFirstUnusedPatternGroup(int _startOff) : int {
+      _startOff = (_startOff & ~3);
+
+      int patIdx = _startOff;
+      while(patIdx < 128)
+      {
+         if(nodeIsPatternEmpty(patIdx))
+            return patIdx;
+
+         patIdx += 4;
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method nodeFindFirstUnusedPatternSub(int _startOff) : int {
+      _startOff = (_startOff & ~3);
+
+      int patIdx = _startOff;
+      while(patIdx < (_startOff + 4))
+      {
+         if(nodeIsPatternEmpty(patIdx))
+            return patIdx;
+
+         patIdx++;
+      }
+
+      return -1;
+   }
+
+   // <method.png>
+   public method nodeFindPatternByEvents(NodePattern _o) : int {
+
+      // (note) called by NodeSeqEditor::explode() to find unique patterns
+
+      local Buffer bufO;
+      bufO.size = MAX_FIND_PAT_STATE_SIZE;
+      bufO.offset = 0;
+      _o.patSaveState(bufO);
+
+      local Buffer bufCur;
+      bufCur.size = MAX_FIND_PAT_STATE_SIZE;
+
+      int patIdx = 0;
+
+      loop(NUM_PATTERNS)
+      {
+         // // NT_MetaPattern pat <= nodeGetPatternByIdx(patIdx);
+         NodePattern pat <= nodeGetPatternByIdx(patIdx);
+         if(null != pat)
+         {
+            if(!pat.patIsEmpty())
+            {
+               bufCur.offset = 0;
+               pat.patSaveState(bufCur);
+
+               if(bufCur.compareBuffer(bufO))
+                  return patIdx;
+            }
+         }
+
+         patIdx++;
+      }
+
+      return -1;
+   }
+
+   // // // <method_set.png>
+   // // public method nodeSetCurrentUsedPlayPatternNr(int _usedPatNr, int _startOff) {
+   // //    int patIdx = _startOff;
+   // //    int usedIdx = 0;
+
+   // //    if(0 <= _startOff < 127)
+   // //    {
+   // //       // Forward search
+   // //       if(_usedPatNr >= 0)
+   // //       {
+   // //          loop(128 - _startOff)
+   // //          {
+   // //             if(!nodeIsPatternEmpty(patIdx))
+   // //             {
+   // //                if(usedIdx == _usedPatNr)
+   // //                {
+   // //                   nodeSetCurrentPlayPatternNr(patIdx);
+   // //                   break;
+   // //                }
+
+   // //                usedIdx++;
+   // //             }
+
+   // //             patIdx++;
+   // //          }
+   // //       }
+   // //       else
+   // //       {
+   // //          // Backward Search
+   // //          _usedPatNr = -_usedPatNr;
+
+   // //          loop(_startOff + 1)
+   // //          {
+   // //             if(!nodeIsPatternEmpty(patIdx))
+   // //             {
+   // //                if(usedIdx == _usedPatNr)
+   // //                {
+   // //                   nodeSetCurrentPlayPatternNr(patIdx);
+   // //                   break;
+   // //                }
+
+   // //                usedIdx++;
+   // //             }
+
+   // //             patIdx--;
+   // //          }
+   // //       }
+   // //    }
+   // // }
+
+   // <method_set.png>
+   public method nodeSetCurrentUsedEditPatternNr(int _usedPatNr, int _startOff) : boolean {
+
+      boolean bFwd = (_usedPatNr >= 0) && (_startOff >= 0);
+
+      if(_usedPatNr < 0)
+         _usedPatNr = -_usedPatNr;
+
+      if(_startOff < 0)
+         _startOff = -_startOff;
+
+      int patIdx = _startOff;
+      int usedIdx = 0;
+
+      if(0 <= _startOff < 127)
+      {
+         // Forward search
+         if(bFwd)////if(_usedPatNr >= 0)
+         {
+            loop(128 - _startOff)
+            {
+               if(!nodeIsPatternEmpty(patIdx))
+               {
+                  if(usedIdx == _usedPatNr)
+                  {
+                     nodeSetCurrentEditPatternNr(patIdx);
+                     return true;
+                  }
+
+                  usedIdx++;
+               }
+
+               patIdx++;
+            }
+         }
+         else
+         {
+            // Backward Search
+            // // _usedPatNr = -_usedPatNr;
+
+            loop(_startOff + 1)
+            {
+               if(!nodeIsPatternEmpty(patIdx))
+               {
+                  if(usedIdx == _usedPatNr)
+                  {
+                     nodeSetCurrentEditPatternNr(patIdx);
+                     return true;
+                  }
+
+                  usedIdx++;
+               }
+
+               patIdx--;
+            }
+         }
+      }
+
+      // Not found
+      return false;
+   }
+
+   // <method_get.png>
+   public =replay= method nodeGetCurrentUsedPlayPatternNr() : int {
+      int usedIdx = 0;
+      int patIdx = 0;
+
+      int curPat = nodeGetCurrentPlayPatternNr();
+
+      loop(128)
+      {
+         if(!nodeIsPatternEmpty(patIdx))
+         {
+            if(curPat == patIdx)
+               return usedIdx;
+
+            usedIdx++;
+         }
+
+         patIdx++;
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public =replay= method nodeGetCurrentUsedEditPatternNr() : int {
+      int usedIdx = 0;
+      int patIdx = 0;
+
+      int curPat = nodeGetCurrentEditPatternNr();
+
+      loop(128)
+      {
+         if(!nodeIsPatternEmpty(patIdx))
+         {
+            if(curPat == patIdx)
+               return usedIdx;
+
+            usedIdx++;
+         }
+
+         patIdx++;
+      }
+   }
+
+   // <method_get.png>
+   public method nodeGetCurrentPlayPatternNumTicks() : int {
+      // return length in ticks
+      //   (note) used by PagePipeMap progress display
+      return nodeGetPatternNumTicks(nodeGetCurrentPlayPatternNr());
+   }
+
+   // <method_get.png>
+   public method nodeGetPatternNumTicks(local byte _patternNr) : int {
+      return 0;
+   }
+
+   // <method.png>
+   public method nodeGetCurrentPlayPatternTickOffset() : int {
+      // return play position relative to pattern start
+      //   (note) the returned value will be modulo'd by nodeGetCurrentPlayPatternNumTicks()
+      //   (note) used by PagePipeMap progress display
+      return 0;
+   }
+
+   // // // <method.png>
+   // // public method nodeGetCurrentPlayPatternTickOffsetRel() : float {
+   // //    // return play position relative to pattern start (0..1)
+   // //    //   called by PagePipeMap for progress display
+   // //    int numTicks = nodeGetCurrentPlayPatternNumTicks();
+   // //    if(numTicks > 0)
+   // //    {
+   // //       int tickOff = nodeGetCurrentPlayPatternTickOffset();
+   // //       tickOff = tickOff % numTicks;
+   // //       // int ticksPer16th = current_song.getNumTicksPer16th();
+   // //       // tickOff = (tick / ticksPer16th) * ticksPer16th;
+   // //       return float(tickOff) / numTicks;
+   // //    }
+   // //    return 0;
+   // // }
+
+   // <method_set.png>
+   public =replay= method setEnableAutoFilterA(boolean _bEnable) {
+      b_auto_filter_a = _bEnable;
+
+      if(!b_ui_auto_filter_a_edited)
+      {
+         b_ui_auto_filter_a_edited = true;
+
+         STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.midi_default_auto_filter_a_dev_name);
+         if(null != dev)
+            auto_dev_filter_a = dev.dev_idx;
+      }
+   }
+
+   // <method_get.png>
+   public method getEnableAutoFilterA() : boolean {
+      return b_auto_filter_a;
+   }
+
+   // <method_set.png>
+   public =replay= method setAutoDevFilterA(int _devIdx) {
+      auto_dev_filter_a = _devIdx;
+   }
+
+   // <method_get.png>
+   public method getAutoDevFilterA() : int {
+      return auto_dev_filter_a;
+   }
+
+   // <method_set.png>
+   public =replay= method setAutoChFilterA(int _ch) {
+      auto_ch_filter_a = _ch;
+   }
+
+   // <method_get.png>
+   public method getAutoChFilterA() : int {
+      return auto_ch_filter_a;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableAutoFilterB(boolean _bEnable) {
+      b_auto_filter_b = _bEnable;
+
+      if(!b_ui_auto_filter_b_edited)
+      {
+         b_ui_auto_filter_b_edited = true;
+
+         STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.midi_default_auto_filter_b_dev_name);
+         if(null != dev)
+            auto_dev_filter_b = dev.dev_idx;
+      }
+   }
+
+   // <method_get.png>
+   public method getEnableAutoFilterB() : boolean {
+      return b_auto_filter_b;
+   }
+
+   // <method_set.png>
+   public =replay= method setAutoDevFilterB(int _devIdx) {
+      auto_dev_filter_b = _devIdx;
+   }
+
+   // <method_get.png>
+   public method getAutoDevFilterB() : int {
+      return auto_dev_filter_b;
+   }
+
+   // <method_set.png>
+   public =replay= method setAutoChFilterB(int _ch) {
+      auto_ch_filter_b = _ch;
+   }
+
+   // <method_get.png>
+   public method getAutoChFilterB() : int {
+      return auto_ch_filter_b;
+   }
+
+   // <method_get.png>
+   protected method NodeGetAutoString(boolean _bEnable, int _dev, int _ch) : String {
+      if(_bEnable)
+      {
+         String r = "";
+
+         if(-1 != _dev)
+         {
+            STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_dev);
+
+            // // trace "xxx NodeGetAutoString: dev="+#(dev)+" idx="+_dev;
+
+            if(null != dev)
+               r = dev.getAliasOrDeviceName();
+            else
+               r = "???";
+         }
+         else
+         {
+            r = "*";
+         }
+         r.append(":");
+
+         if(-1 != _ch)
+            r.append(_ch + 1);
+         else
+            r.append("*");
+
+         return r;
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method nodeGetAutoStringA() : String {
+      return NodeGetAutoString(b_auto_filter_a, auto_dev_filter_a, auto_ch_filter_a);
+   }
+
+   // <method_get.png>
+   public method nodeGetAutoStringB() : String {
+      return NodeGetAutoString(b_auto_filter_b, auto_dev_filter_b, auto_ch_filter_b);
+   }
+
+   // <method_update.png>
+   public =replay= method nodeHandleAutoDevChanged() {
+      // called when auto dev filter dev/ch/enable is changed in UI
+      // implemented by e.g. NodeScript
+   }
+
+   // <method_get.png>
+   public method nodeGetSupportedRPNs() : IntArray {
+      return null;
+   }
+
+   // <method_get.png>
+   public method nodeGetSupportedRPNsSorted() : IntArray {
+      local IntArray ret = nodeGetSupportedRPNs();
+      local IntArray ia;
+      ret.sortByValue(ia);
+      ret.rearrange(ia);
+      return deref ret;
+   }
+
+   // <method_get.png>
+   public method nodeGetSupportedRPNSubMenus() : StringArray {
+      return null;
+   }
+
+   // <ui.png>
+   public method nodeAddSupportedRPNsToPopupMenu(PopupMenu _pm, String _prefix, StringArray _submenus) {
+      _pm.setNumItemsPerColumn(23);
+      local IntArray rpns <= nodeGetSupportedRPNsSorted();
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById("internal");
+      if(null != msp) // should not be null
+      {
+         PopupMenu pmCur <= _pm;
+         short rpn;
+         short rpnSubMenuLast = -1;
+         PopupMenu spm <= null;
+         foreach rpn in rpns
+         {
+            if(null != _submenus)
+            {
+               if(-1 != rpnSubMenuLast)
+               {
+                  if(rpn > rpnSubMenuLast)
+                  {
+                     rpnSubMenuLast = -1;
+                     pmCur <= _pm;
+                  }
+               }
+
+               if(-1 == rpnSubMenuLast)
+               {
+                  String *s;
+                  foreach s in _submenus
+                  {
+                     if(s <= String(rpn))
+                     {
+                        // "<startrpn>..<endrpn>:"
+                        int idxDD = s.indexOf("..", 0);
+                        if(-1 != idxDD)
+                        {
+                           int idxDot = s.indexOf(":", idxDD+2);
+                           if(-1 != idxDot)
+                           {
+                              rpnSubMenuLast = s.substring(idxDD+2, idxDot-idxDD-2).trim();
+                              if(rpnSubMenuLast > rpn)
+                              {
+                                 pmCur <= PopupMenu.New(_pm);
+                                 pmCur.setNumItemsPerColumn(23);
+                                 _pm.addMenu(s.substring(idxDot+1, 99).trim(), deref pmCur);
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(rpn);
+            if(null != alias) // should not be null
+            {
+               PopupMenuButton pmb <= pmCur.addDefaultButton(rpn+": "+alias.caption, _prefix+rpn);
+               pmb.setToolTipCaption(alias.info);
+            }
+         }
+      }
+   }
+
+   // <method_get.png>
+   protected method nodeDecodePolystepRPN(MIDIPipeFrame _frameRec, MIDIPipeFrame _framePlay) {
+
+      polystep_max = 0;
+
+      if( (_frameRec.numEventsRPN > 0) || (_framePlay.numEventsRPN > 0) )
+      {
+         polystep_stepnr .fill(-1);
+         polystep_patnr  .fill(-1);
+         polystep_tracknr.fill(-1);
+
+         // FrameRec
+         if(b_auto_filter_a)
+         {
+            polystep_max = _frameRec.decodePolystepRPN(auto_dev_filter_a, auto_ch_filter_a,
+                                                       polystep_stepnr, polystep_patnr, polystep_tracknr
+                                                       );
+         }
+
+         if(b_auto_filter_b)
+         {
+            polystep_max = mathMaxi(_frameRec.decodePolystepRPN(auto_dev_filter_b, auto_ch_filter_b,
+                                                                polystep_stepnr, polystep_patnr, polystep_tracknr
+                                                                ),
+                                    polystep_max
+                                    );
+         }
+
+         // FramePlay
+         if(b_auto_filter_a)
+         {
+            polystep_max = mathMaxi(_framePlay.decodePolystepRPN(auto_dev_filter_a, auto_ch_filter_a,
+                                                                 polystep_stepnr, polystep_patnr, polystep_tracknr
+                                                                 ),
+                                    polystep_max
+                                    );
+         }
+
+         if(b_auto_filter_b)
+         {
+            polystep_max = mathMaxi(_framePlay.decodePolystepRPN(auto_dev_filter_b, auto_ch_filter_b,
+                                                                 polystep_stepnr, polystep_patnr, polystep_tracknr
+                                                                 ),
+                                    polystep_max
+                                    );
+         }
+
+         polystep_stepnr .numElements = polystep_max;
+         polystep_patnr  .numElements = polystep_max;
+         polystep_tracknr.numElements = polystep_max;
+      }
+   }
+
+   // <method_get.png>
+   protected method getFrameRPN(MIDIPipeFrame _frame, int _rpn) : float {
+      float t;
+
+      if(_frame.numEventsRPN > 0)
+      {
+         if(b_auto_filter_a)
+         {
+            t = _frame.getFilteredRPN(auto_dev_filter_a, auto_ch_filter_a, _rpn);
+            // trace "xxx getFrameRPN: rpn="+_rpn+" => t="+t;
+         }
+         else
+         {
+            t = -1;
+         }
+
+         if(t < 0)
+         {
+            if(b_auto_filter_b)
+            {
+               t = _frame.getFilteredRPN(auto_dev_filter_b, auto_ch_filter_b, _rpn);
+            }
+            else
+            {
+               t = -1;
+            }
+
+            if(t >= 0)
+            {
+               // Auto B
+               return t;
+            }
+         }
+         else
+         {
+            // Auto A
+            return t;
+         }
+      }
+      return -1.0f;
+   }
+
+   // <method_get.png>
+   public method getRPN(MIDIPipeFrame _framePlay,
+                        MIDIPipeFrame _frameRec,
+                        int _rpn
+                        ) : float {
+      float t = getFrameRPN(_frameRec, _rpn);
+
+      if(t < 0.0f)
+         t = getFrameRPN(_framePlay, _rpn);
+
+      return t;
+   }
+
+   // <method.png>
+   public method nodeParseRPN_Mute(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec
+                                   ) {
+
+      short t;
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_MUTE_TEMP);
+      if(-1 != t)
+      {
+         // trace "xxx RPN_COMMON_MUTE_TEMP: t="+t;
+         node_queued_b_mute_temp = t;
+      }
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_MUTE_TEMP_TOGGLE);
+      if(-1 != t)
+      {
+         if(t)
+            node_queued_b_mute_temp = !node_b_mute_temp;
+      }
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_MUTE_TEMP_1_8);
+      if(-1 != t)
+         queued_node_mute_temp_track_mask_1_8 = t;
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_MUTE_TEMP_9_16);
+      if(-1 != t)
+         queued_node_mute_temp_track_mask_9_16 = t;
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_SOLO_TEMP_1_8);
+      if(-1 != t)
+         node_solo_temp_track_mask = (node_solo_temp_track_mask & ~255) | t;
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_SOLO_TEMP_9_16);
+      if(-1 != t)
+         node_solo_temp_track_mask = (node_solo_temp_track_mask & 255) | (t << 8);
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_UI_NODE_MUTE);
+      if(-1 != t)
+         replay.addUIMuteEntry(getNodeGID(), UIMuteEntry.AC_NODE_MUTE, t);
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_UI_NODE_SOLO);
+      if(-1 != t)
+      {
+         // trace "xxx parse UI_NODE_SOLO t="+t;
+         replay.addUIMuteEntry(getNodeGID(), UIMuteEntry.AC_NODE_SOLO, t);
+      }
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_UI_PIPE_MUTE);
+      if(-1 != t)
+         replay.addUIMuteEntry(getNodeGID(), UIMuteEntry.AC_PIPE_MUTE, t);
+
+      t = getRPN(_framePlay, _frameRec, RPN_COMMON_UI_PIPE_SOLO);
+      if(-1 != t)
+         replay.addUIMuteEntry(getNodeGID(), UIMuteEntry.AC_PIPE_SOLO, t);
+   }
+
+   // <method_handle.png>
+   protected method nodeHandleQueuedMuteTemp() : boolean {
+      if(-1 != node_queued_b_mute_temp)
+      {
+         // trace "xxx Node: eval node_queued_b_mute_temp="+node_queued_b_mute_temp;
+         node_b_mute_temp = node_queued_b_mute_temp ? true : false;
+
+         node_queued_b_mute_temp = -1;
+      }
+
+      return node_b_mute_temp;
+   }
+
+   // <method.png>
+   public method nodeParseRPN_Vel_Dur_Speed(MIDIPipeFrame _framePlay,
+                                            MIDIPipeFrame _frameRec
+                                            ) {
+      float t;
+
+      // Velocity offset
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_VELOCITY_OFF);
+      if(t >= 0.0f)
+      {
+         // trace "xxx rpn_com_vel_off, t="+t;
+         rpn_com_vel_off = Utils.Bipolar8ToOffset(t);
+         // trace "xxx rpn_com_vel_off="+rpn_com_vel_off;
+      }
+
+      // Velocity scale
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_VELOCITY_SCL);
+      if(t >= 0.0f)
+      {
+         rpn_com_vel_scl = Utils.Bipolar8ToScale(t, 8, 8);
+         // trace "xxx Node: t="+t+" rpn_com_vel_scl="+rpn_com_vel_scl;
+      }
+
+      // Duration offset
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_DURATION_OFF);
+      if(t >= 0.0f)
+         rpn_com_dur_off = Utils.Bipolar8ToOffset(t);
+
+      // Duration scale
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_DURATION_SCL);
+      if(t >= 0.0f)
+      {
+         rpn_com_dur_scl = Utils.Bipolar8ToScale(t, 4, 4);
+         // // trace "xxx rpn_com_dur_scl="+rpn_com_dur_scl;
+      }
+
+      // Speed scale (async)
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_SPEED);
+      if(t >= 0.0f)
+      {
+         rpn_com_speed_scl = Utils.Bipolar14ToScaleZero(t, 5);
+         // // trace "xxx rpn_com_speed_scl="+rpn_com_speed_scl+" t="+t;
+      }
+
+      // Position scale
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_POSITION);
+      if(t >= 0.0f)
+      {
+         rpn_com_pos_scl = Utils.Bipolar14ToScaleZero(t, 5);
+         // // trace "xxx rpn_com_pos_scl="+rpn_com_pos_scl;
+      }
+
+      // Speed scale (async)
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_SPEEDSYNCRATE);
+      if(t >= 0.0f)
+      {
+         // // if(t > 512)
+         // //    rpn_com_speed_sync_rate = Utils.Bipolar14ToScaleZero(t, 8);
+         // // else
+         // //    rpn_com_speed_sync_rate = 0.0;
+         if(t > 512.0f)
+            rpn_com_speed_sync_rate = (t * 2.0f) / 16384.0;
+         else
+            rpn_com_speed_sync_rate = 0.0;
+         // trace "xxx rpn_com_speed_sync_rate="+rpn_com_speed_sync_rate+" t="+t;
+      }
+
+   }
+
+   // <method.png>
+   protected method nodeParseRPN_Vel_Track_internal(MIDIPipeFrame _frame, int _fltDev, byte _fltCh) {
+
+      int numEv = _frame.getNumEventsRPNByFlt(_fltDev, _fltCh);
+
+      if(numEv > 0)
+      {
+         int pevIdx = 0;
+         MIDIPipeEvent pev;
+
+         loop(numEv)
+         {
+            if(_frame.getEventByIdxAndFlt(pevIdx,
+                                          pev,
+                                          MIDIPIPE_EVENT_TYPE_RPN,
+                                          _fltDev,
+                                          _fltCh
+                                          )
+               )
+            {
+               if(RPN_COMMON_VEL_SCL_TRACK_1 <= pev.rpn <= RPN_COMMON_VEL_SCL_TRACK_16)
+                  rpn_com_vel_scl_track[pev.rpn - RPN_COMMON_VEL_SCL_TRACK_1] = Utils.Bipolar8ToScale(pev.rpnValue, 8, 8);
+            }
+
+            // Next RPN
+            pevIdx++;
+         }
+
+      }
+   }
+
+   // <method.png>
+   public method nodeParseRPN_Vel_Track(MIDIPipeFrame _framePlay, MIDIPipeFrame _frameRec) {
+      if(b_auto_filter_a)
+      {
+         nodeParseRPN_Vel_Track_internal(_frameRec, auto_dev_filter_a, auto_ch_filter_a);
+         nodeParseRPN_Vel_Track_internal(_framePlay, auto_dev_filter_a, auto_ch_filter_a);
+      }
+
+      if(b_auto_filter_b)
+      {
+         nodeParseRPN_Vel_Track_internal(_frameRec, auto_dev_filter_b, auto_ch_filter_b);
+         nodeParseRPN_Vel_Track_internal(_framePlay, auto_dev_filter_b, auto_ch_filter_b);
+      }
+   }
+
+   // <method.png>
+   protected method nodeParseRPN_Dur_Track_internal(MIDIPipeFrame _frame, int _fltDev, byte _fltCh) {
+
+      int numEv = _frame.getNumEventsRPNByFlt(_fltDev, _fltCh);
+
+      if(numEv > 0)
+      {
+         int pevIdx = 0;
+         MIDIPipeEvent pev;
+
+         loop(numEv)
+         {
+            if(_frame.getEventByIdxAndFlt(pevIdx,
+                                          pev,
+                                          MIDIPIPE_EVENT_TYPE_RPN,
+                                          _fltDev,
+                                          _fltCh
+                                          )
+               )
+            {
+               if(RPN_COMMON_DUR_SCL_TRACK_1 <= pev.rpn <= RPN_COMMON_DUR_SCL_TRACK_16)
+                  rpn_com_dur_scl_track[pev.rpn - RPN_COMMON_DUR_SCL_TRACK_1] = Utils.Bipolar8ToScale(pev.rpnValue, 8, 8);
+            }
+
+            // Next RPN
+            pevIdx++;
+         }
+
+      }
+   }
+
+   // <method.png>
+   public method nodeParseRPN_Dur_Track(MIDIPipeFrame _framePlay, MIDIPipeFrame _frameRec) {
+      if(b_auto_filter_a)
+      {
+         nodeParseRPN_Dur_Track_internal(_frameRec, auto_dev_filter_a, auto_ch_filter_a);
+         nodeParseRPN_Dur_Track_internal(_framePlay, auto_dev_filter_a, auto_ch_filter_a);
+      }
+
+      if(b_auto_filter_b)
+      {
+         nodeParseRPN_Dur_Track_internal(_frameRec, auto_dev_filter_b, auto_ch_filter_b);
+         nodeParseRPN_Dur_Track_internal(_framePlay, auto_dev_filter_b, auto_ch_filter_b);
+      }
+   }
+
+   // <method.png>
+   public method nodeParseRPN_Transpose(MIDIPipeFrame _framePlay,
+                                        MIDIPipeFrame _frameRec
+                                        ) {
+      short t;
+
+      // Velocity offset
+      t = getRPN(_framePlay, _frameRec, Node.RPN_COMMON_TRANSPOSE);
+      if(t >= 0)
+      {
+         rpn_com_transpose = t - 64;
+         // trace "xxx rpn_com_transpose="+rpn_com_transpose;
+      }
+   }
+
+   // <method.png>
+   public method nodeParseRPN_Probability(MIDIPipeFrame _framePlay,
+                                          MIDIPipeFrame _frameRec
+                                          ) {
+
+      // Handle global and per-track probability modulation
+      short t = getRPN(_framePlay, _frameRec, RPN_COMMON_PROB_ALL_REL);
+      if(t >= 0)
+      {
+         rpn_com_prob_all_rel = Utils.Bipolar8ToFloat(t);  // 0..255 => -1..1 (128=+0)
+         // trace "xxx rpn_prob_all_rel="+rpn_prob_all_rel;
+      }
+
+      int trackIdx = 0;
+      loop(16)
+      {
+         t = getRPN(_framePlay, _frameRec, RPN_COMMON_PROB_TRACK_1 + trackIdx);
+         if(t >= 0)
+            rpn_com_prob_track[trackIdx] = mathClampf(t, 0, 255) / 127.0;  // 0..~2, 127=100%
+
+         // Next track
+         trackIdx++;
+      }
+   }
+
+   // <method_get.png>
+   public method nodeHaveCustomAutoDeviceSettings(boolean _bB) : boolean {
+      if(_bB)
+         return
+            (true != b_auto_send_prgchg_b) ||
+            (true != b_auto_recv_prgchg_b);
+      else
+         return
+            (true != b_auto_send_prgchg_a) ||
+            (true != b_auto_recv_prgchg_a);
+   }
+
+   // <save.png>
+   public method nodeSaveState(Stream ofs) {
+
+      // Write version
+      ofs.i16 = 13;
+
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+
+      ofs.i32 = last_pattern_start_editor_song_offset; // v2+
+      ofs.i32 = last_pattern_start_song_offset;        // v2+
+
+      Utils.WriteString(ofs, STConfig.node_class_names.get(node_class_id)); // v3+
+
+      ofs.i8 = node_class_color; // v7+
+
+      ofs.i8 = b_node_class_show; // v4+
+      ofs.i32 = node_class_show_in_gid; // v8+
+
+      ofs.i32 = node_gid; // v5+
+
+       // v6+:
+      ofs.i8 = b_auto_filter_a;
+      ofs.i8 = auto_dev_filter_a;
+      ofs.i8 = auto_ch_filter_a;
+      ofs.i8 = b_ui_auto_filter_a_edited;
+      ofs.i8 = b_ui_auto_filter_a_autoassign;  // v11+
+      ofs.i8 = b_auto_filter_b;
+      ofs.i8 = auto_dev_filter_b;
+      ofs.i8 = auto_ch_filter_b;
+      ofs.i8 = b_ui_auto_filter_b_edited;
+      ofs.i8 = b_ui_auto_filter_b_autoassign;  // v11+
+
+      // v10+
+      ofs.i8 = b_auto_send_prgchg_a;
+      ofs.i8 = b_auto_send_prgchg_b;
+      ofs.i8 = b_auto_recv_prgchg_a;
+      ofs.i8 = b_auto_recv_prgchg_b;
+
+      // Speed scale reset value (v9+)
+      ofs.f32 = rpn_com_speed_scl_reset_val;
+
+      // Ignore PrgChg + Mute (v13+)
+      ofs.i8 = b_node_ignore_seek_prgchg_mute;
+   }
+
+   // <load.png>
+   public method nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      // (note) devNames as seen when the song was saved (-> to fix up dev indices)
+
+      short ver = ifs.i16;
+
+      node_gid = -1;
+
+      if(ver >= 1)
+      {
+         if(ver >= 12)
+         {
+            edit_pattern_nr = ifs.i8;  // v12+
+            play_pattern_nr = ifs.i8;
+         }
+
+         if(ver >= 2)
+         {
+            last_pattern_start_editor_song_offset = ifs.i32; // v2+
+            last_pattern_start_song_offset        = ifs.i32; // v2+
+
+            if(STConfig.b_ignore_last_pattern_start_song_offset)
+            {
+               last_pattern_start_song_offset = 0;
+            }
+
+            if(ver >= 3)
+            {
+               String ncl; ncl.empty();
+               Utils.ReadString(ifs, ncl);
+               node_class_id = STConfig.node_class_names.indexOfObject(ncl, 0);
+               if(-1 == node_class_id)
+                  node_class_id = 0;
+            }
+
+            // (note) CAREFUL when adding anything before here (see ReadClassNameFromPresetFile())
+
+            if(ver >= 7)
+            {
+               node_class_color = ifs.s8; // v7+
+            }
+
+            if(ver >= 4)
+            {
+               b_node_class_show = ifs.i8; // v4+
+            }
+            // trace "xxx Node::loadState: b_node_class_show="+b_node_class_show+" ver="+ver+" this="+#(this);
+
+            if(ver >= 8)
+            {
+               node_class_show_in_gid = ifs.i32; // v8+;
+
+               // trace "xxx Node::nodeLoadState: node_class_show_in_gid="+node_class_show_in_gid+" b_force_new_gid="+b_force_new_gid+" force_new_gid_map="+#(force_new_gid_map);
+            }
+
+            if(ver >= 5)
+            {
+               if(b_force_new_gid)
+               {
+                  int oldGID = ifs.i32; // v5+
+                  node_gid = current_song.nodeAllocGID();
+                  force_new_gid_map.add(oldGID);
+                  force_new_gid_map.add(node_gid);
+               }
+               else
+               {
+                  node_gid = ifs.i32; // v5+
+               }
+            }
+
+            if(ver >= 6)
+            {
+               b_auto_filter_a = ifs.i8;
+               auto_dev_filter_a = ifs.s8;
+               auto_ch_filter_a  = ifs.s8;
+               b_ui_auto_filter_a_edited = ifs.u8;
+               if(ver >= 11)
+                  b_ui_auto_filter_a_autoassign = ifs.b8;  // v11+
+
+               // trace "xxx read auto_dev_filter="+auto_dev_filter;
+               // trace "xxx _outDevIdxMap="+#(_outDevIdxMap);
+
+               if(-1 != auto_dev_filter_a)
+               {
+                  _outDevUseCount.inc(auto_dev_filter_a);
+
+                  auto_dev_filter_a = _outDevIdxMap.get(auto_dev_filter_a);
+               }
+
+               b_auto_filter_b = ifs.i8;
+               auto_dev_filter_b = ifs.s8;
+               auto_ch_filter_b  = ifs.s8;
+               b_ui_auto_filter_b_edited = ifs.u8;
+               if(ver >= 11)
+                  b_ui_auto_filter_b_autoassign = ifs.b8;  // v11+
+
+               // trace "xxx read auto_dev_filter="+auto_dev_filter;
+               // trace "xxx _outDevIdxMap="+#(_outDevIdxMap);
+
+               if(-1 != auto_dev_filter_b)
+               {
+                  _outDevUseCount.inc(auto_dev_filter_b);
+
+                  auto_dev_filter_b = _outDevIdxMap.get(auto_dev_filter_b);
+               }
+            }
+
+            if(ver >= 10)
+            {
+               // v10+
+               b_auto_send_prgchg_a = ifs.b8;
+               b_auto_send_prgchg_b = ifs.b8;
+               b_auto_recv_prgchg_a = ifs.b8;
+               b_auto_recv_prgchg_b = ifs.b8;
+            }
+
+            if(ver >= 9)
+            {
+               // Speed scale reset value (v9+)
+               rpn_com_speed_scl_reset_val = ifs.f32;
+            }
+
+            if(ver >= 13)
+            {
+               // Ignore PrgChg + Mute (v13+)
+               b_node_ignore_seek_prgchg_mute = ifs.b8;
+            }
+
+         }
+
+         if(node_gid <= 0)
+         {
+            node_gid = current_song.nodeAllocGID();
+            Global.Debug2("Node::nodeLoadState: allocated GID="+node_gid);
+         }
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Node::nodeLoadState: invalid version ("+ver+").";
+      }
+
+      return false;
+   }
+
+
+   // <save.png>
+   public method nodeSaveStateToBuffer(Buffer _b) {
+      // (note) Used by NT undo/redo (add/delete track)
+      // (note) resizes buffer
+      SongFileReader.InitIdentityOutDevIdxMap();
+
+      DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      nodeSaveState(ds);
+
+      _b.size = ds.offset;
+      _b.offset = 0;
+      nodeSaveState(_b);
+
+      _b.offset = 0;
+   }
+
+   // <load.png>
+   public static ReadClassNameFromPresetFile(String _pathName) : String {
+      local String r = "";
+      local File f;
+      trace "[>>>] Node::ReadClassNameFromPresetFile: pathName=\""+_pathName+"\"";
+      if(f.openLocal(Utils.ToNativePathName(_pathName), IOS_IN))
+      {
+         // // trace "[>>>] Node::ReadClassNameFromPresetFile: ok, file openend";
+         f.byteOrder = LITTLE_ENDIAN;
+
+         local Integer chunkHeaderRet;
+         local Integer chunkSizeRet;
+         SongFileReader.ReadChunkHeader(f, chunkHeaderRet, chunkSizeRet);
+
+         if(chunkHeaderRet == SongFile.FOURCC_NODE_FILEHEADER)
+         {
+            int bytesLeft;
+            bytesLeft = chunkSizeRet - 8;
+
+            while(bytesLeft > 0)
+            {
+               SongFileReader.ReadChunkHeader(f, chunkHeaderRet, chunkSizeRet);
+
+               int chunkDataSize = chunkSizeRet - 8;
+
+               if(chunkSizeRet <= bytesLeft)
+               {
+                  switch(chunkHeaderRet)
+                  {
+                     default:
+                        // skip MIDIINDEVCFGS, MIDIOUTDEVCFGS, PIPEROOTDEVMAP
+                        f.seek(chunkDataSize, SEEK_CUR);
+                        break;
+
+                     case SongFile.FOURCC_NSTREAM_NODE:
+                        if(PipeIO.PipeNode_LoadState(null/*parentPipe*/, f, null/*outDevIdxMap*/, null/*outDevUseCount*/, null/*nodeOrNull*/, r/*catClassOrNull*/))
+                        {
+                           return deref r;
+                        }
+                        return null;
+                  }
+
+                  bytesLeft -= chunkSizeRet;
+               }
+               else
+               {
+                  trace "[---] Node::ReadClassNameFromPresetFile: current chunk size > bytesLeft ("+chunkSizeRet+" > "+bytesLeft+").";
+                  break;
+               }
+            } // while bytesLeft
+         } // if NODE_FILEHEADER
+      } // if f.openLocal
+
+      return null;
+   }
+
+   // <save.png>
+   public method nodeSaveRecUndoState() {
+      if(0 == rec_undo_state.size)
+         rec_undo_state.size = MAX_REC_UNDO_STATE_SIZE;
+
+      rec_undo_state.offset = 0;
+      nodeSaveState(rec_undo_state);
+
+      if(rec_undo_state.offset < MAX_REC_UNDO_STATE_SIZE)
+      {
+         Global.Debug2("Node::nodeSaveRecUndoState: name=\""+nodeGetName()+"\" wrote "+rec_undo_state.offset+" bytes");
+      }
+      else
+      {
+         // Failed: state size too large (won't be able to revert/reload properly)
+         Global.Debug("Node::nodeSaveRecUndoState: WARNING: name=\""+nodeGetName()+"\" undo state exceeds max size, discarding..");
+         rec_undo_state.offset = 0;
+      }
+   }
+
+   // <load.png>
+   public method nodeLoadRecUndoState() {
+      if(rec_undo_state.offset > 0)
+      {
+         // Create dummy map+usecount arrays (never read back)
+         local IntArray outDevIdxMap;
+         outDevIdxMap.identity(MIDI.out_devices.numElements);
+
+         local IntArray devUseCount;
+         devUseCount.allocAndFill(MIDI.out_devices.numElements, 0);
+
+         rec_undo_state.offset = 0;
+         b_force_new_gid = false;
+         nodeLoadState(rec_undo_state, outDevIdxMap, devUseCount);
+         Global.Debug2("Node::nodeLoadRecUndoState: name=\""+nodeGetName()+"\" read "+rec_undo_state.offset+" bytes");
+      }
+   }
+
+   // <method_set.png>
+   public method setNodeClassId(int _id) {
+      node_class_id = _id;
+   }
+
+   // <method_set.png>
+   public method setNodeClassIdFromString(String _className) : boolean {
+      String *catName;
+      local String nameLC <= _className.toLower();
+      local String catNameLC;
+      int catIdx = 0;
+      foreach catName in STConfig.node_class_names
+      {
+         catName.toLower() => catNameLC;
+         if(nameLC == catNameLC)
+         {
+            node_class_id = catIdx;
+            return true;
+         }
+         catIdx++;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getNodeClassId() : int {
+      return node_class_id;
+   }
+
+   // <method_set.png>
+   public method setNodeClassColor(int _color) {
+      node_class_color = _color;
+   }
+
+   // <method_get.png>
+   public method getNodeClassColor() : int {
+      return node_class_color;
+   }
+
+   // <method_set.png>
+   public method setNodeGID(int _gid) {
+      // Called after cloning a node
+      node_gid = _gid;
+   }
+
+   // <method_get.png>
+   public method getNodeGID() : int {
+      return node_gid;
+   }
+
+   // <method_get.png>
+   public method getNodeClassString() : String {
+      return STConfig.node_class_names.get(node_class_id);
+   }
+
+   // <method_set.png>
+   public method setEnableNodeClassShow(boolean _bEnable) {
+      b_node_class_show = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableNodeClassShow() : boolean {
+      return b_node_class_show;
+   }
+
+   // <method_set.png>
+   public method setNodeClassShowInGID(int _gid) {
+      node_class_show_in_gid = _gid;
+   }
+
+   // <method_get.png>
+   public method getNodeClassShowInGID() : int {
+      return node_class_show_in_gid;
+   }
+
+   // <method_get.png>
+   public method getNodeClassShowInGIDString() : String {
+      return (-1 == node_class_show_in_gid) ? "*" : String(node_class_show_in_gid);
+   }
+
+   // <method_get.png>
+   public method nodeIsArmedForRecording() : boolean {
+      // returns true when node is recording or is armed for recording
+      return false;
+   }
+
+   // <method_get.png>
+   public method nodeArmForRecording(boolean _bEnable) : boolean {
+      // toggles tracker node edit mode
+   }
+
+   // <method_get.png>
+   public method nodeIsRTRecordActive() : boolean {
+      return false;
+   }
+
+   // <method_handle.png>
+   public method nodeHandleStartRecording() {
+      // Called from replay thread
+      // e.g. start undo transaction
+   }
+
+   // <method_handle.png>
+   public method nodeHandleStopRecording() {
+      // Called from UI thread while =replay= mutex is locked
+      // e.g. finish undo transaction
+   }
+
+   // <method_handle.png>
+   public method nodeHandleStartPlaying() {
+      // Called from replay thread
+      if(STConfig.b_node_send_play_pattern_prgchg_when_replay_starts)
+      {
+         nodeQueuePrgChgOut(nodeGetCurrentPlayPatternNr());
+      }
+   }
+
+   // <method_handle.png>
+   public method nodeHandleStopPlaying() {
+      // Called from UI thread while =replay= is locked
+      nodeStopOutputCapture();
+   }
+
+   // <method_find.png>
+   public method findArrangerGIDsBeforeThis(StringArray _retGIDsAsStrings) {
+
+      int numPipes = current_pipe_root.getNumPipes();
+      int pipeIdx = 0;
+
+      loop(numPipes)
+      {
+         MIDIPipe cPipe <= current_pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         int numNodes = cPipe.getNumNodes();
+         int nodeIdx = 0;
+
+         loop(numNodes)
+         {
+            MIDIPipeNode cNode <= cPipe.getNodeByIdx(nodeIdx);
+
+            if(@(cNode) == @(parent_pipenode))
+            {
+               break;
+            }
+
+            if(cNode instanceof MIDIPipeNodeScriptProxy)
+            {
+               MIDIPipeNodeScriptProxy nsp <= cNode;
+               Node sci <= nsp.sci;
+
+               if(sci instanceof NodeArranger)
+               {
+                  _retGIDsAsStrings.add(sci.node_gid + ": "+cNode.name);
+               }
+
+            }
+
+            // Next node
+            nodeIdx++;
+         }
+
+         // Next pipe
+         pipeIdx++;
+      }
+   }
+
+   // <method_find.png>
+   static FindPatNrIdxByString(String _s) : int {
+      String *patNrName;
+      int patNrIdx = 0;
+      foreach patNrName in patnr_options_short
+      {
+         if(patNrName.toLower() == _s)
+            return patNrIdx;
+         patNrIdx++;
+      }
+      return -1;
+   }
+
+   // <method_update.png>
+   public method nodeUpdateClonedGIDs(IntArray _newGIDMap) {
+      // implemented by e.g. NodeArranger (update GIDs after preset load or clone)
+      if(-1 != node_class_show_in_gid)
+      {
+         int idx = _newGIDMap.indexOf(node_class_show_in_gid, 0);
+         if(-1 != idx)
+         {
+            if(0 == (idx & 1))  // is "old" GID ?
+            {
+               node_class_show_in_gid = _newGIDMap.get(idx + 1);  // replace by new GID
+            }
+            else
+            {
+               // should not be reachable
+               trace "[!!!] Node::nodeUpdateClonedGIDs: node_class_show_in_gid="+node_class_show_in_gid+" already is a new GID";
+            }
+         }
+         else
+         {
+            // can be reachable when loading node/pipe preset and "external" arranger node is referenced
+            trace "[~~~] Node::nodeUpdateClonedGIDs: show_in_gid="+node_class_show_in_gid+" => node not found in newGIDMap="+_newGIDMap+" (was external?";
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= static TogglePipeOrNodeMuteStateUI(MIDIPipeNode _node, boolean _bQuiet) {
+      // called from changing pipe/node mute/solo state via UI (key, button click)
+      // trace "xxx TogglePipeOrNodeMuteState";
+      local String *msg;
+      local MIDIPipe *pipe;
+      if(_node.isNodeOrPipeMuted())
+      {
+         if(_node.isPipeMuted())
+         {
+            // Unmute pipe
+            pipe <= _node.parent;
+            if(MIDIPIPE_STATE_MUTE == pipe.state)
+            {
+               pipe.state = MIDIPIPE_STATE_PLAY;
+               msg <= "Unmute pipe";
+            }
+         }
+         if(_node.isNodeOrPipeMuted())
+         {
+            // Unmute node
+            _node.state = MIDIPIPE_STATE_PLAY;
+            if(null != msg)
+               msg.append(" + node");
+            else
+               msg <= "Unmute node";
+         }
+      }
+      else
+      {
+         // Mute node
+         _node.state = MIDIPIPE_STATE_MUTE;
+         msg <= "Mute node";
+      }
+
+      if(null != pipe)
+      {
+         HandlePipeStateChangedUI(pipe);
+      }
+      else
+      {
+         HandleNodeStateChangedUI(_node);
+      }
+
+      if(!_bQuiet && (null != msg))
+         Global.Print(msg);
+   }
+
+   // <ui_handle.png>
+   protected static HandlePipeStateChangedUI(MIDIPipe _pipe) {
+      // called from changing pipe mute/solo state via UI (key, button click)
+      //  (i.e. _not_ when sequencing mute/solo)
+
+      // Pipe mute/solo state changed
+      int ni = 0;
+      loop(_pipe.numNodes)
+      {
+         MIDIPipeNode n <= _pipe.getNodeByIdx(ni++);
+         // trace "xxx HandlePipeStateChangedUI: ni="+ni+" n="+#(n)+" n.state="+n.state;
+         if(MIDIPIPE_STATE_MUTE != n.state)
+         {
+            if(n instanceof MIDIPipeNodeScriptProxy)
+            {
+               MIDIPipeNodeScriptProxy nsp <= n;
+               Node sci <= nsp.sci;
+               if(MIDIPIPE_STATE_MUTE != _pipe.state)
+               {
+                  if(Configuration.debugLevel >= 2)
+                     Global.Debug2("Node::HandlePipeStateChangedUI: call sci.nodeHandleUnmute() (\""+nsp.name+"\")");
+                  sci.nodeHandleUnmute();
+               }
+               else
+               {
+                  if(Configuration.debugLevel >= 2)
+                     Global.Debug2("Node::HandlePipeStateChangedUI: call sci.nodeHandleMute() (\""+nsp.name+"\")");
+                  sci.nodeHandleMute();
+               }
+            }
+         }
+         // else: node is muted, pipe state change has no effect
+      }
+   }
+
+   // <ui_handle.png>
+   protected static HandleNodeStateChangedUI(MIDIPipeNode _node) {
+      // called from changing pipe/node mute/solo state via UI (key, button click)
+      //  (i.e. _not_ when sequencing mute/solo)
+
+      if(_node instanceof MIDIPipeNodeScriptProxy)
+      {
+         MIDIPipe parentPipe <= _node.parent;
+         if(null != parentPipe)
+         {
+            MIDIPipeNodeScriptProxy nsp <= _node;
+            Node sci <= nsp.sci;
+
+            // Node mute/solo state changed
+            if( (MIDIPIPE_STATE_MUTE != parentPipe.state) && (MIDIPIPE_STATE_MUTE != _node.state) )
+            {
+               if(Configuration.debugLevel >= 2)
+                  Global.Debug2("Node::HandleNodeStateChangedUI: call sci.nodeHandleUnmute() (\""+nsp.name+"\")");
+               sci.nodeHandleUnmute();
+            }
+            else if(MIDIPIPE_STATE_MUTE != parentPipe.state)
+            {
+               if(Configuration.debugLevel >= 2)
+                  Global.Debug2("Node::HandleNodeStateChangedUI: call sci.nodeHandleMute() (\""+nsp.name+"\")");
+               sci.nodeHandleMute();
+            }
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method isNodeOrPipeMuted() : boolean {
+      boolean bMuted = false;
+
+      if(null != parent_pipe)
+      {
+         bMuted = !parent_pipe.isPipeActive();
+      }
+
+      if(null != parent_pipenode)
+      {
+         if(!bMuted)
+         {
+            bMuted = !parent_pipenode.isNodeActive();
+         }
+      }
+
+      return bMuted;
+   }
+
+   // <method_get.png>
+   public method isNodeMuted() : boolean {
+      boolean bMuted = false;
+      if(null != parent_pipenode)
+      {
+         if(!bMuted)
+         {
+            bMuted = !parent_pipenode.isNodeActive();
+         }
+      }
+      return bMuted;
+   }
+
+   // <method_set.png>
+   public =replay= method nodeSetEnableMute(boolean _bEnable) {
+      // called when copying node state in NA_TimelineForm::handleCopyNodeStateFromArranger()
+      // also called by NT_AudioDialog and NodeTracker (when live-recording auto-stops)
+      if(null != parent_pipenode)
+      {
+         parent_pipenode.state = _bEnable ? MIDIPIPE_STATE_MUTE : MIDIPIPE_STATE_PLAY;
+      }
+   }
+
+   // <method_set.png>
+   public static ToggleNodeMuteState(MIDIPipeNode node) {
+      // called from NodesTM and Replay::processUIMuteQueue()
+      MIDIPipe pipe <= node.parent;
+      int newState = (MIDIPIPE_STATE_MUTE == node.state) ? (pipe.soloNode == node) ? MIDIPIPE_STATE_SOLO : MIDIPIPE_STATE_PLAY : MIDIPIPE_STATE_MUTE;
+
+      node.state = newState;
+
+      replay.handleNodeStateChangedNativeUI(node, node.isNodeActive()/*active*/, -1/*pat*/);
+
+      HandleNodeStateChangedUI(node);
+   }
+
+   // <method_set.png>
+   public static SetNodeMuteState(MIDIPipeNode node, boolean _bMute) : boolean {
+      // called from Replay::processUIMuteQueue()
+      if((MIDIPIPE_STATE_MUTE == node.state) ^ _bMute)
+      {
+         int newState = _bMute ? MIDIPIPE_STATE_MUTE : MIDIPIPE_STATE_PLAY;
+
+         node.state = newState;
+
+         replay.handleNodeStateChangedNativeUI(node, node.isNodeActive()/*active*/, -1/*pat*/);
+
+         // (note) do not call HandleNodeMuteStateChangedUI()
+
+         return true;
+      }
+      return false;
+   }
+
+   // <method_set.png>
+   public static ToggleNodeSoloState(MIDIPipeNode node) {
+      // called from SetNodeSoloState(), Replay::processUIMuteQueue(), NodesTM
+      MIDIPipeNode *n;
+      int ni;
+      MIDIPipe pipe <= node.parent;
+
+      int newState = (MIDIPIPE_STATE_SOLO == node.state) ? MIDIPIPE_STATE_PLAY : MIDIPIPE_STATE_SOLO;
+
+      if(MIDIPIPE_STATE_SOLO == node.state)
+      {
+         ni = 0;
+         loop(pipe.numNodes)
+         {
+            n <= pipe.getNodeByIdx(ni);
+            if(MIDIPIPE_STATE_PLAY != n.state)
+            {
+               n.restorePreSoloState();
+               replay.handleNodeStateChangedNativeUI(n, n.isNodeActive()/*active*/, -1/*pat*/);
+            }
+            if(MIDIPIPE_STATE_SOLO == n.state)
+            {
+               n.state = MIDIPIPE_STATE_PLAY;
+               replay.handleNodeStateChangedNativeUI(n, n.isNodeActive()/*active*/, -1/*pat*/);
+            }
+            ni++;
+         }
+
+         pipe.soloNode = null;
+      }
+
+      node.state = newState;
+
+      if(MIDIPIPE_STATE_SOLO == node.state)
+      {
+         pipe.soloNode = node;
+
+         ni = 0;
+         loop(pipe.numNodes)
+         {
+            n <= pipe.getNodeByIdx(ni);
+            n.saveSoloState();
+            n.state = MIDIPIPE_STATE_MUTE;
+            replay.handleNodeStateChangedNativeUI(n, false/*active*/, -1/*pat*/);
+            ni++;
+         }
+         node.state = MIDIPIPE_STATE_SOLO;
+         replay.handleNodeStateChangedNativeUI(node, node.isNodeActive()/*active*/, -1/*pat*/);
+      }
+
+      HandleNodeStateChangedUI(node);
+   }
+
+   // <method_set.png>
+   public static SetNodeSoloState(MIDIPipeNode node, boolean _bSolo) : boolean {
+      if((MIDIPIPE_STATE_SOLO == node.state) ^ _bSolo)
+      {
+         ToggleNodeSoloState(node);
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public static TogglePipeMuteState(MIDIPipe pipe) {
+      MIDIPipe *p;
+      int pi;
+
+      MIDIPipeRoot root <= pipe.root;
+
+      int newState = (MIDIPIPE_STATE_MUTE == pipe.state) ? (root.soloPipe == pipe) ? MIDIPIPE_STATE_SOLO : MIDIPIPE_STATE_PLAY : MIDIPIPE_STATE_MUTE;
+
+      pipe.state = newState;
+
+      replay.handlePipeStateChangedNativeUI(pipe);
+
+      HandlePipeStateChangedUI(pipe);
+   }
+
+   // <method_set.png>
+   public static SetPipeMuteState(MIDIPipe pipe, boolean _bMute) : boolean {
+      if((MIDIPIPE_STATE_MUTE == pipe.state) ^ _bMute)
+      {
+         int newState = _bMute ? MIDIPIPE_STATE_MUTE : MIDIPIPE_STATE_PLAY;
+
+         pipe.state = newState;
+
+         replay.handlePipeStateChangedNativeUI(pipe);
+         return true;
+      }
+      return false;
+   }
+
+   // <method_set.png>
+   public static TogglePipeSoloState(MIDIPipe pipe) {
+      MIDIPipe *p;
+      int pi;
+
+      int newState = (MIDIPIPE_STATE_SOLO == pipe.state) ? MIDIPIPE_STATE_PLAY : MIDIPIPE_STATE_SOLO;
+
+      MIDIPipeRoot root <= pipe.root;
+
+      if(MIDIPIPE_STATE_SOLO == pipe.state)
+      {
+         pi = 0;
+         loop(root.numPipes)
+         {
+            p <= root.getPipeByUsedIdx(pi);
+            if(MIDIPIPE_STATE_PLAY != p.state)
+            {
+               p.restorePreSoloState();
+               replay.handlePipeStateChangedNativeUI(p);
+            }
+            if(MIDIPIPE_STATE_SOLO == p.state)
+            {
+               p.state = MIDIPIPE_STATE_PLAY;
+               replay.handlePipeStateChangedNativeUI(p);
+            }
+            pi++;
+         }
+
+         root.soloPipe = null;
+      }
+
+      pipe.state = newState;
+
+      if(MIDIPIPE_STATE_SOLO == pipe.state)
+      {
+         root.soloPipe = pipe;
+
+         pi = 0;
+         loop(root.numPipes)
+         {
+            p <= root.getPipeByUsedIdx(pi);
+            p.saveSoloState();
+            p.state = MIDIPIPE_STATE_MUTE;
+            replay.handlePipeStateChangedNativeUI(p);
+            pi++;
+         }
+         pipe.state = MIDIPIPE_STATE_SOLO;
+      }
+
+      replay.handlePipeStateChangedNativeUI(pipe);
+
+      HandlePipeStateChangedUI(pipe);
+   }
+
+   // <method_set.png>
+   public static SetPipeSoloState(MIDIPipe pipe, boolean _bSolo) : boolean {
+      if((MIDIPIPE_STATE_SOLO == pipe.state) ^ _bSolo)
+      {
+         TogglePipeSoloState(pipe);
+         return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method nodeGetPatternsGeneric() : PointerArray {
+      // Implemented by nodes that support generic swap/insert/delete/copy/paste (most but not e.g. NodeTracker)
+      return null;
+   }
+
+   // <method_set.png>
+   public method nodeSetPattern(int _idx, NodePattern _pat) {
+      PointerArray patternsGen <= nodeGetPatternsGeneric();
+      if(null != patternsGen)
+      {
+         patternsGen[_idx] = deref _pat;
+      }
+      else
+      {
+         trace "[---] Node::nodeSetPattern: internal error: class does not support generic patterns[]";
+      }
+   }
+
+   // <method.png>
+   public method nodeNewPattern(int _patIdx) : NodePattern {
+      String className <= nodeGetPatternClassName();
+      if(null != className)
+      {
+         NodePattern pat <= TKS.newObjectByName(null/*nspace*/, className);
+         pat.patInit(this, _patIdx);
+         nodeSetPattern(_patIdx, deref pat);
+         return pat;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public method nodeFreePatternTrackData(int _patIdx) {
+      // Used by e.g. NodeTracker
+   }
+
+   // <method.png>
+   public method nodeDeletePatternByIdx(int _patIdx) {
+      nodeSetPattern(_patIdx, null);
+   }
+
+   // <method.png>
+   protected method nodeReEnumeratePatterns() {
+      int patIdx = 0;
+      loop(NUM_PATTERNS)
+      {
+         NodePattern pat <= nodeGetPatternByIdx(patIdx);
+         if(null != pat)
+         {
+            pat.pat_nr = patIdx;
+         }
+         patIdx++;
+      }
+   }
+
+   // <method_get.png>
+   public method nodeCanShiftPatterns() : boolean {
+      return (null != nodeGetPatternsGeneric());
+   }
+
+   // <method.png>
+   public method nodeShiftInsertPatternSlotAtIdx(int _patIdx) : boolean {
+      // insert (null) pattern slot at the given index and shift subsequent patterns
+
+      // Generic implementation:
+      PointerArray a <= nodeGetPatternsGeneric();
+      if(null != a)
+      {
+         nodeDeletePatternByIdx(NUM_PATTERNS - 1);
+         a.insert(_patIdx, null);
+         nodeReEnumeratePatterns();
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method nodeShiftDeletePatternSlotAtIdx(int _patIdx) : boolean {
+      // delete pattern slot at the given index and shift subsequent patterns
+
+      // Generic implementation:
+      PointerArray a <= nodeGetPatternsGeneric();
+      if(null != a)
+      {
+         nodeDeletePatternByIdx(_patIdx);
+         a.delete(_patIdx);
+         a.insert(NUM_PATTERNS -1, null);
+         nodeReEnumeratePatterns();
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method nodeSwapPatterns(int _idxA, int _idxB) {
+      PointerArray genPatterns <= nodeGetPatternsGeneric();
+      if(null != genPatterns)
+      {
+         NodePattern a <= genPatterns.get(_idxA);
+         NodePattern b <= genPatterns.get(_idxB);
+
+         genPatterns.swap(_idxA, _idxB);
+
+         if(null != a)
+         {
+            a.pat_nr = _idxB;
+         }
+         if(null != b)
+         {
+            b.pat_nr = _idxA;
+         }
+      }
+   }
+
+   // <method.png>
+   public method nodeCanCopyPatterns() : boolean {
+      // true=node supports patterns
+      return true;
+   }
+
+   // <method_get.png>
+   public method nodeIsPatternClipboardEmpty() : boolean {
+      String patClassName <= nodeGetPatternClassName();
+      if(null != patClassName)
+      {
+         NodePattern patCB <= NodePattern.PatGetClipboardForClass(patClassName);
+         return (null == patCB) || patCB.patIsEmpty();
+      }
+      return true;
+   }
+
+   // <method.png>
+   public =replay= method nodeExchangePatternWithClipboard(int _patIdx) : boolean {
+      NodePattern pat <= nodeGetPatternByIdx(_patIdx);
+      String patClassName <= nodeGetPatternClassName();
+      if(null != patClassName)
+      {
+         NodePattern patCB <= NodePattern.PatGetClipboardForClass(patClassName);
+
+         boolean bPatEmpty = true;
+
+         if(null != pat)
+         {
+            bPatEmpty = pat.patIsEmpty();
+         }
+
+         if(!bPatEmpty || (null != patCB))
+         {
+            NodePattern *tmp;
+
+            // trace "xxx pat="+#(pat)+" patCB="+#(patCB);
+
+            if(null != pat)
+            {
+               tmp <= pat.patNewClipboard();
+            }
+            else
+            {
+               tmp <= patCB.patNewClipboard();
+            }
+
+            if(!bPatEmpty)
+            {
+               if(null == patCB)
+               {
+                  // trace "xxx exchange with empty clipboard";
+                  patCB <= pat.patGetOrCreateClipboard();
+                  patCB.patCopyFrom(pat, false/*bClear*/); // "clear" is currently only used by NodeAutoPattern
+                  pat <= nodeNewPattern(_patIdx);
+                  nodeFreePatternTrackData(_patIdx);
+               }
+               else
+               {
+                  // trace "xxx exchange with non-empty clipboard";
+                  tmp.patCopyFrom(pat, false/*bClear*/); // "clear" is currently only used by NodeAutoPattern
+                  pat.patCopyFrom(patCB, false/*bClear*/);
+                  patCB.patCopyFrom(tmp, false/*bClear*/);
+                  pat.patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+               }
+               tmp <= null;
+            }
+            else
+            {
+               // Allocate new pattern (have cb)
+               pat <= nodeNewPattern(_patIdx);
+               pat.patCopyFrom(patCB, false/*bClear*/);
+               pat.patFreeClipboard();
+            }
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_find.png>
+   public method sameAutoDevChAs_A(Node _o) : boolean {
+
+      if(b_auto_filter_a)
+      {
+         if(_o.b_auto_filter_a)
+         {
+            if((-1 == _o.auto_dev_filter_a) || (_o.auto_dev_filter_a == auto_dev_filter_a) || (-1 == auto_dev_filter_a))
+            {
+               if((-1 == _o.auto_ch_filter_a) || (_o.auto_ch_filter_a == auto_ch_filter_a) || (-1 == auto_ch_filter_a))
+               {
+                  return true;
+               }
+            }
+         }
+
+         if(_o.b_auto_filter_b)
+         {
+            if((-1 == _o.auto_dev_filter_b) || (_o.auto_dev_filter_b == auto_dev_filter_a) || (-1 == auto_dev_filter_a))
+            {
+               if((-1 == _o.auto_ch_filter_b) || (_o.auto_ch_filter_b == auto_ch_filter_a) || (-1 == auto_ch_filter_a))
+               {
+                  return true;
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <method_find.png>
+   public method sameAutoDevChAs_B(Node _o) : boolean {
+
+      if(b_auto_filter_b)
+      {
+         if(_o.b_auto_filter_a)
+         {
+            if((-1 == _o.auto_dev_filter_a) || (_o.auto_dev_filter_a == auto_dev_filter_b) || (-1 == auto_dev_filter_b))
+            {
+               if((-1 == _o.auto_ch_filter_a) || (_o.auto_ch_filter_a == auto_ch_filter_b) || (-1 == auto_ch_filter_b))
+               {
+                  return true;
+               }
+            }
+         }
+
+         if(_o.b_auto_filter_b)
+         {
+            if((-1 == _o.auto_dev_filter_b) || (_o.auto_dev_filter_b == auto_dev_filter_b) || (-1 == auto_dev_filter_b))
+            {
+               if((-1 == _o.auto_ch_filter_b) || (_o.auto_ch_filter_b == auto_ch_filter_b) || (-1 == auto_ch_filter_b))
+               {
+                  return true;
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <method_find.png>
+   public method sameAutoDevChAs(Node _o) : boolean {
+
+      if(sameAutoDevChAs_A(_o))
+         return true;
+
+      if(sameAutoDevChAs_B(_o))
+         return true;
+   }
+
+   // <ui_update.png>
+   public method updateChFilterUniqueness(ComboBox _cm, boolean _bB) {
+
+      boolean bLocallyUnique = true;
+      boolean bGloballyUnique = true;
+
+      MIDIPipe *pipe;
+      int pipeUsedIdx = 0;
+
+      boolean bArrClash = false;
+
+      String sharedAutoNodeNames;
+      sharedAutoNodeNames.empty();
+
+      loop(current_pipe_root.numPipes)
+      {
+         pipe <= current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+
+         if(null != pipe) // shouldn't be null
+         {
+            int nodeIdx = 0;
+
+            loop(pipe.numNodes)
+            {
+               MIDIPipeNode n <= pipe.getNodeByIdx(nodeIdx);
+
+               if(@(n) != @(parent_pipenode))
+               {
+                  if(n instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     MIDIPipeNodeScriptProxy sn <= n;
+
+                     Node no <= sn.sci;
+
+                     if(_bB)
+                     {
+                        if(sameAutoDevChAs_B(no))
+                        {
+                           if(@(pipe) == @(parent_pipe))
+                              bLocallyUnique = false;
+                           else
+                              bGloballyUnique = false;
+
+                           if(b_node_class_show && no.b_node_class_show)
+                              bArrClash = (-1 == node_class_show_in_gid) || (-1 == no.node_class_show_in_gid) || (node_class_show_in_gid == no.node_class_show_in_gid);
+
+                           sharedAutoNodeNames.append("\n  - \""+no.nodeGetName()+"\"");
+                        }
+                     }
+                     else
+                     {
+                        if(sameAutoDevChAs_A(no))
+                        {
+                           if(@(pipe) == @(parent_pipe))
+                              bLocallyUnique = false;
+                           else
+                              bGloballyUnique = false;
+
+                           if(b_node_class_show && no.b_node_class_show)
+                              bArrClash = (-1 == node_class_show_in_gid) || (-1 == no.node_class_show_in_gid) || (node_class_show_in_gid == no.node_class_show_in_gid);
+
+                           sharedAutoNodeNames.append("\n  - \""+no.nodeGetName()+"\"");
+                        }
+                     }
+                  }
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeUsedIdx++;
+      }
+
+      // Blue: locally unique
+      // Green: globally unique
+      // Cyan: locally and globally unique
+      int c32 = 0;
+      String tt = "Automation channel filter "+(_bB ? "B" : "A");
+
+      if(bGloballyUnique)
+      {
+         if(bLocallyUnique)
+         {
+            c32 += app_lnf.getColor(AppLookAndFeel.COLOR_AUTODEVICEFORM_GLOBALANDLOCAL_UNIQUE_BG_TINT);
+            tt.append("\n\n- Both globally and locally unique");
+         }
+         else
+         {
+            tt.append("\n- Only globally unique");
+            c32 += app_lnf.getColor(AppLookAndFeel.COLOR_AUTODEVICEFORM_GLOBAL_UNIQUE_BG_TINT);//0x40005050;
+         }
+      }
+      else
+      {
+         if(!bLocallyUnique)
+         {
+            tt.append("\n\n- Neither globally nor locally unique");
+            c32 = app_lnf.getColor(AppLookAndFeel.COLOR_AUTODEVICEFORM_NOT_UNIQUE_BG_TINT);//0x68800000;
+         }
+         else
+         {
+            tt.append("\n- Only locally unique");
+            c32 += app_lnf.getColor(AppLookAndFeel.COLOR_AUTODEVICEFORM_LOCAL_UNIQUE_BG_TINT);
+         }
+      }
+
+      if(bArrClash)
+      {
+         tt.append("\n\nWarning: not unique in arranger !");
+         c32 |= app_lnf.getColor(AppLookAndFeel.COLOR_AUTODEVICEFORM_ARR_CLASH_BG_TINT);//0x60FF6000;
+      }
+
+      if(!sharedAutoNodeNames.isBlank())
+      {
+         tt.append("\n\nShared with:");
+         tt.append(sharedAutoNodeNames);
+      }
+
+      _cm.setBackgroundTint(c32);
+      _cm.setToolTipCaption(tt);
+   }
+
+   // <method_find.png>
+   static FindFirstNodeThatListensTo(int _devIdx, byte _midiCh) : Node {
+
+      int numPipes = current_pipe_root.getNumPipes();
+      int pipeIdx = 0;
+
+      loop(numPipes)
+      {
+         MIDIPipe cPipe <= current_pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         int numNodes = cPipe.getNumNodes();
+         int nodeIdx = 0;
+
+         loop(numNodes)
+         {
+            MIDIPipeNode cNode <= cPipe.getNodeByIdx(nodeIdx);
+
+            // trace "xxx cNode="+#(cNode);
+
+            if(cNode instanceof MIDIPipeNodeScriptProxy)
+            {
+               MIDIPipeNodeScriptProxy nsp <= cNode;
+               Node sci <= nsp.sci;
+
+               // trace "xxx sci="+#(sci);
+
+               if(sci instanceof Node)
+               {
+                  // trace "xxx devIdx="+_devIdx+" auto_dev_filter_a="+sci.auto_dev_filter_a;
+
+                  if(sci.b_auto_filter_a)
+                  {
+                     if( (-1 == sci.auto_dev_filter_a) || (sci.auto_dev_filter_a == _devIdx) )
+                     {
+                        if( (-1 == sci.auto_ch_filter_a) || (sci.auto_ch_filter_a == _midiCh) )
+                        {
+                           return sci;
+                        }
+                     }
+                  }
+
+                  if(sci.b_auto_filter_b)
+                  {
+                     if( (-1 == sci.auto_dev_filter_b) || (sci.auto_dev_filter_b == _devIdx) )
+                     {
+                        if( (-1 == sci.auto_ch_filter_b) || (sci.auto_ch_filter_b == _midiCh) )
+                        {
+                           return sci;
+                        }
+                     }
+                  }
+
+               } // if is Node
+            } // if is script Node
+
+            // Next node
+            nodeIdx++;
+         }
+
+         // Next pipe
+         pipeIdx++;
+      }
+
+   }
+
+   // <method.png>
+   function CalcPatNrOptions(Node        _sci,
+                             StringArray _retOptionsShort, // or null
+                             StringArray _retOptionsLong,  // or null
+                             IntArray    _retColors        // or null
+                             ) {
+
+      if(null != _retOptionsShort)
+         _retOptionsShort.empty();
+
+      if(null != _retOptionsLong)
+         _retOptionsLong.empty();
+
+      if(null != _retColors)
+         _retColors.empty();
+
+      int patNr = 0;
+
+      int c32Empty = UI.IsDarkOrMono() ? #38ff2030 : #50ff0000;
+
+      loop(NUM_PATTERNS/*128*/)
+      {
+         local String optShort = Node.patnr_options.get(patNr);
+         local String optLong = optShort;
+         optLong.append(": ");
+         local NodePattern nodePat <= _sci.nodeGetPatternByIdx(patNr);
+         boolean bEmpty = true;
+         if(null != nodePat)
+         {
+            if(!nodePat.patIsEmpty())
+            {
+               optLong.append(nodePat.pat_name);
+               if(null != _retColors)
+                  _retColors.add(Node.patnr_colors.get(patNr));
+               bEmpty = false;
+            }
+         }
+
+         if(bEmpty)
+         {
+            int c32 = Node.patnr_colors.get(patNr);
+            if(127 == patNr)
+            {
+               if(null != _retColors)
+                  _retColors.add(c32);
+            }
+            else
+            {
+               optLong.append("-");
+               // //patNrColors.add(UI.TintColor32Alpha(c32, #80ffffff, #90)); //(c32>>24)&255)
+               if(null != _retColors)
+                  _retColors.add(c32Empty);
+            }
+         }
+
+         if(null != _retOptionsShort)
+            _retOptionsShort.add(optShort);
+
+         if(null != _retOptionsLong)
+            _retOptionsLong.add(optLong);
+
+         patNr++;
+      }
+   }
+
+   // <method_get.png>
+   public method getAutoPortString() : String {
+      local String r;
+      STX_MIDIOutDevice *dev;
+
+      r.append("A:");
+      if(b_auto_filter_a)
+      {
+         if(auto_dev_filter_a >= 0)
+         {
+            dev <= MIDI.GetMIDIOutDeviceByIndex(auto_dev_filter_a);
+            if(null != dev)
+            {
+               r.append(dev.getAliasOrDeviceName());
+            }
+            else
+            {
+               r.append("-");
+            }
+         }
+         else
+         {
+            r.append("*");
+         }
+         r.append(":");
+         if(-1 == auto_ch_filter_a)
+            r.append("*");
+         else
+            r.append(auto_ch_filter_a+1);
+      }
+      else
+         r.append("-");
+
+      r.append(" B:");
+      if(b_auto_filter_b)
+      {
+         if(auto_dev_filter_b >= 0)
+         {
+            dev <= MIDI.GetMIDIOutDeviceByIndex(auto_dev_filter_b);
+            if(null != dev)
+            {
+               r.append(dev.getAliasOrDeviceName());
+            }
+            else
+            {
+               r.append("-");
+            }
+         }
+         else
+         {
+            r.append("*");
+         }
+         r.append(":");
+         if(-1 == auto_ch_filter_b)
+            r.append("*");
+         else
+            r.append(auto_ch_filter_b+1);
+      }
+      else
+         r.append("-");
+
+      return deref r;
+   }
+
+   // <method_find.png>
+   public static FindNodeTemplateByLowerCaseName(String _type) : Object {
+      // called by NewTrackDialog.createGetNodeClass()
+      local String *className;
+      // (todo) move to STConfig ?
+      switch(_type)
+      {
+         case "analogrytm":  className <= "NodeAnalogRytm";  break;
+         case "arranger":    className <= "NodeArranger";    break;
+         case "buffer"       className <= "NodeBuffer";      break;
+         case "ctlmorph":    className <= "NodeCtlMorph";    break;
+         case "delay":       className <= "NodeDelay";       break;
+         case "keymap":      className <= "NodeKeymap";      break;
+         case "modmatrix":   className <= "NodeModMatrix";   break;
+         case "modular":     className <= "NodeModular";     break;
+         case "monitor":     className <= "NodeMonitor";     break;
+         case "monopoly":    className <= "NodeMonoPoly";    break;
+         case "proxy":       className <= "NodeProxy";       break;
+         case "script":      className <= "NodeScript";      break;
+         case "seq":
+         case "freeform":
+            className <= "NodeSeq";
+            break;
+
+         default:
+         case "tracker":
+            className <= "NodeTracker";
+            break;
+
+         case "trigseq":
+            className <= "NodeTrigSeq";
+            break;
+      }
+
+      if(null != className)
+      {
+         if(Global.LazyAccessNodeClass(className))  // load TSLs (and stashed MMC)
+         {
+            return TKS.findScriptClass(null/*nsp*/, className);
+         }
+      }
+      return null;
+   }
+
+   // <method_new.png>
+   static method NewNodeByName(String _scriptClassName) : Node {
+      if(Global.LazyAccessNodeClass(_scriptClassName))
+         return TKS.newObjectByName(null/*nsp*/, _scriptClassName);
+      return null;
+   }
+
+   // <method.png>
+   public method nodeSupportsHWInterface(int _outDevIdx, byte _midiCh) : boolean {
+      // e.g. for querying whether node has a dedicated Linnstrument mode
+      return false;
+   }
+
+   // <method.png>
+   public method nodeOnGlobalNotification(local Node _src, local String _id, local String _action) {
+      // used for linnstrument HW interface to notify e.g. the Linnstrument arranger script node that
+      //  the user firmware mode has been enabled or disabled (e.g. by the NTS_Linnstrument TrigSeq editor plugin)
+      //  (id="<LINNSTRUMENT>", action="USERMODE_ON" or "USERMODE_OFF")
+   }
+
+   // <method.png>
+   public =replay= static SendGlobalNotification(local Node _src, local String _id, local String _action) {
+      local int numPipes = current_pipe_root.numPipes;
+      local int pipeUsedIdx = 0;
+      loop(numPipes)
+      {
+         local MIDIPipe pipe <= current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+         if(null != pipe)
+         {
+            local int numNodes = pipe.numNodes;
+            local int nodeIdx = 0;
+            loop(numNodes)
+            {
+               local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  local Node sn <= n.sci;
+                  sn.nodeOnGlobalNotification(_src, _id, _action);
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeUsedIdx++;
+      }
+   }
+
+   // <method.png>
+   public static FindFirstArranger() : NodeArranger {
+      local int numPipes = current_pipe_root.numPipes;
+      local int pipeUsedIdx = 0;
+      loop(numPipes)
+      {
+         local MIDIPipe pipe <= current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+         if(null != pipe)
+         {
+            local int numNodes = pipe.numNodes;
+            local int nodeIdx = 0;
+            loop(numNodes)
+            {
+               local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  local Node sn <= n.sci;
+                  if(sn instanceof NodeArranger)
+                     return sn;
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeUsedIdx++;
+      }
+      return null;
+   }
+
+   // <method_set.png>
+   public =replay= method setSpeedSclResetVal(float _val) {
+      rpn_com_speed_scl_reset_val = _val;
+   }
+
+   // <method.png>
+   public static SaveRecUndoStates(boolean _bArmedOnly) {
+      local int numPipes = current_pipe_root.numPipes;
+      local int pipeUsedIdx = 0;
+      int numSaved = 0;
+      loop(numPipes)
+      {
+         local MIDIPipe pipe <= current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+         if(null != pipe)
+         {
+            local int numNodes = pipe.numNodes;
+            local int nodeIdx = 0;
+            loop(numNodes)
+            {
+               local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  local Node sn <= n.sci;
+
+                  if(!_bArmedOnly || sn.nodeIsArmedForRecording())
+                  {
+                     sn.nodeSaveRecUndoState();
+                     numSaved++;
+                  }
+                  else
+                  {
+                     sn.rec_undo_state.setOffset(0);
+                  }
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeUsedIdx++;
+      }
+      return numSaved;
+   }
+
+   // <method.png>
+   public static LoadRecUndoStates(boolean _bClearAfterwards) : int {
+      int numLoaded = 0;
+      local int numPipes = current_pipe_root.numPipes;
+      local int pipeUsedIdx = 0;
+      loop(numPipes)
+      {
+         local MIDIPipe pipe <= current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+         if(null != pipe)
+         {
+            local int numNodes = pipe.numNodes;
+            local int nodeIdx = 0;
+            loop(numNodes)
+            {
+               local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  local Node sn <= n.sci;
+
+                  if((sn.rec_undo_state.offset) > 0)
+                  {
+                     sn.nodeLoadRecUndoState();
+                     numLoaded++;
+
+                     if(_bClearAfterwards)
+                     {
+                        sn.rec_undo_state.setOffset(0);
+                     }
+                  }
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeUsedIdx++;
+      }
+      return numLoaded;
+   }
+
+   // <method.png>
+   public static HaveAnyRecUndoStates() : boolean {
+      local int numPipes = current_pipe_root.numPipes;
+      local int pipeUsedIdx = 0;
+      loop(numPipes)
+      {
+         local MIDIPipe pipe <= current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+         if(null != pipe)
+         {
+            local int numNodes = pipe.numNodes;
+            local int nodeIdx = 0;
+            loop(numNodes)
+            {
+               local MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  local Node sn <= n.sci;
+
+                  if((sn.rec_undo_state.offset) > 0)
+                  {
+                     return true;
+                  }
+               }
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeUsedIdx++;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method nodeStopOutputCapture() {
+      b_capture = false;
+   }
+
+   // // <method.png>
+   // protected method nodeMergeContextSensitiveAutoDevEvents(MIDIPipeFrame _frame) {
+   // }
+
+   // <method.png>
+   protected method nodeHandleContextSensitiveAutoDevEvents(MIDIPipeFrame _frameRec, MIDIPipeFrame _framePlay) {
+      // transform incoming <autodev_a/b> events to actual node autodev a/b
+      //   - also add to output capture buffer (when active)
+      MIDIPipeFrame frOut; frOut.empty();
+      if(b_auto_filter_a)
+      {
+         // trace "xxx nodeeditor_autodev_a="+#(nodeeditor_autodev_a);
+         int dstDev;
+         int dstCh;
+
+         if(null != nodeeditor_autodev_a)
+         {
+            dstDev = (-1 == auto_dev_filter_a) ? nodeeditor_autodev_a.dev_idx : auto_dev_filter_a;
+            dstCh  = (-1 == auto_ch_filter_a) ? 0 : auto_ch_filter_a;
+            // trace "xxx nodeHandleContextSensitiveAutoDevEvents: dstDev="+dstDev+" dstCh="+dstCh;
+
+            frOut.mergeFrameFltDst(_frameRec,
+                                   nodeeditor_autodev_a.dev_idx/*fltDev*/,
+                                   -1/*fltCh*/,
+                                   dstDev,
+                                   dstCh,
+                                   true/*bMergeNotes*/,
+                                   true/*bMergeRPN*/
+                                   );
+
+            _frameRec.deleteEventsByFlt(nodeeditor_autodev_a.dev_idx, -1/*fltCh*/);
+         }
+      } // if auto a
+
+      if(b_auto_filter_b)
+      {
+         if(null != nodeeditor_autodev_b)
+         {
+            dstDev = (-1 == auto_dev_filter_b) ? nodeeditor_autodev_b.dev_idx : auto_dev_filter_b;
+            dstCh  = (-1 == auto_ch_filter_b) ? 0 : auto_ch_filter_b;
+
+            frOut.mergeFrameFltDst(_frameRec,
+                                   nodeeditor_autodev_b.dev_idx/*fltDev*/,
+                                   -1/*fltCh*/,
+                                   dstDev,
+                                   dstCh,
+                                   true/*bMergeNotes*/,
+                                   true/*bMergeRPN*/
+                                   );
+
+            _frameRec.deleteEventsByFlt(nodeeditor_autodev_b.dev_idx, -1/*fltCh*/);
+         }
+      } // if auto b
+
+      if(frOut.hasEvents())
+      {
+         // (note) do _not_ merge into frameRec or events like prgchg might be forwarded to
+         //         current instrument (in Tracker node) (causing unexpected MIDI program changes)
+         // trace "xxx frOut.numEvents="+frOut.numEvents;
+         _framePlay.mergeFrame(frOut);
+
+         if(b_capture && replay.b_playing)
+            mon_capture.captureAdd(frOut, false/*bAdvance*/);
+      }
+
+   }
+
+   // <method_get.png>
+   public method nodeGetPipeIdx() : int {
+      return parent_pipe.pipeIdx;
+   }
+
+   // <method_get.png>
+   public method nodeGetPipeNodeIdx() : int {
+      return parent_pipenode.nodeIdx;
+   }
+
+   // <method.png>
+   public method nodeHandleUnmute() {
+      // called after unmuting node or parent pipe via UI
+   }
+
+   // <method.png>
+   public method nodeHandleMute() {
+      // called after muting node or parent pipe via UI
+   }
+
+   // <method.png>
+   public method nodeQueueBidirectionalAutoDevRPNUpdate(short _rpn, float _rpnVal, String _labelOrNull) {
+      // trace "xxx Node::nodeQueueBidirectionalAutoDevRPNUpdate: rpn="+_rpn+" val="+_rpnVal+" label=\""+_labelOrNull+"\"";
+      short rpnVal;
+      BidiCtl *bidiCtl;
+      foreach bidiCtl in bidi_ctls
+      {
+         rpnVal = mathMini(16383, _rpnVal+0.5);
+         if(b_auto_filter_a && (-1 != auto_dev_filter_a) && (-1 != auto_ch_filter_a) && (null != nodeeditor_autodev_a))
+            bidiCtl.queueBidirectionalRPNUpdate(auto_dev_filter_a, auto_ch_filter_a, nodeeditor_autodev_a,
+                                                _rpn, rpnVal,
+                                                _labelOrNull
+                                                );
+
+         if(b_auto_filter_b && (-1 != auto_dev_filter_b) && (-1 != auto_ch_filter_b) && (null != nodeeditor_autodev_b))
+            bidiCtl.queueBidirectionalRPNUpdate(auto_dev_filter_b, auto_ch_filter_b, nodeeditor_autodev_b,
+                                                _rpn, rpnVal,
+                                                _labelOrNull
+                                                );
+      }
+   }
+
+   // <method.png>
+   public method nodeQueueBidirectionalEditFocusRPNUpdate(short _rpn, float _rpnVal, String _labelOrNull) {
+      // trace "xxx Node::nodeQueueBidirectionalEditFocusRPNUpdate: rpn="+_rpn+" val="+_rpnVal+" label=\""+_labelOrNull+"\"";
+      short rpnVal;
+      BidiCtl *bidiCtl;
+      foreach bidiCtl in bidi_ctls
+      {
+         rpnVal = mathMini(16383, _rpnVal+0.5);
+         if(null != nodeeditor_editfocus_dev)
+            bidiCtl.queueBidirectionalRPNUpdate(-99, -99, nodeeditor_editfocus_dev,
+                                                _rpn, rpnVal,
+                                                _labelOrNull
+                                                );
+      }
+
+   }
+
+   // <method_set.png>
+   public =replay= method nodeSetLastEditFocus(Object _o) {
+      last_editfocus <= _o;
+   }
+
+   // <method_get.png>
+   public method nodeGetLastEditFocus() : Object {
+      return last_editfocus;
+   }
+
+   // <method_find.png>
+   public method nodeFindOtherQuickJumpNode() : Node {
+      PageNode pgNode <= root_form.pg_node;
+      Node nodeA <= pgNode.getQuickJumpNode(false/*a*/);
+      Node nodeB <= pgNode.getQuickJumpNode(true/*b*/);
+
+      if( (null != nodeA) && (null != nodeB) )
+      {
+         if(@(nodeA) == @(this))
+         {
+            return (@(nodeB) != @(this)) ? nodeB : null;
+         }
+         else if(@(nodeB) == @(this))
+         {
+            return (@(nodeA) != @(this)) ? nodeA : null;
+         }
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public method nodeFindSampleUIDs(IntArray _retSmpUIDs) {
+      // implemented by NodeArranger
+   }
+
+   // <method.png>
+   public method nodeHandleEditSound(int _trackIdxHint, int _noteIdxHint) {
+      // implemented by NodeAnalogRytm (edit kit via 'k' keyboard shortcut in NodeTrigSeq)
+   }
+
+   // <method.png>
+   public =replay= method nodeToggleIgnoreSeekPrgChgMute() {
+      b_node_ignore_seek_prgchg_mute = !b_node_ignore_seek_prgchg_mute;
+   }
+
+   // <method_get.png>
+   public method nodeGetCursorTrack() : int {
+      // derived classes should return currently focused edit track
+      //  (note) used to determine locked_keyjazz_track
+      //  (note) [06Oct2024] currently implemented by NodeTracker, NodeTrigSeq, NodeSeq
+      return 0;
+   }
+
+   // <method.png>
+   public method nodeIsKeyJazzLocked() : boolean {
+      if(node_gid == current_song.locked_keyjazz_node_gid)
+      {
+         return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method nodeToggleKeyJazzLock() : boolean {
+      // called from UI thread
+      if(nodeIsKeyJazzLocked())
+      {
+         // Is currently locked --> unlock
+         current_song.locked_keyjazz_node_gid = -1;
+         current_song.locked_keyjazz_track    = 0;
+         return false;
+      }
+
+      // Lock
+      current_song.locked_keyjazz_node_gid = node_gid;
+      current_song.locked_keyjazz_track    = nodeGetCursorTrack();
+      return true;
+   }
+
+   // <method.png>
+   public static HandleNodeEditorLookAndFeelChanged() {
+      // after LookAndFeel theme changed (PagePrefs)
+      PointerArray classes <= TKS.findClassesByPrefix(null/*nsp*/, "Node");
+      Object clazz;
+      MIDIMapContext *mmc;
+      UI.b_debug_lnf_changed_reset_custom_color_flags = true;
+      foreach clazz in classes
+      {
+         if(clazz instanceof Node)
+         {
+            Node n <= clazz;
+            NodeEditor editor <= n.nodeGetEditorIfExists();
+            if(null != editor)
+            {
+               // // trace "xxx call editor="+#(editor)+" recursiveOnLookAndFeelChanged()";
+               editor.recursiveOnLookAndFeelChanged();
+            }
+         }
+      }
+      UI.b_debug_lnf_changed_reset_custom_color_flags = false;
+   }
+
+}

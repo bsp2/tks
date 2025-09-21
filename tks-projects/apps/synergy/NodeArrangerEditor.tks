@@ -1,0 +1,896 @@
+// ----
+// ---- file   : NodeArrangerEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 03Oct2015, 04Oct2015, 05Oct2015, 06Oct2015, 07Oct2015, 08Oct2015, 09Oct2015
+// ----          10Oct2015, 11Oct2015, 12Oct2015, 12Nov2015, 13Nov2015, 15Nov2015, 13Mar2016
+// ----          04Oct2016, 19Jan2017, 04Feb2017, 09Feb2017, 18Mar2017, 24Mar2017, 11Apr2017
+// ----          12Apr2017, 15Apr2017, 16Apr2017, 25Apr2017, 30Apr2017, 16Jun2017, 01Sep2017
+// ----          12Oct2017, 03Jan2018, 04Jan2018, 17Jun2018, 31May2019, 29Aug2019, 20Sep2019
+// ----          03Oct2019, 31Oct2019, 26Apr2020, 13May2021, 22May2021, 12Aug2022, 13Aug2022
+// ----          23Jun2023, 03Feb2024, 26Jan2025, 08Mar2025
+// ----
+// ----
+// ----
+
+module MNodeArrangerEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeArrangerEditor extends NodeEditor, MIDIMapEventListener, ActionProvider, MIDIMapDefs {
+
+   define String TA_SMPPEAKS;  // refresh sample peaks
+   TimerAction ta_smppeaks;
+
+   define String TA_LIVEREC_SELECT;  // show track instance+sample
+   TimerAction ta_liverec_select;
+
+   define String TA_REDRAWALL_SLOW;
+   TimerAction ta_redrawall_slow;
+
+   define int TAB_TIMELINE  = 0;
+   define int TAB_PLAY      = 1;
+
+   define String MMT_QUEUE16TH;
+   define String MMT_QUEUE16TH_INV;
+   define String MMT_QUEUE16TH_DELTA;
+   define String MMT_QUEUE16TH_INC;
+   define String MMT_QUEUE16TH_DEC;
+
+   public NodeArranger *arranger;
+
+   protected TabSwitch *ts_groups;
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected FloatParam *fp_play_queue_16th;
+
+   protected CheckBox *cb_trackmutenode;
+   protected CheckBox *cb_sendcliprelpos;
+
+   // ArrayList of all pipenodes (Node*) that can be controlled by this Arranger instance
+   //  (note) used for mapping nodeGIDs to Node refs
+   public PointerArray pipe_nodes;
+
+   public IntArray available_gids;
+
+   public NA_TimelineForm *timeline;
+
+   protected static int last_edited_arranger_gid = -1;
+
+   int     queued_liverec_selectinstancebyid = -1;
+   int     queued_liverec_selectsamplebyuniqueid = -1;
+   float   queued_liverec_selectsample_selstartms;
+   float   queued_liverec_selectsample_sellenms; // -1=keep current selection
+   boolean b_queued_liverec_force_edit;  // 1=edit sample even if auto-edit-sample is disabled
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeArrangerEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            f_autodev.initAutoDeviceForm();
+
+            initMMC();
+            initTimers();
+
+            if(timeline.init(this))
+            {
+               ts_groups.setActiveTabIndex(TAB_TIMELINE);
+
+               recursiveBuildTabCycleLists();
+
+               return true;
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_smppeaks       <= TimerAction.New(TA_SMPPEAKS,       this, 55);
+      ta_liverec_select <= TimerAction.New(TA_LIVEREC_SELECT, this, 100);
+      ta_redrawall_slow <= TimerAction.New(TA_REDRAWALL_SLOW, this, 420);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeArrangerEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+
+      // Play
+      mmcAddTargetExO(MMT_QUEUE16TH,           CLASS_VALUE, SYN_NONE,
+                      "Queue 16", "Queue 16",  DPY_DEFAULT, fp_play_queue_16th
+                      );
+      mmcAddTargetExO(MMT_QUEUE16TH_INV,       CLASS_VALUE, SYN_NONE,
+                      "Queue 16", "Queue 16",  DPY_DEFAULT, fp_play_queue_16th
+                      );
+      mmcAddTargetExO(MMT_QUEUE16TH_DELTA,     CLASS_DELTA, 4,
+                      "Queue 16", "Queue 16",  DPY_DEFAULT, fp_play_queue_16th
+                      );
+      mmcAddTarget(MMT_QUEUE16TH_INC,     CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_QUEUE16TH_DEC,     CLASS_BUTTON, SYN_BUTTON_REPEAT);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      // // trace "xxx NodeArrangerEditor::mmcHandleEvent";
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+      NodeArrangerPattern pat <= getEditPattern();
+
+      if(null != boundEv)
+      {
+         String tgtName <= boundEv.bound_target.target_name;
+
+         switch(tgtName)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+
+               // Play
+            case MMT_QUEUE16TH:
+            case MMT_QUEUE16TH_DELTA:
+               ts_groups.setActiveTabIndex(TAB_PLAY);
+               handleTabSelected();
+               MMTListener.MMTHandleLayerEvent(fp_play_queue_16th, _ev, false/*bInv*/);
+               return true;
+
+            case MMT_QUEUE16TH_INV:
+               ts_groups.setActiveTabIndex(TAB_PLAY);
+               handleTabSelected();
+               MMTListener.MMTHandleLayerEvent(fp_play_queue_16th, _ev, true/*bInv*/);
+               return true;
+
+            case MMT_QUEUE16TH_INC:
+               ts_groups.setActiveTabIndex(TAB_PLAY);
+               handleTabSelected();
+               MMTListener.MMTHandleLayerInc(fp_play_queue_16th);
+               return true;
+
+            case MMT_QUEUE16TH_DEC:
+               ts_groups.setActiveTabIndex(TAB_PLAY);
+               handleTabSelected();
+               MMTListener.MMTHandleLayerDec(fp_play_queue_16th);
+               return true;
+         }
+      }
+
+      // // trace "xxx NodeArrangerEditor::mmcHandleEvent: unhandled";
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_TIMELINE:
+            layers.add(ts_groups);
+            timeline.addTabCycleOverrides(layers);
+            return layers;
+
+         case TAB_PLAY:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cm_node_class,
+                             cb_node_class_show,
+                             cm_node_class_show_in,
+
+                             fp_play_queue_16th,
+
+                             cb_trackmutenode,
+                             cb_sendcliprelpos
+                           ]
+                          );
+
+            f_autodev.addTabCycleOverrides(layers);
+
+            return layers;
+      }
+   }
+
+   // <ui_focus.png>
+   public method refocusDefault() {
+
+      UI.SetKeyboardFocus(ts_groups);
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_TIMELINE:
+            UI.SetKeyboardFocus(timeline.data);
+            break;
+
+         case TAB_PLAY:
+            break;
+      }
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeArranger _arranger) {
+      arranger <= _arranger;
+
+      NA_TimelineData data <= timeline.data;
+      data.current_track_sy = arranger.saved_track_sy;
+
+      if(SysEx.IsAudioConnected())
+      {
+         f_audio_liverec.handleQueryIfStale();
+         dlg_audio_liverec.dockToArrangerTimeline(timeline, timeline.pn_liverec_dock);
+         f_audio_liverec.preShow();
+         f_audio_liverec.resizeToMinimum();
+         relayout();
+      }
+
+      timeline.tstate <= arranger.timeline;  // 26Apr2020
+      NA_State tstate <= timeline.tstate;
+      tstate.current_record_audio_smp_uid = -1;
+      scanPipeNodes();
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(arranger);
+
+      updateQueue16th();
+
+      cb_trackmutenode.setSelected(_arranger.b_track_mute_node);
+      cb_sendcliprelpos.setSelected(_arranger.b_send_clip_rel_pos);
+
+      // Update auto-dev device names
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      f_autodev.showNode(arranger, devAll, bgcolorsAll);
+
+      // // MIDI.AddMIDIMapEventListener(this);
+
+      timeline.showNode(_arranger, false/*bUndoRedo*/);
+      handleTabSelected();
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         UI.SetKeyboardFocus(ts_groups);
+      }
+
+      last_edited_arranger_gid = arranger.getNodeGID();
+
+      ta_smppeaks.reschedule();
+   }
+
+   // <ui_show.png>
+   public method showNodeQuiet(NodeArranger _arranger) {
+      arranger <= _arranger;
+      timeline.tstate <= arranger.timeline;  // 26Apr2020
+      scanPipeNodes();
+      timeline.showNodeQuiet(_arranger);
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+      // // trace "xxx NodeArrangerEditor::showNodePost";
+
+      refocusDefault();
+   }
+
+   // <method_find.png>
+   public static FindLastEditedArranger() : NodeArranger {
+      NodeArranger r <= current_song.findNodeByGID(last_edited_arranger_gid);
+      if!(r instanceof NodeArranger)
+         r <= null;
+      return r;
+   }
+
+   // <method_find.png>
+   public static FindLastEditedOrFirstArranger() : NodeArranger {
+      NodeArranger r <= FindLastEditedArranger();
+      if(null == r)
+         r <= Node.FindFirstArranger();
+      return r;
+   }
+
+   // <method_find.png>
+   public static FindPreviousClipStartTicks(int _gid, int _ticks, boolean _bSubOffset) : int {
+      int ret = -1;
+      NodeArranger a <= FindLastEditedOrFirstArranger();
+      if(null != a)
+      {
+         NA_Track aTrk <= a.timeline.findTrackByGID(_gid);
+         if(null != aTrk)
+         {
+            NA_Clip aClip <= aTrk.findClipBefore(_ticks);
+            if(null != aClip)
+            {
+               if(aClip.start_ticks == _ticks)
+                  aClip <= aTrk.findClipBefore(_ticks - 1);
+
+               if(null != aClip)
+               {
+                  ret = aClip.start_ticks;
+
+                  if(_bSubOffset)
+                     ret -= aClip.calcOffsetTicks();
+               }
+            }
+         }
+      }
+      return ret;
+   }
+
+   // <method_find.png>
+   public static FindNextClipStartTicks(int _gid, int _ticks, boolean _bSubOffset) : int {
+      int ret = -1;
+      NodeArranger a <= FindLastEditedOrFirstArranger();
+      if(null != a)
+      {
+         NA_Track aTrk <= a.timeline.findTrackByGID(_gid);
+         if(null != aTrk)
+         {
+            NA_Clip aClip <= aTrk.findClipAfter(_ticks);
+            if(null != aClip)
+            {
+               ret = aClip.start_ticks;
+
+               if(_bSubOffset)
+                  ret -= aClip.calcOffsetTicks();
+            }
+         }
+      }
+      return ret;
+   }
+
+   // <ui_update.png>
+   protected method handleTabSelected() {
+      if(TAB_TIMELINE == ts_groups.getActiveTabIndex())
+         root_form.addOverlay(timeline.data);
+      else
+         root_form.removeOverlay(timeline.data); // can probably be skipped
+   }
+
+   // <method_get.png>
+   protected method getEditPattern() : NodeArrangerPattern {
+      return null;
+   }
+
+   // <method.png>
+   protected method scanPipeNodes() {
+      // // trace "xxx scanPipeNodes: arranger="+#(arranger);
+      // // trace "xxx scanPipeNodes: arranger.parent_pipe="+#(arranger.parent_pipe);
+      boolean bIsMasterPipe = (0 == (arranger.parent_pipe.pipeIdx));
+
+      int pipeIdx = (arranger.parent_pipe.pipeIdx);
+
+      pipe_nodes.empty();
+
+      available_gids.empty();
+
+      MIDIPipeNode parentPipeNode <= (arranger.parent_pipenode);
+
+      while(pipeIdx < current_pipe_root.maxPipes)
+      {
+         MIDIPipe pipe <= current_pipe_root.getPipeByIdx(pipeIdx);
+
+         if(null != pipe)
+         {
+            int nodeIdx;
+
+            if(@(pipe) == @(arranger.parent_pipe))
+               nodeIdx = (parentPipeNode.getNodeIdx()) + 1;
+            else
+               nodeIdx = 0;
+
+            while(nodeIdx < pipe.numNodes)
+            {
+               MIDIPipeNode pipeNode <= pipe.getNodeByIdx(nodeIdx);
+
+               if(@(pipeNode) != @(parentPipeNode))
+               {
+                  if(pipeNode instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     MIDIPipeNodeScriptProxy nsp <= pipeNode;
+                     Node sci <= nsp.sci;
+
+                     boolean bAdd = false;
+
+                     if(sci.getEnableNodeClassShow())
+                     {
+                        if( (-1 == sci.getNodeClassShowInGID()) || (sci.getNodeClassShowInGID() == arranger.getNodeGID()) )
+                        {
+                           Global.Debug2("NodeArrangerEditor::scanPipeNodes: add sci="+#(sci)+" gid="+sci.getNodeGID()+" name=\""+pipeNode.name+"\"");
+                           pipe_nodes.add(sci);
+
+                           // // arranger.lazyAddUniquePatternNodesByGID(sci.getNodeGID());
+                           available_gids.add(sci.getNodeGID());
+
+                           bAdd = true;
+                        }
+                     }
+
+                     if(!bAdd)
+                     {
+                        Global.Debug3("NodeArrangerEditor::scanPipeNodes: SKIP sci="+#(sci)+" gid="+sci.getNodeGID()+" name=\""+pipeNode.name+"\"");
+                     }
+                  }
+               }
+
+               // Next node
+               nodeIdx++;
+            } // while nodeIdx
+
+         } // if pipe
+
+         // Next pipe
+         if(!bIsMasterPipe)
+            break;
+
+         pipeIdx++;
+      } // while pipeIdx
+
+      // Update timeline
+      arranger.timeline.lazyUpdateTracksFromGIDs(available_gids);
+   }
+
+   // <method_find.png>
+   protected method findNodeByGID(int _gid) : Node {
+      Node *n;
+      foreach n in pipe_nodes
+      {
+         if(n.getNodeGID() == _gid)
+            return n;
+      }
+      return null;
+   }
+
+   // <ui_hide.png>
+   public virtual isNodeEditorLocked() : boolean {
+      return false;
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+      // Global.Debug("NodeArrangerEditor::leaveNode");
+
+      // // MIDI.RemoveMIDIMapEventListener(this);
+      if(null != arranger)
+      {
+         timeline.leaveNode();
+         root_form.removeOverlay(timeline.data);
+
+         arranger.saved_track_sy = timeline.data.current_track_sy;
+      }
+
+      dlg_audio_liverec.undockFromArrangerTimeline(timeline.pn_liverec_dock);
+
+      ta_smppeaks.cancel();
+      ta_redrawall_slow.cancel();
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      // Global.Debug("NodeArrangerEditor::unsetNode");
+      arranger <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mml.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(_ev.isReservedEvent())
+         return false;
+
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(arranger.getNodeClassId());
+      cb_node_class_show.setSelected(arranger.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      arranger.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+arranger.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      arranger.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(arranger.getEnableNodeClassShow()));
+   }
+
+   // <ui_update.png>
+   protected method updateQueue16th() {
+
+      fp_play_queue_16th.setValue(arranger.getQueue16th());
+   }
+
+   // <ui_handle.png>
+   protected method handleQueue16thChanged() {
+      arranger.setQueue16th(fp_play_queue_16th.getFloatValue());
+      // // trace "xxx arranger.getQueue16th()="+arranger.getQueue16th();
+
+      String msg = "Queue 16th is "+arranger.getQueue16th();
+
+      // Show equivalent in bars/beats
+      float q = arranger.getQueue16th();
+      float numTicksPer16th = current_song.ppq / 4.0;
+      q *= numTicksPer16th;
+
+      msg += " "+current_song.getTicksAsBarsAndBeatsString(q);
+
+      Global.Print(msg);
+   }
+
+   // <ui_handle.png>
+   protected method handleTrackMuteNodeChanged() {
+      arranger.setEnableTrackMuteNode(cb_trackmutenode.isSelected());
+
+      Global.Print("Track-mute-node is "+Utils.GetEnableString(arranger.b_track_mute_node));
+   }
+
+   // <ui_handle.png>
+   protected method handleSendClipRelPosChanged() {
+      arranger.setEnableSendClipRelPos(cb_sendcliprelpos.isSelected());
+
+      Global.Print("Send-clip-rel-pos RPNs is "+Utils.GetEnableString(arranger.b_send_clip_rel_pos));
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+      // called from UI thread
+
+      Global.Debug2("NodeArrangerEditor::handleStartPlaying");
+
+      // // // arranger.nodeCopyLastPatternStartSongOffsetFromEditor();
+
+      // // Apply pattern offsets, ..
+      // // (note) current scene is queued in nodeReset()
+      // // // arranger.queueScene(arranger.nodeGetCurrentPlayPatternNr(), false/*bQueue*/);
+
+      // // rec_blinkcount = 0;
+
+      timeline.handleStartPlaying();
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+
+      // trace "[trc] NodeArrangerEditor::handleStopPlaying";
+
+      // // // arranger.nodeCopyLastPatternStartSongOffsetFromEditor();
+
+      timeline.handleStopPlaying();
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+
+      // trace "[trc] NodeArrangerEditor::handleSongPosSelected";
+
+      // called from UI thread while =replay= is locked
+      arranger.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+
+      timeline.handleSongPosSelected();
+   }
+
+   // <ui_handle.png>
+   public virtual nodeHandleEditPatternChanged() {
+      // handlePlayPatChanged();
+   }
+
+   // <method_handle.png>
+   public virtual handlePlayPatChanged() {
+       // trace "[trc] NodeArrangerEditor::handlePlayPatChanged";
+   }
+
+   // <ui_timer.png>
+   byte last_marker_pat_nr = -1;
+   public virtual handleReplayTimer() {
+      if(SysEx.IsAudioConnected())
+         f_audio_liverec.handleReplayTimer();
+
+      byte markerPatNr = arranger.nodeGetCurrentPlayPatternNr();
+      if(markerPatNr != last_marker_pat_nr)
+      {
+         last_marker_pat_nr = markerPatNr;
+         PageNode pgNode <= root_form.pg_node;
+         pgNode.handlePlayPatChanged();  // calls handlePlayPatChanged()
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      //trace "xxx onMouse: _ev.changed_state="+_ev.changed_state+" _ev.current_state="+_ev.current_state;
+      if(_ev.leftButtonUp())
+      {
+         UI.SetKeyboardFocus(timeline);
+         timeline.refocusDefault();
+         return true;
+      }
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         // // case 'q':
+         // // case VKEY_ESCAPE:
+         // //    break;
+
+         case VKEY_HOME:
+            return true;
+
+         case VKEY_END:
+            return true;
+
+         case '1':
+            ts_groups.setActiveTabIndex(TAB_TIMELINE);
+            handleTabSelected();
+            UI.SetKeyboardFocus(timeline.data);
+            return true;
+
+         case '2':
+            ts_groups.setActiveTabIndex(TAB_PLAY);
+            handleTabSelected();
+            return true;
+      }
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_TIMELINE:
+            break;
+
+         case TAB_PLAY:
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return ["calc_start_offsets_relative_to_first_selected_clip",
+              "refresh_audio_clip_names_from_sample_names",
+              "delete_unused_samples",
+              "update_sample_peaks"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public method cmdGetDefaultActions() : StringArray {
+      return ["calc_start_offsets_relative_to_first_selected_clip",
+              "refresh_audio_clip_names_from_sample_names",
+              "delete_unused_samples",
+              "update_sample_peaks"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      switch(_cmd)
+      {
+         case "calc_start_offsets_relative_to_first_selected_clip":
+            return null;
+
+         case "refresh_audio_clip_names_from_sample_names":
+            return null;
+      }
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public method cmdDeleteUnusedSamples() {
+      int numDeleted = AudioLiveRecForm.DeleteUnusedSamples();
+      Global.Print("Deleted "+numDeleted+" unused sample"+Utils.GetPluralString(numDeleted));
+   }
+
+   // <method.png>
+   public method cmdUpdateSamplePeaks() {
+      AudioLiveRecForm.ForceSamplePeakUpdates();
+      ta_smppeaks.reschedule();
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      Global.Debug("NodeArrangerEditor::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "calc_start_offsets_relative_to_first_selected_clip":
+         case "refresh_audio_clip_names_from_sample_names":
+            return timeline.cmdExec(_argv);
+
+         case "delete_unused_samples":
+            cmdDeleteUnusedSamples();
+            return true;
+
+         case "update_sample_peaks":
+            cmdUpdateSamplePeaks();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_timer.png>
+   public method rescheduleRedrawAllSlow() {
+      // called by AudioLiveRecForm (on sample peaks update)
+      ta_redrawall_slow.reschedule();
+   }
+
+   // <ui_timer.png>
+   protected method handleSmpPeaksTimer() : boolean {
+      if(SysEx.IsAudioConnected())
+      {
+         if(1 || !replay.b_playing)
+         {
+            // Build list of samples referenced by audio clips
+            IntArray smpUIDs;
+            smpUIDs.empty();
+            NA_State tstate <= timeline.tstate;
+            tstate.findAudioClipSampleUIDs(smpUIDs);
+
+            if(AudioLiveRecForm.UpdateSamplePeaks(smpUIDs) > 0)
+            {
+               redraw();
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method queueAudioLiveRecSelectInstanceAndSample(int _instanceId, short _sampleUID,
+                                                          float _selStartMS, float _selLenMS,
+                                                          boolean _bForceEdit
+                                                          ) {
+      queued_liverec_selectinstancebyid      = _instanceId;
+      queued_liverec_selectsamplebyuniqueid  = _sampleUID;
+      queued_liverec_selectsample_selstartms = _selStartMS;
+      queued_liverec_selectsample_sellenms   = _selLenMS;
+      b_queued_liverec_force_edit            = _bForceEdit;
+      ta_liverec_select.reschedule();
+   }
+
+   // <ui_timer.png>
+   protected method handleLiveRecSelectTimer() {
+      if(SysEx.IsAudioConnected())
+      {
+         if( (-1 != queued_liverec_selectinstancebyid) &&
+             (-1 != queued_liverec_selectsamplebyuniqueid)
+             )
+         {
+            f_audio_liverec.selectInstanceById(queued_liverec_selectinstancebyid, false/*bAllowEdit*/);
+            f_audio_liverec.selectSampleByUniqueId(queued_liverec_selectsamplebyuniqueid,
+                                                   true/*bAllowEdit*/,
+                                                   queued_liverec_selectsample_selstartms,
+                                                   queued_liverec_selectsample_sellenms,
+                                                   b_queued_liverec_force_edit
+                                                   );
+            queued_liverec_selectinstancebyid     = -1;
+            queued_liverec_selectsamplebyuniqueid = -1;
+            b_queued_liverec_force_edit           = false;
+         }
+
+         // // f_audio_liverec.handleSampleChanged(true/*bWait*/);  // !! don't call while =replay= is locked !! (=> sysex timeout)
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      // // trace "xxx NodeArrangerEditor::consumeAction: acName=\""+acName+"\"";
+
+      if(TA_SMPPEAKS == acName)
+      {
+         if(handleSmpPeaksTimer())
+            ta_smppeaks.reschedule();
+         return true;
+      }
+      else if(TA_LIVEREC_SELECT == acName)
+      {
+         handleLiveRecSelectTimer();
+         return true;
+      }
+      else if(TA_REDRAWALL_SLOW == acName)
+      {
+         UI.RedrawAll();
+         return true;
+      }
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(ts_groups):
+            Global.Print("Active tab is \""+ts_groups.getActiveViewCaption()+"\".");
+            handleTabSelected();
+            return true;
+
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(arranger);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+         case @(fp_play_queue_16th):
+            handleQueue16thChanged();
+            return true;
+
+         case @(cb_trackmutenode):
+            handleTrackMuteNodeChanged();
+            return true;
+
+         case @(cb_sendcliprelpos):
+            handleSendClipRelPosChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

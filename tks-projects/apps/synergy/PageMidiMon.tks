@@ -1,0 +1,404 @@
+// ----
+// ---- file   : PageMidiMon.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 13Nov2012, 04Jan2013, 06Jan2013, 25Mar2013, 19Apr2013, 11Aug2014, 12Aug2014
+// ----          13Aug2014, 14Aug2014, 19Aug2014, 04Sep2014, 05Sep2014, 16Sep2014, 19Sep2014
+// ----          29Sep2014, 23Feb2015, 26Jul2015, 09Feb2017, 17Jun2017, 09Jul2017, 17Aug2017
+// ----          29Jan2019, 01Nov2019, 14Oct2023, 20Oct2023, 05Oct2024
+// ----
+// ----
+// ----
+
+module MPageMidiMon;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageMidiMon extends Page, ActionProvider, MIDIMapEventListener {
+
+   define String ACTION_EVENTCLICKED;
+
+   define String TA_ADDEVENT;
+   define String TA_REDRAW;
+
+   define int MAX_LOG_ENTRIES = 256;
+
+   protected Button *bt_parent;
+
+   protected CheckBox *cb_capture;
+   protected CheckBox *cb_hex;
+   protected CheckBox *cb_syn;
+   protected CheckBox *cb_xform;
+   public TableView   *tv_log;
+   protected MIDIInputMonitorTM tm_log;
+   protected Button *bt_clear;
+
+   protected TextField *tf_last_dev;
+   protected TextField *tf_last_ch;
+   protected TextField *tf_last_type;
+   protected TextField *tf_last_ext;
+
+   protected Button *bt_output_mon;
+
+   protected TimerAction *ta_addevent;
+   protected TimerAction *ta_redraw;
+
+   boolean b_show_syn;
+
+   protected PopupMenu *pm_context;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageMidiMon.xfm"))
+      {
+         trace "[---] failed to parse PageMidiMon.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tm_log.cb_hex <= cb_hex;
+
+      tm_log.initTableModel();
+      tv_log.setTableModel(tm_log);
+
+      ta_addevent <= TimerAction.New(TA_ADDEVENT, this, 50);
+      ta_redraw   <= TimerAction.New(TA_REDRAW,   this, 50);
+
+      b_show_syn = true;
+
+      recursiveBuildTabCycleLists();
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(app_lnf.b_ascii_back_buttons)
+      {
+         Global.ASCIIBackButton(bt_parent);
+      }
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_PIPEMAP;
+   }
+
+   // <ui_update.png>
+   public method updateForm() {
+      tv_log.tableModelChanged();
+      tv_log.moveCursorToLastRow();
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      MIDI.AddMIDIMapEventListener(this);
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      MIDI.RemoveMIDIMapEventListener(this);
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(cb_capture);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         cb_capture, cb_hex, cb_syn, bt_clear, tv_log
+                              ];
+   }
+
+   // <midi.png>
+   public virtual mmlOverrideForceGlobal() : boolean {
+      return true;
+   }
+
+   // <midi.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      // Add copy of 'ev to events array
+      //  (note) called from UI thread (processing UI event queue in Replay.tks)
+
+      MIDIMapEvent *ev;
+
+      if(cb_xform.isSelected())
+      {
+         MIDIMapEvent evXForm = _ev;
+         MIDIMorphScene.TransformEvent(evXForm);
+         if(!evXForm.isValid())
+            return false;
+         evXForm.echoTransformForced();
+         ev <= evXForm;
+      }
+      else
+      {
+         ev <= _ev;
+      }
+
+      if(cb_capture.isSelected())
+      {
+         if( (MIDIMapEvent.SYN_NONE == ev.syn_type) || b_show_syn )
+         {
+            if(tm_log.events.numElements >= MAX_LOG_ENTRIES)
+            {
+               tm_log.events.delete(0);
+            }
+            tm_log.events.add(#(Object(ev)));
+
+            ta_addevent.schedule(); // schedule TableView update
+         }
+      }
+
+      updateLastEventInfo(ev);
+
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updateLastEventInfo(MIDIMapEvent _ev) {
+      if(null != _ev)
+      {
+         // Set last event info
+         if(null != _ev.dev)
+         {
+            tf_last_dev.setText(_ev.dev.getAliasOrDeviceName());
+
+            Integer io = _ev.dev_ch + 1;
+            tf_last_ch.setText(io.printf("#%02d"));
+
+            String className <= _ev.getClassTypeName();
+
+            if(null == className)
+            {
+               className <= MIDIMapEventType.type_names_short[_ev.type];
+            }
+
+            tf_last_type.setText(className);
+
+            tf_last_ext.setText(_ev.getExtTypeName());
+         }
+      }
+      else
+      {
+         tf_last_dev .setText(" ");
+         tf_last_ch  .setText(" ");
+         tf_last_type.setText(" ");
+         tf_last_ext .setText(" ");
+      }
+
+      ta_redraw.schedule();
+   }
+
+   // <ui_handle.png>
+   protected method handleClear() {
+      tm_log.events.free();
+      tv_log.tableModelChanged();
+      tv_log.moveCursorToLastRow();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleCapture() {
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleHex() {
+      tv_log.tableModelChanged();
+      tv_log.moveCursorToLastRow();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleSyn() {
+      b_show_syn = !b_show_syn;
+
+      Global.Success("Synthetic events are now "+(b_show_syn?"shown" : "hidden")+".");
+   }
+
+   // <method.png>
+   public method getSelectedMIDIMapEvent() : MIDIMapEvent {
+      int idx = tm_log.getCursorIndex();
+      if(-1 != idx)
+      {
+         MIDIMapEvent ev <= tm_log.events.get(idx);
+         return ev;
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method copyToCtlClipboard(boolean _bClipboardB) {
+      MIDIMapEvent ev <= getSelectedMIDIMapEvent();
+
+      if(null != ev)
+      {
+         String msgPrefix <= _bClipboardB ? "copyctl<B>: " : "copyctl<A>: ";
+
+         STX_MIDIInDevice inDev <= ev.dev;
+         STX_MIDIOutDevice *outDev;
+         if(inDev instanceof STX_MIDIInDevice)
+            outDev <= inDev.cached_out_dev;
+         else
+            outDev <= inDev;
+
+         if(null != outDev)
+         {
+            if(_bClipboardB)
+            {
+               mmarg_clipboard_b.copyFromMIDIMapEvent(ev);
+               mmarg_clipboard_b.dev_idx = outDev.dev_idx;
+            }
+            else
+            {
+               mmarg_clipboard_a.copyFromMIDIMapEvent(ev);
+               mmarg_clipboard_a.dev_idx = outDev.dev_idx;
+            }
+
+            Global.Print(msgPrefix+"type="+ev.getExtTypeName()+" port="+ev.getAliasOrDeviceName()+":"+(1+ev.dev_ch));
+         }
+         else
+         {
+            Global.Warning(msgPrefix+": Invalid device");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+      MIDIMapEvent ev <= getSelectedMIDIMapEvent();
+      boolean bHaveEntry = (null != ev);
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+      PopupMenu pm <= pm_context;
+
+      pmb <= pm.addDefaultButton("Copy to Ctl.Clipboard A", "copyctl_a");
+      pmb.setToolTipCaption("Copy port+type to Ctl.Clipboard A");
+      pmb.setActive(bHaveEntry);
+
+      pmb <= pm.addDefaultButton("Copy to Ctl.Clipboard B", "copyctl_b");
+      pmb.setToolTipCaption("Copy port+type to Ctl.Clipboard B");
+      pmb.setActive(bHaveEntry);
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show context menu.");
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            if(_k.modNone())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            if(TA_ADDEVENT == acName)
+            {
+               updateForm();
+
+               return true;
+            }
+            else if(TA_REDRAW == acName)
+            {
+               redraw();
+
+               return true;
+            }
+            break;
+
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            switch(acName)
+            {
+               case "copyctl_a":
+                  copyToCtlClipboard(false/*bB*/);
+                  return true;
+
+               case "copyctl_b":
+                  copyToCtlClipboard(true/*bB*/);
+                  return true;
+            }
+            return true;
+
+         case @(tv_log):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               // (note) don't update when ROWSELECTED since adding new events while cause
+               //         the last added row to be selected after adding.
+               //         When Synthetic events are filtered, the last update "LastEventInfo"
+               //         will be e.g. ButtonUp instead of e.g. Hold End, otherwise.
+               updateLastEventInfo(tm_log.events.get(tm_log.getCursorIndex()));
+
+               provideAction(Action.New(ACTION_EVENTCLICKED, this));
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showContextMenu(tv_log.b_contextmenu_kbd/*bFocusFirst*/);
+            }
+            return true;
+
+         case @(cb_capture):
+            handleToggleCapture();
+            return true;
+
+         case @(cb_hex):
+            handleToggleHex();
+            return true;
+
+         case @(cb_syn):
+            handleToggleSyn();
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            return true;
+
+         case @(bt_parent):
+            root_form.showPageParent();
+            return true;
+
+         case @(bt_output_mon):
+            root_form.showPageNav(RootForm.PAGE_OUTPUTMON);
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

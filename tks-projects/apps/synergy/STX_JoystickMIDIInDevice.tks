@@ -1,0 +1,207 @@
+// ----
+// ---- file   : STX_JoystickMIDIInDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 03Jun2018
+// ---- changed: 05Oct2024
+// ----
+// ----
+// ----
+
+module MSTX_JoystickMIDIInDevice;
+
+use namespace st2;
+
+
+// <class.png>
+class STX_JoystickEvent {
+   define int TYPE_AXIS   = 0;
+   define int TYPE_BALL   = 1;
+   define int TYPE_BUTTON = 2;
+   define int TYPE_HAT    = 3;
+
+   int type;
+   int src;    // axis/ball/button/hat idx
+   int value;  // movement, button state, ..
+   int dx;     // ball only
+   int dy;
+}
+
+
+// <class.png>
+class STX_JoystickMIDIInDevice : STX_MIDIInDevice {
+
+   String joydev_name;
+   String joy_idx;
+   int num_axes;
+   int num_balls;
+   int num_buttons;
+   int num_hats;
+
+   protected ClassArray js_event_queue;  // STX_JoystickEvent instances
+   protected Mutex js_mutex;
+
+
+   // <init.png>
+   public method initJoystick(String _devName, int _devIdx, int _joyIdx, Joystick _joystick) {
+      joydev_name = _devName;
+      dev_idx     = _devIdx;
+      joy_idx     = _joyIdx;
+      num_axes    = _joystick.numAxes;
+      num_balls   = _joystick.numBalls;
+      num_buttons = _joystick.numButtons;
+      num_hats    = _joystick.numHats;
+      js_event_queue.template = STX_JoystickEvent;
+      js_event_queue.alloc(32);
+   }
+
+   // <method_get.png>
+   public virtual isOpen() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getDeviceName() : String {
+      return joydev_name;
+   }
+
+   // <method_get.png>
+   public virtual getAlias() : String {
+      return b_project ? project_alias : getGlobalAlias();
+   }
+
+   // <method_get.png>
+   public virtual getGlobalAlias() : String {
+      return MIDI.GetGlobalInDeviceAlias(joydev_name);
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return joydev_name;
+   }
+
+   // <method_find.png>
+   public =replay= virtual findOutDeviceAndCache() : STX_MIDIOutDevice {
+      return null;
+   }
+
+   // <method_find.png>
+   public virtual findOutDeviceByNativeIdx() : STX_MIDIOutDevice {
+      return null;
+   }
+
+   // <method.png>
+   public virtual start() {
+      // intentionally left blank
+   }
+
+   // <method.png>
+   public virtual close() {
+      // intentionally left blank
+   }
+
+   // <method.png>
+   public virtual keepAlive() : boolean {
+      // intentionally left blank
+      return true;
+   }
+
+   // <method.png>
+   public virtual clearEvents() {
+      // intentionally left blank
+   }
+
+   // <method_get.png>
+   public virtual getNextLongMessageBySize(int _size, Buffer _ret) : boolean {
+      explain "Return next long message that matches the given size. Return true if such a message was found, false otherwise.";
+      // intentionally left blank
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual getNextLongMessage(Buffer _ret) : boolean {
+      // intentionally left blank
+      return false;
+   }
+
+   // <method_set.png>
+   public virtual setEnableParam(byte _ch, boolean _bEnabled) {
+      // intentionally left blank
+   }
+
+   // <method_add.png>
+   public method queueJoystickAxisEvent(int _joyDev, int _axis, int _val) {
+      js_mutex.lock();
+      STX_JoystickEvent ev <= js_event_queue.nextFree;
+      if(null != ev)
+      {
+         ev.type  = STX_JoystickEvent.TYPE_AXIS;
+         ev.src   = _axis;
+         ev.value = _val;
+      }
+      js_mutex.unlock();
+   }
+
+   // <method_add.png>
+   public method queueJoystickBallEvent(int _joyDev, int _ball, int _dx, int _dy) {
+      js_mutex.lock();
+      STX_JoystickEvent ev <= js_event_queue.nextFree;
+      if(null != ev)
+      {
+         ev.type  = STX_JoystickEvent.TYPE_BALL;
+         ev.src   = _ball;
+         ev.dx    = _dx;
+         ev.dy    = _dy;
+      }
+      js_mutex.unlock();
+   }
+
+   // <method_add.png>
+   public method queueJoystickButtonEvent(int _joyDev, int _button, int _pressed) {
+      js_mutex.lock();
+      STX_JoystickEvent ev <= js_event_queue.nextFree;
+      if(null != ev)
+      {
+         ev.type  = STX_JoystickEvent.TYPE_BUTTON;
+         ev.src   = _button;
+         ev.value = _pressed;
+      }
+      js_mutex.unlock();
+   }
+
+   // <method_add.png>
+   public method queueJoystickHatEvent(int _joyDev, int _hat, int _state) {
+      js_mutex.lock();
+      STX_JoystickEvent ev <= js_event_queue.nextFree;
+      if(null != ev)
+      {
+         ev.type  = STX_JoystickEvent.TYPE_HAT;
+         ev.src   = _hat;
+         ev.value = _state;
+      }
+      js_mutex.unlock();
+   }
+
+   // <method.png>
+   public method lockJSEventQueueAndGetNumEv() : int {
+      js_mutex.lock();
+      return js_event_queue.numElements;
+   }
+
+   // <method_get.png>
+   public method getJSEventByIdx(int _idx) : STX_JoystickEvent {
+      return js_event_queue.get(_idx);
+   }
+
+   // <method.png>
+   public method clearAndUnlockJSEventQueue() {
+      js_event_queue.empty();
+      js_mutex.unlock();
+   }
+
+}

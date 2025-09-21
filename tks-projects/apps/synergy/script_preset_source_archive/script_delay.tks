@@ -1,0 +1,197 @@
+// Note delay (with feedback / velocity decay and ducking)
+//
+//   created: 28Mar2025
+//   changed: 29Mar2025
+//
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ configuration
+boolean b_debug = 0;
+
+// (note) 'note' port: note/ctl input
+// (note)  'out' port: note output
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /configuration
+
+tag float p_mod_1 = 0x2000;  // delay len     (RPN 15000 / script_param_1_abs. see 'internal.msp')
+tag float p_mod_2 = 0x2000;  // vel dcy mod   (RPN 15002 / script_param_2_abs)
+tag float p_mod_3 = 0x2000;  // duck win mod  (RPN 15004 / script_param_3_abs)
+tag float p_mod_4 = 0x2000;  // -
+tag float p_mod_5 = 0x2000;  // -
+tag float p_mod_6 = 0x2000;  // -
+tag float p_mod_7 = 0x2000;  // -
+tag float p_mod_8 = 0x2000;  // -
+
+tag int   p_buf_size      = 16;     // num 16ths
+tag int   p_clear         = 0;      // 1=clear buffer frame before write  0=decay
+tag float p_clear_min_vel = 8.0;
+tag float p_min_note_dur  = 1;      // num ticks
+tag float p_delay_len     = 1.0;    // num 16ths
+tag float p_delay_len_mod = 1.0;    // mod amount via RPN 15000
+tag float p_delay_len_q   = 16.0;   // mod amount quantization precision (higher=more precise)
+tag float p_vel_dcy       = 0.5;    // 0(instant)..1(never)
+tag float p_vel_dcy_mod   = 0.5;    // mod amount via RPN 15002
+tag float p_duck_win      = 0.5;    // num 16ths
+tag float p_duck_win_mod  = 1.0;    // mod amount via RPN 15004
+tag float p_duck_win_q    = 16.0;   // mod amount quantization precision (higher=more precise)
+tag float p_duck_win_min  = 0.0625; // minimum ducking window size (base + modulation) (#16ths)
+tag int   p_reset_ctl     = 0;      // 1=auto-reset ctl modulation when node is reset
+
+
+use namespace st2;
+
+
+class Delay {
+
+   MIDIPipeFrame *[] frames;
+   int write_off;
+
+   int last_note_on_ticks;
+
+
+   public method allocFrames() {
+      int numTicks = mathMaxi(1, current_song.getNumTicksPer16th() * p_buf_size);
+      frames.alloc(numTicks);
+      loop(numTicks)
+      {
+         MIDIPipeFrame fr <= new MIDIPipeFrame;
+         frames.add(#(deref fr));
+      }
+      write_off = 0;
+   }
+
+   public static ClearFrameIfBelowMinVel(MIDIPipeFrame _frOut,
+                                         MIDIPipeFrame _frDelay,
+                                         float _minVel
+                                         ) {
+      boolean bClear = true;
+      MIDIPipeEvent pev;
+      int evIdx;
+      int numEv = _frDelay.getNumEventsNoteOnByFlt(in_dev, in_ch);
+      if(numEv > 0)
+      {
+         evIdx = 0;
+         loop(numEv)
+         {
+            _frDelay.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_dev, in_ch);
+            if(b_debug) trace "xxx pev.velocity="+pev.velocity+" minVel="+_minVel;
+            if(pev.velocity > _minVel)
+            {
+               _frOut.noteOffPre(true/*bSet*/, out_dev, out_ch, pev.note, 0/*vel*/);
+               bClear = false;
+               break;
+            }
+            evIdx++;
+         }
+      }
+
+      if(bClear)
+         _frDelay.empty();
+   }
+
+   public method process(MIDIPipeFrame _fr,
+                         int           _delayTicks,
+                         float         _velocityDecay,
+                         int           _duckTicks
+                         ) {
+      _delayTicks = mathClampi(_delayTicks, 0, frames.numElements);
+
+      MIDIPipeFrame frWrite <= frames.get(write_off);
+      if(p_clear || 0 == frWrite.numEventsNoteOn)
+         frWrite.empty();
+
+      if(_fr.getNumEventsNoteOnByFlt(in_dev, in_ch) > 0)
+      {
+         last_note_on_ticks = current_song.tick_nr;
+         frWrite.mergeFrameFlt(_fr, in_dev, in_ch);
+         frWrite.setMinNoteDurations(p_min_note_dur);
+      }
+
+      int tDeltaLast = mathMaxi(0, current_song.tick_nr - last_note_on_ticks);
+      if(b_debug) trace "xxx tDeltaLast="+tDeltaLast;
+
+      boolean bEmit = (tDeltaLast >= _duckTicks);
+
+      if(_delayTicks > 0)
+      {
+         // Emit delayed note(s)
+         MIDIPipeFrame frDelay
+            <= frames.get(mathWrapi(write_off - _delayTicks, 0, frames.numElements));
+
+         frDelay.noteOnVelMul(in_dev, in_ch, _velocityDecay);
+         if(bEmit)
+            _fr.mergeFrameFltDst(frDelay,
+                                 in_dev, in_ch,
+                                 out_dev, out_ch,
+                                 true/*bMergeNotes*/, true/*bMergeRPN*/
+                                 );
+
+         if(!p_clear)
+            ClearFrameIfBelowMinVel(_fr, frDelay, p_clear_min_vel);
+
+         frWrite.mergeFrame(frDelay);
+      }
+
+      write_off = (write_off + 1) % frames.numElements;
+   }
+
+}
+
+
+Delay delay_rec;   // 'rec' frames
+Delay delay_play;  // 'play' frames
+
+
+function ResetCtl() {
+   p_mod_1 = 0x2000;
+   p_mod_2 = 0x2000;
+   p_mod_3 = 0x2000;
+   p_mod_4 = 0x2000;
+   p_mod_5 = 0x2000;
+   p_mod_6 = 0x2000;
+   p_mod_7 = 0x2000;
+   p_mod_8 = 0x2000;
+}
+
+function OnReset() {
+   delay_rec .allocFrames();
+   delay_play.allocFrames();
+
+   if(p_reset_ctl)
+      ResetCtl();
+}
+
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bMuted)
+      return;
+
+   float ticksPer16th = current_song.getNumTicksPer16th();
+
+   // Delay modulation
+   float dlyMod = ((p_mod_1 - 0x2000) / 8192.0) * p_delay_len_mod/*#16ths*/;
+   float dlyModQ = (1.0 / p_delay_len_q);
+   dlyMod = round(dlyMod / dlyModQ) * dlyModQ;
+   if(b_debug) trace "xxx dlyMod="+dlyMod;
+   float dly16th = mathMaxf(p_duck_win_min, p_delay_len + dlyMod);
+   int delayTicks = int(ticksPer16th * dly16th + 0.5);
+
+   // Feedback modulation
+   float velocityDecay = mathClampf(p_vel_dcy + p_vel_dcy_mod * ((p_mod_2 - 0x2000)/8192.0),
+                                    0.0f, 1.0f
+                                    );
+
+   // Ducking modulation
+   float duckMod = ((p_mod_3 - 0x2000) / 8192.0) * p_duck_win_mod/*#16ths*/;
+   float duckModQ = (1.0 / p_duck_win_q);
+   duckMod = round(duckMod / duckModQ) * duckModQ;
+   int duckTicks = mathMaxi(0, int(ticksPer16th * (p_duck_win + duckMod) + 0.5));
+   if(b_debug) trace "xxx duckTicks="+duckTicks+" duckMod="+duckMod+" p_mod_3="+p_mod_3+" q="+duckModQ;
+
+   // Process delay lines
+   delay_rec .process(framePlay, delayTicks, velocityDecay, duckTicks);
+   delay_play.process(frameRec,  delayTicks, velocityDecay, duckTicks);
+}

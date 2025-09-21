@@ -1,0 +1,1208 @@
+// ----
+// ---- file   : MidiMorphEntryForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 19Aug2014, 20Aug2014, 21Aug2014, 22Aug2014, 04Sep2014, 17Oct2014, 18Feb2015
+// ----          26Feb2015, 02Mar2015, 17May2015, 19Mar2016, 21Mar2016, 08Jul2016, 01Jul2017
+// ----          20Sep2019, 05Oct2019, 10Nov2020, 17Dec2021, 14Jun2023
+// ----
+// ----
+// ----
+
+module MMidiMorphEntryForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class MidiMorphEntryForm extends XMLForm, ActionProvider, MIDIMapDefs {
+
+   define String AC_ENTRY_EDITED;
+   define String AC_UPDATE_TABLE_QUIET;
+   define String AC_CANCEL_AUTOSELECT;
+
+   protected PageEditMidiMorph *parent_page;
+
+   protected Panel *pn_formbg;
+
+   protected ComboBox    *cm_dev;
+   protected ComboBox    *cm_ch;
+   protected ComboBox    *cm_type;
+   protected LayerSwitch *ls_type;
+   protected ComboBox    *cm_ext_note;
+   protected CheckBox    *cb_ext_note_onoff;
+   protected ComboBox    *cm_ext_cc;
+   protected FloatParam  *fp_ext_rpn;
+   protected ComboBox    *cm_ext_rpn;
+   protected FloatParam  *fp_ext_nrpn;
+   protected ComboBox    *cm_ext_nrpn;
+
+   protected CheckBox    *cb_flt;
+   protected LayerSwitch *ls_flt;
+   protected LayerSwitch *ls_flt_srcdst;
+
+   protected ComboBox    *cm_morph_flt;
+   protected FloatParam  *fp_morph_flt_arg1;
+   protected FloatParam  *fp_morph_flt_arg2;
+   protected Label       *lb_morph_flt_arg1;
+   protected Label       *lb_morph_flt_arg2;
+
+   protected ComboBox    *cm_morph_op;
+   protected FloatParam  *fp_morph_op_arg1;
+   protected FloatParam  *fp_morph_op_arg2;
+   protected Label       *lb_morph_op_arg1;
+   protected Label       *lb_morph_op_arg2;
+
+   protected boolean b_dst; // false=src, true=dst
+
+   public MIDIMapEvent *current_ev;
+
+   protected MIDIMapEvent edit_ev;
+
+   // used for lalt modifier (edit all entries)
+   define int EDIT_NONE     = 0;
+   define int EDIT_TYPE     = 1;
+   define int EDIT_DEV      = 2;
+   define int EDIT_CH       = 3;
+   define int EDIT_EXT_NOTE = 4;
+   define int EDIT_EXT_NOTE_ON_OFF = 5;
+   define int EDIT_EXT_CC   = 6;
+   define int EDIT_EXT_RPN  = 7;
+   define int EDIT_EXT_NRPN = 8;
+   protected int last_edited_param;
+
+   public int last_orig_dev_idx;  // used for LALT "update all"
+   public int last_orig_ch;
+
+   public int last_orig_faderport_bank;
+   public int last_new_faderport_bank;
+
+
+   // <init.png>
+   public method init(PageEditMidiMorph _parentPage, boolean _bDst) : boolean {
+
+      parent_page <= _parentPage;
+      b_dst = _bDst;
+
+      if(!initPakFile("MidiMorphEntryForm.xfm"))
+      {
+         trace "[---] failed to parse MidiMorphEntryForm.xfm";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      recursiveBuildTabCycleLists();
+
+      StringArray opt = MIDIMapEventType.type_names_short;
+      opt.insert(0, "*");
+      cm_type.setOptions(opt);
+
+      StringArray cap = MIDIMapEventType.type_names;
+      cap.insert(0, "All types");
+      cm_type.setToolTipCaptions(cap);
+
+      if(_bDst)
+      {
+         cb_flt.setToolTipCaption("Show transform details");
+
+         cm_morph_op.setOptions(MIDIMapEvent.morph_dst_op_names);
+         cm_morph_op.setToolTipCaptions(MIDIMapEvent.morph_dst_op_tooltips);
+      }
+      else
+      {
+         cb_flt.setToolTipCaption("Show filter details");
+
+         cm_morph_flt.setOptions(MIDIMapEvent.morph_src_flt_names);
+         cm_morph_flt.setToolTipCaptions(MIDIMapEvent.morph_src_flt_tooltips);
+      }
+
+      return true;
+   }
+
+   // <method_set.png>
+   public method setEnableRecTarget(boolean _bEnable) {
+
+      if(true == _bEnable)
+      {
+         pn_formbg.setPanelAlphaAndTint(255, #9F9cff28);////#AF00CF00);
+      }
+      else if(maybe == _bEnable)
+      {
+         pn_formbg.setPanelAlphaAndTint(255, #DFff9c28);////#AF00CF00);
+      }
+      else
+      {
+         pn_formbg.setPanelAlphaAndTint(255, #01000000);
+      }
+
+      redraw();
+   }
+
+   // <method_update.png>
+   public method updateDeviceNames() {
+
+      if(b_dst)
+      {
+         // // trace "xxx MidiMorphEntryForm: MIDI.out_device_names.numElements="+(MIDI.out_device_names.numElements);
+         // // trace "xxx MidiMorphEntryForm: MIDI.out_device_bgcolors.numElements="+(MIDI.out_device_bgcolors.numElements);
+         // // trace "xxx MidiMorphEntryForm: MIDI.out_device_names="+#(MIDI.out_device_names);
+         cm_dev.setOptions(MIDI.out_device_names_sorted);
+         cm_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+      }
+      else
+      {
+         cm_dev.setOptions(MIDI.in_device_names_sorted);
+         cm_dev.setOptionBGColors(MIDI.in_device_bgcolors_sorted);
+      }
+
+   }
+
+   // <method_get.png>
+   public method isValidEvent() : boolean {
+      if(null != current_ev.dev)
+      {
+         return true;
+      }
+      return false;
+   }
+
+   // <method_init.png>
+   public method initEmptyEvent() {
+      local MIDIMapEvent ev;
+
+      if(!b_dst)
+      {
+         ev.b_morph_note_onoff = true;
+      }
+
+      updateFromEvent(ev, false/*bMapped*/, true/*bToggleFlt*/);
+   }
+
+   // <method_set.png>
+   public method resetInvalidOptionNames() {
+      cm_dev.setInvalidOptionName("");
+   }
+
+   // <method_update.png>
+   public method updateFromEvent(MIDIMapEvent _ev, boolean _bMapped, boolean _bToggleFlt) {
+
+      resetInvalidOptionNames();
+
+      if(_bMapped)
+      {
+         current_ev <= _ev;
+      }
+      else
+      {
+         current_ev <= edit_ev;
+
+         if(null != _ev)
+         {
+            current_ev = _ev;
+         }
+      }
+
+      if(null != _ev)
+      {
+         if(null != _ev.dev)
+         {
+            if(b_dst)
+            {
+               if(current_ev.dev instanceof STX_MIDIInDevice)
+               {
+                  current_ev.dev <= current_ev.dev.findOutDeviceAndCache();
+               }
+            }
+
+
+            // trace "xxx current_ev.b_morph_all_types="+current_ev.b_morph_all_types;
+
+            String devName <= _ev.dev.getAliasOrDeviceName();
+
+            // // trace "xxx ev devName=\""+devName+"\"";
+
+            if(null != devName)
+            {
+               int sortedDevIdx;
+
+               if(_ev.dev.isOpen())
+               {
+                  // // trace "xxx MIDI.out_device_names="+MIDI.out_device_names;
+
+                  if(b_dst)
+                  {
+                     sortedDevIdx = MIDI.out_device_names_sorted.indexOfObject(devName, 0);
+                  }
+                  else
+                  {
+                     sortedDevIdx = MIDI.in_device_names_sorted.indexOfObject(devName, 0);
+                  }
+
+                  if(-1 != sortedDevIdx)
+                  {
+                     cm_dev.setSelectedOption(sortedDevIdx);
+                     cm_dev .setEditable(true);
+                  }
+                  else
+                  {
+                     // Should not be reached (device is open)
+                     cm_dev.setInvalidOptionName(_ev.dev.getUnavailAliasOrDeviceName());
+                     cm_dev.setSelectedOption(-1);
+                  }
+               }
+               else
+               {
+                  // Device is unavailable
+                  cm_dev.setInvalidOptionName(devName);
+                  cm_dev.setSelectedOption(b_dst ?
+                                           MIDI.UnsortedToSortedDevIdx(_ev.dev.dev_idx)
+                                           :
+                                           MIDI.UnsortedToSortedInDevIdx(_ev.dev.dev_idx)
+                                           );
+               }
+            }
+            else
+            {
+               cm_dev.setInvalidOptionName(_ev.dev.getUnavailAliasOrDeviceName());
+               cm_dev.setSelectedOption(-1);
+            }
+         }
+         else
+         {
+            cm_dev.setInvalidOptionName(_ev.unavail_devname);
+            cm_dev.setSelectedOption(-1);
+         }
+
+         updateTypeChanged();
+
+         if(_bToggleFlt)
+         {
+            boolean bChanged = cb_flt.isSelected() ^ (0 != current_ev.morph_type);
+            if(bChanged)
+            {
+               cb_flt.setSelected(0 != current_ev.morph_type);
+               handleShowFltChanged();
+            }
+         }
+
+         cm_ch  .setEditable(true);
+         cm_type.setEditable(true);
+      }
+      else
+      {
+         cm_dev .setSelectedOption(-1);
+         cm_ch  .setSelectedOption(-1);
+         cm_type.setSelectedOption(-1);
+
+         ls_type.switchToLayerNr(0);
+      }
+
+      redraw();
+   }
+
+   // <method_get.png>
+   public method getDevIdx() : int {
+      return b_dst ?
+         MIDI.SortedToUnsortedDevIdx(cm_dev.getSelectedOption())
+         :
+         MIDI.SortedToUnsortedInDevIdx(cm_dev.getSelectedOption());
+   }
+
+   // <method_get.png>
+   public method getMidiCh() : int {
+      return cm_ch.getSelectedOption() - 1;
+   }
+
+   // <method_update.png>
+   protected method updateTypeChanged() {
+      if(null != current_ev.dev)
+      {
+         StringArray tsa;
+
+         MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
+
+         if(null == msp)
+         {
+            msp <= MIDI.GetDefaultSynthProfile();
+         }
+
+         if(b_dst)
+            cm_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(current_ev.dev.dev_idx, "*"/*firstOptionOrNull*/));
+         else
+            cm_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByInDevIdx(current_ev.dev.dev_idx, "*"/*firstOptionOrNull*/));
+
+         if(current_ev.b_morph_all_ch)
+         {
+            cm_ch.setSelectedOption(0); // '*'
+         }
+         else
+         {
+            cm_ch.setSelectedOption(current_ev.dev_ch + 1);
+         }
+
+         if(current_ev.b_morph_all_types)
+         {
+            cm_type.setSelectedOption(0); // '*'
+         }
+         else
+         {
+            cm_type.setSelectedOption(current_ev.type + 1);
+         }
+
+         fp_morph_flt_arg1.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_morph_flt_arg2.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_morph_op_arg1.setDisplayType(FloatParam.DISPLAY_FLOAT);
+         fp_morph_op_arg2.setDisplayType(FloatParam.DISPLAY_FLOAT);
+
+         if(current_ev.b_morph_all_types)
+         {
+            ls_type.switchToLayerNr(0);
+         }
+         else
+         {
+            switch(current_ev.type)
+            {
+               default:
+                  ls_type.switchToLayerNr(0);
+                  break;
+
+               case TYPE_NOTE_OFF:
+               case TYPE_NOTE_ON:
+                  if(!b_dst)
+                  {
+                     ls_type.switchToLayerNr(1);
+                     cm_ext_note.setOptions(msp.note_captions);
+                     // cm_ext_note.setToolTipCaptions(msp.note_infos);
+                     cm_ext_note.setSelectedOption(current_ev.ext_type);
+                     cb_ext_note_onoff.setSelected(current_ev.b_morph_note_onoff);
+                  }
+                  else
+                  {
+                     ls_type.switchToLayerNr(0);
+                  }
+
+                  fp_morph_flt_arg1.setDisplayType(FloatParam.DISPLAY_USER);
+                  fp_morph_flt_arg2.setDisplayType(FloatParam.DISPLAY_USER);
+                  fp_morph_op_arg1.setDisplayType(FloatParam.DISPLAY_USER);
+                  fp_morph_op_arg2.setDisplayType(FloatParam.DISPLAY_USER);
+
+                  fp_morph_flt_arg1.setUserTable(MIDI.midi_notes);
+                  fp_morph_flt_arg2.setUserTable(MIDI.midi_notes);
+                  fp_morph_op_arg1.setUserTable(MIDI.midi_notes);
+                  fp_morph_op_arg2.setUserTable(MIDI.midi_notes);
+                  break;
+
+               case TYPE_CC:
+                  ls_type.switchToLayerNr(2);
+                  ////cm_ext_cc.setOptions(msp.cc_captions);
+                  tsa.join(["*"], current_ev.dev.getCCNamesSingle(current_ev.dev_ch));
+                  cm_ext_cc.setOptions(tsa);
+                  tsa.join(["All CCs"], msp.cc_infos);
+                  cm_ext_cc.setToolTipCaptions(tsa);
+
+                  if(current_ev.b_morph_all_subtypes)
+                  {
+                     cm_ext_cc.setSelectedOption(0);
+                  }
+                  else
+                  {
+                     cm_ext_cc.setSelectedOption(current_ev.ext_type + 1);
+                  }
+                  break;
+
+               case TYPE_RPN:
+                  ls_type.switchToLayerNr(3);
+                  fp_ext_rpn.setValue(current_ev.ext_type);
+                  tsa.join(["*"], msp.rpn_captions);
+                  cm_ext_rpn.setOptions(tsa);
+                  tsa.join(["All RPNs"], msp.rpn_infos);
+                  cm_ext_rpn.setToolTipCaptions(tsa);
+
+                  if(current_ev.b_morph_all_subtypes)
+                  {
+                     cm_ext_rpn.setSelectedOption(0);
+                  }
+                  else
+                  {
+                     cm_ext_rpn.setSelectedOption(msp.getRPNCaptionIndex(current_ev.ext_type) + 1);
+                  }
+
+                  break;
+
+               case TYPE_NRPN:
+                  ls_type.switchToLayerNr(4);
+                  fp_ext_nrpn.setValue(current_ev.ext_type);
+                  tsa.join(["*"], msp.nrpn_captions);
+                  cm_ext_nrpn.setOptions(tsa);
+                  tsa.join(["All NRPNs"], msp.nrpn_infos);
+                  cm_ext_nrpn.setToolTipCaptions(tsa);
+
+                  if(current_ev.b_morph_all_subtypes)
+                  {
+                     cm_ext_nrpn.setSelectedOption(0);
+                  }
+                  else
+                  {
+                     cm_ext_nrpn.setSelectedOption(msp.getNRPNCaptionIndex(current_ev.ext_type) + 1);
+                  }
+
+
+                  break;
+            }
+         } // if b_morph_all_types
+
+         cm_ch      .setEditable(true);
+         cm_type    .setEditable(true);
+         cm_ext_note.setEditable(false);///true);  // [23May2017] ext_type is unused (only used for CC/RPN/NRPN)
+         cb_ext_note_onoff.setEditable(true);
+         cm_ext_cc  .setEditable(true);
+         fp_ext_rpn .setEditable(true);
+         cm_ext_rpn .setEditable(true);
+         fp_ext_nrpn.setEditable(true);
+         cm_ext_nrpn.setEditable(true);
+
+         cm_morph_flt.setEditable(true);
+         cm_morph_op .setEditable(true);
+
+         updateFilterOrOp();
+
+         relayout();
+         // layoutHierarchy(true, false);
+         // //layoutHierarchy(true, false);
+      }
+      else
+      {
+         cm_ch      .setEditable(false);
+         cm_type    .setEditable(false);
+         cm_ext_note.setEditable(false);
+         cb_ext_note_onoff.setEditable(false);
+         cm_ext_cc  .setEditable(false);
+         fp_ext_rpn .setEditable(false);
+         cm_ext_rpn .setEditable(false);
+         fp_ext_nrpn.setEditable(false);
+         cm_ext_nrpn.setEditable(false);
+
+         cm_morph_flt.setEditable(false);
+         fp_morph_flt_arg1.setEditable(false);
+         fp_morph_flt_arg2.setEditable(false);
+
+         cm_morph_op.setEditable(false);
+         fp_morph_op_arg1.setEditable(false);
+         fp_morph_op_arg2.setEditable(false);
+
+         // // updateFilterOrOp();
+
+         ls_type.switchToLayerNr(0);
+      }
+   }
+
+   // <method_update.png>
+   protected method updateFilterOrOp() {
+      if(b_dst)
+      {
+         cm_morph_op.setSelectedOption(current_ev.morph_type);
+
+         fp_morph_op_arg1.setMinValue(0);
+         fp_morph_op_arg2.setMinValue(0);
+
+         fp_morph_op_arg1.setEditable(false);
+         fp_morph_op_arg2.setEditable(false);
+
+         switch(current_ev.type)
+         {
+            default:
+            case TYPE_CC:
+            case TYPE_NOTE_ON:
+            case TYPE_NOTE_OFF:
+            case TYPE_PROGRAM_CHANGE:
+               fp_morph_op_arg1.setMaxValue(127);
+               fp_morph_op_arg2.setMaxValue(127);
+
+               switch(current_ev.morph_type)
+               {
+                  case DST_OP_TRANSPOSE:
+                     fp_morph_op_arg1.setMinValue(-127);
+                     fp_morph_op_arg2.setMinValue(-127);
+                     fp_morph_op_arg1.setEditable(true);
+                     break;
+
+                  case DST_OP_REMAP:
+                     fp_morph_op_arg1.setEditable(true);
+                     fp_morph_op_arg2.setEditable(true);
+                     break;
+
+                  case DST_OP_REPLACE:
+                     fp_morph_op_arg1.setEditable(true);
+                     break;
+
+                  case DST_OP_DISCARD:
+                     break;
+               }
+               break;
+
+            case TYPE_PITCHBEND:
+            case TYPE_RPN:
+            case TYPE_NRPN:
+               fp_morph_op_arg1.setMaxValue(16383);
+               fp_morph_op_arg2.setMaxValue(16383);
+
+               switch(current_ev.morph_type)
+               {
+                  case DST_OP_TRANSPOSE:
+                     fp_morph_op_arg1.setMinValue(-16383);
+                     fp_morph_op_arg2.setMinValue(-16383);
+                     fp_morph_op_arg1.setEditable(true);
+                     break;
+
+                  case DST_OP_REMAP:
+                     fp_morph_op_arg1.setEditable(true);
+                     fp_morph_op_arg2.setEditable(true);
+                     break;
+
+                  case DST_OP_REPLACE:
+                     fp_morph_op_arg1.setEditable(true);
+                     break;
+
+                  case DST_OP_DISCARD:
+                     break;
+               }
+               break;
+         }
+
+         switch(current_ev.morph_type)
+         {
+            default:
+            case DST_OP_DEFAULT:
+            case DST_OP_DISCARD:
+               lb_morph_op_arg1.setCaption("---");
+               lb_morph_op_arg2.setCaption("---");
+               break;
+
+            case DST_OP_TRANSPOSE:
+               lb_morph_op_arg1.setCaption("Offset:");
+               lb_morph_op_arg2.setCaption("---");
+               fp_morph_op_arg1.setDisplayType(FloatParam.DISPLAY_FLOAT);
+               break;
+
+            case DST_OP_REMAP:
+               lb_morph_op_arg1.setCaption("Start:");
+               lb_morph_op_arg2.setCaption("End:");
+               break;
+
+            case DST_OP_REPLACE:
+               lb_morph_op_arg1.setCaption("Const:");
+               lb_morph_op_arg2.setCaption("---");
+               break;
+         }
+
+         fp_morph_op_arg1.setValue(current_ev.morph_arg1);
+         fp_morph_op_arg2.setValue(current_ev.morph_arg2);
+      }
+      else
+      {
+         cm_morph_flt.setSelectedOption(current_ev.morph_type);
+
+         fp_morph_flt_arg1.setMinValue(0);
+         fp_morph_flt_arg2.setMinValue(0);
+
+         fp_morph_flt_arg1.setEditable(false);
+         fp_morph_flt_arg2.setEditable(false);
+
+         switch(current_ev.type)
+         {
+            case TYPE_NOTE_OFF:
+            case TYPE_NOTE_ON:
+            case TYPE_POLY_PRESSURE:
+            case TYPE_CC:
+            case TYPE_PROGRAM_CHANGE:
+            case TYPE_CHANNEL_PRESSURE:
+               fp_morph_flt_arg1.setMaxValue(127);
+               fp_morph_flt_arg2.setMaxValue(127);
+
+               switch(current_ev.morph_type)
+               {
+                  case SRC_FLT_RANGE:
+                  case SRC_FLT_RANGE_CLIP:
+                     fp_morph_flt_arg1.setEditable(true);
+                     fp_morph_flt_arg2.setEditable(true);
+                     break;
+
+                  case SRC_FLT_CLIP_MIN:
+                  case SRC_FLT_MATCH:
+                  case SRC_FLT_SPLIT_START:
+                     fp_morph_flt_arg1.setEditable(true);
+                     break;
+
+                  case SRC_FLT_CLIP_MAX:
+                  case SRC_FLT_SPLIT_END:
+                     fp_morph_flt_arg2.setEditable(true);
+                     break;
+               }
+               break;
+
+            case TYPE_PITCHBEND:
+            case TYPE_RPN:
+            case TYPE_NRPN:
+               fp_morph_flt_arg1.setMaxValue(16383);
+               fp_morph_flt_arg2.setMaxValue(16383);
+
+               switch(current_ev.morph_type)
+               {
+                  case SRC_FLT_RANGE:
+                  case SRC_FLT_RANGE_CLIP:
+                     fp_morph_flt_arg1.setEditable(true);
+                     fp_morph_flt_arg2.setEditable(true);
+                     break;
+
+                  case SRC_FLT_CLIP_MIN:
+                  case SRC_FLT_MATCH:
+                  case SRC_FLT_SPLIT_START:
+                     fp_morph_flt_arg1.setEditable(true);
+                     break;
+
+                  case SRC_FLT_CLIP_MAX:
+                  case SRC_FLT_SPLIT_END:
+                     fp_morph_flt_arg2.setEditable(true);
+                     break;
+               }
+         }
+
+         fp_morph_flt_arg1.setValue(current_ev.morph_arg1);
+         fp_morph_flt_arg2.setValue(current_ev.morph_arg2);
+
+         switch(current_ev.morph_type)
+         {
+            default:
+            case SRC_FLT_OFF:
+               lb_morph_flt_arg1.setCaption("---");
+               lb_morph_flt_arg2.setCaption("---");
+               break;
+
+            case SRC_FLT_RANGE:
+            case SRC_FLT_RANGE_CLIP:
+               lb_morph_flt_arg1.setCaption("Start:");
+               lb_morph_flt_arg2.setCaption("End:");
+               break;
+
+            case SRC_FLT_CLIP_MIN:
+               lb_morph_flt_arg1.setCaption("Min:");
+               lb_morph_flt_arg2.setCaption("---");
+               break;
+
+            case SRC_FLT_CLIP_MAX:
+               lb_morph_flt_arg1.setCaption("---");
+               lb_morph_flt_arg2.setCaption("Max:");
+               break;
+
+            case SRC_FLT_MATCH:
+               lb_morph_flt_arg1.setCaption("Value:");
+               lb_morph_flt_arg2.setCaption("---");
+               break;
+
+            case SRC_FLT_SPLIT_START:
+               lb_morph_flt_arg1.setCaption("Start:");
+               lb_morph_flt_arg2.setCaption("---");
+               break;
+
+            case SRC_FLT_SPLIT_END:
+               lb_morph_flt_arg1.setCaption("---");
+               lb_morph_flt_arg2.setCaption("End:");
+               break;
+         }
+      }
+   }
+
+   // <midi_mmt.png>
+   public method addMMTFocusLayers(PointerArray pa) {
+
+      pa.add(cb_flt);
+      pa.add(cm_dev);
+      pa.add(cm_ch);
+      pa.add(cm_type);
+
+      // trace "xxx MidiMorphEntryForm::addMMTFocusLayers: current_ev.type="+current_ev.type;
+
+      switch(current_ev.type)
+      {
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_ON:
+            if(!b_dst)
+            {
+               pa.add(cb_ext_note_onoff);
+               pa.add(cm_ext_note);
+            }
+            break;
+
+         case TYPE_CC:
+            pa.add(cm_ext_cc);
+            break;
+
+         case TYPE_RPN:
+            pa.add(fp_ext_rpn);
+            pa.add(cm_ext_rpn);
+            break;
+
+         case TYPE_NRPN:
+            pa.add(fp_ext_nrpn);
+            pa.add(cm_ext_nrpn);
+            break;
+      }
+
+      if(cb_flt.isSelected())
+      {
+         if(b_dst)
+         {
+            pa.add(cm_morph_op);
+
+            if(fp_morph_op_arg1.isEditable())
+            {
+               pa.add(fp_morph_op_arg1);
+            }
+
+            if(fp_morph_op_arg2.isEditable())
+            {
+               pa.add(fp_morph_op_arg2);
+            }
+         }
+         else
+         {
+            pa.add(cm_morph_flt);
+
+            if(fp_morph_flt_arg1.isEditable())
+            {
+               pa.add(fp_morph_flt_arg1);
+            }
+
+            if(fp_morph_flt_arg2.isEditable())
+            {
+               pa.add(fp_morph_flt_arg2);
+            }
+         }
+      }
+   }
+
+   // public virtual onKey(Key _k) : boolean {
+   //    switch(_k.pressed)
+   //    {
+   //    }
+   // }
+
+   // <ui_handle.png>
+   protected method handleEntryEdited(int _which) {
+      if(@(current_ev) != @(edit_ev))
+      {
+         last_edited_param = _which;
+         provideAction(Action.New(AC_ENTRY_EDITED, this));
+      }
+   }
+
+   // <method_get.png>
+   public method getLastEditedParam() : int {
+      return last_edited_param;
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdateTableQuiet() {
+      provideAction(Action.New(AC_UPDATE_TABLE_QUIET, this));
+   }
+
+   // <method.png>
+   protected method cancelAutoSelect() {
+      provideAction(Action.New(AC_CANCEL_AUTOSELECT, this));
+   }
+
+   // <ui_handle.png>
+   protected method handleDevChanged() {
+
+      last_orig_dev_idx = current_ev.getDevIdx();
+      last_orig_ch = current_ev.dev_ch;
+
+      local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+      if(!selectedEvents.containsPointer(current_ev))
+         selectedEvents.add(current_ev);
+
+      MIDIMapEvent *ev;
+      foreach ev in selectedEvents
+      {
+         if(b_dst)
+            ev.setDev(MIDI.GetMIDIOutDeviceByAliasOrName(MIDI.out_device_names_sorted.get(cm_dev.getSelectedOption())));
+         else
+            ev.setDev(MIDI.GetMIDIInDeviceByAliasOrName(MIDI.in_device_names_sorted.get(cm_dev.getSelectedOption())));
+      }
+
+      updateTypeChanged();
+
+      handleEntryEdited(EDIT_DEV);
+   }
+
+   // <ui_handle.png>
+   protected method handleChChanged() {
+
+      last_orig_dev_idx = current_ev.getDevIdx();
+      last_orig_ch = current_ev.dev_ch;
+
+      int opt = cm_ch.getSelectedOption();
+      // trace "xxx cm_ch opt="+opt;
+
+      if( (faderport.b_connected) &&
+          (@(current_ev.dev) == @(faderport.in_dev)) &&
+          (MIDIMapDefs.TYPE_NRPN == current_ev.type) &&
+          (0 <= current_ev.ext_type < (FaderPort.NUM_BANKS*FaderPort.NUM_FADERS_PER_BANK))
+          )
+      {
+         if(opt > 0)
+         {
+            // Special handling: Change Fader Bank instead of MIDI channel
+            last_orig_faderport_bank = current_ev.ext_type / FaderPort.NUM_FADERS_PER_BANK;
+            last_new_faderport_bank = (opt-1);
+            cm_ext_nrpn.setSelectedOption( 1 + ((opt-1) * 16) + (current_ev.ext_type & 15) );
+            handleExtNRPNCMChanged();
+            handleEntryEdited(EDIT_CH);
+         }
+      }
+      else
+      {
+         local MIDIMapEvent*[] selectedEvents <= parent_page.getSelectedEvents(b_dst);
+         if(!selectedEvents.containsPointer(current_ev))
+            selectedEvents.add(current_ev);
+
+         MIDIMapEvent *ev;
+         foreach ev in selectedEvents
+         {
+            if(0 == opt) // '*' ?
+            {
+               ev.b_morph_all_ch = true;
+            }
+            else
+            {
+               ev.b_morph_all_ch = false;
+               ev.setDevCh(opt - 1);
+            }
+         }
+
+         updateTypeChanged();
+
+         handleEntryEdited(EDIT_CH);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleTypeChanged() {
+
+      int opt = cm_type.getSelectedOption();
+
+      if(0 == opt)
+      {
+         current_ev.b_morph_all_types = true;
+         current_ev.setType(-1);
+      }
+      else
+      {
+         current_ev.b_morph_all_types = false;
+         current_ev.setType(opt - 1);
+      }
+
+      // Update "morph all subtypes"
+      switch(current_ev.type)
+      {
+         default:
+            current_ev.b_morph_all_subtypes = false;
+            break;
+
+         case TYPE_CC:
+            current_ev.b_morph_all_subtypes = (0 == cm_ext_cc.getSelectedOption());
+            break;
+
+         case TYPE_RPN:
+            current_ev.b_morph_all_subtypes = (0 == cm_ext_rpn.getSelectedOption());
+            break;
+
+         case TYPE_NRPN:
+            current_ev.b_morph_all_subtypes = (0 == cm_ext_nrpn.getSelectedOption());
+            break;
+      }
+
+      updateTypeChanged();
+
+      handleEntryEdited(EDIT_TYPE);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtNoteChanged() {
+      current_ev.setExtType(cm_ext_note.getSelectedOption());
+
+      handleEntryEdited(EDIT_EXT_NOTE);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtNoteOnOffChanged() {
+      current_ev.setMorphNoteOnOff(cb_ext_note_onoff.isSelected());
+
+      handleEntryEdited(EDIT_EXT_NOTE_ON_OFF);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtCCChanged() {
+      int ccNr = cm_ext_cc.getSelectedOption();
+
+      if(ccNr > 0)
+      {
+         current_ev.setExtType(ccNr - 1);
+         current_ev.b_morph_all_subtypes = false;
+      }
+      else
+      {
+         current_ev.b_morph_all_subtypes = true;
+      }
+
+      handleEntryEdited(EDIT_EXT_CC);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtRPNFPChanged() {
+      current_ev.setExtType(fp_ext_rpn.getFloatValue());
+      current_ev.b_morph_all_subtypes = false;
+
+      MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
+
+      cm_ext_rpn.setSelectedOption(msp.getRPNCaptionIndex(current_ev.ext_type) + 1);
+
+      handleEntryEdited(EDIT_EXT_RPN);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtRPNCMChanged() {
+      MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
+
+      int rpn = cm_ext_rpn.getSelectedOption();
+
+      if(rpn > 0)
+      {
+         current_ev.setExtType(msp.getRPNByCaptionIndex(rpn - 1));
+         current_ev.b_morph_all_subtypes = false;
+      }
+      else
+      {
+         current_ev.b_morph_all_subtypes = true;
+      }
+
+      fp_ext_rpn.setValue(current_ev.ext_type);
+
+      handleEntryEdited(EDIT_EXT_RPN);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtNRPNFPChanged() {
+
+      current_ev.setExtType(fp_ext_nrpn.getFloatValue());
+      current_ev.b_morph_all_subtypes = false;
+
+      MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
+
+      cm_ext_nrpn.setSelectedOption(msp.getNRPNCaptionIndex(current_ev.ext_type) + 1);
+
+      handleEntryEdited(EDIT_EXT_NRPN);
+   }
+
+   // <ui_handle.png>
+   protected method handleExtNRPNCMChanged() {
+      MIDISynthProfile msp <= current_ev.dev.getMIDISynthProfile(current_ev.dev_ch);
+
+      int nrpn = cm_ext_nrpn.getSelectedOption();
+
+      // trace "xxx nrpn="+nrpn;
+
+      if(nrpn > 0)
+      {
+         current_ev.setExtType(msp.getNRPNByCaptionIndex(nrpn - 1));
+         current_ev.b_morph_all_subtypes = false;
+      }
+      else
+      {
+         current_ev.b_morph_all_subtypes = true;
+      }
+
+      fp_ext_nrpn.setValue(current_ev.ext_type);
+
+      handleEntryEdited(EDIT_EXT_NRPN);
+   }
+
+   // <ui_handle.png>
+   protected method handleShowFltChanged() {
+
+      UI.LoseKeyboardFocusIfWithin(ls_flt, true/*bQuiet*/);
+
+      if(cb_flt.isSelected())
+      {
+         ls_flt.switchToLayerNr(1);
+
+         ls_flt_srcdst.switchToLayerNr(b_dst ? 1 : 0);
+      }
+      else
+      {
+         ls_flt.switchToLayerNr(0);
+      }
+
+      Layer r <= getRoot();
+      r.layoutHierarchy(true, false);
+      r.redraw();
+   }
+
+   // <ui_toggle.png>
+   public method toggleShowFltOrOp() {
+
+      cb_flt.setSelected(!cb_flt.isSelected());
+
+      handleShowFltChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphFltChanged() {
+      current_ev.setMorphType(cm_morph_flt.getSelectedOption());
+
+      // // updateFilterOrOp();
+      updateTypeChanged();
+      handleUpdateTableQuiet();
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphFltArg1Changed() {
+      current_ev.setMorphArg1(fp_morph_flt_arg1.getFloatValue());
+      handleUpdateTableQuiet();
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphFltArg2Changed() {
+      current_ev.setMorphArg2(fp_morph_flt_arg2.getFloatValue());
+      handleUpdateTableQuiet();
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphOpChanged() {
+      current_ev.setMorphType(cm_morph_op.getSelectedOption());
+
+      // // updateFilterOrOp();
+      updateTypeChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphOpArg1Changed() {
+      current_ev.setMorphArg1(fp_morph_op_arg1.getFloatValue());
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphOpArg2Changed() {
+      current_ev.setMorphArg2(fp_morph_op_arg2.getFloatValue());
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(cm_dev):
+            cancelAutoSelect();
+            handleDevChanged();
+            return true;
+
+         case @(cm_ch):
+            cancelAutoSelect();
+            handleChChanged();
+            return true;
+
+         case @(cm_type):
+            cancelAutoSelect();
+            handleTypeChanged();
+            return true;
+
+         case @(cm_ext_note):
+            cancelAutoSelect();
+            handleExtNoteChanged();
+            return true;
+
+         case @(cb_ext_note_onoff):
+            cancelAutoSelect();
+            handleExtNoteOnOffChanged();
+            return true;
+
+         case @(cm_ext_cc):
+            cancelAutoSelect();
+            handleExtCCChanged();
+            return true;
+
+         case @(fp_ext_rpn):
+            cancelAutoSelect();
+            handleExtRPNFPChanged();
+            return true;
+
+         case @(cm_ext_rpn):
+            cancelAutoSelect();
+            handleExtRPNCMChanged();
+            return true;
+
+         case @(fp_ext_nrpn):
+            cancelAutoSelect();
+            handleExtNRPNFPChanged();
+            return true;
+
+         case @(cm_ext_nrpn):
+            cancelAutoSelect();
+            handleExtNRPNCMChanged();
+            return true;
+
+         case @(cb_flt):
+            handleShowFltChanged();
+            return true;
+
+         case @(cm_morph_op):
+            cancelAutoSelect();
+            handleMorphOpChanged();
+            return true;
+
+         case @(fp_morph_op_arg1):
+            cancelAutoSelect();
+            handleMorphOpArg1Changed();
+            return true;
+
+         case @(fp_morph_op_arg2):
+            cancelAutoSelect();
+            handleMorphOpArg2Changed();
+            return true;
+
+         case @(cm_morph_flt):
+            cancelAutoSelect();
+            handleMorphFltChanged();
+            return true;
+
+         case @(fp_morph_flt_arg1):
+            cancelAutoSelect();
+            handleMorphFltArg1Changed();
+            return true;
+
+         case @(fp_morph_flt_arg2):
+            cancelAutoSelect();
+            handleMorphFltArg2Changed();
+            return true;
+
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

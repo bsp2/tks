@@ -1,0 +1,776 @@
+// ----
+// ---- file   : NTS_Pattern.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 09Jul2016, 10Jul2016, 11Jul2016, 12Jul2016, 13Jul2016, 17Jul2016, 08Oct2016
+// ----          09Oct2016, 16Oct2016, 11Dec2016, 12Dec2016, 19Dec2016, 30Jan2017, 31Jan2017
+// ----          02Feb2017, 03Feb2017, 04Feb2017, 10Feb2017, 12Feb2017, 26Feb2017, 18Mar2017
+// ----          01Jun2017, 05Jun2017, 12Aug2017, 18Aug2017, 03Sep2017, 09Oct2017, 14Oct2017
+// ----          10Nov2017, 11Nov2017, 25Nov2017, 29Nov2017, 30Nov2017, 04Jan2018, 07Mar2018
+// ----          12May2018, 21May2018, 27May2018, 28May2018, 01Jun2018, 17Jun2018, 24Jun2018
+// ----          20Jul2019, 02Oct2019, 03Oct2019, 04Oct2019, 05Oct2019, 06Oct2019, 07Oct2019
+// ----          08Oct2019, 09Oct2019, 14Oct2019, 16Oct2019, 17Oct2019, 18Oct2019, 19Oct2019
+// ----          25Oct2019, 31Oct2019, 01Nov2019, 02Nov2019, 07Nov2019, 06Mar2020, 18Mar2020
+// ----          05May2020, 26Oct2020, 27Oct2020, 30Oct2020, 02Nov2020, 03Nov2020, 10Nov2020
+// ----          12Nov2020, 13Nov2020, 23Nov2020, 27Jan2021, 20Jun2021, 01Jan2022, 04Jan2022
+// ----          21Feb2022, 07May2022, 21Jun2023, 14Oct2023, 27Nov2023, 01Dec2023, 02Dec2023
+// ----          06Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+module MNTS_Pattern;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NTS_Pattern : NodePattern {
+
+   define int NUM_TRACKS = 16;
+
+   NodeTrigSeq *parent_node;
+
+   PointerArray tracks;  // NTS_Track instances (16)
+
+   float   arg3_offset;  // e.g. note offset (48=C-4)
+   String *note_name_profile_id;  // null=use Numbers profile
+   float   swing_offset;  // -0.5..0.5
+   float   velocity_jitter_offset;
+   float   microtime_jitter_offset;
+   int     default_note_duration_offset;
+   float   mod1_jitter_offset;
+   float   mod2_jitter_offset;
+   float   quantization_offset;
+
+   // Used import_from_trigseq to determine parent TrigSeq instance (e.g. for output dev/ch).
+   //  (note) only set when copying pattern to clipboard
+   int parent_gid;
+
+   int microtime_track_idx;
+
+   byte pitchbend_range_up;
+   byte pitchbend_range_down;
+
+   boolean b_recalc_common_repeat;
+   int common_repeat_ticks_cache;
+
+   float master_len_16th;  // <=0: use track lengths, >0: auto-restart pattern after "n" 16ths
+
+   public int step_modulo_16th;  // highlight every <modulo> 16th step
+   public int bar_modulo_16th;  // for UI only: divide pattern into multiple bars (step nr count resets to 1 at bar start) (e.g. for 6/8 rhythms, e.g. 2:3 clave)
+
+
+   // <method_init.png>
+   public virtual patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+
+      parent_node <= _parent;
+
+      allocTracks(NUM_TRACKS);
+
+      parent_gid = -1;
+
+      microtime_track_idx = -1;
+
+      note_name_profile_id <= null;
+
+      arg3_offset = 36;  // C-3
+
+      default_note_duration_offset = 0;
+
+      mod1_jitter_offset = 0;
+      mod2_jitter_offset = 0;
+
+      pitchbend_range_up = 0;
+      pitchbend_range_down = 0;
+
+      quantization_offset = 0;
+
+      b_recalc_common_repeat = true;
+
+      master_len_16th = -1;
+
+      step_modulo_16th = 4;
+      bar_modulo_16th = 64;
+   }
+
+   // <method.png>
+   protected method allocTracks(int _num) {
+      tracks.alloc(_num);
+      int trackNr = 0;
+      loop(_num)
+      {
+         NTS_Track track <= new NTS_Track;
+         track.init(parent_node, trackNr++);
+         tracks.add(#(deref track));
+      }
+      b_recalc_common_repeat = true;
+   }
+
+   // <method.png>
+   public virtual patCopyFrom(NodePattern _o, boolean _bClear) {
+      patCopyFromGeneric(_o);
+      patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+   }
+
+   // <method_get.png>
+   public method getTrackByIndex(int _trackIndex) : NTS_Track {
+      return tracks.get(_trackIndex);
+   }
+
+   // <method_get.png>
+   public method isTrackUsedByIndex(int _trackIndex) : boolean {
+      // Used by Linnstrument plugin to determine whether to draw trigger pad
+      NTS_Track track <= tracks.get(_trackIndex);
+      if(null != track)
+      {
+         String s <= track.name;
+         return !s.isBlank() && (s != "-");
+      }
+      return false;
+   }
+
+   // <method_update.png>
+   public method updateTrigCachesAndNumTicks() {
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         track.updateTrigCache();
+         track.calcCurrentStepNumTicks();
+         track.calcCurrentRepeatNumTicks();
+      }
+   }
+
+   // <method_get.png>
+   public method getMaxSteps() : int {
+      int maxSteps = 0;
+
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         if(track.play_length > maxSteps)
+            maxSteps = track.play_length;
+      }
+
+      return maxSteps;
+   }
+
+   // <method_get.png>
+   public method getMaxTicks() : int {
+      int maxTicks = 0;
+
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         int numTicks = (track.play_length * track.current_step_num_ticks);
+
+         if(numTicks > maxTicks)
+            maxTicks = numTicks;
+      }
+
+      return maxTicks;
+   }
+
+   // <method_set.png>
+   public =replay= method setMicrotimeTrackIdx(int _idx) {
+      microtime_track_idx = _idx;
+   }
+
+   // <method_set.png>
+   public =replay= method setArg3Offset(float _off) {
+      arg3_offset = _off;
+   }
+
+   // <method_set.png>
+   public =replay= method setDefaultNoteDurationOffset(int _off) {
+      default_note_duration_offset = _off;
+   }
+
+   // <method_set.png>
+   public =replay= method setSwingOffset(float _off) {
+      swing_offset = _off;
+   }
+
+   // <method_set.png>
+   public =replay= method setVelocityJitterOffset(float _off) {
+      velocity_jitter_offset = _off;
+   }
+
+   // <method_set.png>
+   public =replay= method setMicrotimeJitterOffset(float _off) {
+      microtime_jitter_offset = _off;
+   }
+
+   // <method_set.png>
+   public =replay= method setMod1JitterOffset(float _val) {
+      mod1_jitter_offset = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setMod2JitterOffset(float _val) {
+      mod2_jitter_offset = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setPitchbendRangeUp(byte _val) {
+      pitchbend_range_up = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setPitchbendRangeDown(byte _val) {
+      pitchbend_range_down = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setQuantizationOffset(float _off) {
+      quantization_offset = _off;
+   }
+
+   // <method_set.png>
+   public =replay= method setMasterLen16th(float _num16th) {
+      master_len_16th = _num16th;
+   }
+
+   // <replay.png>
+   public virtual patReset(boolean _bSoft) {
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         track.trackReset(_bSoft);
+      }
+   }
+
+   // <method_handle.png>
+   public virtual patHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+      if(_bPPQ)
+      {
+         NTS_Track *track;
+         foreach track in tracks
+         {
+            track.calcCurrentStepNumTicks();
+            track.calcCurrentRepeatNumTicks();
+         }
+      }
+      b_recalc_common_repeat = true;
+   }
+
+   // <method.png>
+   public =replay= method clearAll(boolean _bKeepTimingTrack) {
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         if(!_bKeepTimingTrack || (microtime_track_idx != track.track_nr))
+         {
+            track.clearAll(false/*bMod*/);
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method toggleSoloState(int _trackNr) {
+
+      NTS_Track *t;
+      NTS_Track track <= tracks.get(_trackNr);
+
+      if(null != track)
+      {
+         int newState = (NTS_Track.STATE_SOLO == track.play_state) ? NTS_Track.STATE_PLAY : NTS_Track.STATE_SOLO;
+
+         boolean bOtherSolo = false;
+         foreach t in tracks
+         {
+            if(@(t) != @(track))
+            {
+               if(NTS_Track.STATE_SOLO == t.play_state)
+               {
+                  bOtherSolo = true;
+                  break;
+               }
+            }
+         }
+
+         if(NTS_Track.STATE_SOLO == track.play_state)
+         {
+            // Solo => Play (or mute)
+
+            if(!bOtherSolo)
+            {
+               // Restore pre-solo state
+               foreach t in tracks
+               {
+                  if(NTS_Track.STATE_PLAY != t.play_state)
+                  {
+                     t.play_state = t.play_state_presolo;
+
+                     if(@(t) == @(track))
+                     {
+                        newState = t.play_state;
+                     }
+                  }
+               }
+            }
+            else
+            {
+               newState = NTS_Track.STATE_MUTE;
+            }
+         }
+
+         if(NTS_Track.STATE_SOLO == newState)
+         {
+            if(!bOtherSolo)
+            {
+               // Save pre-solo states
+               foreach t in tracks
+               {
+                  t.play_state_presolo = t.play_state;
+                  t.play_state = NTS_Track.STATE_MUTE;
+               }
+            }
+         }
+
+         track.play_state = newState;
+      }
+   }
+
+   // <method.png>
+   public =replay= method toggleMuteState(int _trackNr) {
+      NTS_Track track <= tracks.get(_trackNr);
+
+      if(null != track)
+      {
+         if(NTS_Track.STATE_SOLO == track.play_state)
+            toggleSoloState(_trackNr);
+
+         int newState = (NTS_Track.STATE_MUTE == track.play_state) ? NTS_Track.STATE_PLAY : NTS_Track.STATE_MUTE;
+
+         track.play_state = newState;
+      }
+   }
+
+   // <method.png>
+   public =replay= method rotatePatternStepsLeft() {
+      NTS_Track *track;
+      foreach track in tracks
+         track.rotateStepsLeft();
+   }
+
+   // <method.png>
+   public =replay= method rotatePatternStepsRight() {
+      NTS_Track *track;
+      foreach track in tracks
+         track.rotateStepsRight();
+   }
+
+   // <method.png>
+   public =replay= method insertPatternStep(int _stepIdx) {
+      NTS_Track *track;
+      foreach track in tracks
+         track.insertStep(_stepIdx);
+   }
+
+   // <method.png>
+   public =replay= method deletePatternStep(int _stepIdx) {
+      NTS_Track *track;
+      foreach track in tracks
+         track.deleteStep(_stepIdx);
+   }
+
+   // <method.png>
+   public =replay= method moveStepUp(int _trackIdx, int _stepIdx) : boolean {
+      if(0 < _trackIdx < tracks.numElements)
+      {
+         if(0 <= _stepIdx < NTS_Track.MAX_STEPS)
+         {
+            NTS_Track trackSrc <= tracks.get(_trackIdx);
+            NTS_Track trackDst <= tracks.get(_trackIdx - 1);
+            NTS_Step  stDst    <= trackDst.getStepByIndex(_stepIdx);
+            if(!stDst.b_trig && !stDst.b_repeat && !stDst.b_mod)
+            {
+               NTS_Step stSrc <= trackSrc.getStepByIndex(_stepIdx);
+               stDst.copyFrom(stSrc);
+               stSrc.b_trig   = false;
+               stSrc.b_repeat = false;
+               stSrc.b_mod    = false;
+               trackSrc.updateTrigCache();
+               trackDst.updateTrigCache();
+               return _trackIdx - 1;
+            }
+         }
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public =replay= method moveStepDown(int _trackIdx, int _stepIdx) : boolean {
+      if(0 <= _trackIdx < (tracks.numElements - 1))
+      {
+         if(0 <= _stepIdx < NTS_Track.MAX_STEPS)
+         {
+            NTS_Track trackSrc <= tracks.get(_trackIdx);
+            NTS_Track trackDst <= tracks.get(_trackIdx + 1);
+
+            NTS_Step stDst <= trackDst.getStepByIndex(_stepIdx);
+            if(!stDst.b_trig && !stDst.b_repeat && !stDst.b_mod)
+            {
+               NTS_Step stSrc <= trackSrc.getStepByIndex(_stepIdx);
+               stDst.copyFrom(stSrc);
+               stSrc.b_trig   = false;
+               stSrc.b_repeat = false;
+               stSrc.b_mod    = false;
+               trackSrc.updateTrigCache();
+               trackDst.updateTrigCache();
+               return _trackIdx + 1;
+            }
+         }
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public =replay= method clearAllStepsAndResetTrackLengths() {
+
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         track.clearAllStepsAndResetPlayLength(this);
+      }
+   }
+
+   // <method.png>
+   public =replay= method reversePatternSteps() {
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         track.reverseSteps();
+      }
+   }
+
+   // <method.png>
+   public =replay= method initArg3FromPreset(StringArray _preset) {
+      NTS_Track *track;
+      int trackIdx = 0;
+
+      if(_preset.get(0).endsWith("Scale"))
+      {
+         foreach track in tracks
+         {
+            track.arg3 = _preset.get(trackIdx+1);  // +1 to skip preset name
+            track.name = MIDI.midi_notes.get(track.arg3 + arg3_offset);
+            trackIdx++;
+         }
+      }
+      else
+      {
+         foreach track in tracks
+         {
+            track.arg3 = _preset.get(trackIdx+1);  // +1 to skip preset name
+            trackIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   public method importMonPatternPort(NTS_Pattern _pat,
+                                      NM_Pattern  _patMon,
+                                      int         _patMonNumTicks,
+                                      int         _devIdx,
+                                      int         _midiCh,
+                                      Integer     _trackOffset
+                                      ) : int {
+      int retNumTrigs = 0;
+      local IntArray notes;
+      _patMon.findUniquePlayedNotes(notes, _devIdx, _midiCh);
+      // // trace "xxx importMonPatternPort: uniqueNotes="+#(notes);
+      if(notes.numElements > 0)
+      {
+         float ticksToMilliSeconds = current_song.ticksToMilliSeconds(1.0);
+
+         int noteIdx = 0;
+         loop(notes.numElements)
+         {
+            int noteNr = notes[noteIdx];
+
+            if(_trackOffset < NTS_Pattern.NUM_TRACKS)
+            {
+               NTS_Track track <= tracks.get(_trackOffset);
+               track.step_note_length = NTS_Track.NOTELEN_16;
+
+               // (todo) support variable step duration
+               int stepTicks = (current_song.ppq / 4);
+               int numSteps = _patMonNumTicks / stepTicks;
+               if(numSteps > NTS_Track.MAX_STEPS)
+               {
+                  trace "[~~~] importMonPatternPort: numSteps="+numSteps+" exceeds "+NTS_Track.MAX_STEPS+" (devIdx="+_devIdx+" midiCh="+_midiCh+" trackOffset="+_trackOffset+")";
+                  numSteps = NTS_Track.MAX_STEPS;
+               }
+               track.play_length = numSteps;
+               track.b_forced_out = true;
+               track.forced_out_dev = _devIdx;
+               track.forced_out_ch  = _midiCh;
+               track.forced_output_mode = NodeTrigSeq.OUT_SINGLECH_NOTE;  // arg1=vel, arg2=dur
+               track.arg3 = noteNr - _pat.arg3_offset;
+
+               int firstTicks = -1;
+
+               int frIdx = 0;
+               loop(_patMon.getNumFrames())
+               {
+                  MIDIPipeFrame fr <= _patMon.getReplayFrameByIdx(frIdx);
+                  if(null != fr)
+                  {
+                     int ticks;
+
+                     if(_patMon.b_tick_timebase)  // used (only) by output capture mode
+                        ticks = fr.timeStamp/*ticks*/;
+                     else
+                        ticks = fr.timeStamp / ticksToMilliSeconds;   // convert ms to ticks
+
+                     if(-1 == firstTicks)
+                        firstTicks = ticks;
+
+                     MIDIPipeEvent pev;
+                     if(fr.getNoteOnEventByFlt(pev, noteNr, _devIdx, _midiCh))
+                     {
+                        ticks -= firstTicks;
+
+                        int stepIdx = int((ticks + stepTicks/2) / stepTicks);
+                        if(NTS_Track.MAX_STEPS == stepIdx)
+                           stepIdx = NTS_Track.MAX_STEPS - 1;
+
+                        // trace "xxx have noteOn nr="+noteNr+" vel="+pev.velocity+" dur="+pev.duration+" ticks="+ticks+" stepIdx="+stepIdx;
+
+                        if(stepIdx < NTS_Track.MAX_STEPS)
+                        {
+                           NTS_Step st <= track.getStepByIndex(stepIdx);
+                           if(!st.b_trig)
+                           {
+                              st.b_trig = true;
+                              st.microtime = (ticks - (stepIdx * stepTicks)) / float(stepTicks);
+                              st.arg1 = track.findVelocityIndexByVelocity(pev.velocity);
+                              st.arg2 = pev.duration;
+                              // trace "xxx import trig note="+(MIDI.midi_notes.get(noteNr))+" ("+noteNr+") stepIdx="+stepIdx+" microtime="+st.microtime+" velIdx="+st.arg1+" dur="+st.arg2;
+                              retNumTrigs++;
+                           }
+                           // else: step already used
+                        }
+                     }
+                  }
+
+                  // Next frame
+                  frIdx++;
+               }
+
+               // Next track / note
+               _trackOffset++;
+            }
+            else
+               break;
+
+            // Next note
+            noteIdx++;
+         } // loop notes
+      } // if #notes
+      return retNumTrigs;
+   }
+
+   // <save.png>
+   public virtual patSaveState(Stream ofs) {
+
+      // Global.Debug3("NTS::patSaveState");
+
+      NodePattern::patSaveState(ofs);
+
+      // Write version
+      ofs.i16 = 13;
+
+      // Write tracks
+      ofs.i8 = tracks.numElements;
+
+      NTS_Track *track;
+      foreach track in tracks
+      {
+         track.saveState(ofs);
+      }
+
+      // Write arg3_offset (v2+)
+      ofs.f32 = arg3_offset;
+
+      // Write note name profile id (v5+)
+      Utils.WriteString(ofs, note_name_profile_id);
+
+      // Write swing_offset (v3+)
+      ofs.f32 = swing_offset;
+
+      // Write default_note_duration_offset (v7+)
+      ofs.i32 = default_note_duration_offset;
+
+      // Write velocity_jitter_offset (v6+)
+      ofs.f32 = velocity_jitter_offset;
+
+      // Write microtime_jitter_offset (v6+)
+      ofs.f32 = microtime_jitter_offset;
+
+      // Write microtime track idx (v4+)
+      ofs.i8 = microtime_track_idx;
+
+      // Write mod1_jitter_offset (v8+)
+      ofs.f32 = mod1_jitter_offset;
+
+      // Write mod2_jitter_offset (v8+)
+      ofs.f32 = mod2_jitter_offset;
+
+      // Write pitchbend_range_up (v9+)
+      ofs.i8 = pitchbend_range_up;
+
+      // Write pitchbend_range_down (v9+)
+      ofs.i8 = pitchbend_range_down;
+
+      // Write quantization offset (v10+)
+      ofs.f32 = quantization_offset;
+
+      // Write master_len_16th (v11+)
+      ofs.f32 = master_len_16th;
+
+      // Write step_modulo_16th (v12+)
+      ofs.i8 = step_modulo_16th;
+
+      // Write bar_modulo_16th (v13+)
+      ofs.i8 = bar_modulo_16th;
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      // Global.Debug3("NTS::patLoadState ver="+_ver);
+
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.i16;
+
+         if(ver >= 1)
+         {
+            // Read tracks
+            int numTracks = ifs.u8;
+
+            allocTracks(numTracks);
+
+            int trackIdx = 0;
+            loop(numTracks)
+            {
+               NTS_Track track <= tracks.get(trackIdx);
+
+               if(track.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+               {
+               }
+               else
+               {
+                  trace "[---] NTS_Pattern::patLoadState: failed to read track (trackIdx="+trackIdx+" num="+numTracks+")";
+                  return false;
+               }
+
+               trackIdx++;
+            }
+
+            if(ver >= 2)
+            {
+               // Read arg3_offset (v2+)
+               arg3_offset = ifs.f32;
+            }
+
+            if(ver >= 5)
+            {
+               // Read note name profile id (v5+)
+               note_name_profile_id <= new String;
+               Utils.ReadString(ifs, note_name_profile_id);
+               if(note_name_profile_id.isBlank())
+                  note_name_profile_id <= null;
+            }
+
+            if(ver >= 3)
+            {
+               // Read swing_offset (v3+)
+               swing_offset = ifs.f32;
+            }
+
+            if(ver >= 7)
+            {
+               // Read default_note_duration_offset (v7+)
+               default_note_duration_offset = ifs.i32;
+            }
+
+            if(ver >= 6)
+            {
+               // Read velocity_jitter_offset (v6+)
+               velocity_jitter_offset = ifs.f32;
+
+               // Read microtime_jitter_offset (v6+)
+               microtime_jitter_offset = ifs.f32;
+            }
+
+            if(ver >= 4)
+            {
+               // Read microtime track idx (v4+)
+               microtime_track_idx = ifs.s8;
+            }
+
+            if(ver >= 8)
+            {
+               // Read mod1_jitter_offset (v8+)
+               mod1_jitter_offset = ifs.f32;
+
+               // Read mod2_jitter_offset (v8+)
+               mod2_jitter_offset = ifs.f32;
+            }
+
+            if(ver >= 9)
+            {
+               // Read pitchbend_range_up (v9+)
+               pitchbend_range_up = ifs.u8;
+
+               // Read pitchbend_range_down (v9+)
+               pitchbend_range_down = ifs.u8;
+            }
+
+            if(ver >= 10)
+            {
+               // Read quantization offset (v10+)
+               quantization_offset = ifs.f32;
+            }
+
+            if(ver >= 11)
+            {
+               // Read master_len_16th (v11+)
+               master_len_16th = ifs.f32;
+            }
+
+            if(ver >= 12)
+            {
+               // Read step_modulo_16th (v12+)
+               step_modulo_16th = ifs.u8;
+            }
+
+            if(ver >= 13)
+            {
+               // Read bar_modulo_16th (v13+)
+               bar_modulo_16th = ifs.u8;
+            }
+
+            b_recalc_common_repeat = true;
+
+            return true;
+         }
+         else
+         {
+            trace "[---] NTS_Pattern::patLoadState: invalid version ("+ver+").";
+         }
+      }
+
+      return false;
+   }
+}

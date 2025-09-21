@@ -1,0 +1,1067 @@
+// ----
+// ---- file   : NewTrackDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 21Sep2019
+// ---- changed: 22Sep2019, 23Sep2019, 24Sep2019, 30Oct2019, 12Nov2020, 10May2021, 13May2021
+// ----          24Jul2021, 19Feb2023, 03Oct2023, 04Oct2023, 30Oct2023, 04Nov2023, 04Oct2024
+// ----          05Oct2024, 31Jan2025
+// ----
+// ----
+// ----
+
+module MNewTrackDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NewTrackDialog extends Dialog, ActionProvider, MMTListener {
+
+   define String ACTION_CREATE_NEW_TRACK;
+   define String ACTION_CANCEL_NEW_TRACK;
+
+   protected XMLForm *xfm;
+
+   protected ActionConsumer *recipient;
+
+   protected TextField  *tf_name;
+   protected ComboBox   *cm_cat;
+   protected ComboBox   *cm_type;
+   protected CheckBox   *cb_type_all;
+   protected ComboBox   *cm_preset;
+   protected ComboField *cf_flt;
+   protected CheckBox   *cb_cat_flt;
+   protected CheckBox   *cb_autoassign;
+
+   protected Button *bt_create;
+   protected Button *bt_cancel;
+
+   // parsed from STConfig.newtrackdialog_track_categories
+   public    StringArray track_categories;
+   public    StringArray track_device_names;
+   public    IntArray    track_midi_channels;
+
+   protected StringArray all_categories;           // including <preset> and <current>
+   protected StringArray all_categories_long;      // ..
+   protected IntArray    all_categories_bgcolors;
+
+   protected StringArray preset_node_types;
+   protected StringArray preset_names;
+
+   protected String current_pipe_name;
+
+   protected String orig_create_tooltipcaption;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NewTrackDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      if(!xfm.autoResolveIds(this))
+         return false;
+
+      parseTrackCategories();
+
+      initWindow(xfm,
+                 "New Track / Pipe / Node",
+                 100, 100,
+                 640, 240
+                 );
+
+      updateTypeOptions();
+      cf_flt.setOptionsSorted(STConfig.newtrackdialog_user_filter_history);
+
+      cb_type_all.setSelected(STConfig.b_newtrackdialog_type_all);
+
+      orig_create_tooltipcaption = bt_create.getToolTipCaption();
+
+      return true;
+   }
+
+   // <ui_update.png>
+   protected method updateTypeOptions() {
+      local StringArray allTypes;
+      allTypes.add("*");
+      allTypes.join(allTypes,
+                    cb_type_all.isSelected() ?
+                    STConfig.newtrackdialog_node_types_all : STConfig.newtrackdialog_node_types_instr
+                    );
+      cm_type.setOptions(allTypes);
+   }
+
+   // <ui_consume.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_CREATE_NEW_TRACK, ACTION_CANCEL_NEW_TRACK];
+   }
+
+   // <ui.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <ui.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <ui.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      return getTabCycleOverridesDef();
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtGetFocusLayers() : PointerArray {
+      return getTabCycleOverrides();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         tf_name,
+         cm_cat,
+         cm_type,
+         cb_type_all,
+         cm_preset,
+         cf_flt,
+         cb_cat_flt,
+         cb_autoassign,
+         bt_create,
+         bt_cancel
+                              ];
+   }
+
+   // <ui_show.png>
+   public method showNewTrackDialog(ActionConsumer _recipient, boolean _bCurrentPipe, boolean _bShowAllNodeTypes) {
+      recipient <= _recipient;
+      tf_name.setText("");
+
+      if(maybe != _bShowAllNodeTypes)
+         cb_type_all.setSelected(_bShowAllNodeTypes);
+
+      initAllCategories();
+      rescanPresets();
+      updateCreatability();
+      tryUpdateCatByPreset();
+      updateCreatability();
+
+      if(_bCurrentPipe)
+         cm_cat.setSelectedOptionAction(1); // Select "[current pipe]"
+      else
+         cm_cat.setSelectedOptionAction(0); // Select "-" category
+
+      showCentered();
+   }
+
+   // <ui_show.png>
+   public method prepareNewTrackDialog() {
+      // called by NodeSeqEditor::explode() (reads track_categories)
+      recipient <= null;
+      tf_name.setText("");
+
+      initAllCategories();
+      rescanPresets();
+      updateCreatability();
+      tryUpdateCatByPreset();
+      updateCreatability();
+   }
+
+   // <ui_update.png>
+   protected method initAllCategories() {
+      all_categories.empty();
+      all_categories_long.empty();
+      all_categories_bgcolors.empty();
+
+      all_categories.add("-");  // see updateCatPresetName()
+      all_categories_long.add("-\t[preset]");
+      all_categories_bgcolors.add(app_lnf.getColor(AppLookAndFeel.COLOR_NEWTRACKDLG_CAT_BG_PRESET));
+
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgPipeRoot.getSelectedPipe();
+      if(null != pipe)
+      {
+         current_pipe_name <= pipe.name;
+         all_categories.add(pipe.name);
+         all_categories_long.add(pipe.name+"\t[current pipe]");
+      }
+      else
+      {
+         all_categories.add("-");
+         all_categories_long.add("-\t[current pipe]");
+         current_pipe_name = "new";
+      }
+      all_categories_bgcolors.add(app_lnf.getColor(AppLookAndFeel.COLOR_NEWTRACKDLG_CAT_BG_CURRENT));
+
+      // // all_categories.join(all_categories, track_categories);
+      // // all_categories_long.join(all_categories_long, track_categories);
+      int trackCatIdx = 0;
+      loop(track_categories.numElements)
+      {
+         String trackCatName <= track_categories[trackCatIdx];
+         STX_MIDIOutDevice trackCatDev <= MIDI.GetMIDIOutDeviceByAliasOrName(track_device_names.get(trackCatIdx));
+         byte trackCatMidiCh = track_midi_channels.get(trackCatIdx);
+         local String trackCatOpt;
+         if(null != trackCatDev)
+            trackCatOpt <= trackCatName+"\t"+trackCatDev.getAliasOrDeviceName()+":"+(trackCatMidiCh+1);
+         else
+            trackCatOpt <= trackCatName;
+         all_categories.add(trackCatOpt);
+         all_categories_long.add(trackCatOpt);
+         all_categories_bgcolors.add(app_lnf.getColor(AppLookAndFeel.COLOR_NEWTRACKDLG_CAT_BG_DEFAULT));
+
+         // Next track category
+         trackCatIdx++;
+      }
+
+      cm_cat.setOptions(all_categories);
+      cm_cat.setOptionsLong(all_categories_long);
+      cm_cat.setOptionBGColors(all_categories_bgcolors);
+
+      if(0) cm_cat.setSelectedOption(1);  // current pipe
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      if(!b_layer_postinit_done)
+         resizeToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+
+      if(STConfig.b_newtrackdialog_prefer_filter_focus)
+      {
+         UI.SetKeyboardFocus(cf_flt);
+         cf_flt.selectAll();
+         cf_flt.onTabFocus(); // start editing
+      }
+      else
+      {
+         UI.SetKeyboardFocus(tf_name);
+         tf_name.selectAll();
+         tf_name.onTabFocus(); // start editing
+      }
+   }
+
+   // <method.png>
+   protected method parseTrackCategories() {
+      int idx = 0;
+      StringArray categories <= STConfig.newtrackdialog_track_categories;
+      loop(categories.numElements / 2)
+      {
+         String catName   <= categories[idx + 0];
+         String devChName <= categories[idx + 1];
+
+         track_categories.add(catName);
+         int idxCh = devChName.indexOf(":", 0);
+         if(-1 != idxCh)
+         {
+            int prefMidiCh = devChName.substring(idxCh+1, 10);
+            prefMidiCh = mathClampi(prefMidiCh, 1, 16);
+            track_device_names.add(devChName.substring(0, idxCh));
+            track_midi_channels.add(prefMidiCh - 1);
+         }
+         else
+         {
+            track_device_names.add(devChName);
+            track_midi_channels.add(8-1);
+         }
+
+         // Next category
+         idx += 2;
+      }
+   }
+
+   // <method_find.png>
+   public method findPreferredAutoDevByCategoryName(String _name, Integer _retCh) : STX_MIDIOutDevice {
+      // name = "Keys", "Keys.mod", ..
+      String *catName;
+      local String nameLC <= _name.toLower();
+      local String catNameLC;
+      int catIdx = 0;
+      foreach catName in track_categories
+      {
+         catName.toLower() => catNameLC;
+         if(nameLC == catNameLC)
+         {
+            STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(track_device_names.get(catIdx));
+            _retCh = track_midi_channels.get(catIdx);
+            return dev;
+         }
+         catIdx++;
+      }
+      return null;
+   }
+
+   // <method_add.png>
+   public static AddPresets(local String  _nodeType,
+                            local String  _relPath,
+                            local String  _catName,
+                            local boolean _bCatFlt,
+                            local String  _userFltOrNull,
+                            StringArray   _presetNodeTypesOrNull,
+                            StringArray   _presetNames
+                            ) {
+      Global.Debug("NewTrackDialog::addPresets: nodetype=\""+_nodeType+"\" relPath=\""+_relPath+"\" catName=\""+_catName+"\" bCatFlt="+_bCatFlt);
+      local String dirName <= Utils.ToNativePathName(STConfig.node_rootpath+"/"+_nodeType+"/"+_relPath);
+      Global.Debug2("NewTrackDialog::addPresets: NewTrackDialog::addPresets: dirName=\""+dirName+"\"");
+      local StringArray filenames <= Utils.ReadDirectory(dirName);
+
+      if(null != filenames)
+      {
+         local String *fileNameEn;
+
+         foreach fileNameEn in filenames
+         {
+            local StringArray attr <= fileNameEn.splitSpace(true);
+            local String fileName <= attr.get(1);
+
+            // // trace "xxx fileNameEn=\""+fileNameEn+"\"";
+
+            if('d' == fileNameEn.getc(0))
+            {
+               if!( (fileName == ".") || (fileName == "..") )
+               {
+                  // Recurse into directory
+                  AddPresets(_nodeType, _relPath + "/" +fileName, _catName, _bCatFlt, _userFltOrNull,
+                             _presetNodeTypesOrNull,
+                             _presetNames
+                             );
+               }
+            }
+            else if('f' == fileNameEn.getc(0))
+            {
+               if(fileName.endsWith(Global.NODE_FILE_SUFFIX/*.sno*/))
+               {
+                  boolean bAdd = true;
+
+                  if(null != _userFltOrNull)
+                  {
+                     bAdd = (_relPath+"/"+fileName) & _userFltOrNull;
+                  }
+
+                  if(bAdd && _bCatFlt)
+                  {
+                     bAdd = false;
+                     local String pathName = dirName+"/"+fileName;
+                     local String className <= ReadFirstWordOfClassNameFromPresetFile(pathName);
+                     if(null != className)
+                     {
+                        bAdd = className.compareIgnoreCase(_catName);
+                     }
+                  }
+                  if(bAdd)
+                  {
+                     if(null != _presetNodeTypesOrNull)
+                        _presetNodeTypesOrNull.add(_nodeType);
+                     if(null != _presetNames)
+                        _presetNames.add(_relPath+"/"+fileName);////.replace(Global.NODE_FILE_SUFFIX, ""));
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method rescanPresets() {
+      local String *nodeTypeFlt;
+      switch(cm_type.getSelectedOption())
+      {
+         case 0:  // "*"
+            break;
+
+         default:
+            nodeTypeFlt <= cm_type.getSelectedOptionName().toLower();
+            break;
+      }
+
+      local String catName = getSelectedCategoryName();
+      catName.toLower();
+      int subCatIdx = catName.indexOfChar('.', 0);
+      if(-1 != subCatIdx)
+         catName.substring(0, subCatIdx);  // "Keys.mod" => "Keys"
+
+      boolean bCatFlt = cb_cat_flt.isSelected();
+
+      preset_node_types.empty();
+      preset_names.empty();
+
+      preset_node_types.add("");
+      preset_names.add("-");
+
+      local String userFltOrNull <= cf_flt.getSelectedOptionName();
+      if(userFltOrNull.isBlank())
+         userFltOrNull <= null;
+
+      if(null != nodeTypeFlt)
+      {
+         AddPresets(nodeTypeFlt, ""/*relPath*/, catName, bCatFlt, userFltOrNull,
+                    preset_node_types,
+                    preset_names
+                    );
+      }
+      else
+      {
+         String *nodeTypeName;
+         foreach nodeTypeName in (cb_type_all.isSelected() ? STConfig.newtrackdialog_node_types_all : STConfig.newtrackdialog_node_types_instr)
+         {
+            AddPresets(nodeTypeName.toLower(), ""/*relPath*/, catName, bCatFlt, userFltOrNull,
+                       preset_node_types,
+                       preset_names
+                       );
+         }
+      }
+
+      local StringArray presetNameOptions;
+      local String presetName;
+      int presetNameIdx = 1;
+      presetNameOptions.add("-");
+      loop(preset_names.numElements - 1)
+      {
+         // (note) "\t" right-aligns string
+         presetName = preset_names.get(presetNameIdx).replace(Global.NODE_FILE_SUFFIX, "");
+         if(null == nodeTypeFlt)
+         {
+            if(presetName <= "/")
+               presetNameOptions.add(presetName.substring(1,999) + "\t["+preset_node_types.get(presetNameIdx)+"] ");
+            else
+               presetNameOptions.add(presetName + "\t["+preset_node_types.get(presetNameIdx)+"] ");
+         }
+         else
+         {
+            if(presetName <= "/")
+               presetNameOptions.add(presetName.substring(1,999));
+            else
+               presetNameOptions.add(presetName);
+         }
+         presetNameIdx++;
+      }
+
+      cm_preset.setOptions(presetNameOptions);
+
+      Global.Debug("NewTrackDialog::rescanPresets: found "+(preset_names.numElements-1)+" preset(s)");
+
+      resizeToMinimum();
+      moveToClippedPosition2f(position_x, position_y);
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      Global.Print("Name is \""+tf_name.getText()+"\"");
+      updateCreatability();
+   }
+
+   // <method.png>
+   protected method setCreateError(String _msg) {
+      bt_create.setToolTipCaption(orig_create_tooltipcaption+"\n\nERROR: "+_msg);
+   }
+
+   // <method.png>
+   protected method updateCreatability() {
+      // (note) yeah, I know, this isn't an actual word :-)
+      boolean bOk = true;
+
+      // Validate category
+      if(null == getSelectedCategoryName())
+      {
+         bOk = false;
+         setCreateError("bad category");
+      }
+
+      // Validate name
+      if(bOk)
+      {
+         local String name <= tf_name.getText();
+         if(!name.isBlank())
+         {
+            if(name == Utils.ConvertToFileName(name))
+            {
+               bOk = true;
+            }
+         }
+         else
+         {
+            bOk = true;
+         }
+      }
+
+      // Validate node type
+      if(bOk)
+      {
+         bOk = (0/* * */ != cm_type.getSelectedOption());
+         if(!bOk)
+         {
+            int presetIdx = cm_preset.getSelectedOption();
+            bOk = (presetIdx > 0);  // can determine node type from preset ?
+            if(!bOk)
+               setCreateError("bad node type");
+         }
+      }
+
+      if(bOk ^ bt_create.isEditable())
+      {
+         if(bOk)
+            bt_create.setToolTipCaption(orig_create_tooltipcaption);
+
+         bt_create.setEditable(bOk);
+         bt_create.redraw();
+      }
+   }
+
+   // <method.png>
+   protected static ReadFirstWordOfClassNameFromPresetFile(String _pathName) : String {
+      local String className <= Node.ReadClassNameFromPresetFile(_pathName);
+      if((null != className) && !className.isBlank())
+      {
+         // // trace "xxx splitSpace="+#(className.splitSpace(false).getCopy(0));
+         className = className.splitSpace(false).getCopy(0);  // "Drums 2" => "Drums"
+         // // trace "xxx read className=\""+className+"\" from preset";
+         return deref className;
+      }
+      return null;
+   }
+
+   // <ui_update.png>
+   protected method tryUpdateCatByPreset() {
+      boolean bFound = false;
+
+      local String pathName <= createGetPresetPathName();
+      if(null != pathName)
+      {
+         local String className <= ReadFirstWordOfClassNameFromPresetFile(pathName);
+         trace "[trc] NewTrackDialog::tryUpdateCatByPreset: ReadFirstWordOfClassNameFromPresetFile(\""+pathName+"\") returned className=\""+className+"\"";
+         if(null != className)
+         {
+            // Find category
+            String *catName;
+            int catIdx = 0;
+            foreach catName in track_categories
+            {
+               if(catName.compareIgnoreCase(className))
+               {
+                  STX_MIDIOutDevice trackCatDev <= MIDI.GetMIDIOutDeviceByAliasOrName(track_device_names.get(catIdx));
+                  if(null != trackCatDev)
+                  {
+                     byte trackCatMidiCh = track_midi_channels.get(catIdx);
+                     all_categories[0] = catName+"\t"+trackCatDev.getAliasOrDeviceName()+":"+(trackCatMidiCh+1);
+                  }
+                  else
+                  {
+                     all_categories[0] = catName;
+                  }
+                  all_categories_long[0] = catName+"\t[preset]";
+                  bFound = true;
+                  break;
+               }
+               catIdx++;
+            }
+         }
+      }
+
+      if(!bFound)
+      {
+         all_categories[0] = "-";
+         all_categories_long[0] = "-\t[preset]";
+      }
+
+      cm_cat.setOptions(all_categories);
+      cm_cat.setOptionsLong(all_categories_long);
+      cm_cat.redraw();
+   }
+
+   // <method_get.png>
+   protected method getSelectedCategoryName() : String {
+      int catIdx = cm_cat.getSelectedOption();
+      String *r;
+      if(0 == catIdx)
+      {
+         // <preset> (xyz)
+         r <= cm_cat.getSelectedOptionNameLeft();
+      }
+      else if(1/*<current>*/ == catIdx)
+      {
+         r <= current_pipe_name;
+      }
+      else
+      {
+         r <= cm_cat.getSelectedOptionNameLeft(); // "Keys", ..
+      }
+      if("-" == r)
+         r <= null;
+      return deref r;
+   }
+
+   // <method_get.png>
+   protected method getSelectedCategoryIdx() : int {
+      local String catName <= getSelectedCategoryName();
+      int catIdx = 0;
+      loop(track_categories.numElements)
+      {
+         if(track_categories.get(catIdx).compareIgnoreCase(catName))
+            return catIdx;
+         catIdx++;
+      }
+      // Should not be reachable
+      return -1;
+   }
+
+   // <ui_handle.png>
+   protected method handleUserFltChanged(boolean _bChangeFocus, boolean _bQuiet) {
+      rescanPresets();
+      int numPresets = preset_names.numElements - 1/*"-"*/;
+
+      if(!_bQuiet)
+         Global.Print("Reselect user filter \""+cf_flt.getSelectedOptionName()+"\" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+
+      if(preset_names.numElements > 1)
+      {
+         cm_preset.setSelectedOption(1);
+         tryUpdateCatByPreset();
+         if(_bChangeFocus)
+            UI.SetKeyboardFocus(cm_preset);
+      }
+      else
+      {
+         tryUpdateCatByPreset();  // sets cat to "<preset> -"
+      }
+      updateCreatability();
+   }
+
+   // <method.png>
+   public virtual hide() {
+      Dialog::hide();
+      STConfig.newtrackdialog_user_filter_history = cf_flt.getOptions();
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         StringAction ac <= Action.New(getProvidedActionAlias(ACTION_CANCEL_NEW_TRACK), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCreate() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         StringAction ac <= Action.New(getProvidedActionAlias(ACTION_CREATE_NEW_TRACK), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <method_get.png>
+   public method createGetPipeName() : String {
+      local String catName = getSelectedCategoryName();
+      catName.toLower();
+      int subCatIdx = catName.indexOfChar('.', 0);
+      if(-1 != subCatIdx)
+         catName.substring(0, subCatIdx);  // "Keys.mod" => "Keys"
+      return deref catName;
+   }
+
+   // <method_get.png>
+   public method createGetNodeName() : String {
+      local String name <= tf_name.getText();
+      if(name.isBlank())
+      {
+         if((0 != cm_preset.getSelectedOption()) && !(cf_flt.getSelectedOptionName().isBlank()))
+         {
+            name <= cf_flt.getSelectedOptionName();
+         }
+         else
+         {
+            name = getSelectedCategoryName();
+            int subCatIdx = name.indexOfChar('.', 0);
+            if(-1 != subCatIdx)
+               name.substring(subCatIdx+1, 99);  // "Keys.mod" => "mod"
+         }
+      }
+      return deref name;
+   }
+
+   // <method_get.png>
+   public method createGetNodeClass() : Object {
+      local String type;
+      if(0/* * */ == cm_type.getSelectedOption())
+      {
+         int presetIdx = cm_preset.getSelectedOption();
+         type <= preset_node_types.get(presetIdx);
+         trace "[trc] NewTrackDialog::createGetNodeClass: presetIdx="+presetIdx+" => type=\""+type+"\"";
+      }
+      else
+      {
+         type = cm_type.getSelectedOptionName().toLower();
+      }
+
+      return Node.FindNodeTemplateByLowerCaseName(type);
+   }
+
+   // <method_get.png>
+   public method createGetPresetPathName() : String {
+      int presetIdx = cm_preset.getSelectedOption();
+      if(0 != presetIdx)
+      {
+         local String r = STConfig.node_rootpath;
+
+         Class nodeClass <= createGetNodeClass();
+         trace "[trc] NewTrackDialog::createGetPresetPathName: createGetNodeClass() returned nodeClass="+#(nodeClass);
+         local String nodeClassDir <= nodeClass.yacMetaClassName().replace("Node", "").toLower();
+         trace "[trc] NewTrackDialog::createGetPresetPathName:   => nodeClassDir=\""+nodeClassDir+"\"";
+
+         r.append("/");
+         r.append(nodeClassDir);
+         r.append("/");
+         r.append(preset_names.get(presetIdx));
+         // // r.append(Global.NODE_FILE_SUFFIX/*.sno*/);
+         r.replace("//", "/");
+         r.replace("//", "/");
+
+         return deref r;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method createGetAutoDev() : STX_MIDIOutDevice {
+      int catIdx = getSelectedCategoryIdx();
+      Global.Debug("NewTrackDialog::createGetAutoDev: catIdx="+catIdx+" => \""+track_device_names.get(catIdx)+"\"");
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(track_device_names.get(catIdx));
+      Global.Debug("NewTrackDialog::createGetAutoDev:   ==> dev="+#(dev));
+      if(null == dev)
+      {
+         Global.Warning("Failed to resolve category \""+getSelectedCategoryName()+"\" auto-dev \""+track_device_names.get(catIdx)+"\"");
+
+         if(1/*[current pipe]*/ == cm_cat.getSelectedOption())
+         {
+            StringArray aInstr <= STConfig.newtrackdialog_node_types_instr;
+            HashTable htDpyNames <= STConfig.node_type_display_names;
+            Class nodeClass <= createGetNodeClass();
+            trace "[>>>] NewTrackDialog::createGetAutoDev: createGetNodeClass()="+#(nodeClass);
+            if(null != nodeClass && aInstr.containsObject(htDpyNames.get(nodeClass.yacMetaClassName())))
+            {
+               // trace "xxx is instr";
+               PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+               MIDIPipe pipe <= pgPipeRoot.getSelectedPipe();
+               if(null != pipe)
+               {
+                  int nodeIdx = 0;
+                  MIDIPipeNodeScriptProxy *nsp;
+                  loop(pipe.numNodes)
+                  {
+                     nsp <= pipe.getNodeByIdx(nodeIdx);
+                     if(nsp instanceof MIDIPipeNodeScriptProxy)
+                     {
+                        Node sci <= nsp.sci;
+                        trace "[>>>]   current_pipe node["+nodeIdx+"] sci="+#(sci);
+                        if(aInstr.containsObject(htDpyNames.get(nodeClass.yacMetaClassName())))
+                        {
+                           // Is instrument node
+                           if(sci.b_auto_filter_a)
+                           {
+                              dev <= MIDI.GetMIDIOutDeviceByIndex(sci.auto_dev_filter_a);
+                           }
+                           if(null == dev && sci.b_auto_filter_b)
+                           {
+                              dev <= MIDI.GetMIDIOutDeviceByIndex(sci.auto_dev_filter_b);
+                           }
+
+                           if(null != dev)
+                              break;
+                        }
+                     }
+
+                     // Next node
+                     nodeIdx++;
+                  } // loop current pipe nodes
+               }
+            }
+         } // if create instrument-type node
+
+         if(null == dev)
+         {
+            // Fall back to virtual "<Pipe>" device
+            dev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.pipe_local_auto_devicename);
+            Global.Debug2("NewTrackDialog::createGetAutoDev: fallback name=\""+STConfig.pipe_local_auto_devicename+"\" => dev="+#(dev));
+         }
+      }
+      return dev;
+   }
+
+   // <method_get.png>
+   public method createGetAutoCh() : byte {
+      int catIdx = getSelectedCategoryIdx();
+      return track_midi_channels.get(catIdx);
+   }
+
+   // <method_get.png>
+   public method doAutoAssign() : boolean {
+      return cb_autoassign.isSelected();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleCreate();
+            return true;
+
+         default:
+            break;
+      }
+
+      if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case 'n':
+               UI.SetKeyboardFocus(tf_name);
+               return true;
+
+            case 't':
+               cb_type_all.toggleSelectionAction();
+               return true;
+
+            case 'c':
+               if(cm_cat.hasKeyboardFocus())
+                  cm_cat.showComboBoxPopup();
+               else
+                  UI.SetKeyboardFocus(cm_cat);
+               return true;
+
+            case 'e':
+               if(cm_type.hasKeyboardFocus())
+                  cm_type.showComboBoxPopup();
+               else
+                  UI.SetKeyboardFocus(cm_type);
+               return true;
+
+            case 'r':
+               if(cm_preset.hasKeyboardFocus())
+                  cm_preset.showComboBoxPopup();
+               else
+                  UI.SetKeyboardFocus(cm_preset);
+               return true;
+
+            case 'f':
+               if(cf_flt.hasKeyboardFocus())
+                  cf_flt.showPopup();
+               else
+                  UI.SetKeyboardFocus(cf_flt);
+               return true;
+
+            case 's':
+               cb_autoassign.toggleSelectionAction();
+               return true;
+
+            case 'w':
+               handleCreate();
+               return true;
+
+            case 'z':  // 'y' on german kbd
+            case 'y':  // 'z' on german kbd
+               cb_cat_flt.toggleSelectionAction();
+               return true;
+
+            default:
+               return true;
+         }
+      }
+      else if(_k.modNone())
+      {
+         if(0 != _k.unicode)
+         {
+            if(@(UI.GetKeyboardFocus()) != @(cf_flt))
+            {
+               if(UI.IsAutoFocusKey(_k))
+               {
+                  UI.SetKeyboardFocus(cf_flt);
+                  cf_flt.selectAll();
+               }
+               else
+               {
+                  return false;
+               }
+            }
+            cf_flt.onKey(_k);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName <= _ac.getActionName();
+      int numPresets;
+
+      switch(@(ap))
+      {
+         case @(tf_name):
+            handleNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               UI.SetKeyboardFocus(bt_create);
+            }
+            return true;
+
+         case @(cm_cat):
+            rescanPresets();
+            numPresets = preset_names.numElements - 1/*"-"*/;
+            switch(cm_cat.getSelectedOption())
+            {
+               default:
+                  Global.Print("Category is \""+cm_cat.getSelectedOptionNameLeft()+"\" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+                  break;
+               case 0:
+                  Global.Print("Category (Preset) is \""+cm_cat.getSelectedOptionNameLeft()+"\" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+                  break;
+               case 1:
+                  Global.Print("Category (Current Pipe) is \""+cm_cat.getSelectedOptionNameLeft()+"\" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+                  break;
+            }
+            cm_preset.setSelectedOption(1);
+            tryUpdateCatByPreset();
+            updateCreatability();
+            return true;
+
+         case @(cm_type):
+            rescanPresets();
+            numPresets = preset_names.numElements - 1/*"-"*/;
+            cm_preset.setSelectedOption(1);
+            tryUpdateCatByPreset();
+            updateCreatability();
+            Global.Print("Type is \""+cm_type.getSelectedOptionName()+"\" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+            return true;
+
+         case @(cb_type_all):
+            updateTypeOptions();
+            rescanPresets();
+            numPresets = preset_names.numElements - 1/*"-"*/;
+            cm_preset.setSelectedOption(1);
+            tryUpdateCatByPreset();
+            updateCreatability();
+            Global.Print("Show All Types is "+Utils.GetEnableString(cb_type_all.isSelected())+" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+            return true;
+
+         case @(cm_preset):
+            Global.Print("Preset is \""+cm_preset.getSelectedOptionNameLeft()+"\"  (cat=\""+getSelectedCategoryName()+"\")");
+            tryUpdateCatByPreset();
+            updateCreatability();
+            return true;
+
+         case @(cb_cat_flt):
+            if(cb_cat_flt.isSelected())
+            {
+               if(cm_cat.getSelectedOption() <= 1/*<current>*/)
+                  cm_cat.setSelectedOption(1);
+            }
+            rescanPresets();
+            numPresets = preset_names.numElements - 1/*"-"*/;
+            if(cb_cat_flt.isSelected())
+            {
+               if((0/*-*/ == cm_preset.getSelectedOption()) && (numPresets > 0))
+               {
+                  cm_preset.setSelectedOption(1);
+                  tryUpdateCatByPreset();
+               }
+            }
+            updateCreatability();
+            Global.Print("Category preset name filter is "+Utils.GetEnableString(cb_cat_flt.isSelected())+" ("+numPresets+" preset"+Utils.GetPluralString(numPresets)+")");
+            return true;
+
+         case @(cf_flt):
+            if(ComboField.ACTION_CURSORUP == acName)
+            {
+               UI.SetKeyboardFocus(cm_preset);
+            }
+            else if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               Global.Print("Add user filter \""+cf_flt.getSelectedOptionName()+"\"");
+               handleUserFltChanged(true/*bChangeFocus*/, false/*bQuiet*/);
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleUserFltChanged(true/*bChangeFocus*/, false/*bQuiet*/);
+               Global.Print("Select user filter \""+cf_flt.getSelectedOptionName()+"\"");
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               // RETURN pressed while option already exists
+               handleUserFltChanged(true/*bChangeFocus*/, false/*bQuiet*/);
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               handleUserFltChanged(false/*bChangeFocus*/, false/*bQuiet*/);
+               Global.Print("Remove user flter \""+cf_flt.getLastRemovedOptionName()+"\"");
+            }
+            else
+            {
+               handleUserFltChanged(false/*bChangeFocus*/, (ComboField.ACTION_OPTIONEDITED == acName)/*bQuiet*/);
+            }
+            return true;
+
+         case @(cb_autoassign):
+            if(maybe == cb_autoassign.isSelected())
+            {
+               Global.Print("Auto-Assign port to instrument-type nodes");
+            }
+            else if(true == cb_autoassign.isSelected())
+            {
+               Global.Print("Auto-Assign port (all node types)");
+            }
+            else if(false == cb_autoassign.isSelected())
+            {
+               Global.Print("Auto-Assign port is disabled");
+            }
+            return true;
+
+         case @(bt_create):
+             handleCreate();
+             return true;
+
+         case @(bt_cancel):
+             handleCancel();
+             return true;
+      }
+
+      return true;
+   }
+
+}

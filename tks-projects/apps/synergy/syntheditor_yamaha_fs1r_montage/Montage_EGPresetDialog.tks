@@ -1,0 +1,653 @@
+// ----
+// ---- file   : Montage_EGPresetDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2022-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 28Oct2022
+// ---- changed: 29Oct2022, 11Nov2022, 08Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module MMontage_EGPresetDialog;
+
+use namespace ui;
+
+
+// <class.png>
+class Montage_EGPresetListener {
+   public method loadEGPreset(Montage_EGPreset _preset, String _typeName) {
+   }
+}
+
+
+// <class.png>
+class Montage_EGPresetDialog extends Dialog, ActionProvider {
+   protected Montage_EGPresetListener *listener;
+   protected Montage_EGPreset *[] current_eg_settings;
+
+   protected XMLForm *xfm;
+
+   protected Button *bt_revert;
+
+   protected CheckBox *cb_multi;
+
+   protected Button *bt_rand_l_peg;
+   protected Button *bt_rand_l_aeg;
+   protected Button *bt_rand_l_feg;
+
+   protected Button *bt_rand_mix_peg;
+   protected Button *bt_rand_mix_aeg;
+   protected Button *bt_rand_mix_feg;
+
+   protected Button *bt_rand_r_peg;
+   protected Button *bt_rand_r_aeg;
+   protected Button *bt_rand_r_feg;
+
+   protected ComboBox   *[] preset_cms_l;
+   protected FloatParam *[] preset_mixers;
+   protected ComboBox   *[] preset_cms_r;
+
+   static Montage_EGPresetDialog *dlg_preset;
+
+   protected StringArray opt_names;
+
+   static boolean b_multi;
+
+
+   // <ui_init.png>
+   public method initEGPresetDialog(PointerArray _currentEGSettings) : boolean {
+
+      initDialog();
+
+      current_eg_settings <= deref _currentEGSettings;
+
+      // Init widgets
+      local String bufTempl;
+      bufTempl.load("Montage_EGPresetDialogTemplate.xfm", true/*bRemoveCR*/);
+
+      Montage_EGPreset *cEG;
+      local String buf;
+      int egIdx = 0;
+      foreach cEG in current_eg_settings
+      {
+         local String bufType = bufTempl;
+         bufType.replace("$(i)", String(egIdx));
+         buf.append(bufType);
+
+         // Next EG
+         egIdx++;
+      }
+
+      // Parse XFM
+      local String bufXFM;
+      bufXFM.load("Montage_EGPresetDialog.xfm", true/*bRemoveCR*/);
+      bufXFM.replace("$(PRESETS)", buf);
+
+      xfm <= XMLForm.New(bufXFM);
+      if(null == xfm)
+      {
+         trace "[---] failed to parse \"Montage_EGPresetDialog.xfm\"";
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      cb_multi.setSelected(b_multi);
+
+      // Parse Presets
+      Montage_EGPreset.LoadPresets();
+      opt_names.empty();
+      opt_names.add("<current>");
+      Montage_EGPreset *p;
+      foreach p in Montage_EGPreset.all_presets
+      {
+         opt_names.add(p.name);
+      }
+
+      // Resolve widgets and update preset name labels
+      egIdx = 0;
+      local String presetPathName <= Utils.ToNativePathName(Montage_EGPreset.EGPRESET_FILE);
+      String *toolTipCaption;
+      foreach cEG in current_eg_settings
+      {
+         Montage_EGMixerSettings cEGMixerSettings <= cEG.eg_mixer_settings;
+         ComboBox cm <= xfm.findLayerById("cm_preset_l_"+egIdx);
+         cm.setOptions(opt_names);
+         cm.setSelectedOption(opt_names.indexOfObject(cEGMixerSettings.preset_name_l, 0));
+         preset_cms_l.add(cm);
+         toolTipCaption <= cm.getToolTipCaption();
+         toolTipCaption.replace("$(PATHNAME)", presetPathName);
+
+         cm <= xfm.findLayerById("cm_preset_r_"+egIdx);
+         cm.setOptions(opt_names);
+         cm.setSelectedOption(opt_names.indexOfObject(cEGMixerSettings.preset_name_r, 0));
+         toolTipCaption <= cm.getToolTipCaption();
+         toolTipCaption.replace("$(PATHNAME)", presetPathName);
+         preset_cms_r.add(cm);
+
+         Label lb <= xfm.findLayerById("lb_preset_l_"+egIdx);
+         lb.setCaption(cEG.name+":");
+
+         lb <= xfm.findLayerById("lb_preset_r_"+egIdx);
+         lb.setCaption(cEG.name+":");
+
+         FloatParam fp <= xfm.findLayerById("fp_mix_"+egIdx);
+         fp.setValue(cEGMixerSettings.mix_amt);
+         preset_mixers.add(fp);
+
+         // Next EG
+         egIdx++;
+      }
+
+      initWindow(xfm,
+                 "EG Mixer",
+                 100, 100,
+                 640, 240
+                 );
+
+      resizeToMinimum();
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      return getTabCycleOverridesDef();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers, [
+                           bt_revert,
+
+                           bt_rand_l_peg,
+                           bt_rand_l_aeg,
+                           bt_rand_l_feg,
+
+                           bt_rand_mix_peg,
+                           bt_rand_mix_aeg,
+                           bt_rand_mix_feg,
+
+                           bt_rand_r_peg,
+                           bt_rand_r_aeg,
+                           bt_rand_r_feg,
+                                     ]
+                        );
+
+      int egIdx = 0;
+      loop(preset_cms_l.numElements)
+      {
+         ComboBox cmL <= preset_cms_l.get(egIdx);
+         _retLayers.add(cmL);
+
+         FloatParam fpMix <= preset_mixers.get(egIdx);
+         _retLayers.add(fpMix);
+
+         ComboBox cmR <= preset_cms_r.get(egIdx);
+         _retLayers.add(cmR);
+
+         // Next EG
+         egIdx++;
+      }
+   }
+
+   // <ui_show.png>
+   public method showEGPresetDialog(Montage_EGPresetListener _listener) {
+      listener <= _listener;
+
+      resizeToMinimum();
+      showNearMouse(0, 0);
+   }
+
+   // <ui_show.png>
+   public static ShowEGPresetDialog(Montage_EGPresetListener _listener, PointerArray _currentEGSettings) {
+      if(_currentEGSettings.numElements > 0)
+      {
+         dlg_preset <= new Montage_EGPresetDialog;
+         dlg_preset.initEGPresetDialog(deref _currentEGSettings);
+         dlg_preset.showEGPresetDialog(_listener);
+      }
+      else
+      {
+         Global.Warning("No EG settings to edit");
+      }
+   }
+
+   // <ui_focus.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(preset_cms_l.get(0));
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method handlePresetChanged(int _egIdx) {
+      Montage_EGPreset currentPreset <= current_eg_settings[_egIdx];
+      ComboBox cmL <= preset_cms_l.get(_egIdx);
+      ComboBox cmR <= preset_cms_r.get(_egIdx);
+      int presetIdxL = cmL.getSelectedOption();
+      int presetIdxR = cmR.getSelectedOption();
+      Montage_EGPreset pL <= (0 == presetIdxL) ? currentPreset : Montage_EGPreset.all_presets.get(presetIdxL - 1);
+      Montage_EGPreset pR <= (0 == presetIdxR) ? currentPreset : Montage_EGPreset.all_presets.get(presetIdxR - 1);
+      FloatParam fpMix <= preset_mixers.get(_egIdx);
+      float mixAmt = fpMix.getFloatValue();
+      if( (null != pL) && (null != pR) )
+      {
+         Montage_EGPreset pMix;
+         pMix.mix(pL, pR, mixAmt);
+         pMix.name = (mixAmt >= 0.5) ? pR.name : pL.name;  // debug info only
+         Global.Debug2("Montage_EGPresetDialog::handlePresetChanged: egIdx="+_egIdx+" name="+currentPreset.name+" mix="+mixAmt);
+         Montage_EGMixerSettings mixSettings <= pMix.eg_mixer_settings;
+         mixSettings.preset_name_l = cmL.getSelectedOptionName();
+         mixSettings.preset_name_r = cmR.getSelectedOptionName();
+         mixSettings.mix_amt       = mixAmt;
+         listener.loadEGPreset(pMix, currentPreset.name);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRevert() {
+      Montage_EGPreset *currentPreset;
+      int egIdx = 0;
+      foreach currentPreset in current_eg_settings
+      {
+         listener.loadEGPreset(currentPreset, currentPreset.name);
+
+         Montage_EGMixerSettings cEGMixerSettings <= currentPreset.eg_mixer_settings;
+         ComboBox cmL <= preset_cms_l.get(egIdx);
+         ComboBox cmR <= preset_cms_r.get(egIdx);
+         FloatParam fpMix <= preset_mixers.get(egIdx);
+         cmL.setSelectedOption(opt_names.indexOfObject(cEGMixerSettings.preset_name_l, 0));
+         cmR.setSelectedOption(opt_names.indexOfObject(cEGMixerSettings.preset_name_r, 0));
+         fpMix.setValue(cEGMixerSettings.mix_amt);
+
+         // Next EG
+         egIdx++;
+      }
+
+      Global.Print("Revert all EGs");
+   }
+
+   // <ui_handle.png>
+   protected method randL(String _type, boolean _bReplaceCurrent) {
+
+      // Filter presets by EG type (feg, aeg, peg)
+      local IntArray optIndices;
+      String *opt;
+      int optIdx = 0;
+      foreach opt in opt_names
+      {
+         if(opt & _type)
+            optIndices.add(optIdx);
+         optIdx++;
+      }
+
+      Montage_EGPreset *currentPreset;
+      int egIdx = 0;
+      foreach currentPreset in current_eg_settings
+      {
+         if(currentPreset.name & _type)
+         {
+            ComboBox cmL <= preset_cms_l.get(egIdx);
+            if(_bReplaceCurrent || cmL.getSelectedOption() > 0)  // not <current> ?
+            {
+               // cmL.setSelectedOption(1 + rand(opt_names.numElements-2));
+               cmL.setSelectedOption(optIndices.get(rand(optIndices.numElements-1)));
+               handlePresetChanged(egIdx);
+            }
+         }
+
+         // Next EG
+         egIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRandLPEG(boolean _bReplaceCurrent) {
+      randL("peg", _bReplaceCurrent);
+      Global.Print("Randomize left-hand side PEG preset selections"+(_bReplaceCurrent?" (replace <current>)":""));
+   }
+
+   // <ui_handle.png>
+   protected method handleRandLAEG(boolean _bReplaceCurrent) {
+      randL("aeg", _bReplaceCurrent);
+      Global.Print("Randomize left-hand side AEG preset selections"+(_bReplaceCurrent?" (replace <current>)":""));
+   }
+
+   // <ui_handle.png>
+   protected method handleRandLFEG(boolean _bReplaceCurrent) {
+      randL("feg", _bReplaceCurrent);
+      Global.Print("Randomize left-hand side FEG preset selections"+(_bReplaceCurrent?" (replace <current>)":""));
+   }
+
+   // <ui_handle.png>
+   protected method randMix(String _type) {
+      Montage_EGPreset *currentPreset;
+      int egIdx = 0;
+      foreach currentPreset in current_eg_settings
+      {
+         if(currentPreset.name & _type)
+         {
+            ComboBox cmL <= preset_cms_l.get(egIdx);
+            ComboBox cmR <= preset_cms_r.get(egIdx);
+            if( (cmL.getSelectedOption() > 0) || (cmR.getSelectedOption() > 0) )   // not <current> ?
+            {
+               FloatParam fpMix <= preset_mixers.get(egIdx);
+               fpMix.setValue(rand(1.0));
+               handlePresetChanged(egIdx);
+            }
+         }
+
+         // Next EG
+         egIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMixPEG() {
+      randMix("peg");
+      Global.Print("Randomize PEG mix amounts");
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMixAEG() {
+      randMix("aeg");
+      Global.Print("Randomize AEG mix amounts");
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMixFEG() {
+      randMix("feg");
+      Global.Print("Randomize FEG mix amounts");
+   }
+
+   // <ui_handle.png>
+   protected method randR(String _type, boolean _bReplaceCurrent) {
+
+      // Filter presets by EG type (feg, aeg, peg)
+      local IntArray optIndices;
+      String *opt;
+      int optIdx = 0;
+      foreach opt in opt_names
+      {
+         if(opt & _type)
+            optIndices.add(optIdx);
+         optIdx++;
+      }
+
+      Montage_EGPreset *currentPreset;
+      int egIdx = 0;
+      foreach currentPreset in current_eg_settings
+      {
+         if(currentPreset.name & _type)
+         {
+            ComboBox cmR <= preset_cms_r.get(egIdx);
+            if(_bReplaceCurrent || cmR.getSelectedOption() > 0)  // not <current> ?
+            {
+               // // cmR.setSelectedOption(1 + rand(opt_names.numElements-2));
+               cmR.setSelectedOption(optIndices.get(rand(optIndices.numElements-1)));
+               handlePresetChanged(egIdx);
+            }
+         }
+
+         // Next EG
+         egIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRandRPEG(boolean _bReplaceCurrent) {
+      randR("peg", _bReplaceCurrent);
+      Global.Print("Randomize right-hand side PEG preset selections"+(_bReplaceCurrent?" (replace <current>)":""));
+   }
+
+   // <ui_handle.png>
+   protected method handleRandRAEG(boolean _bReplaceCurrent) {
+      randR("aeg", _bReplaceCurrent);
+      Global.Print("Randomize right-hand side AEG preset selections"+(_bReplaceCurrent?" (replace <current>)":""));
+   }
+
+   // <ui_handle.png>
+   protected method handleRandRFEG(boolean _bReplaceCurrent) {
+      randR("feg", _bReplaceCurrent);
+      Global.Print("Randomize right-hand side FEG preset selections"+(_bReplaceCurrent?" (replace <current>)":""));
+   }
+
+   // <method.png>
+   protected method multiEditL(int _egIdx, int _opt) {
+      ComboBox *cmL;
+      Montage_EGPreset p <= current_eg_settings[_egIdx];
+      String *fltType;
+      if(p.name & "feg")
+         fltType <= "feg";
+      else if(p.name & "aeg")
+         fltType <= "aeg";
+      else if(p.name & "peg")
+         fltType <= "peg";
+      else
+         fltType <= "";  // should not be reachable
+      int egIdx = 0;
+      foreach cmL in preset_cms_l
+      {
+         if(egIdx != _egIdx)
+         {
+            p <= current_eg_settings[egIdx];
+            if(p.name & fltType)
+            {
+               cmL.setSelectedOption(_opt);
+               cmL.redraw();
+               handlePresetChanged(egIdx);
+            }
+         }
+
+         egIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method multiEditR(int _egIdx, int _opt) {
+      ComboBox *cmR;
+      Montage_EGPreset p <= current_eg_settings[_egIdx];
+      String *fltType;
+      if(p.name & "feg")
+         fltType <= "feg";
+      else if(p.name & "aeg")
+         fltType <= "aeg";
+      else if(p.name & "peg")
+         fltType <= "peg";
+      else
+         fltType <= "";  // should not be reachable
+      int egIdx = 0;
+      foreach cmR in preset_cms_r
+      {
+         if(egIdx != _egIdx)
+         {
+            p <= current_eg_settings[egIdx];
+            if(p.name & fltType)
+            {
+               cmR.setSelectedOption(_opt);
+               cmR.redraw();
+               handlePresetChanged(egIdx);
+            }
+         }
+
+         egIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method multiEditMix(int _egIdx, float _mixAmt) {
+      FloatParam *fpMix;
+      Montage_EGPreset p <= current_eg_settings[_egIdx];
+      String *fltType;
+      if(p.name & "feg")
+         fltType <= "feg";
+      else if(p.name & "aeg")
+         fltType <= "aeg";
+      else if(p.name & "peg")
+         fltType <= "peg";
+      else
+         fltType <= "";  // should not be reachable
+      int egIdx = 0;
+      foreach fpMix in preset_mixers
+      {
+         if(egIdx != _egIdx)
+         {
+            p <= current_eg_settings[egIdx];
+            if(p.name & fltType)
+            {
+               fpMix.setValue(_mixAmt);
+               fpMix.redraw();
+               handlePresetChanged(egIdx);
+            }
+         }
+
+         egIdx++;
+      }
+   }
+
+   // <ui.png>
+   public virtual hide() {
+      Dialog::hide();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      Layer ap <= _ac.getActionProvider();
+      // trace "xxx Montage_EGPresetDialog: acName="+name;
+
+      boolean bMulti = b_multi || (VMOD_LALT == UI.GetKeyMod());
+
+      int egIdx = preset_cms_l.indexOfPointer(ap, 0);
+      if(-1 != egIdx)
+      {
+         if(bMulti)
+         {
+            ComboBox cmL <= preset_cms_l[egIdx];
+            multiEditL(egIdx, cmL.getSelectedOption());
+         }
+      }
+      else
+      {
+         egIdx = preset_cms_r.indexOfPointer(ap, 0);
+
+         if(-1 != egIdx)
+         {
+            if(bMulti)
+            {
+               ComboBox cmR <= preset_cms_r[egIdx];
+               multiEditR(egIdx, cmR.getSelectedOption());
+            }
+         }
+         else
+         {
+            egIdx = preset_mixers.indexOfPointer(ap, 0);
+
+            if(-1 != egIdx)
+            {
+               if(bMulti)
+               {
+                  FloatParam fpMix <= preset_mixers[egIdx];
+                  multiEditMix(egIdx, fpMix.getFloatValue());
+               }
+            }
+         }
+      }
+
+      if(-1 != egIdx)
+      {
+         handlePresetChanged(egIdx);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(bt_revert):
+            handleRevert();
+            return true;
+
+         case @(bt_rand_l_peg):
+            handleRandLPEG( (Button.ACTION_HOLD_CLICK == acName)/*bReplaceCurrent*/ );
+            return true;
+
+         case @(bt_rand_l_aeg):
+            handleRandLAEG( (Button.ACTION_HOLD_CLICK == acName)/*bReplaceCurrent*/ );
+            return true;
+
+         case @(bt_rand_l_feg):
+            handleRandLFEG( (Button.ACTION_HOLD_CLICK == acName)/*bReplaceCurrent*/ );
+            return true;
+
+         case @(bt_rand_mix_peg):
+            handleRandMixPEG();
+            return true;
+
+         case @(bt_rand_mix_aeg):
+            handleRandMixAEG();
+            return true;
+
+         case @(bt_rand_mix_feg):
+            handleRandMixFEG();
+            return true;
+
+         case @(bt_rand_r_peg):
+            handleRandRPEG( (Button.ACTION_HOLD_CLICK == acName)/*bReplaceCurrent*/ );
+            return true;
+
+         case @(bt_rand_r_aeg):
+            handleRandRAEG( (Button.ACTION_HOLD_CLICK == acName)/*bReplaceCurrent*/ );
+            return true;
+
+         case @(bt_rand_r_feg):
+            handleRandRFEG( (Button.ACTION_HOLD_CLICK == acName)/*bReplaceCurrent*/ );
+            return true;
+
+         case @(cb_multi):
+            b_multi = cb_multi.isSelected();
+            Global.Print("Multi is "+Utils.GetEnableString(b_multi));
+            return true;
+      }
+
+      return Dialog::consumeAction(_ac);
+   }
+
+}

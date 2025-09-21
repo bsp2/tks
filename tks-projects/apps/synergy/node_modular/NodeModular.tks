@@ -1,0 +1,791 @@
+// ----
+// ---- file   : NodeModular.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 26Mar2021
+// ---- changed: 27Mar2021, 29Mar2021, 30Mar2021, 31Mar2021, 01Apr2021, 02Apr2021, 13Apr2021
+// ----          08May2021, 13May2021, 21Jun2021, 19Dec2021, 22Dec2021, 28Dec2021, 30Dec2021
+// ----          01Jan2022, 08Oct2023, 03Feb2024, 12Oct2024, 23Oct2024
+// ----
+// ----
+// ----
+
+module MNodeModular;
+
+use namespace ui;
+use namespace st2;
+use namespace modularcv;
+
+
+// <class.png>
+class NodeModular : Node, MIDIMapDefs, ModularCV {
+   define int NUM_PORTS = 8;
+   define int NUM_BUTTONS = 10;
+
+   static NodeModularEditor *editor;
+
+   PointerArray patterns;  // NodeModularPattern instances
+
+   int tick_nr;  // resets when arp reset is enabled (and in nodeReset/nodeSeek)
+
+   CtlIOPort *[] io_ports;
+
+   boolean b_change_reset;  // true=reset node when pattern has changed
+   boolean b_framerec;      // true=output to frameRec instead of framePlay
+
+   boolean b_shown;  // true=editor was shown before in current edit session
+
+   IntArray   queued_ui_rpn_ids;     // 100..131
+   FloatArray queued_ui_rpn_values;  // 0..16383
+
+   // (note) this is currently deactivated and may be removed entirely
+   int pat_change_mute_timeout;    // set to 1/16 ticks in nodeReset()
+   int pat_change_mute_countdown;  // set to timeout after prgchg unless current tick is a 16th (todo: make this configurable)
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(Node.NUM_PATTERNS);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      b_change_reset = false;
+      b_framerec = false;
+
+      io_ports.free();
+      int pIdx = 0;
+      loop(NUM_PORTS)
+      {
+         CtlIOPort p <= new CtlIOPort;
+         // // p.setId( (pIdx < (NUM_PORTS/2)) ? ("in_"+(pIdx+1)) : ("out_"+(pIdx-(NUM_PORTS/2)+1)) );
+         p.setId("port_"+(pIdx+1));
+         io_ports.add(#(deref p));
+         pIdx++;
+      }
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+      local NodeModularPattern pat;
+
+      Node::nodeUIInit();
+
+      // Allocate first pattern
+      pat.patInit(this, 0);
+
+      nodeSetPattern(0, deref pat);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeModularEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_modular_mono");
+      else
+         return UI.GetIcon("node_modular");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NodeModularPattern";
+   }
+
+   // <method_get.png>
+   public method getPortIdByIndex(int _index) : String {
+      CtlIOPort p <= io_ports.get(_index);
+      if(null != p)
+         return p.id;
+      else
+         return "-";
+   }
+
+   // <method_get.png>
+   public method getPortByIndex(int _index) : CtlIOPort {
+      return io_ports.get(_index);
+   }
+
+   // <replay.png>
+   public virtual nodeRestart() {
+      nodeSetLastPatternStartSongOffset(current_song.song_offset);
+
+      nodeSeek(nodeGetLastPatternStartSongOffset() + 0);
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      // trace "xxx modular: nodeReset";
+
+      CtlIOPort *p;
+      foreach p in io_ports
+      {
+         p.active_note_state.reset();
+      }
+
+      nodeSetLastPatternStartSongOffset(nodeGetLastPatternStartEditorSongOffset());
+
+      nodeSeek(nodeGetLastPatternStartSongOffset());
+
+      NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.reset();
+      }
+
+      pat_change_mute_timeout = current_song.ppq / 4;  // 1/16        
+      pat_change_mute_countdown = 0;
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+
+      tick_nr = _ticks - nodeGetLastPatternStartSongOffset();
+      // trace "xxx NodeModular::nodeSeek("+_ticks+") _ticks="+_ticks+" lastPatStart="+nodeGetLastPatternStartSongOffset()+" => tick_nr="+tick_nr;
+
+      NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(tick_nr);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method.png>
+   protected method handlePlayPatternChanged() {
+
+      if(0)
+      {
+         if(0 != (current_song.song_offset % (current_song.ppq / 4)))
+            pat_change_mute_countdown = pat_change_mute_timeout;
+      }
+
+      NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.callOnPatternChanged();
+      }
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(tick_nr);
+      }
+
+      if(b_change_reset)
+      {
+         nodeReset(false/*bSoft*/);
+      }
+
+      handlePlayPatternChanged();
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPattern(int _startOff) : int {
+      int patIdx = patterns.indexOfPointer(null, _startOff);
+
+      return patIdx;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NodeModularPattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NodeModularPattern {
+      NodeModularPattern pat <= patterns.get(edit_pattern_nr);
+
+      if(null == pat)
+      {
+         pat <= new NodeModularPattern;
+         pat.patInit(this, edit_pattern_nr);
+         patterns[edit_pattern_nr] = deref pat;
+      }
+
+      return pat;
+   }
+
+   // <method.png>
+   public =replay= method insertEmptyPatternSlotAt(int _idx) {
+      patterns.insert(_idx, null); // may inc patcnt > 128 (so deleting the slot gets back the last pat)
+   }
+
+   // <method.png>
+   public =replay= method deletePatternSlotAt(int _idx) {
+      patterns.delete(_idx);
+      patterns.insert(127, null);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NodeModularPattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NodeModularPattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NodeModularPattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableChangeReset(boolean _bChangeReset) {
+      b_change_reset = _bChangeReset;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableFrameRec(boolean _bFrameRec) {
+      b_framerec = _bFrameRec;
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 3; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // IO ports
+      CtlIOPort *p;
+      foreach p in io_ports
+      {
+         p.saveState(ofs);
+      }
+
+      // Patterns
+      NodeModularPattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+
+      // Reset when pattern is changed (v2+)
+      ofs.i8 = b_change_reset;
+
+      // Output to frameRec (v3+)
+      ofs.i8 = b_framerec;
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      NodeModularEditor *editorOrNull <= nodeGetEditorIfExists();
+      if(null != editorOrNull)
+      {
+         editorOrNull.unrefModuleUIs();
+      }
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         CtlIOPort *p;
+         foreach p in io_ports
+         {
+            if(!p.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+               return false;
+         }
+
+         // Patterns
+         int patIdx;
+         NodeModularPattern *pat;
+         boolean bPatUsed;
+
+         patIdx = 0;
+         loop(128)
+         {
+            bPatUsed = ifs.i8;
+            if(bPatUsed)
+            {
+               pat <= new NodeModularPattern;
+               pat.patInit(this, patIdx);
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeModular::loadState: patLoadState failed (patIdx="+patIdx+")";
+                  return false;
+               }
+            }
+
+            // Next pattern
+            patIdx++;
+         }
+
+         // (note) [21Jun2021] moved to Node base class
+         edit_pattern_nr = ifs.u8;
+         play_pattern_nr = ifs.u8;
+
+         if(ver >= 2)
+         {
+            // Reset when pattern is changed (v2+)
+            b_change_reset = ifs.b8;
+         }
+
+         if(ver >= 3)
+         {
+            // Output to frameRec (v3+)
+            b_framerec = ifs.b8;
+         }
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeModular: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeModular: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseRPN(MIDIPipeFrame _frame, int _fltDev, int _fltCh) {
+      // parse <Audio2RPN> events (RPN 100..131)
+
+      NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         boolean bEditorVisible = nodeIsEditorVisible();
+         Patch patch <= pat.patch;
+
+         int numEv = _frame.getNumEventsRPNByFlt(_fltDev, _fltCh);
+         int evIdx = 0;
+
+         loop(numEv)
+         {
+            MIDIPipeEvent ev;
+
+            if(_frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_RPN, _fltDev, _fltCh))
+            {
+               if(Node.RPN_CTL_BASE <= ev.rpn < (Node.RPN_CTL_BASE + 32))  // Ctl 1..32
+               {
+                  int ctlIdx = ev.rpn - Node.RPN_CTL_BASE/*100*/;
+                  ModCV_AutoRPNSlider *mod;
+                  foreach mod in patch.all_modules
+                  {
+                     if(mod instanceof ModCV_AutoRPNSlider)
+                     {
+                        if(mod.ctl_idx == ctlIdx)
+                        {
+                           // trace "xxx queue ctlIdx="+ctlIdx+" rpnValue="+ev.rpnValue+" bEditorVisible="+bEditorVisible;
+                           mod.handleValueChangedViaMIDIReplay(ev.rpnValue);
+
+                           if(bEditorVisible)
+                           {
+                              queued_ui_rpn_ids.add(ev.rpn);
+                              queued_ui_rpn_values.add(ev.rpnValue);
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            evIdx++;
+         }
+      }
+   }
+
+   // <method_parse.png>
+   protected method parseRPN_editfocus(MIDIPipeFrame _frame) {
+      // parse <editfocus> events (RPN 100..131)
+
+      STX_MIDIOutDevice focusDev <= nodeeditor_editfocus_dev;
+      if(null != focusDev)
+      {
+         boolean bEditorVisible = nodeIsEditorVisible();
+         if(bEditorVisible)
+         {
+            int fltDev = focusDev.dev_idx;
+            int fltCh = -1;
+
+            if(null != last_editfocus)
+            {
+               NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+
+               if(null != pat)
+               {
+                  Patch patch <= pat.patch;
+
+                  int numEv = _frame.getNumEventsRPNByFlt(fltDev, fltCh);
+                  int evIdx = 0;
+
+                  loop(numEv)
+                  {
+                     MIDIPipeEvent ev;
+
+                     if(_frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_RPN, fltDev, fltCh))
+                     {
+                        if(Node.RPN_CTL_BASE <= ev.rpn < (Node.RPN_CTL_BASE + Node.RPN_CTL_NUM))  // Ctl 1..100
+                        {
+                           // Queue param update
+                           int paramIdx = ev.rpn - Node.RPN_CTL_BASE/*100*/;
+                           // trace "xxx queue paramIdx="+paramIdx;
+                           Module mod <= last_editfocus;
+                           mod.setNormalizedParamByIndexReplay(paramIdx, ev.rpnValue);
+                        }
+                     }
+
+                     evIdx++;
+                  } // loop ev
+
+               } // if pat
+            } // if last_editfocus
+
+            _frame.deleteEventsByFlt(fltDev, fltCh);
+
+         } // if bEditorVisible
+      }  // if focusDev
+   }
+
+   // <replay.png>
+   public method emitOutput(MIDIPipeFrame _frOut, int _portIdx, float _normalizedValue, int _forcedType) {
+      CtlIOPort port <= io_ports.get(_portIdx);
+      if(null != port)
+      {
+         if(port.b_enable)
+         {
+            MIDIMapEventType t <= port.mm_type;
+            t.emitNormalizedValue(_frOut, port.dev_idx, port.dev_ch, _normalizedValue, _forcedType);
+            // trace "xxx emit val="+_normalizedValue;
+         }
+      }
+   }
+
+   // <replay.png>
+   public method emitOutputBipolar(MIDIPipeFrame _frOut, int _portIdx, int _nr, float _normalizedValue, int _forcedType) {
+      CtlIOPort port <= io_ports.get(_portIdx);
+      if(null != port)
+      {
+         if(port.b_enable)
+         {
+            MIDIMapEventType t <= port.mm_type;
+            t.emitNormalizedValueBipolar(_frOut, port.dev_idx, port.dev_ch, _nr, _normalizedValue, _forcedType);
+            // trace "xxx port.mm_type.type="+port.mm_type.type;
+            // trace "xxx emit val="+_normalizedValue;
+         }
+      }
+   }
+
+   // <replay.png>
+   public method emitOutputTrig(MIDIPipeFrame _frOut, int _portIdx, boolean _bTrig) {
+      CtlIOPort port <= io_ports.get(_portIdx);
+      if(null != port)
+      {
+         if(port.b_enable)
+         {
+            MIDIMapEventType t <= port.mm_type;
+            t.emitTrig(_frOut, port.dev_idx, port.dev_ch, _bTrig);
+         }
+      }
+   }
+
+   // <replay.png>
+   public isAnyPortNoteActive(int _portIdx) : boolean {
+      return (io_ports[_portIdx].active_note_state.getNumActiveNotes() > 0);
+   }
+
+   // <replay.png>
+   public method readInput(MIDIPipeFrame _frIn, int _portIdx) : float {
+      // called by ModCV_Input ("cv in")
+      CtlIOPort ioPort <= io_ports.get(_portIdx);
+      if(null != ioPort)
+      {
+         if(ioPort.b_enable)
+         {
+            float t;
+            switch(ioPort.mm_type.type)
+            {
+               case TYPE_NOTE_ON:
+                  // gate signal
+                  return (ioPort.active_note_state.getNumActiveNotes() > 0) ? 1.0 : 0.0f;
+
+               case TYPE_NOTE_OFF:
+                  // inverted gate signal
+                  return (ioPort.active_note_state.getNumActiveNotes() > 0) ? 0.0 : 1.0f;
+
+               case TYPE_PITCHBEND:
+                  // => -1..1
+                  t = _frIn.getFilteredPitchbend(ioPort.dev_idx, ioPort.dev_ch);
+                  if(t >= 0.0f)
+                     return (t >= 8192.0) ? ((t - 8192.0)/8191.0) : (-1.0 + (t/8192.0));
+                  break;
+
+               case TYPE_CHANNEL_PRESSURE:
+                  // => 0..1
+                  t = _frIn.getFilteredChPressure(ioPort.dev_idx, ioPort.dev_ch);
+                  if(t >= 0.0f)
+                     return t / 127.0;
+                  break;
+
+               case TYPE_CC:
+                  // => 0..1
+                  t = _frIn.getFilteredCC(ioPort.dev_idx, ioPort.dev_ch, ioPort.mm_type.ext_type);
+                  if(t >= 0.0f)
+                     return t / 127.0;
+                  break;
+
+               case TYPE_RPN:
+                  // => 0..1
+                  t = _frIn.getFilteredRPN(ioPort.dev_idx, ioPort.dev_ch, ioPort.mm_type.ext_type);
+                  if(t >= 0.0f)
+                     return t / 16383.0;
+                  break;
+
+               case TYPE_NRPN:
+                  // => 0..1
+                  t = _frIn.getFilteredNRPN(ioPort.dev_idx, ioPort.dev_ch, ioPort.mm_type.ext_type);
+                  if(t >= 0.0f)
+                     return t / 16383.0;
+                  break;
+            }
+         }
+      }
+      return INVALID_VALUE;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+              RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+              // RPN_COMMON_RESET,
+
+              RPN_COMMON_UI_PRGCHG,
+              RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+              RPN_COMMON_MUTE_TEMP_TOGGLE,
+              // RPN_COMMON_MUTE_TEMP_1_8,
+              // RPN_COMMON_MUTE_TEMP_9_16,
+              // RPN_COMMON_SOLO_TEMP_1_8,
+              // RPN_COMMON_SOLO_TEMP_9_16,
+              RPN_COMMON_UI_NODE_MUTE,
+              RPN_COMMON_UI_NODE_SOLO,
+              RPN_COMMON_UI_PIPE_MUTE,
+              RPN_COMMON_UI_PIPE_SOLO,
+
+              // RPN_COMMON_SEEK_OFFSET,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      // trace "xxx tick_nr="+tick_nr+" rec_tick_nr="+rec_tick_nr;
+
+      if(nodeIsEditorVisible())
+         nodeHandleContextSensitiveAutoDevEvents(_frameRec, _framePlay);
+
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      if(bAllowSeekPrgChgAndMute)
+      {
+         handlePrgChg(_framePlay);
+         handlePrgChg(_frameRec);
+      }
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         parseRPN_editfocus(_framePlay);
+         parseRPN_editfocus(_frameRec);
+
+         if(b_auto_filter_a)
+         {
+            parseRPN(_framePlay, auto_dev_filter_a, auto_ch_filter_a);
+            parseRPN(_frameRec, auto_dev_filter_a, auto_ch_filter_a);
+         }
+
+         if(b_auto_filter_b)
+         {
+            parseRPN(_framePlay, auto_dev_filter_b, auto_ch_filter_b);
+            parseRPN(_frameRec, auto_dev_filter_b, auto_ch_filter_b);
+         }
+
+         short t;
+
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // Handle MUTE_TEMP_*, MUTE_TEMP_TOGGLE, MUTE_SOLO_*
+            nodeParseRPN_Mute(_framePlay, _frameRec);
+         }
+      }
+
+      if(bAllowSeekPrgChgAndMute)
+         _bMuted |= nodeHandleQueuedMuteTemp();
+
+      // Update active note states
+      CtlIOPort *ioPort;
+      foreach ioPort in io_ports
+      {
+         ioPort.updateActiveNoteState(_framePlay);
+         ioPort.updateActiveNoteState(_frameRec);
+      }
+
+      NodeModularPattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         MIDIPipeFrame frOut;
+         frOut.empty();
+
+         pat.tick(tick_nr, _frameRec, _framePlay, frOut);
+
+         if(pat_change_mute_countdown > 0)
+         {
+            pat_change_mute_countdown--;
+            frOut.empty();
+         }
+
+         if(!_bMuted)
+         {
+            boolean bCapture = b_capture && replay.b_playing;
+            if(bCapture)
+            {
+               mon_capture.captureAdd(frOut, true/*bAdvance*/);
+            }
+
+            if(b_framerec)
+               _frameRec.mergeFrame(frOut);
+            else
+               _framePlay.mergeFrame(frOut);
+         }
+      }
+
+      if(_bPlaySeq)
+      {
+         tick_nr++;
+      }
+   }
+
+}

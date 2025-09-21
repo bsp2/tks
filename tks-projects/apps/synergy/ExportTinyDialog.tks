@@ -1,0 +1,1725 @@
+// ----
+// ---- file   : ExportTinyDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2020-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 26Aug2020
+// ---- changed: 27Aug2020, 28Aug2020, 29Aug2020, 30Aug2020, 31Aug2020, 01Sep2020, 02Sep2020
+// ----          03Sep2020, 05Sep2020, 06Sep2020, 08Sep2020, 09Sep2020, 10Sep2020, 11Sep2020
+// ----          12Sep2020, 10Oct2020, 15Oct2020, 17Oct2020, 18Oct2020, 31Aug2021, 01Sep2021
+// ----          05Sep2021, 09Apr2023, 11Apr2023, 04Oct2023, 30Oct2023, 20Apr2024
+// ----
+// ----
+// ----
+
+module MExportTinyDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ExportTinyEvent {
+   // first byte (event mask):
+   define int EV0_INIT = 0;
+   define int EV0_DELTATIME_BIT  = (1 << 0);  // 0=repeat last deltatime
+   define int EV0_DATAREPEAT_BIT = (1 << 1);  // 1=bits 2..7 are event history idx (0..63)
+   define int EV0_DIRECTNOTE_BIT = (1 << 2);  // 1=bits 3..7 are signed note nr (5bit, -15..+15, -16==0=noteoff ), relative to last ext_note
+   define int EV0_EXT_INSTR_BIT  = (1 << 3);
+   define int EV0_EXT_NOTE_BIT   = (1 << 4);
+   define int EV0_EXT_VOL_BIT    = (1 << 5);
+   define int EV0_GLIDE_BIT      = (1 << 6);  // 1=don't retrig sample, just slide to new period
+   define int EV0_NEXT_BIT       = (1 << 7);
+
+   define int EV1_SEQ_RETRIG_BIT      = (1 << 0);  // lsb4 use same encoding as lsb4 of sample flags
+   define int EV1_SMPOFF_BIT          = (1 << 1);
+   define int EV1_WT_XY_BIT           = (1 << 2);
+   define int EV1_JUMPTOLOOP_BIT      = (1 << 3);
+   define int EV1_VOL_TBL_BIT         = (1 << 4);
+   define int EV1_FREQ_COARSE_TBL_BIT = (1 << 5);
+   define int EV1_PITCHBEND_BIT       = (1 << 6);
+   define int EV1_NEXT_BIT            = (1 << 7);
+
+   define int EV2_TEMPO_BIT        = (1 << 0);
+   // define int EV2_WT_LFO_SPEED_BIT = (1 << 1);
+   // define int EV2_GLIDESPEED_BIT   = (1 << 2);
+   define int EV2_NEXT_BIT         = (1 << 7);  // unused (0)
+
+   int tick_nr;
+   byte    note;            // -1=unset, 0=off, 5*12=60=C-5 (C-3 in PT)
+   int     vol;             // -1=unset, volshift and offset otherwise
+   byte    prg;             // -1=unset, 0..255  (sample index, _not_ MIDI program)
+   byte    smpoff;          // 0=default (unset)
+   int     pb;              // -1=unset, (byte)-96..96 => +-12 semitones (8 steps per semitone)
+   int     retrig;          // -1=unset, msb4=vol/freq_fine/freq_coarse/loop seq retrig flags
+   int     wt_x_rel;        // -1=unset, 0..127=0..wt_w-1
+   int     wt_y_rel;        // -1=unset, 0..127=0..wt_h-1
+   // // int     wt_xy;      // -1=unset, 0..255 otherwise (msb4=y, lsb4=x)
+   byte    jumptoloop;      // -1=unset, 0..84 otherwise
+   int     vol_tbl;         // -1=unset, 0..255 otherwise
+   int     freq_coarse_tbl; // -1=unset, 0..255 otherwise
+   int     bpm;             // -1=unset
+   boolean b_glide;
+
+   static Buffer ev_data;
+
+   ExportTinySample *cur_sample;  // must be valid
+
+
+   public method init(int _tickNr) {
+      tick_nr         = _tickNr;
+      note            = -1;
+      vol             = -1;
+      prg             = -1;
+      smpoff          =  0;
+      pb              = -1;
+      retrig          = -1;
+      // // vel = 127;
+      // // mod = 0;
+      wt_x_rel        = -1;
+      wt_y_rel        = -1;
+      // // wt_xy      = -1;
+      vol_tbl         = -1;
+      freq_coarse_tbl = -1;
+      jumptoloop      = -1;
+      bpm             = -1;
+
+      if(0 == ev_data.size)
+         ev_data.size = 16;
+   }
+
+   public method saveStream(Stream ofs, ExportTinySong _song, ExportTinyChannel _ch, int _lastTickNr) {
+      int deltaTime = tick_nr - _lastTickNr;
+      byte ev0;
+      int ev0Off;
+      int ev0Addr;
+      int oldOff;
+
+      trace "xxx write ev tick_nr="+tick_nr+" lastTickNr="+_lastTickNr+" => deltaTime="+deltaTime+"  ofs.offset="+ofs.offset;
+
+      ev_data.offset = 0;
+
+      // Byte 0: deltatime
+      ev0Off = _ch.writeDeltaTime(ofs, _song, deltaTime);
+      trace "xxx write ev0Off="+ev0Off;
+
+      // // if(prg >= 0)
+      // //    _ch.last_prg = prg;
+
+      if(0 == ev0Off)
+      {
+         ev0Addr = ofs.offset;
+         ev0 = EV0_INIT;  // repeat last deltatime
+      }
+      else
+      {
+         ev0Addr = ofs.offset - ev0Off;
+         ev0 = EV0_DELTATIME_BIT;
+      }
+
+      // ev0 placeholder
+      ev_data.i8 = 0;
+
+      boolean bNoteDone = true;
+
+      if(note >= 0)
+      {
+         bNoteDone = false;
+
+         if(!b_glide &&
+            (-1 == prg)        &&
+            (-1 == vol)        &&
+            ( 0 == smpoff)     &&
+            (-1 == pb)         &&
+            (-1 == retrig)     &&
+            (-1 == wt_x_rel)   &&
+            (-1 == jumptoloop) &&
+            (-1 == vol_tbl)    &&
+            (-1 == freq_coarse_tbl) &&
+            (-1 == bpm)
+            )
+         {
+            // "direct note" fast path
+            if(0 == note)
+            {
+               // Direct Note-off (=> -16)
+               ev0 |= EV0_DIRECTNOTE_BIT | (0x10<<3);
+               bNoteDone = true;
+            }
+            else if(-1 != _ch.last_note)
+            {
+               int noteDelta = note - _ch.last_note;
+               if( abs(noteDelta) <= 15 )
+               {
+                  ev0 |= EV0_DIRECTNOTE_BIT;
+                  ev0 |= (noteDelta&31) << 3;
+                  bNoteDone = true;
+                  trace "xxx write noteDelta="+noteDelta;
+               }
+            }
+         }
+      }
+
+      if(b_glide)
+         ev0 |= EV0_GLIDE_BIT;
+
+      if(prg >= 0)
+      {
+         ev0 |= EV0_EXT_INSTR_BIT;
+         ev_data.i8 = prg;
+      }
+
+      if(!bNoteDone)
+      {
+         ev0 |= EV0_EXT_NOTE_BIT;
+         ev_data.i8 = note;
+         _ch.last_note = note;
+      }
+
+      if(vol >= 0)
+      {
+         ev0 |= EV0_EXT_VOL_BIT;
+         ev_data.i8 = vol;  // 5:3
+      }
+
+      int ev1 = 0;
+      int ev1Addr = ev_data.offset;
+      int ev2 = 0;
+      int ev2Addr = ev1Addr;
+
+      if(retrig >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_SEQ_RETRIG_BIT;
+         ev_data.i8 = retrig;
+         ev2Addr++;
+         trace "xxx write retrig="+retrig+" @tick="+tick_nr;
+      }
+
+      if(smpoff > 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_SMPOFF_BIT;
+         ev_data.i8 = smpoff;
+         ev2Addr++;
+         trace "xxx write smpoff="+smpoff+" @tick="+tick_nr;
+      }
+
+      if(wt_x_rel >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_WT_XY_BIT;
+
+         byte wtX = (wt_x_rel * cur_sample.wt_w) >> 7;
+         byte wtY = (wt_y_rel * cur_sample.wt_h) >> 7;
+         if(cur_sample.wt_h > 1)
+         {
+            // 2D wavetable
+            ev_data.i8 = (mathClampi(wtY, 0, 15) << 4) | mathClampi(wtX, 0, 15);
+         }
+         else
+         {
+            // 1D wavetable
+            ev_data.i8 = mathClampi(wtX, 0, 127);
+         }
+         ev2Addr++;
+      }
+
+      if(jumptoloop >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_JUMPTOLOOP_BIT;
+         ev_data.i8 = jumptoloop;
+         ev2Addr++;
+         trace "xxx write jumptoloop="+jumptoloop+" @tick="+tick_nr;
+      }
+
+      if(vol_tbl >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_VOL_TBL_BIT;
+         ev_data.i8 = vol_tbl;
+         ev2Addr++;
+         trace "xxx write vol_tbl="+vol_tbl+" @tick="+tick_nr;
+      }
+
+      if(freq_coarse_tbl >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_FREQ_COARSE_TBL_BIT;
+         ev_data.i8 = freq_coarse_tbl;
+         ev2Addr++;
+         trace "xxx write freq_coarse_tbl="+freq_coarse_tbl+" @tick="+tick_nr;
+      }
+
+      if(pb >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_PITCHBEND_BIT;
+         ev_data.i8 = pb;
+         ev2Addr++;
+         trace "xxx write pb="+pb+" @tick="+tick_nr;
+      }
+
+      if(bpm >= 0)
+      {
+         ev0 |= EV0_NEXT_BIT;
+         if(0 == ev1) { ev_data.i8 = 0; ev2Addr++; }
+         ev1 |= EV1_NEXT_BIT;
+         if(0 == ev2) { ev_data.i8 = 0; }
+         ev2 |= EV2_TEMPO_BIT;
+         ev_data.i8 = bpm;
+      }
+
+      if(0 != ev1)
+      {
+         ev_data.pokeI8(ev1Addr, ev1);
+
+         if(0 != ev2)
+         {
+            ev_data.pokeI8(ev2Addr, ev2);
+         }
+      }
+
+      // Update ev0
+      int off;
+      boolean bEv0Done = false;
+      trace "xxx ev_data.offset="+ev_data.offset;
+      if(ev_data.offset > 1)
+      {
+         ev_data.pokeI8(0, ev0 & ~(EV0_DELTATIME_BIT | EV0_DATAREPEAT_BIT));
+         int historyIdx = _ch.findEventInHistory(ev_data);
+         if(-1 != historyIdx)
+         {
+            trace "xxx write historyIdx="+historyIdx+" ev_data.offset="+ev_data.offset;
+            ev0 = (ev0 & EV0_DELTATIME_BIT) | EV0_DATAREPEAT_BIT;
+            ev0 |= (historyIdx << 2);
+            if(0 == ev0Off)
+            {
+               // reusing deltatime, write ev0
+               ofs.i8 = ev0;
+            }
+            else
+            {
+               // ev0 and deltatime have already been written, update ev0
+               off = ofs.offset;
+               ofs.seek(ev0Addr, SEEK_SET);
+               ofs.i8 = ev0;
+               ofs.seek(off, SEEK_SET);
+            }
+            bEv0Done = true;
+         }
+         else
+         {
+            _ch.addEventToHistory(ev_data);
+         }
+      }
+
+      if(!bEv0Done)
+      {
+         if(0 == ev0Off)
+         {
+            // reusing deltatime, write ev0 + ev_data
+            ev_data.pokeI8(0, ev0);
+            ofs.writeBuffer(ev_data, 0, ev_data.offset);
+         }
+         else
+         {
+            // ev0 and deltatime have already been written, update ev0 and write remaining ev_data
+            off = ofs.offset;
+            ofs.seek(ev0Addr, SEEK_SET);
+            ofs.i8 = ev0;
+            ofs.seek(off, SEEK_SET);
+            if(ev_data.offset > 1)
+               ofs.writeBuffer(ev_data, 1/*skip ev0*/, ev_data.offset-1);
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class ExportTinyChannel {
+   // Mono channel
+   byte cur_midi_prg;  // initially -1 (force INSTR event to set default modseq indices)
+   byte cur_smp_prg;  // sample program
+   ExportTinySample *cur_sample;  // last selected sample
+   int cur_vol;  // 0x40=full volume
+   int base_vol;  // for velocity, 0x40=full volume
+   // // int cur_vol_shift;  // 0..6, 0=full volume
+   int cur_pb;
+   byte cur_mod;  // tracks modwheel (cc#001)
+
+   int cur_tick_nr;
+   ExportTinyEvent *cur_ev;
+
+   ExportTinyEvent *[] events;
+
+
+   int cur_note;
+   int cur_note_countdown;
+   int cur_active_note;  // -1=none (e.g. after note off)
+
+   // during save:
+   int last_deltatime;
+   int last_note;  // last written note
+   // // int last_prg;
+   // int last_vol;
+
+   int cur_wt_x;
+   int cur_wt_y;
+
+   int cur_expr;
+
+   int cur_vol_tbl;
+   int cur_freq_coarse_tbl;
+
+   Buffer *[] ev_history;
+
+   public method init() {
+      cur_midi_prg = -1;
+      cur_smp_prg = -1;
+      cur_sample <= null;
+      base_vol = 64;  // velocity
+      cur_vol = 64;
+      // // cur_vol_shift = 0;
+      cur_tick_nr = -1;
+      cur_mod = 0;
+      cur_pb = 0;
+      cur_active_note = -1;
+      cur_note = -1;
+      cur_wt_x = 0;
+      cur_wt_y = 0;
+      cur_expr = -1;
+      cur_vol_tbl = -1;
+      cur_freq_coarse_tbl = -1;
+
+      // // last_prg = 0;
+      last_note = 12*5/*C-5*/;
+      last_deltatime = 0;
+      // last_vol = -1;
+   }
+
+   public method getOrCreateEvent(int _tickNr) : ExportTinyEvent {
+      if(cur_tick_nr != _tickNr)
+      {
+         trace "xxx addEvent: tickNr="+_tickNr;
+         cur_ev <= new ExportTinyEvent;
+         cur_ev.init(_tickNr);
+         events.add(#(deref cur_ev));
+         cur_tick_nr = _tickNr;
+      }
+      return cur_ev;
+   }
+
+   public method writeDeltaTime(Stream ofs, ExportTinySong _song, int _deltaTime) : byte {
+      // Write 0..n-1 deltatime events and return offset to last ev0 byte (0=repeat last)
+      if(_deltaTime == last_deltatime)
+      {
+         // Repeat last deltatime
+         return 0;
+      }
+      else
+      {
+         IntArray deltaTimeTbl <= _song.delta_time_tbl;
+         int deltaTimeIdx = deltaTimeTbl.indexOf(_deltaTime, 0);
+         if(-1 != deltaTimeIdx)
+         {
+            // Re-use previous deltatime
+            ofs.i8 = ExportTinyEvent.EV0_DELTATIME_BIT;
+            ofs.i8 = deltaTimeIdx;
+            last_deltatime = _deltaTime;
+            return 2;
+         }
+         else if(256 != deltaTimeTbl.numElements)
+         {
+            // add new deltatime entry
+            trace "xxx new deltaTime="+_deltaTime;
+            deltaTimeTbl.add(_deltaTime);
+            ofs.i8 = ExportTinyEvent.EV0_DELTATIME_BIT;
+            ofs.i8 = deltaTimeTbl.numElements - 1;
+            last_deltatime = _deltaTime;
+            return 2;
+         }
+         else
+         {
+            // Delta time table is full, chain multiple deltatime events
+            int timeLeft = _deltaTime;
+            int numChained = 0;
+            while(timeLeft > 0)
+            {
+               // Find largest dt that is smaller than 'deltaTime'
+               int idx = 0;
+               int bestIdx = -1;
+               int bestDist = 9999999;
+               int dt;
+               foreach dt in deltaTimeTbl
+               {
+                  if(dt > 0)
+                  {
+                     if(dt <= timeLeft)
+                     {
+                        int dist = (timeLeft - dt);
+                        if((-1 == bestIdx) || (dist < bestDist))
+                        {
+                           bestIdx = idx;
+                           bestDist = dist;
+                        }
+                     }
+                  }
+                  idx++;
+               }
+               dt = deltaTimeTbl.get(bestIdx);  // worstcase: 1
+               ofs.i8 = ExportTinyEvent.EV0_DELTATIME_BIT;
+               ofs.i8 = bestIdx;
+               last_deltatime = dt;
+               numChained++;
+               timeLeft -= dt;
+            }
+            trace "xxx deltaTimeTbl full, chained "+numChained+" events..";
+            return 2;
+         }
+      }
+   }
+
+   public method findEventInHistory(Buffer _evData) : int {
+      Buffer *evDataHistory;
+      int historyIdx = 0;
+      foreach evDataHistory in ev_history
+      {
+         if(evDataHistory == _evData)
+            return historyIdx;
+         historyIdx++;
+      }
+      return -1;
+   }
+
+   public method addEventToHistory(Buffer _evData) {
+      local Buffer evDataHistory = _evData;
+      if(64 == ev_history.numElements)
+         ev_history.delete(63);  // delete oldest
+      ev_history.insert(0, #(deref evDataHistory));
+   }
+
+   // // public method adjustNoteForCurrentSample(int _midiPrg, int _note, int _vel, int _mod) : int {
+   // //    // (note) side effect: may change current smp
+   // //    ExportTinySample s <= findSample(_midiPrg, _note, _vel, _mod);
+   // //    // should not be reachable (but can, if an invalid instr is set)
+   // //    trace "[~~~] ExportTinyDialog: failed to map note "+_note+" (invalid sample selected), returning last note="+last_note;
+   // //    return last_note;
+   // // }
+
+   public method saveStream(Stream ofs, ExportTinySong _song) {
+      ExportTinyEvent *ev;
+      int lastTickNr = 0;
+      last_deltatime = 0;
+      foreach ev in events
+      {
+         ev.saveStream(ofs, _song, this, lastTickNr);
+         lastTickNr = ev.tick_nr;
+      }
+
+      // Write end-of-events marker (deltatime=0 with no other ev0 bits)
+      ofs.i8 = ExportTinyEvent.EV0_DELTATIME_BIT;
+      ofs.i8 = 0;
+   }
+
+}
+
+// <class.png>
+class ExportTinySample {
+   byte smp_idx;
+
+   byte wf_idx;
+
+   byte prg;  // -1=unassigned
+
+   byte key_lo;
+   byte key_hi;
+
+   byte vel_lo;  // 0..127
+   byte vel_hi;  // 0..127
+
+   byte mod_lo;  // 0..127
+   byte mod_hi;  // 0..127
+
+   // (note) e.g. Sample transpose=-0.37 semi => transpose_note=-1 transpose_fine=11/16  => effTranspose= -1 + 0.6875 = -0.3125
+   byte transpose_note;  // -n..n
+   byte transpose_fine;  // 0..15  (=> +0..((15/16)=+0.9375) semitones)
+
+   byte vol_shift;  // 0..6  (0=full volume)  (**unused now**)
+
+   // velocity to sample offset modulation:
+   byte smpoff_shift;  // >=1: enable sampleoffset modulation
+   int  max_vel_offset;
+   int  max_rnd_offset;
+   int  max_smp_offset;  // for clipping vel+rnd offset and EV1_SMPOFF_BIT calculation
+
+   IntArray loops;  // off/len/#rep per entry
+
+   byte wt_cyclelen_bits;  // 0=no wt, 3..10 otherwise
+   byte wt_w;              // 1..16 or 1..128 in 1D mode
+   byte wt_h;              // 1..16
+   byte wt_x_oneshot;
+   byte wt_x_phase;        // 0..15 (15=no reset)
+   byte wt_x_spd;          // 0..15 (0=freeze, 1..15=0.39..6.25Hz)
+   byte wt_y_oneshot;
+   byte wt_y_phase;        // 0..15 (15=no reset)
+   byte wt_y_spd;          // 0..15 (0=freeze, 1..15=0.39..6.25Hz)
+
+   // 1..16 elements
+   IntArray vol_seq_indices;
+   IntArray freq_fine_seq_indices;
+   IntArray freq_coarse_seq_indices;
+   IntArray loop_seq_indices;
+
+   // default seq indices:
+   byte vol_seq_idx;
+   byte freq_fine_seq_idx;
+   byte freq_coarse_seq_idx;
+   byte loop_seq_idx;
+   byte b_jumptoloop_immediately;  // becomes sample flags bit4 during save
+
+   float vol_vel_amt;
+
+   byte glide_speed;    // msb=up lsb=down
+   byte release_speed;  // lsb4=speed 0..15   msb4=fine tune (+0..(15/16=0.9375) semitones)
+
+   // see tsr.c TSR_SMP_FLAG_xxx
+   //  (note) bit4 changes meaning from "allow glide" (during event scan) to "jumptoloop_immediately" (during file export)
+   byte flags;
+
+   public method allowGlide() : boolean {
+      return (0 != (flags & (1 << 4)/*TSR_SMP_FLAG_EXPORT_ALLOW_GLIDE*/));
+   }
+}
+
+
+// <class.png>
+class ExportTinySong {
+   define int NUM_CH = 4;
+
+   int wf_size_proc;
+   int wf_size_static;
+
+   float bpm;  // range: 50..177.5
+   int  num_ticks;
+
+   ExportTinyChannel *[] channels;
+
+   // up to 256 entries, filled while writing song data. short values (0..65535)
+   IntArray delta_time_tbl;
+
+   ExportTinySample *[] samples;
+
+   IntArray wf_offsets;   // bit31: 1=procedural waveform offset, 0=static waveform offset
+
+   Buffer vol_seq_data;  // all bytes (endianess does not matter)
+   Buffer freq_fine_seq_data;
+   Buffer freq_coarse_seq_data;
+   Buffer loop_seq_data;
+
+   public method init() : boolean {
+      ExportTinyChannel *ch;
+      loop(NUM_CH)
+      {
+         ch <= new ExportTinyChannel;
+         ch.init();
+         channels.add(#(deref ch));
+      }
+
+      if(!loadSampleInfo())
+      {
+         Global.Error("Failed to import sample info (click \"Export TSR\" in Eureka!)");
+         return false;
+      }
+
+      if(!loadMSeqInfo())
+      {
+         Global.Error("Failed to import mseq info (click \"Export TSR\" in Eureka!)");
+         return false;
+      }
+
+      // Set default sample (must exist)
+      foreach ch in channels
+      {
+         ch.cur_sample <= samples.get(0);
+      }
+
+      return true;
+   }
+
+   public method addWaveform(int _offset) {
+      wf_offsets.add(_offset);
+   }
+
+   public method addSample() : ExportTinySample {
+      ExportTinySample s <= new ExportTinySample;
+      s.smp_idx = samples.numElements;
+      samples.add(#(deref s));
+      return s;
+   }
+
+   protected method loadSampleInfo() : boolean {
+      // (note) see eureka::Project::exportTSRSampleInfo()
+      local File f;
+      local String pathName <= STConfig.tsr_sampleinfo_import_pathname_prefix+"_smp.dat";  // => "c:/temp/eureka_tsr_smp.dat"
+      local String pathNameLocal <= Utils.ToNativePathName(pathName);
+      if(f.openLocal(pathNameLocal, IOS_IN))
+      {
+         // Total procedural and static waveform sizes
+         wf_size_proc   = f.i32;
+         wf_size_static = f.i32;
+
+         // Number of samples
+         int numSamples = f.u8;
+
+         int sampleNr = 1;
+         loop(numSamples)
+         {
+            // Waveform offset
+            addWaveform(f.i32/*wfOffset*/);
+
+            // MIDI Program Nr (as used in sequencer)
+            int prgNr = f.s8;
+
+            // Number of zones
+            int numZones = f.u8;
+
+            int zoneNr = 1;
+            loop(numZones)
+            {
+               // (todo) vol_vel_amt
+               ExportTinySample s <= addSample();
+
+               s.wf_idx = (wf_offsets.numElements-1);
+               int wfOffsetLast = wf_offsets.last;
+               trace "xxx loadSampleInfo: zoneNr="+zoneNr+" wfOffset="+((wfOffsetLast < 0) ? ("<proc>"+(wfOffsetLast&0x7FFFffff)) : "<static>"+wfOffsetLast)+" (idx="+s.wf_idx+") prgNr="+prgNr;
+
+               s.prg = prgNr;
+
+               s.key_lo = f.u8;
+               s.key_hi = f.u8;
+
+               s.vel_lo = f.u8;
+               s.vel_hi = f.u8;
+
+               s.mod_lo = f.u8;
+               s.mod_hi = f.u8;
+
+               trace "xxx loadSampleInfo:   key="+s.key_lo+".."+s.key_hi+" vel="+s.vel_lo+".."+s.vel_hi+" mod="+s.mod_lo+".."+s.mod_hi;
+
+               s.transpose_note = f.s8;
+               s.transpose_fine = f.u8;  // 0..15
+
+               trace "xxx loadSampleInfo:   transpose note="+s.transpose_note+" fine="+s.transpose_fine;
+
+               s.vol_shift = f.u8;  // 0..6
+               s.vol_vel_amt = f.f32;
+
+               s.smpoff_shift   = f.u8;   // 0=off, 1..7
+               s.max_vel_offset = f.u16;
+               s.max_rnd_offset = f.u16;
+               s.max_smp_offset = f.i32;
+
+               trace "xxx loadSampleInfo:   vol="+(1<<(6-s.vol_shift))+" vel_amt="+int(s.vol_vel_amt*100);
+
+               s.glide_speed = f.i8;  // msb=up lsb=down
+               s.release_speed = f.i8;
+               trace "xxx loadSampleInfo: release_speed="+s.release_speed;
+
+               int numLoops = f.u8;
+               IntArray loops <= s.loops;
+               loop(numLoops * 3)
+                  loops.add(f.u16);
+
+               s.wt_cyclelen_bits = f.u8;  // 0=no wt, 3..10 otherwise
+               if(s.wt_cyclelen_bits > 0)
+               {
+                  s.wt_w             = f.u8;  // 1..16 or 1..128 in 1D mode
+                  s.wt_h             = f.u8;  // 1..16
+                  s.wt_x_oneshot     = f.u8;
+                  s.wt_x_phase       = f.u8;  // 0..15 (15=no reset)
+                  s.wt_x_spd         = f.u8;  // 0..15 (0=freeze, 1..15=0.39..6.25Hz)
+                  s.wt_y_oneshot     = f.u8;
+                  s.wt_y_phase       = f.u8;  // 0..15 (15=no reset)
+                  s.wt_y_spd         = f.u8;  // 0..15 (0=freeze, 1..15=0.39..6.25Hz)
+
+                  trace "xxx loadSampleInfo: wt_cyclelen_bits="+s.wt_cyclelen_bits+" wt_w="+s.wt_w+" wt_h="+s.wt_h+" wt_x_phase="+s.wt_x_phase+" wt_x_spd="+s.wt_x_spd+" wt_y_phase="+s.wt_y_phase+" wt_y_spd="+s.wt_y_spd;
+               }
+
+               int mseqNum;
+               IntArray *mseqIndices;
+
+               // Volume
+               mseqNum = f.u8;
+               mseqIndices <= s.vol_seq_indices;
+               mseqIndices.alloc(mseqNum);
+               loop(mseqNum)
+                  mseqIndices.add(f.u8);
+               s.vol_seq_idx = f.u8;
+
+               // Freq Fine
+               mseqNum = f.u8;
+               mseqIndices <= s.freq_fine_seq_indices;
+               mseqIndices.alloc(mseqNum);
+               loop(mseqNum)
+                  mseqIndices.add(f.u8);
+               s.freq_fine_seq_idx = f.u8;
+
+               // Freq Coarse
+               mseqNum = f.u8;
+               mseqIndices <= s.freq_coarse_seq_indices;
+               mseqIndices.alloc(mseqNum);
+               loop(mseqNum)
+                  mseqIndices.add(f.u8);
+               s.freq_coarse_seq_idx = f.u8;
+
+               // Loop
+               mseqNum = f.u8;
+               mseqIndices <= s.loop_seq_indices;
+               mseqIndices.alloc(mseqNum);
+               loop(mseqNum)
+                  mseqIndices.add(f.u8);
+               s.loop_seq_idx = f.u8;
+
+               s.b_jumptoloop_immediately = f.b8;
+
+               s.flags = f.u8;
+
+               trace "xxx loadSampleInfo:   #volseq="+(s.vol_seq_indices.numElements)+"["+s.vol_seq_idx+"]  #fineseq="+(s.freq_fine_seq_indices.numElements)+"["+s.freq_fine_seq_idx+"]  #coarseseq="+(s.freq_coarse_seq_indices.numElements)+"["+s.freq_coarse_seq_idx+"]  #loopseq="+(s.loop_seq_indices.numElements)+"["+s.loop_seq_idx+"]  flags="+s.flags;
+
+               // Next sample zone
+               zoneNr++;
+            }
+
+            // Next sample
+            sampleNr++;
+         }
+
+         Global.Debug("ExportTinySong::loadSampleInfo: loaded "+samples.numElements+" sample infos");
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] ExportTinySong::loadSampleInfo: failed to import sample info file \""+pathNameLocal+"\"";
+         return false;
+      }
+   }
+
+   protected method loadMSeqInfo() : boolean {
+      local File f;
+      local String pathName <= STConfig.tsr_sampleinfo_import_pathname_prefix+"_mseq.dat";  // => "c:/temp/eureka_tsr_mseq.dat"
+      local String pathNameLocal <= Utils.ToNativePathName(pathName);
+      if(f.openLocal(pathNameLocal, IOS_IN))
+      {
+         vol_seq_data.size         = f.u16;
+         freq_fine_seq_data.size   = f.u16;
+         freq_coarse_seq_data.size = f.u16;
+         loop_seq_data.size        = f.u16;
+         trace "xxx loadMSeqInfo: vol="+vol_seq_data.size+" bytes";
+         trace "xxx loadMSeqInfo: ffn="+freq_fine_seq_data.size+" bytes";
+         trace "xxx loadMSeqInfo: fco="+freq_coarse_seq_data.size+" bytes";
+         trace "xxx loadMSeqInfo: lop="+loop_seq_data.size+" bytes";
+
+         f.readBuffer(vol_seq_data,         0, vol_seq_data.size,         false/*bResize*/);
+         f.readBuffer(freq_fine_seq_data,   0, freq_fine_seq_data.size,   false/*bResize*/);
+         f.readBuffer(freq_coarse_seq_data, 0, freq_coarse_seq_data.size, false/*bResize*/);
+         f.readBuffer(loop_seq_data,        0, loop_seq_data.size,        false/*bResize*/);
+         f.close();
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] ExportTinySong::loadMSeqInfo: failed to import mseq info file \""+pathNameLocal+"\"";
+         return false;
+      }
+   }
+
+   public method findSample(int _prg, int _note, int _vel, int _mod) : ExportTinySample {
+      ExportTinySample *s;
+      foreach s in samples
+      {
+         trace "xxx findSample: prg="+_prg+" s.prg="+s.prg;
+         if(s.prg == _prg)
+         {
+            trace "xxx findSample: note="+_note+" s.key_lo="+s.key_lo+" s.key_hi="+s.key_hi;
+            if(s.key_lo <= _note <= s.key_hi)
+            {
+               trace "xxx findSample: vel="+_vel+" s.vel_lo="+s.vel_lo+" s.vel_hi="+s.vel_hi;
+               if(s.vel_lo <= _vel <= s.vel_hi)
+               {
+                  trace "xxx findSample: mod="+_mod+" s.mod_lo="+s.mod_lo+" s.mod_hi="+s.mod_hi;
+                  if(s.mod_lo <= _mod <= s.mod_hi)
+                  {
+                     return s;
+                  }
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   public method saveStream(Stream ofs) {
+
+      // Total procedural waveform size (#bytes)
+      ofs.i32 = wf_size_proc;
+
+      // Total static waveform size (#bytes)
+      ofs.i32 = wf_size_static;
+
+      Global.Debug("ExportTinySong::saveStream: wf_size_proc="+wf_size_proc+" wf_size_static="+wf_size_static);
+
+      // BPM
+      ofs.i8 = mathClampi((bpm-50.0)*2, 0, 255);
+
+      // Flags (+word align)
+      ofs.i8 = 0;
+
+      // Songlen (number of ticks)
+      ofs.i32 = num_ticks;
+
+      // Channel 1..4 sequence sizes (filled out after writing channel data)
+      int seqOffAddr = ofs.offset;
+      ofs.i16 = 0;
+      ofs.i16 = 0;
+      ofs.i16 = 0;
+      ofs.i16 = 0;
+
+      delta_time_tbl.add(0);
+      delta_time_tbl.add(1);
+      delta_time_tbl.add(2);
+      delta_time_tbl.add(3);
+      delta_time_tbl.add(4);
+      delta_time_tbl.add(5);
+      delta_time_tbl.add(6);   // 1/128
+      delta_time_tbl.add(7);
+      delta_time_tbl.add(8);
+      delta_time_tbl.add(9);
+      delta_time_tbl.add(10);
+      delta_time_tbl.add(11);
+      delta_time_tbl.add(12);  // 1/64
+      delta_time_tbl.add(24);  // 1/32
+      delta_time_tbl.add(48);  // 1/16
+      delta_time_tbl.add(96);  // 1/8
+      delta_time_tbl.add(144); // 1/8
+      delta_time_tbl.add(192); // 1/4
+
+      int seqOffPrev = ofs.offset;
+      int off;
+      ExportTinyChannel *ch;
+      int chIdx = 0;
+      foreach ch in channels
+      {
+         ch.saveStream(ofs, this);
+         off = ofs.offset;
+         ofs.seek(seqOffAddr, SEEK_SET);
+         trace "xxx ch["+chIdx+"] totalEvSize="+(off-seqOffPrev);
+         ofs.i16 = off - seqOffPrev;
+         ofs.seek(off, SEEK_SET);
+         seqOffAddr += 2;
+         seqOffPrev = off;
+         chIdx++;
+      }
+
+      // Deltatime table
+      if(0 == (ofs.offset & 1))
+         ofs.i8 = 0; // pad
+      ofs.i8 = delta_time_tbl.numElements;
+      int deltaTime;
+      foreach deltaTime in delta_time_tbl
+         ofs.i16 = deltaTime;
+
+      // Waveforms
+      ofs.i16 = wf_offsets.numElements;  // a byte would do but we need to word-align
+      int wfOffset;
+      foreach wfOffset in wf_offsets
+         ofs.i32 = wfOffset;
+
+      // Sample infos
+      int smpInfoSzAddr = ofs.offset;
+      ofs.i16 = 0;  // patched later
+
+      ExportTinySample *s;
+      foreach s in samples
+      {
+         Global.Debug("save smp["+s.smp_idx+"] at offset="+ofs.offset);
+         ofs.i8 = (s.flags & ~(1<< 4)) | (s.b_jumptoloop_immediately << 4)/*TSR_SMP_FLAG_JUMPTOLOOP_IMMEDIATELY*/;
+         ofs.i8 = s.wf_idx;
+         ofs.i8 = s.smpoff_shift;  // [17Oct2020] changed to smpoff_shift (was vol_shift)
+         ofs.i8 = s.release_speed | ((s.transpose_fine&15) << 4);  // [20Apr2024] add transpose_fine MSB4
+         ofs.i8 = s.vol_seq_idx;
+         ofs.i8 = s.freq_fine_seq_idx;
+         ofs.i8 = s.freq_coarse_seq_idx;
+         ofs.i8 = s.loop_seq_idx;
+         ofs.i8 = s.glide_speed;  // glidespeed MSB=up/LSB=down
+         IntArray loops <= s.loops;
+         trace "xxx smp loops="+#(loops)+" wt_cyclelen_bits="+s.wt_cyclelen_bits;
+         if(0 == s.wt_cyclelen_bits)
+         {
+            // No wavetable, store regular loop data
+            ofs.i8 = loops.numElements / 3;
+            int loopOff = 0;
+            // (at offset 10):
+            loop(loops.numElements / 3)
+            {
+               ofs.i16 = loops.get(loopOff + 0);
+               ofs.i16 = loops.get(loopOff + 1);
+               ofs.i16 = loops.get(loopOff + 2);
+               loopOff += 3;
+            }
+         }
+         else
+         {
+            // wavetable info (6 bytes)
+            ofs.i8 = 0;  // numloops=0 => wt mode
+            ofs.i16 = loops.get(0);  // waveform offset (#dma words)
+            ofs.i8 =
+               (s.wt_cyclelen_bits - 3)                    |
+               ((s.wt_h > 1) << 5)/*TSR_WT_2D_BIT*/        |
+               (s.wt_x_oneshot << 6)/*TSR_WT_CLAMP_X_BIT*/ |
+               (s.wt_y_oneshot << 7)/*TSR_WT_CLAMP_Y_BIT*/ ;
+            trace "xxx write wt_w="+s.wt_w+" wt_h="+s.wt_h;
+            if(s.wt_h > 1)
+            {
+               // 2D wavetable
+               ofs.i8 = (s.wt_w-1) | ((s.wt_h-1) << 4);
+               ofs.i8 = s.wt_x_spd | (s.wt_y_spd << 4);
+               ofs.i8 = s.wt_x_phase | (s.wt_y_phase << 4);
+            }
+            else
+            {
+               // 1D wavetable
+               ofs.i8 = (s.wt_w-1);
+               ofs.i8 = s.wt_x_spd;
+               ofs.i8 = s.wt_x_phase;
+            }
+         }
+      }
+
+      // Mod sequencers
+      Global.Debug("save modseqs at offset="+ofs.offset);
+      Global.Debug("   vol: "+vol_seq_data.size+" bytes");
+      Global.Debug("   ffn: "+freq_fine_seq_data.size+" bytes");
+      Global.Debug("   fco: "+freq_coarse_seq_data.size+" bytes");
+      Global.Debug("   lop: "+loop_seq_data.size+" bytes");
+      int mseqOff = ofs.offset;
+      ofs.seek(smpInfoSzAddr, SEEK_SET);
+      int smpInfoSz = mseqOff - (smpInfoSzAddr + 2);
+      ofs.i16 = smpInfoSz;
+      trace "xxx smpinfoSz="+smpInfoSz+" ("+samples.numElements+" samples)";
+      ofs.seek(mseqOff, SEEK_SET);
+      ofs.writeBuffer(vol_seq_data, 0, vol_seq_data.size);
+      ofs.writeBuffer(freq_fine_seq_data, 0, freq_fine_seq_data.size);
+      ofs.writeBuffer(freq_coarse_seq_data, 0, freq_coarse_seq_data.size);
+      ofs.writeBuffer(loop_seq_data, 0, loop_seq_data.size);
+
+      // if(ofs.offset & 1)
+      //    ofs.i8 = 0;
+   }
+
+   public method saveFile(String _pathName, boolean _bBigEndian) : boolean {
+      local File f;
+      if(f.openLocal(_pathName, IOS_OUT))
+      {
+         // xxxxxxxx make this configurable
+         if(_bBigEndian)
+            f.byteOrder = YAC_BIG_ENDIAN;
+
+         saveStream(f);
+
+         Global.Debug("ExportTinySong::saveFile: file size is "+f.offset+" bytes ("+(int(100*f.offset / 1024.0)/100.0)+"kb)");
+         trace "[...] wrote file \""+_pathName+"\"";
+
+         local String sPath;
+         local String sFile;
+         Utils.SplitPathname(_pathName, sPath, sFile);
+         Global.Print("TSR: wrote \""+sFile+"\" sz="+f.offset+" ("+(int(100*f.offset / 1024.0)/100.0)+"kb)");
+
+         f.close();
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class ExportTinyDialog extends Dialog {
+
+   protected XMLForm   *xfm;
+
+   protected CheckBox   *cb_bigendian;
+   protected FloatParam *fp_bars;
+   protected FloatParam *fp_beats;
+   protected Label      *lb_ticks;
+
+   protected TextField *tf_pathname;
+   protected Button *bt_browse;
+
+   protected Button   *bt_export;
+   protected Button   *bt_cancel;
+
+   static StringArray file_filter_names = [ "Tiny Synergy Replay File (*.tsr)" ];
+   static StringArray file_filter_strings = [ "*.seq" ];
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ExportTinyDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Export Tiny Synergy Replay File",
+                 100, 100,
+                 640*UI.font_scaling, 240*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      if(!b_layer_postinit_done)
+         resizeToMinimum();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+
+      replay.stopReplay(false, true/*bAllowPanic*/);
+
+      lb_ticks.setCaption(String(getTotalNumTicks()));
+      lb_ticks.redraw();
+   }
+
+   // <method.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_export);
+   }
+
+   // <ui_handle.png>
+   protected method handleBarsChanged() {
+      Global.Print("Num bars is "+fp_bars.getFloatValue());
+
+      lb_ticks.setCaption(String(getTotalNumTicks()));
+      lb_ticks.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleBeatsChanged() {
+      Global.Print("Num beats is "+fp_bars.getFloatValue());
+
+      lb_ticks.setCaption(String(getTotalNumTicks()));
+      lb_ticks.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleBigEndian() {
+      String suggestedPath, suggestedFile;
+      Utils.SplitPathname(tf_pathname.getText(), suggestedPath, suggestedFile);
+      if(cb_bigendian.isSelected())
+      {
+         if(suggestedFile & "_le.")
+         {
+            suggestedFile.replace("_le.", "_be.");
+            if(!suggestedPath.isBlank())
+               tf_pathname.setText(suggestedPath+"/"+suggestedFile);
+            else
+               tf_pathname.setText(suggestedFile);
+         }
+      }
+      else
+      {
+         if(suggestedFile & "_be.")
+         {
+            suggestedFile.replace("_be.", "_le.");
+            if(!suggestedPath.isBlank())
+               tf_pathname.setText(suggestedPath+"/"+suggestedFile);
+            else
+               tf_pathname.setText(suggestedFile);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleBrowse() {
+      String suggestedPath, suggestedFile;
+      Utils.SplitPathname(tf_pathname.getText(), suggestedPath, suggestedFile);
+
+      String fileName <= UI.SaveFileDialog(suggestedPath,
+                                           suggestedFile,
+                                           "Export Tiny Synergy Replay File (.tsr)",
+                                           file_filter_names, file_filter_strings,
+                                           false
+                                           );
+
+      if(null != fileName)
+      {
+         tf_pathname.setText(fileName);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+   }
+
+   // <method.png>
+   protected method getTotalNumTicks() : int {
+      int numTicksPerNote = current_song.ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+      return (int(fp_bars.getFloatValue()) * numTicksPerBar) + (int(fp_beats.getFloatValue()) * numTicksPerBeat);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleExport() {
+      hide();
+
+      int numBars = fp_bars.getFloatValue();
+      int numBeats = fp_beats.getFloatValue();
+
+      if( (numBars > 0) || (numBeats > 0) )
+      {
+         replay.stopReplay(false, true/*bAllowPanic*/);
+
+         local ExportTinySong song;
+         if(!song.init())
+            return;
+
+         int exportNumTicks = getTotalNumTicks();
+         song.num_ticks = exportNumTicks;
+         Global.Debug("ExportTinyDialog::handleExport: export "+exportNumTicks+" ticks");
+
+         local MIDIPipeFrame frExport;
+
+         STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName("vst_a");
+         if(null == outDev)
+         {
+            Global.Error("ExportTiny: device \"vst_a\" not found");
+            return;
+         }
+         int devIdx = outDev.dev_idx;
+
+         // Start replay
+         int oldSongOffset = current_song.song_offset;
+         // // current_song.seek(0);
+         replay.toggleReplay(false/*bAllowPanic*/);
+
+         int exportTickIdx = 0;
+         ExportTinyChannel *ch;
+         int numEv;
+         int evIdx;
+         float t;
+         local MIDIPipeEvent pev;
+         ExportTinyEvent *tev;
+         float curBPM;
+         loop(exportNumTicks)
+         {
+            frExport.empty();
+            replay.tick(0.0f, frExport);
+
+            if(0 == exportTickIdx)
+            {
+               // Initial BPM
+               song.bpm = current_song.bpm;
+               curBPM = song.bpm;
+            }
+
+            numEv = frExport.numEvents;
+            if(numEv > 0)
+               trace "xxx tick="+exportTickIdx+" numEv="+numEv;
+
+            int chIdx = 0;
+            foreach ch in song.channels
+            {
+               tev <= null;
+
+               int newSmp = -1;
+               int newVol = -1;
+
+               if((0 == chIdx) && (exportTickIdx > 0))
+               {
+                  if(current_song.bpm != curBPM)
+                  {
+                     curBPM = current_song.bpm;
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     tev.bpm = mathClampi((curBPM-50.0)*2.0, 0, 255);
+                  }
+               }
+
+               // Note-Off
+               numEv = frExport.getNumEventsNoteOffByFlt(devIdx, chIdx);
+               if(numEv > 0)
+               {
+                  evIdx = 0;
+                  loop(numEv)
+                  {
+                     frExport.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, devIdx, chIdx);
+                     if(pev.note == ch.cur_note)
+                     {
+                        // trace "tick="+exportTickIdx+" note off";
+                        if(1)
+                        {
+                           tev <= ch.getOrCreateEvent(exportTickIdx);
+                           tev.note = 0;//-pev.note;
+                           ch.cur_active_note = -1;
+                        }
+                     }
+                     evIdx++;
+                  }
+               }
+
+               // Auto note-off
+               if((-1 != ch.cur_active_note) && (ch.cur_note_countdown > 0))
+               {
+                  ch.cur_note_countdown--;
+                  if(0 == ch.cur_note_countdown)
+                  {
+                     // trace "tick="+exportTickIdx+" auto note off";
+                     if(1)
+                     {
+                        tev <= ch.getOrCreateEvent(exportTickIdx);
+                        tev.note = 0;//-pev.note;
+                        ch.cur_active_note = -1;
+                     }
+                  }
+               }
+
+               // PrgChg
+               numEv = frExport.getNumEventsPrgChgByFlt(devIdx, chIdx);
+               if(numEv > 0)
+               {
+                  // Get last prgchg event
+                  frExport.getEventByIdxAndFlt((numEv-1), pev, MIDIPIPE_EVENT_TYPE_PRGCHG, devIdx, chIdx);
+                  trace "xxx prgchg="+pev.prgChg;
+                  if(pev.prgChg != ch.cur_midi_prg)
+                  {
+                     trace "ch="+ch+" tick="+exportTickIdx+" prgchg to "+pev.prgChg;
+                     ch.cur_midi_prg = pev.prgChg;
+                  }
+               }
+
+               // Volume
+               t = frExport.getFilteredCC(devIdx, chIdx, 7/*vol*/);
+               if(t >= 0)
+               {
+                  trace "xxx ch="+ch+" tick="+exportTickIdx+" newVol via CC7="+t;
+                  newVol = (mathClampi(t, 0, 127) + 1) >> 1;  // +1 for >>6
+                  ch.base_vol = newVol;
+               }
+
+               // CC#16 (General Purpose 1): Volume Seq Retrig
+               t = frExport.getFilteredCC(devIdx, chIdx, 16/*gp1*/);
+               if(t > 0)
+               {
+                  tev <= ch.getOrCreateEvent(exportTickIdx);
+                  tev.retrig = ((-1 == tev.retrig) ? 0 : tev.retrig) | (1 << 0)/*TSR_SMP_FLAG_VOL_SEQ_RESTART*/;
+                  trace "ch="+ch+" tick="+exportTickIdx+" vol retrig";
+               }
+
+               // CC#17 (General Purpose 2): Freq Fine Seq Retrig
+               t = frExport.getFilteredCC(devIdx, chIdx, 17/*gp2*/);
+               if(t > 0)
+               {
+                  tev <= ch.getOrCreateEvent(exportTickIdx);
+                  tev.retrig = ((-1 == tev.retrig) ? 0 : tev.retrig) | (1 << 1)/*TSR_SMP_FLAG_FREQ_FINE_SEQ_RESTART*/;
+               }
+
+               // CC#18 (General Purpose 3): Freq Coarse Seq Retrig
+               t = frExport.getFilteredCC(devIdx, chIdx, 18/*gp3*/);
+               if(t > 0)
+               {
+                  tev <= ch.getOrCreateEvent(exportTickIdx);
+                  tev.retrig = ((-1 == tev.retrig) ? 0 : tev.retrig) | (1 << 2)/*TSR_SMP_FLAG_FREQ_COARSE_SEQ_RESTART*/;
+               }
+
+               // CC#19 (General Purpose 4): Loop Seq Retrig
+               t = frExport.getFilteredCC(devIdx, chIdx, 19/*gp4*/);
+               if(t > 0)
+               {
+                  tev <= ch.getOrCreateEvent(exportTickIdx);
+                  tev.retrig = ((-1 == tev.retrig) ? 0 : tev.retrig) | (1 << 3)/*TSR_SMP_FLAG_LOOP_SEQ_RESTART*/;
+               }
+
+               // Pitchbend
+               t = frExport.getFilteredPitchbend(devIdx, chIdx);
+               if(t >= 0)
+               {
+                  if(t != ch.cur_pb)
+                  {
+                     ch.cur_pb = t;
+                     float fPB = (t < 0x2000) ? ((t / 8192.0)- 1.0f) : ((t-8192.0)/8191.0);
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     tev.pb = int(fPB * 12*8) & 255;  // +- 12 semitones / one octave
+                  }
+               }
+
+               // Modwheel
+               t = frExport.getFilteredCC(devIdx, chIdx, 1/*mw*/);
+               if(t >= 0)
+                  ch.cur_mod = mathClampi(t, 0, 127);
+               // (todo) support sample change (enable glide, play same note, switch sample)  ==> no, use jumptoloop instead
+
+               // CC#2 (Breath Control): wt x
+               t = frExport.getFilteredCC(devIdx, chIdx, 2/*bc*/);
+               if(t >= 0)
+               {
+                  // (note) [15Oct2020]: switch to normalized range (0..127)
+                  if(t != ch.cur_wt_x)
+                  {
+                     ch.cur_wt_x = t;
+                     if(ch.cur_sample.wt_cyclelen_bits)
+                     {
+                        tev <= ch.getOrCreateEvent(exportTickIdx);
+                        // // tev.wt_xy = (ch.cur_wt_y << 4) | ch.cur_wt_x;
+                        tev.wt_x_rel = ch.cur_wt_x;
+                        tev.wt_y_rel = ch.cur_wt_y;
+                     }
+                  }
+               }
+
+               // CC#4 (Foot Control): wt y
+               t = frExport.getFilteredCC(devIdx, chIdx, 4/*fc*/);
+               if(t >= 0)
+               {
+                  // (note) [15Oct2020]: switch to normalized range (0..127)
+                  if(t != ch.cur_wt_y)
+                  {
+                     ch.cur_wt_y = t;
+                     if(ch.cur_sample.wt_cyclelen_bits)
+                     {
+                        tev <= ch.getOrCreateEvent(exportTickIdx);
+                        // // tev.wt_xy = (ch.cur_wt_y << 4) | ch.cur_wt_x;
+                        tev.wt_x_rel = ch.cur_wt_x;
+                        tev.wt_y_rel = ch.cur_wt_y;
+                     }
+                  }
+               }
+
+               // CC#11 (Expression): jump to loop
+               t = frExport.getFilteredCC(devIdx, chIdx, 11/*ex*/);
+               if(t >= 0)
+               {
+                  t = mathClampi(t, 0, 84);  // (note) 84= 255/3-1
+                  if(t != ch.cur_expr)
+                  {
+                     ch.cur_expr = t;
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     tev.jumptoloop = t;
+                  }
+               }
+
+               // Note-On
+               //  (may overwrite note-off on same tick due to mono)
+               numEv = frExport.getNumEventsNoteOnByFlt(devIdx, chIdx);
+               if(numEv > 0)
+               {
+                  // Get last note-on event
+                  frExport.getEventByIdxAndFlt((numEv-1), pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, devIdx, chIdx);
+                  trace "xxx ch="+chIdx+" tick="+exportTickIdx+" note_on="+(MIDI.midi_notes.get(pev.note))+" dur="+pev.duration;
+                  int note = pev.note;
+                  ExportTinySample s <= song.findSample(ch.cur_midi_prg, note, pev.velocity, ch.cur_mod);
+                  if(null == s)
+                     s <= ch.cur_sample;  // e.g. when shifting Programs via MIDI Fader
+                  if(null != s)
+                  {
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     note = mathClampi(note + s.transpose_note, 3*12/*C-3*/, 5*12+11/*B-5*/);  // => C-1..B-3 PT range
+                     tev.note = note;
+                     ch.cur_note = note;
+                     if(ch.cur_active_note >= 0)
+                     {
+                        trace "xxx glide from "+ch.cur_active_note+" to "+note+" s.allowGlide="+s.allowGlide()+" s.flags="+s.flags;
+                        if(s.allowGlide())
+                        {
+                           tev.b_glide = true;
+                        }
+                     }
+                     ch.cur_active_note = note;
+                     ch.cur_note_countdown = pev.duration;  // 0=inf
+
+                     if(s.vol_vel_amt > 0.01f)
+                     {
+                        // newVol = ((newVol >= 0) ? newVol : ch.cur_vol) * ((1.0f - s.vol_vel_amt) + (s.vol_vel_amt*pev.velocity/127.0f));
+                        newVol = ch.base_vol * ((1.0f - s.vol_vel_amt) + (s.vol_vel_amt*pev.velocity/127.0f));
+                        trace "xxx newVol after vol_vel_amt="+int(100*s.vol_vel_amt)+" is "+newVol;
+                     }
+                     else
+                        newVol = ch.base_vol;
+
+                     if(s.smpoff_shift >= 1)
+                     {
+                        // (note) (max_smp_offset >> (smpoff_shift+1)) <= 255
+                        int smpOff = ((s.max_vel_offset * (mathClampf(127.0-pev.velocity, 0, 127) / 127.0)));
+                        if(s.max_rnd_offset > 0)
+                           smpOff += rand(s.max_rnd_offset);
+                        if(smpOff >= s.max_smp_offset)
+                           smpOff = s.max_smp_offset - 2;
+                        tev.smpoff = smpOff >> (s.smpoff_shift + 1/*dma words*/);
+                     }
+
+                     if(s.smp_idx != ch.cur_smp_prg)
+                     {
+                        ch.cur_smp_prg = s.smp_idx;
+                        ch.cur_sample <= s;
+                        newSmp = s.smp_idx;
+                        trace "xxx ch="+chIdx+" change multi-sample newSmp="+newSmp;
+                        ch.cur_vol_tbl         = s.vol_seq_idx;  // auto-selected when instr is selected
+                        ch.cur_freq_coarse_tbl = s.freq_coarse_seq_idx;
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] ExportTinyDialog: failed to map note "+note+" (midiPrg="+ch.cur_midi_prg+" vel="+pev.velocity+" mod="+ch.cur_mod+"), skipping..";
+                  }
+               }
+
+               if(newSmp >= 0)
+               {
+                  tev <= ch.getOrCreateEvent(exportTickIdx);
+                  tev.prg = newSmp;
+               }
+
+               // CC#80 (General Purpose 5): vol_modseq patch
+               t = frExport.getFilteredCC(devIdx, chIdx, 80);
+               if(t >= 0)
+               {
+                  t = mathClampi(t, 0, 255);
+                  if(t != ch.cur_vol_tbl)
+                  {
+                     ch.cur_vol_tbl = t;
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     tev.vol_tbl = t;
+                  }
+               }
+
+               // CC#82 (General Purpose 7): freq_coarse_modseq patch
+               t = frExport.getFilteredCC(devIdx, chIdx, 82);
+               if(t >= 0)
+               {
+                  t = mathClampi(t, 0, 255);
+                  if(t != ch.cur_freq_coarse_tbl)
+                  {
+                     ch.cur_freq_coarse_tbl = t;
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     tev.freq_coarse_tbl = t;
+                  }
+               }
+
+               if(newVol >= 0)
+               {
+                  trace "xxx ch="+chIdx+" tick="+exportTickIdx+" newVol="+newVol+" cur_vol="+ch.cur_vol;
+                  // if(newVol >= 48) newVol = 64;
+                  // else if(newVol >= 24) newVol = 32;
+                  // else if(newVol >= 12) newVol = 16;
+                  // else if(newVol >=  6) newVol = 8;
+                  // else if(newVol >=  3) newVol = 4;
+                  // newVol = newVol >> 1;  // => 0..64
+                  if(ch.cur_vol != newVol)
+                  {
+                     int volShift = 6 - (log(newVol) / log(2));
+                     trace "xxx ch="+chIdx+" tick="+exportTickIdx+" volShift="+volShift;/////+" ch.cur_vol_shift="+ch.cur_vol_shift;
+                     int volDelta = newVol - (1 << (6 - volShift));
+                     tev <= ch.getOrCreateEvent(exportTickIdx);
+                     if(0 == volDelta)
+                     {
+                        // power-of-two: 64,32,16,8,4,2,1
+                        tev.vol = (volShift + 1)/*1..7*/ | ((volDelta & 31) << 3);
+                        // // ch.cur_vol_shift = volShift;
+                        trace "xxx ch="+chIdx+" new vol="+(1<<(6-volShift))+"+"+volDelta+"="+newVol+" at tick="+exportTickIdx;
+                        ch.cur_vol = newVol;
+                     }
+                     else
+                     {
+                        // volume fade (delta)
+                        volDelta = mathClampi(newVol - ch.cur_vol, -15, 15);
+                        tev.vol = 0 | ((volDelta & 31) << 3);
+                        ch.cur_vol = mathClampi(ch.cur_vol + volDelta, 0, 64);
+                        trace "xxx ch="+chIdx+" new volDelta="+volDelta+" (=> vol="+ch.cur_vol+")";
+                     }
+                  }
+               }
+
+               if(null != tev)
+               {
+                  tev.cur_sample <= ch.cur_sample;
+               }
+
+               // Next channel
+               chIdx++;
+            }
+
+            // Next sequencer tick
+            exportTickIdx++;
+
+            if(0 == (exportTickIdx % current_song.ppq))
+               trace "xxx export quarter tick "+(exportTickIdx / current_song.ppq);
+         }
+
+         replay.toggleReplay(false/*bAllowPanic*/);
+         current_song.seek(oldSongOffset);
+
+         // Debug-print #events
+         chIdx = 0;
+         foreach ch in song.channels
+         {
+            trace "xxx ch["+chIdx+"] has "+(ch.events.numElements)+" events";
+            chIdx++;
+         }
+
+         // Save .tsr file
+         local String pathName <= Utils.ToNativePathName(tf_pathname.getText());
+         if(pathName >= ".tsr")
+         {
+            if(song.saveFile(pathName, cb_bigendian.isSelected()))
+            {
+               // (note) status bar already printed by saveFile()
+               // // Global.Print("Export to \""+pathName+"\"");
+            }
+            else
+            {
+               Global.Error("Failed to export to \""+pathName+"\"");
+            }
+         }
+         else
+         {
+            Global.Error("Export TSR: \""+pathName+"\" does not end with \".tsr\"");
+         }
+
+      }
+      else
+      {
+         Global.Warning("Export duration is 0 ticks, aborting..");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_F11:
+            if(_k.modShiftOnly())
+            {
+               handleCancel();
+               return true;
+            }
+            break;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleExport();
+            return true;
+
+         case 'a':
+            cb_bigendian.toggleSelectionAction();
+            return true;
+
+         case 'd':
+            UI.SetKeyboardFocus(fp_bars);
+            fp_bars.selectAll();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+
+      switch(acName)
+      {
+         case "ok":
+            handleExport();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(fp_bars):
+            handleBarsChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_beats):
+            handleBeatsChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cb_bigendian):
+            handleToggleBigEndian();
+            return true;
+
+         case @(bt_browse):
+            handleBrowse();
+            return true;
+
+         case @(bt_export):
+             handleExport();
+             return true;
+
+         case @(bt_cancel):
+             handleCancel();
+             return true;
+      }
+
+      return true;
+   }
+
+}

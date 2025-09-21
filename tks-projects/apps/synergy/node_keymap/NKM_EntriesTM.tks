@@ -1,0 +1,471 @@
+// ----
+// ---- file   : NKM_EntriesTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 21Jul2016
+// ---- changed: 22Jul2016, 23Jul2016, 25Sep2023, 22Mar2024
+// ----
+// ----
+// ----
+
+module MNKM_EntriesTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NKM_EntriesFloatParamDialog : FloatingLayer {
+   NKM_EntriesTM *tm;
+   FloatParam *fp;
+
+   public method showFP(FloatParam _fp, int _posX, int _posY, int _sx, int _sy) {
+      removeChildHierarchy();
+      fp <= _fp;
+      addLayer(_fp, Layout.CENTER);
+      _fp.setRequiredSize2f(_sx, _sy);
+      setRequiredSize2f(_sx, _sy);
+      showAtXY(_posX, _posY);
+      UI.SetMouseFocus(_fp);
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public virtual handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer) : boolean {
+      if(0 == _ev.current_state)
+      {
+         hide();
+         trace "xxx FPDialog: hide";
+         UI.SetKeyboardFocus(tm.table_view);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(@(ap) == @(fp))
+      {
+         tm.handleFloatParamEdited(fp);
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class NKM_EntriesTM : TableModel, MIDIMapDefs {
+
+   define int COL_ID               = 0;
+   define int COL_NAME             = 1;
+   define int COL_DEV              = 2;
+   define int COL_CH               = 3;
+   define int COL_MATCH_NOTE       = 4;
+   define int COL_MATCH_NOTE_MODE  = 5;
+   define int COL_VELMIN           = 6;
+   define int COL_VELMAX           = 7;
+   define int COL_SEND_NOTE        = 8;
+   define int COL_SEND_NOTE_MODE   = 9;
+   define int COL_SEND_CTL         = 10;
+   define int COL_NUM              = 11;
+
+   NodeKeymapEditor *editor;
+   PointerArray *entries;  // reference to NodeKeymapPattern.entries
+
+   protected FloatParam fp_velmin_edit;
+   protected FloatParam fp_velmax_edit;
+
+   protected NKM_EntriesFloatParamDialog fp_dialog;
+   protected int fp_dialog_row;
+
+
+   public virtual getNumColumns() : int {
+      return COL_NUM;
+   }
+
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id", "Name", "Dst Device", "Ch.", "Match Note", "Match Mode", "Vel.Min", "Vel.Max", "Send Note", "Send Mode", "Send Ctl"][_col];
+   }
+
+   public virtual getNumRows() : int {
+      if(null != entries)
+         return entries.numElements;
+      else
+         return 0;
+   }
+
+   public virtual getCellCaption(int _col, _row) : String {
+      if(null != entries)
+      {
+         NodeKeymapEntry entry <= entries.get(_row);
+
+         switch(_col)
+         {
+            case COL_ID:
+               return (_row + 1);
+
+            case COL_NAME:
+               return entry.name;
+
+            case COL_DEV:
+               return entry.getDevName();
+
+            case COL_CH:
+               return entry.getMidiChString();
+
+            case COL_MATCH_NOTE:
+               return entry.getMatchNoteName();
+
+            case COL_MATCH_NOTE_MODE:
+               return entry.getMatchNoteModeName();
+
+            case COL_VELMIN:
+               return entry.velocity_min;
+
+            case COL_VELMAX:
+               return entry.velocity_max;
+
+            case COL_SEND_NOTE:
+               return entry.getSendNoteName();
+
+            case COL_SEND_NOTE_MODE:
+               return entry.getSendNoteModeName();
+
+            case COL_SEND_CTL:
+               return entry.getSendCtlString();
+         }
+      }
+   }
+
+   protected method initFloatParam(FloatParam _fp) {
+      _fp.initFloatParam();
+      _fp.setStepFine(8);
+      _fp.setStepCoarse(1);
+      _fp.setMinMaxValues(0, 127); // entry dependent
+      _fp.setPrecision(0);
+      _fp.setInnerPadTop(4.0f);
+      _fp.setInnerPadLeft(1.0f);
+      _fp.setPositionX(0.0f);
+      _fp.setEnableBorders(false);
+      _fp.setEnableTableMode(true);
+      _fp.b_skip_kbdfocus = true; // (todo) not working, need setkeyboardfocus hack
+      _fp.setFontByName("big8");
+   }
+
+   public virtual initTableModel() {
+
+      initFloatParam(fp_velmin_edit);
+      initFloatParam(fp_velmax_edit);
+
+      fp_dialog <= new NKM_EntriesFloatParamDialog;
+      fp_dialog.tm <= this;
+      fp_dialog_row = -1;
+
+      TableModel::initTableModel();
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 24;
+
+         case COL_NAME:
+            return 80;
+
+         case COL_DEV:
+            return 100;
+
+         case COL_CH:
+            return 24;
+
+         case COL_MATCH_NOTE:
+            return 60;
+
+         case COL_MATCH_NOTE_MODE:
+            return 60;
+
+         case COL_VELMIN:
+            return 50;
+
+         case COL_VELMAX:
+            return 50;
+
+         case COL_SEND_NOTE:
+            return 55;
+
+         case COL_SEND_NOTE_MODE:
+            return 60;
+
+         case COL_SEND_CTL:
+            return 92;
+      }
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 24;
+
+         case COL_NAME:
+            return 150;
+
+         case COL_DEV:
+            return 600;
+
+         case COL_CH:
+            return 24;
+
+         case COL_MATCH_NOTE:
+            return 60;
+
+         case COL_MATCH_NOTE_MODE:
+            return 60;
+
+         case COL_VELMIN:
+            return 50;
+
+         case COL_VELMAX:
+            return 50;
+
+         case COL_SEND_NOTE:
+            return 55;
+
+         case COL_SEND_NOTE_MODE:
+            return 60;
+
+         case COL_SEND_CTL:
+            return 92;
+      }
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+
+      // // lb.setFontByName("big8");
+      // // lb.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+
+      lb.setBackgroundTint(0);
+
+      if(null != entries)
+      {
+         NodeKeymapEntry entry <= entries.get(_row);
+
+         if(entry.match_note_mode == NodeKeymapEntry.NOTE_OFF)
+         {
+            lb.setBackgroundTint(#30cf7f00);
+         }
+
+         // // if(entry.b_input)
+         // // {
+         // //    if(null == (entry.mm_event.dev))
+         // //    {
+         // //       lb.setBackgroundTint(#50af7f00);
+         // //    }
+         // //    else
+         // //    {
+         // //       lb.setBackgroundTint(#5000af2f);
+         // //    }
+         // // }
+         // // else
+         // // {
+         // //    int t32 = lb.getTint();
+
+         // //    if(null == (entry.mm_event.dev))
+         // //    {
+         // //       t32 = UI.TintColor32(t32, #405f0000);
+         // //    }
+         // //    else if(!entry.b_edited)
+         // //    {
+         // //       t32 = UI.TintColor32(t32, #10000000);
+         // //    }
+
+         // //    lb.setBackgroundTint(t32);
+         // // }
+
+
+         // // if(_row == cursor_index)
+         // // {
+         // //    if(COL_VELMIN == _col)
+         // //    {
+         // //       fp_velmin_edit.setValue(entry.velocity_min);
+         // //    }
+
+         // //    if(COL_VELMAX == _col)
+         // //    {
+         // //       fp_velmax_edit.setValue(entry.velocity_max);
+         // //    }
+         // // }
+
+         if(_col == COL_SEND_CTL)
+            lb.setFontByName("big7");//"fixed 13");//UIConstants.DEFAULT_FONT_NAME_TEXTFIELD); // fixed 11
+         else
+            lb.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      }
+
+      return lb;
+   }
+
+   protected method showFPDialog(FloatParam _fp, MouseEvent _ev, int _col, int _row) {
+
+      trace "xxx showFPDialog: dialog_row="+fp_dialog_row+" new row="+_row;
+
+      if(_row != fp_dialog_row)
+      {
+         fp_dialog.hide();
+         fp_dialog_row = _row;
+      }
+
+      if(!fp_dialog.isFloatingLayerVisible())
+      {
+         // trace "xxx fp_dialog.showFP()";
+         Point2f p;
+         calcAbsCellPosition(_col, _row, p);
+
+         Point2f s;
+         getCellSize(_col, _row, s);
+
+         fp_dialog.showFP(_fp, p.x, p.y, s.x, s.y);
+
+         _fp.onMouse(_ev);
+
+         UI.b_try_drag = true; // xxx hack
+         UI.drag_layer_candidate <= _fp;
+      }
+   }
+
+   // // protected method hideFPDialog() {
+   // //    if(!fp_dialog.isFloatingLayerVisible())
+   // //    {
+   // //       fp_dialog.hide();
+   // //    }
+   // // }
+
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+      boolean bChanged;
+      boolean bOldState;
+
+      // if(null != entries)
+      // {
+      //    NodeKeymapEntry entry <= entries.get(_row);
+
+      //    if(null != entry)
+      //    {
+      //       if(COL_VELMIN == _col)
+      //       {
+      //          // trace "xxx showFPDialog min";
+      //          if(_ev.isAnyButtonDown())////(0 != _ev.current_state) && (0 != _ev.changed_state))
+      //          {
+      //             showFPDialog(fp_velmin_edit, _ev, _col, _row);
+      //             return true;
+      //          }
+      //       }
+      //       else if(COL_VELMAX == _col)
+      //       {
+      //          // trace "xxx showFPDialog min";
+      //          if(_ev.isAnyButtonDown())////(0 != _ev.current_state) && (0 != _ev.changed_state))
+      //          {
+      //             showFPDialog(fp_velmax_edit, _ev, _col, _row);
+      //             return true;
+      //          }
+      //       }
+      //    }
+      // }
+
+      return false;
+   }
+
+   public method handleFloatParamEdited(FloatParam _fp) {
+
+      switch(@(_fp))
+      {
+         case @(fp_velmin_edit):
+            // editor.fp_min.setValue(_fp.getFloatValue());
+            // editor.handleMinChanged();
+            break;
+
+         case @(fp_velmax_edit):
+            // editor.fp_max.setValue(_fp.getFloatValue());
+            // editor.handleMaxChanged();
+            break;
+      }
+   }
+
+
+
+   public virtual getCellEditor(int _col, int _row) : TableCellEditor {
+
+      NodeKeymapEntry entry <= entries.get(_row);
+
+      if(null != entry)
+      {
+         TableCellEditorString *tcestr;
+
+         switch(_col)
+         {
+            case COL_NAME:
+               tcestr <= new TableCellEditorString;
+               tcestr.initStringEditor(entry.name);
+               tcestr.setMaxCols(32);
+               return deref tcestr;
+         }
+      }
+   }
+
+   public virtual handleCellEditing(TableCellEditor _tce) {
+      switch(_tce.table_col)
+      {
+         case COL_NAME:
+            handleCellEdited(_tce);
+            break;
+      }
+   }
+
+   public virtual handleCellEdited(TableCellEditor _tce) {
+
+      NodeKeymapEntry entry <= entries.get(_tce.table_row);
+
+      if(null != entry)
+      {
+         TableCellEditorString *tcestr;
+
+         switch(_tce.table_col)
+         {
+            case COL_NAME:
+               tcestr <= _tce;
+               String newName <= tcestr.getText().trim();
+
+               if(newName != entry.name)
+               {
+                  entry.name = newName;
+                  entry.b_auto_name = false;
+
+                  tableModelChanged();
+               }
+               break;
+         }
+      }
+   }
+
+}

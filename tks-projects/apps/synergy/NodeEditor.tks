@@ -1,0 +1,333 @@
+// ----
+// ---- file   : NodeEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 05Sep2014, 06Sep2014, 07Sep2014, 09Sep2014, 14Sep2014, 16Sep2014, 20Sep2014
+// ----          26Jan2015, 30Jan2015, 22Feb2015, 27Feb2015, 26Jul2015, 12Oct2015, 24Oct2015
+// ----          15Oct2016, 19Jan2017, 20Jan2017, 22Jan2017, 23Jan2017, 09Feb2017, 18Mar2017
+// ----          02Sep2017, 13Oct2017, 27May2018, 11Jan2019, 10Sep2019, 31Oct2019, 26Oct2020
+// ----          29Jan2021, 30Dec2021, 25Jan2025
+// ----
+// ----
+// ----
+
+module MNodeEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeEditor extends MIDIMapContext, MMTListener, XMLForm, CmdProvider {
+
+   define String EV_REPLAYTICK;
+   define String EV_PLAYPAT;      // play pattern queued / changed
+   define String EV_EDITPAT;      // edit pattern changed (PageNode)
+
+   boolean b_layout_done;
+   static boolean b_layout_lock;  // to prevent excessive re-layouting when node is shown
+
+   protected ComboBox *cm_node_class_show_in;
+
+   // Hack to let node select buttons keep focus after node has been selected via mouse
+   public static boolean b_lock_kbdfocus;
+
+   protected AutoDeviceForm *f_autodev;
+
+   protected boolean b_update_bidirectional_controls;
+   protected int update_bidirectional_controls_ticknr;
+
+
+   // <init.png>
+   public abstract init() : boolean {
+   }
+
+   // <ui.png>
+   public virtual layoutHierarchy(local boolean _bInvalidateSizeCaches, local boolean _bLayoutFinal) {
+      if(b_layout_lock)
+      {
+         return;
+      }
+
+      if(b_layout_done)
+      {
+         return;
+      }
+      else
+      {
+         // trace "xxx NodeEditor::layoutHierarchy bInvalidateSizeCaches="+_bInvalidateSizeCaches+" bLayoutFinal="+_bLayoutFinal;
+         // Utils.Backtrace();
+
+         int ms = milliSeconds();
+
+         XMLForm::layoutHierarchy(_bInvalidateSizeCaches, _bLayoutFinal);
+
+         if(_bLayoutFinal)
+         {
+            // // b_layout_done = UI.b_allow_layout_cache;  // moved to pageLeave()
+
+            // // // trace "xxx NodeEditor::layoutHierarchy: (final) size_x="+getSizeX();
+            // // // showNodePost();
+         }
+
+         // trace "xxx NodeEditor::layoutHierarchy took "+(milliSeconds()-ms)+" ms";
+      }
+   }
+
+   // <ui_show.png>
+   public abstract method showNode(Node _node) {
+   }
+
+   // <ui_show.png>
+   public method showNodePost() {
+      // Called everytime node changes (even when page does not)
+      //  (note) layout is still undetermined (sizes are (0;0))
+   }
+
+   // <ui_show.png>
+   public method showNodePostPage() {
+      // Called everytime the node editor page is shown (_after_ the page is shown)
+      //  (note) layout is done at this point
+      //  (note) editors usually implement showNodePost() to configure comboboxes etc _before_ layout
+      refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public method isNodeEditorLocked() : boolean {
+      return false;
+   }
+
+   // <ui_hide.png>
+   public abstract method leaveNode() {
+      // (note) editing may continue, do not set node to null
+   }
+
+   // <ui_hide.png>
+   public abstract unsetNode() {
+      // just set node to null. called when pipemap is shown
+   }
+
+   // <ui_focus.png>
+   public method refocusDefault() {
+   }
+
+   // <midi_push.png>
+   public method handlePushToggleSize() : boolean {
+   }
+
+   // <method_select.png>
+   public method selectPatternByIdx(int _idx) {
+   }
+
+   // <method_select.png>
+   public method selectPatternByUsedIdx(int _idx) {
+   }
+
+   // <ui_kbd.png>
+   public method trySelectPatternByUsedIdx(Key _k) : boolean {
+      if(_k.modShiftOnly())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_KP1:
+               selectPatternByUsedIdx(0);
+               return true;
+
+            case VKEY_KP2:
+               selectPatternByUsedIdx(1);
+               return true;
+
+            case VKEY_KP3:
+               selectPatternByUsedIdx(2);
+               return true;
+
+            case VKEY_KP4:
+               selectPatternByUsedIdx(3);
+               return true;
+
+            case VKEY_KP5:
+               selectPatternByUsedIdx(4);
+               return true;
+
+            case VKEY_KP6:
+               selectPatternByUsedIdx(5);
+               return true;
+
+            case VKEY_KP7:
+               selectPatternByUsedIdx(6);
+               return true;
+
+            case VKEY_KP8:
+               selectPatternByUsedIdx(7);
+               return true;
+
+            case VKEY_KP9:
+               selectPatternByUsedIdx(8);
+               return true;
+
+            case VKEY_KP0:
+               selectPatternByUsedIdx(-1);
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_update.png>
+   public method updateNodeClassShowIn(Node _node) {
+      StringArray options;
+      options = ["*"];
+      _node.findArrangerGIDsBeforeThis(options);
+      cm_node_class_show_in.setOptions(options);
+
+      int showInGID = _node.getNodeClassShowInGID();
+
+      if(-1 != showInGID)
+      {
+         String *s;
+         int optionIdx = 0;
+         boolean bFound = false;
+
+         foreach s in options
+         {
+            int optionGID = int(s.substring(0, s.indexOfChar(':', 0)));
+
+            if(optionGID == showInGID)
+            {
+               cm_node_class_show_in.setSelectedOption(optionIdx);
+               bFound = true;
+               break;
+            }
+
+            optionIdx++;
+         }
+
+         if(!bFound)
+         {
+            cm_node_class_show_in.setInvalidOptionName("<gid "+showInGID+" n/a>");
+            cm_node_class_show_in.setSelectedOption(-1);
+         }
+      }
+      else
+      {
+         cm_node_class_show_in.setSelectedOption(0);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleNodeClassShowInChanged(Node _node) {
+      String optionName <= cm_node_class_show_in.getSelectedOptionName();
+
+      if("*" != optionName)
+      {
+         int gid = int(optionName.substring(0, optionName.indexOfChar(':', 0)));
+         _node.setNodeClassShowInGID(gid);
+         Global.Print("Show node in arranger GID="+gid);
+      }
+      else
+      {
+         _node.setNodeClassShowInGID(-1);
+         Global.Print("Show node in all arrangers");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePatternFree2() {
+      // After dialog (see Dialog_DeletePattern)
+   }
+
+   // <replay.png>
+   public method handleReplayTimer() {
+      // Periodic callback (~30 times per sec). Called from UI thread via PageNode::pageHandleReplayTimer().
+   }
+
+   // <replay.png>
+   public method handleReplayTick() {
+      // called from replay thread
+   }
+
+   // <ui_timer.png>
+   public method handleReplayTickUI() {
+      // called from UI thread
+   }
+
+   // <replay.png>
+   public method handleStartPlaying() {
+      // called from replay thread
+   }
+
+   // <replay.png>
+   public method handleStopPlaying(boolean _bAllowBookmark) {
+      // called from replay thread
+   }
+
+   // <ui_handle.png>
+   public method handleSongPosSelected() {
+      // called from UI thread while =replay= is locked
+   }
+
+   // <ui_handle.png>
+   public method handlePlayPatChanged() {
+      // called when EV_PLAYPAT is received
+   }
+
+   // <ui_handle.png>
+   public method evHandleRedrawPattern() {
+      // called when EV_REDRAWPATTERN is received
+   }
+
+   // <ui_handle.png>
+   public method evHandleScrollDownPattern() {
+      // called when EV_SCROLLDOWNPATTERN is received
+   }
+
+   // <ui_handle.png>
+   public method evHandleRecordMidiEndSchedule() {
+      // called when EV_PV_TARECORDMIDIEND_SCHEDULE is received
+   }
+
+   // <midi_mmc.png>
+   public method getNodeClassMMC() : MIDIMapContext {
+      return null;
+   }
+
+   // // // <midi_mmc.png>
+   // // public method addMMTFocusLayers(PointerArray _layers) {
+   // // }
+
+   // <ui_handle.png>
+   public method nodeHandleEditPatternChanged() {
+      // Called by global prgchg dialog
+   }
+
+   // <ui_update.png>
+   public method queueUpdateBidirectionalControls() {
+      b_update_bidirectional_controls = true;
+      update_bidirectional_controls_ticknr = 0;
+   }
+
+   // <ui_handle.png>
+   protected method handleQueuedBidirectionalControls() {
+      // called by handleReplayTimer()  (e.g. NodeModularEditor, NodeTrackerEditor)
+      if(0 == (++update_bidirectional_controls_ticknr & 7))
+      {
+         if(b_update_bidirectional_controls || root_form.checkResetUpdateBidirectionalControls())
+         {
+            b_update_bidirectional_controls = false;
+            updateBidirectionalControls();
+         }
+      }
+   }
+
+   // <ui_update.png>
+   public method updateBidirectionalControls() {
+      // implemented by derived classes (e.g. NodeModularEditor, NodeTrackerEditor)
+   }
+
+}

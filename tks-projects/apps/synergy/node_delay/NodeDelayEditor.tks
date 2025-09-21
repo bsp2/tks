@@ -1,0 +1,555 @@
+// ----
+// ---- file   : NodeDelayEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 03Mar2017, 04Mar2017, 18Mar2017, 06May2017, 16Jun2017, 12Oct2017, 05Apr2018
+// ----          27Nov2018, 29Aug2019, 20Sep2019, 03Oct2019, 05Oct2019, 08Nov2019, 26Oct2020
+// ----          13May2021, 19Jun2021, 23Jun2023, 11Sep2025, 13Sep2025
+// ----
+// ----
+// ----
+
+module MNodeDelayEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeDelayMonitor extends Panel {
+   public NodeDelay *parent_dly;
+
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      float sx = getSizeX();
+      float sy = getSizeY();
+
+      UIRenderer.DrawDefaultBackground(0, 0, sx, sy);
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, sx, sy);
+
+      int maxTicks = current_song.ppq * 8;
+
+      UIRenderer.SetLineWidth(1.0f);
+      UIRenderer.EnableBlending();
+      UIRenderer.BeginLinesAA(maxTicks*2);
+      float cx = 2;
+
+      float cxStep = (sx - 4.0) / maxTicks;
+      IntArray frHistNumEv <= parent_dly.ui_frame_history_numevents;
+      IntArray frHistNumEvNoteOn <= parent_dly.ui_frame_history_numevents_noteon;
+      int color = -1;
+
+      int c32Other = lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG, #20000000);
+      int c32Note = lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG, #e8006700);
+
+      int tickNr = 0;
+      int curFrameIdx = parent_dly.cur_frame_idx;
+
+      while(tickNr < maxTicks)
+      {
+         int frameIdx = (curFrameIdx - (maxTicks / 2) + tickNr);
+         frameIdx = mathWrapi(frameIdx, 0, NodeDelay.MAX_FRAMES);
+
+         int numEv = frHistNumEv.get(frameIdx) > 0;
+
+         if(numEv > 0)
+         {
+            numEv = frHistNumEvNoteOn.get(frameIdx) > 0;
+
+            if(numEv > 0)
+            {
+               if(1 != color)
+               {
+                  UIRenderer.End();
+                  UIRenderer.SetLineWidth(2.0f);
+                  UIRenderer.SetColorARGB(c32Note);
+                  UIRenderer.BeginLinesAA(maxTicks*2);
+                  color = 1;
+               }
+            }
+            else
+            {
+               if(2 != color)
+               {
+                  UIRenderer.End();
+                  UIRenderer.SetLineWidth(1.0f);
+                  UIRenderer.SetColorARGB(c32Other);
+                  UIRenderer.BeginLinesAA(maxTicks*2);
+                  color = 2;
+               }
+            }
+
+            // // trace "xxx cx="+cx+" color="+color+" cxStep="+cxStep;
+
+            UIRenderer.Vertex2f(cx, 2);
+            UIRenderer.Vertex2f(cx, sy - 2);
+
+            if(1 == color)
+            {
+               loop(1)
+               {
+                  cx += cxStep;
+                  tickNr++;
+               }
+            }
+         }
+
+         cx += cxStep;
+         tickNr++;
+      }
+
+      UIRenderer.End();
+
+      // Draw center (current play position)
+      UIRenderer.SetColorARGB(#ff000000);
+      UIRenderer.SetLineWidth(1.0f);
+      if(UIRenderer.BeginLinesAA(2))
+      {
+         UIRenderer.Vertex2f(cx*0.5, 2);
+         UIRenderer.Vertex2f(cx*0.5, sy-2);
+         UIRenderer.End();
+      }
+
+      UIRenderer.DisableBlending();
+   }
+}
+
+
+// <class.png>
+class NodeDelayEditor extends NodeEditor, ActionProvider, MIDIMapDefs {
+
+   public NodeDelay *dly;
+
+   define String TA_UPDATE;
+   protected TimerAction *ta_update;
+
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected CheckBox *cb_play_flt_enable;
+   protected ComboBox *cm_play_flt_dev;
+   protected ComboBox *cm_play_flt_ch;
+
+   protected FloatParam  *fp_base_delay_ticks;
+   protected CheckBox    *cb_base_delay_16ths;
+   protected LayerSwitch *ls_base_delay;
+   protected FloatParam  *fp_base_delay_16ths;
+
+   protected ComboBox   *cm_play_hold_mode;
+   protected FloatParam *fp_play_hold_ticks;
+
+   protected FloatParam  *fp_swing;
+   protected FloatParam  *fp_swing_note_dur;
+
+   protected NodeDelayMonitor *mon;
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeDelayEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            f_autodev.initAutoDeviceForm();
+
+            fp_swing.setPresetOptions([0.5, 0.54, 0.56, 0.58, 0.60, 0.62, 0.64, 0.66],
+                                      ["50%", "54%", "56%", "58%", "60%", "62%", "64%", "66%"]
+                                      );
+
+            fp_swing_note_dur.setPresetOptions([0.25, 0.5, 0.666, 0.75, 1.0, 2.0],
+                                               ["64th", "32nd", "24th", "21st", "16th", "8th"]
+                                      );
+
+            initMMC();
+            initTimers();
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_update  <= TimerAction.New(TA_UPDATE, this, 1000.0/20);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeDelayEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      // // trace "xxx NodeDelayEditor::mmcHandleEvent";
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       cm_node_class,
+                       cb_node_class_show,
+                       cm_node_class_show_in,
+
+                       cm_play_flt_dev,
+                       cb_play_flt_enable,
+                       cm_play_flt_ch
+                     ]
+                    );
+
+      if(dly.b_base_delay_16ths)
+      {
+         layers.add(fp_base_delay_16ths);
+      }
+      else
+      {
+         layers.add(fp_base_delay_ticks);
+      }
+
+      layers.add(cb_base_delay_16ths);
+
+      layers.joinRR(layers,
+                    [
+                       cm_play_hold_mode,
+                       fp_play_hold_ticks,
+
+                       fp_swing,
+                       fp_swing_note_dur
+                     ]
+                    );
+
+      f_autodev.addTabCycleOverrides(layers);
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeDelay _dly) {
+      dly <= _dly;
+
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(dly);
+
+      boolean bEnable;
+
+      cm_play_flt_dev.setOptions(devAll);
+      cm_play_flt_dev.setOptionBGColors(bgcolorsAll);
+
+      bEnable = dly.getEnableInputFilter();
+      cb_play_flt_enable.setSelected(bEnable);
+      cm_play_flt_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(dly.getInputFilterDev()) + 1);
+      cm_play_flt_dev.setEditable(bEnable);
+      cm_play_flt_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(dly.getInputFilterDev(), "*"/*firstOptionOrNull*/));
+      cm_play_flt_ch.setSelectedOption(dly.getInputFilterCh() + 1);
+      cm_play_flt_ch.setEditable(bEnable);
+
+      fp_base_delay_ticks.setValue(dly.base_delay_ticks);
+      fp_base_delay_16ths.setValue(dly.base_delay_16ths);
+      cb_base_delay_16ths.setSelected(dly.b_base_delay_16ths);
+      ls_base_delay.switchToLayerNr(true == dly.b_base_delay_16ths);
+
+      cm_play_hold_mode.setSelectedOption(dly.hold_mode);
+      fp_play_hold_ticks.setEditable(NodeDelay.HOLD_TICKS == dly.hold_mode);
+      fp_play_hold_ticks.setValue(dly.hold_ticks);
+      fp_play_hold_ticks.redraw();
+
+      fp_swing.setValue(dly.swing_amt * 0.5 + 0.5);
+      fp_swing_note_dur.setValue(dly.swing_note_dur);
+
+      mon.parent_dly <= dly;
+
+      ta_update.reschedule();
+
+      f_autodev.showNode(dly, devAll, bgcolorsAll);
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+      // // trace "xxx NodeDelay::showNodePost";
+      refocusDefault();
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      if(!NodeEditor.b_lock_kbdfocus)
+         f_autodev.refocusDefault();
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+      f_autodev.leaveNode();
+      ta_update.cancel();
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      f_autodev.unsetNode();
+      mon.parent_dly <= null;
+      dly <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(dly.getNodeClassId());
+      cb_node_class_show.setSelected(dly.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      dly.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+dly.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      dly.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(dly.getEnableNodeClassShow()));
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayInputFilterEnableChanged() {
+      boolean bEnable = cb_play_flt_enable.isSelected();
+      dly.setEnableInputFilter(bEnable);
+      cm_play_flt_dev.setEditable(bEnable);
+      cm_play_flt_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(dly.getInputFilterDev()) + 1); // may now be default dev
+      cm_play_flt_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(dly.getInputFilterDev(), "*"/*firstOptionOrNull*/));
+      cm_play_flt_ch.setEditable(bEnable);
+      Global.Print("Input filter is "+Utils.GetEnableString(dly.getEnableInputFilter()));
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayInputFilterDev() {
+      dly.setInputFilterDev(MIDI.SortedToUnsortedDevIdx(cm_play_flt_dev.getSelectedOption() - 1));
+
+      cm_play_flt_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(dly.getInputFilterDev(), "*"/*firstOptionOrNull*/));
+
+      Global.Print("Input filter device is "+cm_play_flt_dev.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayInputFilterChChanged() {
+      dly.setInputFilterCh(cm_play_flt_ch.getSelectedOption() - 1);
+
+      Global.Print("Input filter channel is "+cm_play_flt_ch.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handleBaseDelayTicksChanged() {
+      dly.setBaseDelayTicks(fp_base_delay_ticks.getFloatValue());
+
+      Global.Print("Base Delay Ticks is "+dly.base_delay_ticks+" ("+(dly.base_delay_ticks/(current_song.ppq/4.0f))+" 16th)");
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableBaseDelay16thsChanged() {
+      dly.setEnableBaseDelay16ths(cb_base_delay_16ths.isSelected());
+
+      ls_base_delay.switchToLayerNr(true == dly.b_base_delay_16ths);
+      ls_base_delay.redraw();
+
+      Global.Print("Base Delay 16ths is "+Utils.GetEnableString(dly.b_base_delay_16ths));
+   }
+
+   // <ui_handle.png>
+   protected method handleBaseDelay16thsChanged() {
+      dly.setBaseDelay16ths(fp_base_delay_16ths.getFloatValue());
+
+      Global.Print("Base Delay 16ths is "+dly.base_delay_16ths+" ("+(dly.base_delay_16ths*(current_song.ppq/4.0f))+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handleHoldModeChanged() {
+      dly.setHoldMode(cm_play_hold_mode.getSelectedOption());
+
+      fp_play_hold_ticks.setEditable(NodeDelay.HOLD_TICKS == dly.hold_mode);
+      fp_play_hold_ticks.redraw();
+
+      Global.Print("Hold Mode is "+cm_play_hold_mode.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleHoldTicksChanged() {
+      dly.setHoldTicks(fp_play_hold_ticks.getFloatValue());
+
+      Global.Print("Hold Ticks is "+dly.hold_ticks+" ("+(dly.hold_ticks/(current_song.ppq/4.0f))+" 16th)");
+   }
+
+   // <ui_handle.png>
+   protected method handleSwingAmountChanged() {
+      local Float f = fp_swing.getFloatValue();
+      dly.setSwingAmount((f-0.5) * 2.0);
+      f *= 100.0;
+
+      Global.Print("Swing Amount is "+f.printf("%3.2f%%"));
+   }
+
+   // <ui_handle.png>
+   protected method handleSwingNoteDurChanged() {
+      dly.setSwingNoteDuration(fp_swing_note_dur.getFloatValue());
+      int ticks = current_song.getNumTicksPer16th() * dly.swing_note_dur;
+
+      Global.Print("Swing Note Duration is "+dly.swing_note_dur+" ("+ticks+" ticks)");
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+      // ta_replay.schedule();
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+      dly.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_UPDATE == acName)
+      {
+         mon.redraw();
+         ta_update.reschedule();
+         return true;
+      }
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(dly);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+            // input filter:
+         case @(cb_play_flt_enable):
+            handlePlayInputFilterEnableChanged();
+            return true;
+
+         case @(cm_play_flt_dev):
+            handlePlayInputFilterDev();
+            return true;
+
+         case @(cm_play_flt_ch):
+            handlePlayInputFilterChChanged();
+            return true;
+
+         case @(fp_base_delay_ticks):
+            handleBaseDelayTicksChanged();
+            return true;
+
+         case @(cb_base_delay_16ths):
+            handleEnableBaseDelay16thsChanged();
+            return true;
+
+         case @(fp_base_delay_16ths):
+            handleBaseDelay16thsChanged();
+            return true;
+
+         case @(cm_play_hold_mode):
+            handleHoldModeChanged();
+            return true;
+
+         case @(fp_play_hold_ticks):
+            handleHoldTicksChanged();
+            return true;
+
+         case @(fp_swing):
+            handleSwingAmountChanged();
+            return true;
+
+         case @(fp_swing_note_dur):
+            handleSwingNoteDurChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

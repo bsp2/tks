@@ -1,0 +1,147 @@
+// ----
+// ---- file   : XFMSyntaxHighlighter.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 29Mar2025
+// ---- changed:
+// ----
+// ----
+// ----
+
+module MXFMSyntaxHighlighter;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class XFMSyntaxHighlighter : TextViewSyntaxHighlighter {
+
+   define int PAL_NONE       =  0;
+   define int PAL_OTHER      =  1;   // "'
+   define int PAL_TEXT       =  2;
+   define int PAL_STRING     =  3;   // "" (quot.flag)
+   define int PAL_COMMENT    =  4;   // <!-- -->
+   define int PAL_TAG        =  5;   // <>
+   define int PAL_ELEMENT    =  6;   // <*Button*
+   define int PAL_ASSIGN     =  7;   // =
+   define int PAL_KEY        =  8;   // key=<value>
+
+   static IntArray pal_light = [
+      0,          // PAL_NONE
+      #ff747474,  // PAL_OTHER
+      #ff444444,  // PAL_TEXT
+      #ff777777,  // PAL_STRING
+      #ffcdcdcd,  // PAL_COMMENT
+      #ff3e6da0,  // PAL_TAG
+      #ffd03f3f,  // PAL_ELEMENT
+      #ffb13f3f,  // PAL_ASSIGN
+      #ff334375,  // PAL_KEY
+                                ];
+
+   static IntArray pal_dark = [
+      0,          // PAL_NONE
+      #ff747474,  // PAL_OTHER
+      #ffc2c2c2,  // PAL_TEXT
+      #ff929292,  // PAL_STRING
+      #ff6d6d59,  // PAL_COMMENT
+      #ffd0bbbb,  // PAL_TAG
+      #fff4ffff,  // PAL_ELEMENT
+      #ffffaa99,  // PAL_ASSIGN
+      #ffc29ca3,  // PAL_KEY
+                                ];
+
+   static StringArray a_keywords_tag = [
+      "<", ">",
+                                      ];
+
+
+   // <method.png>
+   // static int dbg_count;
+   public virtual colorizeText(TextView _text) {
+      int numRows = _text.getNumRows();
+      // trace "xxx ["+(dbg_count++)+"] XFMSyntaxHighlighter::colorizeText: numRows="+numRows;
+
+      local IntArray aRanges;
+      local StringArray aTok;
+
+      IntArray pal <= UI.IsDarkOrMono() ? pal_dark : pal_light;
+
+      String *sLine;
+      IntArray *aColors;
+      int rowIdx = 0;
+      loop(numRows)
+      {
+         sLine <= _text.getVisibleRowStringByIndex(rowIdx);
+         if(null != sLine)
+         {
+            sLine.tokenizeWithRanges(" \t=~<>()[]{}*+&|^,;:", aRanges) => aTok;
+            aColors <= _text.getVisibleRowColorsByIndex(rowIdx);
+            aColors.fill(pal.get(PAL_OTHER));
+            // trace "aTok="+#(aTok);
+            // trace "aRanges="+#(aRanges);
+
+            int palIdxComment = 0;
+            boolean bVar = false;
+            boolean bParam = false;
+            // boolean bTemplate = false;
+            String sTokP <= "";
+            String sTokPP <= "";
+
+            String *sTok;
+            int tokOff = 0;
+            foreach sTok in aTok
+            {
+               int startOff = aRanges.get(tokOff + 0);
+               int numChars = aRanges.get(tokOff + 1);
+               // trace "token["+(tokOff/2)+"] sTok=\""+sTok+"\"  substr=\""+sLine.substring(startOff, numChars)+"\"";
+               int palIdx = PAL_TEXT;
+               if(sTokP == "--")
+                  palIdxComment = 0;
+               if(sTok == "!--")
+                  palIdxComment = PAL_COMMENT;
+               if(palIdxComment)
+                  palIdx = palIdxComment;
+               else if(a_keywords_tag.containsObject(sTok))
+                  palIdx = PAL_TAG;
+               else if("=" == sTok)
+               {
+                  palIdx = PAL_ASSIGN;
+
+                  if(tokOff >= 2)
+                  {
+                     int startOffKey = aRanges.get(tokOff - 2);
+                     int numCharsKey = aRanges.get(tokOff - 1);
+                     aColors.fillRegion(startOffKey, numCharsKey, pal.get(PAL_KEY));
+                  }
+               }
+               else if(sTokP == "<")
+                  palIdx = PAL_ELEMENT;
+               else if(sTok.getQuotFlag())
+                  palIdx = PAL_STRING;
+
+               aColors.fillRegion(startOff, numChars, pal.get(palIdx));
+
+               // Next token
+               tokOff += 2;
+               sTokPP <= sTokP;
+               sTokP <= sTok;
+            }
+
+            // trace "xxx line["+rowIdx+"] sLine=\""+sLine+"\"";
+            // trace "xxx line["+rowIdx+"] aColors="+aColors;
+
+            // Next visible row
+            rowIdx++;
+         }
+         else
+            break;  // beyond end of text
+      }
+   }
+
+}

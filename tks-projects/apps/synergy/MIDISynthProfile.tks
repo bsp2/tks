@@ -1,0 +1,1698 @@
+// ----
+// ---- file   : MIDISynthProfile.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2013-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 06Apr2013
+// ---- changed: 07Apr2013, 08Apr2013, 13Apr2013, 13Aug2014, 14Aug2014, 19Aug2014, 04Sep2014
+// ----          29Sep2014, 17Feb2015, 18Feb2015, 06Mar2015, 17May2015, 21Jan2016, 12Feb2016
+// ----          29Mar2016, 23Jul2016, 13Jan2017, 10Mar2017, 11Mar2017, 18Jan2019, 20Jan2019
+// ----          22Jan2019, 24Jan2019, 26Jan2019, 08Feb2019, 09Feb2019, 18Feb2019, 08Jun2019
+// ----          14Jul2019, 08Oct2019, 20Nov2019, 24Nov2019, 26Nov2019, 27Nov2019, 20Feb2020
+// ----          19Mar2020, 09May2020, 29Aug2020, 31Jan2021, 18Feb2021, 09Jul2021, 18Dec2021
+// ----          02Apr2022, 20Apr2022, 21Apr2022, 24Apr2022, 07May2022, 17Jun2022, 18Jun2022
+// ----          29Sep2022, 22Oct2022, 24Nov2022, 14Jun2023, 25Jun2023, 08Jul2023, 28Jul2023
+// ----          24Sep2023, 25Sep2023, 04Oct2023, 20Oct2023, 09Oct2024, 28Feb2025, 30Mar2025
+// ----
+// ----
+// ----
+
+module MMIDISynthProfile;
+
+use namespace st2;
+
+
+// <class.png>
+class MIDISynthProfile {
+
+   define int ENC_NONE      = 0;
+   define int ENC_8TO7      = 1;
+   define int ENC_ALPHAJUNO = 2;  // separate patch/tone sysex param messages + juno char encoding
+   define int ENC_SUB37     = 3;
+   define int ENC_PARAMS    = 4;  // send patch via single params (e.g. Novation Peak)
+
+   String midi_profile_id; // also see STX_MIDIInstrument.midi_profile_id
+
+   String profile_caption; // human-readable / UI profile name
+
+   String manufacturer;  // "Sequential", "Novation", "Elektron", "Vermona", ..
+
+   String *note_name_profile_id;  // null or ".mnn" profile id. set via "noteNameProfile" attrib
+
+   String s_tsl;  // comma-separated list of required script libraries (or "") ("tsl" attribute)
+
+   String s_data_class;  // MIDISynthProfileData derived class name
+   MIDISynthProfileData *profile_data_template; // template for per-instance/instrument profile data
+
+   String s_form_class;
+   EditMIDISynthForm *edit_form;
+   boolean b_edit_form_init_done;
+
+   NTS_EditorPlugin *trigseq_editor_plugin;
+
+   MIDISynthProfileCtlAlias *[] cc_aliases;     // MIDISynthProfileCtlAlias instances
+   MIDISynthProfileCtlAlias *[] rpn_aliases;    // MIDISynthProfileCtlAlias instances
+   MIDISynthProfileCtlAlias *[] nrpn_aliases;   // MIDISynthProfileCtlAlias instances
+   MIDISynthProfileCtlAlias *[] note_aliases;   // MIDISynthProfileCtlAlias instances
+   MIDISynthProfileCtlAlias *[] data_aliases;   // MIDISynthProfileCtlAlias instances (pseudo param for GenericSynthEdit)
+   MIDISynthProfileCtlAlias *[] widget_aliases; // custom <widget> pseudo-aliases
+   MIDISynthProfileCtlAlias *[] all_aliases;    // MIDISynthProfileCtlAlias refs
+
+   MIDISynthProfileCtlAlias *[] cc_alias_lut;   // always 128 entries, some may be null. MIDISynthProfileCtlAlias refs.
+   MIDISynthProfileCtlAlias *[] rpn_alias_lut;  // always 16384 entries, some may be null. MIDISynthProfileCtlAlias refs.
+   MIDISynthProfileCtlAlias *[] nrpn_alias_lut; // always 16384 entries, some may be null. MIDISynthProfileCtlAlias refs.
+   MIDISynthProfileCtlAlias *[] note_alias_lut; // always 128 entries, some may be null.. MIDISynthProfileCtlAlias refs.
+
+   public StringArray note_captions;
+   public StringArray cc_captions;
+   public StringArray rpn_captions;
+   public StringArray nrpn_captions;
+
+   public StringArray note_infos; // info for each caption (used for tooltips)
+   public StringArray cc_infos;
+   public StringArray rpn_infos;
+   public StringArray nrpn_infos;
+
+   IntArray rpn_to_caption_idx;
+   IntArray nrpn_to_caption_idx;
+
+   MIDISynthProfileCtlAlias pitchbend;
+
+   MIDISynthProfileCtlAlias sysrt_start;
+   MIDISynthProfileCtlAlias sysrt_stop;
+   MIDISynthProfileCtlAlias sysrt_continue;
+
+   protected boolean b_inherit;  // true=inherit default CC names
+
+   public boolean b_enable_param;  // true=enable (N)RPN parser (CC#6/38/96..101). Also see MIDIIn.setEnableParam().
+   public int     param_mode;      // 0=MSBLSB, 1=LSBMSB, 2=MSB (see MIDI_DATAENTRYMODE_xxx in MIDIIn.h)
+
+   boolean b_cc_perf_lsb;  // true=convert performance CC (mw/bc/fc/ex) to 14bit MSB+LSB when frame is emitted
+
+   public boolean b_filter_note_off_channel_pressure;
+
+   public boolean b_running_status;
+
+   public HashTable vars;
+
+   public Buffer  syx_patch_req_msg;  // F0..F7, set via "syxPatchReqMsg"
+   public Buffer  syx_patch_enc_hdr;  // patch data hdr (before encoded data). set via "syxPatchEncHdr". w/o F0
+   public int     syx_patch_enc_size; // encoded patch data size (w/o F0..F7 markers but with enc_hdr).
+   public int     syx_patch_enc_type; // see ENC_xxx. set via "syxPatchEnc"
+   public int     syx_patch_size;     // patch data size (w/o F0..F7 markers. decoded data.)
+   public Buffer *syx_patch_init;     // initial patch data, set via "syxPatchInit"
+   public int     syx_patch_name_off; //
+   public int     syx_patch_name_len; // 0=not supported
+   MIDISynthProfileCtlAlias *[] *patch_byte_to_alias_lut;  // MIDISynthProfileCtlAlias refs (may contain null elements)
+   MIDISynthProfileCtlAlias *[] *data_nr_to_alias_lut;     // indexed by alias.nr (FS1R editor)
+
+   public boolean b_14bit_as_8bit_data;  // 1=store msb/lsb as 8bit (e.g. Sequential Pro 3), 0=store as 7bit [default]
+
+   public    StringArray     all_editgroup_captions;
+   public    StringArray *[] all_editgroup_subgroup_captions;  // StringArray instances
+
+   protected String       cur_editgroup;         // blank=no editgroup
+   protected int          cur_editgroup_idx;
+   protected StringArray *cur_editsubgroups;     // reference to current all_editgroup_subgroup_captions element
+   protected String       cur_editsubgroup;      // blank=no editsubgroup
+   protected int          cur_editsubgroup_idx;  // or -1
+
+   public int def_randlock_mask;  // see defRandLockMask / randLockBit / randLockFlags (GenericSynthEdit)
+
+   public int num_midi_tunings;  // >0 if synth supports the MIDI Tuning Standard
+   public boolean b_single_note_tuning;  // 1=synth supports "single note tuning" messages
+   public int mts_program_offset;  // tuning program offset. applied during bulk upload (e.g. for Novation Peak where the first editable table is 1, not 0)
+   // public int mts_program_display_offset;  // for Sequential Pro 3 where the first selectable user table is actually table 2 (off=1)
+
+   public boolean b_multi_timbral;  // true=allow MIDI channel redirect in UI
+
+   public boolean b_use_overflow_buffers;  // true=restrict output to 48 bytes/tick when STConfig.b_midi_overflow_buffers == maybe.
+
+   public int num_out_buffers; // 0=def. see STX_MIDIOutDevice. (note) Moog Sub 37 requires this to be set to 1 (avoid lost param changes)
+
+   public boolean b_data_to_proxy_rpn;  // true=add (virtual) proxy RPN for <data> elements (Korg Radias). see "dataToProxyRPN=1" attribute and <proxyrpn> element. rpn=data syxoff
+   protected int next_proxy_rpn;
+
+
+
+   // <init.png>
+   public method initDefault() {
+      b_inherit       = true;
+      b_enable_param  = true;
+      midi_profile_id = "default";
+      profile_caption = "Default";
+      param_mode      = MIDI_DATAENTRYMODE_MSBLSB/*0*/;
+      initDefaultAliases();
+      buildLUTs();
+   }
+
+   // <method_init.png>
+   protected method initDefaultAliases() {
+      pitchbend.id      = "pitch";
+      pitchbend.caption = "Pitchbend";
+
+      sysrt_start.id          = "sysrt_start";
+      sysrt_start.caption     = "SysRT Start";
+      sysrt_start.class_type  = MIDIMapEventType.CLASS_BUTTON;
+      sysrt_start.b_repeat    = true;
+      sysrt_start.b_norelease = true;
+      sysrt_start.class_button_down_cond   = MIDIMapEventType.FLT_CNE;
+      sysrt_start.class_button_down_refval = 0;
+      // trace "xxx profile_caption="+profile_caption+" sysrt_start="+#(sysrt_start);
+
+      sysrt_stop.id          = "sysrt_stop";
+      sysrt_stop.caption     = "SysRT Stop";
+      sysrt_stop.class_type  = MIDIMapEventType.CLASS_BUTTON;
+      sysrt_stop.b_repeat    = true;
+      sysrt_stop.b_norelease = true;
+      sysrt_stop.class_button_down_cond   = MIDIMapEventType.FLT_CNE;
+      sysrt_stop.class_button_down_refval = 0;
+      // trace "xxx profile_caption="+profile_caption+" sysrt_stop="+#(sysrt_stop);
+
+      sysrt_continue.id          = "sysrt_continue";
+      sysrt_continue.caption     = "SysRT Continue";
+      sysrt_continue.class_type  = MIDIMapEventType.CLASS_BUTTON;
+      sysrt_continue.b_norelease = true;
+      sysrt_continue.b_norelease = true;
+      sysrt_continue.class_button_down_cond   = MIDIMapEventType.FLT_CNE;
+      sysrt_continue.class_button_down_refval = 0;
+      // trace "xxx profile_caption="+profile_caption+" sysrt_continue="+#(sysrt_continue);
+   }
+
+   // <method.png>
+   protected method lazyAddDefaultCCs() {
+
+      int ccIdx = 0;
+      loop(128)
+      {
+         MIDISynthProfileCtlAlias *alias;
+         boolean bFound = false;
+         foreach alias in cc_aliases
+         {
+            if(alias.nr == ccIdx)
+            {
+               bFound = true;
+               break;
+            }
+         }
+
+         if(!bFound)
+         {
+            alias <= new MIDISynthProfileCtlAlias;
+            alias.id = "cc"+ccIdx;
+            alias.type = MIDIMapDefs.TYPE_CC;
+            alias.caption = (MIDI.cc_names.get(ccIdx));
+            alias.nr = ccIdx;
+            alias.min = 0;
+            alias.max = 127;
+            alias.cel_range = NT_CEL.RANGE_0_127;
+
+            if([64,65,66,67,68,69, 120,121,122,123,124,125,126,127].contains(ccIdx))
+            {
+               alias.cel_style = NT_CEL.STYLE_HI_NIBBLE;
+               alias.cel_range = NT_CEL.RANGE_BINARY_127;
+            }
+
+            cc_aliases.add(#(deref alias));
+         }
+
+         ccIdx++;
+      }
+   }
+
+   // <method_find.png>
+   public method findGroupIdxByCaption(String _group) : int {
+      String *s;
+      int idx = 0;
+      foreach s in all_editgroup_captions
+      {
+         if(s == _group)
+            return idx;
+         idx++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findSubGroupIdxByCaption(int _groupIdx, String _subGroup) : int {
+      StringArray subGroupCaptions <= all_editgroup_subgroup_captions.get(_groupIdx);
+      if(null != subGroupCaptions)
+      {
+         String *s;
+         int idx = 0;
+         foreach s in subGroupCaptions
+         {
+            if(s == _subGroup)
+               return idx;
+            idx++;
+         }
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findDataAliasesByGroupIds(int _groupIdx, int _subGroupIdx, PointerArray _ret) {
+      _ret.empty();
+
+      MIDISynthProfileCtlAlias *alias;
+      foreach alias in data_aliases
+      {
+         if( (alias.editgroup_idx    == _groupIdx   ) &&
+             (alias.editsubgroup_idx == _subGroupIdx)
+             )
+         {
+            _ret.add(alias);
+         }
+      }
+   }
+
+   // <method_find.png>
+   public method findDataAliasesByGroupCaptions(String _group, String _subGroup, PointerArray _ret) {
+      _ret.empty();
+
+      int groupIdx = findGroupIdxByCaption(_group);
+      if(groupIdx >= 0)
+      {
+         int subGroupIdx = findSubGroupIdxByCaption(groupIdx, _subGroup);
+         if(subGroupIdx >= 0)
+         {
+            findDataAliasesByGroupIds(groupIdx, subGroupIdx, _ret);
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getSubGroupCaptionsByGroupIdx(int _groupIdx) : StringArray {
+      return all_editgroup_subgroup_captions.get(_groupIdx);
+   }
+
+   // <method_get.png>
+   public method getCCAliasByCtl(int _ctlNr) : MIDISynthProfileCtlAlias {
+      return cc_alias_lut.get(_ctlNr);
+   }
+
+   // <method_get.png>
+   public method getCCAliasByCaptionPattern(String _pattern) : MIDISynthProfileCtlAlias {
+      // (note) called by STX_MIDIDevice.getCCByNamePattern()
+      MIDISynthProfileCtlAlias *alias;
+
+      // trace "xxx getCCAliasByCaptionPattern(pattern="+_pattern+") profile="+midi_profile_id+" #cc_aliases="+cc_aliases.numElements;
+      foreach alias in cc_aliases
+      {
+         // trace "xxx getCCAliasByCaptionPattern(pattern="+_pattern+"): alias=\""+(alias.caption.toLower());
+         if((alias.caption.toLower()).patternMatch(_pattern))
+            return alias;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getInheritedCCNrByCaptionPattern(String _pattern) : int {
+      // (note) called by STX_MIDIDevice.getCCByNamePattern() (fallback when alias was not found)
+      if(b_inherit)
+      {
+         String *ccName;
+         int ccNr = 0;
+         foreach ccName in MIDI.cc_names
+         {
+            if(ccName.toLower().patternMatch(_pattern))
+               return ccNr;
+            ccNr++;
+         }
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getRPNAliasByNr(int _rpn) : MIDISynthProfileCtlAlias {
+      return rpn_alias_lut.get(_rpn);
+   }
+
+   // <method_get.png>
+   public method getRPNAliasByCaptionPattern(String _pattern) : MIDISynthProfileCtlAlias {
+      MIDISynthProfileCtlAlias *alias;
+      foreach alias in rpn_aliases
+      {
+         if((alias.caption.toLower()).patternMatch(_pattern))
+            return alias;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNRPNAliasByCaptionPattern(String _pattern) : MIDISynthProfileCtlAlias {
+      MIDISynthProfileCtlAlias *alias;
+      foreach alias in nrpn_aliases
+      {
+         if((alias.caption.toLower()).patternMatch(_pattern))
+            return alias;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNRPNAliasByNr(int _nrpn) : MIDISynthProfileCtlAlias {
+      return nrpn_alias_lut.get(_nrpn);
+   }
+
+   // <method_get.png>
+   public method getNoteAliasByNr(int _noteNr) : MIDISynthProfileCtlAlias {
+      return note_alias_lut.get(_noteNr);
+   }
+
+   // <method_get.png>
+   public method getCCCaption(int _ccNr) : String {
+      MIDISynthProfileCtlAlias alias <= cc_alias_lut.get(_ccNr);
+
+      Integer io = _ccNr;
+
+      // trace "xxx getCCaption: ccNr="+_ccNr+" alias="+#(alias)+" b_inherit="+b_inherit;
+      if(null != alias)
+      {
+         return io.printf("%03d: ") + alias.caption;
+      }
+      else if(b_inherit)
+      {
+         return MIDI.cc_names.get(_ccNr);
+      }
+      else
+      {
+         return io.printf("%03d: -");
+      }
+   }
+
+   // <method_get.png>
+   public method getCCInfo(int _ccNr) : String {
+      MIDISynthProfileCtlAlias alias <= cc_alias_lut.get(_ccNr);
+
+      Integer io = _ccNr;
+
+      if(null != alias)
+      {
+         if(!alias.info.isBlank())
+         {
+            return io.printf("%03d: ") + alias.info;
+         }
+         else
+         {
+            return getCCCaption(_ccNr);
+         }
+      }
+      else if(b_inherit)
+      {
+         return MIDI.cc_names.get(_ccNr);
+      }
+      else
+      {
+         return io.printf("%03d: -");
+      }
+   }
+
+   // <method_get.png>
+   public method getRPNCaption(int _rpn) : String {
+      MIDISynthProfileCtlAlias alias <= rpn_alias_lut.get(_rpn);
+
+      Integer io = _rpn;
+
+      if(null != alias)
+      {
+         return io.printf("%05d: ") + alias.caption;
+      }
+      else
+      {
+         return io.printf("%05d");
+      }
+   }
+
+   // <method_get.png>
+   public method getRPNInfo(int _rpn) : String {
+      MIDISynthProfileCtlAlias alias <= rpn_alias_lut.get(_rpn);
+
+      Integer io = _rpn;
+
+      if(null != alias)
+      {
+         if(!alias.info.isBlank())
+         {
+            return io.printf("%05d: ") + alias.info;
+         }
+         else
+         {
+            return getRPNCaption(_rpn);
+         }
+      }
+      else
+      {
+         return io.printf("%05d");
+      }
+   }
+
+   // <method_get.png>
+   public method getNRPNCaption(int _nrpn) : String {
+      MIDISynthProfileCtlAlias alias <= nrpn_alias_lut.get(_nrpn);
+
+      Integer io = _nrpn;
+
+      if(null != alias)
+      {
+         return io.printf("%05d: ") + alias.caption;
+      }
+      else
+      {
+         return io.printf("%05d");
+      }
+   }
+
+   // <method_get.png>
+   public method getNRPNInfo(int _nrpn) : String {
+      MIDISynthProfileCtlAlias alias <= nrpn_alias_lut.get(_nrpn);
+
+      Integer io = _nrpn;
+
+      if(null != alias)
+      {
+         if(!alias.info.isBlank())
+         {
+            return io.printf("%05d: ") + alias.info;
+         }
+         else
+         {
+            return getNRPNCaption(_nrpn);
+         }
+      }
+      else
+      {
+         return io.printf("%05d");
+      }
+   }
+
+   // <method_get.png>
+   public method getRPNCaptionIndex(int _rpn) : int {
+      return rpn_to_caption_idx.get(_rpn);
+   }
+
+   // <method_get.png>
+   public method getNRPNCaptionIndex(int _nrpn) : int {
+      return nrpn_to_caption_idx.get(_nrpn);
+   }
+
+   // <method_get.png>
+   public method getRPNByCaptionIndex(int _captionIdx) : int {
+      MIDISynthProfileCtlAlias alias <= rpn_aliases.get(_captionIdx);
+
+      if(null != alias)
+      {
+         return alias.nr;
+      }
+
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getNRPNByCaptionIndex(int _captionIdx) : int {
+      MIDISynthProfileCtlAlias alias <= nrpn_aliases.get(_captionIdx);
+
+      if(null != alias)
+      {
+         return alias.nr;
+      }
+
+      return 0;
+   }
+
+   // <method_get.png>
+   public method getNoteCaption(int _noteNr) : String {
+      MIDISynthProfileCtlAlias alias <= note_alias_lut.get(_noteNr);
+
+      if(null != alias)
+      {
+         return (MIDI.midi_notes.get(_noteNr)) + ": "+alias.caption;
+      }
+      else
+      {
+         return MIDI.midi_notes.get(_noteNr); // "C-4",..
+      }
+   }
+
+   // <method_get.png>
+   public method getNoteCaptionOrNull(int _noteNr) : String {
+      MIDISynthProfileCtlAlias alias <= note_alias_lut.get(_noteNr);
+
+      if(null != alias)
+      {
+         return alias.caption;
+      }
+      else
+      {
+         return null;
+      }
+   }
+
+   // <method_get.png>
+   public method getNoteInfo(int _noteNr) : String {
+      MIDISynthProfileCtlAlias alias <= note_alias_lut.get(_noteNr);
+
+      if(null != alias)
+      {
+         if(!alias.info.isBlank())
+         {
+            return (MIDI.midi_notes.get(_noteNr)) + ": "+alias.info;
+         }
+         else
+         {
+            return getNoteCaption(_noteNr);
+         }
+      }
+      else
+      {
+         return MIDI.midi_notes.get(_noteNr); // "C-4",..
+      }
+   }
+
+   // <method_get.png>
+   public method findAliasById(String _id) : MIDISynthProfileCtlAlias {
+      MIDISynthProfileCtlAlias *alias;
+      foreach alias in all_aliases
+      {
+         if(alias.id == _id)
+            return alias;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method findAliasByMIDIMapEventType(MIDIMapEventType _evType) : MIDISynthProfileCtlAlias {
+      if(MIDIMapDefs.TYPE_CC == _evType.type)
+      {
+         return getCCAliasByCtl(_evType.ext_type);
+      }
+      if(MIDIMapDefs.TYPE_RPN == _evType.type)
+      {
+         return getRPNAliasByNr(_evType.ext_type);
+      }
+      if(MIDIMapDefs.TYPE_NRPN == _evType.type)
+      {
+         return getNRPNAliasByNr(_evType.ext_type);
+      }
+      if(MIDIMapDefs.TYPE_NOTE_ON == _evType.type || MIDIMapDefs.TYPE_NOTE_OFF == _evType.type)
+      {
+         return getNoteAliasByNr(_evType.ext_type);
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method buildCtlTagLabelByMIDIMapEventType(MIDIMapEventType _evType) {
+      MIDISynthProfileCtlAlias alias <= findAliasByMIDIMapEventType(_evType);
+      if(null != alias)// && !alias.id.isBlank())
+      {
+         local String sLabel = alias.id;
+         if(sLabel <= "com_")  // "internal.msp"
+            sLabel.replace("com_", "");
+         else if(sLabel <= "trk_")
+            sLabel.replace("trk_", "");
+         else if(sLabel <= "trigseq_")
+            sLabel.replace("trigseq_", "");
+         else if(sLabel <= "proxy_")
+            sLabel.replace("proxy_", "");
+         else if(sLabel <= "monitor_")
+            sLabel.replace("monitor_", "");
+         else if(sLabel <= "ctlmorph_")
+            sLabel.replace("ctlmorph_", "");
+         else if(sLabel <= "ar_kit_")
+            sLabel.replace("ar_kit_", "");
+         else if(sLabel <= "buffer_")
+            sLabel.replace("buffer_", "");
+         sLabel.replace("_", " ");
+         if(sLabel.numChars > 15)
+            sLabel.abbrev(15);
+         return deref sLabel;
+      }
+      else
+      {
+         return _evType.getDefaultShortNameForCtlTagLabel();
+      }
+   }
+
+   // <method_get.png>
+   public method getAliasByPatchByteOffset(int _offset) : MIDISynthProfileCtlAlias {
+      // used by GenericSynthEdit
+      if(null != patch_byte_to_alias_lut)
+      {
+         return patch_byte_to_alias_lut.get(_offset);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getAliasByDataNr(int _nr) : MIDISynthProfileCtlAlias {
+      if(null != data_nr_to_alias_lut)
+      {
+         return data_nr_to_alias_lut.get(_nr);
+      }
+      return null;
+   }
+
+   // <method_build.png>
+   protected method buildLUTs() {
+      cc_alias_lut.alloc(128);
+      cc_alias_lut.useAll();
+
+      rpn_alias_lut.alloc(16384);
+      rpn_alias_lut.useAll();
+
+      nrpn_alias_lut.alloc(16384);
+      nrpn_alias_lut.useAll();
+
+      note_alias_lut.alloc(128);
+      note_alias_lut.useAll();
+
+      MIDISynthProfileCtlAlias *alias;
+
+      foreach alias in cc_aliases
+      {
+         if(null != cc_alias_lut.get(alias.nr))
+         {
+            trace "[~~~] MIDISynthProfile::buildLUTs: CC#"+alias.nr+" already assigned (msp="+midi_profile_id+")";
+         }
+         cc_alias_lut[alias.nr] = alias;
+      }
+
+      rpn_to_caption_idx.allocAndFill(16384, -1);
+      nrpn_to_caption_idx.allocAndFill(16384, -1);
+
+      int idx = 0;
+      foreach alias in rpn_aliases
+      {
+         if(null != rpn_alias_lut.get(alias.nr))
+         {
+            trace "[~~~] MIDISynthProfile::buildLUTs: RPN#"+alias.nr+" already assigned (msp="+midi_profile_id+")";
+         }
+         rpn_alias_lut[alias.nr] = alias;
+
+         rpn_to_caption_idx[alias.nr] = idx++;
+
+         rpn_captions.add(alias.caption);
+         rpn_infos.add(getRPNInfo(alias.nr));
+      }
+
+      idx = 0;
+      foreach alias in nrpn_aliases
+      {
+         if(null != nrpn_alias_lut.get(alias.nr))
+         {
+            trace "[~~~] MIDISynthProfile::buildLUTs: NRPN#"+alias.nr+" already assigned (msp="+midi_profile_id+")";
+         }
+         nrpn_alias_lut[alias.nr] = alias;
+
+         nrpn_to_caption_idx[alias.nr] = idx++;
+
+         nrpn_captions.add(alias.caption);
+         nrpn_infos.add(getNRPNInfo(alias.nr));
+      }
+
+      foreach alias in note_aliases
+      {
+         if(null != note_alias_lut.get(alias.nr))
+         {
+            trace "[~~~] MIDISynthProfile::buildLUTs: Note#"+alias.nr+" already assigned (msp="+midi_profile_id+")";
+         }
+         note_alias_lut[alias.nr] = alias;
+      }
+
+      // CC/Note caption arrays
+      idx = 0;
+      cc_captions  .alloc(128);
+      cc_infos     .alloc(128);
+      note_captions.alloc(128);
+      note_infos   .alloc(128);
+      loop(128)
+      {
+         cc_captions.add(getCCCaption(idx));
+         cc_infos.add(getCCInfo(idx));
+
+         note_captions.add(getNoteCaption(idx));
+         note_infos.add(getNoteInfo(idx));
+
+         idx++;
+      }
+
+      // Cross-reference hi/lo aliases (CC MSB/LSB)
+      foreach alias in all_aliases
+      {
+         MIDISynthProfileCtlAlias *otherAlias;
+
+         if(alias.nr_lo > 0)
+         {
+            if(MIDIMapEventType.TYPE_CC == alias.type)
+            {
+               foreach otherAlias in all_aliases
+               {
+                  if(MIDIMapEventType.TYPE_CC == otherAlias.type)
+                  {
+                     if(otherAlias.nr == alias.nr_lo)
+                     {
+                        otherAlias.nr_hi = alias.nr;
+                        otherAlias.nr_hi_alias <= alias;
+                        alias.nr_lo_alias <= otherAlias;
+                        // trace "xxx alias.nr="+alias.nr+" alias.nr_lo="+alias.nr_lo+" otherAlias.nr="+otherAlias.nr+" alias.nr_lo_alias="+#(alias.nr_lo_alias);
+                        break;
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      if(syx_patch_size > 0)
+      {
+         patch_byte_to_alias_lut <= new PointerArray;
+         patch_byte_to_alias_lut.alloc(syx_patch_size);
+         patch_byte_to_alias_lut.useAll();
+         patch_byte_to_alias_lut[0] = null;
+
+         data_nr_to_alias_lut <= new PointerArray;
+         data_nr_to_alias_lut.alloc(16384);
+         data_nr_to_alias_lut.useAll();
+
+         foreach alias in all_aliases
+         {
+            if(alias.nr > 0 && alias.b_ui)
+            {
+               data_nr_to_alias_lut[alias.nr] = alias;
+            }
+         }
+
+         int patchByteOff = 0;
+         loop(syx_patch_size)
+         {
+            foreach alias in all_aliases
+            {
+               if(alias.syx_off >= 0 && alias.b_ui)
+               {
+                  if(alias.syx_off < syx_patch_size)
+                  {
+                     if(alias.syx_off == patchByteOff)
+                     {
+                        // trace "xxx alias.id="+alias.id+" syx_off="+alias.syx_off+" patchByteOff="+patchByteOff;
+                        patch_byte_to_alias_lut[patchByteOff] = alias;
+                        // // if(0 == alias.syx_off_hi)  // not lsb ?
+                        // // {
+                        // // }
+                     }
+                  }
+                  else
+                  {
+                     trace "[~~~] MIDISynthProfile::buildLUTs: invalid syx_off ("+alias.syx_off+">="+syx_patch_size+", id="+alias.id+")";
+                  }
+               }
+            }
+
+            // Next patch byte
+            patchByteOff++;
+         }
+      }
+      else
+      {
+         patch_byte_to_alias_lut <= null;
+      }
+   }
+
+   // <midi.png>
+   public method classifyMIDIMapEvent(local MIDIMapEvent _ev) {
+
+      local MIDISynthProfileCtlAlias alias <= null;
+
+      local byte cVal = 0;
+
+      switch(_ev.type)
+      {
+         case MIDIMapEventType.TYPE_CC:
+            alias <= cc_alias_lut.get(_ev.ext_type);
+            cVal = _ev.arg1;
+            break;
+
+         case MIDIMapEventType.TYPE_RPN:
+            alias <= rpn_alias_lut.get(_ev.ext_type);
+            cVal = _ev.arg1;
+            break;
+
+         case MIDIMapEventType.TYPE_NRPN:
+            alias <= nrpn_alias_lut.get(_ev.ext_type);
+            cVal = _ev.arg1;
+            break;
+
+         case MIDIMapEventType.TYPE_NOTE_ON:
+         case MIDIMapEventType.TYPE_NOTE_OFF:
+            alias <= note_alias_lut.get(_ev.arg1);
+            cVal = _ev.arg2;
+            break;
+
+         case MIDIMapEventType.TYPE_PITCHBEND:
+            alias <= pitchbend;
+            break;
+
+         case MIDIMapEventType.TYPE_SYSRT_START:
+            // trace "xxx MIDIMapEventType.TYPE_SYSRT_START";
+            alias <= sysrt_start;
+            cVal = 1;
+            break;
+
+         case MIDIMapEventType.TYPE_SYSRT_STOP:
+            // trace "xxx MIDIMapEventType.TYPE_SYSRT_STOP";
+            alias <= sysrt_stop;
+            cVal = 1;
+            break;
+
+         case MIDIMapEventType.TYPE_SYSRT_CONTINUE:
+            // trace "xxx MIDIMapEventType.TYPE_SYSRT_CONTINUE";
+            alias <= sysrt_continue;
+            cVal = 1;
+            break;
+      }
+
+      // trace "xxx MSP::classifyMIDIMapEvent: alias="+#(alias)+" cVal="+cVal;
+
+      if(null != alias)
+      {
+         // trace "xxx MSP::classifyMIDIMapEvent: alias.id="+alias.id+" profile_id="+midi_profile_id;
+
+         _ev.class_type  = alias.class_type;
+         _ev.b_repeat    = alias.b_repeat;
+         _ev.b_norelease = alias.b_norelease;
+
+         if(MIDIMapEventType.CLASS_DELTA_SIGNBIT == _ev.class_type)
+         {
+            _ev.b_class_delta_signbit = true;
+            _ev.class_type = MIDIMapEventType.CLASS_DELTA;
+         }
+         else
+         {
+            _ev.b_class_delta_signbit = false;
+         }
+
+         if(MIDIMapEventType.CLASS_BUTTON == alias.class_type)
+         {
+            // Determine up/down state
+            _ev.class_type_ext = 0;
+
+            // trace "xxx MSP::classifyMIDIMapEvent: alias.class_button_down_cond="+alias.class_button_down_cond;
+
+            switch(alias.class_button_down_cond)
+            {
+               case MIDIMapEventType.FLT_CEQ:
+                  _ev.class_type_ext = (cVal == alias.class_button_down_refval);
+                  break;
+
+               case MIDIMapEventType.FLT_CNE:
+                  _ev.class_type_ext = (cVal != alias.class_button_down_refval);
+                  break;
+
+               case MIDIMapEventType.FLT_CGE:
+                  _ev.class_type_ext = (cVal >= alias.class_button_down_refval);
+                  break;
+
+               case MIDIMapEventType.FLT_CGT:
+                  _ev.class_type_ext = (cVal > alias.class_button_down_refval);
+                  break;
+
+               case MIDIMapEventType.FLT_CLE:
+                  _ev.class_type_ext = (cVal <= alias.class_button_down_refval);
+                  break;
+
+               case MIDIMapEventType.FLT_CLT:
+                  _ev.class_type_ext = (cVal < alias.class_button_down_refval);
+                  break;
+            }
+
+            // trace "xxx MSP::classifyMIDIMapEvent: _ev.class_type_ext="+_ev.class_type_ext;
+         }
+      }
+
+   }
+
+   // <method.png>
+   protected method replaceVars(HashTable attr) {
+      // Replace $(VAR)s
+      String *attrKey;
+      String *attrVal;
+      foreach attrKey in attr
+      {
+         attrVal <= attr.get(attrKey);
+         if(null != attrVal)
+         {
+            int varIdxS = attrVal.indexOf("$(", 0);
+            if(-1 != varIdxS)
+            {
+               int varIdxE = attrVal.indexOf(")", varIdxS+2);
+               if(-1 != varIdxE)
+               {
+                  local String varName;
+                  attrVal.substring(varIdxS+2, varIdxE-varIdxS-2) => varName;
+                  // trace "xxx msp: varName=\""+varName+"\"";
+                  if(vars.exists(varName))
+                  {
+                     String newVal <= new String;
+                     local String oldVarTrail;
+                     newVal.empty();
+                     attrVal.substring(0, varIdxS) => newVal;
+                     attrVal.substring(varIdxE+1, 9999) => oldVarTrail;
+                     newVal.append(vars.get(varName));
+                     newVal.append(oldVarTrail);
+                     // trace "xxx msp: attrKey=\""+attrKey+"\": replace var \""+varName+"\" => \""+newVal+"\"";
+                     attr[attrKey] = deref newVal;
+                  }
+                  else
+                  {
+                     trace "[~~~] MIDISynthProfile::parseProfile: var \""+varName+"\" has not been declared";
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getEditGroupNameByIdx(int _groupIdx) : String {
+      return all_editgroup_captions.get(_groupIdx);
+   }
+
+   // <method_get.png>
+   public method getEditSubGroupNameByIdx(int _groupIdx, int _subGroupIdx) : String {
+      StringArray a <= all_editgroup_subgroup_captions.get(_groupIdx);
+      if(null != a)
+      {
+         return a.get(_subGroupIdx);
+      }
+      return null;
+   }
+
+   // <init.png>
+   public method parseProfile(TreeNode c) : boolean {
+      HashTable attr <= c.objectValue;
+
+      all_editgroup_captions.free();
+      all_editgroup_subgroup_captions.free();
+      cur_editgroup_idx = -1;
+      cur_editgroup.empty();
+      cur_editsubgroups <= null;
+      cur_editsubgroup_idx = -1;
+      cur_editsubgroup.empty();
+
+      if(attr.exists("caption"))
+      {
+         profile_caption = attr.get("caption");
+      }
+      else
+      {
+         trace "[~~~] tag \"MIDISynthProfile\" is missing attribute \"caption\" (-> using id instead)";
+         profile_caption = midi_profile_id;
+      }
+
+
+      if(attr.exists("inherit"))
+      {
+         b_inherit = int(attr["inherit"]) ? true : false;
+      }
+      else
+      {
+         b_inherit = true;
+      }
+
+      if(attr.exists("manufacturer"))
+      {
+         manufacturer = attr["manufacturer"];
+      }
+
+      if(attr.exists("param"))
+      {
+         b_enable_param = int(attr["param"]) ? true : false;
+      }
+      else
+      {
+         b_enable_param = true;
+      }
+
+      if(attr.exists("paramMode"))
+      {
+         switch(attr["paramMode"])
+         {
+            default:
+            case "MSBLSB":
+               param_mode = MIDI_DATAENTRYMODE_MSBLSB/*0*/;
+               break;
+
+            case "LSBMSB":
+               param_mode = MIDI_DATAENTRYMODE_LSBMSB/*1*/;
+               break;
+
+            case "MSB":
+               param_mode = MIDI_DATAENTRYMODE_MSB/*2*/;
+               break;
+         }
+      }
+      else
+      {
+         param_mode = MIDI_DATAENTRYMODE_MSBLSB/*0*/;
+      }
+
+      if(attr.exists("ccPerfLSB"))
+      {
+         b_cc_perf_lsb = (0 != int(attr["ccPerfLSB"]));
+      }
+
+      if(attr.exists("filterNoteOffChannelPressure"))
+      {
+         b_filter_note_off_channel_pressure = (false != int(attr["filterNoteOffChannelPressure"]));
+      }
+
+      if(attr.exists("runningStatus"))
+      {
+         b_running_status = (false != int(attr["runningStatus"]));
+      }
+
+      if(attr.exists("syx14BitAs8BitData"))
+      {
+         b_14bit_as_8bit_data = (0 != int(attr["syx14BitAs8BitData"]));
+      }
+
+      if(attr.exists("syxPatchReqMsg"))
+      {
+         Utils.ParseHexString(syx_patch_req_msg, attr["syxPatchReqMsg"]);
+      }
+
+      if(attr.exists("syxPatchEnc"))
+      {
+         switch(attr["syxPatchEnc"].toLower())
+         {
+            default:
+            case "none":
+               syx_patch_enc_type = ENC_NONE;
+               break;
+
+            case "8to7":
+               syx_patch_enc_type = ENC_8TO7;
+               break;
+
+            case "alphajuno":
+               syx_patch_enc_type = ENC_ALPHAJUNO;
+               break;
+
+            case "sub37":
+               syx_patch_enc_type = ENC_SUB37;
+               break;
+
+            case "params":
+               syx_patch_enc_type = ENC_PARAMS;
+               break;
+         }
+      }
+
+      if(attr.exists("syxPatchEncHdr"))
+      {
+         Utils.ParseHexString(syx_patch_enc_hdr, attr["syxPatchEncHdr"]);
+      }
+
+      if(attr.exists("syxPatchEncSize"))
+      {
+         syx_patch_enc_size = int(attr["syxPatchEncSize"]);
+      }
+
+      if(attr.exists("syxPatchSize"))
+      {
+         syx_patch_size = int(attr["syxPatchSize"]);
+
+         if(0 == syx_patch_enc_size)
+            syx_patch_enc_size = syx_patch_size;
+      }
+
+      if(attr.exists("syxPatchNameOff"))
+      {
+         syx_patch_name_off = int(attr["syxPatchNameOff"]);
+      }
+
+      if(attr.exists("syxPatchNameLen"))
+      {
+         syx_patch_name_len = int(attr["syxPatchNameLen"]);
+      }
+
+      if(attr.exists("syxPatchInit"))
+      {
+         syx_patch_init <= new Buffer;
+         Utils.ParseHexString(syx_patch_init, attr["syxPatchInit"]);
+         if(syx_patch_size != syx_patch_init.size)
+         {
+            trace "[~~~] MIDISynthProfile<"+midi_profile_id+">: patch size != init.size ("+syx_patch_size+" != "+syx_patch_init.size+")";
+         }
+      }
+      else
+      {
+         syx_patch_init <= null;
+      }
+
+      if(attr.exists("defRandLockMask"))
+      {
+         def_randlock_mask = attr.get("defRandLockMask");
+      }
+
+      if(attr.exists("numMIDITunings"))
+      {
+         num_midi_tunings = attr.get("numMIDITunings");
+      }
+
+      if(attr.exists("canDoSingleNoteTuning"))
+      {
+         b_single_note_tuning = attr.get("canDoSingleNoteTuning");
+      }
+
+      if(attr.exists("mtsProgramOffset"))
+      {
+         mts_program_offset = attr.get("mtsProgramOffset");
+      }
+
+      if(attr.exists("numOutBuffers"))
+      {
+         num_out_buffers = attr.get("numOutBuffers");
+      }
+
+      if(attr.exists("dataToProxyRPN"))
+      {
+         b_data_to_proxy_rpn = int(attr.get("dataToProxyRPN"));
+      }
+
+      next_proxy_rpn = 0;
+
+      HashTable attrGlobal <= attr;
+
+      initDefaultAliases();
+
+      c <= c.right;
+
+      int syxOffShift = 0;
+      int nrShift = 0;
+
+      while(null != c)
+      {
+         attr <= c.objectValue;
+         MIDISynthProfileCtlAlias *alias;
+         MIDISynthProfileCtlAlias *proxyAlias;
+
+         replaceVars(attr);
+
+         switch(c.name)
+         {
+            case "var":
+               if(attr.exists("id"))
+               {
+                  if(attr.exists("value"))
+                  {
+                     vars[attr.get("id")] = Object(attr.get("value"));
+                  }
+                  else
+                  {
+                     trace "[~~~] MIDISynthProfile::parseProfile: <var id="+attr.get("id")+" is missing \"value\" attribute";
+                  }
+               }
+               else
+               {
+                  trace "[~~~] MIDISynthProfile::parseProfile: <var> is missing \"id\" attribute";
+               }
+               break;
+
+            case "editgroup":
+               cur_editsubgroup.empty();
+               cur_editsubgroup_idx = -1;
+               cur_editsubgroups <= null;
+               if(attr.exists("caption"))
+               {
+                  cur_editgroup = attr["caption"];
+                  if(!all_editgroup_captions.containsObject(cur_editgroup))
+                  {
+                     all_editgroup_captions.add(cur_editgroup);
+                     all_editgroup_subgroup_captions.add(#(new StringArray));
+                  }
+                  cur_editgroup_idx = all_editgroup_captions.indexOfObject(cur_editgroup, 0);
+                  cur_editsubgroups <= all_editgroup_subgroup_captions.get(cur_editgroup_idx);
+               }
+               else
+               {
+                  trace "[~~~] MIDISynthProfile::parseProfile: <editgroup> is missing \"caption\" attribute";
+                  cur_editgroup.empty();
+               }
+               break;
+
+            case "editsubgroup":
+               if(attr.exists("caption"))
+               {
+                  if(null != cur_editsubgroups)
+                  {
+                     cur_editsubgroup = attr["caption"];
+                     if(!cur_editsubgroups.containsObject(cur_editsubgroup))
+                     {
+                        cur_editsubgroups.add(cur_editsubgroup);
+                     }
+                     cur_editsubgroup_idx = cur_editsubgroups.indexOfObject(cur_editsubgroup, 0);
+                  }
+                  else
+                  {
+                     trace "[~~~] MIDISynthProfile::parseProfile: <editsubgroup> w/o <editgroup>";
+                     cur_editsubgroup.empty();
+                     cur_editsubgroup_idx = -1;
+                  }
+               }
+               else
+               {
+                  trace "[~~~] MIDISynthProfile::parseProfile: <editgroup> is missing \"caption\" attribute";
+                  cur_editsubgroup.empty();
+                  cur_editsubgroup_idx = -1;
+               }
+               break;
+
+            case "proxyrpn":
+               if(attr.exists("nr"))
+               {
+                  next_proxy_rpn = int(attr.get("nr")) & 16383;
+               }
+               break;
+
+            case "widget":
+               alias <= new MIDISynthProfileCtlAlias;
+               alias.initEmpty(MIDIMapDefs.TYPEX_CUSTOM_WIDGET);
+               alias.b_ui_custom_widget = true;
+               alias.editgroup_idx    = cur_editgroup_idx;
+               alias.editsubgroup_idx = cur_editsubgroup_idx;
+               if(alias.parse(attr, null/*nrAttrName*/, 0/*nrMax*/, 0/*nrShift*/))
+               {
+                  widget_aliases.add(#(deref alias));
+                  all_aliases.add(alias);
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <widget> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "cc":
+               alias <= new MIDISynthProfileCtlAlias;
+               alias.initEmpty(MIDIMapDefs.TYPE_CC);
+               alias.min = 0;
+               alias.max = 127;
+               alias.editgroup_idx    = cur_editgroup_idx;
+               alias.editsubgroup_idx = cur_editsubgroup_idx;
+               if(alias.parse(attr, "ctl", 127, nrShift))
+               {
+                  if(alias.syx_off >= 0)
+                     alias.syx_off += syxOffShift;
+                  if(alias.syx_off_lo >= 0)
+                     alias.syx_off += syxOffShift;
+                  if(alias.syx_off_hi >= 0)
+                     alias.syx_off += syxOffShift;
+                  // trace "xxx add cc alias to "+midi_profile_id;
+                  cc_aliases.add(#(deref alias));
+                  all_aliases.add(alias);
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <cc> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "rpn":
+               alias <= new MIDISynthProfileCtlAlias;
+               alias.initEmpty(MIDIMapDefs.TYPE_RPN);
+               alias.min = 0;
+               alias.max = 16383;
+               alias.editgroup_idx    = cur_editgroup_idx;
+               alias.editsubgroup_idx = cur_editsubgroup_idx;
+               if(alias.parse(attr, "nr", 16383, nrShift))
+               {
+                  if(alias.syx_off >= 0)
+                     alias.syx_off += syxOffShift;
+                  if(alias.syx_off_lo >= 0)
+                     alias.syx_off += syxOffShift;
+                  if(alias.syx_off_hi >= 0)
+                     alias.syx_off += syxOffShift;
+                  rpn_aliases.add(#(deref alias));
+                  all_aliases.add(alias);
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <rpn> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "nrpn":
+               alias <= new MIDISynthProfileCtlAlias;
+               alias.initEmpty(MIDIMapDefs.TYPE_NRPN);
+               alias.min = 0;
+               alias.max = 16383;
+               alias.editgroup_idx    = cur_editgroup_idx;
+               alias.editsubgroup_idx = cur_editsubgroup_idx;
+               if(alias.parse(attr, "nr", 16383, nrShift))
+               {
+                  if(alias.syx_off >= 0)
+                     alias.syx_off += syxOffShift;
+                  if(alias.syx_off_lo >= 0)
+                     alias.syx_off += syxOffShift;
+                  if(alias.syx_off_hi >= 0)
+                     alias.syx_off += syxOffShift;
+                  nrpn_aliases.add(#(deref alias));
+                  all_aliases.add(alias);
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <nrpn> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "syxoff":
+               if(attr.exists("shift"))
+               {
+                  syxOffShift = int(attr["shift"]);
+               }
+               break;
+
+            case "nr":
+               if(attr.exists("shift"))
+               {
+                  nrShift = int(attr["shift"]);
+               }
+               break;
+
+            case "data":
+               alias <= new MIDISynthProfileCtlAlias;
+               alias.initEmpty(MIDIMapDefs.TYPE_SYSEX);
+               alias.min = 0;
+               alias.max = 127;
+               alias.editgroup_idx    = cur_editgroup_idx;
+               alias.editsubgroup_idx = cur_editsubgroup_idx;
+               if(alias.parse(attr, null, 16383, 0/*nrShift*/))
+               {
+                  if(attr.exists("nr"))  // optional (used by FS1R editor)
+                     alias.nr = attr["nr"] + nrShift;
+                  alias.syx_off += syxOffShift;
+                  data_aliases.add(#(deref alias));
+                  all_aliases.add(alias);
+
+                  if(b_data_to_proxy_rpn && (0 <= alias.syx_off <= 16383))
+                  {
+                     // Add virtual RPN controller for NodeProxy (non-destructive patch modulation)
+                     //  (note) currently used by Korg Radias editor
+                     proxyAlias <= new MIDISynthProfileCtlAlias;
+                     proxyAlias.initEmpty(MIDIMapDefs.TYPE_RPN);
+                     proxyAlias.b_ui = false;
+                     proxyAlias.nr   = next_proxy_rpn++;////rpn_aliases.numElements;////alias.syx_off;
+                     proxyAlias.id   = "proxy_"+alias.id;
+
+                     // Add editgroup prefix (e.g. for multitimbral synths)
+                     boolean bCaptionDone = false;
+                     if(-1 != alias.editgroup_idx)
+                     {
+                        if(-1 != alias.editsubgroup_idx)
+                        {
+                           StringArray subGroupNames <= all_editgroup_subgroup_captions.get(alias.editgroup_idx);
+                           // trace "xxx subGroupNames="+#(subGroupNames);
+                           // trace "xxx all_editgroup_captions.get(alias.editgroup_idx)="+#(all_editgroup_captions.get(alias.editgroup_idx));
+                           // trace "xxx subGroupNames.get(alias.editsubgroup_idx)="+#(subGroupNames.get(alias.editsubgroup_idx));
+                           proxyAlias.caption = all_editgroup_captions.get(alias.editgroup_idx)+":"+subGroupNames.get(alias.editsubgroup_idx)+":"+alias.caption;
+                           bCaptionDone = true;
+                        }
+                        else
+                        {
+                           proxyAlias.caption = all_editgroup_captions.get(alias.editgroup_idx)+":"+alias.caption;
+                           bCaptionDone = true;
+                        }
+                     }
+                     if(!bCaptionDone)
+                     {
+                        proxyAlias.caption = alias.caption;
+                     }
+                     // trace "proxyAlias.caption="+proxyAlias.caption;
+
+                     if(alias.info.isBlank())
+                     {
+                        proxyAlias.info = "min="+alias.min+" max="+alias.max;
+                     }
+                     else
+                     {
+                        proxyAlias.info = alias.info;
+                     }
+
+                     proxyAlias.info    = alias.info;
+                     proxyAlias.min     = alias.min;
+                     proxyAlias.max     = alias.max;
+                     proxyAlias.bias    = alias.bias;
+                     proxyAlias.ui_bias = alias.ui_bias;
+                     proxyAlias.ui_zero = alias.ui_zero;
+                     proxyAlias.cel_style = alias.cel_style;
+                     proxyAlias.cel_range = alias.cel_range;
+                     proxyAlias.syx_off     = alias.syx_off;
+                     proxyAlias.syx_off_lo  = alias.syx_off_lo;
+                     proxyAlias.syx_bit_off = alias.syx_bit_off;
+                     proxyAlias.syx_bit_num = alias.syx_bit_num;
+                     rpn_aliases.add(#(deref proxyAlias));
+                     all_aliases.add(proxyAlias);
+                  }
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <data> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "note":
+               alias <= new MIDISynthProfileCtlAlias;
+               alias.initEmpty(MIDIMapDefs.TYPE_NOTE_ON);
+               alias.editgroup_idx    = cur_editgroup_idx;
+               alias.editsubgroup_idx = cur_editsubgroup_idx;
+               if(alias.parse(attr, "nr", 127, nrShift))
+               {
+                  note_aliases.add(#(deref alias));
+                  all_aliases.add(alias);
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <note> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "pitchbend":
+               pitchbend.initEmpty(MIDIMapDefs.TYPE_PITCHBEND);
+               pitchbend.min = 0;
+               pitchbend.max = 16383;
+               pitchbend.editgroup_idx    = cur_editgroup_idx;
+               pitchbend.editsubgroup_idx = cur_editsubgroup_idx;
+               if(!pitchbend.parse(attr, null, 16383, 0/*nrShift*/))
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <pitchbend> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "sysrt_start":
+               sysrt_start.type = MIDIMapDefs.TYPE_SYSRT_START;
+               if(!sysrt_start.parse(attr, null, 0, 0/*nrShift*/))
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <sysrt_start> tag. attr="+#(attr);
+                  return false;
+               }
+               // trace "xxx sysrt_start="+#(sysrt_start)+" id="+sysrt_start.id+" caption="+sysrt_start.caption;
+               break;
+
+            case "sysrt_stop":
+               sysrt_stop.type = MIDIMapDefs.TYPE_SYSRT_STOP;
+               if(!sysrt_stop.parse(attr, null, 0, 0/*nrShift*/))
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <sysrt_stop> tag. attr="+#(attr);
+                  return false;
+               }
+               break;
+
+            case "sysrt_continue":
+               sysrt_continue.type = MIDIMapDefs.TYPE_SYSRT_CONTINUE;
+               if(!sysrt_continue.parse(attr, null, 0, 0/*nrShift*/))
+               {
+                  trace "[---] MIDISynthProfile::parseProfile: failed to parse <sysrt_continue> tag. attr="+#(attr);
+                  return false;
+               }
+               // trace "xxx sysrt_continue="+#(sysrt_continue)+" id="+sysrt_continue.id+" caption="+sysrt_continue.caption;
+               break;
+         }
+
+         // Next node
+         c <= c.left;
+      }
+
+      // Multi timbral mode (allow MIDI channel redirect in UI)
+      if(attrGlobal.exists("multiTimbral"))
+      {
+         b_multi_timbral = int(attrGlobal["multiTimbral"]);
+      }
+
+      // Use MIDI overflow buffers (48 bytes per tick limit) when STConfig.
+      if(attrGlobal.exists("overflowBuffers"))
+      {
+         b_use_overflow_buffers = int(attrGlobal["overflowBuffers"]);
+      }
+
+      // Determine TSL dependencies
+      if(attrGlobal.exists("tsl"))
+      {
+         s_tsl = attrGlobal.get("tsl");
+      }
+
+      // Determine data class template
+      if(attrGlobal.exists("dataClass"))
+      {
+         s_data_class = attrGlobal.get("dataClass");
+      }
+
+      // Determine/Init editor form class
+      if(attrGlobal.exists("formClass"))
+      {
+         s_form_class = attrGlobal.get("formClass");
+      }
+
+      // Determine/Init TrigSeq HW interface plugin class
+      if(attrGlobal.exists("trigSeqEditorPluginClass"))
+      {
+         NTS_EditorPlugin trigSeqEditorPlugin <= TKS.newObjectByName(null, attrGlobal.get("trigSeqEditorPluginClass"));
+         if(Configuration.debugLevel >= 3)
+            Global.Debug2("MIDISynthProfile::parseProfile: trigSeqEditorPlugin="+#(trigSeqEditorPlugin));
+         if(trigSeqEditorPlugin instanceof NTS_EditorPlugin)
+         {
+            if(!trigSeqEditorPlugin.init(this))
+            {
+               trace "[---] InitMIDISynthProfile: failed to initialize TrigSeq editor plugin class "+attrGlobal.get("trigSeqEditorPluginClass");
+               return false;
+            }
+            trigseq_editor_plugin <= deref trigSeqEditorPlugin;
+         }
+         else
+         {
+            trace "[---] invalid MIDI synth profile TrigSeq editor class \""+attrGlobal.get("trigSeqEditorPluginClass")+"\" (profileId=\""+midi_profile_id+"\", plugin="+#(trigSeqEditorPlugin)+").";
+            return false;
+         }
+      }
+
+      if(attrGlobal.exists("noteNameProfile"))
+         note_name_profile_id <= Object(attrGlobal["noteNameProfile"]);
+
+      if(("default" == midi_profile_id) || b_inherit)
+      {
+         lazyAddDefaultCCs();
+      }
+
+      buildLUTs();
+
+      // Succeeded
+      return true;
+   }
+
+   // <method_get.png>
+   public method isEncAlphaJuno() : boolean {
+      return (ENC_ALPHAJUNO == syx_patch_enc_type);
+   }
+
+   // <method_init.png>
+   public method lazyPrepareSynthEditor() : boolean {
+      // called by MIDI.LazyAccessSynthEditor()
+      if(!s_data_class.isBlank())
+      {
+         if(null == profile_data_template)
+         {
+            if(!s_tsl.isBlank())
+            {
+               // Load libraries (comma separated list)
+               if(!Global.LazyLoadTSL_CSL(s_tsl))
+               {
+                  trace "[---] MIDISynthProfile::lazyPrepareSynthEditor<"+midi_profile_id+">: failed to load TSL(s) \""+s_tsl+"\"";
+                  return false;
+               }
+
+               // Find data class template
+               MIDISynthProfileData mpd <= TKS.findScriptClass(null, s_data_class);
+               if(mpd instanceof MIDISynthProfileData)
+               {
+                  profile_data_template <= mpd;
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::lazyPrepareSynthEditor<"+midi_profile_id+">: invalid data class \""+s_data_class+"\" (profile_data_template="+#(mpd)+")";
+                  return false;
+               }
+
+               // Find and instantiate editor form class
+               EditMIDISynthForm msf <= TKS.newObjectByName(null, s_form_class);
+               // trace "xxx midi_profile_id="+midi_profile_id+" edit_form="+#(msf);
+               if(msf instanceof EditMIDISynthForm)
+               {
+                  // (note) post-pone editor init until devices have been opened (see lazyInitSynthEditorEditForm())
+                  edit_form <= deref msf;
+               }
+               else
+               {
+                  trace "[---] MIDISynthProfile::lazyPrepareSynthEditor<"+midi_profile_id+">: invalid form class \""+s_form_class+"\" (edit_form="+#(msf)+")";
+                  return false;
+               }
+
+            }
+         }
+      }
+
+      return true;
+   }
+
+   // <method_init.png>
+   public method lazyInitSynthEditorEditForm() : boolean {
+      Global.Debug2("MIDISynthProfile::lazyInitSynthEditorEditForm<"+midi_profile_id+">: b_edit_form_init_done="+b_edit_form_init_done);
+      if(!b_edit_form_init_done)
+      {
+         Global.Debug2("MIDISynthProfile::lazyInitSynthEditorEditForm<"+midi_profile_id+">: edit_form="+#(edit_form));
+         if(null != edit_form)
+         {
+            if(!edit_form.init(this))
+            {
+               trace "[---] MIDISynthProfile::lazyInitSynthEditorEditForm: failed to initialize SysEx editor class "+edit_form.yacMetaClassName();
+               return false;
+            }
+         }
+         b_edit_form_init_done = true;
+      }
+      return true;
+   }
+
+   // <method_get.png>
+   public method hasDataClass() : boolean {
+      return !s_data_class.isBlank();
+   }
+
+   // <method_init.png>
+   public method lazyInitProfileData() : MIDISynthProfileData {
+      // (note) skips dynamically loaded editors (during app start)
+      if(null != profile_data_template)
+      {
+         MIDISynthProfileData data <= Object(profile_data_template);
+         data.init(this);
+         data.b_multi_timbral = b_multi_timbral;
+         data.reload(false/*bFromUI*/);
+
+         return deref data;
+      }
+      return null;
+   }
+
+}

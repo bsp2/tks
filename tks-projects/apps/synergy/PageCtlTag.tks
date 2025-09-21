@@ -1,0 +1,3096 @@
+// ----
+// ---- file   : PageCtlTag.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 17May2015, 26Jul2015, 23Oct2015, 12Nov2015, 14Nov2015, 15Nov2015, 16Nov2015
+// ----          23Dec2015, 08Apr2016, 10Apr2016, 19Aug2016, 09Feb2017, 10Mar2017, 09Jul2017
+// ----          07Mar2018, 08Dec2018, 09Dec2018, 17Jan2019, 20Sep2019, 01Nov2019, 14Oct2023
+// ----          15Oct2023, 20Oct2023, 22Mar2024, 07Jul2024, 05Oct2024
+// ----
+// ----
+// ----
+
+module MPageCtlTag;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class CtlTagEntry : MIDIMapDefs {
+   // Maps MIDI event type (+dev/ch) to user defined name
+
+   define int TYPE_NONE         = 0;
+   define int TYPE_SELECT       = 1;
+   define int TYPE_TOGGLE       = 2;
+   define int TYPE_MOMENTARY    = 3;
+   define int TYPE_MOMENTARY_PB = 4;
+   define int TYPE_PRESSURE     = 5;
+
+   static StringArray type_names = [
+      "-",
+      "Select",
+      "Toggle",
+      "Momentary",
+      "Momentary PB",
+      "Pressure"
+                                    ];
+
+   static StringArray type_tooltips = [
+      "-",
+      "Select: Send controller value A when pad is pressed",
+      "Toggle: Send controller value A when pad is activated (first press), value B when pad is deactivated (second press)",
+      "Momentary: Send controller value A when pad is pressed, value B when it is released",
+      "Momentary PB: Like Momentary but send controller values only when push pitchbend touch strip is used",
+      "Pressure: Send controller value A/B, interpolated according to pad pressure"
+                                    ];
+
+   String tag_name;
+
+   String do_dev;
+   String do_ch;
+   String do_type;
+
+   MIDIMapEvent mm_event;
+
+   int  group_idx;
+   byte push_pad_idx; // 0=lb
+   byte push_color;
+   int  push_type;
+
+   short val_a;   // off or min value
+   short val_b;   // on or max value
+
+   boolean pad_state;  // false=released/deactivated; true=pressed/activated
+
+   short last_sent_val;  // -1=unknown
+
+   boolean b_send_reset;
+   short   reset_value;
+
+   boolean b_name_edited;  // true=name edited manually, false=auto-generated name (from remote query ctl targets)
+
+   static StringArray pad_names = [ // indexed by padidx
+      "-",
+      "8;1", "8;2", "8;3", "8;4", "8;5", "8;6", "8;7", "8;8",
+      "7;1", "7;2", "7;3", "7;4", "7;5", "7;6", "7;7", "7;8",
+      "6;1", "6;2", "6;3", "6;4", "6;5", "6;6", "6;7", "6;8",
+      "5;1", "5;2", "5;3", "5;4", "5;5", "5;6", "5;7", "5;8",
+      "4;1", "4;2", "4;3", "4;4", "4;5", "4;6", "4;7", "4;8",
+      "3;1", "3;2", "3;3", "3;4", "3;5", "3;6", "3;7", "3;8",
+      "2;1", "2;2", "2;3", "2;4", "2;5", "2;6", "2;7", "2;8"
+                                    ];
+
+
+   // <method_init.png>
+   public method init() {
+      push_color    = 1;
+      push_pad_idx  = -1;
+      push_type     = TYPE_NONE;
+      last_sent_val = -1;
+      b_send_reset  = false;
+      reset_value   = 0;
+      b_name_edited = false;
+   }
+
+   // <method.png>
+   public method copyFrom(CtlTagEntry _o) {
+      tag_name = _o.tag_name;
+
+      do_dev  = _o.do_dev;
+      do_ch   = _o.do_ch;
+      do_type = _o.do_type;
+
+      mm_event.copyFrom(_o.mm_event);
+
+      group_idx    = _o.group_idx;
+      push_pad_idx = _o.push_pad_idx;
+      push_color   = _o.push_color;
+      push_type    = _o.push_type;
+
+      val_a = _o.val_a;
+      val_b = _o.val_b;
+
+      pad_state = _o.pad_state;
+
+      last_sent_val = _o.last_sent_val;
+
+      b_send_reset = _o.b_send_reset;
+      reset_value  = _o.reset_value;
+
+      b_name_edited = _o.b_name_edited;
+   }
+
+   // <method_get.png>
+   public method getMaxVal() : int {
+      switch(mm_event.type)
+      {
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_ON:
+         case TYPE_POLY_PRESSURE:
+         case TYPE_CC:
+         case TYPE_PROGRAM_CHANGE:
+         case TYPE_CHANNEL_PRESSURE:
+            return 127;
+
+         case TYPE_PITCHBEND:
+            return 16383;
+
+         case TYPE_SYSEX:
+         case TYPE_SYSCOM_TIMECODE:
+         case TYPE_SYSCOM_SONG_POSITION:
+         case TYPE_SYSCOM_SONG_SELECT:
+         case TYPE_SYSCOM_F4:
+         case TYPE_SYSCOM_F5:
+         case TYPE_SYSCOM_TUNE_REQUEST:
+         case TYPE_SYSRT_TIMING_CLOCK:
+         case TYPE_SYSRT_F9:
+         case TYPE_SYSRT_START:
+         case TYPE_SYSRT_CONTINUE:
+         case TYPE_SYSRT_STOP:
+         case TYPE_SYSRT_FD:
+         case TYPE_SYSRT_ACTIVE_SENSING:
+         case TYPE_SYSRT_SYSTEM_RESET:
+         default:
+            return 0;
+
+         case TYPE_RPN:
+         case TYPE_NRPN:
+            return 16383;
+      }
+   }
+
+   public method getMIDISynthProfile() : MIDISynthProfile {
+      STX_MIDIOutDevice dev <= mm_event.dev;
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(mm_event.dev_ch);
+         if(null != msp)
+         {
+            return msp;
+         }
+      }
+      return MIDI.GetDefaultSynthProfile();
+   }
+}
+
+
+// <class.png>
+class PageCtlTag extends Page, MIDIMapContext, ActionProvider, MIDIMapEventListener, RemoteQueryCtlTargetsListener {
+
+   define int NUM_GROUPS = 6;
+
+   define String TA_REDRAW;
+   define String TA_MIDI_LEARN;
+   define String TA_REBUILD;
+
+   define String MMT_ADD;
+   define String MMT_CLONE;
+   define String MMT_REMOVE;
+   define String MMT_TOGGLE_GROUP_ENC;
+   define String MMT_CLEAR_ENC;
+   define String MMT_RESEND_LAST_VAL;
+   define String MMT_DISCARDCTL;
+
+
+   protected Button *bt_back;
+   protected Button *bt_add;
+   protected Button *bt_remove;
+   protected Button *bt_moveup;
+   protected Button *bt_movedown;
+
+   protected CheckBox *cb_movecsr;
+
+   public TableView   *tv_map;
+   protected CtlTagTM tm_map;
+
+   protected TextField *tf_name;
+   protected Button    *bt_query_remote_ctl;
+   protected ComboBox  *cm_group;
+   protected ComboBox  *cm_push_pad;
+   protected Button    *bt_push_pad_learn;
+   protected ComboBox  *cm_push_color;
+
+   protected Panel       *pn_midi;
+   protected ComboBox    *cm_midi_dev;
+   protected ComboBox    *cm_midi_ch;
+   protected ComboBox    *cm_midi_type;
+   protected LayerSwitch *ls_midi_type;
+   protected ComboBox    *cm_midi_cc_nr;
+   protected ComboBox    *cm_midi_rpn_nr;
+   protected FloatParam  *fp_midi_rpn_nr;
+   protected ComboBox    *cm_midi_nrpn_nr;
+   protected FloatParam  *fp_midi_nrpn_nr;
+
+   protected ComboBox    *cm_push_type;
+   protected LayerSwitch *ls_val_a;
+   protected FloatParam  *fp_val_a;
+   protected LayerSwitch *ls_val_b;
+   protected FloatParam  *fp_val_b;
+
+   protected TextField *tf_last_dev;
+   protected TextField *tf_last_ch;
+   protected TextField *tf_last_type;
+   protected TextField *tf_last_ext;
+
+   protected TimerAction *ta_redraw;
+   protected TimerAction *ta_midi_learn;
+   protected TimerAction *ta_rebuild;
+
+   protected FloatParam *fp_reset_value;
+   protected CheckBox   *cb_reset;
+   protected Button     *bt_reset_setlast;
+
+   protected MIDIMapEvent last_ev;
+   protected String last_ev_aliasordevicename;  // set when leaving page, used to restore last_ev.dev when page is re-entered
+
+   protected boolean b_movecsr;
+   protected boolean b_firstevent;
+
+   protected boolean b_initial_automovecsr;
+
+   protected TextInputDialog *dlg_name;
+
+   protected PushGrid push_grid;
+
+   protected int cur_group_idx;
+
+   protected MIDIPipeFrame play_frame;
+
+   protected int midi_learn_timeout;
+
+   protected boolean b_discardctl_last;  // false=pad 7 used last, true=pad 6 used last
+
+   // Global (last-used) mapping of entries to push encoders
+   protected IntArray global_enc_entry_indices;
+
+   // Per-group mapping of entries to push encoders
+   //  Array of IntArrays. elements0..7: -1=not mapped, 0..n=entry index
+   protected PointerArray group_enc_entry_indices;
+
+   protected boolean b_group_enc_mode;  // true=group-specific encoder mapping, false=global encoder mapping
+
+   protected PopupMenu *pm_context;
+
+   protected ImportSynthProfileDialog *dlg_importmsp;
+   protected STX_MIDIOutDevice *importmsp_dev;
+   protected byte importmsp_dev_ch;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageCtlTag.xfm"))
+      {
+         trace "[---] failed to parse PageCtlTag.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tm_map.initTableModel();
+      tv_map.setTableModel(tm_map);
+
+      ta_redraw      <= TimerAction.New(TA_REDRAW,       this, 250);
+      ta_midi_learn  <= TimerAction.New(TA_MIDI_LEARN,   this, 250);
+      ta_rebuild     <= TimerAction.New(TA_REBUILD,      this, 3000);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      cm_push_color.setOptions(PushDefs.color_names);
+      cm_push_pad.setOptions(CtlTagEntry.pad_names);
+      cm_push_type.setOptions(CtlTagEntry.type_names);
+      cm_push_type.setToolTipCaptions(CtlTagEntry.type_tooltips);
+
+      cm_midi_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_midi_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      cm_midi_type.setOptions(MIDIMapEventType.type_names_short);
+
+      if(STConfig.b_push)
+         push_grid.init(0, 0, 8, 8, this);
+
+      loop(NUM_GROUPS)
+      {
+         IntArray ei <= new IntArray;
+         group_enc_entry_indices.add(#(deref ei));
+      }
+
+      initMMC();
+
+      MIDI.AddMIDIMapEventListener(this);  // allows listening (track last event)
+
+      if(app_lnf.b_ascii_back_buttons)
+         Global.ASCIIBackButton(bt_back);
+
+      return true;
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("PageCtlTag");
+
+      mmcAddTarget(MMT_ADD,              CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_CLONE,            CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_REMOVE,           CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_TOGGLE_GROUP_ENC, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_CLEAR_ENC,        CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_RESEND_LAST_VAL,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_DISCARDCTL,       CLASS_BUTTON, SYN_BUTTON_MOD);
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return -1;
+   }
+
+   // <ui_page.png>
+   public virtual pageIsSub() : boolean {
+      return true;
+   }
+
+   // <ui_page.png>
+   protected method pageEnterInt() {
+
+      Page::pageEnter();
+
+      // // trace "xxx last_ev_aliasordevicename=\""+last_ev_aliasordevicename+"\"";
+
+      if(!last_ev_aliasordevicename.isBlank())
+      {
+         // // trace "xxx updateLastEventInfo";
+         last_ev.dev <= MIDI.GetMIDIOutDeviceByAliasOrName(last_ev_aliasordevicename);
+         updateLastEventInfo(last_ev);
+      }
+      else
+      {
+         updateLastEventInfo(null);
+      }
+
+      bt_remove.setEditable(false);
+
+      if(!b_initial_automovecsr)
+      {
+         b_firstevent = true;
+         cb_movecsr.setEnableMixedState(true);
+         cb_movecsr.setSelected(maybe);
+      }
+      else
+      {
+         b_firstevent = false;
+         cb_movecsr.setEnableMixedState(false);
+         cb_movecsr.setSelected(b_initial_automovecsr);
+      }
+
+      cm_midi_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_midi_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      updateTable();
+
+      if(null != last_ev.dev)
+      {
+         // Find best matching map entry and select it
+         if(selectEntryByEvent(last_ev,
+                               (-1 != tm_map.getCursorIndex()) && !cb_movecsr.isSelected()/*bLeadOnly*/
+                               ))
+         {
+            // // endAutoMoveCsrMode();
+         }
+      }
+
+      handleEntrySelected();
+
+      pagePushColorizePads();
+
+      recursiveBuildTabCycleLists();
+
+      relayout(); // fix cm_midi_dev width
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      if(b_mmc_force_ctltag_push)
+      {
+         pageLeave();  // Remove listener
+         b_mmc_force_ctltag_push = false;
+      }
+
+      pageEnterInt();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      midiLearnEnd();
+
+      if(null != last_ev.dev)
+      {
+         last_ev_aliasordevicename = last_ev.dev.getAliasOrDeviceName();
+      }
+      else
+      {
+         last_ev_aliasordevicename = "";
+      }
+
+      push.resetMode();
+
+      ta_redraw.cancel();
+      ta_midi_learn.cancel();
+      if(ta_rebuild.isScheduled())
+      {
+         handleRebuildTimer();
+         ta_rebuild.cancel();
+      }
+   }
+
+   // <method.png>
+   public method togglePushCtlMode(boolean _bForce) {
+
+      if(maybe == _bForce)
+         b_mmc_force_ctltag_push = !b_mmc_force_ctltag_push;
+      else
+         b_mmc_force_ctltag_push = _bForce;
+
+      if(b_mmc_force_ctltag_push)
+         pageEnterInt();
+      else
+         pageLeave();
+
+      Global.Print("Push controller mode is "+Utils.GetEnableString(b_mmc_force_ctltag_push));
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_map);
+   }
+
+   // <midi.png>
+   public virtual mmtHandleGlobalValue(float _val) {
+      tv_map.moveCursorToRow(mmtSelectTableRow(tm_map, _val));
+      tv_map.centerRow();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_back, bt_add, cb_movecsr, bt_remove,
+         tv_map,
+         tf_name, bt_query_remote_ctl, cm_group, cm_push_pad, bt_push_pad_learn, cm_push_color,
+         cm_midi_dev, cm_midi_ch, cm_midi_type
+                    ];
+
+      switch(ls_midi_type.getCurrentChildNr())
+      {
+         case 0:
+            break;
+
+         case 1: // CC
+            _retLayers.add(cm_midi_cc_nr);
+            break;
+
+         case 2: // RPN
+            _retLayers.add(fp_midi_rpn_nr);
+            _retLayers.add(cm_midi_rpn_nr);
+            break;
+
+         case 3: // NRPN
+            _retLayers.add(fp_midi_nrpn_nr);
+            _retLayers.add(cm_midi_nrpn_nr);
+            break;
+      }
+
+      _retLayers.joinRR(_retLayers, [
+                           cm_push_type, fp_reset_value, bt_reset_setlast, cb_reset,
+                                    ]
+                        );
+      if(cm_push_type.getSelectedOption() >= 1)
+         _retLayers.add(fp_val_a);
+      if(cm_push_type.getSelectedOption() >= 2)
+         _retLayers.add(fp_val_b);
+   }
+
+   // <ui_update.png>
+   public method updateTable() {
+
+      int curRow = tm_map.getCursorIndex();
+      // trace "xxx updateTable: curRow="+curRow;
+
+      MIDI.UpdateCtlTagEntryDOs(); // update display object fields
+      tv_map.tableModelChanged();
+
+      if(-1 != curRow)
+      {
+         tv_map.moveCursorToRow(curRow);
+         tv_map.centerRow();
+      }
+      else
+      {
+         tv_map.moveCursorToFirstRow();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEntrySelected() {
+      CtlTagEntry e <= getSelectedEntry();
+      if(null != e)
+      {
+         bt_moveup.setEditable( (current_song.ctltag_entries.indexOfPointer(e, 0)) > 0 );
+         bt_movedown.setEditable( (current_song.ctltag_entries.indexOfPointer(e, 0)) != (current_song.ctltag_entries.numElements -1) );
+
+         tf_name.setText(e.tag_name);
+         tf_name.setEditable(true);
+
+         cm_group.setSelectedOption(e.group_idx);
+         cm_group.setEditable(true);
+
+         cm_push_pad.setSelectedOption(e.push_pad_idx + 1);
+         cm_push_pad.setEditable(true);
+
+         bt_push_pad_learn.setEditable(true);
+
+         cm_push_color.setSelectedOption(e.push_color);
+         cm_push_color.setEditable(true);
+
+         cm_midi_type.setSelectedOption(e.mm_event.type);
+         cm_midi_type.setEditable(true);
+
+         updateMIDI();
+
+         cm_push_type.setSelectedOption(e.push_type);
+         cm_push_type.setEditable(true);
+
+         fp_val_a.setValue(e.val_a);
+         fp_val_a.setEditable(true);
+
+         fp_val_b.setValue(e.val_b);
+         fp_val_b.setEditable(true);
+
+         ls_val_a.switchToLayerNr( (e.push_type != CtlTagEntry.TYPE_NONE)   ? 1 : 0 );
+         ls_val_b.switchToLayerNr( (e.push_type >= CtlTagEntry.TYPE_TOGGLE) ? 1 : 0 );
+
+         cb_reset.setSelected(e.b_send_reset);
+         cb_reset.setEditable(true);
+
+         updateResetValueRange(e);
+
+         fp_reset_value.setValue(e.reset_value);
+         fp_reset_value.setEditable(true);
+
+         bt_reset_setlast.setEditable(true);
+      }
+      else
+      {
+         bt_moveup.setEditable(false);
+         bt_movedown.setEditable(false);
+
+         tf_name.setText("");
+         tf_name.setEditable(false);
+
+         cm_group.setSelectedOption(-1);
+         cm_group.setEditable(false);
+
+         cm_push_pad.setSelectedOption(-1);
+         cm_push_pad.setEditable(false);
+
+         bt_push_pad_learn.setEditable(false);
+
+         midiLearnEnd();
+
+         cm_push_color.setSelectedOption(-1);
+         cm_push_color.setEditable(false);
+
+         cm_midi_dev.setSelectedOption(-1);
+         cm_midi_dev.setEditable(false);
+
+         cm_midi_ch.setSelectedOption(-1);
+         cm_midi_ch.setEditable(false);
+
+         cm_midi_type.setSelectedOption(-1);
+         cm_midi_type.setEditable(false);
+
+         ls_midi_type.switchToLayerNr(0);
+
+         cm_push_type.setSelectedOption(-1);
+         cm_push_type.setEditable(false);
+
+         fp_val_a.setValue(0);
+         fp_val_a.setEditable(false);
+
+         fp_val_b.setValue(0);
+         fp_val_b.setEditable(false);
+
+         cb_reset.setSelected(false);
+         cb_reset.setEditable(false);
+
+         fp_reset_value.setValue(-1);
+         fp_reset_value.setEditable(false);
+
+         bt_reset_setlast.setEditable(false);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRowSelected() {
+      endAutoMoveCsrMode();
+
+      handleEntrySelected();
+
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         cur_group_idx = e.group_idx;
+
+         pagePushColorizePads();
+      }
+
+      tv_map.setLeadSelection(-1);
+   }
+
+   // <method_handle.png>
+   protected method handleDiscardCtl(boolean bPressed) {
+      replay.setEnableDiscardCtl(bPressed); // button up/down
+
+      b_discardctl_last = true;
+
+      pushUpdateDiscardCtl(bPressed, false);
+
+      Global.Print("DiscardCtl is "+Utils.GetEnableString(bPressed));
+   }
+
+   // <method_handle.png>
+   protected method handleDiscardCtlCollect(boolean bPressed) {
+      replay.setEnableDiscardCtlCollect(bPressed); // button up/down
+
+      b_discardctl_last = false;
+
+      pushUpdateDiscardCtl(false, bPressed);
+
+      Global.Print("DiscardCtl/Collect is "+Utils.GetEnableString(bPressed));
+   }
+
+   // <midi.png>
+   protected method tryHandlePushEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(push.isModeCtl())
+      {
+         boolean bPressed;
+         CtlTagEntry *en;
+         int entryIdx;
+
+         if(@(_ev.dev) == @(push.indev))
+         {
+            // // if((TYPE_NOTE_ON == _ev.type) || (TYPE_NOTE_OFF == _ev.type))
+            // // {
+            // //    bPressed = (TYPE_NOTE_ON == _ev.type);
+
+            // //    if(9 == _ev.ext_type) // enc#11
+            // //    {
+            // //       if(b_discardctl_last)
+            // //       {
+            // //          handleDiscardCtl(bPressed);
+            // //       }
+            // //       else
+            // //       {
+            // //          handleDiscardCtlCollect(bPressed);
+            // //       }
+            // //       return true;
+            // //    }
+            // // }
+            // // else
+            if(TYPE_CC == _ev.type)
+            {
+               if(71 <= _ev.ext_type < 79) // enc 1..8
+               {
+                  int encIdx = _ev.ext_type - 71;
+
+                  IntArray ind <= getCurrentEncIndices();
+
+                  if(encIdx < ind.numElements)
+                  {
+                     entryIdx = ind.get(encIdx);
+
+                     en <= current_song.ctltag_entries.get(entryIdx);
+
+                     if(null != en)
+                     {
+                        short nval = en.last_sent_val;
+
+                        // 127 if negative, 1 if positive
+                        if(_ev.arg1 > 64)
+                        {
+                           nval += (-128 + _ev.arg1);
+                        }
+                        else
+                        {
+                           nval += _ev.arg1;
+                        }
+
+                        nval = mathMaxi(0, nval);
+                        nval = mathMini(nval, en.getMaxVal());
+
+                        queueEvent(en, nval);
+                     }
+
+                     return true;
+                  }
+               }
+            }
+            else if(TYPE_PITCHBEND == _ev.type)
+            {
+               en <= getSelectedEntry();
+
+               if(null != en)
+               {
+                  if(-1 != en.push_pad_idx)
+                  {
+                     CtlTagEntry *eOther;
+
+                     foreach eOther in current_song.ctltag_entries
+                     {
+                        boolean bMatch = @(en) == @(eOther);
+
+                        if(!bMatch)
+                        {
+                           if(@(eOther) != @(en))
+                           {
+                              if(eOther.group_idx == en.group_idx)
+                              {
+                                 if(eOther.push_pad_idx == en.push_pad_idx)
+                                 {
+                                    // Same pad as selected entry
+                                    bMatch = true;
+                                 }
+                              }
+                           }
+                        }
+
+                        if(bMatch)
+                        {
+                           if(8192 != _ev.arg1)
+                           {
+                              switch(eOther.push_type)
+                              {
+                                 default:////case CtlTagEntry.TYPE_NONE:
+                                    queueEvent(eOther, _ev.getNormalizedFloatValue() * eOther.getMaxVal());
+                                    break;
+
+                                 case CtlTagEntry.TYPE_PRESSURE:
+                                    queueEvent(eOther, eOther.val_b + (eOther.val_a - eOther.val_b) * _ev.getNormalizedFloatValue());
+                                 case CtlTagEntry.TYPE_MOMENTARY:
+                                 case CtlTagEntry.TYPE_MOMENTARY_PB:
+                                    queueEvent(eOther, eOther.val_b + (eOther.val_a - eOther.val_b) * _ev.getNormalizedFloatValue());
+                                    break;
+                              }
+                           }
+                           else
+                           {
+                              // Pitchbend was released
+                              switch(eOther.push_type)
+                              {
+                                 case CtlTagEntry.TYPE_MOMENTARY:
+                                 case CtlTagEntry.TYPE_MOMENTARY_PB:
+                                    queueEvent(eOther, eOther.val_b);
+                                    break;
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+               return true;
+            }
+         }
+
+         if(_ev.pushIsPad8x8NoteOrPressure())
+         {
+            bPressed = maybe;
+
+            if(SYN_NONE == _ev.syn_type)
+            {
+               if(MIDIMapDefs.TYPE_NOTE_ON == _ev.type)
+                  bPressed = true;
+               else if(MIDIMapDefs.TYPE_NOTE_OFF == _ev.type)
+                  bPressed = false;
+            }
+
+            Integer px;
+            Integer py;
+
+            int padIdx = _ev.pushGetPad8x8Idx();
+            push_grid.getXYByPadIdx(padIdx, px, py);
+
+            // trace "xxx mmlHandleEventUI type="+_ev.type+" syn_type="+_ev.syn_type+" padIdx="+padIdx;
+
+            if(py > 0)
+            {
+               if(midi_learn_timeout > 0)
+               {
+                  en <= getSelectedEntry();
+
+                  if(null != en)
+                  {
+                     en.group_idx = cur_group_idx;
+                     en.push_pad_idx = padIdx;
+
+                     handleEntrySelected();
+
+                     midiLearnEnd();
+
+                     pagePushColorizePads();
+
+                     Global.Success("Entry mapped to pad "+cm_push_pad.getSelectedOptionName());
+                  }
+
+                  return true;
+               }
+            }
+
+            if(0 == py)
+            {
+               if(px < NUM_GROUPS)
+               {
+                  if(MIDIMapDefs.SYN_BUTTON_CLICK == _ev.syn_type)
+                  {
+                     cur_group_idx = px;
+
+                     if(0 == midi_learn_timeout)
+                     {
+                        // Select first group entry
+                        entryIdx = 0;
+                        foreach en in current_song.ctltag_entries
+                        {
+                           if(en.group_idx == cur_group_idx)
+                           {
+                              break;
+                           }
+                           entryIdx++;
+                        }
+
+                        if(entryIdx != (current_song.ctltag_entries.numElements))
+                        {
+                           tv_map.moveCursorToRow(entryIdx);
+                        }
+                        else
+                        {
+                           tv_map.moveCursorToRow(-1);
+                           handleEntrySelected();
+                        }
+                     }
+
+                     pagePushColorizePads();
+                     Global.Print("Select group "+(px + 1));
+                  }
+                  return true;
+               }
+               else
+               {
+                  if(MIDIMapDefs.SYN_NONE == _ev.syn_type)
+                  {
+                     if(maybe != bPressed)
+                     {
+                        if(6 == px)
+                        {
+                           // DiscardCtl
+                           handleDiscardCtl(bPressed);
+                        }
+                        else if(7 == px)
+                        {
+                           // DiscardCtlCollect
+                           handleDiscardCtlCollect(bPressed);
+                        }
+                     }
+                  }
+               }
+            }
+            else
+            {
+               CtlTagEntry *e;
+               int eIdx = 0;
+               IntArray moveCsrCycleArr;
+               moveCsrCycleArr.empty();
+               foreach e in current_song.ctltag_entries
+               {
+                  if(e.group_idx == cur_group_idx)
+                  {
+                     if(e.push_pad_idx == padIdx)
+                     {
+                        MIDIMapEvent ev <= e.mm_event;
+
+                        // trace "xxx ev.type="+_ev.type+" bPressed="+bPressed+" ticks="+_ev.time_stamp;
+
+                        if(maybe != bPressed)
+                        {
+                           switch(e.push_type)
+                           {
+                              case CtlTagEntry.TYPE_NONE:
+                              case CtlTagEntry.TYPE_PRESSURE:
+                                 if(bPressed)
+                                 {
+                                    lazyAddEnc(e);
+                                 }
+                                 break;
+
+                              case CtlTagEntry.TYPE_SELECT:
+                                 // trace "xxx TYPE_SELECT: bPressed="+bPressed;
+                                 if(bPressed)
+                                 {
+                                    lazyAddEnc(e);
+
+                                    queueEvent(e, e.val_a);
+                                 }
+                                 break;
+
+                              case CtlTagEntry.TYPE_TOGGLE:
+                                 if(bPressed)
+                                 {
+                                    e.pad_state = !e.pad_state;
+                                    if(e.pad_state)
+                                    {
+                                       queueEvent(e, e.val_a);
+                                    }
+                                    else
+                                    {
+                                       queueEvent(e, e.val_b);
+                                    }
+                                 }
+                                 break;
+
+                              case CtlTagEntry.TYPE_MOMENTARY:
+                                 if(bPressed)
+                                 {
+                                    queueEvent(e, e.val_a);
+                                 }
+                                 else
+                                 {
+                                    queueEvent(e, e.val_b);
+                                 }
+                                 break;
+                           }
+                        }
+                        else if(MIDIMapDefs.TYPE_POLY_PRESSURE == _ev.type)
+                        {
+                           // trace "xxx is POLY_PRESSURE";
+                           if(CtlTagEntry.TYPE_PRESSURE == e.push_type)
+                           {
+                              lazyAddEnc(e);
+
+                              queueEvent(e, e.val_b + (e.val_a - e.val_b) * _ev.arg2/127.0f);
+                           }
+                        }
+
+                        // // if(MIDIMapDefs.SYN_BUTTON_CLICK == _ev.syn_type)
+                        // // {
+                        // // }
+
+                        if(bPressed)
+                        {
+                           moveCsrCycleArr.add(eIdx);
+                           // if(-1 == moveCsrIdx)
+                           // {
+                           //    moveCsrIdx = eIdx;
+                           // }
+                        }
+
+                        // (note) process multiple entries when more than one entry is mapped to the same pad
+                        //////return true;
+
+                     } // if pad_idx match
+                  } // if group_idx match
+
+                  eIdx++;
+               } // foreach
+            }
+
+            if(MIDIMapDefs.SYN_BUTTON_CLICK == _ev.syn_type)
+            {
+               // Cycle through entries
+               if(moveCsrCycleArr.numElements > 0)
+               {
+                  int moveCsrIdx = -1;
+
+                  int curCycleIdx = moveCsrCycleArr.indexOf(tm_map.getCursorIndex(), 0);
+                  if(-1 == curCycleIdx)
+                     moveCsrIdx = moveCsrCycleArr.get(0);
+                  else if(curCycleIdx == (moveCsrCycleArr.numElements-1))
+                     moveCsrIdx = moveCsrCycleArr.get(0);
+                  else
+                     moveCsrIdx = moveCsrCycleArr.get(curCycleIdx+1);
+
+                  if(-1 != moveCsrIdx)
+                  {
+                     if(moveCsrIdx != tv_map.getCursorRow())
+                     {
+                        tv_map.moveCursorToRow(moveCsrIdx);
+                        en <= current_song.ctltag_entries.get(moveCsrIdx);
+                        Global.Print("Select entry \""+en.tag_name+"\"");
+                     }
+                  }
+               }
+            }
+
+            return true;
+         } // pushIsPad8x8..
+
+      } // isModeCtl()
+
+      return false;
+   }
+
+   // <midi.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      //  (note) called from UI thread (processing UI event queue in Replay.tks)
+
+      if(!pageIsCurrent())
+      {
+         trackLastRecvdEventBg(_ev);
+         return false;
+      }
+
+      // trace "xxx mmlHandleEventUI type="+_ev.type;
+
+      if(tryHandlePushEventUI(_ev))
+         return true;
+
+      MIDIMapEvent evRec = _ev;
+      MIDIMorphScene.TransformEvent(evRec);
+      if(evRec.isValid())
+      {
+         evRec.echoTransformForced();
+
+         updateLastEventInfo(evRec);
+
+         // Find best matching map entry and select it
+         if(selectEntryByEvent(evRec,
+                               (-1 != tm_map.getCursorIndex()) && !cb_movecsr.isSelected()/*bLeadOnly*/
+                               ))
+         {
+            endAutoMoveCsrMode();
+         }
+
+         // Track last_sent_val when it is modified by other MIDI controller (i.e. not Push)
+         trackLastRecvdValue(evRec, true/*bAllowUpdateEnc*/);
+      }
+
+      return false;
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(_ev.pushIsPad8x8NoteOrPressure())
+      {
+         return true;
+      }
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         String tgtName <= boundEv.bound_target.target_name;
+
+         switch(tgtName)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+
+            case MMT_ADD:
+               handleAdd();
+               return true;
+
+            case MMT_CLONE:
+               handleClone();
+               return true;
+
+            case MMT_REMOVE:
+               handleRemove();
+               return true;
+
+            case MMT_TOGGLE_GROUP_ENC:
+               toggleGroupEncMode();
+               return true;
+
+            case MMT_CLEAR_ENC:
+               clearEnc();
+               return true;
+
+            case MMT_RESEND_LAST_VAL:
+               resendLastVals();
+               return true;
+
+            case MMT_DISCARDCTL:
+               if(b_discardctl_last)
+               {
+                  handleDiscardCtl(_ev.class_type_ext);
+               }
+               else
+               {
+                  handleDiscardCtlCollect(_ev.class_type_ext);
+               }
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected =replay= method queueEventToFrame(MIDIMapEvent _ev) {
+      _ev.addToFrame(play_frame, 1/*noteDuration*/, false/*bDiscard*/);
+   }
+
+   // <method.png>
+   protected method queueEvent(CtlTagEntry _e, int _val) {
+      MIDIMapEvent ev <= _e.mm_event;
+
+      // trace "xxx Q: ev.type="+ev.type+" ev.dev="+#(ev.dev);
+
+      if(null != ev.dev)
+      {
+         switch(ev.type)
+         {
+            case MIDIMapDefs.TYPE_NOTE_ON:
+            case MIDIMapDefs.TYPE_NOTE_OFF:
+            case MIDIMapDefs.TYPE_CC:
+            case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+            case MIDIMapDefs.TYPE_PITCHBEND:
+            case MIDIMapDefs.TYPE_RPN:
+            case MIDIMapDefs.TYPE_NRPN:
+               ev.arg1 = _val;
+               ev.arg2 = 0;
+
+               queueEventToFrame(ev);
+
+               CtlTagEntry *e;
+               foreach e in current_song.ctltag_entries
+               {
+                  if(e.mm_event.matchTypeOf(_e.mm_event))
+                  {
+                     e.last_sent_val = _val;
+                  }
+               }
+
+               mmcPushUpdateEncoderValues();
+               break;
+         }
+      }
+   }
+
+   // <method.png>
+   protected method resendLastVals() {
+      CtlTagEntry *e;
+      foreach e in current_song.ctltag_entries
+      {
+         if(-1 != e.last_sent_val)
+            queueEvent(e, e.last_sent_val);
+      }
+
+      Global.Print("Resend last values");
+   }
+
+   // <method.png>
+   public method revertToResetVals() {
+      // Called when replay starts
+      CtlTagEntry *e;
+      foreach e in current_song.ctltag_entries
+      {
+         if(e.b_send_reset)
+            queueEvent(e, e.reset_value);
+      }
+   }
+
+   // <method.png>
+   protected method trackLastRecvdValue(MIDIMapEvent _ev, boolean _bAllowUpdateEnc) {
+      CtlTagEntry *e;
+      boolean bUpdateEnc = false;
+      foreach e in current_song.ctltag_entries
+      {
+         if(e.mm_event.matchTypeOf(_ev))
+         {
+            e.last_sent_val = _ev.getNormalizedFloatValue() * e.getMaxVal();
+            // trace "xxx track e.last_sent_val="+e.last_sent_val;
+            bUpdateEnc = _bAllowUpdateEnc;
+         }
+      }
+
+      if(bUpdateEnc)
+      {
+         mmcPushUpdateEncoderValues();
+      }
+   }
+
+   // <midi.png>
+   public method trackLastRecvdEventBg(MIDIMapEvent _ev) {
+      // Called when page is not currently visible
+      MIDIMapEvent evRec = _ev;
+      MIDIMorphScene.TransformEvent(evRec);
+
+      trackLastRecvdValue(evRec, false/*bAllowUpdateEnc*/);
+
+      if(evRec.dev instanceof STX_MIDIOutDevice)
+      {
+         last_ev = evRec;
+         last_ev.dev <= null; // (note) device may be deleted before page is shown again
+         last_ev_aliasordevicename = evRec.dev.getAliasOrDeviceName();
+      }
+   }
+
+   // <method.png>
+   protected method endAutoMoveCsrMode() {
+      if(b_firstevent)
+      {
+         b_firstevent = false;
+         cb_movecsr.setSelected(b_movecsr);
+         cb_movecsr.setEnableMixedState(false);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateLastEventInfo(MIDIMapEvent _ev) {
+
+      // trace "xxx updateLastEventInfo: ev="+#(_ev);
+
+      if(null != _ev)
+      {
+         last_ev = _ev;
+
+         // Set last event info
+         tf_last_dev.setText(_ev.dev.getAliasOrDeviceName());
+
+         Integer io = _ev.dev_ch + 1;
+         tf_last_ch.setText(io.printf("#%02d"));
+
+         String className <= _ev.getClassTypeName();
+
+         if(null == className)
+         {
+            className <= MIDIMapEventType.type_names_short[_ev.type];
+         }
+
+         tf_last_type.setText(className);
+
+         tf_last_ext.setText(_ev.getExtTypeName());
+      }
+      else
+      {
+         tf_last_dev .setText(" ");
+         tf_last_ch  .setText(" ");
+         tf_last_type.setText(" ");
+         tf_last_ext .setText(" ");
+      }
+
+      ta_redraw.schedule();
+   }
+
+   // <ui_update.png>
+   protected method updateResetValueRange(CtlTagEntry _e) {
+      switch(_e.mm_event.type)
+      {
+         default:
+         case MIDIMapDefs.TYPE_CC:
+            fp_reset_value.setMaxValue(127);
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+         case MIDIMapDefs.TYPE_NRPN:
+            fp_reset_value.setMaxValue(16383);
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleAutoMoveCsr() {
+      b_firstevent = false;
+      cb_movecsr.setEnableMixedState(false);
+      cb_movecsr.setSelected(!cb_movecsr.isSelected());
+   }
+
+   // <ui_handle.png>
+   protected method toggleGroupEncMode() {
+      b_group_enc_mode = !b_group_enc_mode;
+
+      mmcPushUpdateEncoderValues();
+      mmcPushUpdateEncoderLabels();
+
+      Global.Print((b_group_enc_mode?"Group":"Global")+" encoder mode");
+   }
+
+   // <method_get.png>
+   protected method getCurrentEncIndices() : IntArray {
+      if(b_group_enc_mode)
+         return group_enc_entry_indices.get(cur_group_idx);
+      else
+         return global_enc_entry_indices;
+   }
+
+   // <method.png>
+   protected method lazyAddEnc(CtlTagEntry _e) {
+      IntArray *ind;
+
+      if(
+         (CtlTagEntry.TYPE_NONE     == _e.push_type) ||
+         (CtlTagEntry.TYPE_PRESSURE == _e.push_type)
+         )
+      {
+         ind <= getCurrentEncIndices();
+
+         if(null != ind)
+         {
+            int entryIdx = current_song.ctltag_entries.indexOfPointer(_e, 0);
+
+            if(-1 != entryIdx)
+            {
+               if(!ind.contains(entryIdx))
+               {
+                  CtlTagEntry *e;
+                  int otherEntryIdx = 0;
+                  foreach e in current_song.ctltag_entries
+                  {
+                     if(e.mm_event.matchTypeOf(_e.mm_event))
+                     {
+                        if(ind.contains(otherEntryIdx))
+                           return;
+                     }
+                     otherEntryIdx++;
+                  }
+
+                  if(8 == ind.numElements)
+                     ind.delete(7);
+
+                  ind.insert(0, entryIdx);
+
+                  mmcPushUpdateEncoderLabels();
+                  mmcPushUpdateEncoderValues();
+
+                  Global.Print("Add "+(b_group_enc_mode?"group":"global")+" encoder entry");
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method clearEnc() {
+      IntArray *ind;
+
+      ind <= getCurrentEncIndices();
+
+      if(null != ind)
+      {
+         ind.empty();
+
+         mmcPushUpdateEncoderLabels();
+         mmcPushUpdateEncoderValues();
+
+         Global.Print("Clear "+(b_group_enc_mode?"group":"global")+" encoder mapping");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAdd() {
+
+      midiLearnEnd();
+
+      if(null != last_ev.dev)
+      {
+         if(!selectEntryByEvent(last_ev, false/*bLeadOnly*/))
+         {
+            // (todo) query name
+            if(null == dlg_name)
+            {
+               dlg_name <= TextInputDialog.New("Enter tag name",
+                                               " Enter new tag name",
+                                               "Create", "Cancel",
+                                               "new tag", 16, 16, this
+                                               );
+
+               dlg_name.setButtonFontByName("big3");
+               dlg_name.setMessageFontByName("big5");
+               dlg_name.setTextFontByName("big4");
+               dlg_name.setButtonIcons(UI.GetIcon("add"), UI.GetIcon("cancel"));
+               dlg_name.invalidateSizeCaches();
+               dlg_name.resizeToMinimum();
+               dlg_name.showCentered();
+            }
+
+         }
+         else
+         {
+            Global.Warning("Tag already exists");
+         }
+      }
+      else
+      {
+         Global.Warning("Cannot add: No event");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAdd2(String _name) {
+      if(null != last_ev.dev)
+      {
+         if(!selectEntryByEvent(last_ev, false/*bLeadOnly*/))
+         {
+            CtlTagEntry en <= new CtlTagEntry;
+            en.mm_event      = last_ev;
+            en.tag_name      = _name;
+            en.b_name_edited = true;
+            en.group_idx     = cur_group_idx;
+            en.init();
+
+            current_song.ctltag_entries.add(#(deref en));
+
+            last_ev.dev.buildCtlNames();
+            updateTable();
+
+            selectEntryByEvent(last_ev, false/*bLeadOnly*/);
+
+            pagePushColorizePads();
+            handlePushPadLearn();
+
+            Global.Print("Add tagged event");
+         }
+      }
+   }
+
+   // <method.png>
+   protected method addEntryFromRemoteRPN(int _rpnDevIdx, byte _rpnDevCh, short _rpn) {
+      local STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_rpnDevIdx);
+      if(null != dev)
+      {
+         CtlTagEntry en <= new CtlTagEntry;
+         MIDIMapEvent ev <= en.mm_event;
+         ev.dev      <= dev;
+         ev.dev_ch    = _rpnDevCh;
+         ev.type      = MIDIMapDefs.TYPE_RPN;
+         ev.ext_type  = _rpn;
+
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(_rpnDevCh);
+         if(null != msp)
+            en.tag_name = msp.buildCtlTagLabelByMIDIMapEventType(ev);
+
+         en.b_name_edited = true;
+         en.group_idx     = cur_group_idx;
+         en.init();
+
+         current_song.ctltag_entries.add(#(deref en));
+
+         dev.buildCtlNames();
+         updateTable();
+
+         selectEntryByEvent(ev, false/*bLeadOnly*/);
+
+         pagePushColorizePads();
+         handlePushPadLearn();
+
+         Global.Print("Add Node Remote Ctl");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClone() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      int eIdx;
+      CtlTagEntry *ne;
+
+      if(null != e)
+      {
+         ne <= new CtlTagEntry;
+         ne.copyFrom(e);
+         ne.tag_name = "+"+ne.tag_name;
+
+         eIdx = current_song.ctltag_entries.indexOfPointer(e, 0);
+      }
+      else
+      {
+         eIdx = -1;
+         ne <= new CtlTagEntry;
+         ne.init();
+
+         MIDIMapEvent ev <= ne.mm_event;
+         ev.setDev(MIDI.GetMIDIOutDeviceByIndex(0));
+      }
+
+      current_song.ctltag_entries.insert(eIdx+1, #(deref ne));
+
+      queueRebuild();
+
+      updateTable();
+
+      tv_map.moveCursorToRow(eIdx + 1);
+
+      updateMIDI();
+
+      pagePushColorizePads();
+
+      if(null != e)
+      {
+         Global.Print("Clone entry");
+      }
+      else
+      {
+         Global.Print("Create new entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleRemove() {
+      CtlTagEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         current_song.ctltag_entries.remove(en);
+
+         updateTable();
+
+         if(0 == (current_song.ctltag_entries.numElements))
+         {
+            bt_remove.setEditable(false);
+         }
+
+         midiLearnEnd();
+
+         pagePushColorizePads();
+         queueRebuild();
+
+         Global.Print("Remove tagged event");
+      }
+      else
+      {
+         Global.Error("Remove: No entry selected");
+      }
+   }
+
+   // <method.png>
+   public method getSelectedEntry() : CtlTagEntry {
+      int idx = tm_map.getCursorIndex();
+
+      if(-1 != idx)
+      {
+         CtlTagEntry en <= current_song.ctltag_entries.get(idx);
+         return en;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public method selectEntryByEvent(MIDIMapEvent _ev, boolean _bLeadOnly) : boolean {
+
+      CtlTagEntry *en;
+
+      int rowIdx = 0;
+
+      foreach en in current_song.ctltag_entries
+      {
+         if(en.mm_event.matchTypeOf(_ev))
+         {
+            if(!_bLeadOnly)
+            {
+               tv_map.moveCursorToRow(rowIdx);
+               tv_map.centerRow();
+            }
+            tv_map.setLeadSelection(rowIdx);
+            Global.Print("CtlTag: "+en.tag_name);
+            return true;
+         }
+
+         rowIdx++;
+      }
+
+      // Not found
+      tv_map.setLeadSelection(-1);
+
+      return false;
+   }
+
+   // <midi_push.png>
+   protected method pushUpdateDiscardCtl(boolean bPressedDiscardCtl, boolean bPressedDiscardCtlCollect) {
+
+      push_grid.setGridColor(6, 0, bPressedDiscardCtl ? STConfig.push_page_ctl_tag_col_discardctl_active : b_discardctl_last ? STConfig.push_page_ctl_tag_col_discardctl_last : STConfig.push_page_ctl_tag_col_discardctl_alt);
+      push_grid.setGridColor(7, 0, bPressedDiscardCtlCollect ? STConfig.push_page_ctl_tag_col_discardctl_active : b_discardctl_last ? STConfig.push_page_ctl_tag_col_discardctl_alt : STConfig.push_page_ctl_tag_col_discardctl_last);
+   }
+
+   // <midi_push.png>
+   protected method pushUpdateGroup() {
+
+      if(STConfig.b_push)
+      {
+         int gi = 0;
+
+         loop(NUM_GROUPS)
+         {
+            if(cur_group_idx == gi)
+               push_grid.setGridColor(gi, 0, STConfig.push_page_ctl_tag_col_group_sel);
+            else
+               push_grid.setGridColor(gi, 0, STConfig.push_page_ctl_tag_col_group);
+            gi++;
+         }
+      }
+   }
+
+   // <midi_push.png>
+   protected method pushUpdateEntries() {
+
+      if(STConfig.b_push)
+      {
+         CtlTagEntry *e;
+
+         int eIdx = 0;
+         int selIdx = tm_map.getCursorIndex();
+         foreach e in current_song.ctltag_entries
+         {
+            if(e.group_idx == cur_group_idx)
+            {
+               if(-1 != e.push_pad_idx)
+               {
+                  push_grid.setGridColorByPadIdx(e.push_pad_idx, e.push_color);
+
+                  if(eIdx == selIdx)
+                  {
+                     push.blinkPadEnable(e.push_pad_idx,
+                                         STConfig.push_page_ctl_tag_col_pad_sel,
+                                         STConfig.push_page_ctl_tag_cursor_blink_interval_on,
+                                         STConfig.push_page_ctl_tag_cursor_blink_interval_off,
+                                         false/*bForceRestart*/
+                                         );
+                  }
+               }
+            }
+
+            eIdx++;
+         }
+      }
+   }
+
+   // <midi_push.png>
+   public virtual pagePushColorizePads() {
+
+      // trace "xxx pagePushColorizePads";
+
+      if(STConfig.b_push)
+      {
+         push.padUpdateBegin();
+
+         if(b_mmc_force_global)
+         {
+            // // root_form.mmcPushColorizePads();
+         }
+         else
+         {
+            push_grid.clear();
+
+            // trace "xxx replay.b_discardctl="+replay.b_discardctl+" replay.b_discardctl_collect="+replay.b_discardctl_collect;
+            pushUpdateDiscardCtl(replay.ui_b_discardctl, replay.ui_b_discardctl_collect);
+
+            push.blinkPadDisableRange(push_grid.padidx_lb,
+                                      push_grid.padidx_rt
+                                      );
+
+            pushUpdateGroup();
+            pushUpdateEntries();
+         }
+
+         push.padUpdateEnd();
+
+         mmcPushUpdateEncoderValues();
+         mmcPushUpdateEncoderLabels();
+      }
+   }
+
+   // <midi_push.png>
+   protected method pushUpdateEncLabelsFromIndexArray(IntArray _indices) {
+      int entryIdx;
+      int encIdx = 0;
+
+      foreach entryIdx in _indices
+      {
+         if(encIdx >= 8)
+            break;
+
+         CtlTagEntry e <= current_song.ctltag_entries.get(entryIdx);
+
+         if(null != e)
+         {
+            String encName = e.tag_name.substring(0, 7);
+            boolean bMatch = false;
+
+            CtlTagEntry eSel <= getSelectedEntry();
+
+            if(null != eSel)
+            {
+               if(e.mm_event.matchTypeOf(eSel.mm_event))
+               {
+                  bMatch = true;
+               }
+
+               if(!bMatch)
+               {
+                  CtlTagEntry *eOther;
+                  foreach eOther in current_song.ctltag_entries
+                  {
+                     if(-1 != eSel.push_pad_idx)
+                     {
+                        if(@(eOther) != @(eSel))
+                        {
+                           if(eOther.group_idx == eSel.group_idx)
+                           {
+                              if(eOther.push_pad_idx == eSel.push_pad_idx)
+                              {
+                                 if(e.mm_event.matchTypeOf(eOther.mm_event))
+                                 {
+                                    bMatch = true;
+                                    break;
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            if(bMatch)
+               encName.append("*");
+
+            push.lcdTextEncCellLabel(encIdx, encName, this);
+         }
+
+         // Next entry index
+         encIdx++;
+      }
+   }
+
+   // <midi_push.png>
+   protected method pushUpdateEncValuesFromIndexArray(IntArray _indices) {
+      int entryIdx;
+      int encIdx = 0;
+
+      foreach entryIdx in _indices
+      {
+         if(encIdx >= 8)
+            break;
+
+         if(encIdx >= _indices.numElements)
+            break;
+
+         CtlTagEntry e <= current_song.ctltag_entries.get(entryIdx);
+
+         if(null != e)
+         {
+            // trace "xxx update encIdx="+encIdx+" last_sent_val="+e.last_sent_val;
+            push.lcdTextEncCell(1, encIdx, String(e.last_sent_val));
+         }
+
+         // Next entry index
+         encIdx++;
+      }
+   }
+
+   // <midi_push.png>
+   public virtual mmcPushUpdateEncoderLabels() {
+      if(STConfig.b_push)
+      {
+         IntArray *ind;
+
+         ind <= getCurrentEncIndices();
+
+         if(null != ind)
+         {
+            push.lcdBlankRow(0);
+            pushUpdateEncLabelsFromIndexArray(ind);
+            push.updateLCD();
+         }
+      }
+   }
+
+   // <midi_push.png>
+   public virtual mmcPushUpdateEncoderValues() {
+      if(STConfig.b_push)
+      {
+         IntArray *ind;
+
+         ind <= getCurrentEncIndices();
+
+         if(null != ind)
+         {
+            push.lcdBlankRow(1);
+            pushUpdateEncValuesFromIndexArray(ind);
+            push.updateLCD();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method updateMIDI() {
+      CtlTagEntry e <= getSelectedEntry();
+      if(null != e)
+      {
+         STX_MIDIOutDevice dev <= e.mm_event.dev;
+         MIDISynthProfile msp <= null;
+         if(null != dev)
+         {
+            msp <= dev.getMIDISynthProfile(e.mm_event.dev_ch);
+            cm_midi_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(e.mm_event.dev.dev_idx));
+         }
+
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         cm_midi_dev.setEditable(true);
+         cm_midi_ch.setSelectedOption(e.mm_event.dev_ch);
+         cm_midi_ch.setEditable(true);
+
+         switch(e.mm_event.type)
+         {
+            case TYPE_NOTE_OFF:
+            case TYPE_NOTE_ON:
+            case TYPE_POLY_PRESSURE:
+               ls_midi_type.switchToLayerNr(0);
+
+               fp_val_a.setMinMaxValues(0, 127);
+               fp_val_b.setMinMaxValues(0, 127);
+               break;
+
+            case TYPE_CC:
+               ls_midi_type.switchToLayerNr(1);
+               if(null != dev)
+               {
+                  cm_midi_cc_nr.setOptions(dev.getCCNamesSingle(e.mm_event.dev_ch));
+                  cm_midi_cc_nr.setToolTipCaptions(dev.getCCNamesMulti(e.mm_event.dev_ch));
+               }
+               else
+               {
+                  cm_midi_cc_nr.setOptions(MIDI.cc_names);
+                  cm_midi_cc_nr.setToolTipCaptions(MIDI.cc_names);
+               }
+               cm_midi_cc_nr.setSelectedOption(e.mm_event.ext_type);
+
+               fp_val_a.setMinMaxValues(0, 127);
+               fp_val_b.setMinMaxValues(0, 127);
+               break;
+
+            case TYPE_PROGRAM_CHANGE:
+            case TYPE_CHANNEL_PRESSURE:
+               ls_midi_type.switchToLayerNr(0);
+               fp_val_a.setMinMaxValues(0, 127);
+               fp_val_b.setMinMaxValues(0, 127);
+               break;
+
+            case TYPE_PITCHBEND:
+               ls_midi_type.switchToLayerNr(0);
+               fp_val_a.setMinMaxValues(0, 16383);
+               fp_val_b.setMinMaxValues(0, 16383);
+               break;
+
+            case TYPE_SYSEX:
+            case TYPE_SYSCOM_TIMECODE:
+            case TYPE_SYSCOM_SONG_POSITION:
+            case TYPE_SYSCOM_SONG_SELECT:
+            case TYPE_SYSCOM_F4:
+            case TYPE_SYSCOM_F5:
+            case TYPE_SYSCOM_TUNE_REQUEST:
+            case TYPE_SYSRT_TIMING_CLOCK:
+            case TYPE_SYSRT_F9:
+            case TYPE_SYSRT_START:
+            case TYPE_SYSRT_CONTINUE:
+            case TYPE_SYSRT_STOP:
+            case TYPE_SYSRT_FD:
+            case TYPE_SYSRT_ACTIVE_SENSING:
+            case TYPE_SYSRT_SYSTEM_RESET:
+            default:
+               ls_midi_type.switchToLayerNr(0);
+               break;
+
+            case TYPE_RPN:
+               ls_midi_type.switchToLayerNr(2);
+               cm_midi_rpn_nr.setOptions(msp.rpn_captions);
+               cm_midi_rpn_nr.setToolTipCaptions(msp.rpn_infos);
+               cm_midi_rpn_nr.setSelectedOption(msp.getRPNCaptionIndex(e.mm_event.ext_type));
+               fp_midi_rpn_nr.setValue(e.mm_event.ext_type);
+
+               fp_val_a.setMinMaxValues(0, 16383);
+               fp_val_b.setMinMaxValues(0, 16383);
+               break;
+
+            case TYPE_NRPN:
+               ls_midi_type.switchToLayerNr(3);
+               cm_midi_nrpn_nr.setOptions(msp.nrpn_captions);
+               cm_midi_nrpn_nr.setToolTipCaptions(msp.nrpn_infos);
+               cm_midi_nrpn_nr.setSelectedOption(msp.getNRPNCaptionIndex(e.mm_event.ext_type));
+               fp_midi_nrpn_nr.setValue(e.mm_event.ext_type);
+
+               fp_val_a.setMinMaxValues(0, 16383);
+               fp_val_b.setMinMaxValues(0, 16383);
+               break;
+         }
+      }
+      else
+      {
+         ls_midi_type.switchToLayerNr(0);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveUp() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         int idx = current_song.ctltag_entries.indexOfPointer(e, 0);
+
+         if(-1 != idx)
+         {
+            int rowIdx = tm_map.getCursorIndex();
+
+            if(current_song.moveCtlTagEntryUp(idx))
+            {
+               tv_map.tableModelChanged();
+               tv_map.redraw();
+               tv_map.moveCursorToPreviousRow();
+
+               Global.Print("Move entry up");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveDown() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         int idx = current_song.ctltag_entries.indexOfPointer(e, 0);
+
+         if(-1 != idx)
+         {
+            int rowIdx = tm_map.getCursorIndex();
+
+            if(current_song.moveCtlTagEntryDown(idx))
+            {
+               tv_map.tableModelChanged();
+               tv_map.redraw();
+               tv_map.moveCursorToNextRow();
+
+               Global.Print("Move entry down");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         String oldName = e.tag_name;
+         String newName = tf_name.getText();
+         newName.replace("*", "");
+         e.tag_name = newName;
+
+         if(newName.isBlank())
+            e.b_name_edited = false;
+         else
+            e.b_name_edited |= (oldName != newName);
+
+         if(null != e.mm_event.dev)
+            e.mm_event.dev.buildCtlNames();
+
+         updateTable();
+         updateMIDI();
+
+         Global.Print("Name is \""+e.tag_name+"\"" + (e.b_name_edited?" (*)":""));
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleRemoteQueryCtlTargets(PointerArray _ctlTargets) {
+      // Overwrites RemoteQueryCtlTargetsListener::handleRemoteQueryCtlTargets
+      SysExRemoteCtlTarget *ct;
+      CtlTagEntry *en;
+      int numUpdated = 0;
+      int numSkipped = 0;
+      int numAdded = 0;
+      foreach ct in _ctlTargets
+      {
+         Global.Debug2("PageCtlTage::handleRemoteQueryCtlTargets: ct.param_name=\""+ct.param_name+"\"");
+
+         if(0 <= ct.dev_idx < MIDI.MAX_LOCALMIDI_OUTPUTS/*26*/)
+         {
+            String ctDevName = MIDI.GetVSTOutDeviceNameByIdx(ct.dev_idx);  // 0..25 => vst_a..vst_z
+            int ctMidiCh = (ct.midi_ch >= 0) ? ct.midi_ch : 0;  // (todo) handle -1 (any ch)
+            int ctType;
+            switch(ct.type)
+            {
+               default:
+                  ctType = -1;
+                  break;
+
+               case SysExRemoteCtlTarget.TYPE_CC:
+                  ctType = MIDIMapDefs.TYPE_CC;
+                  break;
+
+               case SysExRemoteCtlTarget.TYPE_RPN:
+                  ctType = MIDIMapDefs.TYPE_RPN;
+                  break;
+
+               case SysExRemoteCtlTarget.TYPE_NRPN:
+                  ctType = MIDIMapDefs.TYPE_NRPN;
+                  break;
+            }
+
+            if(-1 != ctType)
+            {
+               boolean bFound = false;
+               MIDIMapEvent *enEv;
+               foreach en in current_song.ctltag_entries
+               {
+                  enEv <= en.mm_event;
+                  if(enEv.type == ctType)
+                  {
+                     if(enEv.ext_type == ct.ext_type)
+                     {
+                        if(enEv.dev_ch == ctMidiCh)
+                        {
+                           if(enEv.getAliasOrDeviceName() == ctDevName)
+                           {
+                              // Found matching entry, update it
+                              if(!en.b_name_edited)
+                              {
+                                 if(en.tag_name != ct.param_name)
+                                 {
+                                    en.tag_name = ct.param_name;
+                                    numUpdated++;
+                                 }
+                              }
+                              else
+                              {
+                                 numSkipped++;
+                              }
+                              bFound = true;
+                              break;
+                           } // if dev name
+                        } // if dev_ch
+                     } // if ext_type
+                  } // if type
+               } // foreach en
+
+               if(!bFound)
+               {
+                  // New entry
+                  en <= new CtlTagEntry;
+                  en.init();
+                  en.tag_name = ct.param_name;
+                  en.b_name_edited = false;
+                  enEv <= en.mm_event;
+                  STX_MIDIOutDevice enDev <= MIDI.GetMIDIOutDeviceByAliasOrName(ctDevName);
+
+                  switch(ct.type)
+                  {
+                     case SysExRemoteCtlTarget.TYPE_CC:
+                        enEv.initTransformedFromCC(enDev, ctMidiCh,
+                                                   ct.ext_type,
+                                                   0/*value*/
+                                                   );
+                        break;
+
+                     case SysExRemoteCtlTarget.TYPE_RPN:
+                        enEv.initTransformedFromRPN(enDev, ctMidiCh,
+                                                    ct.ext_type,
+                                                    0/*value*/
+                                                    );
+                        break;
+
+                     case SysExRemoteCtlTarget.TYPE_NRPN:
+                        enEv.initTransformedFromNRPN(enDev, ctMidiCh,
+                                                     ct.ext_type,
+                                                     0/*value*/
+                                                     );
+                        break;
+                  }
+
+                  current_song.ctltag_entries.add(#(deref en));
+                  numAdded++;
+               }
+
+            } // if ctType
+         } // if dev_idx
+      }
+
+      Global.Debug("PageCtlTag::queryRemoteCtlCbk: "+numUpdated+" updated, "+numSkipped+" skipped, "+numAdded+" added");
+
+      if( (numUpdated > 0) || (numAdded > 0) )
+      {
+         queueRebuild();
+
+         if(pageIsCurrent())
+         {
+            updateTable();
+            tv_map.tableModelChanged();
+            handleEntrySelected();
+            redraw();
+         }
+      }
+
+      Global.Print("Query Remote Ctl: "+numUpdated+" updated, "+numSkipped+" skipped, "+numAdded+" added");
+   }
+
+   // <ui_handle.png>
+   protected method handleQueryRemoteCtl() {
+      Global.Debug2("PageCtlTag::handleQueryRemoteCtl: send query");
+      SysEx.QueueSendRemoteQueryCtlTargets(this/*listener*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.group_idx = cm_group.getSelectedOption();
+
+         cur_group_idx = e.group_idx;
+
+         tv_map.redraw();
+         pagePushColorizePads();
+
+         Global.Print("Group is "+cm_group.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePushPadChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.push_pad_idx = cm_push_pad.getSelectedOption() - 1;
+
+         pagePushColorizePads();
+
+         Global.Print("Push Pad is "+cm_push_pad.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePushPadLearn() {
+
+      if(midi_learn_timeout > 0)
+         return midiLearnEnd();
+
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         midi_learn_timeout = 40;
+         ta_midi_learn.schedule();
+
+         bt_push_pad_learn.setBackgroundTint(#40ff0000);
+         bt_push_pad_learn.redraw();
+
+         Global.Print("Start MIDI learn (Push Pad)");
+      }
+   }
+
+   // <method.png>
+   protected method midiLearnEnd() {
+      ta_midi_learn.cancel();
+      midi_learn_timeout = 0;
+      bt_push_pad_learn.setBackgroundTint(0);
+      bt_push_pad_learn.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handlePushColorChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.push_color = cm_push_color.getSelectedOption();
+
+         pagePushColorizePads();
+
+         Global.Print("Push Color is "+cm_push_color.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePushTypeChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.push_type = cm_push_type.getSelectedOption();
+
+         handleEntrySelected();
+
+         Global.Print("Push pad type is "+cm_push_type.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIDevChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+         ev.setDev(MIDI.GetMIDIOutDeviceByIndex(MIDI.SortedToUnsortedDevIdx(cm_midi_dev.getSelectedOption())));
+
+         updateTable();
+         updateMIDI();
+         pn_midi.relayout();
+
+         Global.Print("MIDI dev is \""+cm_midi_dev.getSelectedOptionName()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIChChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+         ev.setDevCh(cm_midi_ch.getSelectedOption());
+
+         updateTable();
+         updateMIDI();
+         pn_midi.relayout();
+
+         Global.Print("MIDI channel is "+cm_midi_ch.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDITypeChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+         ev.type = cm_midi_type.getSelectedOption();
+
+         if(null != ev.dev)
+            ev.dev.buildCtlNames();
+
+         updateResetValueRange(e);
+
+         updateTable();
+         updateMIDI();
+         pn_midi.relayout();
+
+         Global.Print("MIDI type is "+cm_midi_type.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDICCNrChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+         ev.ext_type = cm_midi_cc_nr.getSelectedOption();
+
+         if(null != ev.dev)
+            ev.dev.buildCtlNames();
+
+         updateTable();
+
+         Global.Print("CC is "+cm_midi_cc_nr.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIRPNNrChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+               msp <= MIDI.GetDefaultSynthProfile();
+
+            ev.ext_type = msp.getRPNByCaptionIndex(cm_midi_rpn_nr.getSelectedOption());
+            fp_midi_rpn_nr.setValue(ev.ext_type);
+
+            if(null != ev.dev)
+               ev.dev.buildCtlNames();
+
+            updateTable();
+
+            Global.Print("RPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIRPNNrValChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+               msp <= MIDI.GetDefaultSynthProfile();
+
+            ev.ext_type = fp_midi_rpn_nr.getFloatValue();
+            cm_midi_rpn_nr.setSelectedOption(msp.getRPNCaptionIndex(ev.ext_type));
+
+            if(null != ev.dev)
+               ev.dev.buildCtlNames();
+
+            updateTable();
+
+            Global.Print("RPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDINRPNNrChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+               msp <= MIDI.GetDefaultSynthProfile();
+
+            ev.ext_type = msp.getRPNByCaptionIndex(cm_midi_nrpn_nr.getSelectedOption());
+            fp_midi_nrpn_nr.setValue(ev.ext_type);
+
+            if(null != ev.dev)
+               ev.dev.buildCtlNames();
+
+            updateTable();
+
+            Global.Print("NRPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDINRPNNrValChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+               msp <= MIDI.GetDefaultSynthProfile();
+
+            ev.ext_type = fp_midi_nrpn_nr.getFloatValue();
+            cm_midi_nrpn_nr.setSelectedOption(msp.getNRPNCaptionIndex(ev.ext_type));
+
+            if(null != ev.dev)
+               ev.dev.buildCtlNames();
+
+            updateTable();
+
+            Global.Print("NRPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleValAChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.val_a = fp_val_a.getFloatValue();
+
+         Global.Print("Value A is "+e.val_a);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleValBChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.val_b = fp_val_b.getFloatValue();
+
+         Global.Print("Value B is "+e.val_b);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSendResetChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.b_send_reset = cb_reset.isSelected();
+
+         Global.Print("Send reset is "+Utils.GetEnableString(e.b_send_reset));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleResetValueChanged() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         e.reset_value = fp_reset_value.getFloatValue();
+
+         Global.Print("Reset value is "+e.reset_value);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleResetSetLast() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         if(-1 != e.last_sent_val)
+         {
+            e.reset_value = e.last_sent_val;
+
+            fp_reset_value.setValue(e.reset_value);
+            fp_reset_value.redraw();
+
+            Global.Print("Set reset value to last sent/recvd value "+e.reset_value);
+         }
+         else
+         {
+            Global.Warning("Last sent/recvd value is unknown");
+         }
+      }
+   }
+
+   // <replay.png>
+   protected method addToFrameRec(MIDIPipeFrame _frameRec) {
+      // Called from replay thread
+
+      _frameRec.mergeFrame(play_frame);
+   }
+
+   // <replay.png>
+   protected method emptyPlayFrame() {
+      // Called from replay thread
+      play_frame.empty();
+   }
+
+   // <ui_handle.png>
+   public method renameCurrentTagInTable() {
+      // called when F2 is pressed while map table has focus
+      int rowIdx = tm_map.getCursorIndex();
+      if(-1 != rowIdx)
+      {
+         // Show TableCellEditorString
+         tm_map.editColumn(CtlTagTM.COL_TAG, rowIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportParamsFromProfile1() {
+      CtlTagEntry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         // Show import dialog
+         MIDISynthProfile msp <= e.getMIDISynthProfile();
+         if(null != msp)
+         {
+            if(null == dlg_importmsp)
+            {
+               dlg_importmsp <= new ImportSynthProfileDialog;
+               dlg_importmsp.init();
+            }
+            MIDIMapEvent ev <= e.mm_event;
+            importmsp_dev <= ev.dev;
+            importmsp_dev_ch = ev.dev_ch;
+            dlg_importmsp.showMSP(msp, ev.dev, ev.dev_ch, this);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportParamsFromProfile_New(MIDISynthProfile _msp) {
+      // (note) caller must set importmsp_dev / importmsp_dev_ch
+      if(null == dlg_importmsp)
+      {
+         dlg_importmsp <= new ImportSynthProfileDialog;
+         dlg_importmsp.init();
+      }
+      dlg_importmsp.showMSP(_msp, importmsp_dev, importmsp_dev_ch, this);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportParamsFromProfile2() {
+      local PointerArray selectedAliases <= dlg_importmsp.getSelectedAliases();
+      MIDISynthProfileCtlAlias *alias;
+      int numImported = 0;
+      foreach alias in selectedAliases
+      {
+         CtlTagEntry  en <= new CtlTagEntry;
+         MIDIMapEvent ev <= en.mm_event;
+         ev.dev     <= importmsp_dev;
+         ev.dev_ch   = importmsp_dev_ch;
+         ev.type     = alias.type;
+         ev.ext_type = alias.nr;
+         local String sLabel <= alias.id.replace("_", " ");
+         en.tag_name = sLabel;
+         en.b_name_edited = false;
+         en.group_idx     = cur_group_idx;
+         en.init();
+
+         current_song.ctltag_entries.add(#(deref en));
+
+         numImported++;
+      }
+
+      ev.dev.buildCtlNames();
+      updateTable();
+
+      selectEntryByEvent(ev, false/*bLeadOnly*/);
+      pagePushColorizePads();
+      handlePushPadLearn();
+
+      Global.Print("Import "+numImported+" parameter"+Utils.GetPluralString(numImported));
+      pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtl(boolean _bClipboardB) {
+      local String msgPrefix = "copyctl<"+(_bClipboardB?"B":"A")+">: ";
+      CtlTagEntry en <= getSelectedEntry();
+      if(null != en)
+      {
+         NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+         MIDIMapEvent ev <= en.mm_event;
+
+         cb.initFromCopiedCtl(ev.dev.dev_idx,
+                              ev.dev_ch,
+                              NMM_Arg.TYPE_NONE,
+                              0/*ccNr*/,
+                              0/*rpnNr*/,
+                              0/*nrpnNr*/
+                              );
+         cb.copyFromMIDIMapEventType(ev);
+
+         Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+      }
+      else
+      {
+         Global.Warning(msgPrefix+"no entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteCtl(boolean _bClipboardB) {
+      local String msgPrefix = "pastectl<"+(_bClipboardB?"B":"A")+">: ";
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      local STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(cb.dev_idx);
+      if(null != dev)
+      {
+         CtlTagEntry en <= new CtlTagEntry;
+         current_song.ctltag_entries.add(#(deref en));
+         MIDIMapEvent ev <= en.mm_event;
+         ev.dev     <= dev;
+         ev.dev_ch   = cb.dev_ch;
+         cb.copyToMIDIMapEventType(ev);
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(cb.dev_ch);
+         if(null != msp)
+            en.tag_name = msp.buildCtlTagLabelByMIDIMapEventType(ev);
+         en.b_name_edited = false;
+         en.group_idx     = cur_group_idx;
+
+         en.init();
+
+         ev.dev.buildCtlNames();
+         updateTable();
+
+         selectEntryByEvent(ev, false/*bLeadOnly*/);
+         pagePushColorizePads();
+         handlePushPadLearn();
+
+         pageFocusDefault();
+
+         Global.Print(msgPrefix+"dev="+cb.getClipboardPortString());
+      }
+      else
+      {
+         Global.Warning(msgPrefix+"invalid device");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+      CtlTagEntry e <= getSelectedEntry();
+      boolean bHaveEntry = (null != e);
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+      PopupMenu pm <= pm_context;
+
+      MIDISynthProfile msp <= e.getMIDISynthProfile();
+      pmb <= pm.addDefaultButton("Import from Synth Profile \""+msp.profile_caption+"\"..",
+                                 "import_profile"
+                                 );
+      pmb.setAccelerators("lctrl-lshift-i", "lctrl-lshift-INSERT");
+      pmb.setActive(bHaveEntry);
+
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Import from Device", deref spm);
+      MIDI.AppendOutDevSubMenu(spm, true/*bSeparator*/, null/*submenuCaption*/, "Import: ", "new_");
+
+      pm.addSeparator();
+      MIDI.AppendCtlClipboardMenuItems(pm, bHaveEntry/*bActiveCopy*/, true/*bActivePaste*/);
+
+      // Node Remote Control
+      pm.addSeparator();
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Node Remote Control..", deref spm);
+      MIDI.AppendNodeRemoteCtlMenuItems(spm, ""/*actionPrefix*/);  // "rpn_*" menu items
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show context menu.");
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Ver
+      ofs.i16 = 1;
+
+      // Global encoder indices
+      Utils.WriteIntArray(ofs, global_enc_entry_indices);
+
+      // Group encoder indices
+      ofs.i8 = group_enc_entry_indices.numElements;
+      IntArray *ind;
+      foreach ind in group_enc_entry_indices
+      {
+         Utils.WriteIntArray(ofs, ind);
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      short ver = ifs.u16;
+
+      // Global encoder indices
+      Utils.ReadIntArray(ifs, global_enc_entry_indices);
+
+      // Group encoder indices
+      int numGroups = ifs.u8;
+      IntArray *ind;
+      IntArray indRead;
+      int grpIdx = 0;
+      loop(numGroups)
+      {
+         ind <= group_enc_entry_indices.get(grpIdx);
+         if(null != ind)
+         {
+            Utils.ReadIntArray(ifs, ind);
+         }
+         else
+         {
+            // Paranoia..
+            Utils.ReadIntArray(ifs, indRead);
+         }
+         grpIdx++;
+      }
+      indRead.free();
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   protected method handleMidiLearnTimer() {
+      if(midi_learn_timeout > 0)
+      {
+         midi_learn_timeout--;
+
+         bt_push_pad_learn.setBackgroundTint((midi_learn_timeout&1) ? 0 : #20ff0000);
+         bt_push_pad_learn.redraw();
+
+         if(0 == midi_learn_timeout)
+         {
+            midiLearnEnd();
+
+            Global.Print("MIDI learn timeout");
+         }
+         else
+         {
+            ta_midi_learn.schedule();
+         }
+      }
+   }
+
+   // <ui_timer.png>
+   protected method queueRebuild() {
+      ta_rebuild.schedule();
+   }
+
+   // <ui_timer.png>
+   protected method handleRebuildTimer() {
+      MIDI.RebuildOutputCtlNames();
+      MIDI.UpdateCtlTagEntryDOs(); // update display object fields
+      tv_map.tableModelChanged();
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      switch(_k.code)
+      {
+         case 'r':
+            handleToggleAutoMoveCsr();
+            return false;
+
+         case 'a':
+            handleAdd();
+            return false;
+
+         case 'r':
+            handleRemove();
+            return false;
+      }
+      return Page::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(!root_form.showPageSubPrev())
+            {
+               // When entered via navigation bar button
+               root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+            }
+            return true;
+
+         case VKEY_F2:
+            renameCurrentTagInTable();
+            return true;
+
+         case 'q':
+            if(_k.modCtrl())
+            {
+               handleQueryRemoteCtl();
+               return true;
+            }
+            break;
+
+         case 'r':
+            handleToggleAutoMoveCsr();
+            return true;
+
+         case 'i':
+         case VKEY_INSERT:
+            if(_k.modNone())
+            {
+               handleAdd();
+               return true;
+            }
+            else if(_k.modCtrl() && _k.modShift())
+            {
+               handleImportParamsFromProfile1();
+               return true;
+            }
+            break;
+
+         case 'a':
+            if(_k.modNone())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case VKEY_DELETE:
+            handleRemove();
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               handleMoveUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               handleMoveDown();
+               return true;
+            }
+            break;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED == acName)
+      {
+         sac <= _action;
+         handleAdd2(sac.getStringValue());
+         dlg_name <= null;
+         return true;
+      }
+      else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED == acName)
+      {
+         dlg_name <= null;
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            if(TA_REDRAW == acName)
+            {
+               redraw();
+               return true;
+            }
+            else if(TA_MIDI_LEARN == acName)
+            {
+               handleMidiLearnTimer();
+            }
+            else if(TA_REBUILD == acName)
+            {
+               handleRebuildTimer();
+            }
+            break;
+
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(acName <= "new_")
+            {
+               local StringArray aNew <= acName.replace("new_","").splitChar('_');
+               importmsp_dev    <= MIDI.GetMIDIOutDeviceByIndex(int(aNew.get(0)));
+               importmsp_dev_ch  = int(aNew.get(1));
+               handleImportParamsFromProfile_New(importmsp_dev.getMIDISynthProfile(importmsp_dev_ch));
+               return true;
+            }
+
+            if(acName <= "rpn_")
+            {
+               // "rpn_<devidx>_<ch>_<rpn>"
+               local StringArray rpnWords <= acName.splitChar('_');
+               int rpnDevIdx = rpnWords.get(1);
+               int rpnDevCh  = rpnWords.get(2);
+               int rpn       = rpnWords.get(3);
+               addEntryFromRemoteRPN(rpnDevIdx, rpnDevCh, rpn);
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  pageFocusDefault();
+                  return true;
+
+               case "import_profile":
+                  handleImportParamsFromProfile1();
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtl(true/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_a":
+                  handlePasteCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_b":
+                  handlePasteCtl(true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+
+         case @(dlg_importmsp):
+            if(ImportSynthProfileDialog.ACTION_IMPORT == acName)
+            {
+               handleImportParamsFromProfile2();
+            }
+            return true;
+
+         case @(tv_map):
+            bt_remove.setEditable(true);
+            handleRowSelected();
+            if(TableView.ACTION_ROWSELECTED == acName)
+            {
+            }
+            else if(TableView.ACTION_ROWCLICKED == acName)
+            {
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showContextMenu(tv_map.b_contextmenu_kbd/*bFocusFirst*/);
+            }
+            return true;
+
+         case @(bt_back):
+            if(!root_form.showPageSubPrev())
+               root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+            return true;
+
+         case @(bt_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleClone();
+            }
+            else
+            {
+               handleAdd();
+            }
+            return true;
+
+         case @(bt_remove):
+            handleRemove();
+            return true;
+
+         case @(bt_moveup):
+            handleMoveUp();
+            return true;
+
+         case @(bt_movedown):
+            handleMoveDown();
+            return true;
+
+         case @(cb_movecsr):
+            b_movecsr = cb_movecsr.isSelected();
+            return true;
+
+         case @(tf_name):
+            handleNameChanged();
+            return true;
+
+         case @(bt_query_remote_ctl):
+            handleQueryRemoteCtl();
+            return true;
+
+         case @(cm_group):
+            handleGroupChanged();
+            return true;
+
+         case @(cm_push_pad):
+            handlePushPadChanged();
+            return true;
+
+         case @(bt_push_pad_learn):
+            handlePushPadLearn();
+            return true;
+
+         case @(cm_push_color):
+            handlePushColorChanged();
+            return true;
+
+         case @(cm_push_type):
+            handlePushTypeChanged();
+            return true;
+
+         case @(cm_midi_dev):
+            handleMIDIDevChanged();
+            return true;
+
+         case @(cm_midi_ch):
+            handleMIDIChChanged();
+            return true;
+
+         case @(cm_midi_type):
+            handleMIDITypeChanged();
+            return true;
+
+         case @(cm_midi_cc_nr):
+            handleMIDICCNrChanged();
+            return true;
+
+         case @(cm_midi_rpn_nr):
+            handleMIDIRPNNrChanged();
+            return true;
+
+         case @(fp_midi_rpn_nr):
+            handleMIDIRPNNrValChanged();
+            return true;
+
+         case @(cm_midi_nrpn_nr):
+            handleMIDINRPNNrChanged();
+            return true;
+
+         case @(fp_midi_nrpn_nr):
+            handleMIDINRPNNrValChanged();
+            return true;
+
+         case @(fp_val_a):
+            handleValAChanged();
+            return true;
+
+         case @(fp_val_b):
+            handleValBChanged();
+            return true;
+
+         case @(cb_reset):
+            handleSendResetChanged();
+            return true;
+
+         case @(fp_reset_value):
+            handleResetValueChanged();
+            return true;
+
+         case @(bt_reset_setlast):
+            handleResetSetLast();
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

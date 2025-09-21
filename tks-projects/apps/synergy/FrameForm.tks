@@ -1,0 +1,1730 @@
+// ----
+// ---- file   : FrameForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 20Jan2017
+// ---- changed: 21Jan2017, 22Jan2017, 23Jan2017, 27Jan2017, 28Jan2017, 29Jan2017, 05Feb2017
+// ----          06Feb2017, 09Feb2017, 10Feb2017, 10Mar2017, 18Mar2017, 24Mar2017, 16Jun2017
+// ----          18Jun2017, 02Jul2017, 14Jul2017, 15Aug2017, 18Aug2017, 01Sep2017, 12Oct2017
+// ----          13Oct2017, 21Dec2017, 22Dec2017, 23Dec2017, 24Dec2017, 04Jan2018, 16Jun2018
+// ----          17Jun2018, 27Nov2018, 01Dec2018, 07Dec2018, 12Jan2019, 17Jan2019, 30May2019
+// ----          25Jun2019, 28Aug2019, 08Sep2019, 10Sep2019, 14Sep2019, 15Sep2019, 20Sep2019
+// ----          03Oct2019, 05Oct2019, 18Oct2019, 20Oct2019, 08Nov2019, 26Oct2020, 07Nov2020
+// ----          27Jan2021, 07May2022, 28Jul2023, 21Sep2023, 24Oct2023, 22Mar2024, 09Oct2024
+// ----          28Feb2025
+// ----
+// ----    note: [07Nov2020] refactored from NodeMonitor frame view
+// ----
+// ----
+
+module MFrameForm;
+
+use namespace ui;
+use namespace st2;
+
+
+int CHANNEL_DEV_IDX_LABEL_WIDTH   = 90;
+int CHANNEL_DEV_LABEL_WIDTH       = 160;
+int CHANNEL_NOTE_ON_EVENT_WIDTH   = 80+8;
+int CHANNEL_NOTE_OFF_EVENT_WIDTH  = 48+8;
+int CHANNEL_POLYAT_EVENT_WIDTH    = 48+8;
+int CHANNEL_CC_EVENT_WIDTH        = 48+8;
+int CHANNEL_PRGCHG_EVENT_WIDTH    = 24+8;
+int CHANNEL_CHAT_EVENT_WIDTH      = 24+8;
+int CHANNEL_PITCHBEND_EVENT_WIDTH = 40+8;
+int CHANNEL_SYSEX_EVENT_WIDTH     = 40+8;
+int CHANNEL_RPN_EVENT_WIDTH       = 72+8;
+int CHANNEL_NRPN_EVENT_WIDTH      = 72+8;
+int CHANNEL_HEIGHT                = 19;
+
+
+// <function.png>
+function GetByteString(byte _val) {
+   if(STConfig.b_node_monitor_hex)
+   {
+      Integer io = _val;
+      return "x"+((io.printf("%02x")).toUpper());
+   }
+   return String(_val);
+}
+
+
+// <function.png>
+function GetWordString(short _val) {
+   if(STConfig.b_node_monitor_hex)
+   {
+      Integer io = _val;
+      return "x"+((io.printf("%04x")).toUpper());
+   }
+   return String(_val);
+}
+
+
+// <function.png>
+function GetDurationString(int _dur) {
+   if(STConfig.b_node_monitor_dur_millisec)
+   {
+      int ms = 1000 * 60 * ((float(_dur) / current_song.ppq) / current_song.bpm);
+      return String(ms);
+   }
+   return String(_dur);
+}
+
+
+// <class.png>
+class NMO_TimeoutLabel : Button {
+
+   FrameForm *parent_form;
+
+   int millisec;
+   int event_index;  // absolute index of event in original frame (note: a bit useless w/o the frame reference..)
+
+   int  dev_idx;
+   byte midi_ch;
+
+   int c32_border;
+   int c32_text;
+   int c32_bg_alpha;
+
+
+   // <method_init.png>
+   public method initTimeoutlabel() {
+      // (note) millisec are set by update*()
+
+      initButton();
+      setEnableLabelButton(true);
+      setTextPlacement(Layout.LEFT);
+      setInnerPadLeft(3);
+      setEnableKbdFocusOnMouse(false);
+      setLookAndFeelLight();
+   }
+
+   // <method.png>
+   public method resetTimeoutLabel() {
+      c32_border = 0;
+      c32_text = #ff000000;
+      c32_bg_alpha = 0;
+      setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      setInnerPadTop(3);
+   }
+
+   // <method_get.png>
+   public method getMIDIProfile(MIDIPipeEvent _pev, String _retProfileString) : MIDISynthProfile {
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      if(null != outDev)
+      {
+         MIDISynthProfile msp <= outDev.getMIDISynthProfile(_pev.midiCh);
+         if(null != msp)
+         {
+            _retProfileString = msp.midi_profile_id+" ("+msp.profile_caption+")";
+         }
+         else
+         {
+            _retProfileString = "-";
+         }
+         return msp;
+      }
+      else
+      {
+         _retProfileString = "-";
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNoteAliasString(MIDISynthProfile _msp, byte _note) : String {
+      if(null != _msp)
+      {
+         MIDISynthProfileCtlAlias alias <= _msp.getNoteAliasByNr(_note);
+         if(null != alias)
+            return alias.id+" ("+alias.caption+")";
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method getCCAliasString(STX_MIDIDevice _dev, byte _midiCh, MIDISynthProfile _msp, byte _ccNr) : String {
+      if(null != _msp)
+      {
+         if(null != _dev)
+            return _dev.getCCLongNameByCtlAndMSP(_midiCh, _msp, _ccNr, true/*bCtlTag*/);
+
+         MIDISynthProfileCtlAlias alias <= _msp.getCCAliasByCtl(_ccNr);
+         if(null != alias)
+            return alias.id+" ("+alias.caption+")";
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method getRPNAliasString(MIDISynthProfile _msp, short _rpn) : String {
+      if(null != _msp)
+      {
+         MIDISynthProfileCtlAlias alias <= _msp.getRPNAliasByNr(_rpn);
+         if(null != alias)
+            return alias.id+" ("+alias.caption+")";
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method getNRPNAliasString(MIDISynthProfile _msp, short _nrpn) : String {
+      if(null != _msp)
+      {
+         MIDISynthProfileCtlAlias alias <= _msp.getNRPNAliasByNr(_nrpn);
+         if(null != alias)
+            return alias.id+" ("+alias.caption+")";
+      }
+      return "-";
+   }
+
+   // <method_update.png>
+   module method updateDisplayNotation() {
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      byte textBgAlpha = 255 - ((c32_text>>24)&255);
+      int c32Bg = UI.TintColor32(UI.TintColor32(c32_bg, bg32_tint), c32_tint2);
+
+      // (note) always use main LookAndFeel background (labels use LIGHT theme)
+      int c32Win = UI.lnf.getTintedColor(LookAndFeel.COLOR_WINDOW_BG, #20000000);
+      c32Bg = UI.TintColor32(c32Bg, (c32Win&0x00FFFFFF)|c32_bg_alpha);
+
+      int c32Text = UI.TintColor32(c32_text, (c32Bg&0xffffff)|(textBgAlpha<<24));
+
+      setForegroundColor(c32Text);
+
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(),
+                                     c32Bg
+                                     );
+      // if(UI.b_use_cached_layout)
+         Label::drawTransparentCached(0, 0);
+      // else
+      //    Label::drawTransparent(0, 0);
+
+      int c32Border = (c32Bg & 0xFFFFFF) | (c32_border&0xFF000000);
+      UIRenderer.DrawDefaultRaisedBorderTint(0, 0, size_x, size_y, c32Border);
+   }
+
+}
+
+
+// <class.png>
+class NMO_NoteOnEventLabel : NMO_TimeoutLabel {
+
+   byte note;
+   byte vel;
+   int  dur;
+
+
+   // <method_init.png>
+   public method initNoteOnEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_NOTE_ON_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(1));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption((MIDI.midi_notes.get(note))+":"+GetByteString(vel)+":"+GetDurationString(dur));
+   }
+
+   // <method_update.png>
+   public method updateNoteOnEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      note = _pev.note;
+      vel  = _pev.velocity;
+      dur  = _pev.duration;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      String aliasName <= getNoteAliasString(msp, note);
+      setToolTipCaption("Type: Note On\nProfile: "+mspName+"\nAlias: "+aliasName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_NOTE_ON, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class NMO_NoteOffEventLabel : NMO_TimeoutLabel {
+
+   byte note;
+   byte vel;
+
+
+   // <method_init.png>
+   public method initNoteOffEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_NOTE_OFF_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(0));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption((MIDI.midi_notes.get(note))+":"+GetByteString(vel));
+   }
+
+   // <method_update.png>
+   public method updateNoteOffEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      note = _pev.note;
+      vel  = _pev.velocity;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      String aliasName <= getNoteAliasString(msp, note);
+      setToolTipCaption("Type: Note Off\nProfile: "+mspName+"\nAlias: "+aliasName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_NOTE_OFF, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_PolyATEventLabel : NMO_TimeoutLabel {
+
+   byte note;
+   byte pressure;
+
+
+   // <method_init.png>
+   public method initPolyATEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_POLYAT_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(2));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption((MIDI.midi_notes.get(note))+":"+GetByteString(pressure));
+   }
+
+   // <method_update.png>
+   public method updatePolyATEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      note     = _pev.polyPressureNote;
+      pressure = _pev.polyPressureValue;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      String aliasName <= getNoteAliasString(msp, note);
+      setToolTipCaption("Type: Polyphonic Pressure\nProfile: "+mspName+"\nAlias: "+aliasName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_POLYPRESSURE, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_CCEventLabel : NMO_TimeoutLabel {
+
+   byte cc_nr;
+   byte cc_value;
+
+
+   // <method_init.png>
+   public method initCCEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_CC_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(3));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetByteString(cc_nr)+":"+GetByteString(cc_value));
+   }
+
+   // <method_update.png>
+   public method updateCCEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      cc_nr    = _pev.ccId;
+      cc_value = _pev.ccValue;
+
+      updateDisplayNotation();
+
+      local String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      local String aliasName = getCCAliasString(outDev, midi_ch, msp, cc_nr);
+      if(null != outDev)
+      {
+         String tagStr <= MIDI.GetCtlTagCC(outDev, _pev.midiCh, cc_nr, false/*bNameOnly*/);
+         if(null != tagStr)
+         {
+            aliasName.append(" (tag="+tagStr+")");
+         }
+      }
+      setToolTipCaption("Type: Continuous Controller\nProfile: "+mspName+"\nAlias: "+aliasName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_CC, cc_nr/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_PrgChgEventLabel : NMO_TimeoutLabel {
+
+   byte prgchg;
+
+
+   // <method_init.png>
+   public method initPrgChgEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_PRGCHG_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(4));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetByteString(prgchg));
+   }
+
+   // <method_update.png>
+   public method updatePrgChgEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      prgchg = _pev.prgChg;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      setToolTipCaption("Type: Program Change\nProfile: "+mspName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_PRGCHG, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_ChATEventLabel : NMO_TimeoutLabel {
+
+   byte pressure;
+
+
+   // <method_init.png>
+   public method initChATEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_CHAT_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(5));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetByteString(pressure));
+   }
+
+   // <method_update.png>
+   public method updateChATEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      pressure = _pev.chPressure;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      setToolTipCaption("Type: Channel Pressure\nProfile: "+mspName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_CHPRESSURE, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_PitchbendEventLabel : NMO_TimeoutLabel {
+
+   short pitchbend;
+
+
+   // <method_init.png>
+   public method initPitchbendEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_PITCHBEND_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(6));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetWordString(pitchbend));
+   }
+
+   // <method_update.png>
+   public method updatePitchbendEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      pitchbend = _pev.pitchbend;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      setToolTipCaption("Type: Pitchbend\nProfile: "+mspName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_PITCHBEND, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_SysExEventLabel : NMO_TimeoutLabel {
+
+   Buffer sysex_buffer;
+
+
+   // <method_init.png>
+   public method initSysExEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_SYSEX_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(7));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetWordString(sysex_buffer.offset));
+   }
+
+   // <method_update.png>
+   public method updateSysExEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      Buffer sysExBuf <= _pev.sysExBuffer;
+
+      sysex_buffer.size = 0;
+      sysex_buffer = sysExBuf;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      setToolTipCaption("Type: System Exclusive\nProfile: "+mspName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         // (note) there's no sysex type in NMM_Arg
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_CC, 0/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_RPNEventLabel : NMO_TimeoutLabel {
+
+   short rpn_nr;
+   short rpn_value;
+
+
+   // <method_init.png>
+   public method initRPNEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_RPN_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(8));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetWordString(rpn_nr)+":"+GetByteString(rpn_value));
+   }
+
+   // <method_update.png>
+   public method updateRPNEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      rpn_nr = _pev.rpn;
+      rpn_value = _pev.rpnValue;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      String aliasName = getRPNAliasString(msp, rpn_nr);
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      if(null != outDev)
+      {
+         String tagStr <= MIDI.GetCtlTagRPN(outDev, _pev.midiCh, rpn_nr, false/*bNameOnly*/);
+         if(null != tagStr)
+         {
+            aliasName.append(" (tag="+tagStr+")");
+         }
+      }
+      setToolTipCaption("Type: Registered Parameter Number\nProfile: "+mspName+"\nAlias: "+aliasName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_RPN, 0/*ccNr*/, rpn_nr/*rpnNr*/, 0/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_NRPNEventLabel : NMO_TimeoutLabel {
+
+   short nrpn_nr;
+   short nrpn_value;
+
+
+   // <method_init.png>
+   public method initNRPNEventLabel() {
+
+      initTimeoutlabel();
+
+      setRequiredSize2f(CHANNEL_NRPN_EVENT_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      setPadRight(1);
+      setBackgroundTint(STConfig.node_monitor_event_colors.get(9));
+   }
+
+   // <method_update.png>
+   public virtual updateDisplayNotation() {
+      setCaption(GetWordString(nrpn_nr)+":"+GetByteString(nrpn_value));
+   }
+
+   // <method_update.png>
+   public method updateNRPNEventLabel(MIDIPipeEvent _pev) {
+
+      millisec = milliSeconds();
+
+      event_index = _pev.index;
+
+      dev_idx = _pev.devIdx;
+      midi_ch = _pev.midiCh;
+
+      nrpn_nr = _pev.nrpn;
+      nrpn_value = _pev.nrpnValue;
+
+      updateDisplayNotation();
+
+      String mspName;
+      MIDISynthProfile msp <= getMIDIProfile(_pev, mspName);
+      String aliasName = getNRPNAliasString(msp, nrpn_nr);
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      if(null != outDev)
+      {
+         String tagStr <= MIDI.GetCtlTagNRPN(outDev, _pev.midiCh, nrpn_nr, false/*bNameOnly*/);
+         if(null != tagStr)
+         {
+            aliasName.append(" (tag="+tagStr+")");
+         }
+      }
+      setToolTipCaption("Type: Non-Registered Parameter Number\nProfile: "+mspName+"\nAlias: "+aliasName);
+
+      resetTimeoutLabel();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         parent_form.showEventMenu(dev_idx, midi_ch, NMM_Arg.TYPE_NRPN, 0/*ccNr*/, 0/*rpnNr*/, nrpn_nr/*nrpnNr*/);
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NMO_ChannelPanel : Panel {
+
+   FrameForm *parent_form;
+
+   int dev_idx;
+   byte midi_ch;
+
+   Label *dev_idx_label;
+   Label *dev_label;
+
+   boolean b_layout_queued;
+
+   NMO_NoteOnEventLabel    *[] note_on_labels;
+   NMO_NoteOffEventLabel   *[] note_off_labels;
+   NMO_PolyATEventLabel    *[] polyat_labels;
+   NMO_CCEventLabel        *[] cc_labels;
+   NMO_PrgChgEventLabel    *[] prgchg_labels;  // 0 or 1 element(s)
+   NMO_ChATEventLabel      *[] chat_labels;  // 0 or 1 element(s)
+   NMO_PitchbendEventLabel *[] pitchbend_labels;  // 0 or 1 element(s)
+   NMO_SysExEventLabel     *[] sysex_labels;
+   NMO_RPNEventLabel       *[] rpn_labels;
+   NMO_NRPNEventLabel      *[] nrpn_labels;
+
+
+   // <method_init.png>
+   public method initChannel(int _devIdx, byte _midiCh) {
+      dev_idx = _devIdx;
+      midi_ch = _midiCh;
+
+      initPanel();
+      setLayout(null);
+
+      STX_MIDIDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+
+      String devInfoStr = "";
+      if(null != dev)
+      {
+         if(dev.isUnavail())
+         {
+            devInfoStr = "unavail("+dev.getAliasOrDeviceName()+")";
+         }
+         else
+         {
+            if(dev instanceof STX_VirtualMIDIOutDevice)
+            {
+               devInfoStr = "virtual("+dev.getAliasOrDeviceName()+")";
+            }
+            else
+            {
+               devInfoStr = dev.getAliasOrDeviceName();
+            }
+         }
+      }
+      else
+      {
+         devInfoStr = "null";
+      }
+
+      // trace "xxx NodeMonitorEdit initChannel devIdx="+_devIdx+" midiCh="+_midiCh+" infoStr=\""+devInfoStr+"\"";
+
+      dev_idx_label <= new Label;
+      dev_idx_label.initLabel();
+      dev_idx_label.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      dev_idx_label.setCaption("dev "+_devIdx+", ch "+(_midiCh+1));
+      dev_idx_label.setRequiredSize2f(CHANNEL_DEV_IDX_LABEL_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      dev_idx_label.setEnableFillBackground(false);
+
+      dev_label <= new Label;
+      dev_label.initLabel();
+      dev_label.setTextPlacement(Layout.LEFT | Layout.CENTERY);
+      dev_label.setCaption(devInfoStr);
+      dev_label.setEnableAbbreviation(true);
+      dev_label.setRequiredSize2f(CHANNEL_DEV_LABEL_WIDTH*UI.font_scaling, CHANNEL_HEIGHT*UI.font_scaling);
+      dev_label.setEnableFillBackground(false);
+
+      b_layout_queued = true;
+   }
+
+   // <method.png>
+   public method getTotalNumEvents() : int {
+      int ret = 0;
+
+      ret += note_on_labels  .numElements;
+      ret += note_off_labels .numElements;
+      ret += polyat_labels   .numElements;
+      ret += cc_labels       .numElements;
+      ret += prgchg_labels   .numElements;
+      ret += chat_labels     .numElements;
+      ret += pitchbend_labels.numElements;
+      ret += sysex_labels    .numElements;
+      ret += rpn_labels      .numElements;
+      ret += nrpn_labels     .numElements;
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method updateLabelDisplayNotation(PointerArray _labels) {
+
+      NMO_TimeoutLabel *lb;
+
+      foreach lb in _labels
+      {
+         lb.updateDisplayNotation();
+      }
+   }
+
+   // <method_update.png>
+   module method updateDisplayNotation() {
+
+      updateLabelDisplayNotation(note_on_labels);
+      updateLabelDisplayNotation(note_off_labels);
+      updateLabelDisplayNotation(polyat_labels);
+      updateLabelDisplayNotation(cc_labels);
+      updateLabelDisplayNotation(prgchg_labels);
+      updateLabelDisplayNotation(chat_labels);
+      updateLabelDisplayNotation(pitchbend_labels);
+      updateLabelDisplayNotation(sysex_labels);
+      updateLabelDisplayNotation(rpn_labels);
+      updateLabelDisplayNotation(nrpn_labels);
+   }
+
+   // <method.png>
+   protected method autoRemoveEventLabels(PointerArray _labels) : boolean {
+
+      boolean bLayoutChanged = false;
+      NMO_TimeoutLabel *lb;
+      int lbIdx = 0;
+
+      while(lbIdx < _labels.numElements)
+      {
+         lb <= _labels.get(lbIdx);
+
+         if(0 != lb.millisec)
+         {
+            int dt = (milliSeconds() - lb.millisec);
+
+            if(dt >= STConfig.node_monitor_autoremove_timeout)
+            {
+               removeChildLayer(lb);
+               _labels.remove(lb);
+               bLayoutChanged |= true;
+            }
+            else
+            {
+               int c32Old = lb.c32_border;
+               int c32New;
+               int c32TextNew;
+               int c32BgAlphaNew;
+               String fontName = UIConstants.DEFAULT_FONT_NAME_LABEL;
+               int innerPadTop = 3;
+
+               float relDt = (STConfig.node_monitor_autoremove_timeout - dt) / float(STConfig.node_monitor_autoremove_timeout);
+
+               if(relDt >= (STConfig.node_monitor_highlight_ranges.get(0)))
+               {
+                  c32New = STConfig.node_monitor_highlight_border_colors.get(0);
+                  c32TextNew = STConfig.node_monitor_highlight_text_colors.get(0);
+                  c32BgAlphaNew = STConfig.node_monitor_highlight_bg_alpha.get(0);
+                  fontName = UIConstants.DEFAULT_FONT_NAME_LABEL_BOLD;
+                  innerPadTop = 1;
+               }
+               else if(relDt >= (STConfig.node_monitor_highlight_ranges.get(1)))
+               {
+                  c32New = STConfig.node_monitor_highlight_border_colors.get(1);
+                  c32TextNew = STConfig.node_monitor_highlight_text_colors.get(1);
+                  c32BgAlphaNew = STConfig.node_monitor_highlight_bg_alpha.get(1);
+               }
+               else if(relDt >= (STConfig.node_monitor_highlight_ranges.get(2)))
+               {
+                  c32New = STConfig.node_monitor_highlight_border_colors.get(2);
+                  c32TextNew = STConfig.node_monitor_highlight_text_colors.get(2);
+                  c32BgAlphaNew = STConfig.node_monitor_highlight_bg_alpha.get(2);
+               }
+               else if(relDt >= (STConfig.node_monitor_highlight_ranges.get(3)))
+               {
+                  c32New = STConfig.node_monitor_highlight_border_colors.get(3);
+                  c32TextNew = STConfig.node_monitor_highlight_text_colors.get(3);
+                  c32BgAlphaNew = STConfig.node_monitor_highlight_bg_alpha.get(3);
+               }
+               else
+               {
+                  c32New = STConfig.node_monitor_highlight_border_colors.get(4);
+                  c32TextNew = STConfig.node_monitor_highlight_text_colors.get(4);
+                  c32BgAlphaNew = STConfig.node_monitor_highlight_bg_alpha.get(4);
+               }
+
+               if(c32New != c32Old)
+               {
+                  lb.c32_border = c32New;
+                  lb.c32_text = c32TextNew;
+                  lb.c32_bg_alpha = c32BgAlphaNew;
+                  lb.setFontByName(fontName);
+                  lb.setInnerPadTop(innerPadTop);
+                  lb.redraw();
+               }
+
+               lbIdx++;
+            }
+         }
+         else
+         {
+            lbIdx++;
+         }
+      }
+
+      return bLayoutChanged;
+   }
+
+   // <method.png>
+   public method handleAutoRemoveEvents() : boolean {
+      boolean bLayoutChanged = false;
+
+      bLayoutChanged |= autoRemoveEventLabels(note_on_labels);
+      bLayoutChanged |= autoRemoveEventLabels(note_off_labels);
+      bLayoutChanged |= autoRemoveEventLabels(polyat_labels);
+      bLayoutChanged |= autoRemoveEventLabels(cc_labels);
+      bLayoutChanged |= autoRemoveEventLabels(prgchg_labels);
+      bLayoutChanged |= autoRemoveEventLabels(chat_labels);
+      bLayoutChanged |= autoRemoveEventLabels(pitchbend_labels);
+      bLayoutChanged |= autoRemoveEventLabels(sysex_labels);
+      bLayoutChanged |= autoRemoveEventLabels(rpn_labels);
+      bLayoutChanged |= autoRemoveEventLabels(nrpn_labels);
+
+      b_layout_queued |= bLayoutChanged;
+
+      return bLayoutChanged;
+   }
+
+   // <method_find.png>
+   public method findNoteOnEventLabel(byte _note) {
+
+      NMO_NoteOnEventLabel *lb;
+
+      foreach lb in note_on_labels
+      {
+         if(lb.note == _note)
+            return lb;
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public method findNoteOffEventLabel(byte _note) {
+      NMO_NoteOffEventLabel *lb;
+      foreach lb in note_off_labels
+      {
+         if(lb.note == _note)
+            return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findPolyATEventLabel(byte _note) {
+      NMO_PolyATEventLabel *lb;
+      foreach lb in polyat_labels
+      {
+         if(lb.note == _note)
+            return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findCCEventLabel(byte _ccNr) {
+      NMO_CCEventLabel *lb;
+      foreach lb in cc_labels
+      {
+         if(lb.cc_nr == _ccNr)
+            return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findPrgChgEventLabel() {
+
+      NMO_PrgChgEventLabel *lb;
+
+      foreach lb in prgchg_labels
+      {
+         return lb;
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public method findChATEventLabel() {
+      NMO_ChATEventLabel *lb;
+      foreach lb in chat_labels
+      {
+         return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findPitchbendEventLabel() {
+      NMO_PitchbendEventLabel *lb;
+      foreach lb in pitchbend_labels
+      {
+         return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findSysExEventLabel() {
+      NMO_SysExEventLabel *lb;
+      foreach lb in sysex_labels
+      {
+         return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findRPNEventLabel(short _rpnNr) {
+      NMO_RPNEventLabel *lb;
+      foreach lb in rpn_labels
+      {
+         if(lb.rpn_nr == _rpnNr)
+            return lb;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findNRPNEventLabel(short _nrpnNr) {
+      NMO_NRPNEventLabel *lb;
+      foreach lb in nrpn_labels
+      {
+         if(lb.nrpn_nr == _nrpnNr)
+            return lb;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method mergeFrameEvent(MIDIPipeEvent _pev) : boolean {
+      boolean ret = false;
+
+      switch(_pev.type)
+      {
+         case MIDIPIPE_EVENT_TYPE_NOTE_ON:
+
+            NMO_NoteOnEventLabel lbNoteOn <= findNoteOnEventLabel(_pev.note);
+
+            if(null == lbNoteOn)
+            {
+               lbNoteOn <= new NMO_NoteOnEventLabel;
+               lbNoteOn.initNoteOnEventLabel();
+               lbNoteOn.parent_form <= parent_form;
+               note_on_labels.add(#(deref lbNoteOn));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbNoteOn.updateNoteOnEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_NOTE_OFF:
+
+            NMO_NoteOffEventLabel lbNoteOff <= findNoteOffEventLabel(_pev.note);
+
+            if(null == lbNoteOff)
+            {
+               lbNoteOff <= new NMO_NoteOffEventLabel;
+               lbNoteOff.initNoteOffEventLabel();
+               lbNoteOff.parent_form <= parent_form;
+               note_off_labels.add(#(deref lbNoteOff));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbNoteOff.updateNoteOffEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_POLYPRESSURE:
+
+            NMO_PolyATEventLabel lbPolyAT <= findPolyATEventLabel(_pev.polyPressureNote);
+
+            if(null == lbPolyAT)
+            {
+               lbPolyAT <= new NMO_PolyATEventLabel;
+               lbPolyAT.initPolyATEventLabel();
+               lbPolyAT.parent_form <= parent_form;
+               polyat_labels.add(#(deref lbPolyAT));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbPolyAT.updatePolyATEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_CC:
+
+            NMO_CCEventLabel lbCC <= findCCEventLabel(_pev.ccId);
+
+            if(null == lbCC)
+            {
+               lbCC <= new NMO_CCEventLabel;
+               lbCC.initCCEventLabel();
+               lbCC.parent_form <= parent_form;
+               cc_labels.add(#(deref lbCC));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbCC.updateCCEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_PRGCHG:
+
+            NMO_PrgChgEventLabel lbPrgChg <= findPrgChgEventLabel();
+
+            if(null == lbPrgChg)
+            {
+               lbPrgChg <= new NMO_PrgChgEventLabel;
+               lbPrgChg.initPrgChgEventLabel();
+               lbPrgChg.parent_form <= parent_form;
+               prgchg_labels.add(#(deref lbPrgChg));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbPrgChg.updatePrgChgEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_CHPRESSURE:
+
+            NMO_ChATEventLabel lbChAT <= findChATEventLabel();
+
+            if(null == lbChAT)
+            {
+               lbChAT <= new NMO_ChATEventLabel;
+               lbChAT.initChATEventLabel();
+               lbChAT.parent_form <= parent_form;
+               chat_labels.add(#(deref lbChAT));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbChAT.updateChATEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_PITCHBEND:
+
+            NMO_PitchbendEventLabel lbPitchbend <= findPitchbendEventLabel();
+
+            if(null == lbPitchbend)
+            {
+               lbPitchbend <= new NMO_PitchbendEventLabel;
+               lbPitchbend.initPitchbendEventLabel();
+               lbPitchbend.parent_form <= parent_form;
+               pitchbend_labels.add(#(deref lbPitchbend));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbPitchbend.updatePitchbendEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_SYSEX:
+
+            NMO_SysExEventLabel lbSysEx <= findSysExEventLabel();
+
+            if(null == lbSysEx)
+            {
+               lbSysEx <= new NMO_SysExEventLabel;
+               lbSysEx.initSysExEventLabel();
+               lbSysEx.parent_form <= parent_form;
+               sysex_labels.add(#(deref lbSysEx));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbSysEx.updateSysExEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_RPN:
+
+            NMO_RPNEventLabel lbRPN <= findRPNEventLabel(_pev.rpn);
+
+            if(null == lbRPN)
+            {
+               lbRPN <= new NMO_RPNEventLabel;
+               lbRPN.initRPNEventLabel();
+               lbRPN.parent_form <= parent_form;
+               rpn_labels.add(#(deref lbRPN));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbRPN.updateRPNEventLabel(_pev);
+            break;
+
+         case MIDIPIPE_EVENT_TYPE_NRPN:
+
+            NMO_NRPNEventLabel lbNRPN <= findNRPNEventLabel(_pev.nrpn);
+
+            if(null == lbNRPN)
+            {
+               lbNRPN <= new NMO_NRPNEventLabel;
+               lbNRPN.initNRPNEventLabel();
+               lbNRPN.parent_form <= parent_form;
+               nrpn_labels.add(#(deref lbNRPN));
+               b_layout_queued = true;
+               ret = true;
+            }
+
+            // Update label
+            lbNRPN.updateNRPNEventLabel(_pev);
+            break;
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method layoutEventLabels(PointerArray _labels, int _availSx, int _evPx, Integer _cx, Integer _cy, Integer _maxX) {
+
+      Label *lbEvent;
+
+      if(STConfig.b_node_monitor_line_break)
+      {
+         if(_cx > _evPx)
+         {
+            _cx = _evPx;
+            _cy += CHANNEL_HEIGHT*UI.font_scaling;
+         }
+      }
+
+      foreach lbEvent in _labels
+      {
+         int evSx = lbEvent.getSizePadX();
+
+         if((_cx + evSx) > _availSx)
+         {
+            _cx = _evPx;
+            _cy += CHANNEL_HEIGHT*UI.font_scaling;
+         }
+
+         lbEvent.setPosition2f(_cx, _cy);
+         addChildLayer(lbEvent);
+
+         _cx += evSx;
+
+         if(_cx > _maxX)
+            _maxX = _cx;
+      }
+
+   }
+
+   // <method.png>
+   public method layoutIfChanged() {
+
+      // trace "xxx layoutIfChanged: this="+#(this)+" b_layout_queued="+b_layout_queued;
+
+      if(b_layout_queued)
+      {
+         b_layout_queued = false;
+
+         removeChildren();
+
+         Integer cx = 0;
+         Integer cy = 0;
+
+         dev_idx_label.setPosition2f(0, 0);
+         addChildLayer(dev_idx_label);
+         cx += dev_idx_label.getSizeX();
+
+         dev_label.setPosition2f(cx, 0);
+         addChildLayer(dev_label);
+         cx += dev_label.getSizeX();
+
+         int availSx = root_form.getSizeX();
+         int evPx = cx;
+
+         Integer maxX = cx;
+
+         // Note On events
+         layoutEventLabels(note_on_labels, availSx, evPx, cx, cy, maxX);
+
+         // Note Off events
+         layoutEventLabels(note_off_labels, availSx, evPx, cx, cy, maxX);
+
+         // Poly pressure events
+         layoutEventLabels(polyat_labels, availSx, evPx, cx, cy, maxX);
+
+         // CC events
+         layoutEventLabels(cc_labels, availSx, evPx, cx, cy, maxX);
+
+         // PrgChg events
+         layoutEventLabels(prgchg_labels, availSx, evPx, cx, cy, maxX);
+
+         // Channel pressure events
+         layoutEventLabels(chat_labels, availSx, evPx, cx, cy, maxX);
+
+         // Pitchbend
+         layoutEventLabels(pitchbend_labels, availSx, evPx, cx, cy, maxX);
+
+         // SysEx
+         layoutEventLabels(sysex_labels, availSx, evPx, cx, cy, maxX);
+
+         // RPN
+         layoutEventLabels(rpn_labels, availSx, evPx, cx, cy, maxX);
+
+         // NRPN
+         layoutEventLabels(nrpn_labels, availSx, evPx, cx, cy, maxX);
+
+         if(cx > evPx)
+            cy += CHANNEL_HEIGHT*UI.font_scaling;
+
+         setRequiredSize2f(maxX, cy);
+
+         // trace "xxx layoutIfChanged:  reqSize="+getSizeString();
+      }
+   }
+}
+
+
+// <class.png>
+class FrameForm extends XMLForm, MIDIMapDefs { //, ActionProvider {
+
+   protected ScrollPane *sp_events;
+   protected Panel      *pn_events_tint;
+   protected Panel      *pn_events;
+
+   protected NMO_ChannelPanel *[] channel_panels;
+
+   NMM_Arg evmenu_port;
+   PopupMenu *pm_event;
+
+
+   // <init.png>
+   public method initFrameForm() : boolean {
+
+      if(!initPakFile("FrameForm.xfm"))
+      {
+         trace "[---] failed to parse \"FrameForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+         return false;
+
+      pn_events.setLayout(null);
+
+      recursiveBuildTabCycleLists();
+   }
+
+   // <ui_update.png>
+   public method updateDisplayedFrame(boolean _bRebuild, MIDIPipeFrame fr) {
+
+      if(_bRebuild)
+      {
+         // trace "xxx NodeMonitorEditor::updateDisplayedFrame: bRebuild="+bRebuild;
+         pn_events.removeChildren();
+         // trace "xxx NodeMonitor: free panels 1";
+         channel_panels.free();
+      }
+
+      // trace "xxx updateDisplayedFrame: fr="+#(fr);
+
+      if(null != fr)
+      {
+         MIDIPipeEvent pev;
+         int numEvents = fr.numEvents;
+         NMO_ChannelPanel *chpn;
+         boolean bLayoutChanged = _bRebuild;
+
+         // trace "xxx NodeMonitorEditor::updateDisplayedFrame: numEvents="+numEvents;
+
+         if(numEvents > 0)
+         {
+            int eventIdx;
+
+            // Lazy-add channel panels
+            for(eventIdx = 0; eventIdx < numEvents; eventIdx++)
+            {
+               fr.getEventByIdx(eventIdx, pev, -1/*fltType*/);
+
+               // trace "xxx mon: add ev devIdx="+pev.devIdx+" midiCh="+pev.midiCh;
+
+               // Find channel panel for devIdx/channel
+               chpn <= findChannelPanel(pev.devIdx, pev.midiCh);
+
+               // trace "xxx NodeMonitorEditor::updateDisplayedFrame: find chpn="+#(chpn)+" devIdx="+pev.devIdx+" midiCh="+pev.midiCh+" (ev "+eventIdx+", num="+numEvents+")";
+
+               if(null == chpn)
+               {
+                  chpn <= new NMO_ChannelPanel;
+                  chpn.initChannel(pev.devIdx, pev.midiCh);
+                  chpn.parent_form <= this;
+                  channel_panels.add(#(deref chpn));
+                  bLayoutChanged = true;
+                  // trace "xxx NodeMonitorEditor::updateDisplayedFrame: add chpn="+#(chpn);
+               }
+
+               // Add event label to chanel panel
+               // trace "xxx mergeFrameEvent idx="+eventIdx+" numEvents="+numEvents;
+               bLayoutChanged |= chpn.mergeFrameEvent(pev);
+               // trace "xxx NodeMonitorEditor::updateDisplayedFrame: bLayoutChanged="+bLayoutChanged;
+            }
+
+         }
+
+         if(bLayoutChanged)
+         {
+            layoutChannelPanels();
+            sp_events.relayout();
+            // // sp_events.updateLayout();
+         }
+
+         sp_events.redraw();
+
+         // trace "xxx pn_events size="+pn_events.getSizeString();
+         // trace "xxx pn_events first_child="+#(pn_events.first_child);
+
+         return;
+
+      } // if fr
+
+      // No pattern or frame
+      if(_bRebuild)
+      {
+         pn_events.removeChildren();
+         channel_panels.free();
+         pn_events.setRequiredSize2f(1, 1);
+         sp_events.relayout();
+      }
+
+      // trace "xxx sp_events.size="+sp_events.getSizeString();
+      // trace "xxx ts_groups.size="+ts_groups.getSizeString();
+
+      sp_events.redraw();
+   }
+
+   // <ui_update.png>
+   public method updateDisplayNotation() {
+      // (note) toggle dec / hex
+      NMO_ChannelPanel *chpn;
+
+      foreach chpn in channel_panels
+      {
+         chpn.updateDisplayNotation();
+      }
+
+      redraw();
+   }
+
+   // <method.png>
+   public method handleAutoRemoveEvents() {
+      // called periodally from redraw Timer handler (20ms interval)
+      NMO_ChannelPanel *chpn;
+      boolean bLayoutChanged = false;
+      int chpnIdx = 0;
+
+      while(chpnIdx < channel_panels.numElements)
+      {
+         chpn <= channel_panels.get(chpnIdx);
+         bLayoutChanged |= chpn.handleAutoRemoveEvents();
+
+         int totalNumEv = chpn.getTotalNumEvents();
+
+         // trace "xxx handleAutoRemoveEvents: totalNumEv="+totalNumEv;
+
+         if(0 == totalNumEv)
+         {
+            // Remove channel
+            // trace "xxx handleAutoRemoveEvents: remove channel_panel";
+            pn_events.removeChildLayer(chpn);
+            channel_panels.remove(chpn);
+            bLayoutChanged |= true;
+         }
+         else
+         {
+            chpnIdx++;
+         }
+      }
+
+      if(bLayoutChanged)
+      {
+         // trace "xxx handleAutoRemoveEvents: bLayoutChanged=true";
+         layoutChannelPanels();
+         sp_events.redraw();
+      }
+   }
+
+   // <method.png>
+   protected method layoutChannelPanels() {
+
+      pn_events.removeChildren();
+
+      int cy = 0;
+      int maxX = 0;
+
+      NMO_ChannelPanel *chpn;
+
+      foreach chpn in channel_panels
+      {
+         chpn.layoutIfChanged();
+         chpn.setPosition2f(0, cy);
+         pn_events.addChildLayer(chpn);
+
+         int chSx = chpn.getSizeX();
+         // trace "xxx cy="+cy+" chSx="+chSx+" chpn="+#(chpn)+" chpn.dev_idx="+chpn.dev_idx;
+         if(chSx > maxX)
+            maxX = chSx;
+
+         // Next channel
+         cy += chpn.getSizeY();
+      }
+
+      pn_events.setRequiredSize2f(maxX, cy);
+      // trace "xxx layoutChannelPanels: cy="+cy+" maxX="+maxX+" pn_events.size="+pn_events.getSizeString();
+
+      sp_events.relayout();
+
+   }
+
+   // <method_find.png>
+   protected method findChannelPanel(int _devIdx, byte _midiCh) : NMO_ChannelPanel {
+      NMO_ChannelPanel *chpn;
+
+      foreach chpn in channel_panels
+      {
+         if(chpn.dev_idx == _devIdx)
+            if(chpn.midi_ch == _midiCh)
+               return chpn;
+      }
+
+      return null;
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtl(boolean _bClipboardB) {
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      cb.initFromCopiedCtl(evmenu_port.dev_idx,
+                           evmenu_port.dev_ch,
+                           evmenu_port.type,
+                           evmenu_port.cc_nr,
+                           evmenu_port.rpn_nr,
+                           evmenu_port.nrpn_nr
+                           );
+
+      Global.Print("Copy event type+port to Ctl.Clipboard "+(_bClipboardB?"B":"A"));
+   }
+
+   // <ui_show.png>
+   module method showEventMenu(int _devIdx, byte _devCh, int _type, int _ccNr, int _rpnNr, int _nrpnNr) {
+
+      evmenu_port.initFromCopiedCtl(_devIdx, _devCh, _type, _ccNr, _rpnNr, _nrpnNr);
+
+      pm_event <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_event;
+
+      // Ctl.Clipboard
+      pmb <= pm.addDefaultButton("Copy event port+type to Ctl.Clipboard A", "copyctl_a");
+      pmb.setToolTipCaption("Copy event port+type to Ctl.Clipboard A");
+
+      pmb <= pm.addDefaultButton("Copy event port+type to Ctl.Clipboard B", "copyctl_b");
+      pmb.setToolTipCaption("Copy event port+type to Ctl.Clipboard B");
+
+      // Present
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show event context menu.");
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(pm_event):
+            Global.Debug2("FrameForm::consumeAction: pm_event acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close event menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtl(true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

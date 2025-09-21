@@ -1,0 +1,126 @@
+//
+// Program Change Replacement
+//
+// - track prgchg on ports A and B
+// - when note-on occurs on both ports, replace prgchg via LUT and send new prgchg + note-on
+// - when note-on occurs on single port, send last seen port prgchg + note-on
+//
+
+int tick_nr;
+
+byte last_prgchg_a = -1;
+byte last_prgchg_b = -1;
+
+// NoteCh, PrgA, PrgB, PrgOut tuples
+//  (note) prg nrs start with 1 (== MIDI program byte 0)
+//  (note) 'NoteCh' selects which note to play (0=port A, 1=port B)
+IntArray prgchg_replacement_lut = [
+   // NoteCh A   B   Out
+      0,     5,  1,  6,   // hh+bd = mix bd+hh
+      0,     5,  2,  7,   // hh+sd = mix sd+hh
+      1,     5, 14, 15,   // hh+bass = digdug hh
+                       ];
+
+function OnReset() { 
+}
+
+function OnSeek(int ticks) {
+   tick_nr = ticks;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+
+   if(bPlaySeq && !bMuted)
+   {
+      MIDIPipeEvent pev;
+      byte  noteA    = -1;
+      float noteAVel = 127;
+      int   noteADur = 6;
+      byte  noteB    = -1;
+      float noteBVel = 127;
+      int   noteBDur = 6;
+      byte  pc;
+
+      if(framePlay.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_1_dev, in_1_ch))
+      {
+         noteA    = pev.note;
+         noteAVel = pev.velocity;
+         noteADur = pev.duration;
+      }
+
+      if(framePlay.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_2_dev, in_2_ch))
+      {
+         noteB    = pev.note;
+         noteBVel = pev.velocity;
+         noteBDur = pev.duration;
+      }
+
+      pc = framePlay.getFilteredPrgChg(in_1_dev, in_1_ch);
+      if(pc >= 0)
+         last_prgchg_a = pc;
+
+      pc = framePlay.getFilteredPrgChg(in_2_dev, in_2_ch);
+      if(pc >= 0)
+         last_prgchg_b = pc;
+
+      IntArray lut <= prgchg_replacement_lut;
+      if(-1 != noteA)
+      {
+         if(-1 != noteB)
+         {
+            // noteA + noteB
+            int replOff = 0;
+            byte prgOut = 0;
+            loop(prgchg_replacement_lut.numElements / 4)
+            {
+               if((last_prgchg_a+1) == lut.get(replOff + 1) &&
+                  (last_prgchg_b+1) == lut.get(replOff + 2)
+                  )
+               {
+                  prgOut = lut.get(replOff + 3);
+                  break;
+               }
+               replOff += 4;
+            }
+
+            if(prgOut > 0)
+               framePlay.prgChg(true/*bSet*/, out_dev, out_ch, prgOut - 1);
+
+            framePlay.noteOn(true/*bSet*/, out_dev, out_ch,
+                             lut.get(replOff+0) ? noteB : noteA,
+                             lut.get(replOff+0) ? noteBVel : noteAVel,
+                             mathMaxi(6, lut.get(replOff+0) ? noteBDur : noteADur)
+                             );
+         }
+         else
+         {
+            // just noteA
+            if(last_prgchg_a >= 0)
+               framePlay.prgChg(true/*bSet*/, out_dev, out_ch, last_prgchg_a);
+
+            framePlay.noteOn(true/*bSet*/, out_dev, out_ch,
+                             noteA, noteAVel, mathMaxi(6, noteADur)
+                             );
+         }
+      }
+      else if(-1 != noteB)
+      {
+         // just noteB
+         if(last_prgchg_b >= 0)
+            framePlay.prgChg(true/*bSet*/, out_dev, out_ch, last_prgchg_b);
+
+         framePlay.noteOn(true/*bSet*/, out_dev, out_ch,
+                          noteB, noteBVel, mathMaxi(6, noteBDur)
+                          );
+      }
+
+      tick_nr++;
+   }
+}

@@ -1,0 +1,385 @@
+//
+// Polystep Tracker control
+//  (note) target node must be in extclk mode
+//
+//  created: 02Jan2022
+//  changed: 03Jan2022, 04Jan2022, 20Feb2022
+//
+
+int tick_nr;
+
+tag int trk1_len = 16;
+tag int trk2_len = 0;
+tag int trk3_len = 0;
+tag int trk4_len = 0;
+tag int trk5_len = 0;
+tag int trk6_len = 0;
+tag int trk7_len = 0;
+tag int trk8_len = 0;
+
+tag int trk1_spd = 48;
+tag int trk2_spd = 48;
+tag int trk3_spd = 48;
+tag int trk4_spd = 48;
+tag int trk5_spd = 48;
+tag int trk6_spd = 48;
+tag int trk7_spd = 48;
+tag int trk8_spd = 48;
+
+tag int trk1_mode = 0;  // 0=fwd, 1=bwd, 2=pingpong, 3=pingpong (no repeat), 4=rand, 5=rand (no repeat)
+tag int trk2_mode = 0;
+tag int trk3_mode = 0;
+tag int trk4_mode = 0;
+tag int trk5_mode = 0;
+tag int trk6_mode = 0;
+tag int trk7_mode = 0;
+tag int trk8_mode = 0;
+
+tag float trk1_velmin = 0;  // -1..1 => /8..*8
+tag float trk1_velmax = 0;  // -1..1 => /8..*8
+
+tag float trk2_velmin = 0;
+tag float trk2_velmax = 0;
+
+tag float trk3_velmin = 0;
+tag float trk3_velmax = 0;
+
+tag float trk4_velmin = 0;
+tag float trk4_velmax = 0;
+
+tag float trk5_velmin = 0;
+tag float trk5_velmax = 0;
+
+tag float trk6_velmin = 0;
+tag float trk6_velmax = 0;
+
+tag float trk7_velmin = 0;
+tag float trk7_velmax = 0;
+
+tag float trk8_velmin = 0;
+tag float trk8_velmax = 0;
+
+tag float trk1_prob = 1;
+tag float trk2_prob = 1;
+tag float trk3_prob = 1;
+tag float trk4_prob = 1;
+tag float trk5_prob = 1;
+tag float trk6_prob = 1;
+tag float trk7_prob = 1;
+tag float trk8_prob = 1;
+
+tag float trk1_swing = 0;
+tag float trk1_swingvel = 0;
+tag float trk2_swing = 0;
+tag float trk2_swingvel = 0;
+tag float trk3_swing = 0;
+tag float trk3_swingvel = 0;
+tag float trk4_swing = 0;
+tag float trk4_swingvel = 0;
+tag float trk5_swing = 0;
+tag float trk5_swingvel = 0;
+tag float trk6_swing = 0;
+tag float trk6_swingvel = 0;
+tag float trk7_swing = 0;
+tag float trk7_swingvel = 0;
+tag float trk8_swing = 0;
+tag float trk8_swingvel = 0;
+
+tag float trk1_durmin = 0;  // -1..1 => /4..*4
+tag float trk1_durmax = 0;  // -1..1 => /4..*4
+
+tag float trk2_durmin = 0;
+tag float trk2_durmax = 0;
+
+tag float trk3_durmin = 0;
+tag float trk3_durmax = 0;
+
+tag float trk4_durmin = 0;
+tag float trk4_durmax = 0;
+
+tag float trk5_durmin = 0;
+tag float trk5_durmax = 0;
+
+tag float trk6_durmin = 0;
+tag float trk6_durmax = 0;
+
+tag float trk7_durmin = 0;
+tag float trk7_durmax = 0;
+
+tag float trk8_durmin = 0;
+tag float trk8_durmax = 0;
+
+// int out_dev;
+// int out_ch;
+
+class Track {
+   int track_idx;
+
+   // (queued) step:
+   int dly;
+   int stepIdx;
+   float vel;
+   float dur;
+   // int ticks;
+   // int speed;
+   // int len;
+
+   IntArray indices;
+
+
+   reset() {
+      dly = 0;
+      stepIdx = -1;
+      // ticks = 0;
+      genIndicesNR(256);
+   }
+
+   genIndices(int _len) {
+      indices.empty();
+      loop(_len)
+      {
+         indices.add(rand(_len));
+      }
+   }
+
+   genIndicesNR(int _len) {
+      indices.empty();
+      while(indices.numElements != _len)
+      {
+         int r = rand(_len);
+         if(!indices.contains(r))
+            indices.add(r);
+      }
+   }
+
+   process(MIDIPipeFrame _fr, int _len, int _spd, int _mode, 
+           float _velMin, float _velMax, 
+           float _prob, 
+           float _swing, float _swingVel,
+           float _durMin, float _durMax
+           ) {
+      // len   = _len;
+      // speed = _spd;
+      if(_len > 0)
+      {
+         float velMin, velMax;
+         if(_velMin <= _velMax)
+         {
+            velMin = _velMin;
+            velMax = _velMax;
+         }
+         else
+         {
+            velMin = _velMax;
+            velMax = _velMin;
+         }
+
+         float durMin, durMax;
+         if(_durMin <= _durMax)
+         {
+            durMin = _durMin;
+            durMax = _durMax;
+         }
+         else
+         {
+            durMin = _durMax;
+            durMax = _durMin;
+         }
+
+         boolean bPlay = false;
+
+         if(0 == (tick_nr % _spd))
+         {
+            // Play step
+            stepIdx = (tick_nr / _spd);
+            int origStepIdx = stepIdx;
+
+            switch(_mode)
+            {
+               default:
+               case 0: // "->" : forward
+                  stepIdx = stepIdx % _len;
+                  break;
+
+               case 1: // "<-" : backward
+                  stepIdx = (_len - 1) - (stepIdx % _len);
+                  break;
+
+               case 2: // "<<->>" : ping-pong
+                  if( (stepIdx / _len) & 1 )
+                  {
+                     stepIdx = (_len - 1) - (stepIdx % _len);
+                  }
+                  else
+                  {
+                     stepIdx = stepIdx % _len;
+                  }
+                  break;
+
+               case 3: // "<->" : ping-pong (no repeat)
+                  if(_len > 1)
+                  {
+                     stepIdx = (stepIdx % (2 * _len - 2));
+
+                     if(stepIdx >= _len)
+                     {
+                        // bwd
+                        stepIdx = (_len - (stepIdx - _len) - 2);
+                     }
+                     // else: fwd
+                  }
+                  else
+                     stepIdx = 0;
+                  break;
+
+               case 4: // rand
+                  stepIdx = stepIdx % _len;
+                  if(0 == stepIdx)
+                  {
+                     genIndices(_len);
+                  }
+                  stepIdx = indices.get(stepIdx);
+                  break;
+
+               case 5:  // rand (no repeat)
+                  stepIdx = stepIdx % _len;
+                  if(0 == stepIdx)
+                  {
+                     genIndicesNR(_len);
+                  }
+                  stepIdx = indices.get(stepIdx);
+                  break;
+            }
+
+            if(velMin != velMax)
+            {
+               vel = velMin + (velMax - velMin) * rand(1.0);
+               if(vel < 0.0)
+                  vel = 128 + 128*vel;
+               else
+                  vel = 128 + 127*vel;
+            }
+            else
+               vel = 128;
+
+            if(origStepIdx&1)
+            {
+               vel = mathClampf(vel + 128*_swingVel, 0, 255);
+            }
+
+            if(durMin != durMax)
+            {
+               dur = durMin + (durMax - durMin) * rand(1.0);
+               if(dur < 0.0)
+                  dur = 128 + 128*dur;
+               else
+                  dur = 128 + 127*dur;
+            }
+            else
+               dur = 128;
+
+            if(_prob < 1.0)
+            {
+               bPlay = (rand(1.0) <= _prob);
+            }
+            else
+               bPlay = true;
+
+            if(bPlay)
+            {
+               dly = 0;
+               if(_swing > 0.0)
+               {
+                  if(origStepIdx & 1)
+                  {
+                     dly = _swing * _spd;
+                     bPlay = (0 == dly);
+                  }
+               }
+            }
+         }
+         else if(dly > 0)
+         {
+            dly--;
+            if(0 == dly)
+               bPlay = true;
+         }
+
+         if(bPlay)
+         {
+            _fr.rpn(true/*bSet*/, out_dev, out_ch, NodeTracker.RPN_COMMON_VEL_SCL_TRACK_1+track_idx, vel);
+            _fr.rpn(true/*bSet*/, out_dev, out_ch, NodeTracker.RPN_COMMON_DUR_SCL_TRACK_1+track_idx, dur);
+               
+            _fr.rpn(true/*bSet*/, out_dev, out_ch, NodeTracker.RPN_COMMON_POLY_TRACK_1+track_idx, track_idx);
+            _fr.rpn(true/*bSet*/, out_dev, out_ch, NodeTracker.RPN_COMMON_POLY_STEP_1+track_idx, stepIdx);
+
+            stepIdx = -1;
+         }
+      }
+   }
+}
+
+Track *[] tracks;
+
+function Init() {
+   tracks.alloc(8);
+   loop(8)
+   {
+      Track track <= new Track;
+      track.track_idx = tracks.numElements;
+      tracks.add(#(deref track));
+   }
+}
+Init();
+
+
+function OnReset() {
+   Track *track;
+   foreach track in tracks
+      track.reset();
+}
+
+function OnSeek(int ticks) {
+   tick_nr = ticks;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bPlaySeq)
+   {
+      Track *track;
+
+      track <= tracks[0];
+      track.process(framePlay, trk1_len, trk1_spd, trk1_mode, trk1_velmin, trk1_velmax, trk1_prob, trk1_swing, trk1_swingvel, trk1_durmin, trk1_durmax);
+
+      track <= tracks[1];
+      track.process(framePlay, trk2_len, trk2_spd, trk2_mode, trk2_velmin, trk2_velmax, trk2_prob, trk2_swing, trk2_swingvel, trk2_durmin, trk2_durmax);
+
+      track <= tracks[2];
+      track.process(framePlay, trk3_len, trk3_spd, trk3_mode, trk3_velmin, trk3_velmax, trk3_prob, trk3_swing, trk3_swingvel, trk3_durmin, trk3_durmax);
+
+      track <= tracks[3];
+      track.process(framePlay, trk4_len, trk4_spd, trk4_mode, trk4_velmin, trk4_velmax, trk4_prob, trk4_swing, trk4_swingvel, trk4_durmin, trk4_durmax);
+
+      track <= tracks[4];
+      track.process(framePlay, trk5_len, trk5_spd, trk5_mode, trk5_velmin, trk5_velmax, trk5_prob, trk5_swing, trk5_swingvel, trk5_durmin, trk5_durmax);
+
+      track <= tracks[5];
+      track.process(framePlay, trk6_len, trk6_spd, trk6_mode, trk6_velmin, trk6_velmax, trk6_prob, trk6_swing, trk6_swingvel, trk6_durmin, trk6_durmax);
+
+      track <= tracks[6];
+      track.process(framePlay, trk7_len, trk7_spd, trk7_mode, trk7_velmin, trk7_velmax, trk7_prob, trk7_swing, trk7_swingvel, trk7_durmin, trk7_durmax);
+
+      track <= tracks[7];
+      track.process(framePlay, trk8_len, trk8_spd, trk8_mode, trk8_velmin, trk8_velmax, trk8_prob, trk8_swing, trk8_swingvel, trk8_durmin, trk8_durmax);
+
+      tick_nr++;
+   }
+}

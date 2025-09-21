@@ -1,0 +1,1934 @@
+// ----
+// ---- file   : PageNode.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 05Sep2014, 06Sep2014, 09Sep2014, 14Sep2014, 16Sep2014, 17Sep2014, 19Sep2014
+// ----          27Sep2014, 28Sep2014, 29Jan2015, 12Feb2015, 24Feb2015, 26Feb2015, 06Mar2015
+// ----          06Apr2015, 09Apr2015, 28Apr2015, 17May2015, 26Sep2015, 04Oct2015, 24Oct2015
+// ----          25Oct2015, 03Nov2015, 11Nov2015, 12Nov2015, 05Dec2015, 31Dec2015, 22Jan2016
+// ----          05Feb2016, 08Jul2016, 12Jul2016, 08Sep2016, 15Jan2017, 19Jan2017, 29Jan2017
+// ----          04Feb2017, 09Feb2017, 13Mar2017, 17Mar2017, 24Mar2017, 19Apr2017, 02Sep2017
+// ----          03Sep2017, 13Oct2017, 10Nov2017, 04Jan2018, 27May2018, 17Jun2018, 03Dec2018
+// ----          11Jan2019, 02Aug2019, 29Aug2019, 08Sep2019, 05Oct2019, 01Nov2019, 07Nov2019
+// ----          23Oct2020, 08Nov2020, 14Nov2020, 27Nov2020, 28Dec2021, 30Dec2021, 11Feb2022
+// ----          18Mar2022, 08Apr2022, 09Nov2022, 08Oct2023, 21Oct2023, 19Nov2023, 22Mar2024
+// ----          25Jan2025, 07Feb2025
+// ----
+// ----
+// ----
+
+module MPageNode;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageNode extends Page, MIDIMapContext {
+
+   define String EV_UPDATETEXTFIELDNODESTATE;  // after auto-unmuting audio node (see NT_AudioDialog)
+
+   define String TA_KBDFOCUS;
+   protected TimerAction ta_kbdfocus;
+
+   define String MMT_NODE_PREV;
+   define String MMT_NODE_NEXT;
+
+   define String MMT_PIPE_PREV;
+   define String MMT_PIPE_NEXT;
+
+   define String MMT_PIPENODE_A_SET;
+   define String MMT_PIPENODE_B_SET;
+   define String MMT_PIPENODE_A_SHOW;
+   define String MMT_PIPENODE_B_SHOW;
+   define String MMT_PIPENODE_AB_SWAP;
+
+   define String MMT_SELECT_USED_PATTERN_1;
+   define String MMT_SELECT_USED_PATTERN_2;
+   define String MMT_SELECT_USED_PATTERN_3;
+   define String MMT_SELECT_USED_PATTERN_4;
+   define String MMT_SELECT_USED_PATTERN_5;
+   define String MMT_SELECT_USED_PATTERN_6;
+   define String MMT_SELECT_USED_PATTERN_7;
+   define String MMT_SELECT_USED_PATTERN_8;
+   define String MMT_SELECT_USED_PATTERN_9;
+   define String MMT_SELECT_USED_PATTERN_10;
+   define String MMT_SELECT_USED_PATTERN_11;
+   define String MMT_SELECT_USED_PATTERN_12;
+   define String MMT_SELECT_USED_PATTERN_13;
+   define String MMT_SELECT_USED_PATTERN_14;
+   define String MMT_SELECT_USED_PATTERN_15;
+   define String MMT_SELECT_USED_PATTERN_16;
+
+   protected Button *bt_previous_page;
+
+   protected Button    *bt_pipenodeid_edit;
+   protected Button    *bt_pipenodeid_play;
+   protected Label     *lb_pipenodeid;
+   protected TextField *tf_name;
+   protected Button    *bt_remark;
+   protected Button    *bt_prev;
+   protected Button    *bt_next;
+   protected Button    *bt_pipeornode_mute;
+
+   protected Button *bt_prev_pipe;
+   protected Button *bt_next_pipe;
+
+   protected LayerSwitch *ls_editor;
+   protected TextEdit *tx_remark;
+
+   protected Panel *pn_editor;
+
+   protected MIDIPipeNode *node;
+   public    Node         *script_node;
+   public    NodeEditor   *editor;  // reference to static editor instance (or null)
+
+   public PatternManager *pattern_mgr;
+
+   static SetPatternNumberDialog dlg_setpatternnumber;
+
+   protected ActionConsumer *listener;
+
+   protected boolean b_cont_edit;
+
+   protected int a_pipe_idx;  // quick-jump node a
+   protected int a_node_idx;
+
+   protected int b_pipe_idx;  // quick-jump node b
+   protected int b_node_idx;
+
+   protected boolean b_remark_return_to_pipemap;
+
+   protected ComboBoxPopup *cmp_global_prgchg;
+   protected Layer         *global_prgchg_oldfocus;
+   protected boolean        global_prgchg_b;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageNode.xfm"))
+      {
+         trace "[---] failed to parse PageNode.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tx_remark.setEnableQuietHandleEsc(true);  // close dialog on escape (don't just stop editing)
+
+      if(pattern_mgr.init())
+      {
+         recursiveBuildTabCycleLists();
+
+         initMMC();
+
+         a_pipe_idx = -1;
+         a_node_idx = -1;
+
+         b_pipe_idx = -1;
+         b_node_idx = -1;
+
+         initTimers();
+
+         if(app_lnf.b_ascii_back_buttons)
+            Global.ASCIIBackButton(bt_previous_page);
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_kbdfocus <= TimerAction.New(TA_KBDFOCUS, this, 2000);
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_PIPE;
+   }
+
+   // <method_get.png>
+   public method getCurrentScriptNode() : Node {
+      // should only be called when page is visible
+      // called from replay thread
+      return script_node;
+   }
+
+   // <method_get.png>
+   protected method allowNavigateNodes() : boolean {
+      if(script_node instanceof NodeTracker)
+      {
+         // Is temporary node (allocated by NodeSeq) ?
+         NodeTracker tn <= script_node;
+         return !tn.b_seq_temp;
+      }
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageIsModal() : boolean {
+      return !allowNavigateNodes();
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+      mmcInit("PageNode");
+      addBaseMMCTargets(this);
+   }
+
+   // <midi_mmc.png>
+   protected method addBaseMMCTargets(MIDIMapContext _mmc) {
+      _mmc.mmcAddTarget(MMT_NODE_PREV,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_NODE_NEXT,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+
+      _mmc.mmcAddTarget(MMT_PIPE_PREV,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_PIPE_NEXT,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+
+      _mmc.mmcAddTarget(MMT_PIPENODE_A_SET,   CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_PIPENODE_B_SET,   CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_PIPENODE_A_SHOW,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_PIPENODE_B_SHOW,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_PIPENODE_AB_SWAP, CLASS_BUTTON, SYN_BUTTON_CLICK);
+
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_1,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_2,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_3,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_4,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_5,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_6,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_7,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_8,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_9,   CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_10,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_11,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_12,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_13,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_14,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_15,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+      _mmc.mmcAddTarget(MMT_SELECT_USED_PATTERN_16,  CLASS_BUTTON, SYN_BUTTON_SELECT);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcProxyGet() : MIDIMapContext {
+      if(editor instanceof MIDIMapContext)
+         return editor;
+      return null;
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      MIDIMapContext mmcEditor <= mmcProxyGet();
+
+      boolean bHandled = false;
+
+      // trace "xxx mmcHandleEvent: mmcEditor="+#(mmcEditor)+" editor="+#(editor);
+
+      if(null != mmcEditor)
+         bHandled = mmcEditor.mmcHandleEvent(_ev);
+
+      if(!bHandled)
+         return false;
+
+      // Handled by editor MMC
+      return true;
+   }
+
+   // <midi_mmc.png>
+   public method mmcHandleNodeTarget(String _targetName) : boolean {
+
+      switch(_targetName)
+      {
+         case MMT_NODE_PREV:
+            if(0 == UI.GetNumModalFloatingLayers())
+            {
+               if(allowNavigateNodes())
+                  handleSelectPrev();
+            }
+            return true;
+
+         case MMT_NODE_NEXT:
+            if(0 == UI.GetNumModalFloatingLayers())
+            {
+               if(allowNavigateNodes())
+                  handleSelectNext();
+            }
+            return true;
+
+         case MMT_PIPE_PREV:
+            if(0 == UI.GetNumModalFloatingLayers())
+            {
+               if(allowNavigateNodes())
+                  handleSelectPrevPipeLastEditedNode();
+            }
+            return true;
+
+         case MMT_PIPE_NEXT:
+            if(0 == UI.GetNumModalFloatingLayers())
+            {
+               if(allowNavigateNodes())
+                  handleSelectNextPipeLastEditedNode();
+            }
+            return true;
+
+         case MMT_PIPENODE_A_SET:
+            handlePipeNodeASet();
+            return true;
+
+         case MMT_PIPENODE_B_SET:
+            handlePipeNodeBSet();
+            return true;
+
+         case MMT_PIPENODE_A_SHOW:
+            if(allowNavigateNodes())
+            {
+               handlePipeNodeAShow();
+            }
+            return true;
+
+         case MMT_PIPENODE_B_SHOW:
+            if(allowNavigateNodes())
+               handlePipeNodeBShow();
+            return true;
+
+         case MMT_PIPENODE_AB_SWAP:
+            if(allowNavigateNodes())
+            {
+               handlePipeNodeABSwap();
+            }
+            return true;
+
+         default:
+            if(_targetName <= "MMT_SELECT_USED_PATTERN_")
+            {
+               int usedPatIdx = int(_targetName.replace("MMT_SELECT_USED_PATTERN_", "")) - 1;
+               int patIdx = script_node.nodeGetPatternNrByUsedIdx(usedPatIdx);
+               if(-1 != patIdx)
+                  editor.selectPatternByUsedIdx(usedPatIdx);
+               else
+                  editor.selectPatternByIdx(Node.EMPTY_PAT_NR);
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= method setScriptNode(Node _node) {
+      script_node <= _node;
+   }
+
+   // <method.png>
+   protected lazyHidePrgChgPopup() {
+      if(null != cmp_global_prgchg)
+      {
+         if(cmp_global_prgchg.isFloatingLayerVisible())
+         {
+            cmp_global_prgchg.hide();
+         }
+      }
+   }
+
+   // <ui_show.png>
+   public method showNode(MIDIPipeNode _node, int _parentPage, ActionConsumer _listener) {
+
+      lazyHidePrgChgPopup();
+
+      listener <= _listener;
+
+      NodeEditor.b_layout_lock = !UI.b_allow_layout_cache;
+      showNodeInt(_node);
+
+      root_form.showPage(RootForm.PAGE_NODE, true/*bHistory*/);
+      NodeEditor.b_layout_lock = false;
+
+      UI.SetEnableHideAllOverlays(false);
+      ls_editor.switchToLayerNr(0); // Hide remark editor
+      bt_remark.setToggleState(false);
+
+      Global.Debug("PageNode::showNode: editor="+#(editor));
+
+      if(null != editor)
+         editor.showNodePostPage(); // xxx [20Jan2017]
+   }
+
+   // <ui_show.png>
+   public method showNodeInt(MIDIPipeNode _node) {
+
+      lazyHidePrgChgPopup();
+
+      // Reset current pattern node so that e.g. NT receives prgchg again
+      replay.setPatternNode(null);
+
+      Node prevScriptNode <= script_node;
+
+      node <= _node;
+
+      if(null != _node)
+      {
+         MIDIPipe pipe <= _node.parent;
+         pipe.lastEditedNodeIdx = _node.nodeIdx;
+
+         bt_prev_pipe.setEditable(null != pipe.prevUsedPipe);
+         bt_next_pipe.setEditable(null != pipe.nextUsedPipe);
+
+         tf_name.setText(node.name);
+
+         updateTextFieldNodeState();
+
+         bt_prev.setEditable(null != node.prev);
+         bt_next.setEditable(null != node.next);
+      }
+      else
+      {
+         tf_name.setText("<n/a>");
+
+         bt_prev.setEditable(false);
+         bt_next.setEditable(false);
+      }
+
+      UI.LoseKeyboardFocusIfWithin(pn_editor, true/*bQuiet*/);
+      pn_editor.removeChildren();
+
+      if(null != editor)
+      {
+         if(null != prevScriptNode)
+            prevScriptNode.nodeStopEditing();
+         // // trace "xxx call PageNode::showNodeInt: call editor.mmcLeave  editor="+#(editor);
+         editor.mmcLeave();
+         editor.leaveNode();
+      }
+
+      editor <= null;
+
+      if(node instanceof MIDIPipeNodeScriptProxy)
+      {
+         MIDIPipeNodeScriptProxy nsp <= node;
+
+         // (note) don't assign to script_node, yet. replay thread might access it before editor.showNode() has been called
+         Node scriptNode <= nsp.sci;
+         scriptNode.nodeSetLastEditFocus(null);
+
+         boolean bLayoutDone = false;
+
+         if(null != scriptNode)
+         {
+            editor <= scriptNode.nodeGetEditor();
+
+            Global.Debug("PageNode::showNodeInt: editor="+#(editor));
+
+            if(editor instanceof NodeEditor)
+            {
+               // "Hack" to prevent layout glitches (~+3 pixels too wide):
+               pn_editor.setRequiredSizeX(root_form.getSizeX());
+               editor.setRequiredSizeX(root_form.getSizeX());
+
+               pn_editor.addChildLayer(editor);
+
+               // (note) editor_song_offset is set only when node replay is started in NodeEditor
+               // // // Fix pattern startpos to last played
+               // // scriptNode.nodeCopyLastPatternStartSongOffsetToEditor();
+
+               editor.mmcHandleAutoSelectMorphScene();
+
+               // Set edit pattern to play pattern
+               //  (note) when not invoked from arranger
+               if(-1 == scriptNode.edit_clip_parent_arranger_gid)
+               {
+                  scriptNode.nodeSetCurrentEditPatternNr(scriptNode.nodeGetCurrentPlayPatternNr());
+               }
+
+               // Show node editor
+               scriptNode.nodeStartEditing(editor);
+               editor.showNode(scriptNode);
+
+               bLayoutDone = editor.b_layout_done;
+
+               Global.Debug2("PageNode: editor.b_layout_done="+bLayoutDone);
+
+               setScriptNode(scriptNode);
+
+               // 31Dec2015: call showNodePost() after showPageSub() to fix layer / track scrollbar issue
+               // 25Jan2016: moved from showNode() to showNodeInt()
+               // xxx 11Jul2016: postpone showNodePost() until layout is final (NodeEditor::layoutHierarchy())
+               // if(bLayoutDone)
+               // {
+                  editor.showNodePost();
+               // }
+            }
+            else
+            {
+               trace "[---] node editor is not an instance of NodeEditor (editor="+#(editor)+").";
+               editor <= null;
+            }
+         }
+
+         if(!bLayoutDone)
+         {
+            pn_editor.layoutHierarchy(true, false);
+
+            if(editor instanceof NodeEditor)
+            {
+               // Also see NodeEditor::layoutHierarchy()
+               // // // editor.b_layout_done = UI.b_allow_layout_cache;  // moved to pageLeave()
+            }
+         }
+      }
+      else
+      {
+         setScriptNode(null);
+
+         bt_prev.setEditable(false);
+         bt_next.setEditable(false);
+
+         bt_prev_pipe.setEditable(false);
+         bt_next_pipe.setEditable(false);
+      }
+
+      // // // if(null != editor)
+      // // // {
+      // // //    editor.showNodePost();
+      // // // }
+
+      String sPipeNodeId <= handleEditPatternChanged();
+
+      if(null != node)
+      {
+         Global.PrintHead("Edit "+sPipeNodeId+" \""+node.name+"\".");
+      }
+      else
+      {
+         Global.PrintHead("Empty pipe");
+      }
+
+      updateRemark();
+      tx_remark.validateCursorPosition();
+
+      if(1 == ls_editor.getCurrentChildNr())
+      {
+         // In remark editor, change keyboard focus
+         UI.SetKeyboardFocus(bt_previous_page);
+      }
+
+      // // trace "xxx PageNode::showInt: EXIT keyboard_focus="+#(UI.GetKeyboardFocus());
+
+      redraw();
+   }
+
+   // <method_get.png>
+   public method isEditorVisible() : boolean {
+      if(null != script_node && null != editor)
+         return script_node.nodeIsEditorVisible();
+      return false;
+   }
+
+   // <ui_page.png>
+   public virtual isPageLocked() : boolean {
+      if(null != node && null != editor)
+         return editor.isNodeEditorLocked();
+      return false;
+   }
+
+   // <ui_handle.png>
+   public virtual onResize() {
+      if(editor instanceof NodeEditor)
+      {
+         // Also see NodeEditor::layoutHierarchy()
+         editor.b_layout_done = false;
+         relayout();
+      }
+   }
+
+   // <ui_update.png>
+   public method updatePipeNodeLabel() : String {
+      if(null != node)
+      {
+         Integer ioPipe = ( (node.parent.pipeIdx) + 1);
+         Integer ioNode = (node.nodeIdx + 1);
+
+         // // String sPipeNodeId = ioPipe.printf("%02d")+":"+ioNode.printf("%02d")+" "+(node.parent.getName())+" "+Node.GetNodeEditPatternNrString(node)+" p"+Node.GetNodePlayPatternNrString(node)+":";
+         String sPipeNodeId = ioPipe.printf("%02d")+":"+ioNode.printf("%02d")+" "+(node.parent.getName());
+         String sPipeNodeIdEdit = Node.GetNodeEditPatternNrString(node);
+         String sPipeNodeIdPlay = " p"+Node.GetNodePlayPatternNrString(node);
+
+         if(sPipeNodeId != lb_pipenodeid.getCaption())
+         {
+            lb_pipenodeid.setCaption(sPipeNodeId);
+            lb_pipenodeid.redraw();
+         }
+
+         bt_pipenodeid_edit.setCaption(sPipeNodeIdEdit);
+         bt_pipenodeid_edit.redraw();
+         bt_pipenodeid_play.setCaption(sPipeNodeIdPlay);
+         bt_pipenodeid_play.redraw();
+
+         String ttCaption;
+
+         if(script_node instanceof Node)
+         {
+            ttCaption = "Last start: "+RootForm.GetSongPosString(script_node.nodeGetLastPatternStartSongOffset())+((-1 != script_node.edit_clip_start_ticks)?"*":"")+" ("+script_node.nodeGetLastPatternStartSongOffset()+" ticks)"+"\nLast editor start: "+RootForm.GetSongPosString(script_node.nodeGetLastPatternStartEditorSongOffset())+" ("+script_node.nodeGetLastPatternStartEditorSongOffset()+" ticks)";
+         }
+         else
+         {
+            ttCaption = "Last start: n/a\nLast editor start: n/a";
+         }
+
+         lb_pipenodeid.setToolTipCaption(ttCaption);
+         // // // bt_pipenodeid_edit.setToolTipCaption(ttCaption);
+         // // // bt_pipenodeid_play.setToolTipCaption(ttCaption);
+
+         return sPipeNodeId;
+      }
+      else
+      {
+         return "<n/a>";
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEditPatternChanged() : String {
+      return updatePipeNodeLabel();
+   }
+
+   // <ui_handle.png>
+   public method handlePlayPatChanged() {
+      updatePipeNodeLabel();
+
+      if(null != editor)
+         editor.handlePlayPatChanged();
+
+      if(2 == ls_editor.getCurrentChildNr())
+         pattern_mgr.handlePlayPatChanged();
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      if(b_cont_edit)
+      {
+         // Re-enter page after e.g. MMC was edited
+         b_cont_edit = false;
+
+         Global.Debug2("PageNode::pageEnter: b_cont_edit=true");
+
+         showNodeInt(node);
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      if(2 == ls_editor.getCurrentChildNr())
+         togglePatternManager();
+
+      lazyHidePrgChgPopup();
+
+      if(null != editor)
+      {
+         editor.b_layout_done = UI.b_allow_layout_cache;
+
+         if(null != script_node)
+            script_node.nodeStopEditing();
+
+         // // trace "xxx call PageNode::pageLeave: call editor.mmcLeave  editor="+#(editor);
+         editor.mmcLeave();
+         editor.leaveNode();
+
+         editor <= null;
+         node <= null;
+         setScriptNode(null);
+      }
+
+      NodeEditor.b_lock_kbdfocus = false;
+      ta_kbdfocus.cancel();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeaveSub() {
+      b_cont_edit = true;
+
+      if(null != editor)
+      {
+         if(null != script_node)
+            script_node.nodeStopEditing();
+
+         // trace "xxx call PageNode::pageLeaveSub: call editor.mmcLeave  editor="+#(editor);
+         editor.mmcLeave();
+         editor.leaveNode();
+
+         // Don't reset node ptrs so editing can continue, e.g. after editing a MMC
+      }
+   }
+
+   // <method_delete.png>
+   public method deleteLastEditor() {
+      // Called when song is initialized to remove all references to node
+      editor <= null;
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      // // trace "xxx PageNode::pageFocusDefault";
+
+      UI.SetKeyboardFocus(bt_previous_page);
+
+      if(0 == ls_editor.getCurrentChildNr())
+      {
+         // Node editor
+         if(null != editor)
+            editor.refocusDefault();
+      }
+      else if(2 == ls_editor.getCurrentChildNr())
+      {
+         pattern_mgr.refocusDefault();
+      }
+   }
+
+   // <ui_timer.png>
+   public virtual pageHandleReplayTimer() {
+      if(null != editor)
+         editor.handleReplayTimer();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         tf_name,
+         bt_remark,
+         bt_prev,
+         bt_next,
+         bt_prev_pipe,
+         bt_next_pipe
+                              ];
+
+      if(0 == ls_editor.getCurrentChildNr())
+      {
+         if(null != editor)
+            editor.addTabCycleOverrides(_retLayers);
+      }
+      else if(1 == ls_editor.getCurrentChildNr())
+      {
+         _retLayers.add(tx_remark);
+      }
+      else if(2 == ls_editor.getCurrentChildNr())
+      {
+         pattern_mgr.addTabCycleOverrides(_retLayers);
+      }
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(null != editor)
+      {
+         if(editor.mmtHandleGlobalValue(_val))
+            return true;
+      }
+
+      return MMTListener::mmtHandleGlobalValue(_val);
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(null != editor)
+      {
+         if(editor.mmtHandleGlobalValueDelta(_delta))
+            return true;
+      }
+
+      return MMTListener::mmtHandleGlobalValueDelta(_delta);
+   }
+
+   // <method_get.png>
+   public method getAPipeIdx() : int {
+      return a_pipe_idx;
+   }
+
+   // <method_get.png>
+   public method getANodeIdx() : int {
+      return a_node_idx;
+   }
+
+   // <ui_update.png>
+   public method updateTextFieldNodeState() {
+
+      if(null != node)
+      {
+         if(node.isNodeOrPipeMuted())
+         {
+            bt_pipeornode_mute.setIcon(UI.GetIcon("mute_1"));
+            bt_pipeornode_mute.setIconBlendC32(app_lnf.getColor(AppLookAndFeel.COLOR_PAGENODE_MUTEICON_TINT_1));
+         }
+         else
+         {
+            bt_pipeornode_mute.setIcon(UI.GetIcon("mute_0"));
+            bt_pipeornode_mute.setIconBlendC32(app_lnf.getColor(AppLookAndFeel.COLOR_PAGENODE_MUTEICON_TINT_0));
+         }
+         bt_pipeornode_mute.redraw();
+
+         if(MIDIPIPE_STATE_MUTE == (node.parent.state))
+         {
+            tf_name.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_PAGENODE_NAME_MUTE_PIPE_TINT));
+            tf_name.redraw();
+
+            return;
+         }
+
+         switch(node.state)
+         {
+            default:
+            case MIDIPIPE_STATE_PLAY:
+               tf_name.setBackgroundTint(0);
+               break;
+
+            case MIDIPIPE_STATE_MUTE:
+               tf_name.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_PAGENODE_NAME_MUTE_NODE_TINT));
+               break;
+
+            case MIDIPIPE_STATE_SOLO:
+               tf_name.setBackgroundTint(app_lnf.getColor(AppLookAndFeel.COLOR_PAGENODE_NAME_SOLO_NODE_TINT));
+               break;
+         }
+
+         tf_name.redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTogglePipeOrNodeMute() {
+      Node.TogglePipeOrNodeMuteStateUI(node, false/*bQuiet*/);
+      updateTextFieldNodeState();
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      if(null != node)
+      {
+         node.name = tf_name.getText();
+
+         if(script_node instanceof NodeTracker)
+         {
+            // Reset temp flag so node won't be auto-deleted when editing stops
+            NodeTracker tn <= script_node;
+            tn.b_seq_temp = false;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSelectPrev() {
+      if(null != node)
+      {
+         saveRemark();
+
+         MIDIPipeNode n <= node.prev;
+
+         if(null != n)
+         {
+            MIDIPipe pipe <= n.parent;
+
+            PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+            PagePipe pgPipe <= root_form.pg_pipe;
+
+            UI.SetEnableLockKeyboardFocus(true);
+            pgPipeRoot.selectPipeByIdx(pipe.pipeIdx);
+            pgPipe.selectNodeByIdx(n.nodeIdx);
+            UI.SetEnableLockKeyboardFocus(false);
+
+            showNodeInt(n);
+
+            if(null != editor)
+            {
+               NodeEditor.b_lock_kbdfocus = false;  // unlock immediately (instead of TA_KBDFOCUS)
+               editor.showNodePostPage();
+            }
+         }
+
+         tx_remark.validateCursorPosition();
+      }
+      else
+      {
+         Global.Warning("handleSelectPrev: node is null");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNext() {
+      if(null != node)
+      {
+         saveRemark();
+
+         MIDIPipeNode n <= node.next;
+
+         if(null != n)
+         {
+            MIDIPipe pipe <= n.parent;
+
+            PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+            PagePipe pgPipe <= root_form.pg_pipe;
+
+            UI.SetEnableLockKeyboardFocus(true);
+            pgPipeRoot.selectPipeByIdx(pipe.pipeIdx);
+            pgPipe.selectNodeByIdx(n.nodeIdx);
+            UI.SetEnableLockKeyboardFocus(false);
+
+            showNodeInt(n);
+
+            if(null != editor)
+            {
+               NodeEditor.b_lock_kbdfocus = false;  // unlock immediately (instead of TA_KBDFOCUS)
+               editor.showNodePostPage();
+            }
+         }
+
+         tx_remark.validateCursorPosition();
+      }
+      else
+      {
+         Global.Warning("handleSelectNext: node is null");
+      }
+   }
+
+   // <method.png>
+   public method selectNodePrev() {
+      if(allowNavigateNodes())
+      {
+         NodeEditor.b_lock_kbdfocus = false;
+         ta_kbdfocus.cancel();
+         handleSelectPrev();
+      }
+   }
+
+   // <method.png>
+   public method selectNodeNext() {
+      if(allowNavigateNodes())
+      {
+         NodeEditor.b_lock_kbdfocus = false;
+         ta_kbdfocus.cancel();
+         handleSelectNext();
+      }
+   }
+
+   // <method.png>
+   public method selectNodeUp() {
+      if(allowNavigateNodes())
+      {
+         NodeEditor.b_lock_kbdfocus = false;
+         ta_kbdfocus.cancel();
+         handleSelectPrevPipeLastEditedNode();
+      }
+   }
+
+   // <method.png>
+   public method selectNodeDown() {
+      if(allowNavigateNodes())
+      {
+         NodeEditor.b_lock_kbdfocus = false;
+         ta_kbdfocus.cancel();
+         handleSelectNextPipeLastEditedNode();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPrevPipeLastEditedNode() {
+      if(null != node)
+      {
+         saveRemark();
+
+         MIDIPipe pipe <= node.parent;
+
+         Global.Debug2("PageNode::handleSelectPrevPipeLastEditedNode");
+
+         pipe <= pipe.prevNonEmptyUsedPipe;
+
+         if(null != pipe)
+         {
+            int nodeIdx = pipe.lastEditedNodeIdx;
+
+            if(-1 == nodeIdx)
+               nodeIdx = 0;
+
+            MIDIPipeNode n <= pipe.getNodeByIdx(nodeIdx);
+
+            if(null != n)
+            {
+               PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+               PagePipe pgPipe <= root_form.pg_pipe;
+
+               UI.SetEnableLockKeyboardFocus(true);
+               pgPipeRoot.selectPipeByIdx(pipe.pipeIdx);
+               pgPipe.selectNodeByIdx(n.nodeIdx);
+               UI.SetEnableLockKeyboardFocus(false);
+
+               showNodeInt(n);
+
+               if(null != editor)
+               {
+                  NodeEditor.b_lock_kbdfocus = false;  // unlock immediately (instead of TA_KBDFOCUS)
+                  editor.showNodePostPage();
+               }
+            }
+            else
+            {
+               Global.Warning("Previous pipe is empty");
+            }
+         }
+
+         tx_remark.validateCursorPosition();
+      }
+      else
+      {
+         Global.Warning("handleSelectPrevPipeLastEditedNode: node is null");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextPipeLastEditedNode() {
+      if(null != node)
+      {
+         saveRemark();
+
+         MIDIPipe pipe <= node.parent;
+
+         Global.Debug2("PageNode::handleSelectNextPipeLastEditedNode");
+
+         pipe <= pipe.nextNonEmptyUsedPipe;
+
+         if(null != pipe)
+         {
+            int nodeIdx = pipe.lastEditedNodeIdx;
+
+            if(-1 == nodeIdx)
+               nodeIdx = 0;
+
+            MIDIPipeNode n <= pipe.getNodeByIdx(nodeIdx);
+
+            if(null != n)
+            {
+               PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+               PagePipe pgPipe <= root_form.pg_pipe;
+
+               UI.SetEnableLockKeyboardFocus(true);
+               pgPipeRoot.selectPipeByIdx(pipe.pipeIdx);
+               pgPipe.selectNodeByIdx(n.nodeIdx);
+               UI.SetEnableLockKeyboardFocus(false);
+
+               showNodeInt(n);
+
+               if(null != editor)
+               {
+                  NodeEditor.b_lock_kbdfocus = false;  // unlock immediately (instead of TA_KBDFOCUS)
+                  editor.showNodePostPage();
+               }
+            }
+            else
+            {
+               Global.Warning("Next pipe is empty");
+            }
+         }
+
+         tx_remark.validateCursorPosition();
+      }
+      else
+      {
+         Global.Warning("handleSelectNextPipeLastEditedNode: node is null");
+      }
+   }
+
+   // <save.png>
+   public method savePipeNodeAB(Stream ofs) {
+      ofs.i8 = a_pipe_idx;
+      ofs.i8 = a_node_idx;
+      ofs.i8 = b_pipe_idx;
+      ofs.i8 = b_node_idx;
+   }
+
+   // <load.png>
+   public method loadPipeNodeAB(Stream ifs) {
+      a_pipe_idx = ifs.s8;
+      a_node_idx = ifs.s8;
+      b_pipe_idx = ifs.s8;
+      b_node_idx = ifs.s8;
+   }
+
+   // <ui_handle.png>
+   public method handlePipeNodeASet() {
+
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+      PagePipe pgPipe <= root_form.pg_pipe;
+
+      a_pipe_idx = -1;
+      a_node_idx = -1;
+
+      MIDIPipe cPipe <= pgPipeRoot.getSelectedPipe();
+      if(null != cPipe)
+      {
+         a_pipe_idx = cPipe.pipeIdx;
+
+         MIDIPipeNode cNode <= pgPipe.getSelectedNode();
+         if(null != cNode)
+         {
+            a_node_idx = cNode.nodeIdx;
+
+            Global.Print("Set PipeNode A");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePipeNodeBSet() {
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+      PagePipe pgPipe <= root_form.pg_pipe;
+
+      b_pipe_idx = -1;
+      b_node_idx = -1;
+
+      MIDIPipe cPipe <= pgPipeRoot.getSelectedPipe();
+      if(null != cPipe)
+      {
+         b_pipe_idx = cPipe.pipeIdx;
+
+         MIDIPipeNode cNode <= pgPipe.getSelectedNode();
+         if(null != cNode)
+         {
+            b_node_idx = cNode.nodeIdx;
+
+            Global.Print("Set PipeNode B");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   public method showPipeNodeByIdx(int _pipeIdx, int _nodeIdx) : boolean {
+
+      if(-1 != _pipeIdx)
+      {
+         if(-1 != _nodeIdx)
+         {
+            PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+            PagePipe pgPipe <= root_form.pg_pipe;
+
+            if(pgPipeRoot.selectPipeByIdx(_pipeIdx))
+            {
+               if(pgPipe.selectNodeByIdx(_nodeIdx))
+               {
+                  MIDIPipeNode cNode <= pgPipe.getSelectedNode();
+                  showNodeInt(cNode);
+                  return true;
+               }
+               else
+               {
+                  trace "[~~~] pipe selectNodeByIdx failed";
+               }
+            }
+            else
+            {
+               trace "[~~~] pipe selectPipeByIdx failed";
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_show.png>
+   public method getQuickJumpNode(boolean _bB) : Node {
+      int pipeIdx = _bB ? b_pipe_idx : a_pipe_idx;
+      int nodeIdx = _bB ? b_node_idx : a_node_idx;
+
+      if(-1 != pipeIdx)
+      {
+         if(-1 != nodeIdx)
+         {
+            MIDIPipe pipe <= current_pipe_root.getPipeByIdx(pipeIdx);
+            if(null != pipe)
+            {
+               MIDIPipeNodeScriptProxy nsp <= pipe.getNodeByIdx(nodeIdx);
+               if(nsp instanceof MIDIPipeNodeScriptProxy)
+                  return nsp.sci;
+            }
+         }
+      }
+
+      return null;
+   }
+
+   // <method_set.png>
+   public method setAPipeAndNode(int _pipeIdx, int _nodeIdx) {
+      a_pipe_idx = _pipeIdx;
+      a_node_idx = _nodeIdx;
+   }
+
+   // <method_set.png>
+   public method setBPipeAndNode(int _pipeIdx, int _nodeIdx) {
+      b_pipe_idx = _pipeIdx;
+      b_node_idx = _nodeIdx;
+   }
+
+   // <ui_handle.png>
+   public method handlePipeNodeAShow() {
+      if(!root_form.isCurrentPageLocked())
+      {
+         Global.Print("Show PipeNode A");
+         showPipeNodeByIdx(a_pipe_idx, a_node_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePipeNodeBShow() {
+      if(!root_form.isCurrentPageLocked())
+      {
+         Global.Print("Show PipeNode B");
+         showPipeNodeByIdx(b_pipe_idx, b_node_idx);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePipeNodeABSwap() {
+      // swap a_pipe/node and b_pipe/node
+      if(!root_form.isCurrentPageLocked())
+      {
+         PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+         PagePipe pgPipe <= root_form.pg_pipe;
+
+         int nextPipeIdx = a_pipe_idx;
+         int nextNodeIdx = a_node_idx;
+
+         MIDIPipe cPipe <= pgPipeRoot.getSelectedPipe();
+         if(null != cPipe)
+         {
+            MIDIPipeNode cNode <= pgPipe.getSelectedNode();
+            if(null != cNode)
+            {
+               if(a_pipe_idx == cPipe.pipeIdx)
+               {
+                  if(a_node_idx == cNode.nodeIdx)
+                  {
+                     nextPipeIdx = b_pipe_idx;
+                     nextNodeIdx = b_node_idx;
+                  }
+               }
+            }
+         }
+
+         Global.Print("Swap PipeNode A<>B");
+
+         if(pgPipeRoot.selectPipeAndNodeByIdx(nextPipeIdx, nextNodeIdx))
+         {
+            pgPipe.editSelectedNode();
+         }
+         else
+         {
+            Global.Warning("Swap PipeNode A<>B: invalid target");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method showPatternNumberDialog() {
+      if(null != editor)
+      {
+         if(0 == UI.GetNumModalFloatingLayers())
+            dlg_setpatternnumber.run(script_node.nodeGetCurrentEditPatternNr());
+      }
+   }
+
+   // <ui_handle.png>
+   public method showPatternNumberDialog2(int _patNr) {
+      if(null != editor)
+      {
+         if(0 <= _patNr <= 127)
+         {
+            editor.selectPatternByIdx(_patNr);
+
+            Global.Success("Pattern number set to "+_patNr+" ("+(Node.patnr_options.get(_patNr))+")");
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method isPatternManagerVisible() : boolean {
+      return (2 == ls_editor.getCurrentChildNr());
+   }
+
+   // <ui_handle.png>
+   public method togglePatternManager() {
+      Global.Debug("PageNode::togglePatternManager");
+
+      if(0 == ls_editor.getCurrentChildNr())
+      {
+         if(null != editor)
+            editor.leaveNode();
+
+         ls_editor.switchToLayerNr(2);
+         UI.SetEnableHideAllOverlays(true);
+
+         pattern_mgr.show();
+
+         Global.Print("Show pattern manager");
+      }
+      else if(2 == ls_editor.getCurrentChildNr())
+      {
+         pattern_mgr.hide();
+         ls_editor.switchToLayerNr(0);
+         UI.SetEnableHideAllOverlays(false);
+         // // trace "xxx hide pattern manager: editor="+#(editor)+" script_node="+#(script_node);
+
+         if(null != editor)
+         {
+            editor.showNode(script_node);
+            editor.showNodePost(); // [09Nov2020] re-install overlays
+            editor.showNodePostPage();
+         }
+
+         Global.Print("Hide pattern manager");
+      }
+   }
+
+   // <method_get.png>
+   public method isRemarkEditorVisible() : boolean {
+      return (1 == ls_editor.getCurrentChildNr());
+   }
+
+   // <ui_handle.png>
+   public method toggleRemarkEditor(boolean _bFromKeyboard, boolean _bReturnToPipeMap) {
+
+      Global.Debug("PageNode::toggleRemarkEditor: bFromKeyboard="+_bFromKeyboard+" bReturnToPipeMap="+_bReturnToPipeMap);
+
+      if(_bFromKeyboard)
+      {
+         bt_remark.setToggleState(!bt_remark.getToggleState());
+         bt_remark.redraw();
+      }
+
+      if(bt_remark.getToggleState())
+      {
+         // Show remark
+         UI.SetEnableHideAllOverlays(true);
+         ls_editor.switchToLayerNr(1);
+         relayout();
+         tx_remark.onResize();
+
+         if(_bFromKeyboard)
+         {
+            UI.SetKeyboardFocus(tx_remark);
+            tx_remark.startEditing();
+         }
+
+         NodeEditor.b_lock_kbdfocus = false;
+         ta_kbdfocus.cancel();
+
+         b_remark_return_to_pipemap = _bReturnToPipeMap;
+      }
+      else
+      {
+         // Hide remark
+         tx_remark.stopEditing(true/*bQuiet*/);
+         saveRemark();
+         updateRemark();
+         ls_editor.switchToLayerNr(0);
+         UI.SetEnableHideAllOverlays(false);
+
+         if(_bFromKeyboard)
+            pageFocusDefault();
+
+         if(b_remark_return_to_pipemap)
+         {
+            b_remark_return_to_pipemap = false;
+            root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateRemark() {
+      if(null != node)
+      {
+         String pipeRemark = node.remark;
+         if(!pipeRemark.isBlank())
+            bt_remark.setBackgroundTint(#1000ff00);
+         else
+            bt_remark.setBackgroundTint(0);
+         tx_remark.setText(pipeRemark);
+      }
+      else
+      {
+         tx_remark.setText("");
+         bt_remark.setBackgroundTint(0);
+      }
+   }
+
+   // <method.png>
+   protected method saveRemark() {
+      if(null != node)
+      {
+         String newNodeRemark = tx_remark.getText();
+         // // trace "xxx saveRemark: newNodeRemark=\""+newNodeRemark+"\"";
+
+         if(!newNodeRemark.isBlank())
+         {
+            // trace "xxx save remark to node";
+            node.remark = newNodeRemark;
+         }
+         else
+         {
+            // trace "xxx save NULL remark to node";
+            node.remark = null;
+         }
+      }
+   }
+
+   // <method_handle.png>
+   public method evHandleRedrawPattern() {
+      // Called when Replay.EV_REDRAWPATTERN event was received
+      if(null != editor)
+         editor.evHandleRedrawPattern();
+   }
+
+   // <method_handle.png>
+   public method evHandleScrollDownPattern() {
+      // Called when Replay.EV_SCROLLDOWNPATTERN event was received
+      if(null != editor)
+         editor.evHandleScrollDownPattern();
+   }
+
+   // <ui_show.png>
+   protected method showGlobalProgramChangeDialog(boolean _bB) {
+
+      if(null != editor)
+      {
+         if(null != script_node)
+         {
+            local StringArray patNrOptions;
+            local IntArray patNrColors;
+            Node.CalcPatNrOptions(script_node, null/*retOptionsShort*/, patNrOptions, patNrColors);
+
+            int patNr = script_node.nodeGetCurrentPlayPatternNr();
+
+            global_prgchg_oldfocus <= UI.GetKeyboardFocus();
+
+            ComboBoxPopup cmp <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                                null/*fontOrNull*/,
+                                                                deref patNrOptions,
+                                                                null/*optionsLongOrNull*/,
+                                                                patNr,
+                                                                170*UI.font_scaling/*prefSx*/,
+                                                                null/*toolTipCaptions*/,
+                                                                deref patNrColors/*optionBGColors*/,
+                                                                null/*option_fgtints*/
+                                                                );
+
+            global_prgchg_b = _bB;
+            cmp.showNearMouse(4, 0);
+            cmp.centerRow();
+            cmp.focusFirstTabCycleMember();
+            cmp.setEnableHideOnFirstEntryUp(false);
+            cmp.setPageSize(4);
+            cmp_global_prgchg <= deref cmp;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGlobalProgramChangeSelection(int _idx) {
+      Global.Debug2("PageNode::handleGlobalProgramChangeSelection: idx="+_idx+" b="+global_prgchg_b+" script_node="+#(script_node));
+
+      if(null != script_node)
+      {
+         if(global_prgchg_b)
+         {
+            if((-1 != script_node.auto_dev_filter_b) && (-1 != script_node.auto_ch_filter_b) && script_node.b_auto_filter_b)
+            {
+               Global.Debug2("PageNode::handleGlobalProgramChangeSelection: injectPrgChg b idx="+_idx);
+               replay.injectPrgChg(script_node.auto_dev_filter_b, script_node.auto_ch_filter_b, _idx);
+            }
+
+            script_node.nodeSetCurrentEditPatternNr(_idx);
+            script_node.nodeSetCurrentPlayPatternNr(_idx);
+            editor.nodeHandleEditPatternChanged();
+            Global.Debug2("PageNode::handleGlobalProgramChangeSelection: global program change b idx="+_idx);
+         }
+         else
+         {
+            if((-1 != script_node.auto_dev_filter_a) && (-1 != script_node.auto_ch_filter_a) && script_node.b_auto_filter_a)
+            {
+               Global.Debug2("PageNode::handleGlobalProgramChangeSelection: injectPrgChg a idx="+_idx);
+               replay.injectPrgChg(script_node.auto_dev_filter_a, script_node.auto_ch_filter_a, _idx);
+            }
+
+            script_node.nodeSetCurrentEditPatternNr(_idx);
+            script_node.nodeSetCurrentPlayPatternNr(_idx);
+            editor.nodeHandleEditPatternChanged();
+            Global.Debug2("PageNode::handleGlobalProgramChangeSelection: global program change a idx="+_idx);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGlobalProgramChangeIncDec(boolean _bPlay, int _delta) {
+      if(null != script_node)
+      {
+         int patIdx = _bPlay ? script_node.nodeGetCurrentPlayPatternNr() : script_node.nodeGetCurrentEditPatternNr();
+         patIdx = mathClampf(patIdx + _delta, 0, Node.NUM_PATTERNS-1);
+         handleGlobalProgramChangeSelection(patIdx);
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageHandleMuteSoloChanged() {
+      updateTextFieldNodeState();
+   }
+
+   // <method.png>
+   protected =replay= method endTrackerEdit() {
+
+      boolean bWasPlaying = replay.b_playing;
+      int oldSongOffset = current_song.song_offset;
+      if(bWasPlaying)
+      {
+         // // root_form.handleToggleReplay(false/*bSendMMC*/);
+         replay.b_playing = false;
+      }
+
+      // leaving Tracker node that was created by NodeSeq for temporary editing
+      NodeTracker tn <= script_node;
+      NodeTrackerEditor tnEditor <= editor;
+      boolean bHaveUndo = tn.haveUndo();
+      Global.Debug("PageNode::endTrackerEdit: bHaveUndo="+bHaveUndo);
+
+      // Export tracker pattern to output capture monitor buffer
+      if(bHaveUndo)
+         tnEditor.cmd_pattern_exportmon();
+
+      // Re-select NodeSeq and delete tracker node
+      PagePipe pgPipe <= root_form.pg_pipe;
+      if(1)
+      {
+         handleSelectPrev();
+         pgPipe.deleteNextNode1();
+      }
+      // // else
+      // // {
+      // //    boolean bHaveNext = (null != node.next);
+      // //    root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+      // //    PagePipeMap pgPipeMap <= root_form.pg_pipemap;
+      // //    pgPipe.deleteSelectedNode();  // selects previous node if there was no next node
+      // //    if(bHaveNext)
+      // //       pgPipeMap.selectPreviousNode();
+
+      // //    // Re-Show NodeSeq editor
+      // //    pgPipeMap.handleExecAction(PagePipeMap.EXEC_EDIT);
+      // // }
+
+      // Replace NodeSeq selection with output capture buffer (exported by temp Tracker node)
+      if(editor instanceof NodeSeqEditor)
+      {
+         NodeSeqEditor seqEditor <= editor;
+         if(bHaveUndo)
+            seqEditor.endTrackerEdit();
+      }
+      else
+      {
+         Global.Error("editor="+#(editor)+" is not NodeSeqEditor (after temp Tracker edit)");
+      }
+
+      if(bWasPlaying)
+      {
+         // Continue replay
+         // // current_song.seek(oldSongOffset);
+         // // root_form.handleToggleReplay(false/*bSendMMC*/);
+         current_song.song_offset = oldSongOffset;
+         replay.b_playing = true;
+      }
+   }
+
+   // <method.png>
+   protected method endTrackerEdit2() {
+      // update UI after temporary tracker node deletion
+      PagePipe pgPipe <= root_form.pg_pipe;
+      pgPipe.deleteNextNode2();
+   }
+
+   // <replay.png>
+   public method handleMIDIEvent(MIDIMapEvent _ev) : boolean {
+      if(2 == ls_editor.getCurrentChildNr())
+      {
+         return pattern_mgr.handleMIDIEvent(_ev);
+      }
+   }
+
+   // <ui_cmd.png>
+   public method cmdGetRedirect() : CmdProvider {
+      if(null != editor)
+         return editor;
+      return this;
+   }
+
+   // <method.png>
+   public method tryPipeNodeABSwap() {
+      // called by NAR_EditKitDialog (lctrl-x z  OR  'k')
+      if(allowNavigateNodes())
+         handlePipeNodeABSwap();
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          1         :   Select pipenode A (use lctrl-x z to switch between A and B)
+          2         :   Select pipenode B
+          d         :   Toggle pattern manager
+          u         :   Focus node name widget
+          z         :   Switch between pipenodes A/B
+          END       :   Global program change (master pipe, auto dev+ch A)
+          HOME      :   Global program change (master pipe, auto dev+ch B)
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "xxx PageNode::onTriadKey k.code="+_k.code;
+
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case '1':
+               handlePipeNodeASet();
+               r = true; break;
+
+            case '2':
+               handlePipeNodeBSet();
+               r = true; break;
+
+            case 'd':
+               togglePatternManager();
+               r = true; break;
+
+            case 'u':
+               UI.SetKeyboardFocus(tf_name);
+               return true;
+
+            case 'z':
+               tryPipeNodeABSwap();
+               r = true; break;
+
+            case VKEY_END:
+               Global.Debug3("PageNode: global program change A");
+               showGlobalProgramChangeDialog(false/*bB*/);
+               r = true; break;
+
+            case VKEY_HOME:
+               Global.Debug3("PageNode: global program change B");
+               showGlobalProgramChangeDialog(true/*bB*/);
+               r = true; break;
+
+            default:
+               r = maybe; break;
+         }
+
+         if(true == r)
+            return true;
+         else if(maybe == r)
+            Global.Print("");
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // // trace "xxx PageNode::onKey: _k.pressed="+_k.pressed+" _k.mod="+_k.mod+" (==mod:"+(VMOD_LCTRL | VMOD_LSHIFT)+")";
+
+      if((VMOD_LCTRL | VMOD_LSHIFT) == (_k.mod & (VMOD_LCTRL | VMOD_LSHIFT)))
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_LEFT:
+               selectNodePrev();
+               return true;
+
+            case VKEY_RIGHT:
+               selectNodeNext();
+               return true;
+
+            case VKEY_UP:
+               selectNodeUp();
+               return true;
+
+            case VKEY_DOWN:
+               selectNodeDown();
+               return true;
+
+            case 'c':
+               NodeEditor.b_lock_kbdfocus = false;
+               ta_kbdfocus.cancel();
+               toggleRemarkEditor(true/*bFromKeyboard*/, false/*bReturnToPipeMap*/);
+               return true;
+         }
+      }
+
+      if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case 'g':
+               showPatternNumberDialog();
+               return true;
+         }
+      }
+
+      if(VKEY_ESCAPE == _k.pressed)
+      {
+         // // trace "xxx PageNode: ESCAPE b_remark_return_to_pipemap="+b_remark_return_to_pipemap;
+
+         if(tx_remark.isEditing())
+         {
+            tx_remark.stopEditing(true/*bQuiet*/);
+            saveRemark();
+
+            if(!b_remark_return_to_pipemap)
+            {
+               toggleRemarkEditor(true/*bFromKeyboard*/, false/*bReturnToPipeMap*/);
+               return true;
+            }
+         }
+
+         if(b_remark_return_to_pipemap)
+         {
+            if(1 == ls_editor.getCurrentChildNr())
+            {
+               // Hide remark editor
+               toggleRemarkEditor(true/*bFromKeyboard*/, true/*bReturnToPipeMap*/);
+            }
+            else
+            {
+               b_remark_return_to_pipemap = false;
+            }
+            root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+            return true;
+         }
+
+         int parentArrangerGID = -1;
+         if(null != script_node)
+         {
+            parentArrangerGID = script_node.edit_clip_parent_arranger_gid;
+            script_node.nodeInvalidateEditClip();
+            Global.Debug2("PageNode: ESC, invalidate edit_clip_parent_arranger_gid (was "+parentArrangerGID+")");
+         }
+
+         // End temporary tracker node edit ?
+         if(script_node instanceof NodeTracker)
+         {
+            NodeTracker tn <= script_node;
+            if(tn.b_seq_temp)
+            {
+               endTrackerEdit();
+               return true;
+            }
+         }
+
+         // // trace "xxx PageNode: ESC showPagePrev";
+         root_form.showPagePrev();
+
+         if(-1 != parentArrangerGID)
+         {
+            Node arr <= current_song.findNodeByGID(parentArrangerGID);
+
+            if(null != arr)
+            {
+               Global.Debug2("PageNode: ESC, return to parent arranger GID="+parentArrangerGID);
+               if(RootForm.PAGE_NODE != root_form.getCurrentPageNr())
+               {
+                  root_form.showPage(RootForm.PAGE_NODE, false/*bAllowHistory*/);
+               }
+               showPipeNodeByIdx(arr.parent_pipe.pipeIdx,
+                                 arr.parent_pipenode.nodeIdx
+                                 );
+            }
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      IntAction *iac;
+
+      if(TA_KBDFOCUS == acName)
+      {
+         // After node selection via mouse / array buttons
+         //  (@* "Refocus after node selection")
+         NodeEditor.b_lock_kbdfocus = false;
+         if([bt_prev, bt_next, bt_prev_pipe, bt_next_pipe].containsPointer(UI.GetKeyboardFocus()))
+            pageFocusDefault();
+         return true;
+      }
+
+      switch(acName)
+      {
+         case ComboBoxPopup.ACTION_OPTIONSELECTED:
+            iac <= _action;
+            handleGlobalProgramChangeSelection(iac.getIntValue());
+            UI.SetKeyboardFocus(global_prgchg_oldfocus);
+            return true;
+
+         case ComboBoxPopup.ACTION_CANCEL_OPTION_SELECTION:
+            UI.SetKeyboardFocus(global_prgchg_oldfocus);
+            break;
+      }
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(bt_previous_page):
+            if(2 == ls_editor.getCurrentChildNr())
+            {
+               togglePatternManager();
+            }
+            else
+            {
+               if(Button.ACTION_HOLD_CLICK == acName)
+                  root_form.showPageParent();
+               else
+                  root_form.showPagePrev();
+            }
+            return true;
+
+         case @(bt_pipenodeid_edit):
+            if(Button.ACTION_WHEEL_UP == acName)
+            {
+               global_prgchg_b = (VMOD_LSHIFT == UI.GetKeyMod());
+               handleGlobalProgramChangeIncDec(false/*bPlay*/, (UI.GetKeyMod()&VMOD_LCTRL) ? -1 : -4);
+            }
+            else if(Button.ACTION_WHEEL_DOWN == acName)
+            {
+               global_prgchg_b = (VMOD_LSHIFT == UI.GetKeyMod());
+               handleGlobalProgramChangeIncDec(false/*bPlay*/, (UI.GetKeyMod()&VMOD_LCTRL) ? 1 : 4);
+            }
+            else if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               togglePatternManager();
+            }
+            else
+            {
+               showGlobalProgramChangeDialog((VMOD_LSHIFT == UI.GetKeyMod())/*bB*/);
+            }
+            return true;
+
+         case @(bt_pipenodeid_play):
+            if(Button.ACTION_WHEEL_UP == acName)
+            {
+               global_prgchg_b = (VMOD_LSHIFT == UI.GetKeyMod());
+               handleGlobalProgramChangeIncDec(true/*bPlay*/, (UI.GetKeyMod()&VMOD_LCTRL) ? -1 : -4);
+            }
+            else if(Button.ACTION_WHEEL_DOWN == acName)
+            {
+               global_prgchg_b = (VMOD_LSHIFT == UI.GetKeyMod());
+               handleGlobalProgramChangeIncDec(true/*bPlay*/, (UI.GetKeyMod()&VMOD_LCTRL) ? 1 : 4);
+            }
+            else if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               togglePatternManager();
+            }
+            else
+            {
+               showGlobalProgramChangeDialog((VMOD_LSHIFT == UI.GetKeyMod())/*bB*/);
+            }
+            return true;
+
+         case @(tf_name):
+            handleNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               pageFocusDefault();
+               redraw();
+            }
+            return true;
+
+         case @(bt_remark):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               togglePatternManager();
+            }
+            else
+            {
+               toggleRemarkEditor(false/*bFromKeyboard*/, false/*bReturnToPipeMap*/);
+               tx_remark.startEditing();
+            }
+            return true;
+
+         case @(bt_prev):
+            NodeEditor.b_lock_kbdfocus = true;
+            handleSelectPrev();
+            ta_kbdfocus.reschedule();
+            return true;
+
+         case @(bt_next):
+            NodeEditor.b_lock_kbdfocus = true;
+            handleSelectNext();
+            ta_kbdfocus.reschedule();
+            return true;
+
+         case @(bt_prev_pipe):
+            NodeEditor.b_lock_kbdfocus = true;
+            handleSelectPrevPipeLastEditedNode();
+            ta_kbdfocus.reschedule();
+            return true;
+
+         case @(bt_next_pipe):
+            NodeEditor.b_lock_kbdfocus = true;
+            handleSelectNextPipeLastEditedNode();
+            ta_kbdfocus.reschedule();
+            return true;
+
+         case @(bt_pipeornode_mute):
+            if(Button.ACTION_HOLD_CLICK == acName)
+               root_form.togglePipeMute();
+            else
+               handleTogglePipeOrNodeMute();
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

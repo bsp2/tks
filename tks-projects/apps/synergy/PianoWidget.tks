@@ -1,0 +1,265 @@
+// ----
+// ---- file   : PianoWidget.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 20Sep2019
+// ---- changed: 22Sep2019, 03Oct2019, 11Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MPianoWidget;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PianoWidget extends Panel {
+
+   int num_octaves;
+   int low_note;
+
+   IntArray pressed_notes;  // frame notes (red)
+   IntArray last_notes;     // last played or recorded notes (green)
+
+   // true=last_notes store auto-note off ST_Song.tick_nr
+   //  (note) used by NodeTracker
+   protected boolean b_last_notes_auto_off;
+
+
+   function New(float _w, float _h, float _mw, float _mh) : PianoWidget {
+      local PianoWidget r;
+      r.initPianoWidget(_w, _h, _mw, _mh);
+      return deref r;
+   }
+
+   PianoWidget() {
+      setMinimumSize2f(2,2);
+      setManualPreferredSize2f(Layout.FILLX, Layout.FILLY);
+   }
+
+   public method initPianoWidget(float _w, float _h, float _mw, float _mh) {
+      initLayer();
+      setManualPreferredSize2f(_w, _h);
+      setMinimumSize2f(_mw, _mh);
+
+      num_octaves = 7;
+      // low_note    = 2*12 + 4;  // E-2
+      low_note    = 2*12 + 0;  // C-2
+   }
+
+   public virtual allowSubPixelPosition() : boolean {
+      return false;
+   }
+
+   public virtual allowSubPixelSize() : boolean {
+      return false;
+   }
+
+   public method setPressedNotes(IntArray _notes) {
+      pressed_notes = _notes;
+      redraw();
+   }
+
+   public method setPressedNotesFromActiveNoteList(IntArray _activeNotes) {
+      if(pressed_notes.numElements < 128)
+      {
+         pressed_notes.alloc(128);
+         pressed_notes.useAll();
+      }
+      pressed_notes.fill(0);
+      int note;
+      foreach note in _activeNotes
+      {
+         pressed_notes[note] = true;
+      }
+      redraw();
+   }
+
+   public method clearNotes() {
+      pressed_notes.fill(0);
+      last_notes.fill(0);
+   }
+
+   public method setLastNotesByRef(IntArray _lastNotes) {
+      last_notes <= _lastNotes;
+   }
+
+   public method setEnableLastNotesAutoOff(boolean _bEnable) {
+      b_last_notes_auto_off = _bEnable;
+   }
+
+   public virtual onDraw() {
+
+      float w = getSizeX();
+      float h = getSizeY();
+
+      local Point2f abspos;
+      calcAbsolutePosition(abspos);
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, w+0.5, h+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.DrawFilledRectangle(0, 0, w, h, app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_BG));
+
+      // Draw keys
+      int numNotes = num_octaves * 12;
+      float noteW = w / (num_octaves * 7);
+      float whiteH = h;
+      float blackH = h * 0.6;
+      float blackW = noteW * 0.6;
+
+      IntArray btbl <= Scale.black_flags_tbl;
+
+      int c32;
+      int c32White0 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_WHITE);
+      int c32White1 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_WHITE_PRESSED);
+      int c32White2 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_WHITE_LAST);
+      int c32Black0 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_BLACK);
+      int c32Black1 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_BLACK_PRESSED);
+      int c32Black2 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_BLACK_LAST);
+
+      // (note) on an actual keyboard, the black key x position offset differs per note
+      FloatArray offXTbl;
+      offXTbl.empty();
+      offXTbl.add(0);
+      offXTbl.add(noteW - blackW * 0.6);
+      offXTbl.add(0);
+      offXTbl.add(noteW - blackW * 0.4);
+      offXTbl.add(0);
+      offXTbl.add(0);
+      offXTbl.add(noteW - blackW * 0.6);
+      offXTbl.add(0);
+      offXTbl.add(noteW - blackW * 0.5);
+      offXTbl.add(0);
+      offXTbl.add(noteW - blackW * 0.4);
+      offXTbl.add(0);
+
+      float cx;
+      int note;
+
+      // Draw white keys
+      cx = 0;
+      note = low_note;
+      loop(numNotes)
+      {
+         if!(btbl.get(note % 12))
+         {
+            if(last_notes.get(note) > 0)
+               c32 = c32White2;
+            else if(pressed_notes.get(note))
+               c32 = c32White1;
+            else
+               c32 = c32White0;
+            UIRenderer.DrawFilledRectangle(cx, 0, noteW, whiteH, c32);
+
+            cx += noteW;
+         }
+
+         // Next key
+         note++;
+      }
+
+      // Draw white key borders
+      cx = 0;
+      note = low_note;
+      c32 = app_lnf.getColor(AppLookAndFeel.COLOR_PIANO_BORDER);
+      loop(numNotes)
+      {
+         if!(btbl.get(note % 12))
+         {
+            UIRenderer.DrawRectangle(cx-1, -1, noteW+2, whiteH+2, 1, c32);
+
+            cx += noteW;
+         }
+
+         // Next key
+         note++;
+      }
+
+      // Draw black keys
+      cx = -noteW;
+      note = low_note;
+      loop(numNotes)
+      {
+         if(btbl.get(note % 12))
+         {
+            if(last_notes.get(note))
+               c32 = c32Black2;
+            else if(pressed_notes.get(note))
+               c32 = c32Black1;
+            else
+               c32 = c32Black0;
+            UIRenderer.DrawFilledRectangle(cx + offXTbl.get(note % 12), 0, blackW, blackH, c32);
+         }
+         else
+         {
+            cx += noteW;
+         }
+
+         // Next key
+         note++;
+      }
+
+      // Draw black key borders
+      cx = -noteW;
+      note = low_note;
+      loop(numNotes)
+      {
+         if(btbl.get(note % 12))
+         {
+            UIRenderer.DrawRectangle(cx + offXTbl.get(note % 12)-1, -1, blackW+2, blackH+2, 1, c32);
+         }
+         else
+         {
+            cx += noteW;
+         }
+
+         if(b_last_notes_auto_off)
+         {
+            if(last_notes.get(note))
+            {
+               // trace "xxx note="+note+" ticks="+last_notes.get(note)+" tick_nr="+current_song.tick_nr;
+               if(current_song.tick_nr >= last_notes.get(note))
+                  last_notes.set(note, 0);
+            }
+         }
+
+         // Next key
+         note++;
+      }
+
+      // Draw top border
+      UIRenderer.DrawLine(0, 0, w, 0, c32);
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+   }
+
+   public virtual beginXFMTag(AbstractXMLForm _form, HashTable _attributes) : boolean {
+
+      initPianoWidget(400, 60, 336, 40);
+
+      if(Panel::beginXFMTag(_form, _attributes))
+      {
+         String *atname, *atval;
+         StringArray *atsplit;
+         foreach atname in _attributes
+         {
+            atval <= _attributes[atname];
+            switch(atname.toLower())
+            {
+               case "lastnotesautooff":
+                  setEnableLastNotesAutoOff(int(atval));
+                  break;
+            }
+         }
+      }
+      return true;
+   }
+}

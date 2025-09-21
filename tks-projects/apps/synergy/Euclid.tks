@@ -1,0 +1,353 @@
+// ----
+// ---- file   : Euclid.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2017 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 03Dec2014
+// ---- changed: 30Jan2017
+// ----
+// ----
+// ----
+module MEuclid;
+
+
+
+
+// see <http://cgm.cs.mcgill.ca/~mcleish/644/Projects/DerekRivait.1/>
+
+
+// <euclid_ex_1.png>  <euclid_ex_2.png>
+
+
+class Euclid {
+
+   int num_ones  = 5;
+   int num_zeros = 8;
+
+   protected PointerArray lhs_vecs;
+   protected PointerArray rhs_vecs;
+
+   public IntArray ival_vec;
+   public String pat;
+
+
+   protected method cleanIValVec() {
+      int i;
+      i = 0;
+      while(i < ival_vec.numElements)
+      {
+         int dur = ival_vec.get(i);
+
+         if(0 == dur)
+         {
+            ival_vec.delete(i);
+         }
+         else
+         {
+            i++;
+         }
+      }
+   }
+
+   protected method incDecIValVec(boolean _bIncDec, boolean _bDecInc) {
+      if(ival_vec.numElements > 1)
+      {
+         if(_bIncDec)
+         {
+            ival_vec[0] = ival_vec[0] + 1;
+            ival_vec[ival_vec.numElements-1] = ival_vec[ival_vec.numElements-1] - 1;
+         }
+         else if(_bDecInc)
+         {
+            ival_vec[0] = ival_vec[0] - 1;
+            ival_vec[ival_vec.numElements-1] = ival_vec[ival_vec.numElements-1] + 1;
+         }
+      }
+
+      // Clean up interval vec (remove 0 length intervals)
+      cleanIValVec();
+   }
+
+   public method calcPatAndIntervalVec(boolean _bIncDecPre,
+                                       boolean _bDecIncPre,
+                                       boolean _bReverse,
+                                       boolean _bIncDecPost,
+                                       boolean _bDecIncPost,
+                                       int     _rot
+                                       ) {
+
+      //  bIncDecPre: e.g. [1 2 3 4 5] => [2 2 3 4 4]
+      //  bDecIncPre: e.g. [1 2 3 4 5] => [2 3 4 6]
+      //    bReverse: start with first symbol, then reverse. [1 2 3 4 5] => [1 5 4 3 2]
+      // bIncDecPost: e.g. [1 5 4 3 2] => [2 5 4 3 1]
+      // bDecIncPost: e.g. [1 5 4 3 2] => [5 4 3 3]
+      //         rot: final pattern rotation
+
+      ival_vec.empty();
+
+      _rot = -_rot;
+
+      int len = (num_ones + num_zeros);
+
+      while(_rot < 0)
+      {
+         _rot += len;
+      }
+
+      _rot = _rot % len;
+
+      // Calc temporary pattern
+      String tpat = lhs_vecs.get(0);
+      int i = 1;
+      loop(lhs_vecs.numElements - 1)
+         tpat.append(lhs_vecs.get(i++));
+
+      // trace "xxx tpat="+tpat;
+
+      // Calculate interval vector from temporary pattern
+      int dur = 0;
+      i=0;
+      loop(tpat.length - 1)
+      {
+         char c = tpat.getc(i++);
+         if('1' == c)
+         {
+            if(dur > 0)
+            {
+               ival_vec.add(dur);
+            }
+            dur = 1;
+         }
+         else
+         {
+            dur++;
+         }
+      }
+
+      if(dur > 0)
+      {
+         ival_vec.add(dur);
+      }
+
+      // trace "xxx ival_vec="+ival_vec.string;
+
+      // Inc/Dec pre
+      incDecIValVec(_bIncDecPre, _bDecIncPre);
+
+      if(_bIncDecPre || _bDecIncPre)
+      {
+         // trace "xxx pre ival_vec="+ival_vec.string;
+      }
+
+      if(_bReverse)
+      {
+         if(ival_vec.numElements > 2)
+         {
+            IntArray tvec;
+            tvec.empty();
+            tvec.add(ival_vec.get(0));
+
+            i = ival_vec.numElements - 1;
+            loop(ival_vec.numElements - 1)
+            {
+               tvec.add(ival_vec.get(i));
+               i--;
+            }
+
+            ival_vec = tvec;
+         }
+
+         // trace "xxx rev ival_vec="+ival_vec.string;
+      }
+
+      // Inc/dec post
+      incDecIValVec(_bIncDecPost, _bDecIncPost);
+
+      if(_bIncDecPost || _bDecIncPost)
+      {
+         // trace "xxx post ival_vec="+ival_vec.string;
+      }
+
+      // Calc new pattern
+      tpat.empty();
+      foreach dur in ival_vec
+      {
+         tpat.append("X");
+         loop(dur - 1)
+            tpat.append(".");
+      }
+
+      if(0 != _rot)
+      {
+         tpat.substring(_rot, (len - _rot)) => pat;
+         pat.append(tpat.substring(0, _rot));
+      }
+      else
+      {
+         pat = tpat;
+      }
+
+      // trace "xxx pat="+pat;
+
+   }
+
+   public method generate(int _num1, int _len) {
+
+      if(_num1 >= _len)
+         _num1 = _len;
+
+      num_ones  = _num1;
+      num_zeros = _len - _num1;
+
+      // Init LHS
+      lhs_vecs.alloc(num_ones);
+      loop(num_ones)
+      {
+         lhs_vecs.add(#(String("1")));
+      }
+
+      // Init RHS
+      rhs_vecs.alloc(num_zeros);
+      loop(num_zeros)
+      {
+         rhs_vecs.add(#(String("0")));
+      }
+
+      for(;;)
+      {
+         // trace "xxx lhs="+lhs_vecs.string+"  rhs="+rhs_vecs.string;
+
+         if(0 == rhs_vecs.numElements)
+         {
+            break;
+         }
+
+         if(1 == rhs_vecs.numElements)
+         {
+            lhs_vecs.add(#(rhs_vecs.getDeref(0)));
+
+            // trace "xxx => "+lhs_vecs.string;
+
+            break;
+         }
+
+         int li = 0;
+         String *tl;
+
+         if(lhs_vecs.numElements < rhs_vecs.numElements)
+         {
+            // Append rhs vecs to lhs vecs and delete on rhs
+            loop(rhs_vecs.numElements)
+            {
+               if(li >= lhs_vecs.numElements)
+               {
+                  break;
+               }
+               else
+               {
+                  tl <= lhs_vecs.get(li);
+                  tl.append(rhs_vecs.get(0));
+                  rhs_vecs.delete(0);
+               }
+
+               li++;
+            }
+
+            // (note) some rhs vecs remain on rhs
+         }
+         else
+         {
+            int numMove = lhs_vecs.numElements - rhs_vecs.numElements;
+
+            // Append rhs vecs to lhs vecs and delete on rhs
+            loop(rhs_vecs.numElements)
+            {
+               tl <= lhs_vecs.get(li);
+               tl.append(rhs_vecs.get(0));
+               rhs_vecs.delete(0);
+
+               li++;
+            }
+
+            // Move remaining lhs vecs to rhs
+            loop(numMove)
+            {
+               tl <= lhs_vecs.getDeref(li);
+               rhs_vecs.add(#(deref tl));
+               lhs_vecs.delete(li);
+            }
+         }
+
+      }
+      
+   }
+
+}
+
+
+
+// Euclid e;
+
+// int numTrigs;
+// int len;
+// int rot;
+
+// boolean bIncDecPre  = false;
+// boolean bDecIncPre  = false;
+// boolean bReverse    = false;
+// boolean bIncDecPost = false;
+// boolean bDecIncPost = false;
+
+// numTrigs=5;  len=13;
+// numTrigs=3;  len=8;     // tresillo 
+// numTrigs=5;  len=8;     // Cuban cinquillo
+// numTrigs=5;  len=16;    // Spanish Tango  (rotation of the Bossa-Nova rhythm)
+
+// if(Arguments.numElements >= 2)
+// {
+//    numTrigs = Arguments[0];
+//    len      = Arguments[1];
+
+//    if(Arguments.numElements >= 3)
+//    {
+//       rot = Arguments[2];
+
+//       if(Arguments.numElements >= 4)
+//       {
+//          bIncDecPre = Arguments[3];
+
+//          if(Arguments.numElements >= 5)
+//          {
+//             bDecIncPre = Arguments[4];
+
+//             if(Arguments.numElements >= 6)
+//             {
+//                bReverse = Arguments[5];
+
+//                if(Arguments.numElements >= 7)
+//                {
+//                   bIncDecPost = Arguments[6];
+
+//                   if(Arguments.numElements >= 8)
+//                   {
+//                      bDecIncPost = Arguments[7];
+//                   }
+//                }
+//             }
+//          }
+//       }
+//    }
+// }
+
+// e.generate(numTrigs, len);
+// e.calcPatAndIntervalVec(bIncDecPre,
+//                         bDecIncPre,
+//                         bReverse,
+//                         bIncDecPost,
+//                         bDecIncPost,
+//                         rot
+//                         );

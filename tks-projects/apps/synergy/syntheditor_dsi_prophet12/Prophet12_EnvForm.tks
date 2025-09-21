@@ -1,0 +1,648 @@
+// ----
+// ---- file   : Prophet12_EnvForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 16Feb2017
+// ---- changed: 17Feb2017, 19Feb2017, 20Feb2017, 07May2017, 27May2017, 07Jun2017, 04Jan2018
+// ----          21Sep2023
+// ----
+// ----
+// ----
+
+module MProphet12_EnvForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Prophet12_EnvForm extends XMLForm, ActionProvider, MIDIMapDefs, Prophet12_Defs {
+
+   protected EditMIDISynthFormProphet12 *parent_editor;
+
+   protected Prophet12_Env *env;
+
+   protected byte    env_nr;      // 1..4
+   protected boolean b_has_dest;  // true=Aux3/Aux4
+
+   protected FloatParam *fp_delay;
+   protected FloatParam *fp_attack;
+   protected FloatParam *fp_decay;
+   protected FloatParam *fp_sustain;
+   protected FloatParam *fp_release;
+   protected CheckBox   *cb_repeat;
+   protected CheckBox   *cb_enable;
+
+   protected LayerSwitch *ls_mod_dest;
+   protected ComboBox    *cm_mod_dest;
+   protected FloatParam  *fp_velamount;
+   protected FloatParam  *fp_amount;
+   protected CheckBox    *cb_amount_ext;
+   protected FloatParam  *fp_dcurve;
+   protected FloatParam  *fp_rcurve;
+
+   protected PopupMenu *pm_context;
+
+   protected static Prophet12_Env env_clipboard;
+
+
+   // <init.png>
+   public method init(EditMIDISynthFormProphet12 _parentEditor, byte _envNr, boolean _bHasDest) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      env_nr     = _envNr;
+      b_has_dest = _bHasDest;
+
+      if(!initPakFile("Prophet12_EnvForm.xfm"))
+      {
+         trace "[---] failed to parse \"Prophet12_EnvForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      cm_mod_dest.setOptions(mod_dest_names);
+
+      if(1 == env_nr)
+      {
+         fp_amount.setMinMaxValues(0, 127);
+      }
+
+      recursiveBuildTabCycleLists();
+
+      env_clipboard.loadInit(env_nr - 1);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       fp_delay,
+                       fp_attack,
+                       fp_decay,
+                       fp_sustain,
+                       fp_release,
+                       cb_repeat,
+                       cb_enable
+                     ]
+                    );
+
+      if(b_has_dest || env.b_amount_ext)
+      {
+         layers.add(cm_mod_dest);
+      }
+
+      layers.joinRR(layers,
+                    [
+                       fp_velamount,
+                       fp_amount,
+                       cb_amount_ext,
+                       fp_dcurve,
+                       fp_rcurve
+                     ]
+                    );
+   }
+
+   // <method_set.png>
+   public method showEnv(Prophet12_Env _env) {
+      env <= _env;
+
+      if(null != env)
+      {
+         fp_delay     .setValueAndEnable(env.delay);
+         fp_attack    .setValueAndEnable(env.attack);
+         fp_decay     .setValueAndEnable(env.decay);
+         fp_sustain   .setValueAndEnable(env.sustain);
+         fp_release   .setValueAndEnable(env.release);
+         cb_enable    .setSelectedAndEnable(env.b_enable);
+         cb_repeat    .setSelectedAndEnable(env.b_repeat);
+         cm_mod_dest  .setSelectedOption(env.mod_dest);
+         cb_amount_ext.setSelectedAndEnable(env.b_amount_ext);
+         handleAmountExtChanged(true/*bQuiet*/);
+         fp_amount    .setValueAndEnable(env.amount - ((1 == env_nr) ? 0 : 127));
+         fp_velamount .setValueAndEnable(env.vel_amount);
+         fp_dcurve    .setValueAndEnable(env.dcurve_ext);
+         fp_rcurve    .setValueAndEnable(env.rcurve_ext);
+      }
+      else
+      {
+         fp_delay     .setValueAndDisable(0);
+         fp_attack    .setValueAndDisable(0);
+         fp_decay     .setValueAndDisable(0);
+         fp_sustain   .setValueAndDisable(0);
+         fp_release   .setValueAndDisable(0);
+         cb_enable    .setSelectedAndDisable(false);
+         cb_repeat    .setSelectedAndDisable(false);
+         cm_mod_dest  .setSelectedOption(0);
+         fp_amount    .setValueAndDisable(0);
+         cb_amount_ext.setSelectedAndDisable(false);
+         fp_velamount .setValueAndDisable(0);
+         fp_dcurve    .setValueAndEnable(0);
+         fp_rcurve    .setValueAndEnable(0);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDelayChanged() {
+      if(null != env)
+      {
+         env.delay = fp_delay.getFloatValue();
+
+         env.sendDelay(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Delay is "+env.delay);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAttackChanged() {
+      if(null != env)
+      {
+         env.attack = fp_attack.getFloatValue();
+
+         env.sendAttack(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Attack is "+env.attack);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDecayChanged() {
+      if(null != env)
+      {
+         env.decay = fp_decay.getFloatValue();
+
+         env.sendDecay(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Decay is "+env.decay);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSustainChanged() {
+      if(null != env)
+      {
+         env.sustain = fp_sustain.getFloatValue();
+
+         env.sendSustain(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Sustain is "+env.sustain);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleReleaseChanged() {
+      if(null != env)
+      {
+         env.release = fp_release.getFloatValue();
+
+         env.sendRelease(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Release is "+env.release);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRepeatChanged() {
+      if(null != env)
+      {
+         env.b_repeat = cb_repeat.isSelected();
+
+         env.sendRepeat(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Repeat is "+Utils.GetEnableString(env.b_repeat));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      if(null != env)
+      {
+         env.b_enable = cb_enable.isSelected();
+
+         env.sendEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Env "+env_nr+" is "+Utils.GetEnableString(env.b_enable));
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleModDestChanged() {
+      if(null != env)
+      {
+         env.mod_dest = cm_mod_dest.getSelectedOption();
+
+         if(b_has_dest)
+         {
+            env.sendModDest(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+            Global.Print("Env "+env_nr+" Destination is "+cm_mod_dest.getSelectedOptionName());
+         }
+         else
+         {
+            Global.Print("Env "+env_nr+" Ext Destination is "+cm_mod_dest.getSelectedOptionName());
+         }
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <method_update.png>
+   public method updateAutogenAmount() {
+      if(null != env)
+      {
+         Prophet12_Program layer <= parent_editor.getEditLayer();
+
+         if(!env.sendAmount(parent_editor, layer, false/*bProxy*/))
+         {
+            Global.Warning("Env "+env_nr+": all mod slots in use (Amount)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountChanged() {
+      if(null != env)
+      {
+         env.amount = fp_amount.getFloatValue();
+
+         if(env_nr >= 2)
+         {
+            env.amount += 127;
+         }
+
+         // // parent_editor.queueNRPNLayer(nrpn_base + 0, env.amount + ((1 == env_nr) ? 0 : 127));
+
+         Global.Print("Env "+env_nr+" Amount is "+(env.amount - ((1 == env_nr) ? 0 : 127)));
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountExtChanged(boolean _bQuiet) {
+      if(null != env)
+      {
+         env.b_amount_ext = cb_amount_ext.isSelected();
+
+         if(env.b_amount_ext)
+         {
+            fp_amount.setMaxValue(127 + 3*127);
+
+            if(env_nr >= 2)
+               fp_amount.setMinValue(-127 - 3*127);
+         }
+         else
+         {
+            fp_amount.setMaxValue(127);
+
+            if(env_nr >= 2)
+               fp_amount.setMinValue(-127);
+         }
+
+         fp_amount.setValue( (1 == env_nr) ? env.amount : (env.amount - 127) );
+         fp_amount.redraw();
+
+         ls_mod_dest.switchToLayerNr(b_has_dest || env.b_amount_ext);
+
+         relayout();
+
+         if(!_bQuiet)
+            Global.Print("Env "+env_nr+" Ext Amount is "+Utils.GetEnableString(env.b_amount_ext));
+
+         if(!_bQuiet)
+            updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleVelAmountChanged() {
+      if(null != env)
+      {
+         env.vel_amount = fp_velamount.getFloatValue();
+
+         env.sendVelAmount(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Env "+env_nr+" Velocity Amount is "+env.vel_amount);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDCurveChanged() {
+      if(null != env)
+      {
+         env.dcurve_ext = fp_dcurve.getFloatValue();
+
+         env.sendDCurve(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Decay Curve is "+env.dcurve_ext);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRCurveChanged() {
+      if(null != env)
+      {
+         env.rcurve_ext = fp_rcurve.getFloatValue();
+
+         env.sendRCurve(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Env "+env_nr+" Release Curve is "+env.rcurve_ext);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null != env)
+      {
+         env_clipboard.copyFrom(env);
+
+         Global.Print("Copy Env to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != env)
+      {
+         env.copyFrom(env_clipboard);
+
+         env.send(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         showEnv(env);
+
+         Global.Print("Paste Env from clipboard");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != env)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show Env context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // // <midi_mml.png>
+   // public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+   //    if(null == env)
+   //    {
+   //       // Ooops
+   //       return false;
+   //    }
+
+   //    return false;
+   // }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("Prophet12_EnvForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+            }
+            return true;
+
+         case @(fp_delay):
+            handleDelayChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_delay.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_attack):
+            handleAttackChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_attack.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_decay):
+            handleDecayChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_decay.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_sustain):
+            handleSustainChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_sustain.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_release):
+            handleReleaseChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_release.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cb_repeat):
+            handleRepeatChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, cb_repeat.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, cb_enable.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cm_mod_dest):
+            handleModDestChanged();
+            // (note) only 3/4 have mod dests
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, cm_mod_dest.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(fp_amount):
+            handleAmountChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_amount.getFloatValue(), cb_amount_ext.isSelected()/*bExt*/);
+            return true;
+
+         case @(cb_amount_ext):
+            handleAmountExtChanged(false/*bQuiet*/);
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, cb_amount_ext.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(fp_velamount):
+            handleVelAmountChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_velamount.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_dcurve):
+            handleDCurveChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_dcurve.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_rcurve):
+            handleRCurveChanged();
+            parent_editor.tryMultiEditEnv(env_nr, ap.layer_id, fp_rcurve.getFloatValue(), false/*bExt*/);
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+   // <ui_handle.png>
+   public method tryMultiEditById(String _id, float _val, boolean _bExt) {
+      switch(_id)
+      {
+         case "fp_delay":
+            fp_delay.setValue(_val);
+            handleDelayChanged();
+            return;
+
+         case "fp_attack":
+            fp_attack.setValue(_val);
+            handleAttackChanged();
+            return;
+
+         case "fp_decay":
+            fp_decay.setValue(_val);
+            handleDecayChanged();
+            return;
+
+         case "fp_sustain":
+            fp_sustain.setValue(_val);
+            handleSustainChanged();
+            return;
+
+         case "fp_release":
+            fp_release.setValue(_val);
+            handleReleaseChanged();
+            return;
+
+         case "cb_repeat":
+            cb_repeat.setSelected(_val);
+            handleRepeatChanged();
+            return;
+
+         case "cb_enable":
+            cb_enable.setSelected(_val);
+            handleEnableChanged();
+            return;
+
+         case "cm_mod_dest":
+            cm_mod_dest.setSelectedOption(_val);
+            handleModDestChanged();
+            return;
+
+         case "fp_amount":
+            cb_amount_ext.setSelected(_bExt && (abs(_val) > 127) );
+            handleAmountExtChanged(false/*bQuiet*/);
+            fp_amount.setValue(_val);
+            handleAmountChanged();
+            return;
+
+         case "cb_amount_ext":
+            cb_amount_ext.setSelected(_val);
+            handleAmountExtChanged(false/*bQuiet*/);
+            return;
+
+         case "fp_velamount":
+            fp_velamount.setValue(_val);
+            handleVelAmountChanged();
+            return;
+
+         case "fp_dcurve":
+            fp_dcurve.setValue(_val);
+            handleDCurveChanged();
+            return;
+
+         case "fp_rcurve":
+            fp_rcurve.setValue(_val);
+            handleRCurveChanged();
+            return;
+      }
+   }
+
+
+}

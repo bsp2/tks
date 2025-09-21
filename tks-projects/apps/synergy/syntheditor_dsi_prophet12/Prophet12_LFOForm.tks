@@ -1,0 +1,552 @@
+// ----
+// ---- file   : Prophet12_LFOForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 16Feb2017
+// ---- changed: 17Feb2017, 19Feb2017, 07May2017, 27May2017, 07Jun2017, 04Jan2018, 21Sep2023
+// ----
+// ----
+// ----
+
+module MProphet12_LFOForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Prophet12_LFOForm extends XMLForm, ActionProvider, MIDIMapDefs, Prophet12_Defs {
+
+   protected EditMIDISynthFormProphet12 *parent_editor;
+
+   protected Prophet12_LFO *lfo;
+
+   protected byte  lfo_nr;     // 1..4
+
+   protected FloatParam *fp_freq;
+   protected ComboBox   *cm_syncmode;
+   protected CheckBox   *cb_sync;
+   protected ComboBox   *cm_shape;
+   protected FloatParam *fp_phase;
+   protected CheckBox   *cb_wavereset;
+   protected FloatParam *fp_slewrate;
+   protected CheckBox   *cb_enable;
+
+   protected ComboBox   *cm_mod_dest;
+   protected FloatParam *fp_amount;
+   protected CheckBox   *cb_amount_ext;
+
+   protected PopupMenu *pm_context;
+
+   protected static Prophet12_LFO lfo_clipboard;
+
+
+   // <init.png>
+   public method init(EditMIDISynthFormProphet12 _parentEditor, int _lfoNr) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      lfo_nr    = _lfoNr;
+
+      if(!initPakFile("Prophet12_LFOForm.xfm"))
+      {
+         trace "[---] failed to parse \"Prophet12_LFOForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      cm_syncmode.setOptions(lfo_sync_mode_names);
+      cm_shape.setOptions(lfo_shape_names);
+      cm_mod_dest.setOptions(mod_dest_names);
+
+      recursiveBuildTabCycleLists();
+
+      lfo_clipboard.loadInit(lfo_nr - 1);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       fp_freq,
+                       cm_syncmode,
+                       cb_sync,
+                       cm_shape,
+                       fp_phase,
+                       cb_wavereset,
+                       cb_enable,
+                       cm_mod_dest,
+                       fp_amount,
+                       cb_amount_ext,
+                       fp_slewrate
+                     ]
+                    );
+   }
+
+   // <method_set.png>
+   public method showLFO(Prophet12_LFO _lfo) {
+      lfo <= _lfo;
+
+      if(null != lfo)
+      {
+         fp_freq      .setValueAndEnable(lfo.freq);
+         cm_syncmode  .setSelectedOptionAndEnable(lfo.sync_mode);
+         cb_sync      .setSelectedAndEnable(lfo.b_sync);
+         cm_shape     .setSelectedOptionAndEnable(lfo.shape);
+         fp_phase     .setValueAndEnable(lfo.phase);
+         cb_wavereset .setSelectedAndEnable(lfo.b_wavereset);
+         fp_slewrate  .setValueAndEnable(lfo.slew_rate);
+         cb_enable    .setSelectedAndEnable(lfo.b_enable);
+
+         cm_mod_dest  .setSelectedOptionAndEnable(lfo.mod_dest);
+         cb_amount_ext.setSelectedAndEnable(lfo.b_amount_ext);
+         handleAmountExtChanged(true/*bQuiet*/);
+         fp_amount    .setValueAndEnable(lfo.amount);
+      }
+      else
+      {
+         fp_freq     .setValueAndDisable(0);
+         cm_syncmode .setSelectedOptionAndDisable(0);
+         cb_sync     .setSelectedAndDisable(false);
+         cm_shape    .setSelectedOptionAndDisable(0);
+         fp_phase    .setValueAndDisable(0);
+         cb_wavereset.setSelectedAndDisable(false);
+         fp_slewrate .setValueAndDisable(0);
+         cb_enable   .setSelectedAndDisable(false);
+
+         cm_mod_dest  .setSelectedOptionAndDisable(0);
+         fp_amount    .setValueAndDisable(0);
+         cb_amount_ext.setSelectedAndEnable(false);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFreqChanged() {
+      if(null != lfo)
+      {
+         lfo.freq = fp_freq.getFloatValue();
+
+         lfo.sendFreq(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Frequency is "+lfo.freq);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSyncModeChanged() {
+      if(null != lfo)
+      {
+         lfo.sync_mode = cm_syncmode.getSelectedOption();
+
+         lfo.sendSyncMode(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Sync Mode is "+cm_syncmode.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSyncEnableChanged() {
+      if(null != lfo)
+      {
+         lfo.b_sync = cb_sync.isSelected();
+
+         lfo.sendSyncEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Sync is "+Utils.GetEnableString(lfo.b_sync));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleShapeChanged() {
+      if(null != lfo)
+      {
+         lfo.shape = cm_shape.getSelectedOption();
+
+         lfo.sendShape(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Shape is "+cm_shape.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePhaseChanged() {
+      if(null != lfo)
+      {
+         lfo.phase = fp_phase.getFloatValue();
+
+         lfo.sendPhase(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Phase is "+lfo.phase);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleWaveResetChanged() {
+      if(null != lfo)
+      {
+         lfo.b_wavereset = cb_wavereset.isSelected();
+
+         lfo.sendWaveReset(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Sync is "+Utils.GetEnableString(lfo.b_wavereset));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSlewRateChanged() {
+      if(null != lfo)
+      {
+         lfo.slew_rate = fp_slewrate.getFloatValue();
+
+         lfo.sendSlewRate(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("LFO "+lfo_nr+" Slew Rate is "+lfo.slew_rate);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleModDestChanged() {
+      if(null != lfo)
+      {
+         lfo.mod_dest = cm_mod_dest.getSelectedOption();
+
+         lfo.sendModDest(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("LFO "+lfo_nr+" Destination is "+cm_mod_dest.getSelectedOptionName());
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountChanged() {
+      if(null != lfo)
+      {
+         lfo.amount = fp_amount.getFloatValue();
+
+         Global.Print("LFO "+lfo_nr+" Amount is "+lfo.amount);
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <method_update.png>
+   public method updateAutogenAmount() {
+      if(null != lfo)
+      {
+         Prophet12_Program layer <= parent_editor.getEditLayer();
+
+         if(!lfo.sendAmount(parent_editor, layer, false/*bProxy*/))
+         {
+            Global.Warning("LFO "+lfo_nr+": all mod slots in use (amount)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountExtChanged(boolean _bQuiet) {
+      if(null != lfo)
+      {
+         lfo.b_amount_ext = cb_amount_ext.isSelected();
+
+         if(lfo.b_amount_ext)
+         {
+            fp_amount.setMinMaxValues(-(3*127), 127 + (3*127));
+         }
+         else
+         {
+            fp_amount.setMinMaxValues(0, 127);
+         }
+
+         fp_amount.setValue(lfo.amount);
+         fp_amount.redraw();
+
+         if(!_bQuiet)
+            Global.Print("LFO "+lfo_nr+" Ext Amount is "+Utils.GetEnableString(lfo.b_amount_ext));
+
+         if(!_bQuiet)
+            updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      if(null != lfo)
+      {
+         lfo.b_enable = cb_enable.isSelected();
+
+         lfo.sendEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("LFO "+lfo_nr+" is "+Utils.GetEnableString(lfo.b_enable));
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null != lfo)
+      {
+         lfo_clipboard.copyFrom(lfo);
+
+         Global.Print("Copy LFO to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != lfo)
+      {
+         lfo.copyFrom(lfo_clipboard);
+
+         lfo.send(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         showLFO(lfo);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Paste LFO from clipboard");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != lfo)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show LFO context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // // <midi_mml.png>
+   // public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+   //    if(null == lfo)
+   //    {
+   //       // Ooops
+   //       return false;
+   //    }
+
+   //    return false;
+   // }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("Prophet12_LFOForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+            }
+            return true;
+
+         case @(fp_freq):
+            handleFreqChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, fp_freq.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cm_syncmode):
+            handleSyncModeChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cm_syncmode.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(cb_sync):
+            handleSyncEnableChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cb_sync.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cm_shape):
+            handleShapeChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cm_shape.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(fp_phase):
+            handlePhaseChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, fp_phase.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cb_wavereset):
+            handleWaveResetChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cb_wavereset.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(fp_slewrate):
+            handleSlewRateChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, fp_slewrate.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cb_enable.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cm_mod_dest):
+            handleModDestChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cm_mod_dest.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(fp_amount):
+            handleAmountChanged();
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, fp_amount.getFloatValue(), cb_amount_ext.isSelected()/*bExt*/);
+            return true;
+
+         case @(cb_amount_ext):
+            handleAmountExtChanged(false/*bQuiet*/);
+            parent_editor.tryMultiEditLFO(lfo_nr, ap.layer_id, cb_amount_ext.isSelected(), false/*bExt*/);
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+   // <ui_handle.png>
+   public method tryMultiEditById(String _id, float _val, boolean _bExt) {
+      switch(_id)
+      {
+         case "fp_freq":
+            fp_freq.setValue(_val);
+            handleFreqChanged();
+            return true;
+
+         case "cm_syncmode":
+            cm_syncmode.setSelectedOption(_val);
+            handleSyncModeChanged();
+            return true;
+
+         case "cb_sync":
+            cb_sync.setSelected(_val);
+            handleSyncEnableChanged();
+            return true;
+
+         case "cm_shape":
+            cm_shape.setSelectedOption(_val);
+            handleShapeChanged();
+            return true;
+
+         case "fp_phase":
+            fp_phase.setValue(_val);
+            handlePhaseChanged();
+            return true;
+
+         case "cb_wavereset":
+            cb_wavereset.setSelected(_val);
+            handleWaveResetChanged();
+            return true;
+
+         case "fp_slewrate":
+            fp_slewrate.setValue(_val);
+            handleSlewRateChanged();
+            return true;
+
+         case "cb_enable":
+            cb_enable.setSelected(_val);
+            handleEnableChanged();
+            return true;
+
+         case "cm_mod_dest":
+            cm_mod_dest.setSelectedOption(_val);
+            handleModDestChanged();
+            return true;
+
+         case "fp_amount":
+            cb_amount_ext.setSelected(_bExt && ((_val < 0) || (_val > 127)) );
+            handleAmountExtChanged(false/*bQuiet*/);
+            fp_amount.setValue(_val);
+            handleAmountChanged();
+            return true;
+
+         case "cb_amount_ext":
+            cb_amount_ext.setSelected(_val);
+            handleAmountExtChanged(false/*bQuiet*/);
+            return true;
+      }
+   }
+
+}

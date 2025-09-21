@@ -1,0 +1,684 @@
+
+// 19Apr2022, 20Apr2022
+
+//    ==> seems to use highly irregular bitstream-like encoding where you need to know the width of each field
+//         (e.g. patch name 7bit chars are spread over non-contiguous bits)
+//
+//      ? create automatic field finder ?
+//         - iterate .msp aliases
+//         - set min value, get patch dump
+//         - set max value, get patch dump
+//         - find changed bits
+//         - log start-bit / end-bit
+//      ! patch name seems to start at byte 22 (7bit chars)
+//      ? last three bytes before $F7 are checksum ?
+//
+//      ! 14bit values all follow this pattern:
+//           first byte: lower 2 bits = data bits 13..12 (2 highest bits)
+//             2nd byte: bits 5..0 = data bits 11..6
+//             3rd byte: bits 5..0 = data bits  5..0
+//          ! e.g. fltcutoff
+//                   [dbg] Utils::BufferDiff: diff at off=571 (0x23b) a=0x40 b=0x43
+//                   [dbg] Utils::BufferDiff: diff at off=572 (0x23c) a=0x00 b=0x3f
+//                   [dbg] Utils::BufferDiff: diff at off=573 (0x23d) a=0x00 b=0x3f
+//                 3FFF => 43 3f 3f
+//                   1000011 $43
+//                   0111111 $3F
+//                   0111111 $3F
+//
+//      ! <7bit values that cross byte boundaries:
+//          ! highest bits stored in first byte
+//          ! lower bits stored left-aligned in second byte (starting with bit 5)
+//          ! e.g. arpclkdiv:
+//                   [dbg] Utils::BufferDiff: a.size=754 b.size=754
+//                   [dbg] Utils::BufferDiff: diff at off=76 (0x4c) a=0x42 b=0x43
+//                   [dbg] Utils::BufferDiff: diff at off=77 (0x4d) a=0x00 b=0x10
+//                 #20 => 43 10
+//                   1000011 $43
+//                   0010000
+//      ? arppattern max=5 but changed bits (from 0 to 5) are 1 (syxBitOff=3 syxBitNum=1)
+//      ? lfo1clkdiv
+//
+//
+//   ====> all this does for now is decode the patch name (24 chars)
+//
+//
+/*
+  NRPN todo
+    x mod1oscsel (==mod1pitchdst)
+    x mod2oscsel (==mod2pitchdst)
+    x glidedest  (==glideosc)
+ */
+
+module MSub37Debug;
+
+// - looks 8bit encoded
+// - syx size = 756 bytes (F0..xxx..F7)
+// - 754 bytes w/o F0..F7
+// - hdr = 04 0C 04 07 00*6 ? (== 10 bytes)
+// - bit stream: 8 syx bytes form 7 raw bytes ? (see Voyager Sysex docs: http://www.moogmusic.de/SysEx.pdf)
+//    +0: x a6 a5 a4 a3 a2 a1 a0
+//    +1: x b5 b4 b3 b2 b1 b0 a7
+//    +2: x c4 c3 c2 c1 c0 b7 b6
+//    +3: x d3 d2 d1 d0 c7 c6 c5
+//    +4: x e2 e1 e0 d7 d6 d5 d4
+//    +5: x f1 f0 e7 e6 e5 e4 e3
+//    +6: x g0 f7 f6 f5 f4 f3 f2
+//    +7: x g7 g6 g5 g4 g3 g2 g1
+//   744/8 = 93 "packets" => 93*7 = 651 bytes decoded ?
+//       ==> nope
+
+/*
+0000: 49 6e 69 74 20 50 72 65 73 65 74                Init Preset
+
+syx enc buf ('Init Preset'):
+0000: 04 0c 04 07 00 00 00 00 00 00 00 00 00 60 00 00 .............`..
+0010: 00 00 00 00 00 01 44 25 2e 46 25 34 42 01 10 47 ......D%.F%4B..G
+0020: 09 25 47 0d 25 47 10 20 42 00 20 42 00 20 42 00 .%G.%G. B. B. B.
+0030: 20 42 00 20 42 00 20 42 00 20 40 00 00 42 21 08  B. B. B. @..B!.
+0040: 40 14 0d 48 00 0e 40 0d 1a 40 03 00 43 00 00 43 @..H..@..@..C..C
+..
+
+ 01 44 25 2E 46
+ x0000001  $01
+ x1000100  $44
+ x0100101  $25  bits 5..2 are LSB of 'I' (1001) ?
+ x0101110  $2E
+ x1000110  $46
+
+ 49 6e 69 74  'Init'
+ 01001001  $49
+ 01101110  $6e
+ 01101001  $69
+ 01110100  $74
+
+
+syx enc buf ('Jnit Preset'):
+0000: 04 0c 04 07 00 00 00 00 00 00 00 00 00 60 00 00 .............`..
+0010: 00 00 00 00 00 01 44 29 2e 46 25 34 42 01 10 47 ......D).F%4B..G   byte $25 changed to $29 (and last word $0C $22 changed to $08 $22)
+0020: 09 25 47 0d 25 47 10 20 42 00 20 42 00 20 42 00 .%G.%G. B. B. B.
+0030: 20 42 00 20 42 00 20 42 00 20 40 00 00 42 21 08  B. B. B. @..B!.
+0040: 40 14 0d 48 00 0e 40 0d 1a 40 03 00 43 00 00 43 @..H..@..@..C..C
+
+ 01 44 29 2E 46
+ x1000100  $44
+ x0101001  $29  bits 5..2 are LSB of 'J' (1010) ?
+ x0101110  $2E
+ x1000110  $46
+ x0100101  $25
+
+ 4A 6e 69 74  'Jnit'
+ 01001010  $4A 'J'
+ 01101110  $6e 'n'
+ 01101001  $69 'i'
+ 01110100  $74 't'
+
+
+syx enc buf ('ABCD Preset'):
+0000: 04 0c 04 07 00 00 00 00 00 00 00 00 00 60 00 00 .............`..
+0010: 00 00 00 00 00 01 44 05 02 44 0d 04 42 01 10 47 ......D..D..B..G
+0020: 09 25 47 0d 25 47 10 20 42 00 20 42 00 20 42 00 .%G.%G. B. B. B.
+0030: 20 42 00 20 42 00 20 42 00 20 40 00 00 42 21 08  B. B. B. @..B!.
+
+  1000100  $44
+  0000101  $05
+  0000010  $02
+  1000100  $44
+  0001101  $0D
+  0000100  $04
+
+0000: 41 42 43 44 20 50 72 65 73 65 74                ABCD Preset
+  1000001  $41 'A'
+  1000010  $42 'B'
+  1000011  $43 'C'
+  1000100  $44 'D'
+
+
+syx enc buf ('ZBCD Preset'):
+0000: 04 0c 04 07 00 00 00 00 00 00 00 00 00 60 00 00 .............`..
+0010: 00 00 00 00 00 01 45 29 02 44 0d 04 42 01 10 47 ......E).D..B..G
+0020: 09 25 47 0d 25 47 10 20 42 00 20 42 00 20 42 00 .%G.%G. B. B. B.
+0030: 20 42 00 20 42 00 20 42 00 20 40 00 00 42 21 08  B. B. B. @..B!.
+0040: 40 14 0d 48 00 0e 40 0d 1a 40 03 00 43 00 00 43 @..H..@..@..C..C
+
+  1000101  $45
+  0101001  $29
+  0000010  $02
+
+0000: 5a 42 43 44 20 50 72 65 73 65 74                ZBCD Preset
+  1011010  $5A 'Z'
+  1000010  $42 'B'
+  1000011  $43 'C'
+  1000100  $44 'D'
+
+
+syx enc buf ('!BCD Preset'):
+0000: 04 0c 04 07 00 00 00 00 00 00 00 00 00 60 00 00 .............`..
+0010: 00 00 00 00 00 01 42 05 02 44 0d 04 42 01 10 47 ......B..D..B..G
+0020: 09 25 47 0d 25 47 10 20 42 00 20 42 00 20 42 00 .%G.%G. B. B. B.
+
+  1000010  $42
+  0000101  $05
+
+0000: 21 42 43 44 20 50 72 65 73 65 74                !BCD Preset
+  0100001  $5A '!'
+  1000010  $42 'B'
+  1000011  $43 'C'
+  1000100  $44 'D'
+
+
+ */
+use tkmidi;
+
+String IN_DEV_NAME = "Moog Sub 37";
+String OUT_DEV_NAME = "Moog Sub 37";
+
+class Sub37Debug {
+
+   static MIDIIn midiin;
+   static MIDIOut midiout;
+
+   static Buffer buf_req_edit_buf;
+   static Buffer edit_buf_hdr;
+   static Buffer buf_nrpn;
+
+
+   // <method.png>
+   static method Decode7To8_Moog(Buffer _dst, Buffer _src, Buffer _hdr) : boolean {
+      // (todo) SCRAP, does not work
+      int i = 0;
+      _src.offset = 0;
+      _hdr.offset = 0;
+
+      // trace "xxx Decode7To8_Moog header:";
+      // _src..hexdump(0, 10);
+
+      // Compare header
+      loop(_hdr.size)
+      {
+         Byte a = _src.u8;
+         Byte b = _hdr.u8;
+         if(a != b)
+         {
+            trace "[---] Decode7To8_Moog: header mismatch (have="+a.printf("%08x")+", expected "+b.printf("%08x")+", i="+i+", hdr.size="+_hdr.size+")";
+            // return false;
+         }
+         i++;
+      }
+
+      // Decode data
+      int packets = (_src.size - _src.offset) / 8;
+
+      loop(packets)
+      {
+         byte s0 = _src.u8;
+         byte s1 = _src.u8;
+         byte s2 = _src.u8;
+         byte s3 = _src.u8;
+         byte s4 = _src.u8;
+         byte s5 = _src.u8;
+         byte s6 = _src.u8;
+         byte s7 = _src.u8;
+
+         _dst.i8 = ((s0 & 0x7f) >> 0) | ((s1 & 0x01) << 7);
+         _dst.i8 = ((s1 & 0x7f) >> 1) | ((s2 & 0x03) << 6);
+         _dst.i8 = ((s2 & 0x7f) >> 2) | ((s3 & 0x07) << 5);
+         _dst.i8 = ((s3 & 0x7f) >> 3) | ((s4 & 0x0f) << 4);
+         _dst.i8 = ((s4 & 0x7f) >> 4) | ((s5 & 0x1f) << 3);
+         _dst.i8 = ((s5 & 0x7f) >> 5) | ((s6 & 0x3f) << 2);
+         _dst.i8 = ((s6 & 0x7f) >> 6) | ((s7 & 0x7f) << 1);
+      }
+
+      trace "Decode7To8_Moog: decoded dst.offset="+_dst.offset;
+      return true;
+   }
+
+   static ReadPatchNameChar7(Buffer buf, int msbByteOffset, int msbBitOffset, int msbBits) {
+      int r = (buf[msbByteOffset] >> msbBitOffset) & ((1 << msbBits)-1);
+      r = r << (7 - msbBits);
+      int s = (buf[msbByteOffset + 1] >> (msbBits - 1)) & ((1 << (7-msbBits))-1);
+      return r | s;
+   }
+
+   static DecodePatchName_Sub37(Buffer buf) {
+      int bitOff = (22*8)+0;
+      local String s; s.alloc(24+1);
+      int charIdx = 0;
+      Integer io;
+
+      // io = ((buf[22] & 7) << 4) | ((buf[23] >> 2) & 15);
+      // // // buf.readBits(6, true/*bMSBFirst*/, bitOff, 3) |
+      // trace "read patchbyte=$"+io.printf("%02x");
+      // s[charIdx++] = int(io);
+
+      // io = ((buf[23] & 1) << 6) | ((buf[24] >> 0) & 63);
+      // trace "read patchbyte=$"+io.printf("%02x");
+      // s[charIdx++] = int(io);
+
+      int off = 22;
+      loop(12)
+      {
+         io = ReadPatchNameChar7(buf, off, 0, 3);
+         trace "read patchbyte=$"+io.printf("%02x");
+         s[charIdx++] = int(io);
+
+         io = ReadPatchNameChar7(buf, off+1, 0, 1);
+         trace "read patchbyte=$"+io.printf("%02x");
+         s[charIdx++] = int(io);
+
+         off += 3;
+      }
+
+      trace "DecodePatchName_Sub37: s=\""+s+"\"";
+   }
+
+   static SendNRPN(short _nrpn, short _value) {
+      byte _midiCh = 0;
+
+      buf_nrpn.offset = 0;
+
+      buf_nrpn.i8 = 0xB0 | (_midiCh&15);
+      buf_nrpn.i8 = 99;
+      buf_nrpn.i8 = (_nrpn >> 7) & 127;
+      buf_nrpn.i8 = 98;
+      buf_nrpn.i8 = (_nrpn & 127);
+
+      buf_nrpn.i8 = 6;
+      buf_nrpn.i8 = (_value >> 7) & 127;
+      buf_nrpn.i8 = 38;
+      buf_nrpn.i8 = (_value & 127);
+
+      midiout.sendBuffer(buf_nrpn);
+      TKS.sleep(100);
+   }
+
+   static QueryEditBuf(Buffer _retBuf) : boolean {
+      trace "xxx QueryEditBuf: send patch request";
+      midiout.sendBuffer(buf_req_edit_buf);
+      for(;;)
+      {
+         RecordedMIDIEvent ev <= midiin.waitNextEvent(1000);
+         if(null != ev)
+         {
+            if(ev.isLongMessage())
+            {
+               _retBuf.offset = 0;
+               ev.copyToStream(_retBuf);
+               trace "xxx QueryEditBuf: got "+_retBuf.offset+" bytes (w/o F0/F7 marker)";
+
+               // Buffer decBuf;
+               // decBuf.size = 1024;
+               // decBuf.offset = 0;
+               // bufEditBuf.offset = 0;
+               // if(Decode7To8_Moog(decBuf, bufEditBuf, edit_buf_hdr))
+               // {
+               //    trace "Decode7To8_Moog OK. decBuf:";
+               //    Utils.HexDump(decBuf, 0, decBuf.offset);
+               // }
+
+               // DecodePatchName_Sub37(bufEditBuf);
+
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   static GetNumRequiredBits(int _max) : int {
+      if(_max >= 16383)
+         return 14;
+      if(_max > 128)
+         return 8;
+      if(_max > 64)
+         return 7;
+      if(_max > 32)
+         return 6;
+      if(_max > 16)
+         return 5;
+      if(_max > 8)
+         return 4;
+      if(_max > 4)
+         return 3;
+      if(_max > 1)
+         return 2;
+      if(_max > 0)
+         return 1;
+      return 0;
+   }
+
+   // <method.png>
+   static GetNumRequiredBytes(int _max) : int {
+      int reqBits = GetNumRequiredBits(_max);
+      if(reqBits > 8)
+         return 2;
+      else
+         return 1;
+   }
+
+   // <method.png>
+   static BufferDiffAlias(MIDISynthProfileCtlAlias alias, Buffer a, Buffer b, String retAlias, int altOff) : int {
+
+      if(a.size > 0)
+      {
+         if(a.size == b.size)
+         {
+            Integer off = 0;
+
+            loop(a.size)
+            {
+               if(off >= 751) // skip checksum
+                  break;
+
+               byte ba = a.peekI8(off);
+               byte bb = b.peekI8(off);
+
+               if(ba != bb)
+               {
+                  int mask = 1;
+                  int bitIdx = 0;
+                  int bitOff = -1;
+                  int bitNum = 0;
+                  loop(7)
+                  {
+                     if( (ba&mask) != (bb&mask) )
+                     {
+                        if(-1 == bitOff)
+                           bitOff = bitIdx;
+                        if( ((bitIdx+1)-bitOff) > bitNum )
+                           bitNum = ((bitIdx + 1)-bitOff);
+                     }
+                     bitIdx++;
+                     mask = mask << 1;
+                  }
+
+                  // trace "xxx bitOff pre&1: "+bitOff+" bitNum="+bitNum;
+                  // if(0 == (alias.max&1))
+                  // {
+                  //    if(bitOff > 0)
+                  //    {
+                  //       // int reqBits = GetRequiredBits(alias.max);
+                  //       bitOff--;
+                  //       bitNum++;
+                  //    }
+                  // }
+
+                  if(-1 != bitOff)
+                  {
+                     if(2 == alias.max)   // (alias.max-1)=1, high bit not considered
+                        bitNum++;
+
+
+                     int reqBits = GetNumRequiredBits(alias.max);
+                     // if(bitNum >= reqBits)
+                     {
+                        int reqBytes = GetNumRequiredBytes(alias.max);
+                        retAlias.append("\n  <!-- reqBits="+reqBits+" reqBytes="+reqBytes+" -->\n");
+                        retAlias.append("  <nrpn id="+alias.id+"  nr="+alias.nr+"  min="+alias.min+" max="+alias.max+"\n");
+                        retAlias.append("        encOff="+off+"\n");
+                        retAlias.append("        encBitOff="+bitOff+"\n");
+                        retAlias.append("        encBitNum="+bitNum+"\n");
+                        if(reqBits > bitNum)
+                           retAlias.append("        encBitNumExt="+(reqBits-bitNum)+"\n");
+                        retAlias.append("        syxOff="+altOff+"\n");
+                        retAlias.append("  />\n");
+                        altOff += reqBytes;
+                     }
+                     // else: changed bits don't match reqBits (e.g. "arppattern") => skip
+                  }
+
+                  return altOff;
+               }
+
+               off++;
+            }
+         }
+      }
+
+      return altOff;
+   }
+
+   static Run() {
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById("moog_sub37");
+      trace "xxx msp="+#(msp);
+
+      buf_nrpn.size = 9;
+
+      // F0 04 0C 06 00 00 00 00 00 00 00 00 00 00 00 00 F7
+      buf_req_edit_buf.size = 17;
+      buf_req_edit_buf.i8 = 0xF0;
+      buf_req_edit_buf.i8 = 0x04;
+      buf_req_edit_buf.i8 = 0x0C;
+      buf_req_edit_buf.i8 = 0x06;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0x00;
+      buf_req_edit_buf.i8 = 0xF7;
+
+      edit_buf_hdr.size = 10;
+      edit_buf_hdr.i8 = 0x04;
+      edit_buf_hdr.i8 = 0x0C;
+      edit_buf_hdr.i8 = 0x04;
+      edit_buf_hdr.i8 = 0x07;
+      loop(edit_buf_hdr.size - edit_buf_hdr.offset)
+         edit_buf_hdr.i8 = 0x00;
+
+      // Buffer xxxInitPreset;
+      // xxxInitPreset.size = "Init Preset".numChars;
+      // xxxInitPreset.i8 = 'I';
+      // xxxInitPreset.i8 = 'n';
+      // xxxInitPreset.i8 = 'i';
+      // xxxInitPreset.i8 = 't';
+      // xxxInitPreset.i8 = ' ';
+      // xxxInitPreset.i8 = 'P';
+      // xxxInitPreset.i8 = 'r';
+      // xxxInitPreset.i8 = 'e';
+      // xxxInitPreset.i8 = 's';
+      // xxxInitPreset.i8 = 'e';
+      // xxxInitPreset.i8 = 't';
+      // xxxInitPreset.hexdump(0, xxxInitPreset.offset);
+
+      // Buffer xxxInitPreset;
+      // xxxInitPreset.size = "ABCD Preset".numChars;
+      // xxxInitPreset.i8 = 'A';
+      // xxxInitPreset.i8 = 'B';
+      // xxxInitPreset.i8 = 'C';
+      // xxxInitPreset.i8 = 'D';
+      // xxxInitPreset.i8 = ' ';
+      // xxxInitPreset.i8 = 'P';
+      // xxxInitPreset.i8 = 'r';
+      // xxxInitPreset.i8 = 'e';
+      // xxxInitPreset.i8 = 's';
+      // xxxInitPreset.i8 = 'e';
+      // xxxInitPreset.i8 = 't';
+      // xxxInitPreset.hexdump(0, xxxInitPreset.offset);
+
+      Buffer xxxInitPreset;
+      xxxInitPreset.size = "!BCD Preset".numChars;
+      xxxInitPreset.i8 = '!';
+      xxxInitPreset.i8 = 'B';
+      xxxInitPreset.i8 = 'C';
+      xxxInitPreset.i8 = 'D';
+      xxxInitPreset.i8 = ' ';
+      xxxInitPreset.i8 = 'P';
+      xxxInitPreset.i8 = 'r';
+      xxxInitPreset.i8 = 'e';
+      xxxInitPreset.i8 = 's';
+      xxxInitPreset.i8 = 'e';
+      xxxInitPreset.i8 = 't';
+      xxxInitPreset.hexdump(0, xxxInitPreset.offset);
+
+      if(midiin.openByName(IN_DEV_NAME))
+      {
+         trace "[...] opened MIDI input \""+midiin.deviceName+"\".";
+
+         midiin.start();
+
+         if(midiout.openByName(OUT_DEV_NAME))
+         {
+            trace "[...] opened MIDI output \""+midiout.deviceName+"\".";
+
+            RecordedMIDIEvent *ev;
+            Buffer bufEditBuf;
+            bufEditBuf.size = 754;
+            Buffer bufEditBufLast;
+            bufEditBufLast.size = 754;
+
+            local String bufAlias;
+
+            MIDISynthProfileCtlAlias *alias;
+            int aliasIdx = 0;
+            int altOff = 24;  // first 24 bytes store the patch name
+            foreach alias in msp.nrpn_aliases
+            {
+               boolean bProc = false;
+
+               // bProc = ("arppattern" == alias.id);
+               // bProc = ("lfo1clkdiv" == alias.id);
+               bProc = ("osc1on" == alias.id);
+               // bProc = true;
+
+               // if(alias.syx_off >= 0)
+               if(bProc)
+               {
+                  trace "xxx alias.id=\""+alias.id+"\"";
+
+                  // Reset to min
+                  SendNRPN(alias.nr, alias.min);
+
+                  if(QueryEditBuf(bufEditBuf))
+                  {
+                     trace "syx enc buf nrpn="+alias.nr+" min="+alias.min+":";
+                     bufEditBuf.hexdump(0, bufEditBuf.offset);
+
+                     bufEditBufLast = bufEditBuf;
+
+                     // Max
+                     int aliasMax = alias.max;
+                     if(aliasMax > 0)
+                     {
+                        if(0 == (aliasMax&1))
+                           aliasMax--;  // e.g. lfo1clkdiv max=20 (0b10100) => 19 (0b10011)
+                     }
+                     SendNRPN(alias.nr, aliasMax);
+
+                     /* fltcutoff:
+                         [dbg] Utils::BufferDiff: diff at off=571 (0x23b) a=0x40 b=0x43
+                         [dbg] Utils::BufferDiff: diff at off=572 (0x23c) a=0x00 b=0x3f
+                         [dbg] Utils::BufferDiff: diff at off=573 (0x23d) a=0x00 b=0x3f
+                       3FFF => 43 3f 3f
+                         1000011 $43
+                         0111111 $3F
+                         0111111 $3F
+                      */
+
+                     /* arpclkdiv:
+                         [dbg] Utils::BufferDiff: a.size=754 b.size=754
+                         [dbg] Utils::BufferDiff: diff at off=76 (0x4c) a=0x42 b=0x43
+                         [dbg] Utils::BufferDiff: diff at off=77 (0x4d) a=0x00 b=0x10
+                        #20 => 43 10
+                         1000011 $43
+                         0010000
+                     */
+
+
+                     if(QueryEditBuf(bufEditBuf))
+                     {
+                        trace "syx enc buf nrpn="+alias.nr+" max="+alias.max+":";
+                        bufEditBuf.hexdump(0, bufEditBuf.offset);
+
+                        Utils.BufferDiff(bufEditBufLast, bufEditBuf, true/*bVerbose*/);
+
+                        altOff = BufferDiffAlias(alias, bufEditBufLast, bufEditBuf, bufAlias, altOff);
+                     }
+                  }
+               }
+               aliasIdx++;
+
+               // if(aliasIdx > 10)
+               //    break;
+            }
+
+            trace "bufAlias=\n"+bufAlias;
+            // bufAlias.saveLocal("sub37_autogen.msp");
+
+            if(0)
+            {
+               int iter = 0;
+               for(;;)
+               {
+                  trace "xxx ["+iter+"] send patch request";
+                  midiout.sendBuffer(buf_req_edit_buf);
+                  for(;;)
+                  {
+                     ev <= midiin.waitNextEvent(1000);
+                     if(null != ev)
+                     {
+                        if(ev.isLongMessage())
+                        {
+                           bufEditBuf.offset = 0;
+                           ev.copyToStream(bufEditBuf);
+                           trace "xxx ["+iter+"] got "+bufEditBuf.offset+" bytes (w/o F0/F7 marker)";
+
+                           trace "syx enc buf:";
+                           bufEditBuf.hexdump(0, bufEditBuf.offset);
+
+                           trace " ";
+
+                           // Buffer decBuf;
+                           // decBuf.size = 1024;
+                           // decBuf.offset = 0;
+                           // bufEditBuf.offset = 0;
+                           // if(Decode7To8_Moog(decBuf, bufEditBuf, edit_buf_hdr))
+                           // {
+                           //    trace "Decode7To8_Moog OK. decBuf:";
+                           //    Utils.HexDump(decBuf, 0, decBuf.offset);
+                           // }
+
+                           DecodePatchName_Sub37(bufEditBuf);
+
+                           break;
+                        }
+                     }
+                  }
+
+                  // bufEditBuf.hexdump(0, bufEditBuf.offset);
+                  // Utils.BufferDiff(bufEditBufLast, bufEditBuf, true/*bVerbose*/);
+
+                  bufEditBufLast = bufEditBuf;
+
+                  break;
+
+                  iter++;
+                  if(iter > 1)
+                  {
+                     trace " ["+iter+"] press return";
+                     String sLine;
+                     StdInStream.readLine(sLine, 64);
+                  }
+               } // if 0
+
+            }
+
+            // midiout.close();
+         }
+
+         // trace "stop MIDI";
+         // midiin.stop();
+         trace "close MIDI";
+         midiin.close();
+         trace "exit";
+      }
+   }
+}

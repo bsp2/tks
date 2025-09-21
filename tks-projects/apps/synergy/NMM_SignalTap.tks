@@ -1,0 +1,287 @@
+// ----
+// ---- file   : NMM_SignalTap.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 14Mar2017, 17Mar2017, 15Apr2018, 27Jan2021, 11Sep2025, 12Sep2025
+// ----
+// ----
+// ----
+
+module MNMM_SignalTap;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NMM_SignalTapToolTip extends ToolTip {
+   define int RESCALE_TICKS = 200;
+
+   define int ST_RINGBUF_SZ = 128;
+
+   float st_min;
+   float st_max;
+
+   float st_next_min;
+   int st_next_min_num;
+   float st_next_max;
+   int st_next_max_num;
+
+   FloatArray st_ringbuf;
+   int st_ringbuf_next;
+   int st_ringbuf_num;
+
+
+   // <method_init.png>
+   public method initSignalTap(FloatParam _trigger) {
+
+      initLayer();
+
+      trigger_layer <= _trigger;
+      st_ringbuf.alloc(ST_RINGBUF_SZ);
+      st_ringbuf.useAll();
+
+      resetSignalTap();
+
+      setGeometry(0, 0, 256+2*2, 128+2*2);
+   }
+
+   // <method.png>
+   public method resetSignalTap() {
+      st_ringbuf.fill(0);
+      st_ringbuf_next = 0;
+      st_ringbuf_num = 0;
+      st_min = 99999999;
+      st_max = -9999999;
+      st_next_min = 9999999;
+      st_next_max = -999999;
+      st_next_min_num = 0;
+      st_next_max_num = 0;
+   }
+
+   // <method.png>
+   public method captureSignalTapValue(float _f) {
+      // trace "xxx captureSignalTapValue f="+_f+" min="+st_min+" max="+st_max+" next_min="+st_next_min+"(t="+st_next_min_num+") next_max="+st_next_max+"(t="+st_next_max_num+")";
+
+      st_ringbuf[st_ringbuf_next] = _f;
+
+      if(NMM_Arg.INVALID_VALUE != _f)
+      {
+         if(_f < st_min)
+         {
+            st_min = _f;
+            st_next_min_num = 0;
+            st_next_min = 999999;
+         }
+
+         if(_f > st_max)
+         {
+            st_max = _f;
+            st_next_max_num = 0;
+            st_next_max = -999999;
+         }
+
+         if(_f < st_next_min)
+         {
+            st_next_min = _f;
+         }
+
+         if(st_next_min_num++ >= RESCALE_TICKS)
+         {
+            st_next_min_num = 0;
+            st_min = st_next_min;
+            st_next_min = 999999;
+         }
+
+         if(_f > st_next_max)
+         {
+            st_next_max = _f;
+         }
+
+         if(st_next_max_num++ >= RESCALE_TICKS)
+         {
+            st_next_max_num = 0;
+            st_max = st_next_max;
+            st_next_max = -999999;
+         }
+      }
+
+      st_ringbuf_next++;
+      if(st_ringbuf_next >= st_ringbuf.numElements)
+         st_ringbuf_next = 0;
+
+      st_ringbuf_num++;
+      if(st_ringbuf_num >= st_ringbuf.numElements)
+         st_ringbuf_num = st_ringbuf.numElements;
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      ToolTip::hide();
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      float sx = getSizeX();
+      float sy = getSizeY();
+      UIRenderer.DrawFilledRectangle(0, 0, sx, sy, #af0c0c0c);
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, sx, sy);
+
+      float px = sx - 2;
+      sx = sx - 2*2;
+      
+      float pxStep = (sx - 4) / st_ringbuf.numElements;
+
+      float cMin = st_min;
+      float cMax = st_max;
+
+      float cCtr = (cMax - cMin) * 0.5;
+      cMin = cCtr - (cCtr - cMin) * 2;
+      cMax = cCtr + (cMax - cCtr) * 2;
+
+      float fScl = (1.0 / (cMax - cMin)) * (sy - 2*2 - 1);
+
+      UIRenderer.SetColorARGB(#ff00ff00);
+      UIRenderer.SetPointSize(2);
+      UIRenderer.SetLineWidth(1);
+      if(UIRenderer.BeginLineStripAA(st_ringbuf_num))
+      {
+         int rbIdx = st_ringbuf_next;
+         int ptIdx = 0;
+         // float lx;
+         // float ly;
+         loop(st_ringbuf_num)
+         {
+            rbIdx--;
+            if(rbIdx < 0)
+               rbIdx = st_ringbuf.numElements - 1;
+            float f = st_ringbuf.get(rbIdx);
+
+            if(f != NMM_Arg.INVALID_VALUE)
+            {
+               float py = ((f - cMin) * fScl);
+               if(py < 0)
+                  py = 0;
+               else if(py > (sy - 2*2))
+                  py = (sy - 2*2) - 1;
+               else
+                  py = (sy - 2-1) - py;
+
+               // if(0 == ptIdx)
+               //    glVertex2f(px, py);
+               // else
+               //    glVertex2f(lx, ly);
+               UIRenderer.Vertex2f(px, py);
+
+               ptIdx++;
+            }
+            else
+            {
+               ptIdx = 0;
+            }
+
+            // lx = px;
+            // ly = py;
+
+            // Previous data point
+            px -= pxStep;
+         }
+
+         UIRenderer.End();
+      }
+   }
+}
+
+
+// <class.png>
+class NMM_SignalTapFloatParam extends FloatParam {
+   NMM_SignalTapToolTip *signal_tap;
+
+
+   protected virtual newToolTip() : ToolTip {
+      if(null == signal_tap)
+      {
+         signal_tap <= new NMM_SignalTapToolTip;
+         signal_tap.initSignalTap(this);
+      }
+      return signal_tap;
+   }
+
+   protected virtual getToolTipHideDelay() {
+      return UIConstants.TOOLTIP_HIDE_DELAY * 20;
+   }
+
+   // protected virtual showToolTip() {
+   //    trace "xxx NMM_SignalTapFloatParam: showToolTip";
+   //    if(!Mouse.buttons)
+   //    {
+   //       tooltip <= newToolTip();
+   //       if(null != tooltip)
+   //       {
+   //          ////loseMouseFocus();
+   //          if(wantToolTipNearMouse() && !UI.b_touch_mode)
+   //          {
+   //             tooltip.showNearMouse(getToolTipOffsetX(), FloatingLayer.TOOLTIP_OFFSET_Y);
+   //          }
+   //          else
+   //          {
+   //             tooltip.showToolTipNearLayer(this);
+   //          }
+
+   //          toolTipTimerAction.setActionName("onToolTipHideTimer");
+   //          toolTipTimerAction.setTicks(UIConstants.TOOLTIP_HIDE_DELAY);
+   //          UI.Schedule(toolTipTimerAction);
+
+   //          tooltip.redraw();
+
+   //          last_tooltip_layer <= this;
+   //       }
+   //    }
+   // }
+
+   public virtual setValue(float _v) {
+      FloatParam::setValue(_v);
+
+      if(null != signal_tap)
+      {
+         signal_tap.redraw();
+      }
+   }
+
+   public virtual setNonEditableText(String _text) {
+      // INVALID_VALUE
+      FloatParam::setNonEditableText(_text);
+
+      if(null != signal_tap)
+      {
+         signal_tap.redraw();
+      }
+   }
+
+   // <method.png>
+   public method resetSignalTap() {
+      if(null != signal_tap)
+      {
+         signal_tap <= null;
+      }
+   }
+
+   // <method.png>
+   public method hasSignalTap() : boolean {
+      return (null != signal_tap);
+   }
+
+   // <method.png>
+   public method captureSignalTapValue(float _f) {
+      if(null != signal_tap)
+      {
+         signal_tap.captureSignalTapValue(_f);
+      }
+   }
+
+}

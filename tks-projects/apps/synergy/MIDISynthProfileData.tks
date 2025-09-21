@@ -1,0 +1,189 @@
+// ----
+// ---- file   : MIDISynthProfileData.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2013-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 08Apr2013
+// ----
+// ---- changed: 13Apr2013, 05Feb2016, 07Feb2016, 23Feb2017, 09May2017, 24Jan2019, 09Feb2019
+// ----          09Jul2021, 10Oct2022, 02Nov2022, 24Nov2022, 24Sep2023
+// ----
+// ----
+// ----
+
+module MMIDISynthProfileData;
+
+use namespace st2;
+
+
+// <class.png>
+class MIDISynthProfileData {
+   // per synth extended profile data (e.g. patch banks)
+
+   MIDISynthProfile *midi_profile; // reference
+
+   MTS mts;  // tuning tables (optional)
+
+   // -1=synth basic channel
+   // 0..15=force redirect keyboard events to MIDI channels 1..16
+   //  (note) for multi-timbral synths
+   //  (note) see STConfig.pagesysex_auto_devicename / STConfig.b_pagesysex_redirect_ev
+   //  (note) see isMultiTimbral()
+   byte forced_redirect_midi_ch;
+   boolean b_multi_timbral;
+   IntArray multi_midi_ch;  // !empty: mirror redirect_midi_ch to all matching channels
+
+
+   // <init.png>
+   public method init(MIDISynthProfile _profile) {
+      midi_profile <= _profile;
+
+      mts.init(_profile.num_midi_tunings);
+
+      forced_redirect_midi_ch = -1;
+      b_multi_timbral = false;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMIDICh(IntArray _a) {
+      multi_midi_ch = _a;
+   }
+
+   // <save.png>
+   public abstract method saveMIDIProfileData(Stream _ofs) {
+   }
+
+   // <load.png>
+   public abstract method loadMIDIProfileData(Stream _ifs, boolean _bFromUI) : boolean {
+   }
+
+   // <method_get.png>
+   public method projectMIDIProfileDataRequiresSynthEditorInit() : boolean {
+      /// e.g. Prophet12
+      return false;
+   }
+
+   // <save.png>
+   public abstract method saveProjectMIDIProfileData(Stream _ofs) {
+   }
+
+   // <load.png>
+   public abstract method loadProjectMIDIProfileData(Stream _ifs) : boolean {
+   }
+
+   // <load.png>
+   public method tryLoadStashedProjectMIDIProfileData() : boolean {
+      String profileId <= midi_profile.midi_profile_id;
+      if(g_stashed_raw_project_midiprofiledata.exists(profileId))
+      {
+         Buffer buf <= g_stashed_raw_project_midiprofiledata[profileId];
+         buf.offset = 0;
+         if(!loadProjectMIDIProfileData(buf))
+         {
+            trace "[~~~] MIDISynthProfileData::tryLoadStashedProjectMIDIProfileData: loadProjectMIDIProfileData failed (profile=\""+profileId+"\" bufSz="+buf.size+")";
+            return false;
+         }
+         g_stashed_raw_project_midiprofiledata.delete(profileId);
+      }
+      return true;
+   }
+
+   // <method_get.png>
+   public method getProfileDataBaseFileName() : String {
+      return midi_profile.midi_profile_id;
+   }
+
+   // <method_get.png>
+   public method isMultiTimbral() : boolean {
+      return b_multi_timbral;
+   }
+
+   // <method.png>
+   public method transformSysExEditorKeyboardEvents(MIDIPipeFrame _frameRec) {
+   }
+
+   // <load.png>
+   public method reload(boolean _bFromUI) : boolean {
+      local String baseFileName <= midi_profile.midi_profile_id;
+      local String dataFileName = TKS.getHomeDir()+"/"+STConfig.midi_profile_data_path+"/"+baseFileName+".dat";
+      local File f;
+      boolean bOpen = f.openLocal(dataFileName, IOS_IN);
+
+      if(!bOpen)
+      {
+         dataFileName = st2::program_directory+"/"+STConfig.midi_profile_data_path+"/"+baseFileName+".dat";
+         bOpen = f.openLocal(dataFileName, IOS_IN);
+      }
+
+      if(bOpen)
+      {
+         if(loadMIDIProfileData(f, _bFromUI))
+         {
+            trace "[...] MIDIProfileData loaded from \""+dataFileName+"\".";
+            f.close();
+            return true;
+         }
+         else
+         {
+            // Reinit
+            trace "[~~~] failed to load MIDIProfileData from \""+dataFileName+"\", loading init() instead.";
+            init(midi_profile);
+         }
+         f.close();
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method save() : boolean {
+      local String baseFileName <= midi_profile.midi_profile_id;
+      local String dataFileName = TKS.getHomeDir()+"/"+STConfig.midi_profile_data_path+"/"+baseFileName+".dat";
+      local File f;
+      boolean bOpen = f.openLocal(dataFileName, IOS_OUT);
+
+      if(!bOpen)
+      {
+         dataFileName = st2::program_directory+"/"+STConfig.midi_profile_data_path+"/"+baseFileName+".dat";
+         bOpen = f.openLocal(dataFileName, IOS_OUT);
+      }
+
+      if(bOpen)
+      {
+         saveMIDIProfileData(f);
+
+         Global.Success("MIDIProfileData written to \""+dataFileName+"\".");
+
+         f.close();
+      }
+      else
+      {
+         Global.Error("Failed to write MIDIProfileData to \""+dataFileName+"\".");
+      }
+
+      return false;
+   }
+
+   // <save.png>
+   public method saveMTSTables(Stream ofs) {
+      // called by derived class (if supported)
+      mts.saveState(ofs);
+   }
+
+   // <load.png>
+   public method loadMTSTables(Stream ifs) : boolean {
+      if(mts.loadState(ifs))
+      {
+         return true;
+      }
+      else
+      {
+         trace "[---] MIDISynthProfileData::loadMTSTables: failed to load MTS tables";
+         return false;
+      }
+   }
+
+}

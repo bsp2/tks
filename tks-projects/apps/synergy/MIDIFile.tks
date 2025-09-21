@@ -1,0 +1,511 @@
+// ----
+// ---- file   : MIDIFile.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----          Based on info from
+// ----           <http://www.ccarh.org/courses/253/handout/smf/>
+// ----           <http://www.music.mcgill.ca/~ich/classes/mumt306/StandardMIDIfileformat.html>
+// ----
+// ----          (note) The usecase for this is the import of REX mid files. More complex SMFs are untested but may work.
+// ----
+// ----
+// ---- created: 23Jan2016
+// ---- changed: 04Jan2018, 18May2019, 24Jun2019, 05Nov2019, 28Jul2023, 28Feb2025
+// ----
+// ----
+// ----
+module MMIDIFile;
+
+namespace st2;
+
+
+// <class.png>
+class MIDIFileDefs {
+   define exception E_IO             : CriticalError;
+   define exception E_READID4        : E_IO;
+   define exception E_READSTRING_LEN : E_IO;
+   define exception E_PPQ            : E_IO;
+   define exception E_SYSEX          : E_IO;
+   define exception E_MIDIEVTYPE     : E_IO;
+}
+
+
+// <class.png>
+class MIDIFileUtils {
+
+   public static ReadId4(Stream _ifs, String _s, String _expected) {
+      _s.empty();
+
+      _s.alloc(5);
+      _s[0] = _ifs.u8;
+      _s[1] = _ifs.u8;
+      _s[2] = _ifs.u8;
+      _s[3] = _ifs.u8;
+
+      if(null != _expected)
+      {
+         if(_s != _expected)
+         {
+            throw E_READID4("ReadId4: expected=\""+_expected+"\", have=\""+_s+"\"");
+         }
+      }
+   }
+
+   public static ReadStringN(Stream _ifs, String _s, boolean _bAlign) {
+      _s.empty();
+
+      int len = _ifs.i32;
+      // trace "xxx len="+len;
+      if(0 <= len < 256)
+      {
+         int numRead = _ifs.readString(_s, len);
+
+         if(_bAlign)
+         {
+            // Align to next word offset
+            if(_ifs.offset & 1)
+               _ifs.offset = _ifs.offset + 1;
+         }
+      }
+      else
+      {
+         throw E_READSTRING_LEN("invalid string length="+len);
+      }
+   }
+
+   static ReadVariableLength(Stream _ifs) : int {
+      int ret = 0;
+
+      byte val1 = _ifs.u8;
+      byte val2 = 0;
+      byte val3 = 0;
+      byte val4 = 0;
+
+      if(val1 & 128)
+      {
+         val2 = _ifs.u8;
+
+         if(val2 & 128)
+         {
+            val3 = _ifs.u8;
+
+            if(val3 & 128)
+            {
+               val4 = _ifs.u8;
+            }
+         }
+      }
+
+      if(0 != val4)
+      {
+         ret =
+            ((val1 & 127) << 21) |
+            ((val2 & 127) << 14) |
+            ((val3 & 127) << 7)  |
+            ((val4 & 127)     )  ;
+      }
+      else if(0 != val3)
+      {
+         ret =
+            ((val1 & 127) << 14) |
+            ((val2 & 127) << 7)  |
+            ((val3 & 127)     )  ;
+      }
+      else if(0 != val2)
+      {
+         ret =
+            ((val1 & 127) << 7)  |
+            ((val2 & 127)     )  ;
+      }
+      else
+      {
+         ret = val1;
+      }
+
+      return ret;
+   }
+
+   static WriteVariableLength(Stream ofs, int _val) {
+      int bits = 21;
+
+      loop(4)
+      {
+         int val = (_val >> bits) & 127;
+
+         if(bits > 0)
+         {
+            if(val > 0)
+            {
+               ofs.i8 = val | 128;
+            }
+
+            bits -= 7;
+         }
+         else
+         {
+            ofs.i8 = val;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class MIDIFileTrack : MIDIFileDefs {
+   MIDIFile *parent_midifile;
+
+   PointerArray events;  // MIDIPipeFrame instances
+   IntArray     event_abs_times;
+
+   protected int replay_event_idx;
+   protected int replay_ppq;
+
+   protected int track_length;  // 0=unknown
+
+
+   public method replayStart(int _ppq) : boolean {
+
+      replay_ppq = _ppq;
+      replay_event_idx = 0;
+
+      return (events.numElements > 0);
+   }
+
+   public method replayGetNextEvent(Integer _retEventAbsTime) : MIDIPipeFrame {
+
+      if(replay_event_idx < events.numElements)
+      {
+         MIDIPipeFrame fr <= events.get(replay_event_idx);
+         _retEventAbsTime = event_abs_times.get(replay_event_idx);
+
+         _retEventAbsTime *= float(replay_ppq) / parent_midifile.ppq;
+
+         replay_event_idx++;
+
+         return fr;
+      }
+      return null;
+   }
+
+   public method replayGetTrackLength() : int {
+      return (float(replay_ppq) / parent_midifile.ppq) * track_length;
+   }
+
+   public method loadStream(Stream _ifs) {
+
+      // track_chunk = "MTrk" + <length> + <track_event> [+ <track_event> ...]
+
+      String id;
+      MIDIFileUtils.ReadId4(_ifs, id, "MTrk");
+
+      int dataSz  = _ifs.i32;
+      int dataEnd = _ifs.offset + dataSz;
+
+      MIDIPipeFrame *fr;
+      int absTime = 0;
+      int evDeltaTime;
+      byte runningStatus = 0;
+      Integer io;
+
+      track_length = 0;
+
+      while(_ifs.offset < dataEnd)
+      {
+         // track_event = <v_time> + <midi_event> | <meta_event> | <sysex_event>
+
+         evDeltaTime = MIDIFileUtils.ReadVariableLength(_ifs);
+
+         // trace "xxx evDeltaTime="+evDeltaTime;
+
+         absTime += evDeltaTime;
+
+         byte evHdr = _ifs.u8;
+
+         if(0xFF == evHdr)
+         {
+            // meta_event = 0xFF + <meta_type> + <v_length> + <event_data_bytes>
+            //
+            //    0x00  Sequence number          0x20  MIDI channel prefix assignment
+            //    0x01  Text event               0x2F  End of track
+            //    0x02  Copyright notice         0x51  Tempo setting
+            //    0x03  Sequence or track name   0x54  SMPTE offset
+            //    0x04  Instrument name          0x58  Time signature
+            //    0x05  Lyric text               0x59  Key signature
+            //    0x06  Marker text              0x7F  Sequencer specific event
+            //    0x07  Cue point
+            //
+            byte metaType = _ifs.u8;
+            int metaSz = MIDIFileUtils.ReadVariableLength(_ifs);
+            io = metaType;
+            trace "MIDIFile::loadStream: absTime="+absTime+" metaType="+io.printf("0x%02x")+" metaSz="+metaSz+" (skipping)";
+            boolean bSkipMeta = true;
+
+            if(0x2F == metaType)
+            {
+               track_length = absTime;
+            }
+            else if(0x51 == metaType)
+            {
+               if(3 == metaSz)
+               {
+                  int microSecOfQuarterNote = (_ifs.u8 << 16);
+                  microSecOfQuarterNote += (_ifs.u8 << 8);
+                  microSecOfQuarterNote += (_ifs.u8);
+                  // trace "xxx microSecOfQuarterNote="+microSecOfQuarterNote;
+                  float newBpm = Utils.UsecQuarterToBPM(microSecOfQuarterNote);
+
+                  fr <= new MIDIPipeFrame;
+                  events.add(#(deref fr));
+                  event_abs_times.add(absTime);
+                  fr.rpn(true/*bSet*/, 0/*devIdx*/, 0/*midich*/,
+                         NodeTracker.RPN_TRACKER_INJECT_CTL0+NT_TrackPattern.CTL_BPM,
+                         newBpm
+                         );
+                  bSkipMeta = false;
+               }
+            }
+
+            if(bSkipMeta)
+               _ifs.offset = _ifs.offset + metaSz;
+
+         }
+         else if((0xF0 == evHdr) || (0xF7 == evHdr))
+         {
+            int sysexStartOff = _ifs.offset - 1;
+
+            // sysex_event = 0xF0 + <data_bytes> 0xF7 or sysex_event = 0xF7 + <data_bytes> 0xF7
+            byte sysexData = 0;
+
+            while(_ifs.offset < dataEnd)
+            {
+               sysexData = _ifs.u8;
+               if(0xF7 == sysexData)
+                  break;
+            }
+
+            if(0xF7 != sysexData)
+            {
+               throw E_SYSEX("End of sysex event (0xF7) not found");
+            }
+
+            Global.Debug2("MIDIFileTrack: absTime="+absTime+" sysexSize="+(_ifs.offset - sysexStartOff)+" (skipping)");
+         }
+         else
+         {
+            byte evData1;
+
+            // Regular MIDI event
+            if(evHdr & 128)
+            {
+               if(0xF0 != (evHdr & 0xF0))
+               {
+                  runningStatus = evHdr;
+                  evData1 = _ifs.u8;
+               }
+               else
+               {
+                  runningStatus = 0;
+               }
+            }
+            else
+            {
+               evData1 = evHdr;
+               evHdr = runningStatus;
+            }
+
+            if(0xF0 != (evHdr & 0xF0))
+            {
+               byte evData2;
+               byte evData3;
+
+               fr <= new MIDIPipeFrame;
+               events.add(#(deref fr));
+               event_abs_times.add(absTime);
+
+               switch(evHdr & 0xF0)
+               {
+                  default:
+                     throw E_MIDIEVTYPE("Unhandled MIDI event type ("+(evHdr & 0xF0)+")");
+
+                  case 0x80:
+                     // Note off
+                     evData2 = _ifs.u8; // Velocity
+                     fr.noteOff(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/, evData1/*noteNr*/, evData2/*vel*/);
+                     break;
+
+                  case 0x90:
+                     // Note on
+                     evData2 = _ifs.u8; // Velocity
+                     if(0 != evData2)
+                     {
+                        fr.noteOn(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/,
+                                  evData1/*noteNr*/, evData2/*vel*/, 0/*dur*/
+                                  );
+                        // (note) note durations are calculated when frames are recorded in sequencer (e.g. NodeTracker)
+                     }
+                     else
+                     {
+                        fr.noteOff(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/, evData1/*noteNr*/, 0/*vel*/);
+                     }
+                     break;
+
+                  case 0xA0:
+                     // Poly pressure
+                     evData2 = _ifs.u8; // Pressure
+                     fr.polyPressure(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/,
+                                     evData1/*noteNr*/, evData2/*pressure*/
+                                     );
+                     break;
+
+                  case 0xB0:
+                     // Ctl change
+                     trace "xxx import 0xB0 Ctl change = ccNr="+evData1+" val="+evData2;
+                     evData2 = _ifs.u8; // Value
+                     fr.cc(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/,
+                           evData1/*ccNr*/, evData2/*value*/
+                           );
+                     break;
+
+                  case 0xC0:
+                     // Program change
+                     fr.prgChg(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/,
+                               evData1/*prog*/
+                               );
+                     break;
+
+                  case 0xD0:
+                     // Channel pressure
+                     fr.chPressure(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/,
+                                   evData1/*pressure*/
+                                   );
+                     break;
+
+                  case 0xE0:
+                     // Pitchbend
+                     evData2 = _ifs.u8; // pitchbend lsb
+                     fr.pitchbend(true/*bSet*/, 0/*devIdx*/, (evHdr & 15)/*midiCh*/,
+                                  (evData1 << 7) | (evData2 & 127)
+                                  );
+                     break;
+               }
+
+               io = evHdr;
+               Global.Debug2("MIDIFileTrack::loadStream: ev["+(events.numElements - 1)+"] absTime="+absTime+" evHdr="+io.printf("0x%02x"));
+            }
+            // else: single byte realtime message
+
+         }
+
+         // Next event
+
+      } // while(_ifs.offset < dataEnd)
+   }
+}
+
+
+// <class.png>
+class MIDIFile : MIDIFileDefs {
+
+   protected int num_tracks;
+   module int ppq;
+
+   protected MIDIFileTrack *[] tracks;  // MIDIFileTrack instances
+
+
+   // <method_get.png>
+   public method getNumTracks() : int {
+      return num_tracks;
+   }
+
+   // <method_get.png>
+   public method getPPQ() : int {
+      return ppq;
+   }
+
+   // <method_get.png>
+   public method getTrackByIdx(int _trackIdx) : MIDIFileTrack {
+      return tracks.get(_trackIdx);
+   }
+
+   // <load.png>
+   public method loadStream(Stream ifs) : boolean {
+
+      // SMF = <header_chunk> + <track_chunk> [+ <track_chunk> ...]
+
+      try
+      {
+         String id;
+
+         // header_chunk = "MThd" + <header_length> + <format> + <n> + <division>
+
+         MIDIFileUtils.ReadId4(ifs, id, "MThd");
+
+         int  hdrSize = ifs.i32;
+         short format = ifs.u16;
+         num_tracks   = ifs.u16;
+
+         ppq = ifs.u16;
+
+         if(ppq > 0)
+         {
+            Global.Debug("MIDIFile::loadStream: hdrSize="+hdrSize+" format="+format+" num_tracks="+num_tracks+" ppq="+ppq);
+
+            ifs.offset = ifs.offset + (hdrSize - 6);
+
+            tracks.alloc(num_tracks);
+
+            int trackIdx = 0;
+
+            loop(num_tracks)
+            {
+               Global.Debug("\nMIDIFile::loadStream: parsing track "+(trackIdx+1)+" / "+num_tracks);
+
+               MIDIFileTrack track <= new MIDIFileTrack;
+               track.parent_midifile <= this;
+               tracks.add(#(deref track));
+
+               track.loadStream(ifs);
+
+               trackIdx++;
+            }
+
+            return true;
+         }
+         else
+         {
+            throw E_PPQ("SMPTE division format is not supported");
+         }
+      }
+      catch(E_IO e)
+      {
+         trace "[---] caught "+e.name+" ("+e.message+") while parsing patch MIDI file";
+         return false;
+      }
+
+   }
+
+   // <load.png>
+   public method loadLocal(String _filename) : boolean {
+      boolean ret = false;
+      local File f;
+      local String filename <= Utils.ToNativePathName(_filename);
+      if(f.openLocal(filename, IOS_IN))
+      {
+         f.byteOrder = YAC_BIG_ENDIAN;
+
+         ret = loadStream(f);
+
+         f.close();
+      }
+      else
+      {
+         trace "[---] MIDIFile::loadLocal: failed to open \""+filename+"\" for reading.";
+      }
+
+      return ret;
+   }
+}

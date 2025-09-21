@@ -1,0 +1,609 @@
+// ----
+// ---- file   : mftwister.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 11Apr2024
+// ---- changed: 13Apr2024, 22Apr2024
+// ----
+// ----
+// ----
+
+module MMFTwister;
+
+use namespace st2;
+use namespace ui;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class MFTwisterRotary {
+   // MIDI Fighter Twister rotary (-indicator)
+
+   MFTwister *parent_twister;
+   int rotary_idx;
+
+   short value;       // current value (14bit)
+   short dev_value;   // last value sent to device (14bit)
+   short out_value;   // current send value (14bit)
+
+   short select_rgb;
+   short select_rgb_dev;
+
+
+   // <method_init.png>
+   public method init() {
+      dev_value = -1;
+      select_rgb     = #7F7F7F;
+      select_rgb_dev = 0;
+   }
+
+   // <method.png>
+   public method forceUpdate() {
+      dev_value = -1;
+      out_value = value;
+      select_rgb_dev = 0;
+   }
+
+   static Map7To14(float _f7) : float {
+      if(_f7 >= 64.0)
+         return 8192.0 + (_f7-64.0) * (8191.0 / 63.0);
+      else
+         return 8192.0 - (64.0 - _f7) * (8192.0 / 64.0);
+   }
+
+   static Map14To7(float _f14) : float {
+      if(_f14 >= 8192.0)
+         return 64.0 + (_f14-8192.0) * (63.0 / 8191.0);
+      else
+         return 64.0 - (8192.0 - _f14) * (64.0 / 8192.0);
+   }
+
+   // <method.png>
+   public method updateSelectRGBAndHighlight() {
+      // boolean bCurrentBank = ((rotary_idx & 15) == parent_twister.bank_idx);
+
+      // if(bCurrentBank)
+      // {
+      //    if(locked_value >= 0)
+      //    {
+      //       select_rgb = #117F5f;
+      //    }
+      //    else
+      //    {
+      //       select_rgb = #7f7f7f;
+      //    }
+      //    b_highlight_select = true;
+      // }
+      // else
+      // {
+      //    if(locked_value >= 0)
+      //    {
+      //       // select_rgb = #064F1f;
+      //       select_rgb = #032F0f;
+      //       b_highlight_select = true;
+      //    }
+      //    else
+      //    {
+      //       select_rgb = #7f7f7f;
+      //       b_highlight_select = false;
+      //    }
+      // }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // Value
+      ofs.i16 = value;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Value
+         value = ifs.u16;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] MFTwisterRotary: rotary_idx="+rotary_idx+" invalid ver="+ver;
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class MFTwister : BidiCtl {
+   define String DEVICE_ALIAS = "twister";
+
+   define int NUM_BANKS             = 1;
+   define int NUM_ROTARIES_PER_BANK = 16;
+
+   define int NUM_UPDATE_PARTITIONS = 4;  // must be POT
+
+   boolean b_connected;
+   int num_rotaries;
+
+   MFTwisterRotary *[] rotaries;
+
+   Buffer buf;
+
+   int bank_idx;  // 0..15 => 'A'..'P'
+
+   int   undo_rotary_idx;  // 0..255
+   short undo_value;       // 0..16383
+
+   int tick_nr;
+
+
+   // <method_init.png>
+   public virtual init() : boolean {
+      // BidiCtl::init();
+
+      if(b_debug)
+         trace "[trc] MFTwister: STConfig.b_mf_twister="+STConfig.b_mf_twister;
+
+      rotaries.alloc(NUM_BANKS * NUM_ROTARIES_PER_BANK);
+      int rotaryIdx = 0;
+      loop(rotaries.maxElements)
+      {
+         MFTwisterRotary rotary <= new MFTwisterRotary;
+         rotary.rotary_idx = rotaryIdx++;
+         rotary.parent_twister <= this;
+         rotary.init();
+         rotaries.add(#(deref rotary));
+      }
+
+      undo_rotary_idx = -1;
+
+      if(STConfig.b_mf_twister)
+      {
+         num_rotaries = 16;
+
+         in_dev  <= MIDI.GetMIDIInDeviceByAliasOrName(DEVICE_ALIAS);
+         out_dev <= MIDI.GetMIDIOutDeviceByAliasOrName(DEVICE_ALIAS);
+
+         if(b_debug)
+            trace "[trc] MFTwister: in_dev="+#(in_dev)+" out_dev="+#(out_dev);
+
+         b_connected = ((null != in_dev) && (null != out_dev));
+
+         if(b_connected)
+            b_connected = in_dev.isOpen() && out_dev.isOpen();
+
+         if(b_connected)
+         {
+            buf.size = 4096;
+
+            selectBank(0);
+         }
+
+      }
+
+      return b_connected;
+   }
+
+   protected method selectBank(int _bankIdx) {
+      // Allow bank select only when no rotary is touched and detail-edit mode is inactive
+
+      if(b_debug)
+         trace "[trc] MFTwister::selectBank: bankIdx="+_bankIdx;
+
+      bank_idx = _bankIdx;
+
+      // Force rotary update
+      int rotaryIdx = bank_idx * NUM_ROTARIES_PER_BANK;
+      loop(num_rotaries)
+      {
+         MFTwisterRotary rotary <= rotaries[rotaryIdx++];
+         rotary.forceUpdate();
+         rotary.updateSelectRGBAndHighlight();
+      }
+
+      if(!Global.b_initializing)
+         root_form.queueUpdateBidirectionalControls();
+   }
+
+   public virtual handleMIDIEvent(RecordedMIDIEvent _recEv, ClassArray _midiMapRTEventQueue) : boolean {
+      // called from replay thread
+      MIDIMapEvent ev;
+      ev.initFromRecordedMIDIEvent(in_dev, _recEv);
+
+      MFTwisterRotary *rotary;
+      int rotaryIdx;
+      Integer io;
+      short t;
+
+      switch(ev.type)
+      {
+         case TYPE_PITCHBEND:
+            break;
+
+         case TYPE_NOTE_ON:
+            if(b_debug)
+               trace "[trc] MFTwister: note on "+ev.arg1;
+            break;
+
+         case TYPE_NOTE_OFF:
+            if(b_debug)
+               trace "[trc] MFTwister: note off "+ev.arg1;
+            break;
+
+         case TYPE_CC:
+            if(b_debug)
+               trace "[trc] MFTwister: CC ext_type="+ev.ext_type+" arg1="+ev.arg1;
+            rotaryIdx = ev.ext_type + (bank_idx * NUM_ROTARIES_PER_BANK);
+            rotary <= rotaries.get(rotaryIdx);
+            if(null != rotary)
+            {
+               rotary.value     = MFTwisterRotary.Map7To14(ev.arg1);
+               rotary.dev_value = rotary.value;
+               rotary.out_value = rotary.value;
+               if(b_debug)
+                  trace "[>>>] MFTwister: rotary["+rotaryIdx+"] value="+rotary.value;
+               io = rotary.value;
+               // // setTmpLabelLine(rotaryIdx, 2/*lineIdx*/, true/*bInvert*/, io.printf("%04x"));
+               handleRotaryEdited(rotary, _midiMapRTEventQueue);
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   public method tick() {
+      // called from replay thread
+
+      // (note) spread updates over multiple ticks
+      int partition = (tick_nr++ & (NUM_UPDATE_PARTITIONS - 1));
+
+      buf.offset = 0;
+
+      MFTwisterRotary *rotary;
+      int rotaryIdx = (bank_idx * NUM_ROTARIES_PER_BANK);
+      int numRotaries = num_rotaries / NUM_UPDATE_PARTITIONS;
+      rotaryIdx += partition * numRotaries;
+      // trace "xxx partition="+partition+" rotaryIdx="+rotaryIdx+" numRotaries="+numRotaries;
+
+      loop(numRotaries)
+      {
+         rotary <= rotaries[rotaryIdx];
+         int rawRotaryIdx = rotaryIdx & 15;
+
+         // if(14 == rawRotaryIdx)
+         {
+            // Rotary (indicator) automation
+            if(rotary.dev_value != rotary.out_value)
+            {
+               if(b_debug)
+                  trace "[trc] MFTwister: send rotary["+rotaryIdx+"] out_value="+rotary.out_value+" (was "+rotary.dev_value+")";
+               rotary.dev_value = rotary.out_value;
+               buf.i8 = 0xB0; // CC
+               buf.i8 = rawRotaryIdx;
+               buf.i8 = int(MFTwisterRotary.Map14To7(rotary.dev_value));  // value
+            }
+
+            // // 'Select' color
+            // if(rotary.select_rgb != rotary.select_rgb_dev)
+            // {
+            //    if( (rotary.select_rgb&0x7F0000) != (rotary.select_rgb_dev&0x7F0000) )
+            //    {
+            //       // Red
+            //       buf.i8 = 0x91;
+            //       buf.i8 = select_button_ids[rawFaderIdx];
+            //       buf.i8 = (rotary.select_rgb >> 16) & 127;
+            //    }
+
+            //    if( (rotary.select_rgb&0x007F00) != (rotary.select_rgb_dev&0x007F00) )
+            //    {
+            //       // Green
+            //       buf.i8 = 0x92;
+            //       buf.i8 = select_button_ids[rawFaderIdx];
+            //       buf.i8 = (rotary.select_rgb >> 8) & 127;
+            //    }
+
+            //    if( (rotary.select_rgb&0x00007F) != (rotary.select_rgb_dev&0x00007F) )
+            //    {
+            //       // Blue
+            //       buf.i8 = 0x93;
+            //       buf.i8 = select_button_ids[rawFaderIdx];
+            //       buf.i8 = rotary.select_rgb & 127;
+            //    }
+
+            //    rotary.select_rgb_dev = rotary.select_rgb;
+            // }
+
+         } // debug: single rotary
+
+         // Next rotary
+         rotaryIdx++;
+      }
+
+      if(buf.offset > 0)
+      {
+         if(b_debug)
+            Utils.HexDump(buf, 0, buf.offset);
+
+         out_dev.sysExRaw(buf);
+      }
+
+   }
+
+   // <method.png>
+   protected method handleRotaryEdited(MFTwisterRotary _rotary, ClassArray _midiMapRTEventQueue) {
+      // called from handleMIDIEvent()
+      if(b_debug)
+         trace "[trc] MFTwister::handleRotaryEdited: rotary["+_rotary.rotary_idx+"] = "+_rotary.value+" (7bit: "+(_rotary.value>>7)+")";
+
+      MIDIMapEvent midiMapEvent <= _midiMapRTEventQueue.nextFree;
+      if(null != midiMapEvent)
+      {
+         midiMapEvent.initUntransformedFromNRPN(in_dev, 0/*dev_ch*/, _rotary.rotary_idx/*nrpn*/, _rotary.value);
+         replay.sendUIEvent(midiMapEvent);
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= virtual handleSelectOrEditScene() {
+      // called from UI thread
+      //  - update rotary indicators from last seen morph scene src ctl value
+
+      if(b_debug) trace "xxx MFTwister::rotary -----------------";
+
+      MFTwisterRotary *rotary;
+      int groupIdx = MIDIMorphScene.NUM_GROUPS - 1;  // iterate backwards (first group has priority over last)
+      loop(MIDIMorphScene.NUM_GROUPS)  // A..H
+      {
+         // trace "rotary rotaryster::handleSelectOrEditScene:  groupIdx="+rotary+" sceneIdx="+MIDIMorphScene.GetCurrentSceneIdx(rotary);
+         MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+         MIDIMapEvent *mev;
+         foreach mev in mms.mms_entries
+         {
+            if(@(mev.dev) == @(in_dev))
+            {
+               if(0 == mev.dev_ch)
+               {
+                  if(TYPE_NRPN == mev.type)
+                  {
+                     if(0 <= mev.ext_type < (NUM_ROTARIES_PER_BANK * NUM_BANKS))
+                     {
+                        rotary <= rotaries[mev.ext_type];
+
+                        // // fader.updateLabel(mev.getMorphLabel());
+
+                        if(b_debug) trace "xxx MFTwister::handleOrSelectEditScene: OLD rotary.value="+rotary.value;
+                        rotary.value = mev.last_morph_src_arg1;
+                        if(b_debug) trace "xxx MFTwister::handleOrSelectEditScene:   NEW rotary.value="+rotary.value;
+
+                        rotary.out_value = rotary.value;
+                     }
+                  }
+               }
+            }
+         }
+
+         // Next group
+         groupIdx--;
+      }
+   }
+
+   // <save.png>
+   public virtual saveState(Stream ofs) {
+      // (todo) unused (=> don't save anything)
+
+      // ver
+      ofs.i16 = 1;
+
+      // num rotaries
+      ofs.i16 = rotaries.numElements;
+
+      MFTwisterRotary *rotary;
+      foreach rotary in rotaries
+         rotary.saveState(ofs);
+
+      // Current Bank
+      ofs.i8 = bank_idx;
+
+      // Rotary Undo
+      ofs.i16 = undo_rotary_idx;
+      ofs.i16 = undo_value;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream ifs) : boolean {
+      // (todo) unused (=> don't load anything)
+
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // num rotaries
+         int numRotaries = ifs.u16;
+
+         if(numRotaries != rotaries.numElements)
+            trace "[!!!] MFTwister::loadState: numRotaries="+numRotaries+" != rotaries.numElements="+rotaries.numElements;
+
+         MFTwisterRotary *rotary;
+         foreach rotary in rotaries
+         {
+            if(!rotary.loadState(ifs))
+            {
+               return false;
+            }
+         }
+
+         // Current Bank
+         byte bankIdx = ifs.u8;
+
+         // Rotary Undo
+         undo_rotary_idx = ifs.s16;
+         undo_value = ifs.s16;
+
+         selectBank(bankIdx);
+
+         return true;
+      }
+      else
+      {
+         trace "[---] MFTwister: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public virtual handleReplayTimer() {
+      // called from UI thread
+      // if(checkResetQueuedQueryLabel())
+      // {
+      //    queryLabels1();
+      // }
+   }
+
+   // <method.png>
+   protected method updateRotariesFromOutputState() {
+      // (note) currently unused / never called
+      Global.Debug("MFTwister::updateRotariesFromOutputState");
+
+      int rotaryIdx = bank_idx * NUM_ROTARIES_PER_BANK;
+      loop(num_rotaries)
+      {
+         MFTwisterRotary rotary <= rotaries[rotaryIdx];
+
+         int groupIdx = 0;
+         loop(MIDIMorphScene.NUM_GROUPS)
+         {
+            MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+
+            MIDIMapEvent *srcEv;
+            foreach srcEv in mms.mms_entries
+            {
+               if(@(srcEv.dev) == @(in_dev))
+               {
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                  {
+                     if(rotaryIdx == srcEv.ext_type)
+                     {
+                        MIDIMapEvent dstEv <= srcEv.morph_target;
+                        short outVal = dstEv.getOutputState();
+
+                        if(outVal >= 0)
+                        {
+                           short val = srcEv.unmapMorphedValue(outVal, true/*b14bit*/);
+                           if(val >= 0)
+                           {
+                              trace "[>>>] MFTwister::updateRotariesFromOutputState: rotaryIdx="+rotaryIdx+" outVal="+outVal+" => inVal="+val;
+                              srcEv.last_morph_src_arg1 = val;
+                              rotary.value = val;
+                              rotary.out_value = val;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next group
+            groupIdx++;
+         }
+
+         // Next rotary
+         rotaryIdx++;
+      }
+   }
+
+   // <method.png>
+   public =replay= virtual queueBidirectionalRPNUpdate(int _devIdx, byte _ch,
+                                                       STX_MIDIOutDevice _autoDev,
+                                                       short _rpn, short _rpnVal,
+                                                       String _labelOrNull // "-" == unused
+                                                       ) {
+      int rotaryIdx = bank_idx * NUM_ROTARIES_PER_BANK;
+      if(b_debug) trace "[>>>] MFTwister::queueBidirectionalRPNUpdate: rpn="+_rpn+" rpnVal="+_rpnVal;
+
+      if("-" == _labelOrNull)
+         _rpnVal = 0;
+
+      loop(num_rotaries)
+      {
+         MFTwisterRotary rotary <= rotaries[rotaryIdx];
+
+         int groupIdx = 0;
+         loop(MIDIMorphScene.NUM_GROUPS)
+         {
+            MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+
+            MIDIMapEvent *srcEv;
+            foreach srcEv in mms.mms_entries
+            {
+               if(@(srcEv.dev) == @(in_dev))
+               {
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                  {
+                     if(rotaryIdx == srcEv.ext_type)
+                     {
+                        // trace "xxx try rotaryIdx="+rotaryIdx+" val="+_rpnVal;
+                        MIDIMapEvent dstEv <= srcEv.morph_target;
+                        if(MIDIMapDefs.TYPE_RPN == dstEv.type)
+                        {
+                           if(dstEv.ext_type == _rpn)
+                           {
+                              STX_MIDIOutDevice dstDev <= dstEv.dev;
+                              if(null != dstDev)
+                              {
+                                 boolean bMatch = @(dstDev) == @(_autoDev);
+
+                                 if(!bMatch)
+                                 {
+                                    bMatch =
+                                       (dstDev.dev_idx == _devIdx) &&
+                                       (dstEv.dev_ch == _ch);
+                                 }
+
+                                 if(bMatch)
+                                 {
+                                    if(b_debug) trace "[trc] MFTwister::queueBidirectionalRPNUpdate: match rotaryIdx="+rotaryIdx+" value="+_rpnVal;
+
+                                    rotary.value     = _rpnVal;
+                                    rotary.out_value = _rpnVal;
+
+                                    srcEv.last_morph_src_arg1 = _rpnVal;
+                                    srcEv.setMorphAutoLabelKeepFlags(_labelOrNull);
+
+                                    // // fader.updateLabel(srcEv.getMorphLabel());
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next group
+            groupIdx++;
+         }
+
+         // Next rotary
+         rotaryIdx++;
+      }
+   }
+
+}

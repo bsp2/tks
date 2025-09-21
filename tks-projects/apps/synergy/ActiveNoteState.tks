@@ -1,0 +1,422 @@
+// ----
+// ---- file   : ActiveNoteState.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 21Sep2017
+// ---- changed: 22Sep2017, 04Oct2017, 14Apr2018, 15Apr2018, 17Apr2018, 16Sep2018, 15Sep2019
+// ----          16Sep2019, 22May2021, 28Jul2023
+// ----
+// ----
+// ----
+
+module MActiveNoteState;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ActiveNoteState {
+   public IntArray    active_notes;
+   public FloatArray  active_note_vels;
+   public IntArray    active_note_ticks;     // auto note off, 0=inf
+   public ValueArray  active_note_userdata;
+
+
+   // <method_reset.png>
+   public method reset() {
+      active_notes.empty();
+      active_note_vels.empty();
+      active_note_ticks.empty();
+      active_note_userdata.empty();
+   }
+
+   // <method_get.png>
+   public method getActiveNotes(IntArray _ret) {
+      _ret = active_notes;
+   }
+
+   // <method_get.png>
+   public method getNumActiveNotes() : int {
+      return active_notes.numElements;
+   }
+
+   // <method_set.png>
+   public method setActiveNotes(IntArray _notes) {
+      // Used by PatternView chord_detect
+      active_notes = _notes;
+   }
+
+   // <method_get.png>
+   public method getActiveNotesSorted(IntArray _ret) {
+      IntArray indexTbl;
+      active_notes.sortByValue(indexTbl);
+      _ret = active_notes;
+      _ret.rearrange(indexTbl);
+   }
+
+   // <method_get.png>
+   public method isNoteActive(int _note) : boolean {
+      return active_notes.contains(_note);
+   }
+
+   // <method.png>
+   public method findChordIndexAndBaseOrdered(IntArray sortedNotes, Integer _retBaseNote) : int {
+      // (note) find inversions but fails on octave-spread chords
+
+      if(active_notes.numElements > 0)
+      {
+         // trace "xxx sortedNotes="+sortedNotes;
+
+         int numNotes = sortedNotes.numElements;
+         int lowNote = sortedNotes.get(0) % 12;
+
+         boolean bAllowInversion = false;
+
+         // (todo) rearrange chord tables so inversions come last
+         loop(2)
+         {
+            int chordIdx = 0;
+
+            loop(Chord.chord_tbl.numElements)
+            {
+               IntArray ctbl <= Chord.chord_tbl.get(chordIdx);
+
+               if(ctbl.numElements == (numNotes + 1))  // +1 for root index
+               {
+                  int firstOff = ctbl.get(1);
+                  int baseNote = lowNote - firstOff;
+
+                  if(bAllowInversion || (0 == ctbl.get(0)))
+                  {
+                     int tblIdx = 2;
+                     boolean bFound = true;
+
+                     // trace "xxx baseNote="+baseNote+" match  ctbl="+#(ctbl);
+
+                     loop(ctbl.numElements - 2)
+                     {
+                        int tryMatch = ((ctbl.get(tblIdx) + baseNote) % 12);
+                        if(tryMatch < 0)
+                           tryMatch += 12;
+
+                        // trace "xxx   try match "+tryMatch;
+
+                        bFound = false;
+                        int noteIdx = 1;
+
+                        loop(sortedNotes.numElements - 1)
+                        {
+                           int cNote = sortedNotes.get(noteIdx) % 12;
+
+                           // trace "xxx cNote="+cNote;
+
+                           if(cNote == tryMatch)
+                           {
+                              bFound = true;
+                              // trace "xxx       => found";
+                              break;
+                           }
+
+                           noteIdx++;
+                        }
+
+                        if(!bFound)
+                           break;
+
+                        tblIdx++;
+                     }
+
+                     if(bFound)
+                     {
+                        if(baseNote < 0)
+                           baseNote += 12;
+                        if(null != _retBaseNote)
+                           _retBaseNote = baseNote;
+                        // trace "xxx found chord idx="+chordIdx+" name="+(MIDI.base_note_names.get(baseNote))+(Chord.chord_names_short.get(chordIdx))+" base="+baseNote;
+                        return chordIdx;
+                     }
+
+                  }
+               }
+
+               // Try next chord
+               chordIdx++;
+            }
+
+            bAllowInversion = true;
+         }
+      }
+
+      // No match
+      return -1;
+   }
+
+   // <method.png>
+   public method findChordIndexAndBaseUnordered(IntArray sortedNotes, Integer _retBaseNote) : int {
+      // (note) any note order, does not find inversions
+      // (note) sortedNotes must store unique %12 note values
+
+      if(active_notes.numElements > 0)
+      {
+         // trace "xxx sortedNotes="+sortedNotes;
+
+         int numNotes = sortedNotes.numElements;
+         int chordIdx = 0;
+
+         loop(Chord.chord_tbl.numElements)
+         {
+            IntArray ctbl <= Chord.chord_tbl.get(chordIdx);
+
+            if(ctbl.numElements == (numNotes + 1))  // +1 for root index
+            {
+               int sortedOff = 0;
+               loop(sortedNotes.numElements)  // try different "low notes" permutations
+               {
+                  int lowNote = sortedNotes.get(sortedOff) % 12;
+
+                  boolean bMatch = true;
+                  int tblIdx = 1; // skip root note
+                  if(null != _retBaseNote)
+                     _retBaseNote = lowNote;
+                  int ctblRootNote = ctbl.get(ctbl.get(0)) + lowNote;
+                  loop(ctbl.numElements - 1)
+                  {
+                     int noteIdx = sortedNotes.indexOf((ctbl.get(tblIdx) + lowNote)%12, 0);
+                     if(-1 == noteIdx)
+                     {
+                        bMatch = false;
+                        break;
+                     }
+                     if(sortedNotes[noteIdx] == ctblRootNote) // is root note ?
+                        if(null != _retBaseNote)
+                           _retBaseNote = ctblRootNote % 12;
+                     // Next note
+                     tblIdx++;
+                  }
+
+                  if(bMatch)
+                  {
+                     // (todo) check inversions (need ordered notes)
+                     return chordIdx;
+                  }
+
+                  sortedOff++;
+               }
+            }
+
+            // Try next chord
+            chordIdx++;
+         }
+      }
+
+      // No match
+      return -1;
+   }
+
+   // <method.png>
+   public method findChordIndexAndBase(Integer _retBaseNote) : int {
+      local IntArray sortedNotes;
+      getActiveNotesSorted(sortedNotes);
+
+      int ret = -1;
+
+      if(sortedNotes <= Chord.MAX_CHORD_NOTES)
+      {
+         ret = findChordIndexAndBaseOrdered(sortedNotes, _retBaseNote);  // => inv1, inv2, ..
+      }
+
+      if(-1 == ret)
+      {
+         local IntArray sortedNotesMod12;
+         int note;
+         foreach note in sortedNotes
+         {
+            if(!sortedNotesMod12.contains(note % 12))
+               sortedNotesMod12.add(note % 12);
+         }
+
+         if(sortedNotesMod12.numElements <= Chord.MAX_CHORD_NOTES)
+         {
+            local IntArray ia;
+            sortedNotesMod12.sortByValue(ia);
+            sortedNotesMod12.rearrange(ia);
+
+            // trace "xxx sortedNotesMod12="+#(sortedNotesMod12);
+
+            ret = findChordIndexAndBaseUnordered(sortedNotesMod12, _retBaseNote);
+         }
+      }
+      return ret;
+   }
+
+   // <method.png>
+   public method forgetNote(int _note) {
+      int activeNoteIdx = active_notes.indexOf(_note, 0);
+      // trace "xxx ANS: forgetNote: note="+_note+" activeNoteIdx="+activeNoteIdx;
+      if(-1 != activeNoteIdx)
+      {
+         active_notes.delete(activeNoteIdx);
+         active_note_vels.delete(activeNoteIdx);
+         active_note_ticks.delete(activeNoteIdx);
+         active_note_userdata.delete(activeNoteIdx);
+      }
+   }
+
+   // <method.png>
+   public method process(MIDIPipeFrame _frame, int _fltDev, int _fltCh) : boolean {
+      boolean bChanged = false;
+
+      int numEv;
+      MIDIPipeEvent ev;
+      int evIdx;
+      int activeNoteIdx;
+
+      // All Notes Off
+      numEv = _frame.getNumEventsAllNotesOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numEv)
+      {
+         _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_ALL_NOTES_OFF, _fltDev, _fltCh);
+
+         bChanged |= (active_notes.numElements > 0);
+
+         for(activeNoteIdx = 0; activeNoteIdx < active_notes.numElements; activeNoteIdx++)
+         {
+            delegate "note_off"(activeNoteIdx, active_notes.get(activeNoteIdx), 0/*vel*/);
+         }
+
+         active_notes.empty();
+         active_note_vels.empty();
+         active_note_ticks.empty();
+         active_note_userdata.empty();
+         bChanged = true;
+
+         evIdx++;
+      }
+
+      // Auto Note Off
+      for(activeNoteIdx = 0; activeNoteIdx < active_notes.numElements; activeNoteIdx++)
+      {
+         int ticks = active_note_ticks.get(activeNoteIdx);
+
+         if(ticks > 0)
+         {
+            if(0 == --ticks)
+            {
+               delegate "note_off"(activeNoteIdx, active_notes.get(activeNoteIdx), 0/*vel*/);
+
+               active_notes.delete(activeNoteIdx);
+               active_note_vels.delete(activeNoteIdx);
+               active_note_ticks.delete(activeNoteIdx);
+               active_note_userdata.delete(activeNoteIdx);
+               activeNoteIdx--;
+               bChanged = true;
+            }
+            else
+            {
+               active_note_ticks[activeNoteIdx] = ticks;
+            }
+         }
+      }
+
+      // Note Off (pre)
+      numEv = _frame.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numEv)
+      {
+         _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh);
+
+         if(ev.isNoteOffPre())
+         {
+            activeNoteIdx = active_notes.indexOf(ev.note, 0);
+
+            if(-1 != activeNoteIdx)
+            {
+               delegate "note_off"(activeNoteIdx, ev.note, ev.velocity);
+
+               active_notes.delete(activeNoteIdx);
+               active_note_vels.delete(activeNoteIdx);
+               active_note_ticks.delete(activeNoteIdx);
+               active_note_userdata.delete(activeNoteIdx);
+               // trace "xxx delete active note";
+               bChanged = true;
+            }
+         }
+
+         evIdx++;
+      }
+
+      // Note On
+      numEv = _frame.getNumEventsNoteOnByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numEv)
+      {
+         _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDev, _fltCh);
+
+         if(!active_notes.contains(ev.note))
+         {
+            delegate "note_on_pre"(ev.note, ev.duration, ev.velocity);
+            active_notes.add(ev.note);
+            active_note_vels.add(ev.velocity);
+            active_note_ticks.add(ev.duration);
+            Value vo; vo.unset();
+            active_note_userdata.add(vo);  // add "void" value
+            delegate "note_on"(active_notes.numElements-1, ev.note, ev.duration, ev.velocity);
+            // trace "xxx add active note";
+            bChanged = true;
+         }
+
+         evIdx++;
+      }
+
+      // Note Off
+      numEv = _frame.getNumEventsNoteOffByFlt(_fltDev, _fltCh);
+      evIdx = 0;
+      loop(numEv)
+      {
+         _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDev, _fltCh);
+
+         if(!ev.isNoteOffPre())
+         {
+            activeNoteIdx = active_notes.indexOf(ev.note, 0);
+
+            if(-1 != activeNoteIdx)
+            {
+               delegate "note_off"(activeNoteIdx, ev.note, ev.velocity);
+
+               active_notes.delete(activeNoteIdx);
+               active_note_vels.delete(activeNoteIdx);
+               active_note_ticks.delete(activeNoteIdx);
+               active_note_userdata.delete(activeNoteIdx);
+               // trace "xxx delete active note";
+               bChanged = true;
+            }
+         }
+
+         evIdx++;
+      }
+
+      return bChanged;
+   }
+
+   public method getUserData() : ValueArray {
+      return active_note_userdata;
+   }
+
+   public method releaseAllNotesAndReset(MIDIPipeFrame _fr, int _outDev, int _outCh, float _outVel) {
+      // Release chord notes
+      int noteIdx = 0;
+      loop(active_notes.numElements)
+      {
+         _fr.noteOff(true/*bSet*/, _outDev, _outCh, active_notes.get(noteIdx), _outVel);
+         noteIdx++;
+      }
+      reset();
+   }
+}

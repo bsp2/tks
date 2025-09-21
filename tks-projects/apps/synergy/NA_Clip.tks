@@ -1,0 +1,651 @@
+// ----
+// ---- file   : NA_Clip.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 03Oct2015, 04Oct2015, 05Oct2015, 06Oct2015, 08Oct2015, 09Oct2015, 10Oct2015
+// ----          11Oct2015, 12Oct2015, 13Oct2015, 11Nov2015, 13Nov2015, 13Mar2016, 09Apr2016
+// ----          09Jul2016, 12Jul2016, 11Apr2017, 12Apr2017, 13Apr2017, 14Apr2017, 15Apr2017
+// ----          16Apr2017, 17Apr2017, 18Apr2017, 19Apr2017, 20Apr2017, 14Jul2017, 15Jul2017
+// ----          12Aug2017, 19Aug2017, 03Sep2017, 12Oct2017, 03Jan2018, 04Jan2018, 05Jan2018
+// ----          06Jan2018, 07Mar2018, 04Apr2018, 05Apr2018, 27May2018, 17Jun2018, 18Nov2018
+// ----          24Nov2018, 25Nov2018, 01Mar2019, 19Jun2019, 29Aug2019, 23Oct2019, 31Oct2019
+// ----          06Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 30Oct2020, 12Nov2020, 22May2021
+// ----          01Jan2022, 13Feb2022, 11Aug2022, 12Aug2022, 13Aug2022, 06Jan2023, 13Oct2023
+// ----          14Oct2023, 16Nov2023, 18Nov2023, 02Feb2024, 03Feb2024, 07Jul2024, 15Nov2024
+// ----          25Jan2025, 26Jan2025, 07Mar2025, 08Mar2025, 22May2025
+// ----
+// ----
+// ----
+
+module MNA_Clip;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NA_Clip : NodePattern, NA_Defs {
+   // (note) derived from NodePattern so marker clips can be edited in generic PatternManager
+   // (note) [05Apr2018] clip_name is now stored in NodePattern::pat_name (marker clips only)
+
+   int node_gid;  // used for clipboard, -2=marker track, <=-100: audio track (see NODE_GID_xxx)
+   int clip_uid;
+
+   int start_ticks;
+   int end_ticks;
+
+   float   offset;       // node/pattern start offset
+   int     offset_unit;  // NA_Defs.GRID_UNIT_xxx
+   boolean b_offset;     // 1=send start offset
+
+   byte pattern_nr;  // 0..127
+
+   boolean b_mute;
+   boolean b_ui_empty_hint;  // editor hint, updated when timeline is shown
+   boolean b_queued_clip_mute_update;   // true=immediately send clip mute state (after toggling in UI)
+   boolean b_queued_audio_clip_change;  // true=immediately restart audio clip with new sample (after UI editing)
+
+   define int REC_STATE_NONE  = 0;
+   define int REC_STATE_BEGIN = 1;  // start_ticks set, end_ticks need to be updated when next clip is recording or recording stops
+   int rec_state;
+
+   // audio clip properties:
+   short  audio_smp_uid;           // sample assigned to clip (unique_id)
+   String cached_audio_smp_name;   // sample name (displayed as clip name)
+
+   define int INITCTL_MW  = 0;  // CC#1: Modwheel
+   define int INITCTL_BC  = 1;  // CC#2: Breath Control
+   define int INITCTL_FC  = 2;  // CC#4: Foot Control
+   define int INITCTL_EX  = 3;  // CC#11: Expression
+   define int INITCTL_GP1 = 4;  // CC#16: General Purpose 1
+   define int INITCTL_GP2 = 5;  // CC#17: General Purpose 2
+   define int INITCTL_GP3 = 6;  // CC#18: General Purpose 3
+   define int INITCTL_GP4 = 7;  // CC#19: General Purpose 4
+   define int NUM_INITCTL = 8;
+   FloatArray initial_ctl;   // -1=skip. 0..127 otherwise
+
+
+   // <method_init.png>
+   public method init(int _startTicks, int _endTicks, int _uid, int _gid) {
+      clip_uid    = _uid;
+      node_gid    = _gid;
+      start_ticks = _startTicks;
+      end_ticks   = _endTicks;
+      offset_unit = GRID_UNIT_16TH;
+      b_offset    = true;
+      rec_state   = REC_STATE_NONE;
+      // // trace "xxx NA_Clip::init: clip_uid="+clip_uid+" node_gid="+node_gid;
+      initial_ctl.allocAndFill(NUM_INITCTL, -1);
+   }
+
+   // <method.png>
+   public method copyFrom(NA_Clip _o) {
+      node_gid = _o.node_gid;
+      // (note) don't copy clip_uid
+
+      start_ticks = _o.start_ticks;
+      end_ticks   = _o.end_ticks;
+
+      offset      = _o.offset;
+      offset_unit = _o.offset_unit;
+      b_offset    = _o.b_offset;
+
+      pattern_nr = _o.pattern_nr;
+      b_mute     = _o.b_mute;
+
+      audio_smp_uid         = _o.audio_smp_uid;
+      cached_audio_smp_name = _o.cached_audio_smp_name;
+   }
+
+   // <method_get.png>
+   public method isSeq() : boolean {
+      return (node_gid >= -1);  // >=0? -2=marker, <=-100=audio
+   }
+
+   // <method_get.png>
+   public method isMarker() : boolean {
+      return (NA_Track.NODE_GID_MARKER == node_gid);
+   }
+
+   // <method_get.png>
+   public method isAudio() : boolean {
+      return (node_gid <= NA_Track.NODE_GID_AUDIO_BASE);
+   }
+
+   // <method_set.png>
+   public =replay= method setInitCtl(int _idx, float _val) {
+      initial_ctl[_idx] = _val;
+   }
+
+   // <method_get.png>
+   public method getInitCtl(int _idx) : float {
+      return initial_ctl.get(_idx);
+   }
+
+   // <method_get.png>
+   public method getInitCtlString(int _idx) : String {
+      float f = initial_ctl.get(_idx);
+      return (f >= 0.0f) ? (int(f * 100)/100.0) : "-";
+   }
+
+   // <method_set.png>
+   public =replay= method setOffset(float _num) {
+      offset = _num;
+   }
+
+   // <method_set.png>
+   public =replay= method setOffsetUnit(int _unit) {
+      offset_unit = _unit;
+   }
+
+   // <method_set.png>
+   public =replay= method setOffsetTicks(int _ticks) {
+      float unitTicks = CalcTicks(1, offset_unit);
+
+      offset = _ticks / unitTicks;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableOffset(boolean _bEnable) {
+      b_offset = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setPatternNr(byte _patternNr) {
+      pattern_nr = _patternNr;
+   }
+
+   // <method_get.png>
+   public method getName() : String {
+      if(isMarker())
+      {
+         return pat_name;
+      }
+      else if(isAudio())
+      {
+         return cached_audio_smp_name;
+      }
+      else
+      {
+         Node node <= current_song.findNodeByGID(node_gid);
+         if(null != node)
+         {
+            return node.nodeGetPatternNameByIdx(pattern_nr);
+         }
+         return "";
+      }
+   }
+
+   // <method_get.png>
+   public method setName(String _name) {
+      if(isMarker())
+      {
+         pat_name = _name;
+      }
+      else if(isAudio())
+      {
+         trace "[~~~] (todo) rename remote sample to \""+_name+"\"";
+      }
+      else
+      {
+         Node node <= current_song.findNodeByGID(node_gid);
+         if(null != node)
+            return node.nodeSetPatternNameByIdx(pattern_nr, _name);
+      }
+   }
+
+   // <method_set.png>
+   public method setMarkerClipName(String _name) {
+      pat_name = _name;
+   }
+
+   // <method_get.png>
+   public method getMarkerClipName() : String {
+      return pat_name;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMute(boolean _bMuted) {
+      b_mute = _bMuted;
+      b_queued_clip_mute_update = true;
+   }
+
+   // <method.png>
+   public method calcOffsetTicks() : int {
+      return CalcTicks(offset, offset_unit);
+   }
+
+   // <method.png>
+   public method intersectTicks(int _startTicks, int _endTicks) : boolean {
+      return (_startTicks < end_ticks) && (_endTicks > start_ticks);
+   }
+
+   // <method.png>
+   public method withinTicks(int _startTicks, int _endTicks) : boolean {
+      return (_startTicks >= start_ticks) && (_endTicks <= end_ticks);
+   }
+
+   // <method_set.png>
+   public =replay= method setAudioSmpUID(short _smpUID) {
+      audio_smp_uid = _smpUID;
+   }
+
+   // <method_get.png>
+   public method findAudioSample() : SysExSample {
+      // called by UI (setClipLengthsToPatternLengths())
+      //  (note) may return null if samples have not been queried
+      return AudioLiveRecForm.FindSampleByUniqueId(audio_smp_uid);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      ofs.i16 = 7; // version
+
+      ofs.i32 = clip_uid;  // v3+ (for undo/redo)
+      ofs.i32 = start_ticks;
+      ofs.i32 = end_ticks;
+      ofs.f32 = offset;  // (note) offset_ticks in v1
+      ofs.i8  = offset_unit;  // v2+
+      ofs.i8  = b_offset;     // v2+
+      ofs.i8  = pattern_nr;
+      ofs.i8  = b_mute;
+
+      Utils.WriteString(ofs, pat_name);  // v4+
+
+      ofs.i16 = audio_smp_uid; // v5+
+      Utils.WriteString(ofs, cached_audio_smp_name); // v6+
+
+      // v7: initial ctl
+      int numInitCtl = 0;
+      float f;
+      int ctlIdx = 0;
+      foreach f in initial_ctl
+      {
+         ctlIdx++;
+         if(f >= 0.0f)
+            numInitCtl = ctlIdx;
+      }
+      ofs.i8 = numInitCtl;
+      ctlIdx = 0;
+      loop(numInitCtl)
+         ofs.f32 = initial_ctl.get(ctlIdx++);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bLoadUIDs) : boolean {
+      short ver = ifs.u16;
+      int t;
+
+      if(ver >= 1)
+      {
+         if(ver >= 3)
+         {
+            if(_bLoadUIDs)
+            {
+               clip_uid = ifs.i32;
+            }
+            else
+            {
+               t = ifs.i32;
+            }
+         }
+
+         start_ticks  = ifs.i32;
+         end_ticks    = ifs.i32;
+
+         if(1 == ver)
+         {
+            t = ifs.i32;  // offset_ticks
+         }
+         else
+         {
+            offset      = ifs.f32;  // v2+
+            offset_unit = ifs.u8;   // v2+
+            b_offset    = ifs.b8;   // v2+
+         }
+
+         pattern_nr   = ifs.u8;
+         b_mute       = ifs.b8;
+
+         if(ver >= 4)
+         {
+            Utils.ReadString(ifs, pat_name);  // v4+
+         }
+
+         if(ver >= 5)
+         {
+            audio_smp_uid = ifs.s16;  // v5+
+         }
+
+         if(ver >= 6)
+         {
+            Utils.ReadString(ifs, cached_audio_smp_name); // v6+
+         }
+
+         // v7: initial ctl
+         if(ver >= 7)
+         {
+            int numInitCtl = ifs.u8;
+            int ctlIdx = 0;
+            loop(numInitCtl)
+               initial_ctl[ctlIdx++] = ifs.f32;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <replay.png>
+   public method handleQueuedClipMuteUpdate(MIDIPipeFrame _framePlay) {
+
+      b_queued_clip_mute_update = false;
+
+      Node node <= current_song.findNodeByGID(node_gid);
+
+      // // trace "xxx handleQueuedClipMuteUpdate";
+
+      if(null != node)
+      {
+         // Send program change + RPN_COMMON_SEEK_OFFSET + RPN_COMMON_MUTE_TEMP
+         int devIdx = -1;
+         byte ch;
+
+         if(node.b_auto_filter_a)
+         {
+            devIdx = node.auto_dev_filter_a;
+            if(devIdx < 0)
+               devIdx = 0; // all => 0
+
+            ch = node.auto_ch_filter_a;
+            if(ch < 0)
+               ch = 0; // all => 0
+         }
+         else if(node.b_auto_filter_b)
+         {
+            devIdx = node.auto_dev_filter_b;
+            if(devIdx < 0)
+               devIdx = 0; // all => 0
+
+            ch = node.auto_ch_filter_b;
+            if(ch < 0)
+               ch = 0; // all => 0
+         }
+
+         if(-1 != devIdx)
+         {
+            _framePlay.rpn(true/*bSet*/, devIdx, ch, Node.RPN_COMMON_MUTE_TEMP, b_mute);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method sendInitCtls(MIDIPipeFrame _fr, int _devIdx, byte _midiCh) {
+      float f;
+
+      f = initial_ctl.get(INITCTL_MW);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 1/*mw*/, f);
+
+      f = initial_ctl.get(INITCTL_BC);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 2/*bc*/, f);
+
+      f = initial_ctl.get(INITCTL_FC);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 4/*fc*/, f);
+
+      f = initial_ctl.get(INITCTL_EX);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 11/*ex*/, f);
+
+      f = initial_ctl.get(INITCTL_GP1);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 16/*gp1*/, f);
+
+      f = initial_ctl.get(INITCTL_GP2);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 17/*gp2*/, f);
+
+      f = initial_ctl.get(INITCTL_GP3);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 18/*gp3*/, f);
+
+      f = initial_ctl.get(INITCTL_GP4);
+      if(f >= 0.0f)
+         _fr.cc(true/*bSet*/, _devIdx, _midiCh, 19/*gp4*/, f);
+   }
+
+   // <replay.png>
+   public method startStopClip(MIDIPipeFrame _framePlay,
+                               int           _extraOffsetTicks,
+                               boolean       _bStop,
+                               boolean       _bForceStartOffset,
+                               NA_Track      _parentTrack,
+                               NA_State      _timeline
+                               ) {
+
+      int offsetTicks;
+      boolean bSendOffset;
+
+      if(isAudio())
+      {
+         IntArray vstToOutDev <= NodeArranger.cached_vst_device_indices;
+         int devIdx = vstToOutDev.get(_parentTrack.audio_dev_idx);
+         byte midiCh = mathMaxi(0, _parentTrack.audio_midi_ch);
+         byte note = _parentTrack.b_audio_timeline ? NA_Track.AUDIO_TIMELINE_SEQ_TRIG_NOTE/*C-3*/ : (5*12/*c-5*/);
+         byte vel = 127;
+
+         if(!_bStop && replay.b_playing && !b_mute && ! _parentTrack.b_mute)
+         {
+            // (note) node seek offset scaling must be set to 1/16 (usually the default, e.g. NodeTracker)
+            offsetTicks = 0;
+            bSendOffset = b_offset || (_extraOffsetTicks > 0) || _bForceStartOffset;
+
+            if(bSendOffset)
+            {
+               if(b_offset || _bForceStartOffset)
+                  offsetTicks += calcOffsetTicks();
+
+               offsetTicks += _extraOffsetTicks;
+            }
+
+            float offsetMS = current_song.ticksToMilliSeconds(offsetTicks);
+
+            if(_parentTrack.b_audio_timeline)
+            {
+               // Select audio timeline(-variation)
+               _framePlay.prgChg(true/*bSet*/,
+                                 devIdx, midiCh,
+                                 pattern_nr
+                                 );
+            }
+            else
+            {
+               // Select sample
+               _framePlay.rpn(true/*bSet*/,
+                              devIdx, midiCh,
+                              Node.RPN_SMP_UID/*90==ModSample.RPN_SMP_UID*/,
+                              audio_smp_uid
+                              );
+            }
+
+            // Set sample offset
+            _framePlay.rpn(true/*bSet*/, devIdx, midiCh,
+                           Node.RPN_SMPOFFMS_LO/*88*/,
+                           int(offsetMS * 64) & 16383
+                           );
+            _framePlay.rpn(true/*bSet*/, devIdx, midiCh,
+                           Node.RPN_SMPOFFMS_HI/*89*/,
+                           (int(offsetMS) >> 8) & 16383
+                           );
+
+            // Send initial controllers
+            sendInitCtls(_framePlay, devIdx, midiCh);           
+
+            // Send note-on
+            if(0 == replay.ticks_to_play)  // don't start clip when moving edit offset, just update mute/solo states and pattern selection
+            {
+               _framePlay.noteOffPre(true/*bSet*/, devIdx, midiCh, note, 0/*vel*/);
+               // trace "xxx startStopClip<audio>: note on vstDevIdx="+_parentTrack.audio_dev_idx+" devIdx="+devIdx+" midiCh="+midiCh+" note="+note+" vel="+vel+" dur="+(end_ticks - start_ticks);
+               _framePlay.noteOn(true/*bSet*/, devIdx, midiCh, note, vel, (end_ticks - start_ticks)/*dur*/);
+            }
+         }
+         else
+         {
+            // trace "xxx startStopClip<audio>: note off vstDevIdx="+_parentTrack.audio_dev_idx+" devIdx="+devIdx+" midiCh="+midiCh+" note="+note;
+            if(0 == replay.ticks_to_play)
+            {
+               if(_parentTrack.b_audio_timeline || audio_smp_uid != _timeline.current_record_audio_smp_uid)
+                  _framePlay.noteOff(true/*bSet*/, devIdx, midiCh, note, 0/*vel*/);
+            }
+         }
+      }
+
+      Node node <= current_song.findNodeByGID(node_gid);
+
+      // trace "xxx startStopClip";
+
+      if(null != node)
+      {
+         // Send program change + RPN_COMMON_SEEK_OFFSET + RPN_COMMON_MUTE_TEMP
+         devIdx = -1;
+         byte ch;
+
+         if(node.b_auto_filter_a)
+         {
+            devIdx = node.auto_dev_filter_a;
+            if(devIdx < 0)
+               devIdx = 0; // all => 0
+
+            ch = node.auto_ch_filter_a;
+            if(ch < 0)
+               ch = 0; // all => 0
+         }
+         else if(node.b_auto_filter_b)
+         {
+            devIdx = node.auto_dev_filter_b;
+            if(devIdx < 0)
+               devIdx = 0; // all => 0
+
+            ch = node.auto_ch_filter_b;
+            if(ch < 0)
+               ch = 0; // all => 0
+         }
+
+         if(-1 != devIdx)
+         {
+            // trace "xxx timeline: emit clip PC devIdx="+devIdx+" ch="+ch+" patNr="+pattern_nr+" bStop="+_bStop+" extraOff="+_extraOffsetTicks+" b_offset="+b_offset;
+
+            _framePlay.prgChg(true/*bSet*/, devIdx, ch, _bStop ? Node.EMPTY_PAT_NR/* --/ */ : pattern_nr);
+
+            if(!_bStop)
+            {
+               // (note) node seek offset scaling must be set to 1/16 (usually the default, e.g. NodeTracker)
+               offsetTicks = 0;
+               bSendOffset = b_offset || (_extraOffsetTicks > 0) || _bForceStartOffset;
+
+               // // if(b_offset && (offset > 0))
+               // // {
+               // // if(bSendOffset)
+               // //    trace "xxx start clip="+#(this)+" nodeName="+node.nodeGetName()+" b_offset="+b_offset+" offset="+offset+" calcOffsetTicks="+calcOffsetTicks();
+               // // }
+
+               // Send initial controllers
+               sendInitCtls(_framePlay, devIdx, ch);           
+
+               if(bSendOffset)
+               {
+                  if(b_offset || _bForceStartOffset)
+                  {
+                     offsetTicks += calcOffsetTicks();
+
+                     // trace "xxx timeline: emit SEEK_OFFSET="+offsetTicks+" 16th";
+                  }
+
+                  if(b_offset)
+                  {
+                     // trace "xxx arr: nodeSetLastPatternStartSongOffset("+(start_ticks - offsetTicks)+")";
+                     node.nodeSetLastPatternStartSongOffset(start_ticks - offsetTicks);  // [20Jun2019]
+                     // trace "xxx arr:   offsetTicks="+offsetTicks+" extraOffsetTicks="+_extraOffsetTicks;
+                  }
+
+                  offsetTicks += _extraOffsetTicks;
+                  int ticks16th = current_song.ppq / 4.0;
+                  offsetTicks = int(offsetTicks / ticks16th);
+                  _framePlay.rpn(true/*bSet*/, devIdx, ch, Node.RPN_COMMON_SEEK_OFFSET, offsetTicks/*16th*/);
+               }
+
+               // trace "xxx timeline: emit MUTE_TEMP";
+               _framePlay.rpn(true/*bSet*/, devIdx, ch, Node.RPN_COMMON_MUTE_TEMP, b_mute);
+            }
+         }
+         // // else
+         // // {
+         // //    // trace "xxx arr: queue MUTE<scene>="+pn.getEnableMute();
+         // //    n.nodeQueuePattern(pn.getPatternNr(), pn.getPatternOffset(), pn.getEnableMute());
+         // // }
+      } // if node
+   }
+
+   public method sendRelPos(MIDIPipeFrame _framePlay,
+                            int           _playOffset,
+                            NA_Track      _parentTrack
+                            ) {
+      int devIdx = -1;
+      byte midiCh;
+
+      if(isAudio())
+      {
+         IntArray vstToOutDev <= NodeArranger.cached_vst_device_indices;
+         devIdx = vstToOutDev.get(_parentTrack.audio_dev_idx);
+         midiCh = mathMaxi(0, _parentTrack.audio_midi_ch);
+      }
+      else
+      {
+         Node node <= current_song.findNodeByGID(node_gid);
+
+         // trace "xxx startStopClip";
+
+         if(null != node)
+         {
+            // Send program change + RPN_COMMON_SEEK_OFFSET + RPN_COMMON_MUTE_TEMP
+            if(node.b_auto_filter_a)
+            {
+               devIdx = node.auto_dev_filter_a;
+               if(devIdx < 0)
+                  devIdx = 0; // all => 0
+
+               midiCh = node.auto_ch_filter_a;
+               if(midiCh < 0)
+                  midiCh = 0; // all => 0
+            }
+            else if(node.b_auto_filter_b)
+            {
+               devIdx = node.auto_dev_filter_b;
+               if(devIdx < 0)
+                  devIdx = 0; // all => 0
+
+               midiCh = node.auto_ch_filter_b;
+               if(midiCh < 0)
+                  midiCh = 0; // all => 0
+            }
+         }
+      }
+
+      if(devIdx >= 0)
+      {
+         int relTicks = _playOffset - start_ticks;
+         _framePlay.rpn(true/*bSet*/, devIdx, midiCh, Node.RPN_COMMON_REL_CLIP_TICKS, relTicks);
+         _framePlay.rpn(true/*bSet*/, devIdx, midiCh, Node.RPN_COMMON_REL_CLIP_16TH, relTicks / (current_song.ppq/4.0));
+         _framePlay.rpn(true/*bSet*/, devIdx, midiCh, Node.RPN_COMMON_REL_CLIP_01, relTicks / float(end_ticks - start_ticks));
+      }
+   }
+
+}

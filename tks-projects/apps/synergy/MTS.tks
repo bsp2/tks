@@ -1,0 +1,409 @@
+// ----
+// ---- file   : MTS.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 09Feb2019
+// ---- changed: 28Jul2023, 28Sep2024
+// ---     info: MIDI Tuning Standard
+// ----
+// ----
+// ----
+module MMTS;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class MTSEntry {
+   int   note;     // equal-tempered base note
+   float detune1;  // -1..1
+   float detune2;  // -1..1 (e.g. for randomization)
+
+   // <init.png>
+   public method init(int _noteIdx) {
+      note = _noteIdx;
+      detune1 = 0.0f;
+      detune2 = 0.0f;
+   }
+
+   // <method_get.png>
+   public method calcFreq() : float {
+      return Global.NoteToFreq(note + detune1 + detune2);
+   }
+
+   // <method_set.png>
+   public method setFreq(float _freq) {
+      float n = Global.FreqToNoteWithFrac(_freq);
+      detune1 = frac(n);
+      note = int(n);
+      if(detune1 > 0.5f && note < 127)
+      {
+         note++;
+         detune1 = -(1.0f - detune1);
+      }
+      detune2 = 0.0f;
+   }
+
+   // <method_set.png>
+   public method setFracNote(float _note) {
+      detune1 = frac(_note);
+      note = int(_note);
+      if(note < 0)
+         note = 0;
+      detune2 = 0;
+   }
+
+   // <method_get.png>
+   public method getMTSData(Byte _retNote, Byte _retDetMSB, Byte _retDetLSB) {
+      // (note) not always the same as 'note' since detuning in MTS is always positive
+      float det = mathClampf(detune1+detune2, -1, 1);
+      short det14;
+      int n = note;
+      if(det < 0)
+      {
+         if(n > 0)
+         {
+            n--;
+            det += 1.0;
+         }
+         else
+            det = 0.0;
+      }
+
+      // (note) msb=7F lsb=7F means "no change" => clamp to msb=7F lsb=7E
+      det14 = mathMini(det * 16383, 16382);
+      _retNote = n;
+      _retDetMSB = (det14 >> 7) & 127;
+      _retDetLSB = (det14 & 127);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      ofs.i8  = note;
+      ofs.f32 = detune1;
+      ofs.f32 = detune2;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, short ver) : boolean {
+      note    = ifs.u8 & 127;
+      detune1 = ifs.f32;
+      detune2 = ifs.f32;
+      return true;
+   }
+}
+
+
+// <class.png>
+class MTSTable {
+   String name;
+
+   MTSEntry *[] entries;  // 128 MTSEntry instances
+
+
+   // <init.png>
+   public method init() {
+      entries.alloc(128);
+      int noteIdx = 0;
+      loop(128)
+      {
+         MTSEntry en <= new MTSEntry;
+         en.init(noteIdx++);
+         entries.add(#(deref en));
+      }
+   }
+
+   // <method_get.png>
+   public method getEntryByIdx(int _idx) : MTSEntry {
+      return entries.get(_idx);
+   }
+
+   // <method.png>
+   public method randomizeNote() {
+      MTSEntry *en;
+      foreach en in entries
+      {
+         en.note = rand(127);
+      }
+   }
+
+   // <method.png>
+   public method loadEqual() {
+      MTSEntry *en;
+      int noteIdx = 0;
+      foreach en in entries
+      {
+         en.note = noteIdx++;
+         en.detune1 = 0;
+         en.detune2 = 0;
+      }
+   }
+
+   // <method.png>
+   public method randomizeDetune1(float _max) {
+      MTSEntry *en;
+      foreach en in entries
+      {
+         en.detune1 = rand(2.0 * _max) - _max;
+      }
+   }
+
+   // <method.png>
+   public method randomizeDetune2(float _max) {
+      MTSEntry *en;
+      foreach en in entries
+      {
+         en.detune2 = rand(2.0 * _max) - _max;
+      }
+   }
+
+   // <method.png>
+   public method replicateOctave(int _srcOct, boolean _bDetune2) {
+      // 'srcOct' is in range 0..9 (notes 0..108)
+      int curOct = 0;
+      loop(11)
+      {
+         if(curOct != _srcOct)
+         {
+            int relIdx = 0;
+            loop(12)
+            {
+               MTSEntry enSrc <= entries.get((_srcOct*12) + relIdx);
+               MTSEntry enDst <= entries.get(( curOct*12) + relIdx);
+               if(null != enDst)  // (note) last octave is partial so this can be null
+               {
+                  enDst.note    = enSrc.note;
+                  enDst.detune1 = enSrc.detune1;
+                  if(_bDetune2)
+                     enDst.detune2 = enSrc.detune2;
+               }
+               relIdx++;
+            }
+         }
+         curOct++;
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      // Table name
+      Utils.WriteString(ofs, name);
+
+      int noteIdx = 0;
+      MTSEntry *en;
+      foreach en in entries
+      {
+         en.saveState(ofs);
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Table name
+         Utils.ReadString(ifs, name);
+
+         MTSEntry *en;
+         foreach en in entries
+         {
+            if(!en.loadState(ifs, ver))
+            {
+               trace "[---] failed to load MTS entry";
+               return false;
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class MTS {
+   PointerArray tables;  // "n" MTSTable instances
+
+   int edit_table_idx;
+
+   boolean b_autosend;  // true=auto-send tuning updates (via single note tuning messages (realtime updates) or bulk dump)
+
+
+   // <init.png>
+   public method init(int _numTables) {
+      tables.alloc(_numTables);
+      loop(_numTables)
+      {
+         MTSTable *tbl <= new MTSTable;
+         tbl.init();
+         tables.add(#(deref tbl));
+      }
+
+      b_autosend = true;
+   }
+
+   // <method_get.png>
+   public method getEditTable() : MTSTable {
+      return tables.get(edit_table_idx);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 1;
+
+      // Number of tuning tables
+      ofs.i16 = tables.numElements;
+
+      // Current edit table
+      ofs.i16 = edit_table_idx;
+
+      // trace "xxx mts saveState: #tables="+tables.numElements;
+
+      MTSTable *tbl;
+      foreach tbl in tables
+      {
+         tbl.saveState(ofs);
+      }
+
+      // Autosend
+      ofs.i8 = b_autosend;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+
+      // Version
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Number of tuning tables
+         int numTables = ifs.u16;
+
+         // Current edit table
+         edit_table_idx = ifs.u16;
+
+         if(numTables != tables.numElements)
+         {
+            trace "[~~~] MTS::load: numTables != tables.numElements ("+numTables+" != "+tables.numElements+")";
+         }
+
+         int tableIdx = 0;
+         MTSTable *tbl;
+         loop(numTables)
+         {
+            tbl <= tables.get(tableIdx);
+            if(null == tbl)
+               tbl <= new MTSTable; // dummy read
+            if(!tbl.loadState(ifs))
+            {
+               trace "[---] MTS::load: failed to load tuning table "+(tableIdx+1)+"/"+numTables;
+               return false;
+            }
+            tableIdx++;
+         }
+
+         // Autosend
+         b_autosend = ifs.b8;
+
+         return true;
+      }
+      return false;
+   }
+
+   // <load.png>
+   public method tryImportTun(String _buf) : boolean {
+      local StringArray lines <= _buf.splitChar('\n');
+      boolean bDone = false;
+
+      if(null != lines)
+      {
+         // trace "xxx tun file has "+lines.numElements+" lines";
+
+         MTSTable tbl <= getEditTable();
+         String *line;
+         boolean bTuning = false;
+         boolean bInfo = false;
+         int noteIdx = 0;
+         local String t;
+         int idx;
+         foreach line in lines
+         {
+            line.trim();
+            trace "xxx line="+line;
+            if!((line <= ";") || line.isBlank())
+            {
+               if(line <= "[Tuning]")
+               {
+                  trace "xxx MTS::tryImportTun: found [Tuning] section";
+                  bTuning = true;
+                  bInfo = false;
+                  tbl.loadEqual();
+               }
+               else if(line <= "[Info]")
+               {
+                  bTuning = false;
+                  bInfo = true;
+               }
+               else if(bTuning)
+               {
+                  idx = line.indexOfChar('=', 0);
+                  // trace "xxx idx="+idx+" line=\""+line+"\"";
+                  if(-1 != idx)
+                  {
+                     line.substring(idx+1, 999) => t;
+                     if(noteIdx < 128)
+                     {
+                        float cents = t;
+                        float note = cents / 100.0;
+                        MTSEntry en <= tbl.getEntryByIdx(noteIdx);
+                        en.setFracNote(note);
+                        trace "xxx tun note["+noteIdx+"] cents="+cents;
+                        if(128 == ++noteIdx)
+                        {
+                           bDone = true;
+                           bTuning = false;
+                        }
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] MTS::tryImportTun: parse error in line \""+line+"\"";
+                     return false;
+                  }
+               }
+               else if(bInfo)
+               {
+                  if(line <= "Name")
+                  {
+                     idx = line.indexOfChar('=', 0);
+                     // trace "xxx idx="+idx+" line=\""+line+"\"";
+                     if(-1 != idx)
+                     {
+                        line.substring(idx+1, 999) => t;
+
+                        t.replace("\"", "");
+                        t.replace(".tun", "");
+                        tbl.name = t;
+                     }
+                  }
+               }
+            } // if ! blank or comment
+         }
+      }
+      return bDone;
+   }
+}

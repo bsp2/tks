@@ -1,0 +1,591 @@
+// ----
+// ---- file   : Prophet12_DelayForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 16Feb2017, 17Feb2017, 19Feb2017, 07May2017, 27May2017, 07Jun2017, 04Jan2018
+// ----          21Sep2023
+// ----
+// ----
+// ----
+
+module MProphet12_DelayForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Prophet12_DelayForm extends XMLForm, ActionProvider, MIDIMapDefs, Prophet12_Defs {
+
+   protected EditMIDISynthFormProphet12 *parent_editor;
+
+   protected Prophet12_Delay *delay;
+
+   protected byte  delay_nr;  // 1..4
+
+   protected FloatParam *fp_time;
+   protected ComboBox   *cm_syncmode;
+   protected CheckBox   *cb_sync;
+   protected FloatParam *fp_pan;
+   protected CheckBox   *cb_pan_ext;
+   protected FloatParam *fp_amount;
+   protected CheckBox   *cb_enable;
+   protected ComboBox   *cm_fltmode;
+   protected FloatParam *fp_fbamount;
+   protected FloatParam *fp_lpffreq;
+   protected FloatParam *fp_hpffreq;
+
+   protected PopupMenu *pm_context;
+
+   protected static Prophet12_Delay delay_clipboard;
+
+
+   // <init.png>
+   public method init(EditMIDISynthFormProphet12 _parentEditor, int _delayNr) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      delay_nr  = _delayNr;
+
+      if(!initPakFile("Prophet12_DelayForm.xfm"))
+      {
+         trace "[---] failed to parse \"Prophet12_DelayForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      fp_time.setUserTable(delay_time_names);
+      fp_time.setDisplayType(FloatParam.DISPLAY_USER);
+      fp_time.setUserStringToValueFxn(Prophet12_DelayForm.TimeStringToValue);
+      cm_syncmode.setOptions(delay_sync_mode_names);
+
+      recursiveBuildTabCycleLists();
+
+      delay_clipboard.loadInit(delay_nr - 1);
+
+      return true;
+   }
+
+   // <method.png>
+   static TimeStringToValue(String _t) {
+      // trace "xxx TimeStringToValue: t="+_t;
+      String s = _t;
+      s.replace("ms", "");
+      s.replace(" ", "");
+      float ms = s;
+
+      int bestMatchIdx = -1;
+      float bestMatchDMS = 99999;
+
+      for(int i=0; i < delay_time_names.numElements; i++)
+      {
+         float cms = delay_time_names.get(i).replace(" ms", "");
+         float dms = abs(ms - cms);
+
+         if(dms  < bestMatchDMS )
+         {
+            bestMatchIdx = i;
+            bestMatchDMS = dms;
+         }
+      }
+
+      if(-1 == bestMatchIdx)
+         bestMatchIdx = 0;
+
+      return bestMatchIdx;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       fp_time,
+                       cm_syncmode,
+                       cb_sync,
+                       fp_amount,
+                       fp_pan,
+                       cb_pan_ext,
+                       cb_enable,
+                       cm_fltmode,
+                       fp_lpffreq,
+                       fp_hpffreq,
+                       fp_fbamount
+                     ]
+                    );
+   }
+
+   // <method_set.png>
+   public method showDelay(Prophet12_Env _delay) {
+      delay <= _delay;
+
+      if(null != delay)
+      {
+         fp_time    .setValueAndEnable(delay.time);
+         cm_syncmode.setSelectedOptionAndEnable(delay.sync_mode);
+         cb_sync    .setSelectedAndEnable(delay.b_sync);
+         cb_pan_ext .setSelectedAndEnable(delay.b_pan_ext);
+         handlePanExtChanged(true/*bQuiet*/);
+         fp_pan     .setValueAndEnable(delay.pan - 64);
+         fp_amount  .setValueAndEnable(delay.amount);
+         cb_enable  .setSelectedAndEnable(delay.b_enable);
+         cm_fltmode .setSelectedOptionAndEnable(delay.b_hpf);
+         fp_fbamount.setValueAndEnable(delay.fb_amount);
+         fp_lpffreq .setValueAndEnable(delay.lpf);
+         fp_hpffreq .setValueAndEnable(delay.hpf);
+      }
+      else
+      {
+         fp_time    .setValueAndDisable(0);
+         cm_syncmode.setSelectedOptionAndDisable(0);
+         cb_sync    .setSelectedAndDisable(false);
+         cb_pan_ext .setSelectedAndDisable(false);
+         fp_pan     .setValueAndDisable(0);
+         fp_amount  .setValueAndDisable(0);
+         cb_enable  .setSelectedAndDisable(false);
+         cm_fltmode .setSelectedOptionAndDisable(0);
+         fp_fbamount.setValueAndDisable(0);
+         fp_lpffreq .setValueAndDisable(0);
+         fp_hpffreq .setValueAndDisable(0);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleTimeChanged() {
+      if(null != delay)
+      {
+         delay.time = fp_time.getFloatValue();
+
+         delay.sendTime(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" Time is "+delay.time);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSyncModeChanged() {
+      if(null != delay)
+      {
+         delay.sync_mode = cm_syncmode.getSelectedOption();
+
+         delay.sendSyncMode(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" Sync Mode is "+cm_syncmode.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSyncEnableChanged() {
+      if(null != delay)
+      {
+         delay.b_sync = cb_sync.isSelected();
+
+         delay.sendSyncEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" Sync is "+Utils.GetEnableString(delay.b_sync));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountChanged() {
+      if(null != delay)
+      {
+         delay.amount = fp_amount.getFloatValue();
+
+         delay.sendAmount(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" Amount is "+delay.amount);
+      }
+   }
+
+   // <method_update.png>
+   public method updateAutogenPan() {
+      if(null != delay)
+      {
+         Prophet12_Program layer <= parent_editor.getEditLayer();
+
+         if(!delay.sendPan(parent_editor, layer, false/*bProxy*/))
+         {
+            Global.Warning("Delay "+delay_nr+": all mod slots in use (Pan)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePanChanged() {
+      if(null != delay)
+      {
+         delay.pan = fp_pan.getFloatValue() + 64;
+
+         delay.sendPan(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Delay "+delay_nr+" Pan is "+delay.pan);
+
+         updateAutogenPan();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePanExtChanged(boolean _bQuiet) {
+      if(null != delay)
+      {
+         delay.b_pan_ext = cb_pan_ext.isSelected();
+
+         if(delay.b_pan_ext)
+         {
+            fp_pan.setMaxValue(63 + 3*127);   // 444
+            fp_pan.setMinValue(-64 - 3*127);  // -445
+         }
+         else
+         {
+            fp_pan.setMaxValue(63);
+            fp_pan.setMinValue(-64);
+         }
+
+         fp_pan.setValue(delay.pan - 64);
+         fp_pan.redraw();
+
+         if(!_bQuiet)
+            Global.Print("Delay "+delay_nr+" Ext Pan is "+Utils.GetEnableString(delay.b_pan_ext));
+
+         if(!_bQuiet)
+            updateAutogenPan();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+
+      if(null != delay)
+      {
+         delay.b_enable = cb_enable.isSelected();
+
+         delay.sendEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Delay "+delay_nr+" is "+Utils.GetEnableString(delay.b_enable));
+
+         updateAutogenPan();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFltModeChanged() {
+      if(null != delay)
+      {
+         delay.b_hpf = cm_fltmode.getSelectedOption();
+
+         delay.sendFltMode(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" Filter Mode is "+(delay.b_hpf ? "Highpass" : "Lowpass"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLPFFreqChanged() {
+      if(null != delay)
+      {
+         delay.lpf = fp_lpffreq.getFloatValue();
+
+         delay.sendLPF(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" LPF is "+delay.lpf);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleHPFFreqChanged() {
+      if(null != delay)
+      {
+         delay.hpf = fp_hpffreq.getFloatValue();
+
+         delay.sendHPF(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" HPF is "+delay.hpf);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFbAmountChanged() {
+      if(null != delay)
+      {
+         delay.fb_amount = fp_fbamount.getFloatValue();
+
+         delay.sendFbAmount(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Delay "+delay_nr+" Feedback Amount is "+delay.fb_amount);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null != delay)
+      {
+         delay_clipboard.copyFrom(delay);
+
+         Global.Print("Copy Delay to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != delay)
+      {
+         delay.copyFrom(delay_clipboard);
+
+         delay.send(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         showDelay(delay);
+
+         Global.Print("Paste Delay from clipboard");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != delay)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show Delay context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // // <midi_mml.png>
+   // public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+   //    if(null == delay)
+   //    {
+   //       // Ooops
+   //       return false;
+   //    }
+
+   //    return false;
+   // }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("Prophet12_DelayForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+            }
+            return true;
+
+         case @(fp_time):
+            handleTimeChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, fp_time.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cm_syncmode):
+            handleSyncModeChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, cm_syncmode.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(cb_sync):
+            handleSyncEnableChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, cb_sync.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(fp_pan):
+            handlePanChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, fp_pan.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cb_pan_ext):
+            cb_pan_ext.setSelected(cb_pan_ext.isSelected());
+            handlePanExtChanged(false/*bQuiet*/);
+            return;
+
+         case @(fp_amount):
+            handleAmountChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, fp_amount.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, cb_enable.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cm_fltmode):
+            handleFltModeChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, cm_fltmode.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(fp_fbamount):
+            handleFbAmountChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, fp_fbamount.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_lpffreq):
+            handleLPFFreqChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, fp_lpffreq.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_hpffreq):
+            handleHPFFreqChanged();
+            parent_editor.tryMultiEditDelay(delay_nr, ap.layer_id, fp_hpffreq.getFloatValue(), false/*bExt*/);
+            return true;
+
+         // // case @(cb_enable):
+         // //    handleEnableChanged();
+         // //    return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+   // <ui_handle.png>
+   public method tryMultiEditById(String _id, float _val, boolean _bExt) {
+      switch(_id)
+      {
+         case "fp_time":
+            fp_time.setValue(_val);
+            handleTimeChanged();
+            return;
+
+         case "cm_syncmode":
+            cm_syncmode.setSelectedOption(_val);
+            handleSyncModeChanged();
+            return;
+
+         case "cb_sync":
+            cb_sync.setSelected(_val);
+            handleSyncEnableChanged();
+            return;
+
+         // // case "fp_pan":
+         // //    fp_pan.setValue(_val);
+         // //    handlePanChanged();
+         // //    return;
+
+         case "fp_pan":
+            cb_pan_ext.setSelected(_bExt && (abs(_val) > 63) );
+            handlePanExtChanged(false/*bQuiet*/);
+            fp_pan.setValue(_val);
+            handlePanChanged();
+            return;
+
+         case "cb_pan_ext":
+            cb_pan_ext.setSelected(_val);
+            handlePanExtChanged(false/*bQuiet*/);
+            return;
+
+         case "fp_amount":
+            fp_amount.setValue(_val);
+            handleAmountChanged();
+            return;
+
+         case "cb_enable":
+            cb_enable.setSelected(_val);
+            handleEnableChanged();
+            return;
+
+         case "cm_fltmode":
+            cm_fltmode.setSelectedOption(_val);
+            handleFltModeChanged();
+            return;
+
+         case "fp_fbamount":
+            fp_fbamount.setValue(_val);
+            handleFbAmountChanged();
+            return;
+
+         case "fp_lpffreq":
+            fp_lpffreq.setValue(_val);
+            handleLPFFreqChanged();
+            return;
+
+         case "fp_hpffreq":
+            fp_hpffreq.setValue(_val);
+            handleHPFFreqChanged();
+            return;
+      }
+   }
+
+}

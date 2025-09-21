@@ -1,0 +1,694 @@
+// ----
+// ---- file   : CtlIOForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 16Sep2017, 04Jan2018, 20Sep2019, 02Oct2019, 05Oct2019, 06Apr2020, 15Apr2020
+// ----          06Nov2020, 08Nov2020, 27Jan2021, 29Mar2021, 23May2021, 21Sep2023, 15Oct2023
+// ----          20Oct2023, 22Mar2024, 16Nov2024
+// ----
+// ----
+// ----
+
+module MCtlIOForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class CtlIOForm extends XMLForm, ActionProvider, MIDIMapDefs {
+
+   protected CtlIOPort *port;
+
+   define String ACTION_PORT_CHANGED;
+   define String ACTION_PORT_RENAMED;
+   define String ACTION_MIDI_LEARN_START;
+   define String ACTION_REFOCUS_DEFAULT;
+
+   define String TA_MIDI_LEARN;
+   protected TimerAction ta_midi_learn;
+   define int LEARN_TIMEOUT = 49;  // number of ta_midi_learn timeouts (=> 50*200 = 10 sec)
+   define int TINT32_LEARN = #58ef6467;
+   protected int learn_timeout;
+   define int LEARN_NONE = 0;
+   define int LEARN_MIDI = 1;
+   protected int learn_mode;
+
+   protected ActionConsumer *listener;
+
+   protected LayerSwitch *ls_id;
+   protected TextField   *tf_id;
+   protected Label       *lb_id;
+   protected ComboBox    *cm_dev;
+   protected ComboBox    *cm_ch;
+   protected LayerSwitch *ls_enable;
+   protected CheckBox    *cb_enable;
+   protected Button      *bt_learn;
+
+   protected ComboBox    *cm_type;
+   protected LayerSwitch *ls_type;
+   protected FloatParam  *fp_ext;
+
+   protected PopupMenu *pm_context;
+
+   protected static CtlIOPort *port_clipboard;
+
+   protected boolean b_allow_all_ch;  // true=allow '*' ch selection (NodeSeq)
+
+   protected PointerArray *all_forms;  // for multi-editing dev/ch (LALT modifier)
+
+
+   // <init.png>
+   public method init(ActionConsumer _listener,
+                      boolean        _bAllowAllCh,
+                      boolean        _bShowId,
+                      boolean        _bShowEnable,
+                      String         _idLabelOrNull
+                      ) : boolean {
+
+      listener <= _listener;
+
+      if(!initPakFile("CtlIOForm.xfm"))
+      {
+         trace "[---] failed to parse \"CtlIOForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      recursiveBuildTabCycleLists();
+
+      b_allow_all_ch = _bAllowAllCh;
+
+      if(_bAllowAllCh)
+      {
+         cm_ch.setOptions(["*", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"]);
+      }
+
+      ls_id.switchToLayerNr(_bShowId ? 1 : 0);
+      ls_enable.switchToLayerNr(_bShowEnable ? 1 : 0);
+
+      if(null != _idLabelOrNull)
+      {
+         lb_id.setCaption(_idLabelOrNull);
+      }
+
+      cm_type.setOptions(MIDIMapEventType.type_names_short2);
+
+      initTimers();
+
+      return true;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_midi_learn <= TimerAction.New(TA_MIDI_LEARN, this, 200);
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_PORT_CHANGED, ACTION_PORT_RENAMED, ACTION_MIDI_LEARN_START, ACTION_REFOCUS_DEFAULT];
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      if(1 == ls_id.getCurrentChildNr())
+         layers.add(tf_id);
+
+      layers.add(cm_dev);
+      layers.add(cm_ch);
+
+      if(1 == ls_enable.getCurrentChildNr())
+         layers.add(cb_enable);
+
+      layers.add(bt_learn);
+   }
+
+   // <method_set.png>
+   public method setFormArray(PointerArray _forms) {
+      all_forms <= _forms;
+   }
+
+   // <method_set.png>
+   public method showPort(CtlIOPort _port) {
+      port <= _port;
+
+      cm_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      if(null != port)
+      {
+         tf_id.setText(port.id);
+         cm_dev.setSelectedOptionAndEnable(MIDI.UnsortedToSortedDevIdx(port.dev_idx));
+         updateChOptions();
+         cm_ch.setSelectedOptionAndEnable(port.dev_ch + b_allow_all_ch);
+         cb_enable.setSelectedAndEnable(port.b_enable);
+         bt_learn.setEditable(true);
+         cm_type.setEditable(true);
+         updateTypeWidgets();
+      }
+      else
+      {
+         tf_id.setText("-");
+         tf_id.setEditable(false);
+         cm_dev.setSelectedOption(-1);
+         cm_dev.setEditable(false);
+         cm_ch.setSelectedOption(-1);
+         cm_ch.setEditable(false);
+         cb_enable.setSelectedAndDisable(false);
+         bt_learn.setEditable(false);
+         cm_type.setEditable(false);
+         fp_ext.setEditable(false);
+         ls_type.switchToLayerNr(0);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateTypeWidgets() {
+      cm_type.setSelectedOption(port.mm_type.type);
+
+      if(port.mm_type.hasExtType())
+      {
+         if(MIDIMapDefs.TYPE_CC == port.mm_type)
+            fp_ext.setMaxValue(127);
+         else
+            fp_ext.setMaxValue(16383); // (N)RPN
+         fp_ext.setValue(port.mm_type.ext_type);
+         fp_ext.setEditable(true);
+         ls_type.switchToLayerNr(1);
+      }
+      else
+      {
+         fp_ext.setEditable(false);
+         ls_type.switchToLayerNr(0);
+      }
+
+      redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateChOptions() {
+      local StringArray opt <= MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(port.dev_idx, null/*firstOptionOrNull*/);
+      if(b_allow_all_ch)
+         opt.insert(0, "*");
+      cm_ch.setOptionsLong(opt);
+   }
+
+   // <method_set.png>
+   public method setLearnMode(int _mode, boolean _bQuiet) {
+
+      if(learn_mode == _mode)
+      {
+         // Toggle off
+         if(!_bQuiet)
+            Global.Print("Stop MIDI learn");
+
+         learn_mode = LEARN_NONE;
+      }
+      else
+      {
+         if(!_bQuiet)
+         {
+            if(learn_mode != LEARN_NONE)
+            {
+               if(LEARN_NONE == _mode)
+                  Global.Print("Stop MIDI learn");
+            }
+         }
+
+         learn_mode = _mode;
+
+         if(!_bQuiet)
+         {
+            if(LEARN_NONE != _mode)
+            {
+               // Stop all other MIDI learn timers
+               provideAction(Action.New(getProvidedActionAlias(ACTION_MIDI_LEARN_START), this));
+
+               Global.Print("Start MIDI learn");
+            }
+         }
+      }
+
+      String caption = " Learn ";
+
+      bt_learn.setBackgroundTint(0);
+      bt_learn.setCaption(caption);
+      bt_learn.redraw();
+
+      Button bt <= null;
+
+      if(LEARN_NONE != learn_mode)
+      {
+         bt <= bt_learn;
+      }
+
+      if(null != bt)
+      {
+         bt.setCaption(" Stop ");
+         bt.setBackgroundTint(TINT32_LEARN);
+         bt.redraw();
+         learn_timeout = LEARN_TIMEOUT;
+         ta_midi_learn.schedule();
+      }
+      else
+      {
+         ta_midi_learn.cancel();
+         learn_timeout = -1;
+      }
+   }
+
+   // <ui_timer.png>
+   protected method handleMIDILearnTimer() {
+
+      // trace "xxx handleMIDILearnTimer: learn_timeout="+learn_timeout+" mode="+parent_node.learn_mode;
+
+      if(LEARN_NONE != learn_mode)
+      {
+         learn_timeout--;
+
+         if(learn_timeout <= 0)
+         {
+            setLearnMode(LEARN_NONE, false/*bQuiet*/);
+         }
+         else
+         {
+            Button bt <= bt_learn;
+
+            if(learn_timeout & 1)
+            {
+               bt.setBackgroundTint(TINT32_LEARN);
+            }
+            else
+            {
+               bt.setBackgroundTint(0);
+            }
+
+            if(0 == (learn_timeout & 1))
+            {
+               if(0 != (learn_timeout & 2))
+               {
+                  bt.setCaption(" "+(learn_timeout/2)+" ");
+               }
+               else
+               {
+                  bt.setCaption(" Stop ");
+               }
+            }
+
+            bt.redraw();
+
+            ta_midi_learn.schedule();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method learnFromEvent(MIDIMapEvent _ev) : boolean {
+      port.dev_idx = _ev.getDevIdx();
+      port.dev_ch  = _ev.dev_ch;
+      showPort(port);
+      return true;
+   }
+
+   // <method.png>
+   protected method toggleMIDILearn() {
+      setLearnMode(LEARN_MIDI, false/*bQuiet*/);
+   }
+
+   // <midi_mml.png>
+   public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      // Called by NodeScriptEditor.mmlHandleEventUI()
+
+      if(null == port)
+      {
+         // Ooops
+         return false;
+      }
+
+      if(LEARN_MIDI == learn_mode)
+      {
+         return learnFromEvent(_ev);
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method provideChanged() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_PORT_CHANGED), this));
+   }
+
+   // <method.png>
+   protected method provideRenamed() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_PORT_RENAMED), this));
+   }
+
+   // <method.png>
+   protected method initFromCtlTagEntry(int _idx) {
+      CtlTagEntry en <= current_song.getCtlTagEntryByIdx(_idx);
+      MIDIMapEvent ev <= en.mm_event;
+      learnFromEvent(ev);
+   }
+
+   // <ui_handle.png>
+   protected method handleIdChanged() {
+      if(port.setId(tf_id.getText()))
+      {
+         Global.Print("Id is "+port.id);
+         provideRenamed();
+      }
+      else
+      {
+         Global.Error("Invalid id \""+tf_id.getText()+"\"");
+      }
+   }
+
+   // <method_set.png>
+   module method multiSetDevIdx(int _devIdxOld, int _devIdxNew) {
+      // multi-edit (LALT)
+      if(port.dev_idx == _devIdxOld)
+      {
+         port.setDevIdx(_devIdxNew);
+         cm_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(port.dev_idx));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDevChanged() {
+      int devIdxOld = port.dev_idx;
+      int devIdx = MIDI.SortedToUnsortedDevIdx(cm_dev.getSelectedOption());
+
+      if( (0 == devIdxOld) && (devIdx != devIdxOld))
+      {
+         // convenience: enable port after initial device selection
+         port.setEnable(true);
+         cb_enable.setSelected(true);
+      }
+
+      port.setDevIdx(devIdx);
+
+      updateChOptions();
+
+      Global.Print("Dev is "+cm_dev.getSelectedOptionName());
+
+      // multi-edit
+      if((null != all_forms) && (VMOD_LALT == UI.GetKeyMod()))
+      {
+         CtlIOForm *f;
+         foreach f in all_forms
+         {
+            if(@(f) != @(this))
+            {
+               f.multiSetDevIdx(devIdxOld, devIdx);
+            }
+         }
+      }
+
+      updateTypeWidgets();
+
+      provideChanged();
+   }
+
+   // <method_set.png>
+   module method multiSetDevCh(byte _chOld, byte _chNew) {
+      // multi-edit (LALT)
+      if(port.dev_ch == _chOld)
+      {
+         cm_ch.setSelectedOption(_chNew + b_allow_all_ch);
+         port.setDevCh(_chNew);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleChChanged() {
+      int chOld = port.dev_ch;
+      int ch = cm_ch.getSelectedOption() - b_allow_all_ch;
+      port.setDevCh(ch);
+
+      Global.Print("Ch is "+cm_ch.getSelectedOptionName());
+
+      // multi-edit
+      if((null != all_forms) && (VMOD_LALT == UI.GetKeyMod()))
+      {
+         CtlIOForm *f;
+         foreach f in all_forms
+         {
+            if(@(f) != @(this))
+            {
+               f.multiSetDevCh(chOld, ch);
+            }
+         }
+      }
+
+      updateTypeWidgets();
+
+      provideChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleEnableChanged() {
+      port.setEnable(cb_enable.isSelected());
+
+      provideChanged();
+
+      Global.Print("Port is "+Utils.GetEnableString(port.b_enable));
+   }
+
+   // <ui_handle.png>
+   protected method handleTypeChanged() {
+      port.mm_type.setType(cm_type.getSelectedOption());
+      updateTypeWidgets();
+      relayout();
+      redraw();
+
+      Global.Print("Type is "+cm_type.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleExtChanged() {
+      port.mm_type.setExtType(fp_ext.getFloatValue());
+
+      Global.Print("Ext Type is "+port.mm_type.getExtTypeName());
+   }
+
+   // <ui_handle.png>
+   public method handleCopy() {
+      if(null != port)
+      {
+         if(null == port_clipboard)
+            port_clipboard <= new CtlIOPort;
+
+         port_clipboard.copyFrom(port);
+
+         Global.Print("Copy port to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePaste() {
+      if(null != port)
+      {
+         if(null != port_clipboard)
+         {
+            port.copyFrom(port_clipboard);
+
+            showPort(port);
+
+            provideChanged();
+
+            Global.Print("Paste port from clipboard");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtl(boolean _bClipboardB) {
+      // (todo) copy mm_type
+      local String msgPrefix <= "copyctl<"+(_bClipboardB?"B":"A")+">: ";
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      cb.initFromCopiedCtl(port.dev_idx, port.dev_ch,
+                           NMM_Arg.TYPE_CC, 1/*ccNr*/, 0/*rpnNr*/, 0/*nrpnNr*/
+                           );
+
+      Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteCtl(boolean _bClipboardB) {
+      // (todo) paste mm_type
+      local String msgPrefix <= "pastectl<"+(_bClipboardB?"B":"A")+">: ";
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      port.dev_idx = cb.dev_idx;
+      port.dev_ch  = cb.dev_ch;
+      showPort(port);
+      handleDevChanged();
+      handleChChanged();
+      Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != port)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pmb <= pm.addDefaultButton("Copy port to Ctl.Clipboard A", "copyctl_a");
+         pmb.setToolTipCaption("Copy port to Ctl.Clipboard A");
+
+         pmb <= pm.addDefaultButton("Copy port to Ctl.Clipboard B", "copyctl_b");
+         pmb.setToolTipCaption("Copy port to Ctl.Clipboard B");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         pmb.setActive(null != port_clipboard);
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pmb <= pm.addDefaultButton("Paste port from Ctl.Clipboard A", "pastectl_a");
+         pmb.setToolTipCaption("Paste port from Ctl.Clipboard A");
+         pmb.setActive(mmarg_clipboard_a.isValidClipboardArg());
+
+         pmb <= pm.addDefaultButton("Paste port from Ctl.Clipboard B", "pastectl_b");
+         pmb.setToolTipCaption("Paste port from Ctl.Clipboard B");
+         pmb.setActive(mmarg_clipboard_b.isValidClipboardArg());
+
+         MIDI.AppendCtlTagSubMenu(pm, "CtlTag");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show port context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      local boolean bRefocusDefault;
+      StringAction *sac;
+
+      switch(acName)
+      {
+         case TA_MIDI_LEARN:
+            handleMIDILearnTimer();
+            return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("CtlIOForm: pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(acName <= "ctltagentry_")
+            {
+               initFromCtlTagEntry(int(acName.replace("ctltagentry_", "")));
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtl(true/*bClipboardB*/);
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+
+               case "pastectl_a":
+                  handlePasteCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_b":
+                  handlePasteCtl(true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+
+         case @(tf_id):
+            bRefocusDefault = (TextField.ACTION_TEXTENTERED == acName);  // return ?
+            handleIdChanged();
+            if(bRefocusDefault)
+               provideAction(Action.New(getProvidedActionAlias(ACTION_REFOCUS_DEFAULT), this));
+            return true;
+
+         case @(cm_dev):
+            handleDevChanged();
+            return true;
+
+         case @(cm_ch):
+            handleChChanged();
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            return true;
+
+         case @(bt_learn):
+            toggleMIDILearn();
+            return true;
+
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+
+         case @(fp_ext):
+            handleExtChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

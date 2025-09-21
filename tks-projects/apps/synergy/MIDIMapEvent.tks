@@ -1,0 +1,2108 @@
+// ----
+// ---- file   : MIDIMapEvent.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 29Feb2012
+// ---- changed: 09Nov2012, 13Nov2012, 04Jan2013, 23Mar2013, 13Aug2014, 14Aug2014, 15Aug2014
+// ----          19Aug2014, 21Aug2014, 31Aug2014, 04Sep2014, 07Sep2014, 08Sep2014, 12Sep2014
+// ----          15Sep2014, 16Sep2014, 22Sep2014, 29Sep2014, 17Oct2014, 11Feb2015, 16Mar2015
+// ----          20Mar2015, 27Mar2015, 14Apr2015, 27Sep2015, 14Nov2015, 21Jan2016, 27Feb2016
+// ----          19Mar2016, 10Apr2016, 23Jul2016, 04Dec2016, 16Jun2017, 17Jun2017, 15Aug2017
+// ----          17Aug2017, 14Oct2017, 23Oct2017, 03Mar2018, 07Mar2018, 04May2018, 03Jun2018
+// ----          06Jun2018, 02Dec2018, 08Dec2018, 27Jan2019, 30May2019, 10May2020, 18May2020
+// ----          03Jun2021, 25Jul2021, 13Dec2021, 17Dec2021, 18Dec2021, 19Dec2021, 20Dec2021
+// ----          24Nov2022, 09Dec2022, 13Jun2023, 14Jun2023, 25Jun2023, 14Oct2023, 28Feb2025
+// ----
+// ----
+// ----
+
+module MMIDIMapEvent;
+
+use namespace st2;
+
+
+// <class.png>
+class MIDIMapEvent : MIDIMapEventType {
+   explain "An incoming MIDI input event";
+
+   define int MAX_MORPH_LABEL_LEN = 28;
+
+   public int time_stamp;
+   public int time_stamp_ticks;
+
+   public int time_stamp_repeat; // for SYN_BUTTON_REPEAT
+   public int num_repeats;       // for SYN_BUTTON_REPEAT
+
+   public STX_MIDIDevice *dev;    // reference to event source  (destination in case of morph_target)
+   public byte            dev_ch; // event source MIDI channel (0..15)  (destination ch in case of morph target)
+
+   public String *unavail_devname;
+
+   public float arg1; // 0..127 or 0..16383 (e.g. note-number, channel pressure, pitchbend, program change, CC value, (N)RPN value, ..)
+   public float arg2; // 0..127 (e.g. note on/off velocity, poly pressure, ..)
+
+   public Buffer *sysex_buffer;  // w/o F0..F7 bytes
+
+   public byte class_type_ext;  // CLASS_BUTTON: 0=up, 1=down
+
+   public MIDIMapTarget *bound_target; // reference to MIDIMapContext target or null
+
+   static int delta_count;
+   boolean b_class_delta_signbit;
+
+   // // boolean b_send_echo;  // temporary flag. true when input device b_echo is true. causes sendEcho() echo events to out dev
+   boolean b_dont_send;  // used to prevent SysEx messages from being echo'd
+
+
+   // MIDI morph:
+   public boolean       b_morph_enable;
+   public String       *morph_label;  // up to 8 chars, used for Faderport scribble strip (fader labels)
+   public String       *morph_auto_label;  // overrides morph_label (auto-assigned from Eureka ModMatrix)
+   public MIDIMapEvent *morph_target; // instance or null
+
+   // (note) currently only applies to source event
+   public boolean b_morph_all_ch;    // 1=match all MIDI channels
+   public boolean b_morph_all_types; // 1=match all event types
+
+   public boolean b_morph_all_subtypes; // 1=match all CCs/RPNs/NRPNs
+
+   public boolean b_morph_note_onoff; // match both note on and off
+   public int morph_type;  // flt or op
+   public int morph_arg1;
+   public int morph_arg2;
+
+   public short last_morph_src_arg1;  // used for FaderPort scene recall
+
+   public boolean b_xformed;  // true if event was transformed by MIDI morph scene
+
+   public boolean b_repeat;  // allow repeat
+   public boolean b_norelease; // button up/release never occurs (e.g. controller only sends Bx <cc> 7F msg, e.g. Akai MPK49)
+
+   public boolean b_force_classify_fallback;  // 1=classify by MIDI event type, 0=classify using MIDI synth profile
+
+
+   // <method_get.png>
+   public method isValid() : boolean {
+      return (null != dev);
+   }
+
+   // <method_get.png>
+   public method invalidate() {
+      dev <= null;
+   }
+
+   // <method.png>
+   public method copyFrom(MIDIMapEvent _o) {
+      MIDIMapEventType::copyFrom(_o);
+
+      time_stamp = _o.time_stamp;
+      time_stamp_ticks = _o.time_stamp_ticks;
+      time_stamp_repeat = _o.time_stamp_repeat;
+      num_repeats = _o.num_repeats;
+
+      dev <= _o.dev;
+      dev_ch = _o.dev_ch;
+
+      if(null != _o.unavail_devname)
+      {
+         unavail_devname <= String(_o.unavail_devname);
+      }
+      else
+      {
+         unavail_devname <= null;
+      }
+
+      arg1 = _o.arg1;
+      arg2 = _o.arg2;
+
+      class_type_ext = _o.class_type_ext;
+
+      // (note) skip bound_target (not relevant for regular events)
+      // (note) skip morph_target (not relevant for regular events)
+
+      b_morph_enable = _o.b_morph_enable;
+      b_morph_all_ch = _o.b_morph_all_ch;
+      b_morph_all_types = _o.b_morph_all_types;
+
+      b_morph_all_subtypes = _o.b_morph_all_subtypes;
+
+      b_morph_note_onoff = _o.b_morph_note_onoff;
+      morph_type = _o.morph_type;
+      morph_arg1 = _o.morph_arg1;
+      morph_arg2 = _o.morph_arg2;
+
+      if(null != _o.morph_label)
+         morph_label <= Object(_o.morph_label);
+      else
+         morph_label <= null;
+
+      b_xformed = _o.b_xformed;
+
+      b_repeat = _o.b_repeat;
+      b_norelease = _o.b_norelease;
+
+      b_force_classify_fallback = _o.b_force_classify_fallback;
+   }
+
+
+   // <method_init.png>
+   public method initFromRecordedMIDIEvent(STX_MIDIDevice _dev, RecordedMIDIEvent _ev) {
+
+      dev <= _dev;
+      time_stamp = _ev.millisec;//milliSeconds();
+      time_stamp_ticks = current_song.song_offset;
+      time_stamp_repeat = time_stamp;
+      num_repeats = 0;
+      b_repeat = true; // see MIDISynthProfile.classify()
+
+      ext_type = -1;
+
+      class_type = CLASS_UNKNOWN;
+      class_type_ext = 0;
+      b_force_classify_fallback = false;
+
+      syn_type = SYN_NONE;
+
+      bound_target <= null;
+      morph_target <= null;
+
+      b_morph_note_onoff = true;  // (note) don't change this
+      morph_type = 0;
+      morph_arg1 = 0;
+      morph_arg2 = 0;
+
+      b_xformed = false;
+
+      b_dont_send = false;
+
+      b_morph_all_ch = false;
+      b_morph_all_types = false;
+      b_morph_all_subtypes = false;
+
+      // trace "xxx initFromRecordedMIDIEvent: dev="+dev.getAliasOrDeviceName();
+      // trace "xxx initFromRecordedMIDIEvent: _ev.isLongMessage()="+_ev.isLongMessage();
+
+      if(_ev.isLongMessage())
+      {
+         // (note) must copy long message buffer since event buffer ptr is only valid temporarily
+         type = TYPE_SYSEX;
+         sysex_buffer <= new Buffer;
+         sysex_buffer.size = _ev.size;
+         _ev.copyToStream(sysex_buffer);
+         if(STConfig.b_debug_sysex_input)
+         {
+            trace "[>>>] MIDIMapEvent: copy longmessage SYSEX event, size="+sysex_buffer.size;
+            sysex_buffer.hexdump(0, sysex_buffer.size);
+         }
+      }
+      else
+      {
+         int shortMsg = _ev.shortMessage;
+         type = _ev.midiMapEventType;
+         dev_ch = shortMsg & 15;
+
+         switch(type)
+         {
+            // (note) case labels are commented out to speed up case handling..
+
+            case TYPE_CC:
+               ext_type = (shortMsg>> 8) & 127;  // CC#
+               arg1     = (shortMsg>>16) & 127;  // CC value
+               break;
+
+            case TYPE_RPN:
+            case TYPE_NRPN:
+               ext_type = _ev.nrpnId;
+               arg1     = _ev.dataEntry; /////((shortMsg>> 8) & 127) | ( ((shortMsg>>16) & 127) << 7); // (N)RPN value (14bit)
+               break;
+
+            case TYPE_NOTE_OFF:
+               arg1 = (shortMsg>> 8) & 127;
+               arg2 = (shortMsg>>16) & 127;
+               ext_type = arg1; // note number
+               break;
+
+            case TYPE_NOTE_ON:
+               arg1 = (shortMsg>> 8) & 127;
+               arg2 = (shortMsg>>16) & 127;
+               ext_type = arg1; // note number
+               // trace "xxx TYPE_NOTE_ON ext_type="+ext_type;
+
+               if(0 == arg2)
+               {
+                  type = TYPE_NOTE_OFF;
+               }
+               break;
+
+            case TYPE_POLY_PRESSURE:
+               arg1 = (shortMsg>> 8) & 127;
+               arg2 = (shortMsg>>16) & 127;
+               ext_type = arg1; // note number
+               break;
+
+            default:
+            // case TYPE_POLY_PRESSURE:  // pre14Nov2015
+            // case TYPE_PROGRAM_CHANGE:
+            // case TYPE_CHANNEL_PRESSURE:
+               arg1 = (shortMsg>> 8) & 127;
+               arg2 = (shortMsg>>16) & 127;
+               break;
+
+            case TYPE_PITCHBEND:
+               // build 14bit val
+               arg1 = ((shortMsg>> 8) & 127) | ( ( (shortMsg>>16) & 127) << 7);
+               break;
+
+            // // case TYPE_SYSEX:
+            case TYPE_SYSCOM_TIMECODE:
+               // (todo)
+               break;
+
+            case TYPE_SYSCOM_SONG_POSITION:
+               // (todo)
+               break;
+
+            case TYPE_SYSCOM_SONG_SELECT:
+               // (todo)
+               break;
+
+            // case TYPE_SYSCOM_F4:
+            //    // (note) undefined
+            //    break;
+
+            // case TYPE_SYSCOM_F5:
+            //    // (note) undefined
+            //    break;
+
+            // (note) the following (one-byte) message have no args
+            // case TYPE_SYSCOM_TUNE_REQUEST:
+            // case TYPE_SYSRT_TIMING_CLOCK:
+            // case TYPE_SYSRT_F9:
+            // case TYPE_SYSRT_START:
+            // case TYPE_SYSRT_CONTINUE:
+            // case TYPE_SYSRT_STOP:
+            // case TYPE_SYSRT_FD:
+            // case TYPE_SYSRT_ACTIVE_SENSING:
+            // case TYPE_SYSRT_SYSTEM_RESET:
+            //    break;
+         }
+      }
+
+
+      if(push.isModeKbd())
+      {
+         // trace "xxx push old note="+ext_type;
+         push_kbd.transformRecordedEvent(this);
+         // trace "xxx push ==> new note="+ext_type;
+      }
+
+   }
+
+   // <method_init.png>
+   public method initFromJoystickEvent(STX_JoystickMIDIInDevice _inDevJS, STX_JoystickEvent _jsEv, int _genJSEvIdx) {
+      dev <= _inDevJS;
+      dev_ch = 0;
+
+      time_stamp = milliSeconds();
+      time_stamp_ticks = current_song.song_offset;
+      time_stamp_repeat = time_stamp;
+      num_repeats = 0;
+      b_repeat = false; // see MIDISynthProfile.classify()
+
+      ext_type = -1;
+
+      class_type = CLASS_UNKNOWN;
+      class_type_ext = 0;
+      b_force_classify_fallback = false;
+
+      syn_type = SYN_NONE;
+
+      bound_target <= null;
+
+      morph_target <= null;
+
+      b_morph_note_onoff = true;  // (note) don't change this
+      morph_type = 0;
+      morph_arg1 = 0;
+      morph_arg2 = 0;
+
+      b_xformed = false;
+
+      b_dont_send = false;
+
+      b_morph_all_ch = false;
+      b_morph_all_types = false;
+      b_morph_all_subtypes = false;
+
+      type = TYPE_NRPN;
+
+      switch(_jsEv.type)
+      {
+         case STX_JoystickEvent.TYPE_AXIS:
+            // NRPN#0000: Axis 1
+            // NRPN#0001: Axis 2
+            // ..
+            ext_type = _jsEv.src;
+            arg1 = (_jsEv.value / 4.0f) + 8192.0f;  // -32768..32767 => 0..16383
+            break;
+
+         case STX_JoystickEvent.TYPE_BALL:
+            // NRPN#0100: Ball 1 X Axis
+            // NRPN#0101: Ball 1 Y Axis
+            // NRPN#0102: Ball 2 X Axis
+            // NRPN#0103: Ball 2 Y Axis
+            // ..
+            ext_type = 100 + (_jsEv.src * 2) + _genJSEvIdx;
+            arg1 = (_jsEv.value / 4.0f) + 8192.0f;  // -32768..32767 => 0..16383
+            break;
+
+         case STX_JoystickEvent.TYPE_BUTTON:
+            // NRPN#0200: Button 1 state
+            // NRPN#0201: Button 2 state
+            // ..
+            ext_type = 200 + _jsEv.src;
+            arg1 = _jsEv.value ? 32767.0f : 0.0f;
+            break;
+
+         case STX_JoystickEvent.TYPE_HAT:
+            // NRPN#0300: Hat 1 Combined state (bitmask)
+            // NRPN#0301: Hat 1 Up state
+            // NRPN#0302: Hat 1 Right state
+            // NRPN#0303: Hat 1 Down state
+            // NRPN#0304: Hat 1 Left state
+            // NRPN#0305: Hat 2 Combined state (bitmask)
+            // NRPN#0306: Hat 2 Up state
+            // NRPN#0307: Hat 2 Right state
+            // NRPN#0308: Hat 2 Down state
+            // NRPN#0309: Hat 2 Left state
+            // ..
+            if(0 == _genJSEvIdx)
+            {
+               ext_type = 300 + (_jsEv.src * 5);
+               arg1 = _jsEv.value;
+            }
+            else
+            {
+               ext_type = 300 + (_jsEv.src * 5) + _genJSEvIdx;
+               arg1 = (_jsEv.value & (1 << (_genJSEvIdx-1))) ? 32767.0f : 0.0f;
+            }
+            break;
+      }
+   }
+
+   // <method_init.png>
+   public method initFromRemoteEvent(RemoteEvent _ev) : boolean {
+      dev <= MIDI.GetMIDIOutDeviceByDeviceName("vst_"+tcchar('a'+_ev.dev_idx));
+      dev_ch = _ev.midi_ch;
+      arg1 = 1; // note number
+      arg2 = 127; // note velocity
+      type = MIDIMapDefs.TYPE_NOTE_ON;
+      b_force_classify_fallback = false;
+      return (null != dev);
+   }
+
+   // <method_init.png>
+   public method initFromSysExRemoteCtlTarget(PointerArray _vstDevs, SysExRemoteCtlTarget _rct) : boolean {
+      dev <= _vstDevs.get(_rct.dev_idx);
+      dev_ch = _rct.midi_ch;
+
+      switch(_rct.type)
+      {
+         default:
+         case SysExRemoteCtlTarget.TYPE_CC:
+            type = TYPE_CC;
+            break;
+
+         case SysExRemoteCtlTarget.TYPE_RPN:
+            type = TYPE_RPN;
+            break;
+
+         case SysExRemoteCtlTarget.TYPE_NRPN:
+            type = TYPE_NRPN;
+            break;
+      }
+
+      ext_type = _rct.ext_type;  // CC/(N)RPN
+
+      b_force_classify_fallback = false;
+
+      return (null != dev);
+   }
+
+   // <method_init.png>
+   protected method initUntransformed(STX_MIDIInDevice _dev, byte _midiCh) {
+      // Used for synthetic events generated by e.g. the FaderPort class (virtual fader NRPN events)
+      dev <= _dev;
+      dev_ch = _midiCh;
+      time_stamp = milliSeconds();
+      time_stamp_ticks = current_song.song_offset;
+      time_stamp_repeat = time_stamp;
+      num_repeats = 0;
+      b_repeat = true; // see MIDISynthProfile.classify()
+
+      ext_type = -1;
+
+      class_type = CLASS_UNKNOWN;
+      class_type_ext = 0;
+      b_force_classify_fallback = true;
+
+      syn_type = SYN_NONE;
+
+      bound_target <= null;
+      morph_target <= null;
+
+      b_morph_note_onoff = true;  // (note) don't change this
+      morph_type = 0;
+      morph_arg1 = 0;
+      morph_arg2 = 0;
+
+      b_xformed = false;
+      b_dont_send = false;
+
+      b_morph_all_ch = false;
+      b_morph_all_types = false;
+      b_morph_all_subtypes = false;
+   }
+
+   // <method_init.png>
+   protected method initTransformed(STX_MIDIDevice _dev, byte _midiCh) {
+      // Used for synthetic events generated by pipe nodes (e.g. the Linnstrument script)
+      dev <= _dev;
+      dev_ch = _midiCh;
+      time_stamp = milliSeconds();
+      time_stamp_ticks = current_song.song_offset;
+      time_stamp_repeat = time_stamp;
+      num_repeats = 0;
+      b_repeat = true; // see MIDISynthProfile.classify()
+
+      ext_type = -1;
+
+      class_type = CLASS_UNKNOWN;
+      class_type_ext = 0;
+      b_force_classify_fallback = true;
+
+      syn_type = SYN_NONE;
+
+      bound_target <= null;
+
+      morph_target <= null;
+
+      b_morph_note_onoff = true;  // (note) don't change this
+      morph_type = 0;
+      morph_arg1 = 0;
+      morph_arg2 = 0;
+
+      b_xformed = true;
+
+      b_dont_send = true;
+
+      b_morph_all_ch = false;
+      b_morph_all_types = false;
+      b_morph_all_subtypes = false;
+   }
+
+   // <method_init.png>
+   public method initTransformedFromNote(STX_MIDIDevice _dev, byte _midiCh, byte _note, float _vel) {
+
+      initTransformed(_dev, _midiCh);
+
+      arg1 = _note;
+      arg2 = _vel;
+      ext_type = arg1; // note number
+
+      if(0 == arg2)
+      {
+         type = TYPE_NOTE_OFF;
+      }
+      else
+      {
+         type = TYPE_NOTE_ON;
+      }
+
+   }
+
+   // <method_init.png>
+   public method initTransformedFromCC(STX_MIDIDevice _dev, byte _midiCh, byte _cc, float _value) {
+
+      initTransformed(_dev, _midiCh);
+
+      type     = TYPE_CC;
+      ext_type = _cc;
+      arg1     = _value;
+   }
+
+   // <method_init.png>
+   public method initTransformedFromChannelPressure(STX_MIDIDevice _dev, byte _midiCh, float _value) {
+
+      initTransformed(_dev, _midiCh);
+
+      type = TYPE_CHANNEL_PRESSURE;
+      arg1 = _value;
+   }
+
+   // <method_init.png>
+   public method initTransformedFromPitchbend(STX_MIDIDevice _dev, byte _midiCh, float _value) {
+
+      initTransformed(_dev, _midiCh);
+
+      type = TYPE_PITCHBEND;
+      arg1 = _value;
+   }
+
+   // <method_init.png>
+   public method initTransformedFromRPN(STX_MIDIDevice _dev, byte _midiCh, short _rpn, float _value) {
+
+      initTransformed(_dev, _midiCh);
+
+      type     = TYPE_RPN;
+      ext_type = _rpn;
+      arg1     = _value;
+   }
+
+   // <method_init.png>
+   public method initTransformedFromNRPN(STX_MIDIDevice _dev, byte _midiCh, short _nrpn, float _value) {
+
+      initTransformed(_dev, _midiCh);
+
+      type     = TYPE_NRPN;
+      ext_type = _nrpn;
+      arg1     = _value;
+   }
+
+   // <method_init.png>
+   public method initUntransformedFromNRPN(STX_MIDIInDevice _dev, byte _midiCh, short _nrpn, float _value) {
+
+      initUntransformed(_dev, _midiCh);
+
+      type     = TYPE_NRPN;
+      ext_type = _nrpn;
+      arg1     = _value;
+   }
+
+   // <method_init.png>
+   public method initFromNodeModMatrixArg(NMM_Arg _arg) : boolean {
+      // used by Ctl.Clipboard
+      local STX_MIDIOutDevice argDev <= MIDI.GetMIDIOutDeviceByIndex(_arg.dev_idx);
+      boolean bOk = false;
+      if(null != argDev)
+      {
+         initTransformed(argDev, _arg.dev_ch);
+         bOk = true;
+
+         switch(_arg.type)
+         {
+            default:
+            case NMM_Arg.TYPE_BPM:
+               // can't map
+               type = TYPE_CC;
+               bOk = false;
+               break;
+
+            case NMM_Arg.TYPE_NOTE:
+            case NMM_Arg.TYPE_NOTE_ADD:
+            case NMM_Arg.TYPE_NOTE_ON:
+            case NMM_Arg.TYPE_NOTE_ON_ADD:
+               type = TYPE_NOTE_ON;
+               break;
+
+            case NMM_Arg.TYPE_NOTE_OFF:
+            case NMM_Arg.TYPE_NOTE_OFF_ADD:
+               type = TYPE_NOTE_OFF;
+               break;
+
+            case NMM_Arg.TYPE_VELOCITY:
+            case NMM_Arg.TYPE_VELOCITY_ADD:
+               type = TYPE_NOTE_ON;
+               break;
+
+            case NMM_Arg.TYPE_DURATION:
+            case NMM_Arg.TYPE_DURATION_ADD:
+               type = TYPE_NOTE_ON;
+               break;
+
+            case NMM_Arg.TYPE_POLYPRESSURE:
+            case NMM_Arg.TYPE_POLYPRESSURE_ADD:
+               type = TYPE_POLY_PRESSURE;
+               break;
+
+            case NMM_Arg.TYPE_CC:
+               type = TYPE_CC;
+               ext_type = _arg.cc_nr;
+               break;
+
+            case NMM_Arg.TYPE_PRGCHG:
+               type = TYPE_PROGRAM_CHANGE;
+               break;
+
+            case NMM_Arg.TYPE_CHPRESSURE:
+               type = TYPE_CHANNEL_PRESSURE;
+               break;
+
+            case NMM_Arg.TYPE_PITCHBEND:
+               type = TYPE_PITCHBEND;
+               break;
+
+            case NMM_Arg.TYPE_RPN:
+               type = TYPE_RPN;
+               ext_type = _arg.rpn_nr;
+               break;
+
+            case NMM_Arg.TYPE_NRPN:
+               type = TYPE_NRPN;
+               ext_type = _arg.nrpn_nr;
+               break;
+         }
+      }
+      return bOk;
+   }
+
+   public method initFromMIDIPipeEvent(MIDIPipeEvent pev, boolean _bMapOutToIn) : boolean {
+      // used for injecting events from user script back into MIDI map (=> transform in next tick())
+      dev <= null;
+      if(_bMapOutToIn)
+      {
+         local STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(pev.devIdx);
+         if(null != outDev)
+         {
+            dev <= MIDI.FindInDeviceForOutDeviceName(outDev.getAliasOrDeviceName());
+         }
+      }
+      else
+      {
+         dev <= MIDI.GetMIDIInDeviceByIndex(pev.devIdx);
+      }
+      if(null == dev)
+         return false;
+      dev_ch = pev.midiCh;
+
+      time_stamp = milliSeconds();
+      time_stamp_ticks = current_song.song_offset;
+      time_stamp_repeat = time_stamp;
+      num_repeats = 0;
+      b_repeat = true; // see MIDISynthProfile.classify()
+
+      ext_type = -1;
+
+      class_type = CLASS_UNKNOWN;
+      class_type_ext = 0;
+      b_force_classify_fallback = false;
+
+      syn_type = SYN_NONE;
+
+      bound_target <= null;
+      morph_target <= null;
+
+      b_morph_note_onoff = true;  // (note) don't change this
+      morph_type = 0;
+      morph_arg1 = 0;
+      morph_arg2 = 0;
+
+      b_xformed = false;
+
+      b_dont_send = false;
+
+      b_morph_all_ch = false;
+      b_morph_all_types = false;
+      b_morph_all_subtypes = false;
+
+      switch(pev.type)
+      {
+         case MIDIPIPE_EVENT_TYPE_PRGCHG:
+            type = TYPE_PROGRAM_CHANGE;
+            arg1 = pev.prgChg;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_CHPRESSURE:
+            type = TYPE_CHANNEL_PRESSURE;
+            arg1 = pev.chPressure;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_PITCHBEND:
+            type = TYPE_PITCHBEND;
+            arg1 = pev.pitchbend;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_CC:
+            type = TYPE_CC;
+            ext_type = pev.ccId;
+            arg1     = pev.ccValue;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_RPN:
+            type = TYPE_RPN;
+            ext_type = pev.rpn;
+            arg1     = pev.rpnValue;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_NRPN:
+            type = TYPE_NRPN;
+            ext_type = pev.nrpn;
+            arg1     = pev.nrpnValue;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_NOTE_OFF:
+            type = TYPE_NOTE_OFF;
+            arg1     = pev.note;
+            arg2     = pev.velocity;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_NOTE_ON:
+            type = TYPE_NOTE_ON;
+            arg1     = pev.note;
+            arg2     = pev.velocity;
+            return true;
+
+         case MIDIPIPE_EVENT_TYPE_POLYPRESSURE:
+            type = TYPE_POLY_PRESSURE;
+            arg1     = pev.polyPressureNote;
+            arg2     = pev.polyPressureValue;
+            return true;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getAliasOrDeviceName() : String {
+      if(null != dev)
+      {
+         return dev.getAliasOrDeviceName();
+      }
+      else
+      {
+         return unavail_devname;
+      }
+   }
+
+   // <method_get.png>
+   public method getAliasOrDeviceNameForDO() : String {
+      if(null != dev)
+      {
+         return dev.getAliasOrDeviceName();
+      }
+      else
+      {
+         return unavail_devname + "<unavail>";
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setDev(STX_MIDIDevice _dev) {
+      dev <= _dev;
+   }
+
+   // <method_get.png>
+   public method getDevIdx() : int {
+      if(null != dev)
+         return dev.dev_idx;
+      return -1;
+   }
+
+   // <method_set.png>
+   public =replay= method setDevCh(byte _devCh) {
+      dev_ch = _devCh;
+   }
+
+   // <method_get.png>
+   public method getDevCh() {
+      return dev_ch;
+   }
+
+   // <method_get.png>
+   public method getDevParamMode() : int {
+      if(dev instanceof STX_MIDIOutDevice)
+      {
+         return dev.getParamMode(dev_ch);
+      }
+      return MIDI_DATAENTRYMODE_MSBLSB/*0*/;
+   }
+
+   // <method_get.png>
+   public method calcRawFromNormalizedFloatValue(float _n, boolean _b14bit) : float {
+      switch(type)
+      {
+         case TYPE_PITCHBEND:
+            return _n * 16383.0f;
+
+         case TYPE_CC:
+            return _n * 127.0f; // controller value
+
+         case TYPE_RPN:
+         case TYPE_NRPN:
+            if(_b14bit)
+               return _n * 16383.0f; // controller value
+            else
+               return _n * 127.0f; // controller value
+
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_ON:
+            return _n * 127.0f; // notenumber, not velocity
+
+         // case TYPE_POLY_PRESSURE:
+         case TYPE_PROGRAM_CHANGE:
+         case TYPE_CHANNEL_PRESSURE:
+            return _n * 127.0f; // program number / pressure
+      }
+   }
+
+   // <method_get.png>
+   public method calcNormalizedFloatValue(float _f, boolean _b14bit) : float {
+      switch(type)
+      {
+         case TYPE_PITCHBEND:
+            return _f / 16383.0f;
+
+         case TYPE_CC:
+            return _f / 127.0f; // controller value
+
+         case TYPE_RPN:
+         case TYPE_NRPN:
+            if(_b14bit)
+               return _f / 16383.0f; // controller value
+            else
+               return _f / 127.0f; // controller value
+
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_ON:
+            return _f / 127.0f; // notenumber, not velocity
+
+         // case TYPE_POLY_PRESSURE:
+         case TYPE_PROGRAM_CHANGE:
+         case TYPE_CHANNEL_PRESSURE:
+            return _f / 127.0f; // program number / pressure
+      }
+   }
+
+   // <method_get.png>
+   public method getNormalizedFloatValue() : float {
+      // return event value in normalized 0..1 floating point range
+      return calcNormalizedFloatValue(arg1, false/*b14bit*/);
+   }
+
+   // <method_get.png>
+   public method getControllerValue() : short {
+      return arg1;
+   }
+
+   // <method_get.png>
+   public method getDeltaValue() : int {
+      if(CLASS_DELTA == class_type)  // rotary encoder (1..63=+1..+63, 64..127=-64..-1)
+      {
+         if(b_class_delta_signbit)
+         {
+            // trace "xxx getDeltaValue<SignBit>: arg1="+arg1;
+            if(arg1 & 64)
+               return -(arg1 & 63);
+            else
+               return arg1;
+         }
+         else
+         {
+            return arg1 < 64.0f ? arg1 : -(128.0f - arg1);
+         }
+      }
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual getExtTypeName() : String {
+
+      String r <= null;
+
+      if(null != dev)
+      {
+         switch(type)
+         {
+            case TYPE_CC:
+               if(b_morph_all_subtypes)
+               {
+                  r <= "CC*";
+               }
+               else
+               {
+                  r <= dev.getCCLongNameByCtl(dev_ch, ext_type);
+               }
+               break;
+
+            case TYPE_RPN: // 19Mar2016  (forgot RPN ??!!)
+               if(b_morph_all_subtypes)
+               {
+                  r <= "RPN*";
+               }
+               else
+               {
+                  r <= dev.getRPNLongNameByNr(dev_ch, ext_type);
+               }
+               break;
+
+            case TYPE_NRPN:
+               if(b_morph_all_subtypes)
+               {
+                  r <= "NRPN*";
+               }
+               else
+               {
+                  r <= dev.getNRPNLongNameByNr(dev_ch, ext_type);
+               }
+               break;
+
+            case TYPE_NOTE_ON:
+            case TYPE_NOTE_OFF:
+               r <= dev.getNoteLongNameByNr(dev_ch, ext_type);
+               break;
+
+            case TYPE_PITCHBEND:
+               r <= dev.getPitchbendLongName(dev_ch);
+               break;
+         }
+      }
+
+      if(null == r)
+      {
+         return MIDIMapEventType::getExtTypeName();
+      }
+      else
+      {
+         return deref r;
+      }
+
+   }
+
+   // <method.png>
+   public method classify() {
+      if(null != dev)
+      {
+         if(b_force_classify_fallback)
+         {
+            classifyFallback();
+         }
+         else
+         {
+            // Classify via MIDISynthProfile
+            dev.classifyMIDIMapEvent(this, dev_ch);
+         }
+
+         if(CLASS_DELTA == class_type)
+         {
+            delta_count += 1;//(arg1 > 64) ? (-(128-arg1)) : arg1;
+         }
+      }
+   }
+
+   // <method.png>
+   public method classifyFallback() {
+      // Called when no MIDI synth profile is available
+      if(null != dev)
+      {
+         switch(type)
+         {
+            case TYPE_NOTE_OFF:
+            case TYPE_NOTE_ON:
+               class_type = CLASS_BUTTON;
+               class_type_ext = (TYPE_NOTE_ON == type);  // up/down
+               break;
+
+            case TYPE_POLY_PRESSURE:
+            case TYPE_CC:
+            case TYPE_PROGRAM_CHANGE:
+            case TYPE_CHANNEL_PRESSURE:
+            case TYPE_PITCHBEND:
+            case TYPE_RPN:
+            case TYPE_NRPN:
+               class_type = CLASS_VALUE;
+               break;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method getClassTypeName() : String {
+
+      // trace "xxx MIDIMapEvent::getClassTypeName: class_type="+class_type;
+
+      if(SYN_NONE == syn_type)
+      {
+         if(CLASS_UNKNOWN == class_type)
+         {
+            classify();
+         }
+
+         if(CLASS_BUTTON == class_type)
+         {
+            return class_type_ext ? "Button Down" : "Button Up";
+         }
+         else if(CLASS_VALUE == class_type)
+         {
+            return "Value";
+         }
+         else if(CLASS_DELTA == class_type)
+         {
+            return "Delta";
+         }
+         else if(CLASS_DELTA_SIGNBIT == class_type)
+         {
+            // probably not reachable
+            return "Delta_SignBit";
+         }
+
+         return null;
+      }
+      else
+      {
+         switch(syn_type)
+         {
+            default:
+               return "Syn<unknown>"; // internal error
+
+            case SYN_BUTTON_CLICK:
+               return "Button Click";
+
+            case SYN_BUTTON_HOLD_BEGIN:
+               return "Button Hold Begin";
+
+            case SYN_BUTTON_HOLD_END:
+               return "Button Hold End";
+
+            case SYN_BUTTON_MOD:
+               return "Button Mod";
+
+            case SYN_BUTTON_KEYREPEAT:
+               return "Button KeyRepeat";
+
+            case SYN_BUTTON_REPEAT:
+               return "Button Repeat";
+
+            case SYN_BUTTON_SELECT:
+               return "Button Select";
+
+            case SYN_VALUE:
+               return "Value";
+         }
+
+         return null;
+      }
+   }
+
+   // <method_get.png>
+   public method getFullTypeName() : String {
+
+      // e.g. "Scn1 ButtonB 7 (CC# 39) - Button Click"
+
+      String ctn <= getClassTypeName();
+
+      // trace "xxx getExtTypeName()="+#(getExtTypeName());
+
+      if(null != ctn)
+      {
+         return getExtTypeName() + " - " + ctn;
+      }
+      else
+      {
+         return getExtTypeName();
+      }
+   }
+
+   // <method_get.png>
+   public method getDebugString() : String {
+      String r;
+
+      r.empty();
+      r.append(" class=\""+getClassTypeName()+"\"");
+      r.append(" type=\""+getFullTypeName()+"\"");
+      r.append(" dev="+getAliasOrDeviceName()+" ch="+dev_ch);
+      r.append(" arg1="+int(arg1)+" arg2="+int(arg2));
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getInfoStringForPipeMap() : String {
+      local String r;
+      r.append("Ev: \""+getFullTypeName()+"\"");
+      r.append(" dev="+getAliasOrDeviceName()+":"+(dev_ch+1));
+      r.append(" a1="+int(arg1)+" a2="+int(arg2));
+      return deref r;
+   }
+
+   // <method.png>
+   public method matchTypeOf(MIDIMapEvent _ev) : boolean {
+
+      // trace "xxx class_type="+class_type+" _ev.class_type="+_ev.class_type;
+
+      if(class_type == _ev.class_type)
+      {
+         // trace "xxx dev="+#(dev)+" _ev.dev="+#(_ev.dev);
+
+         if(@(dev) == @(_ev.dev))
+         {
+            // trace "xxx dev_ch="+dev_ch+" _ev.dev_ch="+_ev.dev_ch;
+
+            if(dev_ch == _ev.dev_ch)
+            {
+               // trace "xxx type="+type+" _ev.type="+_ev.type;
+
+               if(type == _ev.type)
+               {
+                  // trace "xxx ext_type="+ext_type+" _ev.ext_type="+_ev.ext_type;
+
+                  return (ext_type == _ev.ext_type);  // compare notenr
+               }
+               else if(TYPE_NOTE_ON == type)
+               {
+                  if(TYPE_NOTE_OFF == _ev.type)
+                  {
+                     return (ext_type == _ev.ext_type);  // compare notenr
+                  }
+               }
+               else if(TYPE_NOTE_OFF == type)
+               {
+                  if(TYPE_NOTE_ON == _ev.type)
+                  {
+                     return (ext_type == _ev.ext_type);  // compare notenr
+                  }
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method matchTypeOfIgnoreClass(MIDIMapEvent _ev) : boolean {
+
+      // trace "xxx class_type="+class_type+" _ev.class_type="+_ev.class_type;
+
+      // trace "xxx dev="+#(dev)+" _ev.dev="+#(_ev.dev);
+
+      if(@(dev) == @(_ev.dev))
+      {
+         // trace "xxx dev_ch="+dev_ch+" _ev.dev_ch="+_ev.dev_ch;
+
+         if(dev_ch == _ev.dev_ch)
+         {
+            // trace "xxx type="+type+" _ev.type="+_ev.type;
+
+            if(type == _ev.type)
+            {
+               // trace "xxx ext_type="+ext_type+" _ev.ext_type="+_ev.ext_type;
+
+               return (ext_type == _ev.ext_type);  // compare notenr
+            }
+            else if(TYPE_NOTE_ON == type)
+            {
+               if(TYPE_NOTE_OFF == _ev.type)
+               {
+                  return (ext_type == _ev.ext_type);  // compare notenr
+               }
+            }
+            else if(TYPE_NOTE_OFF == type)
+            {
+               if(TYPE_NOTE_ON == _ev.type)
+               {
+                  return (ext_type == _ev.ext_type);  // compare notenr
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method matchBindTypeOf(MIDIMapEvent _ev) : boolean {
+
+      if(class_type == _ev.class_type)
+      {
+         if(@(dev) == @(_ev.dev))
+         {
+            if(dev_ch == _ev.dev_ch)
+            {
+               boolean bTypeMatch = (type == _ev.type);
+
+               if(!bTypeMatch)
+               {
+                  if(TYPE_NOTE_ON == type)
+                  {
+                     bTypeMatch = (TYPE_NOTE_OFF == _ev.type);
+                  }
+                  else if(TYPE_NOTE_OFF == type)
+                  {
+                     bTypeMatch = (TYPE_NOTE_ON == _ev.type);
+                  }
+               }
+
+               if(bTypeMatch)
+               {
+                  if(ext_type == _ev.ext_type) // match notenr / CC / NRPN ?
+                  {
+                     switch(syn_type)
+                     {
+                        default:
+                           return (syn_type == _ev.syn_type);
+
+                        case SYN_BUTTON_CLICK:
+                        case SYN_BUTTON_SELECT:
+                        case SYN_BUTTON_REPEAT:
+                           return
+                              (_ev.syn_type == SYN_BUTTON_CLICK)  ||
+                              (_ev.syn_type == SYN_BUTTON_REPEAT) ;
+
+                        case SYN_BUTTON_MOD:
+                           return
+                              (_ev.syn_type == SYN_BUTTON_MOD)      ||
+                              (_ev.syn_type == SYN_BUTTON_CLICK)    ||
+                              (_ev.syn_type == SYN_BUTTON_HOLD_END) ;
+
+                        case SYN_BUTTON_KEYREPEAT:
+                           // trace "xxx matchBindType: syn_type="+syn_type+" ev.syn_type="+_ev.syn_type;
+                           return
+                              (_ev.syn_type == SYN_BUTTON_KEYREPEAT)   ||
+                              (_ev.syn_type == SYN_BUTTON_REPEAT)   ||
+                              (_ev.syn_type == SYN_BUTTON_MOD)      ||
+                              (_ev.syn_type == SYN_BUTTON_CLICK)    ||
+                              (_ev.syn_type == SYN_BUTTON_SELECT)   ||
+                              (_ev.syn_type == SYN_BUTTON_HOLD_END) ;
+
+                        case SYN_VALUE:
+                           return
+                              (_ev.syn_type == SYN_VALUE) || (_ev.syn_type == SYN_NONE);
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method matchMorphTypeOf(local MIDIMapEvent _ev) : boolean {
+
+      if(@(dev) == @(_ev.dev))
+      {
+         if( (dev_ch == _ev.dev_ch) || b_morph_all_ch)
+         {
+            if(b_morph_all_types)
+            {
+               return true;
+            }
+
+            local int evType = _ev.type;
+            local int thisType = type;
+
+            if(b_morph_note_onoff)
+            {
+               if(TYPE_NOTE_OFF == thisType)
+               {
+                  if(TYPE_NOTE_ON == evType)
+                  {
+                     evType = TYPE_NOTE_OFF;
+                  }
+               }
+               else if(TYPE_NOTE_ON == thisType)
+               {
+                  if(TYPE_NOTE_OFF == evType)
+                  {
+                     evType = TYPE_NOTE_ON;
+                  }
+               }
+            }
+
+            if(thisType == evType)
+            {
+               if( (TYPE_CC == type) || (TYPE_RPN == type) || (TYPE_NRPN == type) )
+               {
+                  if(!b_morph_all_subtypes && (ext_type != _ev.ext_type))
+                  {
+                     return false;
+                  }
+               }
+
+               // trace "xxx matchMorphTypeOf: morph_type="+morph_type+" marg1="+morph_arg1+" marg2="+morph_arg2+" ev.arg1="+_ev.arg1;
+
+               switch(morph_type)
+               {
+                  case SRC_FLT_OFF:
+                  case SRC_FLT_CLIP_MIN:
+                  case SRC_FLT_CLIP_MAX:
+                     return true;
+
+                  case SRC_FLT_RANGE:
+                  case SRC_FLT_RANGE_CLIP:
+                     // trace "xxx matchMorphTypeOf: r="+(morph_arg1 <= _ev.arg1 < morph_arg2);
+                     return (morph_arg1 <= _ev.arg1 <= morph_arg2);
+
+                  case SRC_FLT_MATCH:
+                     // trace "xxx SRC_FLT_MATCH: morph_arg1="+morph_arg1+" ev.arg1="+_ev.arg1;
+                     return (morph_arg1 == _ev.arg1);
+
+                  case SRC_FLT_SPLIT_START:
+                     return (_ev.arg1 >= morph_arg1);
+
+                  case SRC_FLT_SPLIT_END:
+                     return (_ev.arg1 <= morph_arg2);
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphEnable(boolean _bEnable) {
+      b_morph_enable = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphLabel(String _lbOrNull) {
+      if(null != _lbOrNull)
+         morph_label <= Object(_lbOrNull);
+      else
+         morph_label <= null;
+
+      morph_auto_label <= null;
+   }
+
+   // <method_get.png>
+   public method getMorphLabel() : String {
+      return (null != morph_auto_label) ? morph_auto_label : morph_label;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphLabelKeepFlags(String _lbOrNull) {
+
+      if(null != _lbOrNull)
+      {
+         boolean bPB = false;
+         boolean bMark = false;
+
+         if(null != morph_label)
+         {
+            bPB = (morph_label & "_PB");
+            bMark = (morph_label <= "*");
+         }
+
+         local String lb = _lbOrNull;
+
+         if(bPB)
+            lb.append("_PB");
+
+         if(bMark)
+            lb.insert(0, "*");
+
+         morph_label <= deref lb;
+      }
+      else
+      {
+         morph_label <= null;
+      }
+
+   }
+
+   // <method_set.png>
+   public method setMorphAutoLabel(String _s) {
+      morph_auto_label <= (null != _s) ? Object(_s) : null;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphAutoLabelKeepFlags(String _lbOrNull) {
+
+      if(null != _lbOrNull)
+      {
+         boolean bPB = false;
+         boolean bMark = false;
+
+         if(null != morph_label)
+         {
+            bPB = (morph_label & "_PB");
+            bMark = (morph_label <= "*");
+         }
+
+         local String lb = _lbOrNull;
+
+         if(bPB)
+            lb.append("_PB");
+
+         if(bMark)
+            lb.insert(0, "*");
+
+         morph_auto_label <= deref lb;
+      }
+      else
+      {
+         morph_auto_label <= null;
+      }
+
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphType(int _type) {
+      morph_type = _type;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphArg1(short _arg) {
+      morph_arg1 = _arg;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphArg2(short _arg) {
+      // trace "xxx setMorphArg("+_arg+") this="+#(this);
+      morph_arg2 = _arg;
+   }
+
+   // <method_set.png>
+   public =replay= method setMorphNoteOnOff(boolean _bEnabled) {
+      b_morph_note_onoff = _bEnabled;
+   }
+
+   // <method.png>
+   public method echoTransform() {
+      // // b_send_echo = false;
+
+      if(dev instanceof STX_MIDIInDevice)
+      {
+         STX_MIDIInDevice inDev <= dev;
+
+         // trace "xxx MIDIMapEvent::echoTransform: inDev.cached_out_dev="+#(inDev.cached_out_dev);
+
+         if(null != inDev.cached_out_dev)
+         {
+            dev <= inDev.cached_out_dev;
+
+            // // // b_send_echo = inDev.b_echo;
+            b_dont_send = (type == TYPE_SYSEX) || !(inDev.b_echo);
+         }
+      }
+   }
+
+   // <method.png>
+   public method echoTransformForced() {
+      if(dev instanceof STX_MIDIInDevice)
+      {
+         STX_MIDIInDevice inDev <= dev;
+
+         if(null != inDev.cached_out_dev)
+         {
+            dev <= inDev.cached_out_dev;
+            b_dont_send = !inDev.b_echo;
+         }
+         else
+         {
+            // (todo) remove this log output ?
+            Global.Debug3("MIDIMapEvent::echoTransformForced: unable to determine out device");
+            dev <= null;
+         }
+      }
+   }
+
+   // <method_add.png>
+   public method addToFrame(MIDIPipeFrame _frame, int _noteDuration, boolean _bDiscard) {
+
+      // trace "xxx MIDIMapEvent::addToFrame: type="+type+" dev="+#(dev);
+
+      if(dev instanceof STX_MIDIOutDevice)
+      {
+         int devIdx = dev.dev_idx;
+
+         // trace "xxx MIDIMapEvent::addToFrame: type="+type;
+         _frame.enableDontSend = b_dont_send;
+
+         switch(type)
+         {
+            case TYPE_NOTE_OFF:
+               _frame.noteOff(true/*set*/, devIdx, dev_ch,
+                              int(arg1)/*noteNr*/,
+                              arg2/*vel*/
+                              );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_NOTE_ON:
+               _frame.noteOn(true/*set*/, devIdx, dev_ch,
+                             int(arg1)/*noteNr*/,
+                             arg2/*vel*/,
+                             _noteDuration
+                             );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_POLY_PRESSURE:
+               _frame.polyPressure(true/*set*/, devIdx, dev_ch,
+                                   int(arg1)/*noteNr*/,
+                                   arg2/*pressure*/
+                                   );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_CC:
+               _frame.cc(true/*set*/, devIdx, dev_ch,
+                         (ext_type & 127)/*ccId*/,
+                         arg1/*value*/
+                         );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_PROGRAM_CHANGE:
+               _frame.prgChg(true/*set*/, devIdx, dev_ch,
+                             arg1/*prgNr*/
+                             );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_CHANNEL_PRESSURE:
+               _frame.chPressure(true/*set*/, devIdx, dev_ch,
+                                 arg1/*pressure*/
+                                 );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_PITCHBEND:
+               _frame.pitchbend(true/*set*/, devIdx, dev_ch,
+                                arg1/*bend*/
+                                );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_RPN:
+               _frame.rpn(true/*set*/, devIdx, dev_ch,
+                          (ext_type & 16383)/*rpn*/,
+                          arg1/*value*/
+                          );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_NRPN:
+               _frame.nrpn(true/*set*/, devIdx, dev_ch,
+                           (ext_type & 16383)/*nrpn*/,
+                           arg1/*value*/
+                           );
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+
+            case TYPE_SYSEX:
+               // trace "xxx MIDIMapEventType: add SYSEX event to frame";
+               _frame.sysexAddF0F7(true/*set*/, devIdx, sysex_buffer, b_dont_send);
+               // Global.Debug("MIDIMapEvent::addToFrame<TYPE_SYSEX>: frame="+#(_frame)+" sz="+sysex_buffer.size+" numEventsSysex="+_frame.getNumEventsSysEx()+" b_dont_send="+b_dont_send);
+               if(_bDiscard)
+               {
+                  discard();
+               }
+               break;
+         }
+
+         _frame.enableDontSend = false;
+      }
+   }
+
+   // <method.png>
+   public method discard() {
+      dev <= null;
+   }
+
+   // <method.png>
+   public unlinkMorphTarget() : MIDIMapEvent {
+      MIDIMapEvent r <= deref morph_target;
+      morph_target <= null;
+      return deref r;
+   }
+
+   // <method.png>
+   public method copyMMSEntry(MIDIMapEvent _o) {
+      morph_target <= new MIDIMapEvent;
+
+      dev     <= _o.dev;
+      dev_ch   = _o.dev_ch;
+      type     = _o.type;
+      ext_type = _o.ext_type;
+
+      MIDIMapEvent oTarget <= _o.morph_target;
+
+      morph_target.dev     <= oTarget.dev;
+      morph_target.dev_ch   = oTarget.dev_ch;
+      morph_target.type     = oTarget.type;
+      morph_target.ext_type = oTarget.ext_type;
+      morph_target.b_morph_all_ch    = oTarget.b_morph_all_ch;
+      morph_target.b_morph_all_types = oTarget.b_morph_all_types;
+
+      if(null != _o.morph_label)
+         morph_label <= Object(_o.morph_label);
+      else
+         morph_label <= null;
+
+      b_morph_enable    = _o.b_morph_enable;
+      b_morph_all_ch    = _o.b_morph_all_ch;
+      b_morph_all_types = _o.b_morph_all_types;
+
+      b_morph_all_subtypes = _o.b_morph_all_subtypes;
+
+      b_morph_note_onoff = _o.b_morph_note_onoff;
+
+      morph_type = _o.morph_type;
+      morph_arg1 = _o.morph_arg1;
+      morph_arg2 = _o.morph_arg2;
+
+      morph_target.morph_type = oTarget.morph_type;
+      morph_target.morph_arg1 = oTarget.morph_arg1;
+      morph_target.morph_arg2 = oTarget.morph_arg2;
+
+      b_dont_send = _o.b_dont_send;
+   }
+
+   // <method_get.png>
+   public method getSustainPedal() : float {
+      if((TYPE_CC == type) && (64 == ext_type))
+         return arg1;
+      else
+         return -1.0f;
+   }
+
+   // <midi_push.png>
+   public method pushIsEvent() : boolean {
+      return (@(dev) == @(push.indev));
+   }
+
+   // <midi_push.png>
+   public method pushIsPad8x8() : boolean {
+      if(@(dev) == @(push.indev))
+      {
+         if((TYPE_NOTE_ON == type) || (TYPE_NOTE_OFF == type))
+         {
+            if(0x24 <= ext_type <= (0x24 + 8*8))
+            {
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <midi_push.png>
+   public method pushIsPad8x8NoteOrPressure() : boolean {
+      if(@(dev) == @(push.indev))
+      {
+         if((TYPE_NOTE_ON == type) || (TYPE_NOTE_OFF == type) || (TYPE_POLY_PRESSURE == type))
+         {
+            if(0x24 <= ext_type <= (0x24 + 8*8))
+            {
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <midi_push.png>
+   public method pushGetPad8x8Idx() : int {
+      // (note) may only be called when pushIsPad() returned true
+      return (ext_type - 0x24);
+   }
+
+   // <midi_push.png>
+   public method pushIsTouchStripRelease() : boolean {
+      // (note) Push send pitchbend center value when touch strip is released
+      if(@(dev) == @(push.indev))
+      {
+         if(TYPE_PITCHBEND == type)
+         {
+            if(8192 == int(arg1))
+            {
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <midi.png>
+   public method isReservedEvent() : boolean {
+      // (note) called by mmlHandleEventUI()
+      // (note) returns false if push is in MMC or USR mode
+      if(@(dev) == @(push.indev))
+      {
+         if(push.isModeKbd())
+         {
+            if((TYPE_CC == type) || (TYPE_PITCHBEND == type) || pushIsPad8x8NoteOrPressure())
+               return true;
+            else
+               return false;
+         }
+
+         if!(push.isModeKbdOrCtl())
+         {
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <midi.png>
+   public method mmcIsBindableEvent() : boolean {
+      // (note) called by MIDIMapContext::mmcIsBindableEvent()
+      if(@(dev) == @(push.indev))
+      {
+         if(push.isModeKbd())
+         {
+            if((TYPE_CC == type) || (TYPE_PITCHBEND == type) || pushIsPad8x8NoteOrPressure())
+               return false;
+            else
+               return true;
+         }
+
+         if!(push.isModeMMC())
+         {
+            return false;
+         }
+      }
+      return true;
+   }
+
+   // <midi.png>
+   public method isSyx1Event() : boolean {
+      return 0 == dev_ch && null != dev && @(dev) == @(SysEx.out_dev);
+   }
+
+   // <method_get.png>
+   public method isNoteOnOrOff() : boolean {
+      return (TYPE_NOTE_ON == type) || (TYPE_NOTE_OFF == type);
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) {
+      // Called by NodeCtlMorph
+      // Not called by SongFileWriter
+      //
+      // (todo) sysex_buffer
+      // (todo) morph*
+      // (todo) timestamp
+      //
+
+      // Write version
+      _ofs.i16 = 3;
+
+      // Write type
+      _ofs.i8 = type;
+
+      // Write ext_type
+      _ofs.i16 = ext_type;
+
+      // Write class_type
+      _ofs.i8 = class_type;
+
+      // Write syn_type
+      _ofs.i8 = syn_type;
+
+      // Write class_type_ext
+      _ofs.i8 = class_type_ext;
+
+      // Write arg1
+      //  (note) i16 in <=v2
+      _ofs.f32 = arg1;
+
+      // Write arg2
+      //  (note) i16 in <=v2
+      _ofs.f32 = arg2;
+
+      // Write device alias or name
+      Utils.WriteString(_ofs, getAliasOrDeviceName());
+
+      // Write midi channel
+      _ofs.i8 = dev_ch;
+
+      // Write SysEx buffer (v2+)
+      if(TYPE_SYSEX == type)
+      {
+         Utils.WriteBuffer(_ofs, sysex_buffer);
+      }
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      // Called by NodeCtlMorph
+      // Not called by SongFileReader
+
+      short ver = _ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Read type
+         type = _ifs.u8;
+
+         // Read ext_type
+         ext_type = _ifs.i16;
+
+         // Read class_type
+         class_type = _ifs.i8;
+
+         // Read syn_type
+         syn_type = _ifs.i8;
+
+         // Read class_type_ext
+         class_type_ext = _ifs.i8;
+
+         if(ver >= 3)
+         {
+            // Read arg1
+            arg1 = _ifs.f32;
+
+            // Read arg2
+            arg2 = _ifs.f32;
+         }
+         else
+         {
+            // Read arg1
+            arg1 = _ifs.i16;
+
+            // Read arg2
+            arg2 = _ifs.i16;
+         }
+
+         // Read device alias or name
+         String devAliasOrName;
+         devAliasOrName.empty();
+         Utils.ReadString(_ifs, devAliasOrName);
+
+         dev <= MIDI.GetMIDIOutDeviceByAliasOrName(devAliasOrName);
+
+         if(null == dev)
+         {
+            unavail_devname <= String(devAliasOrName);
+         }
+
+         // Read midi channel
+         dev_ch = _ifs.u8 & 15;
+
+         // Read SysEx buffer (v2+)
+         if(ver >= 2)
+         {
+            if(TYPE_SYSEX == type)
+            {
+               if(null == sysex_buffer)
+               {
+                  sysex_buffer <= new Buffer;
+               }
+               Utils.ReadBuffer(_ifs, sysex_buffer);
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] MIDIMapEvent::loadState: bad ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   public method isHiFreqEvent() : boolean {
+      return
+         (TYPE_POLY_PRESSURE    == type) ||
+         (TYPE_CHANNEL_PRESSURE == type) ||
+         (TYPE_PITCHBEND        == type) ||
+         (TYPE_NRPN             == type) ||
+         (TYPE_RPN              == type) ||
+         (TYPE_CC               == type) // && (74 == evXForm.ext_type))
+         ;
+   }
+
+   // <method_get.png>
+   public method getAlias() : MIDISynthProfileCtlAlias {
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(dev_ch);
+         if(null != msp)
+         {
+            MIDISynthProfileCtlAlias alias <= null;
+            switch(type)
+            {
+               case TYPE_CC:
+                  alias <= msp.getCCAliasByCtl(ext_type);
+                  break;
+
+               case TYPE_RPN:
+                  alias <= msp.getRPNAliasByNr(ext_type);
+                  break;
+
+               case TYPE_NRPN:
+                  alias <= msp.getNRPNAliasByNr(ext_type);
+                  break;
+            }
+            // trace "xxx alias="+#(alias);
+            return alias;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method autoAdjustMorphTransformToMIDISynthProfileCtlAlias(MIDISynthProfileCtlAlias _alias) {
+      // used to transform FaderPort fader range to actual parameter range ('this' is the morph target event)
+      switch(type)
+      {
+         case TYPE_CC:
+         case TYPE_RPN:
+         case TYPE_NRPN:
+            if( (_alias.min >= 1) || (_alias.max != 127) )
+            {
+               morph_type = DST_OP_REMAP;
+               morph_arg1 = _alias.min;
+               morph_arg2 = _alias.max;
+            }
+            break;
+      }
+   }
+
+   // <method_get.png>
+   public method getEditOptionStringByIndex(int _idx) : String {
+      MIDISynthProfileCtlAlias alias <= getAlias();
+      if(null != alias)
+      {
+         return alias.getEditOptionStringByIndex(_idx/*arg1*/);
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method copyToOutputState() {
+      if(dev instanceof STX_MIDIOutDevice)
+      {
+         STX_MIDIOutDevice outDev <= dev;
+         MIDIPipeDevice pipeDev <= outDev.getMIDIPipeDevice();
+         if(null != pipeDev)
+         {
+            switch(type)
+            {
+               case TYPE_PROGRAM_CHANGE:
+                  pipeDev.setPrg(dev_ch, arg1);
+                  break;
+
+               case TYPE_CHANNEL_PRESSURE:
+                  pipeDev.setChPressure(dev_ch, arg1);
+                  break;
+
+               case TYPE_PITCHBEND:
+                  pipeDev.setPitchbend(dev_ch, arg1);
+                  break;
+
+               case TYPE_CC:
+                  pipeDev.setCCState(dev_ch, ext_type, arg1);
+                  break;
+
+               case TYPE_RPN:
+                  pipeDev.setRPNState(dev_ch, ext_type, arg1);
+                  break;
+
+               case TYPE_NRPN:
+                  pipeDev.setNRPNState(dev_ch, ext_type, arg1);
+                  break;
+
+               case TYPE_POLY_PRESSURE:
+                  pipeDev.setPolyPressure(dev_ch, arg1/*note*/, arg2/*pressure*/);
+                  break;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method getOutputState() : short {
+      short val = -1;
+
+      if(dev instanceof STX_MIDIOutDevice)
+      {
+         STX_MIDIOutDevice outDev <= dev;
+         MIDIPipeDevice pipeDev <= outDev.getMIDIPipeDevice();
+
+         if(null != pipeDev)
+         {
+            if(dev_ch >= 0)
+            {
+               switch(type)
+               {
+                  case TYPE_PROGRAM_CHANGE:
+                     val = pipeDev.getPrg(dev_ch);
+                     break;
+
+                  case TYPE_CHANNEL_PRESSURE:
+                     val = pipeDev.getChPressure(dev_ch);
+                     break;
+
+                  case TYPE_PITCHBEND:
+                     val = pipeDev.getPitchbend(dev_ch);
+                     break;
+
+                  case TYPE_CC:
+                     val = pipeDev.getCCState(dev_ch, ext_type);
+                     break;
+
+                  case TYPE_RPN:
+                     val = pipeDev.getRPNState(dev_ch, ext_type);
+                     break;
+
+                  case TYPE_NRPN:
+                     val = pipeDev.getNRPNState(dev_ch, ext_type);
+                     break;
+
+                  case TYPE_POLY_PRESSURE:
+                     val = pipeDev.getPolyPressure(dev_ch, arg1/*note*/);
+                     break;
+               }
+            }
+         } // if pipeDev
+      } // if dev
+
+      return val;
+   }
+
+   // <method.png>
+   public method unmapMorphedValue(float _val, boolean _b14bit) : float {
+      // (note) assumes no complex transform (i.e. type conversions only)
+      // (note) 'val' is raw output value (0..127, 0..16383, depending on type)
+      if(null != morph_target)
+      {
+         _val = morph_target.calcNormalizedFloatValue(_val, _b14bit);
+         if(_val >= 0)
+         {
+            return calcRawFromNormalizedFloatValue(_val, _b14bit);
+         }
+      }
+   }
+
+}

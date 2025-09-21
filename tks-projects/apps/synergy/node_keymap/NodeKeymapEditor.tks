@@ -1,0 +1,3120 @@
+// ----
+// ---- file   : NodeKeymapEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 21Jul2016
+// ---- changed: 22Jul2016, 23Jul2016, 24Jul2016, 16Sep2016, 08Oct2016, 15Oct2016, 19Jan2017
+// ----          23Jan2017, 04Feb2017, 09Feb2017, 18Mar2017, 24Mar2017, 16Jun2017, 14Jul2017
+// ----          30Jul2017, 10Aug2017, 01Sep2017, 12Oct2017, 13Oct2017, 04Jan2018, 05Apr2018
+// ----          17Jun2018, 25Jun2019, 29Aug2019, 08Sep2019, 10Sep2019, 20Sep2019, 03Oct2019
+// ----          05Oct2019, 08Nov2019, 23Oct2020, 26Oct2020, 13May2021, 14May2021, 02Jun2021
+// ----          18Jun2021, 11Feb2023, 23Jun2023, 21Sep2023, 03Oct2023, 26Nov2023, 22Mar2024
+// ----          06Oct2024
+// ----
+// ----
+// ----
+
+module MNodeKeymapEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeKeymapEditor extends NodeEditor, MIDIMapEventListener, ActionProvider, MIDIMapDefs {
+
+   define String TA_REPLAY;
+   define String TA_MIDI_LEARN;
+   protected TimerAction *ta_replay;
+   protected TimerAction *ta_midi_learn;
+
+   define int TAB_PATTERN  = 0;
+   define int TAB_ENTRIES  = 1;
+   define int TAB_PLAY     = 2;
+
+   public NodeKeymap *kmap;
+
+   protected Panel     *pn_groups;
+   protected TabSwitch *ts_groups;
+   protected TextField *tf_pattern_name2;
+
+   // Pattern:
+   protected ComboBox   *cm_pattern_nr;
+   protected Label      *lb_pattern_nr;
+   protected TextField  *tf_pattern_name;
+
+   protected Button    *bt_pattern_alloc;
+   protected Button    *bt_pattern_tools;
+   protected PopupMenu *pm_pattern_tools;
+   protected Button    *bt_pattern_free;
+
+   // Entries:
+   protected NKM_EntriesTM  *tm_entries;
+   protected TableView      *tv_entries;
+   Button *bt_en_add;
+   Button *bt_en_remove;
+   Button *bt_en_moveup;
+   Button *bt_en_movedown;
+   CheckBox *cb_en_select;
+
+   // Entry:
+
+   protected ComboBox *cm_learn_trig_mode;
+   protected Button   *bt_learn;
+   protected CheckBox *cb_learn_velocity;
+   protected CheckBox *cb_learn_polyat;
+   protected CheckBox *cb_learn_pitchbend;
+   protected CheckBox *cb_learn_modwheel;
+   protected CheckBox *cb_learn_expression;
+   protected CheckBox *cb_learn_breathcontrol;
+   protected CheckBox *cb_learn_prgchg;
+   protected ComboBox *cm_learn_next_match_note;
+   protected CheckBox *cb_learn_next_match_note_black_and_white;
+   protected FloatParam *fp_note_offset;
+   protected FloatParam *fp_note_modulo;
+   protected Button     *bt_entry_tools;
+   protected PopupMenu  *pm_entry_tools;
+
+   protected ComboBox *cm_en_dst_dev;
+   protected ComboBox *cm_en_dst_ch;
+
+   protected ComboBox   *cm_en_match_note;
+   protected FloatParam *fp_en_note_range;
+   protected ComboBox   *cm_en_match_note_mode;
+
+   protected ComboBox   *cm_en_fixed_send_note;
+   protected ComboBox   *cm_en_fixed_send_note_mode;
+   protected FloatParam *fp_en_fixed_send_note_duration;
+
+   protected CheckBox   *cb_en_velocity_normalize;
+   protected FloatParam *fp_en_velocity_min;
+   protected FloatParam *fp_en_velocity_max;
+   protected ComboBox   *cm_en_velocity_curve;
+
+   protected CheckBox   *cb_en_fixed_velocity;
+   protected FloatParam *fp_en_fixed_velocity;
+
+   protected CheckBox   *cb_en_fixed_polyat;
+   protected FloatParam *fp_en_fixed_polyat;
+
+   protected CheckBox   *cb_en_fixed_pitchbend;
+   protected FloatParam *fp_en_fixed_pitchbend;
+
+   protected CheckBox   *cb_en_fixed_rpn_preset;
+   protected ComboBox   *cm_en_fixed_rpn_preset;
+
+   protected CheckBox   *cb_en_fixed_modwheel;
+   protected FloatParam *fp_en_fixed_modwheel;
+
+   protected CheckBox   *cb_en_fixed_expression;
+   protected FloatParam *fp_en_fixed_expression;
+
+   protected CheckBox   *cb_en_fixed_breathcontrol;
+   protected FloatParam *fp_en_fixed_breathcontrol;
+
+   protected CheckBox   *cb_en_fixed_prgchg;
+   protected FloatParam *fp_en_fixed_prgchg;
+   protected Label      *lb_en_fixed_prgchg;
+
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected ComboBox *cm_play_out_dev;
+   protected ComboBox *cm_play_out_ch;
+
+   protected ComboBox *cm_play_out_mode;
+
+   protected CheckBox *cb_removeevents;
+
+   Dialog_DeletePattern *dlg_deletepattern;
+
+   define int LEARN_NONE    = 0;
+   define int LEARN_KEY     = 1;
+   // (note) learn_mode is stored in node (needed by midi recording)
+
+   static StringArray learn_mode_names = ["None",
+                                          "Key"
+                                          ];
+   protected boolean b_learning; // true while scanning MIDI input
+   define int LEARN_TIMEOUT = 49;  // number of ta_midi_learn timeouts (=> 50*200 = 10 sec)
+   define int TINT32_LEARN = #58ef6467;
+   protected int learn_timeout;
+   protected boolean b_learn_infinite;
+
+   protected byte last_learn_note_on;
+   protected byte last_learn_note_vel;
+   protected byte last_learn_note_dev_idx;
+   protected byte last_learn_note_ch;
+   protected byte last_learn_note_off;
+   protected int  last_learn_note_on_millisec;
+
+   protected byte next_match_note;
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeKeymapEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            // Move pattern name textfield into TabSwitch
+            tf_pattern_name2 <= pn_groups.unlinkChildLayer(tf_pattern_name2);
+            pn_groups.removeChildLayer(tf_pattern_name2);
+            Panel pnLabels <= ts_groups.getPnLabels();
+            pnLabels.addLayer(tf_pattern_name2, Layout.RIGHT);
+
+            f_autodev.initAutoDeviceForm();
+
+            tm_entries <= new NKM_EntriesTM;
+            tm_entries.initTableModel();
+            tm_entries.editor <= this;
+            tv_entries.setTableModel(tm_entries);
+
+            cm_pattern_nr.setOptions(Node.patnr_options);
+
+            cm_learn_trig_mode.setOptions(NodeKeymap.learn_trig_mode_names);
+
+            cm_learn_next_match_note.setOptions(MIDI.midi_notes);
+
+            cm_en_fixed_rpn_preset.setOptions(NodeKeymapEntry.fixed_rpn_preset_names);
+
+            initMMC();
+
+            initTimers();
+
+            ts_groups.setActiveTabIndex(1); // Entries
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_replay       <= TimerAction.New(TA_REPLAY,      this, 1000.0/60);
+      ta_midi_learn   <= TimerAction.New(TA_MIDI_LEARN,  this, 200);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeKeymapEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      // trace "xxx NodeKeymapEditor::mmcHandleEvent";
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      // (todo) implement me
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             tf_pattern_name2,
+
+                             cm_pattern_nr,
+                             bt_pattern_alloc,
+                             bt_pattern_tools,
+                             bt_pattern_free
+                           ]
+                          );
+            break;
+
+         case TAB_ENTRIES:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             tf_pattern_name2,
+
+                             cm_learn_trig_mode,
+                             bt_learn,
+                             cb_learn_velocity,
+                             cb_learn_polyat,
+                             cb_learn_pitchbend,
+                             cb_learn_modwheel,
+                             cb_learn_expression,
+                             cb_learn_breathcontrol,
+                             cb_learn_prgchg,
+                             cm_learn_next_match_note,
+                             cb_learn_next_match_note_black_and_white,
+                             fp_note_offset,
+                             fp_note_modulo,
+                             bt_entry_tools,
+
+                             tv_entries,
+                             bt_en_add,
+                             bt_en_remove,
+                             bt_en_moveup,
+                             bt_en_movedown
+                           ]
+                          );
+
+            break;
+
+         case TAB_PLAY:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             tf_pattern_name2,
+
+                             cm_node_class,
+                             cb_node_class_show,
+                             cm_node_class_show_in,
+
+                             cb_removeevents,
+                             ]
+                          );
+            f_autodev.addTabCycleOverrides(layers);
+            return layers;
+      }
+
+      return layers;
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeKeymap _kmap) {
+      kmap <= _kmap;
+
+      // Pattern:
+      updatePatternNrComboBox();
+      cm_pattern_nr.setSelectedOption(kmap.nodeGetCurrentEditPatternNr());
+
+      // Entries:
+      cb_learn_velocity     .setSelected(kmap.b_learn_velocity);
+      cb_learn_polyat       .setSelected(kmap.b_learn_polyat);
+      cb_learn_pitchbend    .setSelected(kmap.b_learn_pitchbend);
+      cb_learn_modwheel     .setSelected(kmap.b_learn_modwheel);
+      cb_learn_expression   .setSelected(kmap.b_learn_expression);
+      cb_learn_breathcontrol.setSelected(kmap.b_learn_breathcontrol);
+      cb_learn_prgchg       .setSelected(kmap.b_learn_prgchg);
+      cm_learn_trig_mode    .setSelectedOption(kmap.learn_trig_mode);
+
+      cm_learn_next_match_note.setSelectedOption(kmap.learn_next_match_note);
+      cb_learn_next_match_note_black_and_white.setSelected(kmap.b_learn_next_match_note_black_and_white);
+
+      cm_en_dst_ch.setOptions(MIDI.midi_ch_names);
+      cm_en_dst_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_en_dst_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      cm_en_match_note.setOptions(MIDI.midi_notes);
+      cm_en_match_note_mode.setOptions(NodeKeymapEntry.note_mode_names);
+
+      cm_en_velocity_curve.setOptions(NodeKeymapEntry.velocity_curve_names);
+
+      cm_en_fixed_send_note.setOptions(MIDI.midi_notes);
+      cm_en_fixed_send_note_mode.setOptions(NodeKeymapEntry.note_mode_names);
+
+      // Play:
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      f_autodev.showNode(kmap, devAll, bgcolorsAll);
+
+      handlePatternChanged(false/*bFromUI*/);
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(kmap);
+
+      cb_removeevents.setSelected(kmap.b_remove_input_events);
+
+      last_learn_note_on = -1;
+      last_learn_note_on_millisec = -1;
+      last_learn_note_off = -1;
+
+      MIDI.AddMIDIMapEventListener(this);
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         UI.SetKeyboardFocus(ts_groups);
+      }
+
+      handleViewEnter();
+
+      tv_entries.moveCursorToFirstRowIfNoneSelected();
+
+      handlePatternChanged(false/*bFromUI*/);
+
+      if(replay.b_playing)
+      {
+         ta_replay.schedule();
+      }
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         if(TAB_ENTRIES == ts_groups.getActiveTabIndex())
+         {
+            UI.SetKeyboardFocus(tv_entries);
+         }
+         else
+         {
+            UI.SetKeyboardFocus(ts_groups);
+         }
+         handleViewEnter();
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrComboBox() {
+      local StringArray patNrOptionsShort;
+      local StringArray patNrOptionsLong;
+      local IntArray patNrColors;
+      Node.CalcPatNrOptions(kmap, patNrOptionsShort, patNrOptionsLong, patNrColors);
+      cm_pattern_nr.setOptions(patNrOptionsShort);
+      cm_pattern_nr.setOptionsLong(patNrOptionsLong);
+      cm_pattern_nr.setOptionBGColors(patNrColors);
+   }
+
+   // <method_get.png>
+   public method getEditPattern() : NodeKeymapPattern {
+      if(null != kmap)
+      {
+         NodeKeymapPattern pat <= kmap.nodeGetCurrentEditPattern();
+         return pat;
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   public virtual nodeHandleEditPatternChanged() {
+      handlePatternChanged(false/*bFromUI*/);
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternChanged(boolean _bFromUI) {
+
+      NodeKeymapPattern pat <= kmap.nodeGetCurrentEditPattern();
+
+      updatePatternNrLabel();
+
+      if(!_bFromUI)
+      {
+         cm_pattern_nr.setSelectedOption(kmap.nodeGetCurrentEditPatternNr());
+         cm_pattern_nr.redraw();
+      }
+
+      updateEntry();
+
+      if(null != pat)
+      {
+         tf_pattern_name.setText(pat.pat_name);
+         tf_pattern_name.setEditable(true);
+
+         tf_pattern_name2.setText(pat.pat_name);
+         tf_pattern_name2.setEditable(true);
+
+         fp_note_offset.setValue(pat.note_offset);
+         fp_note_offset.setEditable(true);
+
+         fp_note_modulo.setValue(pat.note_modulo);
+         fp_note_modulo.setEditable(true);
+
+         tm_entries.entries <= pat.entries;
+         tv_entries.tableModelChanged();
+      }
+      else
+      {
+         tf_pattern_name.setText("");
+         tf_pattern_name.setEditable(false);
+
+         tf_pattern_name2.setText("");
+         tf_pattern_name2.setEditable(false);
+
+         tm_entries.entries <= null;
+
+         fp_note_offset.setValue(-1);
+         fp_note_offset.setNonEditableText("-");
+         fp_note_offset.setEditable(false);
+
+         fp_note_modulo.setValue(-1);
+         fp_note_modulo.setNonEditableText("-");
+         fp_note_modulo.setEditable(false);
+      }
+
+      redraw();
+
+      root_form.pg_node.handleEditPatternChanged();
+
+      setLearnMode(LEARN_NONE, true/*bQuiet*/, false/*bInfinite*/);
+   }
+
+   // <method_get.png>
+   protected method getSelectedEntry() : NodeKeymapEntry {
+      NodeKeymapPattern pat <= kmap.nodeGetCurrentEditPattern();
+
+      int rowIdx = tm_entries.getCursorIndex();
+
+      if((null != pat) && (-1 != rowIdx))
+      {
+         return pat.getEntryByIndex(rowIdx);
+      }
+
+      return null;
+   }
+
+   // <ui_update.png>
+   protected method updateEntry() {
+
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         // Match note + range
+         cm_en_match_note.setSelectedOption(en.match_note);
+         cm_en_match_note.setEditable(true);
+
+         fp_en_note_range.setValue(en.note_range);
+         fp_en_note_range.setEditable(true);
+
+         cm_en_match_note_mode.setSelectedOption(en.match_note_mode);
+         cm_en_match_note_mode.setEditable(true);
+
+         // Dst dev/ch
+         cm_en_dst_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(en.dst_dev_idx));
+         cm_en_dst_dev.setEditable(true);
+
+         cm_en_dst_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(en.dst_dev_idx, null/*firstOptionOrNull*/));
+         cm_en_dst_ch.setSelectedOption(en.dst_ch);
+         cm_en_dst_ch.setEditable(true);
+
+         // Fixed send note
+         cm_en_fixed_send_note.setSelectedOption(en.fixed_send_note);
+         cm_en_fixed_send_note.setEditable(true);
+
+         cm_en_fixed_send_note_mode.setSelectedOption(en.fixed_send_note_mode);
+         cm_en_fixed_send_note_mode.setEditable(true);
+
+         fp_en_fixed_send_note_duration.setValue(en.fixed_send_note_duration);
+         fp_en_fixed_send_note_duration.setEditable(true);
+
+         // Velocity
+         fp_en_velocity_min.setValue(en.velocity_min);
+         fp_en_velocity_min.setEditable(true);
+         fp_en_velocity_max.setValue(en.velocity_max);
+         fp_en_velocity_max.setEditable(true);
+         cb_en_velocity_normalize.setSelected(en.b_normalize_velocity);
+         cb_en_velocity_normalize.setEditable(true);
+         cm_en_velocity_curve.setSelectedOption(en.velocity_curve_idx);
+         cm_en_velocity_curve.setEditable(true);
+
+         // Fixed velocity
+         cb_en_fixed_velocity.setSelected(en.b_fixed_velocity);
+         fp_en_fixed_velocity.setValue(en.fixed_velocity);
+         cb_en_fixed_velocity.setEditable(true);
+         fp_en_fixed_velocity.setEditable(true);
+
+         // Fixed polyAT
+         cb_en_fixed_polyat.setSelected(en.b_fixed_polyat);
+         fp_en_fixed_polyat.setValue(en.fixed_polyat);
+         cb_en_fixed_polyat.setEditable(true);
+         fp_en_fixed_polyat.setEditable(true);
+
+         // Fixed pitchbend
+         cb_en_fixed_pitchbend.setSelected(en.b_fixed_pitchbend);
+         fp_en_fixed_pitchbend.setValue(en.fixed_pitchbend);
+         cb_en_fixed_pitchbend.setEditable(true);
+         fp_en_fixed_pitchbend.setEditable(true);
+
+         // Fixed RPN preset
+         cb_en_fixed_rpn_preset.setSelected(en.b_fixed_rpn_preset);
+         cm_en_fixed_rpn_preset.setSelectedOption(en.fixed_rpn_preset);
+         cb_en_fixed_rpn_preset.setEditable(true);
+         cm_en_fixed_rpn_preset.setEditable(true);
+
+         // Fixed modwheel
+         cb_en_fixed_modwheel.setSelected(en.b_fixed_modwheel);
+         fp_en_fixed_modwheel.setValue(en.fixed_modwheel);
+         cb_en_fixed_modwheel.setEditable(true);
+         fp_en_fixed_modwheel.setEditable(true);
+
+         // Fixed expression
+         cb_en_fixed_expression.setSelected(en.b_fixed_expression);
+         fp_en_fixed_expression.setValue(en.fixed_expression);
+         cb_en_fixed_expression.setEditable(true);
+         fp_en_fixed_expression.setEditable(true);
+
+         // Fixed breath control
+         cb_en_fixed_breathcontrol.setSelected(en.b_fixed_breathcontrol);
+         fp_en_fixed_breathcontrol.setValue(en.fixed_breathcontrol);
+         cb_en_fixed_breathcontrol.setEditable(true);
+         fp_en_fixed_breathcontrol.setEditable(true);
+
+         // Fixed prgchg
+         cb_en_fixed_prgchg.setSelected(en.b_fixed_prgchg);
+         cb_en_fixed_prgchg.setEditable(true);
+         fp_en_fixed_prgchg.setValue(en.fixed_prgchg);
+         fp_en_fixed_prgchg.setEditable(true);
+         lb_en_fixed_prgchg.setCaption(Node.patnr_options.get(en.fixed_prgchg));
+         lb_en_fixed_prgchg.redraw();
+
+      }
+      else
+      {
+         // No entry selected
+         cm_en_match_note.setSelectedOption(-1);
+         cm_en_match_note.setEditable(false);
+
+         fp_en_note_range.setValue(-1);
+         fp_en_note_range.setNonEditableText("-");
+         fp_en_note_range.setEditable(false);
+
+         cm_en_match_note_mode.setSelectedOption(-1);
+         cm_en_match_note_mode.setEditable(false);
+
+         cm_en_dst_ch.setSelectedOption(-1);
+         cm_en_dst_ch.setEditable(false);
+
+         cm_en_dst_dev.setSelectedOption(-1);
+         cm_en_dst_dev.setEditable(false);
+
+         cm_en_fixed_send_note.setSelectedOption(-1);
+         cm_en_fixed_send_note.setEditable(false);
+
+         cm_en_fixed_send_note_mode.setSelectedOption(-1);
+         cm_en_fixed_send_note_mode.setEditable(false);
+
+         fp_en_fixed_send_note_duration.setValue(0);
+         fp_en_fixed_send_note_duration.setNonEditableText("-");
+         fp_en_fixed_send_note_duration.setEditable(false);
+
+         fp_en_velocity_min.setValue(-1);
+         fp_en_velocity_min.setNonEditableText("-");
+         fp_en_velocity_min.setEditable(false);
+         fp_en_velocity_max.setValue(-1);
+         fp_en_velocity_max.setNonEditableText("-");
+         fp_en_velocity_max.setEditable(false);
+         cb_en_velocity_normalize.setSelected(false);
+         cb_en_velocity_normalize.setEditable(false);
+         cm_en_velocity_curve.setSelectedOption(-1);
+         cm_en_velocity_curve.setEditable(false);
+
+         // Fixed velocity
+         cb_en_fixed_velocity.setSelected(false);
+         fp_en_fixed_velocity.setValue(-1);
+         fp_en_fixed_velocity.setNonEditableText("-");
+         cb_en_fixed_velocity.setEditable(false);
+         fp_en_fixed_velocity.setEditable(false);
+
+         // Fixed polyAT
+         cb_en_fixed_polyat.setSelected(false);
+         fp_en_fixed_polyat.setValue(-1);
+         fp_en_fixed_polyat.setNonEditableText("-");
+         cb_en_fixed_polyat.setEditable(false);
+         fp_en_fixed_polyat.setEditable(false);
+
+         // Fixed pitchbend
+         cb_en_fixed_pitchbend.setSelected(false);
+         fp_en_fixed_pitchbend.setValue(-1);
+         fp_en_fixed_pitchbend.setNonEditableText("-");
+         cb_en_fixed_pitchbend.setEditable(false);
+         fp_en_fixed_pitchbend.setEditable(false);
+
+         // Fixed RPN preset
+         cb_en_fixed_rpn_preset.setSelected(false);
+         cm_en_fixed_rpn_preset.setSelectedOption(-1);
+         cb_en_fixed_rpn_preset.setEditable(false);
+         cm_en_fixed_rpn_preset.setEditable(false);
+
+         // Fixed modwheel
+         cb_en_fixed_modwheel.setSelected(false);
+         fp_en_fixed_modwheel.setValue(-1);
+         fp_en_fixed_modwheel.setNonEditableText("-");
+         cb_en_fixed_modwheel.setEditable(false);
+         fp_en_fixed_modwheel.setEditable(false);
+
+         // Fixed expression
+         cb_en_fixed_expression.setSelected(false);
+         fp_en_fixed_expression.setValue(-1);
+         fp_en_fixed_expression.setNonEditableText("-");
+         cb_en_fixed_expression.setEditable(false);
+         fp_en_fixed_expression.setEditable(false);
+
+         // Fixed breath control
+         cb_en_fixed_breathcontrol.setSelected(false);
+         fp_en_fixed_breathcontrol.setValue(-1);
+         fp_en_fixed_breathcontrol.setNonEditableText("-");
+         cb_en_fixed_breathcontrol.setEditable(false);
+         fp_en_fixed_breathcontrol.setEditable(false);
+
+         // Fixed prgchg
+         cb_en_fixed_prgchg.setSelected(false);
+         cb_en_fixed_prgchg.setEditable(false);
+         fp_en_fixed_prgchg.setValue(-1);
+         fp_en_fixed_prgchg.setNonEditableText("-");
+         fp_en_fixed_prgchg.setEditable(false);
+         lb_en_fixed_prgchg.setCaption("--/");
+         lb_en_fixed_prgchg.redraw();
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+      MIDI.RemoveMIDIMapEventListener(this);
+
+      handleViewLeave();
+
+      ta_replay.cancel();
+
+      setLearnMode(LEARN_NONE, true/*bQuiet*/, false/*bInfinite*/);
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      kmap <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrLabel() {
+      Integer io = kmap.nodeGetCurrentEditPatternNr();
+      lb_pattern_nr.setCaption("Pattern:\n  ("+io.printf("0x%02x")+")");
+      lb_pattern_nr.redraw();
+   }
+
+   // <ui_handle.png>
+   module =replay= method handlePatternAlloc(boolean _bSub) : NodeKeymapPattern {
+      local NodeKeymapPattern p;
+
+      p.patInit(kmap, 0/*patNr placeholder*/);
+
+      int patIdx;
+
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(true == _bSub)
+         {
+            // Find unused A..D sub pattern
+            patIdx = kmap.nodeFindFirstUnusedPatternSub(kmap.nodeGetCurrentEditPatternNr());
+         }
+         else
+         {
+            // Find unused 1..32 pattern group
+            patIdx = kmap.nodeFindFirstUnusedPatternGroup(kmap.nodeGetCurrentEditPatternNr());
+         }
+
+         if(-1 == patIdx)
+         {
+            patIdx = kmap.findFirstUnusedPattern(0);
+         }
+      }
+      else
+      {
+         patIdx = kmap.nodeGetCurrentEditPatternNr();
+      }
+
+      // trace "xxx findFirstUnusedPattern: patIdx="+patIdx+" currentEditNr="+kmap.nodeGetCurrentEditPatternNr();
+
+      if(-1 != patIdx)
+      {
+         p.pat_nr = patIdx;
+         kmap.nodeSetPattern(patIdx, deref p);
+
+         kmap.nodeSetCurrentEditPatternNr(patIdx);
+         kmap.nodeSetCurrentPlayPatternNr(patIdx);
+
+         cm_pattern_nr.setSelectedOption(patIdx);
+
+         selectPatternByIdx(patIdx);
+
+         updatePatternNrComboBox();
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         Global.SuccessShort("New: Allocate pattern "+cm_pattern_nr.getSelectedOptionName()+" ("+(patIdx+1)+").");
+         return p;
+      }
+      else
+      {
+         Global.Error("New: All patterns in use.");
+         return null;
+      }
+   }
+
+   // <ui_show.png>
+   protected method showPatternToolsMenu(boolean _bFocusFirst) {
+
+      pm_pattern_tools <= PopupMenu.New(this);
+      PopupMenu pm <= pm_pattern_tools;
+      PopupMenuButton *pmb;
+
+      NodeKeymapPattern pat <= kmap.nodeGetCurrentEditPattern();
+      boolean bHavePat = (null != pat);
+
+      pmb <= pm.addDefaultButton("Copy pattern", "copy");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= pm.addDefaultButton("Paste pattern", "paste");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lctrl-v", "");
+
+      if(bHavePat)
+      {
+         pmb.setActive(null != pat.patGetClipboard());
+      }
+      else
+      {
+         pmb.setActive(false);
+      }
+
+      pmb <= pm.addDefaultButton("Clone pattern", "clone");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("Clone pattern (sub)", "clone_sub");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lshift-lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("New pattern (sub)", "new_sub");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lshift-lctrl-n", "");
+
+      // pm.addSeparator();
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_pattern_tools);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show pattern tools menu.");
+   }
+
+   // <ui_handle.png>
+   module method handlePatternCopy() {
+
+      NodeKeymapPattern pat <= getEditPattern();
+
+      // trace "xxx nkm: handlePatternCopy: pat="+#(pat);
+
+      if(null != pat)
+      {
+         pat.patCopyToClipboard();
+
+         Global.Print("Pattern copied to clipboard.");
+      }
+   }
+
+   // <ui_handle.png>
+   module method handlePatternPaste() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      // trace "xxx nkm: handlePatternPaste: pat="+#(pat);
+
+      if(null == pat)
+      {
+         handlePatternAlloc(false/*bSub*/);
+         pat <= getEditPattern();
+      }
+
+      if(null != pat)
+      {
+         if(pat.patCopyFromClipboard())
+         {
+            handlePatternChanged(false/*bFromUI*/);
+
+            updatePatternNrComboBox();
+
+            Global.SuccessShort("Clipboard pasted to pattern.");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   module =replay= method handlePatternClone(boolean _bSub) {
+      NodeKeymapPattern patSrc <= getEditPattern();
+
+      if(null != patSrc)
+      {
+         if(null != handlePatternAlloc(_bSub))
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            pat.patCopyFrom(patSrc, false/*bClear*/);
+            pat.patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+
+            handlePatternChanged(false/*bFromUI*/);
+
+            updatePatternNrComboBox();
+
+            Global.SuccessShort("Pattern cloned to "+cm_pattern_nr.getSelectedOptionName()+".");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   module method handlePatternFree() {
+
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         dlg_deletepattern <= new Dialog_DeletePattern;
+         dlg_deletepattern.run(this, pat.pat_name);
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handlePatternFree2() {
+
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         kmap.nodeSetPattern(kmap.edit_pattern_nr, null);
+
+         pat <= null;
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         updatePatternNrComboBox();
+
+         Global.Print("Delete pattern");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPattern() {
+
+      // trace "xxx cm_pattern_nr.getSelectedOption()="+cm_pattern_nr.getSelectedOption();
+      int patNr = cm_pattern_nr.getSelectedOption();
+
+      kmap.nodeSetCurrentEditPatternNr(patNr);
+      kmap.nodeSetCurrentPlayPatternNr(patNr);
+
+      kmap.nodeQueuePrgChgOut(patNr);
+      // // replay.handleNodeStateChangedUI(kmap, -1/*active*/, patNr/*pat*/);
+
+      handlePatternChanged(true/*bFromUI*/);
+
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" \""+pat.pat_name+"\".");
+      }
+      else
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" <empty>.");
+      }
+   }
+
+   // <method.png>
+   public virtual selectPatternByIdx(int _idx) {
+
+      cm_pattern_nr.setSelectedOption(_idx);
+
+      handleSelectPattern();
+   }
+
+   // <method.png>
+   public virtual selectPatternByUsedIdx(int _idx) {
+      if(_idx >= 0)
+      {
+         int patNr = kmap.nodeGetPatternNrByUsedIdx(_idx);
+
+         if(-1 != patNr)
+         {
+            selectPatternByIdx(patNr);
+         }
+      }
+      else
+      {
+         selectPatternByIdx(127); // --/
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectPreviousPattern() {
+      byte patNr = kmap.nodeGetCurrentEditPatternNr();
+
+      if(patNr > 0)
+      {
+         patNr--;
+
+         kmap.nodeSetCurrentEditPatternNr(patNr);
+         kmap.nodeSetCurrentPlayPatternNr(patNr);
+
+         replay.handleNodeStateChangedUI(kmap, -1/*active*/, patNr/*pat*/);
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         kmap.nodeQueuePrgChgOut(patNr);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectNextPattern() {
+      byte patNr = kmap.nodeGetCurrentEditPatternNr();
+
+      if(patNr < 127)
+      {
+         patNr++;
+
+         kmap.nodeSetCurrentEditPatternNr(patNr);
+         kmap.nodeSetCurrentPlayPatternNr(patNr);
+
+         replay.handleNodeStateChangedUI(kmap, -1/*active*/, patNr/*pat*/);
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         kmap.nodeQueuePrgChgOut(patNr);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPreviousUsedPattern() {
+      int patIdx = kmap.nodeGetCurrentEditPatternNr();
+      patIdx = kmap.nodeFindPreviousPatternNrByUsedIdxWithOffset(patIdx-1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextUsedPattern() {
+      int patIdx = kmap.nodeGetCurrentEditPatternNr();
+      patIdx = kmap.nodeFindNextPatternNrByUsedIdxWithOffset(patIdx+1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNameChanged() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pattern_name.getText();
+         tf_pattern_name2.setText(pat.pat_name);
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternName2Changed() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pattern_name2.getText();
+         tf_pattern_name.setText(pat.pat_name);
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntrySelected(boolean _bFromUI, boolean _bClick) {
+      updateEntry();
+
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(_bClick)
+      {
+         if(null != en)
+         {
+            kmap.learn_next_match_note = kmap.calcNextMatchNote(en.match_note);
+            cm_learn_next_match_note.setSelectedOption(kmap.learn_next_match_note);
+            cm_learn_next_match_note.redraw();
+
+            kmap.queueEntryIdx(tm_entries.getCursorIndex());
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryChanged() {
+
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.updateAutoGeneratedName();
+
+         updateEntry();
+
+         tv_entries.tableModelChanged();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnTrigModeChanged() {
+      kmap.learn_trig_mode = cm_learn_trig_mode.getSelectedOption();
+
+      Global.Print("Learn trig mode is "+(NodeKeymap.learn_trig_mode_names.get(kmap.learn_trig_mode)));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnVelocityChanged() {
+      kmap.b_learn_velocity = cb_learn_velocity.isSelected();
+
+      Global.Print("Learn velocity is "+Utils.GetEnableString(kmap.b_learn_velocity));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnModWheelChanged() {
+      kmap.b_learn_modwheel = cb_learn_modwheel.isSelected();
+
+      Global.Print("Learn modwheel is "+Utils.GetEnableString(kmap.b_learn_modwheel));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnPolyATChanged() {
+      kmap.b_learn_polyat = cb_learn_polyat.isSelected();
+
+      Global.Print("Learn polyAT is "+Utils.GetEnableString(kmap.b_learn_polyat));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnPitchbendChanged() {
+      kmap.b_learn_pitchbend = cb_learn_pitchbend.isSelected();
+
+      Global.Print("Learn pitchbend is "+Utils.GetEnableString(kmap.b_learn_pitchbend));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnExpressionChanged() {
+      kmap.b_learn_expression = cb_learn_expression.isSelected();
+
+      Global.Print("Learn expression is "+Utils.GetEnableString(kmap.b_learn_expression));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnBreathControlChanged() {
+      kmap.b_learn_breathcontrol = cb_learn_breathcontrol.isSelected();
+
+      Global.Print("Learn breath control is "+Utils.GetEnableString(kmap.b_learn_breathcontrol));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnPrgChgChanged() {
+      kmap.b_learn_prgchg = cb_learn_prgchg.isSelected();
+
+      Global.Print("Learn program change is "+Utils.GetEnableString(kmap.b_learn_prgchg));
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnNextMatchNoteChanged() {
+      kmap.learn_next_match_note = cm_learn_next_match_note.getSelectedOption();
+
+      Global.Print("Next learnt match node is "+cm_learn_next_match_note.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleLearnNextMatchNoteBlackAndWhiteChanged() {
+      kmap.b_learn_next_match_note_black_and_white = cb_learn_next_match_note_black_and_white.isSelected();
+
+      Global.Print("Learn "+(kmap.b_learn_next_match_note_black_and_white ? "black and white" : "white")+" keys");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoteOffsetChanged() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.note_offset = fp_note_offset.getFloatValue();
+
+         Global.Print("Match note offset is "+pat.note_offset);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleNoteModuloChanged() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.note_modulo = fp_note_modulo.getFloatValue();
+
+         Global.Print("Match note modulo is "+pat.note_modulo);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryClone() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      trace "xxx handleEntryClone: en="+#(en);
+
+      if(null != en)
+      {
+         NodeKeymapPattern pat <= getEditPattern();
+
+         NodeKeymapEntry n <= new NodeKeymapEntry;
+         n.init();
+
+         trace "xxx handleEntryClone n="+#(n);
+         n.copyFrom(en);
+         int rowIdx = tm_entries.getCursorIndex() + 1;
+         pat.insertEntryAt(deref n, rowIdx);
+
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToRow(rowIdx);
+
+         Global.Print("Clone entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryAdd() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         NodeKeymapEntry n <= new NodeKeymapEntry;
+         n.init();
+
+         int rowIdx = tm_entries.getCursorIndex() + 1;
+         pat.insertEntryAt(deref n, rowIdx);
+
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToRow(rowIdx);
+
+         updateEntry();
+
+         Global.Print("Add entry");
+      }
+   }
+
+   // <method.png>
+   protected method setEntryFixedVals(NodeKeymapEntry n, byte note, byte _vel, int _devIdx, byte _ch) {
+      // short val;
+      MIDIPipeEvent pev;
+      MIDIPipeFrame frLearn <= kmap.fr_learn;
+      int numEv;
+      int evIdx;
+
+      if(kmap.b_learn_velocity)
+      {
+         n.b_fixed_velocity = true;
+         n.fixed_velocity = _vel;
+      }
+
+      if(kmap.b_learn_polyat)
+      {
+         numEv = frLearn.getNumEventsPolyPressureByFlt(_devIdx, _ch);
+         for(evIdx = 0; evIdx < numEv; evIdx++)
+         {
+            if(frLearn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, _devIdx, _ch))
+            {
+               if(pev.polyPressureNote == note)
+               {
+                  n.b_fixed_polyat = true;
+                  n.fixed_polyat = pev.polyPressureValue;
+                  break;
+               }
+            }
+         }
+      }
+
+      if(kmap.b_learn_pitchbend)
+      {
+         if(frLearn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PITCHBEND, _devIdx, _ch))
+         {
+            n.b_fixed_pitchbend = true;
+            n.fixed_pitchbend = pev.pitchbend;
+         }
+      }
+
+      numEv = frLearn.getNumEventsCCByFlt(_devIdx, _ch);
+      for(evIdx = 0; evIdx < numEv; evIdx++)
+      {
+         if(frLearn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, _devIdx, _ch))
+         {
+            // trace "xxx evIdx="+evIdx+" pev.ccId="+pev.ccId+" ccValue="+pev.ccValue;
+            if(pev.ccId == 1/*modwheel*/)
+            {
+               if(kmap.b_learn_modwheel)
+               {
+                  n.b_fixed_modwheel = true;
+                  n.fixed_modwheel = pev.ccValue;
+               }
+            }
+            else if(pev.ccId == 11/*expression*/)
+            {
+               if(kmap.b_learn_expression)
+               {
+                  n.b_fixed_expression = true;
+                  n.fixed_expression = pev.ccValue;
+               }
+            }
+            else if(pev.ccId == 2/*breathcontrol*/)
+            {
+               if(kmap.b_learn_breathcontrol)
+               {
+                  n.b_fixed_breathcontrol = true;
+                  n.fixed_breathcontrol = pev.ccValue;
+               }
+            }
+
+         }
+      }
+
+      if(kmap.b_learn_prgchg)
+      {
+         if(frLearn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_PRGCHG, _devIdx, _ch))
+         {
+            n.b_fixed_prgchg = true;
+            n.fixed_prgchg = pev.prgChg;
+         }
+      }
+   }
+
+   // <method_add.png>
+   protected =replay= method addLearntEntry(byte _noteOn, byte _noteOff, byte _vel, int _devIdx, byte _ch) {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         NodeKeymapEntry n <= new NodeKeymapEntry;
+         n.init();
+
+         int rowIdx = tm_entries.getCursorIndex() + 1;
+         pat.insertEntryAt(deref n, rowIdx);
+
+         n.dst_dev_idx = _devIdx;
+         n.dst_ch      = _ch;
+
+         byte note;
+
+         if(-1 != _noteOn)
+         {
+            n.match_note      = kmap.learn_next_match_note;
+            n.match_note_mode = NodeKeymapEntry.NOTE_ON;
+            n.fixed_send_note      = _noteOn;
+            n.fixed_send_note_mode = NodeKeymapEntry.NOTE_ON;
+            note = _noteOn;
+         }
+         else if(-1 != _noteOff)
+         {
+            n.match_note      = kmap.learn_next_match_note;
+            n.match_note_mode = NodeKeymapEntry.NOTE_ON;
+            n.fixed_send_note      = _noteOff;
+            n.fixed_send_note_mode = NodeKeymapEntry.NOTE_OFF;
+            note = _noteOff;
+         }
+
+         kmap.learn_next_match_note = kmap.calcNextMatchNote(kmap.learn_next_match_note);
+
+         // Set entry name to note name (if it exists)
+         STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+         if(null != dev)
+         {
+            MIDISynthProfile msp <= dev.getMIDISynthProfile(_ch);
+            if(null != msp)
+            {
+               String noteCap <= msp.getNoteCaptionOrNull(note);
+
+               if(null != noteCap)
+               {
+                  n.name = noteCap;
+               }
+            }
+         }
+
+         setEntryFixedVals(n, note, _vel, _devIdx, _ch);
+
+         kmap.clearLearnEvents();
+         last_learn_note_on = -1;
+         last_learn_note_off = -1;
+         last_learn_note_on_millisec = -1;
+
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToRow(rowIdx);
+
+         updateEntry();
+
+         cm_learn_next_match_note.setSelectedOption(kmap.learn_next_match_note);
+
+         Global.Print("Learn entry noteOn="+_noteOn+" noteOff="+_noteOff);
+      }
+   }
+
+   // <method_update.png>
+   protected =replay= method updateLearntEntrySend(byte _note, byte _vel, int _devIdx, byte _ch) {
+      NodeKeymapEntry n <= getSelectedEntry();
+
+      if(null != n)
+      {
+         n.dst_dev_idx = _devIdx;
+         n.dst_ch      = _ch;
+
+         n.fixed_send_note = _note;
+
+         // Set entry name to note name (if it exists)
+         STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+         if(null != dev)
+         {
+            MIDISynthProfile msp <= dev.getMIDISynthProfile(_ch);
+            if(null != msp)
+            {
+               String noteCap <= msp.getNoteCaptionOrNull(_note);
+
+               if(null != noteCap)
+               {
+                  n.name = noteCap;
+               }
+            }
+         }
+
+         setEntryFixedVals(n, _note, _vel, _devIdx, _ch);
+
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToNextRowNoAction();
+
+         updateEntry();
+
+         Global.Print("Update entry send note="+_note);
+      }
+   }
+
+   // <method_update.png>
+   protected =replay= method updateLearntEntryMatch(byte _note) {
+      NodeKeymapEntry n <= getSelectedEntry();
+
+      if(null != n)
+      {
+         n.match_note = _note;
+
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToNextRowNoAction();
+
+         updateEntry();
+
+         Global.Print("Update entry match note="+_note);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryRemove() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         NodeKeymapPattern pat <= getEditPattern();
+
+         int rowIdx = tm_entries.getCursorIndex();
+         pat.removeEntryAt(rowIdx);
+
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToRow(rowIdx);
+
+         if(0 == tm_entries.getNumRows())
+         {
+            kmap.learn_next_match_note = STConfig.node_keymap_first_match_note;
+            cm_learn_next_match_note.setSelectedOption(kmap.learn_next_match_note);
+         }
+
+         updateEntry();
+
+         Global.Print("Remove entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryMoveUp() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         NodeKeymapPattern pat <= getEditPattern();
+
+         int rowIdx = tm_entries.getCursorIndex();
+
+         if(rowIdx > 0)
+         {
+            pat.moveEntryUp(rowIdx);
+
+            tv_entries.tableModelChanged();
+            tv_entries.moveCursorToRow(rowIdx - 1);
+
+            Global.Print("Move entry up");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryMoveDown() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         NodeKeymapPattern pat <= getEditPattern();
+
+         int rowIdx = tm_entries.getCursorIndex();
+
+         if(rowIdx < (pat.entries.numElements - 1))
+         {
+            pat.moveEntryDown(rowIdx);
+
+            tv_entries.tableModelChanged();
+            tv_entries.moveCursorToRow(rowIdx + 1);
+
+            Global.Print("Move entry down");
+         }
+      }
+   }
+
+   // <method.png>
+   protected method toggleKeyLearn(boolean _bInfinite) {
+
+      if(null == getEditPattern())
+      {
+         handlePatternAlloc(false/*bSub*/);
+      }
+
+      setLearnMode(LEARN_KEY, false/*bQuiet*/, _bInfinite);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnDstDevChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         int dstDevIdxOld = en.dst_dev_idx;
+         int dstDevIdx = MIDI.SortedToUnsortedDevIdx(cm_en_dst_dev.getSelectedOption());
+
+         // Update all entries ?
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            foreach en in pat.entries
+            {
+               if(en.dst_dev_idx == dstDevIdxOld)
+               {
+                  en.dst_dev_idx = dstDevIdx;
+               }
+            }
+         }
+         else
+         {
+            en.dst_dev_idx = dstDevIdx;
+         }
+
+         handleEntryChanged();
+
+         Global.Print("Dst dev is "+cm_en_dst_dev.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnDstChChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         int dstDevIdx = en.dst_dev_idx;
+         int dstChOld = en.dst_ch;
+         int dstCh = cm_en_dst_ch.getSelectedOption();
+
+         // Update all entries ?
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            foreach en in pat.entries
+            {
+               if(en.dst_dev_idx == dstDevIdx)
+               {
+                  if(en.dst_ch == dstChOld)
+                  {
+                     en.dst_ch = dstCh;
+                  }
+               }
+            }
+         }
+         else
+         {
+            en.dst_ch = dstCh;
+         }
+
+         handleEntryChanged();
+
+         Global.Print("Dst ch is "+cm_en_dst_ch.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnMatchNoteChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.match_note = cm_en_match_note.getSelectedOption();
+
+         handleEntryChanged();
+
+         Global.Print("Match note is "+cm_en_match_note.getSelectedOptionName()+" ("+en.match_note+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnNoteRangeChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.note_range = fp_en_note_range.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Note range is "+en.note_range+" semitones");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnMatchNoteModeChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         int matchMode = cm_en_match_note_mode.getSelectedOption();
+
+         // Update all entries ?
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            foreach en in pat.entries
+            {
+               en.match_note_mode = matchMode;
+            }
+         }
+         else
+         {
+            en.match_note_mode = matchMode;
+         }
+
+         handleEntryChanged();
+
+         Global.Print("Match note mode is "+cm_en_match_note_mode.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedSendNoteChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_send_note = cm_en_fixed_send_note.getSelectedOption();
+
+         handleEntryChanged();
+
+         Global.Print("Send note is "+cm_en_fixed_send_note.getSelectedOptionName()+" ("+en.fixed_send_note+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedSendNoteModeChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         int sendMode = cm_en_fixed_send_note_mode.getSelectedOption();
+
+         // Update all entries ?
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            foreach en in pat.entries
+            {
+               en.fixed_send_note_mode = sendMode;
+            }
+         }
+         else
+         {
+            en.fixed_send_note_mode = sendMode;
+         }
+
+         handleEntryChanged();
+
+         Global.Print("Send note mode is "+cm_en_fixed_send_note_mode.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedSendNoteDurationChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         int noteDur = fp_en_fixed_send_note_duration.getFloatValue();
+
+         // Update all entries ?
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            foreach en in pat.entries
+            {
+               en.fixed_send_note_duration = noteDur;
+            }
+         }
+         else
+         {
+            en.fixed_send_note_duration = noteDur;
+         }
+
+         handleEntryChanged();
+
+         Global.Print("Send note duration is "+en.fixed_send_note_duration+" ticks");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnVelocityNormalizeChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_normalize_velocity = cb_en_velocity_normalize.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Normalize velocity is "+Utils.GetEnableString(en.b_normalize_velocity));
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleEnVelocityMinChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.velocity_min = fp_en_velocity_min.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Min velocity is "+en.velocity_min);
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleEnVelocityMaxChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.velocity_max = fp_en_velocity_max.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Max velocity is "+en.velocity_max);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnVelocityCurveChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         int curveIdx = cm_en_velocity_curve.getSelectedOption();
+
+         // Update all entries ?
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            NodeKeymapPattern pat <= getEditPattern();
+
+            foreach en in pat.entries
+            {
+               en.velocity_curve_idx = curveIdx;
+            }
+         }
+         else
+         {
+            en.velocity_curve_idx = curveIdx;
+         }
+
+         handleEntryChanged();
+
+         Global.Print("Velocity curve is "+cm_en_velocity_curve.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedVelocityEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_velocity = cb_en_fixed_velocity.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed velocity is "+Utils.GetEnableString(en.b_fixed_velocity));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedVelocityChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_velocity = fp_en_fixed_velocity.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed velocity is "+en.fixed_velocity);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedPolyATEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_polyat = cb_en_fixed_polyat.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed polyAT is "+Utils.GetEnableString(en.b_fixed_polyat));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedPolyATChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_polyat = fp_en_fixed_polyat.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed polyAT is "+en.fixed_polyat);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedPitchbendEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_pitchbend = cb_en_fixed_pitchbend.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed pitchbend is "+Utils.GetEnableString(en.b_fixed_pitchbend));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedPitchbendChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_pitchbend = fp_en_fixed_pitchbend.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed pitchbend is "+en.fixed_pitchbend);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedRPNPresetEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_rpn_preset = cb_en_fixed_rpn_preset.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed RPN preset is "+Utils.GetEnableString(en.b_fixed_rpn_preset));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedRPNPresetChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_rpn_preset = cm_en_fixed_rpn_preset.getSelectedOption();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed RPN preset is "+en.fixed_rpn_preset);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedModWheelEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_modwheel = cb_en_fixed_modwheel.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed modwheel is "+Utils.GetEnableString(en.b_fixed_modwheel));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedModWheelChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_modwheel = fp_en_fixed_modwheel.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed modwheel is "+en.fixed_modwheel);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedExpressionEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_expression = cb_en_fixed_expression.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed expression is "+Utils.GetEnableString(en.b_fixed_expression));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedExpressionChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_expression = fp_en_fixed_expression.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed expression is "+en.fixed_expression);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedBreathControlEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_breathcontrol = cb_en_fixed_breathcontrol.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed breathcontrol is "+Utils.GetEnableString(en.b_fixed_breathcontrol));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedBreathControlChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_breathcontrol = fp_en_fixed_breathcontrol.getFloatValue();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed breath control is "+en.fixed_breathcontrol);
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedPrgChgEnableChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.b_fixed_prgchg = cb_en_fixed_prgchg.isSelected();
+
+         handleEntryChanged();
+
+         Global.Print("Send fixed prgchg is "+((false == en.b_fixed_prgchg) ? "disabled" : (true == en.b_fixed_prgchg) ? "enabled (CTL_PC)" : "enabled (RPN_COMMON_UI_PRGCHG)"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnFixedPrgChgChanged() {
+      NodeKeymapEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         en.fixed_prgchg = fp_en_fixed_prgchg.getFloatValue();
+
+         lb_en_fixed_prgchg.setCaption(Node.patnr_options.get(en.fixed_prgchg));
+         lb_en_fixed_prgchg.redraw();
+
+         handleEntryChanged();
+
+         Global.Print("Fixed program change is "+en.fixed_prgchg+" ("+(Node.patnr_options.get(en.fixed_prgchg & 127))+")");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showEntryToolsMenu(boolean _bFocusFirst) {
+
+      pm_entry_tools <= PopupMenu.New(this);
+      PopupMenu pm <= pm_entry_tools;
+      PopupMenuButton *pmb;
+
+      NodeKeymapPattern pat <= kmap.nodeGetCurrentEditPattern();
+      boolean bHavePat = (null != pat);
+
+      pmb <= pm.addCheckButton("Show note events in status bar", STConfig.b_show_ctl_info, "toggle_ctl_info_lo");
+      pmb <= pm.addCheckButton("Show perf events in status bar", STConfig.b_show_ctl_info_hifreq, "toggle_ctl_info_hi");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Swap Match and Send Notes", "swap_match_and_send_notes");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-p", "");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_entry_tools);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show entry tools menu.");
+   }
+
+   // <ui_handle.png>
+   protected method handleSwapMatchAndSendNotes() {
+      NodeKeymapPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.swapMatchAndSendNotes();
+         handlePatternChanged(false/*bFromUI*/);
+         Global.Print("Swap match and send notes");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(kmap.getNodeClassId());
+      cb_node_class_show.setSelected(kmap.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      kmap.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+kmap.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      kmap.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(kmap.getEnableNodeClassShow()));
+   }
+
+   // <ui_handle.png>
+   protected method handleRemoveEventsChanged() {
+      kmap.setEnableRemoveInputEvents(cb_removeevents.isSelected());
+
+      if(maybe == kmap.b_remove_input_events)
+         Global.Print("Remove input events when at least one keymap entry matches");
+      else
+         Global.Print("Remove-all-input-events (note on+off) is "+Utils.GetEnableString(kmap.b_remove_input_events));
+   }
+
+   // <ui_handle.png>
+   protected method handleViewEnter() {
+
+      // // if(TAB_ENTRIES == ts_groups.getActiveTabIndex())
+      // // {
+      // // }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleViewLeave() {
+      if(TAB_ENTRIES == ts_groups.getActiveTabIndex())
+      {
+      }
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+      // // // kmap.nodeCopyLastPatternStartSongOffsetFromEditor();
+      ta_replay.schedule();
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+      // // // kmap.nodeCopyLastPatternStartSongOffsetFromEditor();
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+      kmap.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+   }
+
+   // <method.png>
+   protected =replay= selectEntryByEvent(MIDIMapEvent _ev) {
+
+      if(_ev.isNoteOnOrOff())
+      {
+         NodeKeymapPattern pat <= getEditPattern();
+
+         if(null != pat)
+         {
+            NodeKeymapEntry *en;
+            int rowIdx;
+
+            // Try send note
+            en <= kmap.findEntryBySendNoteAndDevCh(_ev.arg1/*note*/,
+                                                   (MIDIMapDefs.TYPE_NOTE_ON == _ev.type)/*bNoteOn*/,
+                                                   _ev.getDevIdx(),
+                                                   _ev.dev_ch
+                                                   );
+
+            if(null != en)
+            {
+               rowIdx = pat.entries.indexOfPointer(en, 0);
+
+               tv_entries.moveCursorToRow(rowIdx);
+
+               updateEntry();
+               return;
+            }
+
+            // Try match note
+            Integer noteOffset = 0;
+            en <= kmap.findEntryByNote(_ev.arg1/*note*/,
+                                       (MIDIMapDefs.TYPE_NOTE_ON == _ev.type)/*bNoteOn*/,
+                                       _ev.arg2/*vel*/,
+                                       noteOffset,
+                                       0/*matchIdx*/
+                                       );
+
+            if(null != en)
+            {
+               rowIdx = pat.entries.indexOfPointer(en, 0);
+
+               tv_entries.moveCursorToRow(rowIdx);
+
+               updateEntry();
+               return;
+            }
+
+         }
+
+      }
+   }
+
+   // <midi_mml.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(_ev.isReservedEvent())
+         return false;
+
+      MIDIMapEvent evXForm = _ev;
+      MIDIMorphScene.TransformEvent(evXForm);
+      evXForm.echoTransformForced();
+
+      if(STConfig.b_show_ctl_info)
+      {
+         if(STConfig.b_show_ctl_info_hifreq || !evXForm.isHiFreqEvent())
+         {
+            Global.PrintFast(evXForm.getInfoStringForPipeMap());
+         }
+      }
+
+      if(LEARN_KEY == kmap.learn_mode)
+      {
+         handleKeyLearn(evXForm);
+      }
+      else if(cb_en_select.isSelected())
+      {
+         selectEntryByEvent(evXForm);
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method handleKeyLearn(MIDIMapEvent _ev) {
+
+      MIDIMapEvent evRec = _ev;
+      MIDIMorphScene.TransformEvent(evRec);
+      evRec.echoTransformForced();
+      evRec.classify();
+
+      if(MIDIMapDefs.SYN_NONE != evRec.syn_type)
+         return;
+
+      // trace "xxx nkm: evRec: "+evRec.getDebugString();
+
+      if(evRec.class_type == MIDIMapDefs.CLASS_UNKNOWN)
+      {
+         evRec.class_type = MIDIMapDefs.CLASS_VALUE;
+      }
+
+      if(MIDIMapDefs.TYPE_NOTE_ON == evRec.type)
+      {
+         last_learn_note_on = evRec.arg1;
+         last_learn_note_vel = evRec.arg2;
+         last_learn_note_dev_idx = evRec.getDevIdx();
+         last_learn_note_ch = evRec.dev_ch;
+         last_learn_note_on_millisec = milliSeconds();
+
+         switch(kmap.learn_trig_mode)
+         {
+            case NodeKeymap.LEARN_TRIG_NOTE_ON:
+            case NodeKeymap.LEARN_TRIG_NOTE_ON_OR_OFF:
+               addLearntEntry(last_learn_note_on, -1/*noteOff*/, evRec.arg2/*vel*/, evRec.getDevIdx(), evRec.dev_ch);
+               break;
+
+            case NodeKeymap.LEARN_TRIG_NOTE_ON_HOLD:
+               break;
+
+            case NodeKeymap.LEARN_TRIG_UPDATE_SEND:
+               updateLearntEntrySend(last_learn_note_on, evRec.arg2/*vel*/, evRec.getDevIdx(), evRec.dev_ch);
+               break;
+
+            case NodeKeymap.LEARN_TRIG_UPDATE_MATCH:
+               updateLearntEntryMatch(last_learn_note_on);
+               break;
+
+            case NodeKeymap.LEARN_TRIG_KEYPRESS:
+               break;
+         }
+      }
+      else if(MIDIMapDefs.TYPE_NOTE_OFF == evRec.type)
+      {
+         last_learn_note_off = evRec.arg1;
+         // // last_learn_note_vel = evRec.arg2;
+         last_learn_note_dev_idx = evRec.getDevIdx();
+         last_learn_note_ch = evRec.dev_ch;
+
+         switch(kmap.learn_trig_mode)
+         {
+            case NodeKeymap.LEARN_TRIG_NOTE_OFF:
+            case NodeKeymap.LEARN_TRIG_NOTE_ON_OR_OFF:
+               addLearntEntry(-1/*noteOn*/, last_learn_note_off, evRec.arg2/*vel*/, evRec.getDevIdx(), evRec.dev_ch);
+               return;
+
+            case NodeKeymap.LEARN_TRIG_NOTE_ON_HOLD:
+               if(-1 != last_learn_note_on_millisec)
+               {
+                  if((milliSeconds() - last_learn_note_on_millisec) >= STConfig.node_keymap_hold_note_threshold)
+                  {
+                     addLearntEntry(last_learn_note_on, -1/*noteOff*/, evRec.arg2/*vel*/, evRec.getDevIdx(), evRec.dev_ch);
+                     return;
+                  }
+               }
+               break;
+
+            case NodeKeymap.LEARN_TRIG_UPDATE_SEND:
+            case NodeKeymap.LEARN_TRIG_UPDATE_MATCH:
+            case NodeKeymap.LEARN_TRIG_KEYPRESS:
+               break;
+         }
+      }
+
+
+      if(MIDIMapDefs.CLASS_VALUE == evRec.class_type)
+      {
+         NodeKeymapEntry en <= getSelectedEntry();
+
+         if(null != en)
+         {
+            switch(evRec.type)
+            {
+               // case MIDIMapDefs.TYPE_CC:
+               // case MIDIMapDefs.TYPE_PITCHBEND:
+               // case MIDIMapDefs.TYPE_POLY_PRESSURE:
+               // case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+               case MIDIMapDefs.TYPE_NOTE_ON:
+               case MIDIMapDefs.TYPE_NOTE_OFF:
+                  // handleEntryChanged(false/*bFromUI*/);
+                  break;
+            }
+         }
+      } // is CLASS_VALUE
+
+      learn_timeout = LEARN_TIMEOUT;
+      ta_midi_learn.schedule();
+   }
+
+   // <method_get.png>
+   protected method getLearnButton() : Button {
+      Button *bt;
+
+      switch(kmap.learn_mode)
+      {
+         default:
+         case LEARN_NONE:
+            bt <= null;
+            break;
+
+         case LEARN_KEY:
+            bt <= bt_learn;
+            break;
+      }
+
+      return bt;
+   }
+
+   // <method_set.png>
+   protected method setLearnMode(int _mode, boolean _bQuiet, boolean _bInfinite) {
+
+      if(kmap.learn_mode == _mode)
+      {
+         // Toggle off
+         if(!_bQuiet)
+         {
+            Global.Print("Stop learn <"+learn_mode_names.get(kmap.learn_mode)+">");
+         }
+
+         kmap.learn_mode = LEARN_NONE;
+      }
+      else
+      {
+         if(!_bQuiet)
+         {
+            if(kmap.learn_mode != LEARN_NONE)
+            {
+               if(LEARN_NONE == _mode)
+               {
+                  Global.Print("Stop learn <"+learn_mode_names.get(kmap.learn_mode)+">");
+               }
+            }
+         }
+
+         kmap.learn_mode = _mode;
+
+         if(!_bQuiet)
+         {
+            if(LEARN_NONE != _mode)
+            {
+               Global.Print("Start learn <"+learn_mode_names.get(kmap.learn_mode)+">");
+            }
+         }
+      }
+
+      String caption = " Learn ";
+
+      bt_learn    .setBackgroundTint(0);
+      bt_learn    .setCaption(caption);
+      bt_learn    .redraw();
+
+      Button bt <= getLearnButton();
+
+      if(null != bt)
+      {
+         bt.setCaption(" Stop ");
+         bt.setBackgroundTint(TINT32_LEARN);
+         bt.redraw();
+         learn_timeout = LEARN_TIMEOUT;
+         b_learn_infinite = _bInfinite;
+         ta_midi_learn.schedule();
+         kmap.clearLearnEvents();
+      }
+      else
+      {
+         ta_midi_learn.cancel();
+         learn_timeout = -1;
+         kmap.clearLearnEvents();
+      }
+   }
+
+   // <ui_timer.png>
+   protected method handleMIDILearnTimer() {
+
+      // trace "xxx handleMIDILearnTimer: learn_timeout="+learn_timeout+" mode="+kmap.learn_mode;
+
+      if(LEARN_NONE != kmap.learn_mode)
+      {
+         learn_timeout--;
+
+         if(learn_timeout <= 0)
+         {
+            if(!b_learn_infinite)
+            {
+               setLearnMode(LEARN_NONE, false/*bQuiet*/, false/*bInfinite*/);
+               return;
+            }
+
+            learn_timeout = LEARN_TIMEOUT - 1;
+         }
+
+         Button bt <= getLearnButton();
+
+         if(learn_timeout & 1)
+            bt.setBackgroundTint(TINT32_LEARN);
+         else
+            bt.setBackgroundTint(0);
+
+         if(0 == (learn_timeout & 1))
+         {
+            if(0 != (learn_timeout & 2))
+            {
+               if(b_learn_infinite)
+                  bt.setCaption(" INF ");
+               else
+                  bt.setCaption(" "+(learn_timeout/2)+" ");
+            }
+            else
+            {
+               bt.setCaption(" Stop ");
+            }
+         }
+
+         bt.redraw();
+
+         ta_midi_learn.schedule();
+      }
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyHome(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectNextUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            handleSelectNextPattern();
+            handleSelectNextPattern();
+            handleSelectNextPattern();
+         }
+         handleSelectNextPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyEnd(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectPreviousUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            handleSelectPreviousPattern();
+            handleSelectPreviousPattern();
+            handleSelectPreviousPattern();
+         }
+         handleSelectPreviousPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          z         :   Switch between pipenodes A/B
+          F3        :   Delete current pattern
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case VKEY_F3:
+               handlePatternFree();
+               return true;
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(TAB_ENTRIES != ts_groups.getActiveTabIndex())
+            {
+               ts_groups.setActiveTabIndex(TAB_ENTRIES);
+               return true;
+            }
+            // let PageNode handle it
+            break;
+
+         case VKEY_HOME:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyEnd(_k.mod);
+            else
+               handlePatternKeyHome(_k.mod);
+            return true;
+
+         case VKEY_END:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyHome(_k.mod);
+            else
+               handlePatternKeyEnd(_k.mod);
+            return true;
+
+         case '1':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(0); // Pattern
+               handleViewEnter();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(1); // Entries
+               handleViewEnter();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(2); // Play
+               handleViewEnter();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case 'a':
+         case 'b':
+         case 'c':
+         case 'd':
+         case 'e':
+         case 'f':
+         case 'g':
+         case 'h':
+         case 'i':
+         case 'j':
+         case 'k':
+         case 'l':
+         case 'm':
+         case 'n':
+         case 'o':
+         case 'p':
+         case 'q':
+         case 'r':
+         case 's':
+         case 't':
+         case 'u':
+         case 'v':
+         case 'w':
+         case 'x':
+         case 'y':
+         case 'z':
+         case VKEY_RCTRL:
+            if(_k.modNone())
+            {
+               if(LEARN_KEY == kmap.learn_mode)
+               {
+                  if(kmap.learn_trig_mode == NodeKeymap.LEARN_TRIG_KEYPRESS)
+                  {
+                     if(-1 != last_learn_note_on)
+                     {
+                        addLearntEntry(last_learn_note_on, -1/*noteOff*/, last_learn_note_vel, last_learn_note_dev_idx, last_learn_note_ch);
+                     }
+                  }
+               }
+               else if('a' == _k.pressed)
+               {
+                  if(TAB_PATTERN == ts_groups.getActiveTabIndex())
+                     showPatternToolsMenu(true/*bFocusFirst*/);
+                  else if(TAB_ENTRIES == ts_groups.getActiveTabIndex())
+                     showEntryToolsMenu(true/*bFocusFirst*/);
+               }
+               return true;
+            }
+            else if('n' == _k.pressed && _k.modShift())
+            {
+               if(TAB_PATTERN == ts_groups.getActiveTabIndex())
+               {
+                  tf_pattern_name.onTabFocus();
+               }
+               else
+               {
+                  ts_groups.setActiveTabIndex(TAB_ENTRIES);
+                  handleViewEnter();
+                  tf_pattern_name2.onTabFocus();
+               }
+               return true;
+            }
+            break;
+      }
+
+      switch(_k.pressed)
+      {
+         case 'c':
+            if( (VMOD_LCTRL == _k.mod) || (_k.modCmdOnly() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternPaste();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternClone(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternClone(false/*bSub*/);
+               }
+               return true;
+            }
+            break;
+
+         case 'p':
+            if(_k.modCtrl())
+            {
+               handleSwapMatchAndSendNotes();
+               return true;
+            }
+            break;
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_INSERT:
+            if(_k.modShift())
+               handleEntryClone();
+            else
+               handleEntryAdd();
+            return true;
+
+         case VKEY_DELETE:
+            handleEntryRemove();
+            return true;
+      }
+
+      if(trySelectPatternByUsedIdx(_k))
+         return true;
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_MIDI_LEARN == acName)
+      {
+         handleMIDILearnTimer();
+         return true;
+      }
+
+      // if(TA_REPLAY == acName)
+      // {
+      //    grid.handleReplayTimer();
+
+      //    if(replay.b_playing)
+      //    {
+      //       ta_replay.schedule();
+      //    }
+
+      //    return true;
+      // }
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+            // Pattern:
+         case @(ts_groups):
+            Global.Print("Active tab is \""+ts_groups.getActiveViewCaption()+"\".");
+            handleViewEnter();
+            refocusDefault();
+            return true;
+
+         case @(bt_pattern_alloc):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handlePatternClone(false/*bSub*/);
+            }
+            else
+            {
+               handlePatternAlloc(false/*bSub*/);
+            }
+            return true;
+
+         case @(bt_pattern_tools):
+            showPatternToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_pattern_tools):
+            Global.Debug2("nkm: pm_pattern_tools acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close pattern tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handlePatternCopy();
+                  return true;
+
+               case "paste":
+                  handlePatternPaste();
+                  return true;
+
+               case "clone":
+                  handlePatternClone(false/*bSub*/);
+                  return true;
+
+               case "clone_sub":
+                  handlePatternClone(true/*bSub*/);
+                  return true;
+
+               case "new_sub":
+                  handlePatternAlloc(true/*bSub*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_pattern_free):
+            handlePatternFree();
+            return true;
+
+         case @(cm_pattern_nr):
+            handleSelectPattern();
+            return true;
+
+         case @(tf_pattern_name):
+            handlePatternNameChanged();
+            updatePatternNrComboBox();
+
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+         case @(tf_pattern_name2):
+            handlePatternName2Changed();
+            updatePatternNrComboBox();
+
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+
+            // Entries:
+         case @(cm_learn_trig_mode):
+            handleLearnTrigModeChanged();
+            return true;
+
+         case @(bt_learn):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               toggleKeyLearn(true/*bInfinite*/);
+            }
+            else
+            {
+               toggleKeyLearn(false/*bInfinite*/);
+            }
+            return true;
+
+         case @(cb_learn_velocity):
+            handleLearnVelocityChanged();
+            return true;
+
+         case @(cb_learn_modwheel):
+            handleLearnModWheelChanged();
+            return true;
+
+         case @(cb_learn_polyat):
+            handleLearnPolyATChanged();
+            return true;
+
+         case @(cb_learn_pitchbend):
+            handleLearnPitchbendChanged();
+            return true;
+
+         case @(cb_learn_expression):
+            handleLearnExpressionChanged();
+            return true;
+
+         case @(cb_learn_breathcontrol):
+            handleLearnBreathControlChanged();
+            return true;
+
+         case @(cb_learn_prgchg):
+            handleLearnPrgChgChanged();
+            return true;
+
+         case @(cm_learn_next_match_note):
+            handleLearnNextMatchNoteChanged();
+            return true;
+
+         case @(cb_learn_next_match_note_black_and_white):
+            handleLearnNextMatchNoteBlackAndWhiteChanged();
+            return true;
+
+         case @(fp_note_offset):
+            handleNoteOffsetChanged();
+            return true;
+
+         case @(fp_note_modulo):
+            handleNoteModuloChanged();
+            return true;
+
+         case @(tv_entries):
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               handleEntrySelected(true/*bFromUI*/, true/*bClick*/);
+            }
+            else if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               handleEntrySelected(true/*bFromUI*/, false/*bClick*/);
+            }
+            return true;
+
+         case @(bt_en_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleEntryClone();
+            }
+            else
+            {
+               handleEntryAdd();
+            }
+            return true;
+
+         case @(bt_en_remove):
+            handleEntryRemove();
+            return true;
+
+         case @(bt_en_moveup):
+            handleEntryMoveUp();
+            return true;
+
+         case @(bt_en_movedown):
+            handleEntryMoveDown();
+            return true;
+
+         case @(cm_en_dst_dev):
+            handleEnDstDevChanged();
+            return true;
+
+         case @(cm_en_dst_ch):
+            handleEnDstChChanged();
+            return true;
+
+         case @(cm_en_match_note):
+            handleEnMatchNoteChanged();
+            return true;
+
+         case @(fp_en_note_range):
+            handleEnNoteRangeChanged();
+            return true;
+
+         case @(cm_en_match_note_mode):
+            handleEnMatchNoteModeChanged();
+            return true;
+
+         case @(cm_en_fixed_send_note):
+            handleEnFixedSendNoteChanged();
+            return true;
+
+         case @(cm_en_fixed_send_note_mode):
+            handleEnFixedSendNoteModeChanged();
+            return true;
+
+         case @(fp_en_fixed_send_note_duration):
+            handleEnFixedSendNoteDurationChanged();
+            return true;
+
+         case @(cb_en_velocity_normalize):
+            handleEnVelocityNormalizeChanged();
+            return true;
+
+         case @(fp_en_velocity_min):
+            handleEnVelocityMinChanged();
+            return true;
+
+         case @(fp_en_velocity_max):
+            handleEnVelocityMaxChanged();
+            return true;
+
+         case @(cm_en_velocity_curve):
+            handleEnVelocityCurveChanged();
+            return true;
+
+         case @(cb_en_fixed_velocity):
+            handleEnFixedVelocityEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_velocity):
+            handleEnFixedVelocityChanged();
+            return true;
+
+         case @(cb_en_fixed_polyat):
+            handleEnFixedPolyATEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_polyat):
+            handleEnFixedPolyATChanged();
+            return true;
+
+         case @(cb_en_fixed_pitchbend):
+            handleEnFixedPitchbendEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_pitchbend):
+            handleEnFixedPitchbendChanged();
+            return true;
+
+         case @(cb_en_fixed_rpn_preset):
+            handleEnFixedRPNPresetEnableChanged();
+            return true;
+
+         case @(cm_en_fixed_rpn_preset):
+            handleEnFixedRPNPresetChanged();
+            return true;
+
+         case @(cb_en_fixed_modwheel):
+            handleEnFixedModWheelEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_modwheel):
+            handleEnFixedModWheelChanged();
+            return true;
+
+         case @(cb_en_fixed_expression):
+            handleEnFixedExpressionEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_expression):
+            handleEnFixedExpressionChanged();
+            return true;
+
+         case @(cb_en_fixed_breathcontrol):
+            handleEnFixedBreathControlEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_breathcontrol):
+            handleEnFixedBreathControlChanged();
+            return true;
+
+         case @(cb_en_fixed_prgchg):
+            handleEnFixedPrgChgEnableChanged();
+            return true;
+
+         case @(fp_en_fixed_prgchg):
+            handleEnFixedPrgChgChanged();
+            return true;
+
+         case @(bt_entry_tools):
+            showEntryToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_entry_tools):
+            Global.Debug2("nkm: pm_entry_tools acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close entry tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "toggle_ctl_info_lo":
+                  STConfig.b_show_ctl_info = !STConfig.b_show_ctl_info;
+                  Global.Print("Show low-freq-event-info is "+Utils.GetEnableString(STConfig.b_show_ctl_info));
+                  return true;
+
+               case "toggle_ctl_info_hi":
+                  STConfig.b_show_ctl_info_hifreq = !STConfig.b_show_ctl_info_hifreq;
+                  Global.Print("Show high-freq-event-info is "+Utils.GetEnableString(STConfig.b_show_ctl_info_hifreq));
+                  return true;
+
+               case "swap_match_and_send_notes":
+                  handleSwapMatchAndSendNotes();
+                  return true;
+            }
+            return true;
+
+
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(kmap);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+         case @(cb_removeevents):
+            handleRemoveEventsChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,633 @@
+// ----
+// ---- file   : MTSDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : tested with DSI Prophet 12, Novation Peak, and Sequential Pro 3
+// ----           (note) due to a bug in the P12, the tuning table notes are shifted by one octave (C-5 = C-4 in MTS)
+// ----           (note) due to a bug in the P3, the tuning table changes do not become active until the table is reselected
+// ----           (note) the first tuning program in the P12 and Peak is 1 (not 0!)
+// ----
+// ---- created: 09Feb2019
+// ---- changed: 07May2022, 08Jul2023, 29Jul2023, 04Oct2023, 20Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module MMTSDialog;
+
+use namespace ui;
+
+
+// <class.png>
+class MTSDialog extends Dialog {
+
+   define String TA_AUTOSEND;
+   protected TimerAction *ta_autosend;
+
+   protected XMLForm *xfm;
+
+   protected FloatParam *fp_edit;
+   protected TextField  *tf_name;
+   protected Button     *bt_upload;
+   protected CheckBox   *cb_autosend;
+
+   protected Button     *bt_equal;
+   protected Button     *bt_rand_detune2;
+   protected FloatParam *fp_detune_rand;
+   protected Button     *bt_rand_all;
+
+   protected ScrollPane *sp_entries;
+   protected Button *bt_close;
+
+   protected EditMIDISynthForm *synthform;
+
+   protected MTS *mts;  // ref to data.mts
+
+   STX_MIDIInDevice  *in_dev;
+   STX_MIDIOutDevice *out_dev;
+   byte midi_ch;
+   MIDISynthProfile *profile;
+
+   Label      *[] en_idx;      // Index labels (1..128)
+   FloatParam *[] en_freq;     // Frequency floatparams
+   ComboBox   *[] en_note;     // Note comboboxes
+   FloatParam *[] en_detune1;  // Detune1 floatparams
+   FloatParam *[] en_detune2;  // Detune2 floatparams
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= new XMLForm;
+
+      local String xfmSrc;
+      if(xfmSrc.load("MTSDialog.xfm", true/*bRemoveCR*/))
+      {
+         createEntryWidgets(xfmSrc);
+
+         if(xfm.parseXMLForm(xfmSrc))
+         {
+            resolveEntryWidgets();
+            xfm.autoResolveIds(this);
+
+            initWindow(xfm,
+                       "MIDI Tuning Standard Editor",
+                       100, 100,
+                       940, 540
+                       );
+
+            initTimers();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_autosend <= TimerAction.New(TA_AUTOSEND, this, 500);
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showMTS(EditMIDISynthForm _synthform, MTS _mts,
+                         STX_MIDIInDevice  _inDev,
+                         STX_MIDIOutDevice _outDev,
+                         byte _midiCh,
+                         MIDISynthProfile _profile
+                         ) {
+      mts       <= _mts;
+      synthform <= _synthform;
+      in_dev    <= _inDev;
+      out_dev   <= _outDev;
+      midi_ch    = _midiCh;
+      profile   <= _profile;
+
+      fp_edit.setMaxValue(mts.tables.numElements);
+      fp_edit.setValue(mts.edit_table_idx + 1);
+
+      cb_autosend.setSelected(mts.b_autosend);
+
+      updateUIFromEditTable();
+
+      showCentered();
+   }
+
+   // <ui_init.png>
+   protected method createEntryWidgets(String _xfmSrc) {
+      local String templ;
+      if(templ.load("MTSDialogEntryTemplate.xfm", true/*bRemoveCR*/))
+      {
+         local String buf;
+         local String enBuf;
+
+         int entryIdx = 0;
+         loop(128)
+         {
+            // One panel per octave
+            if(0 == (entryIdx % 12))
+            {
+               if(entryIdx > 0)
+                  buf.append("</Panel>\n");
+               buf.append("<Panel dir=RIGHT padLeft=10>\n");
+            }
+
+            enBuf = templ;
+            enBuf.replace("$(IDX)", String(entryIdx));
+
+            buf.append(enBuf);
+
+            entryIdx++;
+         }
+
+         buf.append("</Panel>\n");
+
+         _xfmSrc.replace("$(ENTRIES)", buf);
+      }
+   }
+
+   // <ui_init.png>
+   protected method resolveEntryWidgets() {
+      Label *lb;
+      FloatParam *fp;
+      ComboBox *cm;
+      int entryIdx = 0;
+
+      en_idx.alloc(128);
+      en_freq.alloc(128);
+      en_note.alloc(128);
+      en_detune1.alloc(128);
+      en_detune2.alloc(128);
+
+      loop(128)
+      {
+         // Entry nr
+         lb <= xfm.findLayerById("lb_en_nr_"+entryIdx);
+         lb.setCaption(entryIdx+":");
+         en_idx.add(lb);
+         lb.getSizeX();
+         lb.getSizeY();
+         // trace "xxx ["+entryIdx+"] lb.size="+lb.getSizeString()+" prefSz="+lb.getPreferredSizeString();
+
+         // Freq
+         fp <= xfm.findLayerById("fp_en_freq_"+entryIdx);
+         en_freq.add(fp);
+         // trace "xxx ["+entryIdx+"] fp_en_freq.size="+fp.getSizeString();
+
+         // Note
+         cm <= xfm.findLayerById("cm_en_note_"+entryIdx);
+         cm.setOptions(MIDI.midi_notes);
+         en_note.add(cm);
+
+         // Detune 1
+         fp <= xfm.findLayerById("fp_en_detune1_"+entryIdx);
+         en_detune1.add(fp);
+
+         // Detune 2
+         fp <= xfm.findLayerById("fp_en_detune2_"+entryIdx);
+         en_detune2.add(fp);
+
+         // Next entry
+         entryIdx++;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateUIFromEditTable() {
+      MTSTable tbl <= mts.getEditTable();
+
+      Label *lb;
+      FloatParam *fp;
+      ComboBox *cm;
+
+      tf_name.setText(tbl.name);
+
+      int entryIdx = 0;
+      loop(128)
+      {
+         MTSEntry en <= tbl.getEntryByIdx(entryIdx);
+
+         // Freq
+         fp <= en_freq[entryIdx];
+         float freq = en.calcFreq();
+         fp.setValue(freq);
+
+         // Note
+         cm <= en_note[entryIdx];
+         cm.setSelectedOption(en.note);
+
+         // Detune 1
+         fp <= en_detune1[entryIdx];
+         fp.setValue(en.detune1);
+
+         // Detune 2
+         fp <= en_detune2[entryIdx];
+         fp.setValue(en.detune2);
+
+         // Next entry
+         entryIdx++;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      // (todo)
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      if(!b_layer_postinit_done)
+      {
+         handleResize();
+         setSize2f(850*UI.font_scaling,
+                   (2.0 == UI.font_scaling) ? 750 : 400*UI.font_scaling
+                   );
+         handleResize();
+      }
+
+      relayout();
+
+      Dialog::preShow();
+   }
+
+   // <method.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_close);
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+   }
+
+   // <midi.png>
+   protected =replay= method sendSingleNoteTuning(MTSEntry _en) {
+      if(null != out_dev)
+      {
+         local Buffer buf;
+         Byte mtsKey;
+         Byte mtsDetMSB;
+         Byte mtsDetLSB;
+         _en.getMTSData(mtsKey, mtsDetMSB, mtsDetLSB);
+
+         boolean bBank = false;
+         // boolean bBank = true;
+
+         buf.size = bBank ? 12 : 11;
+
+         buf.i8 = 0xF0;
+         buf.i8 = 0x7F;     // realtime (0x7E=non-realtime)
+         buf.i8 = midi_ch;  // device id  (0x7f=all devices)
+         buf.i8 = 0x08;     // sub-id#1 "MIDI Tuning Standard"
+
+         if(bBank)
+         {
+            buf.i8 = 0x07;  // sub-id#2 "SINGLE NOTE TUNING CHANGE (NON REAL-TIME)(BANK)"
+            buf.i8 = 0x00;  // bank
+         }
+         else
+         {
+            buf.i8 = 0x02;  // sub-id#2 "note change"
+         }
+
+         buf.i8 = mathClampi(mts.edit_table_idx + profile.mts_program_offset, 0, 127);  // tuning preset number
+         buf.i8 = 0x01;  // one change
+         buf.i8 = mtsKey;
+         buf.i8 = mtsDetMSB;
+         buf.i8 = mtsDetLSB;
+         buf.i8 = 0xF7;
+
+         out_dev.addBuffer(buf);
+         out_dev.send(milliSeconds());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryChanged(MTSEntry _en) {
+      if(mts.b_autosend)
+      {
+         if(profile.b_single_note_tuning)
+         {
+            sendSingleNoteTuning(_en);
+         }
+         else
+         {
+            ta_autosend.schedule();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleEntryWidget(Layer _l, String _acName) : boolean {
+      int idx;
+
+      MTSTable tbl <= mts.getEditTable();
+      MTSEntry *en;
+      FloatParam *fp;
+      ComboBox *cm;
+
+      // Freq
+      idx = en_freq.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         en <= tbl.getEntryByIdx(idx);
+         fp <= en_freq.get(idx);
+         en.setFreq(fp.getFloatValue());
+
+         ComboBox cmNote <= en_note.get(idx);
+         FloatParam fpDetune1 <= en_detune1.get(idx);
+         FloatParam fpDetune2 <= en_detune2.get(idx);
+         cmNote.setSelectedOption(en.note);
+         fpDetune1.setValue(en.detune1);
+         fpDetune2.setValue(en.detune2);
+
+         handleEntryChanged(en);
+
+         Global.Print("Entry "+(idx+1)+" frequency is "+fp.getFloatValue()+" Hz");
+
+         if(FloatParam.ACTION_VALUECHANGED == _acName)
+            refocusDefault();
+
+         return true;
+      }
+
+      // Note
+      idx = en_note.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         en <= tbl.getEntryByIdx(idx);
+         cm <= en_note.get(idx);
+         en.note = cm.getSelectedOption();
+
+         fp <= en_freq.get(idx);
+         fp.setValue(en.calcFreq());
+         fp.redraw();
+
+         handleEntryChanged(en);
+
+         Global.Print("Entry "+(idx+1)+" equal-tempered base note is "+cm.getSelectedOptionName());
+         return true;
+      }
+
+      // Detune 1
+      idx = en_detune1.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         en <= tbl.getEntryByIdx(idx);
+         fp <= en_detune1.get(idx);
+         en.detune1 = fp.getFloatValue();
+
+         fp <= en_freq.get(idx);
+         fp.setValue(en.calcFreq());
+         fp.redraw();
+
+         handleEntryChanged(en);
+
+         Global.Print("Entry "+(idx+1)+" detune1 is "+(en.detune1*100)+" cents");
+
+         if(FloatParam.ACTION_VALUECHANGED == _acName)
+            refocusDefault();
+
+         return true;
+      }
+
+      // Detune 2
+      idx = en_detune2.indexOfPointer(_l, 0);
+      if(-1 != idx)
+      {
+         en <= tbl.getEntryByIdx(idx);
+         fp <= en_detune2.get(idx);
+         en.detune2 = fp.getFloatValue();
+
+         fp <= en_freq.get(idx);
+         fp.setValue(en.calcFreq());
+         fp.redraw();
+
+         handleEntryChanged(en);
+
+         Global.Print("Entry "+(idx+1)+" detune2 is "+(en.detune2*100)+" cents");
+
+         if(FloatParam.ACTION_VALUECHANGED == _acName)
+            refocusDefault();
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method sendBulkDump() {
+      if(null != out_dev)
+      {
+         local Buffer buf;
+         Byte mtsKey;
+         Byte mtsDetMSB;
+         Byte mtsDetLSB;
+         MTSTable tbl <= mts.getEditTable();
+         buf.size = 22 + (3*128) + 1 + 1; // == 408
+
+         // 22 byte header
+         buf.i8 = 0xF0;
+         buf.i8 = 0x7E;  // non-realtime hdr
+         buf.i8 = 0x00;  // target device id
+         buf.i8 = 0x08;  // sub-id #1 (MIDI tuning standard)
+         buf.i8 = 0x01;  // sub-ID #2 (Bulk dump reply)
+         buf.i8 = mts.edit_table_idx + profile.mts_program_offset;  // tuning preset number
+         int charIdx = 0;
+         loop(16)
+         {
+            buf.i8 = tbl.name.getc(charIdx++);
+         }
+
+         // 128*3 bytes key data
+         int noteIdx = 0;
+         loop(128)
+         {
+            MTSEntry en <= tbl.getEntryByIdx(noteIdx);
+            en.getMTSData(mtsKey, mtsDetMSB, mtsDetLSB);
+
+            buf.i8 = mtsKey;
+            buf.i8 = mtsDetMSB;
+            buf.i8 = mtsDetLSB;
+
+            // Next key
+            noteIdx++;
+         }
+
+         // Checksum
+         //  "Due to ambiguities in the instructions for the original Bulk Dump Message (Sub-ID#2="01")
+         //   various manufacturers have implemented that checksum differently, and it is now recommended that
+         //   receivers may ignore the checksum in that message.
+         //   For all other Dump messages the checksum field is calculated by successively XOR'ing the bytes
+         //   in the message, excluding the F0, F7, and the checksum field... The resulting value is then
+         //   AND'ed with 7F, to create a 7 bit value"
+         buf.i8 = 0; // checksum
+
+         // EOX
+         buf.i8 = 0xF7;
+
+         trace "[trc] MTSDialog: SysEx buf.offset="+buf.offset;
+
+         out_dev.addBuffer(buf);
+         out_dev.send(milliSeconds());
+
+         Global.Print("Bulk dump sent");
+      }
+   }
+
+   // <method.png>
+   public virtual hide() {
+      ta_autosend.cancel();
+      Dialog::hide();
+   }
+
+   // <ui_handler.png>
+   protected method onDropFiles(StringArray _fileNames) {
+      Global.Debug("MTSDialog::onDropFiles: fileNames="+#(_fileNames));
+
+      if(1 == _fileNames.numElements)
+      {
+         local String buf;
+         String pathName <= _fileNames.get(0);
+
+         if(buf.loadLocal(pathName, true/*bRemoveCR*/))
+         {
+            Global.Debug("MTSDialog::onDropFiles: tun buf loaded");
+
+            if(mts.tryImportTun(buf))
+            {
+               updateUIFromEditTable();
+               if(mts.b_autosend)
+                  ta_autosend.schedule();
+
+               Global.Print("Import tuning from file \""+pathName+"\"");
+            }
+         }
+     }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      MTSTable *tbl;
+      tbl <= mts.getEditTable();
+
+      if(TA_AUTOSEND == acName)
+      {
+         sendBulkDump();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            if(tryHandleEntryWidget(ap, acName))
+               return true;
+            break;
+
+         case @(fp_edit):
+            mts.edit_table_idx = fp_edit.getFloatValue() - 1;
+            updateUIFromEditTable();
+            Global.Print("Edit table is "+(mts.edit_table_idx+1)+"/"+(mts.tables.numElements));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(tf_name):
+            tbl.name = tf_name.getText();
+            Global.Print("Table name is \""+tbl.name+"\"");
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_upload):
+            sendBulkDump();
+            return true;
+
+         case @(cb_autosend):
+            mts.b_autosend = cb_autosend.isSelected();
+            Global.Print("Autosend is "+Utils.GetEnableString(mts.b_autosend));
+            return true;
+
+         case @(bt_equal):
+            tbl.loadEqual();
+            updateUIFromEditTable();
+            if(mts.b_autosend)
+               ta_autosend.schedule();
+            Global.Print("Load equal temperament");
+            return true;
+
+         case @(bt_rand_detune2):
+            tbl.randomizeDetune2(fp_detune_rand.getFloatValue());
+            updateUIFromEditTable();
+            if(mts.b_autosend)
+               ta_autosend.schedule();
+            Global.Print("Randomize detune 2 (max=+-"+(fp_detune_rand.getFloatValue()*100)+" cents");
+            return true;
+
+         case @(fp_detune_rand):
+            Global.Print("Detune randomization amount is "+(fp_detune_rand.getFloatValue()*100)+" cents");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_rand_all):
+            tbl.randomizeNote();
+            tbl.randomizeDetune1(fp_detune_rand.getFloatValue());
+            updateUIFromEditTable();
+            if(mts.b_autosend)
+               ta_autosend.schedule();
+            Global.Print("Randomize note + detune 1 (max=+-"+(fp_detune_rand.getFloatValue()*100)+" cents");
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return false;
+   }
+
+}

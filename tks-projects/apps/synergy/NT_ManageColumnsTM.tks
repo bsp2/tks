@@ -1,0 +1,624 @@
+// ----
+// ---- file   : NT_ManageColumnsTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 06Feb2012
+// ---- changed: 07Feb2012, 12Feb2012, 13Feb2012, 13Apr2013, 25Jul2016, 10Feb2017, 13Mar2017
+// ----          15Oct2023, 05Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_ManageColumnsTM;
+
+use namespace ui;
+
+
+// <class.png>
+class NT_ManageColumnsTM : TableModel {
+
+   define int COL_ID     = 0;
+   define int COL_TYPE   = 1; // Entry type
+   define int COL_CELVIS = 2; // Cel visible (boolean)
+   define int COL_CEL    = 3; // Cel info (style/range), if cel available (prefixed with ! if visible)
+   define int COL_CTL    = 4; // CTL id/name (e.g. CTL_USRn, CTL_NOTE1, ..)
+   define int COL_PARAM  = 5; // Param name, "<paramidx>:<name>"
+   define int COL_MIDI   = 6; // e.g. CC#40
+
+   define int NUM_COLS = 7;
+
+   static StringArray col_names = ["Id", "Type", "!", "Cel", "Ctl", "Param", "MIDI"];
+
+   NT_TEL        *tel;
+   NT_Instrument *ins; // can be null
+
+   NT_ManageColumnsEntry *[] entries; // NT_ManageColumnsEntry instances
+
+   public NT_ManageColumnsFilter filter;
+   public String                 all_filter_pattern;
+
+   protected int next_id;
+
+
+   // <method_get.png>
+   public method getFirstRowForCtl(int _ctlId) : int {
+
+      NT_ManageColumnsEntry *e;
+      int rowNr = 0;
+
+      foreach e in entries
+      {
+         if(e.ctl_id == _ctlId)
+            return rowNr;
+
+         // Next row
+         rowNr++;
+      }
+
+      // No entry exists that references _ctlId
+      return -1;
+   }
+
+   // <method_add.png>
+   protected method addMIDIParamDataToEntry(NT_ManageColumnsEntry e, int paramId, boolean _bRef) : boolean {
+
+      NT_MIDIParam midiParam <= ins.getUsrCtlParam(paramId);
+
+      if(null != midiParam)
+      {
+         Integer io;
+
+         e.midi_param <= midiParam;
+
+         io = paramId + 1;
+         e.param_string = io.printf("%02d:") + midiParam.name;
+
+         // Make "link" icon appear next to ctl names
+         e.b_ctl_link = _bRef;
+
+         // (_bRef?"> ":"") +
+         e.midi_string = midiParam.getTypeString()+":"+midiParam.uiGetMIDIParamString(false/*bMultiLine*/, ins);
+      }
+      else
+      {
+         // midiParam does not exist ?!
+         e.midi_string = "-";
+      }
+
+      return true;
+   }
+
+   // <method_add.png>
+   protected method addRowFiltered(NT_ManageColumnsEntry _e) {
+
+      // Filter entry by pattern
+      if(!all_filter_pattern.isBlank())
+      {
+         String flt = "*" + all_filter_pattern + "*";
+
+         String strAll = (NT_ManageColumnsEntry.type_names[_e.type])+" ";
+         if(_e.ctl_id >= NT_TrackPattern.CTL_USR)
+            strAll.append("CTL_USR"+(_e.ctl_id - NT_TrackPattern.CTL_USR + 1));
+         else
+            strAll.append(MNT_PatternView.ctl_names.get(_e.ctl_id));
+         strAll.append(" ");
+         strAll.append(_e.param_string);
+         strAll.append(_e.midi_string);
+         strAll.toLower();
+         flt.toLower();
+
+         if(!strAll.patternMatch(flt))
+            return;
+      }
+
+      entries.add(#(deref _e));
+   }
+
+   // <method_add.png>
+   protected method addStdCtlRow(int _ctlId) : NT_ManageColumnsEntry {
+
+      // Has tracklayout cel ?
+      if(null != tel)  // null during init()
+      {
+         NT_ManageColumnsEntry e <= new NT_ManageColumnsEntry();
+         e.init(next_id++);
+
+         e.type = NT_ManageColumnsEntry.TYPE_STDCTL;
+         e.ctl_id = _ctlId;
+         e.param_string = "-";
+         e.midi_string = "-";
+
+         NT_CEL cel <= tel.findCelForCtlById(_ctlId);
+
+         if(null != cel)
+         {
+            e.cel <= cel;
+
+            if(!filter.b_show_visible)
+            {
+               if(cel.b_visible)
+               {
+                  // filter: Do not show already visible cels
+                  return null;
+               }
+            }
+
+            if(!filter.b_show_unmapped)
+            {
+               if(!cel.b_visible)
+               {
+                  // filter: Do not show invisible cels
+                  return null;
+               }
+            }
+         }
+         else if(!filter.b_show_unmapped)
+         {
+            // filter: Do not show entries that are not mapped to a cel
+            return null;
+         }
+
+         return deref e;
+      }
+
+      return null;
+   }
+
+   // <method_add.png>
+   protected method addStdCtlRows() {
+      int ctlId = 0;
+
+      loop(NT_TrackPattern.CTL_USR)
+      {
+         NT_ManageColumnsEntry e <= addStdCtlRow(ctlId);
+
+         if(null != e)
+         {
+            addRowFiltered(deref e);
+         }
+
+         // Next controller
+         ctlId++;
+      }
+   }
+
+   // <method_add.png>
+   protected method addUsrCtlRow(int _usrCtlId) : NT_ManageColumnsEntry {
+      NT_ManageColumnsEntry e <= new NT_ManageColumnsEntry();
+      e.init(next_id++);
+
+      e.type = NT_ManageColumnsEntry.TYPE_USRCTL;
+      e.ctl_id = NT_TrackPattern.CTL_USR + _usrCtlId;
+
+      // Has tracklayout cel ?
+      NT_CEL cel <= tel.findCelForCtlById(_usrCtlId + NT_TrackPattern.CTL_USR);
+
+      if(null != cel)
+      {
+         e.cel <= cel;
+
+         if(!filter.b_show_visible)
+         {
+            if(cel.b_visible)
+            {
+               // filter: Do not show already visible cels
+               return null;
+            }
+         }
+
+         if(!filter.b_show_unmapped)
+         {
+            if(!cel.b_visible)
+            {
+               // filter: Do not show invisible cels
+               return null;
+            }
+         }
+      }
+      else if(!filter.b_show_unmapped)
+      {
+         // filter: Do not show entries that are not mapped to a cel
+         return null;
+      }
+
+      e.mapped_to_usrctl_param = -1;
+
+      // Is user controller mapped to a param ?
+      NT_MIDIParam param <= ins.getUsrCtlParam(_usrCtlId);
+
+      addMIDIParamDataToEntry(e, _usrCtlId/*paramId*/, true/*bRef*/);
+
+      if(null != param)
+      {
+         e.mapped_to_usrctl_param = param.id;
+         Integer io = param.id + 1;
+         // "> " +
+         e.param_string = io.printf("%02d:") + ins.getUsrCtlParamName(_usrCtlId);
+         e.b_param_link = true;
+      }
+      else
+      {
+         if(!filter.b_show_usrctl_unmapped)
+         {
+            // filter: Do not show usrctls that are not mapped to a param
+            return null;
+         }
+         e.mapped_to_usrctl_param = -1;
+         e.param_string = "-";
+      }
+
+      return deref e;
+   }
+
+   // <method_add.png>
+   protected method addUsrCtlRows() {
+      int usrCtlId = 0;
+
+      loop(NT_TrackPattern.CTL_NUMUSR)
+      {
+         NT_ManageColumnsEntry e <= addUsrCtlRow(usrCtlId);
+         if(null != e)
+            addRowFiltered(deref e);
+
+         // Next user controller
+         usrCtlId++;
+      }
+   }
+
+   // <method_add.png>
+   protected method addMidiCtlRowCC(int _ctlId) : NT_ManageColumnsEntry {
+      NT_ManageColumnsEntry e <= new NT_ManageColumnsEntry();
+      e.init(next_id++);
+
+      e.type = NT_ManageColumnsEntry.TYPE_MIDI_CC;
+      e.midi_cc_nr   = _ctlId;
+      e.midi_string  = ins.getCCNames(null/*forcedDev*/,-1/*forcedCh*/,false/*bMultiLine*/).get(_ctlId);
+      e.param_string = "-";
+
+      boolean bMappedToParamAndCelVisible = false;
+
+      NT_MIDIParam p <= ins.findParamByCC(_ctlId);
+
+      if(null != p)
+      {
+         Integer io = p.id + 1;
+         // "> " +
+         e.param_string = io.printf("%02d:") + p.name;
+         e.b_param_link = true;
+         e.mapped_to_usrctl_param = p.id;
+         e.midi_string = p.uiGetMIDIParamString(false/*bMultiLine*/, ins); // replace by more-detailed string (CC msb/lsb coupled params, etc)
+         e.midi_param <= p;
+
+         bMappedToParamAndCelVisible = true;
+      }
+
+      if(!filter.b_show_unmapped)
+      {
+         if(!bMappedToParamAndCelVisible)
+         {
+            // filter: do not show unmapped/invisble cells
+            return null;
+         }
+      }
+
+      return deref e;
+   }
+
+   // <method_add.png>
+   protected method addMidiCtlRowsCC() {
+
+      int ctlId = 0;
+
+      loop(128)
+      {
+         NT_ManageColumnsEntry e <= addMidiCtlRowCC(ctlId);
+
+         if(null != e)
+         {
+            addRowFiltered(deref e);
+         }
+
+         // Next MIDI controller
+         ctlId++;
+      }
+   }
+
+   // <method_add.png>
+   protected method addMidiCtlRowsRPN() {
+
+      MIDISynthProfile msp <= ins.getMIDISynthProfile();
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias *alias;
+
+         foreach alias in msp.rpn_aliases
+         {
+            NT_ManageColumnsEntry e <= new NT_ManageColumnsEntry();
+            e.init(next_id++);
+
+            e.type = NT_ManageColumnsEntry.TYPE_MIDI_RPN;
+            e.midi_rpn_nr = alias.nr;
+
+            Integer io = alias.nr;
+            e.midi_string = io.printf("%04d:")+alias.caption;
+
+            e.param_string = "-";
+
+            boolean bMappedToParam = false;
+
+            NT_MIDIParam p <= ins.findParamByRPN(alias.nr);
+
+            if(null != p)
+            {
+               io = p.id + 1;
+               // "> " +
+               e.param_string = io.printf("%02d:") + p.name;
+               e.b_param_link = true;
+               e.mapped_to_usrctl_param = p.id;
+               // // e.midi_string = p.uiGetMIDIParamString(false/*bMultiLine*/, ins); // replace by more-detailed string
+               e.midi_param <= p;
+
+               bMappedToParam = true;
+            }
+
+            if(!filter.b_show_unmapped)
+            {
+               if(!bMappedToParam)
+               {
+                  // filter: do not show unmapped cells
+                  e <= null;
+               }
+            }
+
+            if(null != e)
+               addRowFiltered(deref e);
+
+            // Next RPN
+         }
+      }
+   }
+
+   // <method_add.png>
+   protected method addMidiCtlRowsNRPN() {
+
+      MIDISynthProfile msp <= ins.getMIDISynthProfile();
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias *alias;
+
+         foreach alias in msp.nrpn_aliases
+         {
+            NT_ManageColumnsEntry e <= new NT_ManageColumnsEntry();
+            e.init(next_id++);
+
+            e.type = NT_ManageColumnsEntry.TYPE_MIDI_NRPN;
+            e.midi_nrpn_nr = alias.nr;
+
+            Integer io = alias.nr;
+            e.midi_string = io.printf("%04d:")+alias.caption;
+
+            e.param_string = "-";
+
+            boolean bMappedToParam = false;
+
+            NT_MIDIParam p <= ins.findParamByNRPN(alias.nr);
+
+            if(null != p)
+            {
+               io = p.id + 1;
+               // "> " +
+               e.param_string = io.printf("%02d:") + p.name;
+               e.b_param_link = true;
+               e.mapped_to_usrctl_param = p.id;
+               // // e.midi_string = p.uiGetMIDIParamString(false/*bMultiLine*/, ins); // replace by more-detailed string
+               e.midi_param <= p;
+
+               bMappedToParam = true;
+            }
+
+            if(!filter.b_show_unmapped)
+            {
+               if(!bMappedToParam)
+               {
+                  // filter: do not show unmapped cells
+                  e <= null;
+               }
+            }
+
+            if(null != e)
+            {
+               addRowFiltered(deref e);
+            }
+
+            // Next NRPN
+         }
+      }
+   }
+
+   // <method_update.png>
+   protected method updateRows() {
+      entries.free();
+
+      next_id = 1;
+
+      if(filter.b_show_stdctl)
+         addStdCtlRows();
+
+      if(null != ins)
+      {
+         if(filter.b_show_usrctl)
+            addUsrCtlRows();
+
+         if(filter.b_show_midictl_cc)
+            addMidiCtlRowsCC();
+
+         if(filter.b_show_midictl_rpn)
+            addMidiCtlRowsRPN();
+
+         if(filter.b_show_midictl_nrpn)
+            addMidiCtlRowsNRPN();
+      }
+   }
+
+   // <ui_handle.png>
+   virtual tableModelChanged() {
+      updateRows();
+      TableModel::tableModelChanged();
+   }
+
+   // <method_get.png>
+   virtual getNumColumns() : int {
+      return NUM_COLS;
+   }
+
+   // <method_get.png>
+   virtual getColumnCaption(int _col) : String {
+      return col_names.get(_col);
+   }
+
+   // <method_get.png>
+   virtual getPreferredColumnWidth(int _col) : int {
+      //     ["Id", "Type", "Vis", "Cel", "Ctl", "Param", "MIDI"];
+      return [ 30,   65,     20,    100,   100,   800,     800  ][_col];
+   }
+
+   // <method_get.png>
+   virtual getMinimumColumnWidth(int _col) : int {
+      //     ["Id", "Type", "Vis", "Cel", "Ctl", "Param", "MIDI"];
+      return [ 30,   65,     20,    100,   100,   120,     160  ][_col];
+   }
+
+   // <method_get.png>
+   virtual getNumRows() : int {
+      return entries.numElements;
+   }
+
+   // <method_get.png>
+   virtual getCellIcon(int _col, _row) : Icon {
+      NT_ManageColumnsEntry e <= entries.get(_row);
+
+      switch(_col)
+      {
+         case COL_CEL:
+            return
+               ((null != e.cel) && ((e.type >= NT_ManageColumnsEntry.TYPE_MIDI_CC)))
+               ? UI.GetIcon(UI.IsHiDPI() ? "mgrctl_link_2x" : "mgrctl_link")
+               : null
+               ;
+
+         case COL_CELVIS:
+            if(null != e.cel)
+            {
+               if(e.cel.b_visible)
+               {
+                  return UI.GetIcon(UI.IsHiDPI() ? "mgrctl_celvis_2x" : "mgrctl_celvis");
+               }
+            }
+            break;
+
+
+         case COL_CTL:
+            return
+               ((-1 != e.ctl_id) && (e.type >= NT_ManageColumnsEntry.TYPE_MIDI_CC))
+               ? UI.GetIcon(UI.IsHiDPI() ? "mgrctl_link_2x" : "mgrctl_link")
+               : null
+               ;
+
+         case COL_PARAM:
+            return e.b_param_link ? (UI.IsHiDPI() ? "mgrctl_link_2x" : "mgrctl_link") : null;
+
+         case COL_MIDI:
+            return e.b_ctl_link ? (UI.IsHiDPI() ? "mgrctl_link_2x" : "mgrctl_link") : null;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   virtual getCellCaption(int _col, _row) : String {
+      NT_ManageColumnsEntry e <= entries.get(_row);
+
+      if(null != e) // (note) this should never be null (but sometimes it is, see 26Feb2012 todo entry)
+      {
+         NT_CEL *cel;
+
+         switch(_col)
+         {
+            case COL_ID:
+               return e.id;
+
+            case COL_TYPE:
+               return NT_ManageColumnsEntry.type_names[e.type];
+
+            case COL_CELVIS:
+               if(null != e.cel)
+               {
+                  if(!e.cel.b_visible)
+                  {
+                     return "-";
+                  }
+               }
+               return "";
+
+            case COL_CEL:
+               if(null != e.cel)
+               {
+                  cel <= e.cel;
+                  if(cel.style > NT_CEL.STYLE_NOTE)
+                  {
+                     return
+                        (NT_CEL.cel_style_names[cel.style]) +
+                        ":" +
+                        (NT_CEL.cel_range_names[cel.range]);
+                  }
+                  else
+                  {
+                     return
+                        (NT_CEL.cel_style_names[cel.style]) +
+                        (1+cel.ctl_id); // NOTE1..5
+                  }
+               }
+               else
+               {
+                  // Not mapped to a cel
+                  return "-";
+               }
+
+            case COL_CTL:
+               if(-1 != e.ctl_id)
+               {
+                  if(e.ctl_id >= NT_TrackPattern.CTL_USR)
+                  {
+                     // ((e.type >= ManageColumnsEntry.TYPE_PARAM)?"> ":"") +
+                     return "CTL_USR"+(e.ctl_id - NT_TrackPattern.CTL_USR + 1);
+                  }
+                  else
+                  {
+                     // ((e.type >= ManageColumnsEntry.TYPE_PARAM)?"> ":"") +
+                     return MNT_PatternView.ctl_names[e.ctl_id];
+                  }
+               }
+               else
+               {
+                  // No controller context available
+                  return "-";
+               }
+
+            case COL_PARAM:
+               return e.param_string;
+
+            case COL_MIDI:
+               return e.midi_string;
+         }
+
+      } // if null !=e
+   }
+
+}

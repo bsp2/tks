@@ -1,0 +1,281 @@
+// ----
+// ---- file   : MIDIInputMonitorTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2013-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 04Jan2013, 06Jan2013, 24Mar2013, 05Jun2013, 11Aug2014, 14Aug2014, 31Aug2014
+// ----          04Sep2014, 21Feb2015, 23Dec2017, 01Dec2018, 20Oct2023, 22Mar2024, 03Aug2024
+// ----
+// ----
+// ----
+
+module MMIDIInputMonitorTM;
+
+
+use namespace ui;
+use namespace st2;
+
+
+class MIDIInputMonitorTM : TableModel {
+
+   define int COL_TIMESTAMP   = 0;
+   define int COL_DEVICE      = 1;
+   define int COL_MIDICHANNEL = 2;
+   define int COL_MSGTYPE     = 3;
+   define int COL_MSGEXTTYPE  = 4;
+   define int COL_DATA1       = 5;
+   define int COL_DATA2       = 6;
+
+   MIDIMapEvent *[] events;  // MIDIMapEvent instances
+
+   namespace CheckBox *cb_hex; // reference to MIDIInputMonitorView.cb_hex
+
+
+   public virtual getNumColumns() : int {
+      return 7;
+   }
+
+   public virtual getColumnCaption(int _col) : String {
+      return ["Timestamp", "Device", "Ch.", "Message type", "Ext. type", "Data 1", "Data 2"][_col];
+   }
+
+   public virtual getNumRows() : int {
+      return events.numElements;
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+      lb.setFontByName("big8");
+
+      MIDIMapEvent ev <= events.get(_row);
+      int c32 = 0;
+
+      boolean bSyn = (MIDIMapEvent.SYN_NONE != ev.syn_type);
+
+      switch(ev.type)
+      {
+         case MIDIMapDefs.TYPE_NOTE_OFF:
+            c32 = bSyn ? #18ff0000 : #30ff0000;
+            break;
+
+         case MIDIMapDefs.TYPE_NOTE_ON:
+            c32 = bSyn ? #2200c000 : #4400c000;
+            break;
+
+         case MIDIMapDefs.TYPE_POLY_PRESSURE:
+            c32 = #23404008;
+            break;
+
+         case MIDIMapDefs.TYPE_CC:
+            c32 = #10008060;
+            break;
+
+         case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            c32 = #40f8f017;
+            break;
+
+         case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+            c32 = #27808010;
+            break;
+
+         case MIDIMapDefs.TYPE_PITCHBEND:
+            c32 = #24400830;
+            break;
+
+         case MIDIMapDefs.TYPE_SYSEX:
+            c32 = #30602010;
+            break;
+
+         case MIDIMapDefs.TYPE_SYSCOM_TIMECODE:
+         case MIDIMapDefs.TYPE_SYSCOM_SONG_POSITION:
+         case MIDIMapDefs.TYPE_SYSCOM_SONG_SELECT:
+         case MIDIMapDefs.TYPE_SYSCOM_F4:
+         case MIDIMapDefs.TYPE_SYSCOM_F5:
+         case MIDIMapDefs.TYPE_SYSCOM_TUNE_REQUEST:
+         case MIDIMapDefs.TYPE_SYSRT_TIMING_CLOCK:
+         case MIDIMapDefs.TYPE_SYSRT_F9:
+         case MIDIMapDefs.TYPE_SYSRT_START:
+         case MIDIMapDefs.TYPE_SYSRT_CONTINUE:
+         case MIDIMapDefs.TYPE_SYSRT_STOP:
+         case MIDIMapDefs.TYPE_SYSRT_FD:
+         case MIDIMapDefs.TYPE_SYSRT_ACTIVE_SENSING:
+         case MIDIMapDefs.TYPE_SYSRT_SYSTEM_RESET:
+            c32 = #2c700000;
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+         case MIDIMapDefs.TYPE_NRPN:
+            c32 = #21003840;
+            break;
+      }
+
+      c32 = UI.TintColor32(c32, app_lnf.getColor(AppLookAndFeel.COLOR_MIDIMON_CELL_BG_TINT));
+
+      if(cursor_index == _row)
+         c32 = UI.TintColor32(c32, #20000000);
+
+      lb.setBackgroundTint(c32);
+
+      return lb;
+   }
+
+   public virtual updateCellRendererColors(Layer l, int _col, int _row, int _visibleRow) {
+      TableModel::updateCellRendererColors(l, _col, _row, _visibleRow);
+
+      int c32;
+      if(cursor_index == _row)
+         c32 = app_lnf.getColor(AppLookAndFeel.COLOR_MIDIMON_CELL_SELECT_FG);
+      else
+         c32 = app_lnf.getColor(AppLookAndFeel.COLOR_MIDIMON_CELL_FG);
+
+      l.setForegroundColor(c32);
+   }
+
+   public virtual getCellCaption(int _col, _row) : String {
+      String line;
+      String devName;
+      String typeName;
+      String data1;
+      String data2;
+      String timeStamp;
+      Integer io;
+      MIDIMapEvent *ev;
+
+      line.empty();
+      ev <= events.get(_row);
+
+      switch(_col)
+      {
+         case COL_TIMESTAMP:
+            io = ev.time_stamp;
+            io.printf("%10d") => timeStamp;
+            return timeStamp;
+
+         case COL_DEVICE:
+            devName = ev.getAliasOrDeviceNameForDO();
+            return devName;
+
+         case COL_MIDICHANNEL:
+            io = ev.dev_ch + 1;
+            return io.printf("%02d");
+
+         case COL_MSGTYPE:
+            typeName = ev.getTypeName();
+            return typeName;
+
+         case COL_MSGEXTTYPE:
+            return ev.getFullTypeName();
+
+         case COL_DATA1:
+            if(ev.type == MIDIMapEventType.TYPE_SYSEX)
+            {
+               if(null != ev.sysex_buffer)
+                  return (ev.sysex_buffer.size) + 2;  // +2 for F0..F7
+               return "?";
+            }
+            else if(ev.usesArg1())
+            {
+               if(ev.type == MIDIMapEventType.TYPE_PITCHBEND)
+               {
+                  io = ev.arg1;
+                  if(cb_hex.isSelected())
+                     data1 = io.printf("$%04x");
+                  else
+                     data1 = io.printf("%05d");
+                  return data1;
+               }
+               else
+               {
+                  io = ev.arg1;
+                  if(cb_hex.isSelected())
+                     data1 = io.printf("$%02x");
+                  else
+                     data1 = io.printf("%03d");
+
+                  if([
+                        MIDIMapEventType.TYPE_NOTE_ON,
+                        MIDIMapEventType.TYPE_NOTE_OFF,
+                        MIDIMapEventType.TYPE_POLY_PRESSURE
+                        ]
+                     .contains(ev.type))
+                  {
+                     data1.append(" ("+(MIDI.midi_notes.get(ev.arg1))+")");
+                  }
+
+                  return data1;
+               }
+            }
+            return "-";
+
+         case COL_DATA2:
+            if(ev.usesArg2())
+            {
+               // Data2
+               io = ev.arg2;
+               if(cb_hex.isSelected())
+                  data2 = io.printf("$%02x");
+               else
+                  data2 = io.printf("%03d");
+               return data2;
+            }
+            return "-";
+      }
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_TIMESTAMP:
+            return 80;
+
+         case COL_DEVICE:
+            return 150;
+
+         case COL_MIDICHANNEL:
+            return 24;
+
+         case COL_MSGTYPE:
+            return 100;
+
+         case COL_MSGEXTTYPE:
+            return 160;
+
+         case COL_DATA1:
+            return 60;
+
+         case COL_DATA2:
+            return 40;
+      }
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_TIMESTAMP:
+            return 80;
+
+         case COL_DEVICE:
+            return 200;
+
+         case COL_MIDICHANNEL:
+            return 24;
+
+         case COL_MSGTYPE:
+            return 130;
+
+         case COL_MSGEXTTYPE:
+            return 200;
+
+         case COL_DATA1:
+            return 100;
+
+         case COL_DATA2:
+            return 40;
+      }
+   }
+
+}

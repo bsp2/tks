@@ -1,0 +1,976 @@
+//
+//    file: script_autochorder.tks
+//  author: bsp
+//    info: autochorder script ("jazz hands")
+//           (note) this is meant to be used with _two_ keyboards
+//           (note) kbd1: two-note intervals (1=minmaj, 2=sus2, 3=min, 4=maj, 5=sus4, 6=dim, 7=7th)
+//           (note)        when base note is repeated in another octave, duplicate/transpose all notes
+//           (note)         (e.g. "c-4 d#4 c-6 c-7" adds 2nd and 3rd octave mirror notes)
+//           (note) kbd2: oct4: num notes (C-4=2 notes, C#4=3 notes, ..) (on inv_cc port)
+//           (note) kbd2: oct5: inversion (c-5=none, c#5=inversion 1, ..) (on inv_cc port)
+//           (note)        when 2nd note is played: abs(note_delta) is number of additional non-inverted notes
+//           (note)        this resets when a new "1st note" is played
+//           (note) kbd2: oct6: set default number of additional non-inverted notes (on inv_cc port)
+//           (note) kbd3: oct7: select note table (c-7=Default, d-7=User 1, e-7=User 2, ..) (on inv_cc port)
+//           (note) num notes and inversion can also be controlled via CCs (alternatively)
+//           (note) time scatter can be controlled by CC ("scatter_cc" port, see "I/O" tab)
+//           (note) velocity randomization (among other things) can be configured in the "Param" tab)
+//           (note) supports up to 4 custom note tables (each with 7 sub-tables, selected by note intervals)
+//                   (up to 12 notes per table)
+//
+// created: 15Sep2019
+// changed: 16Sep2019, 17Sep2019, 19Sep2019, 22Mar2024
+//
+//
+
+use namespace st2;
+
+// boolean b_debug = true;
+boolean b_debug = false;
+
+int oct_4 = 4*12;  // num notes
+int oct_5 = 5*12;  // inversion
+int oct_6 = 6*12;  // additional, non-inverted notes
+int oct_7 = 7*12;  // note table selection (c,d,e,f,g => default..user 4)
+
+
+// --------------------------------------------------------------------------
+// no configuration options below this point (just code -- here be dragons !)
+// --------------------------------------------------------------------------
+int tick_nr;
+
+// (note) the initial values must line up with the XFM widget defaults
+tag int   p_frame_type = 0;  // note i/o frame type. 0=rec, 1=play
+tag int   p_notetbl_idx = 0;
+tag int   p_rec_notetbl_interval_idx = 0;  // 0..6 => majmin, sus2, min, maj, sus4, dim, 7th
+tag float p_vel_rand = 0.25;
+tag int   p_num_cc = 1; // MW
+tag float p_max_num = 1.0;
+tag int   p_inv_cc = 12; // MPK49 Fader1
+tag float p_max_inversion = 1.0;
+tag int   p_scatter_cc = 13; // MPK49 Fader2
+tag float p_max_scatter = 0.5;  // 1.0 = 1 beat
+tag float p_max_scatter_rand = 0.25;
+tag int   p_rec_min = 1;
+tag int   p_other_off = 0;   // true=when switching chords, hold prev chord notes. false=release previous notes
+
+MIDIPipeFrame frame_tmp;
+MIDIPipeFrame frame_new;
+ActiveNoteState ans_in;
+ActiveNoteState ans_out;
+
+int note_num_threshold_cc = -1;
+float note_num_threshold = 0.25;
+
+int force_kbd_note_num = 0;  // via note
+
+int inversion_cc = -1;
+float inversion_amount = 0.0;
+
+int kbd_inv_note1 = -1;
+int kbd_inv_note2 = -1;
+int force_kbd_inv = -1;      // via note, num inverted notes
+int force_kbd_non_inv = -1;  // via note, num non-inverted notes, abs(note1 - note2)
+int default_kbd_non_inv = -1;  // set via oct6. -1=use CC
+
+IntArray last_noteon_sorted_notes;
+IntArray this_frame_noteons;
+int last_noteon_duration = 1;
+float last_noteon_vel = 64;
+
+int num_octaves = 1;  // octave duplication (when playing base note in multiple octaves)
+int last_trig_note = -1;
+
+// Time scatter
+float scatter_amount = 0.1;  // set via CC (p_scatter_cc)
+IntArray note_on_todo_tick;
+IntArray note_on_todo_note;
+IntArray note_on_todo_vel;
+IntArray note_on_todo_dur;
+IntArray note_on_todo_force;
+
+
+// Default note tables
+IntArray def_note_tbl_majmin = [
+   0, 3, 7, 11, 13, 16, 18, 21, 25, 30
+                          ];
+
+IntArray def_note_tbl_sus2 = [
+   0, 2, 7, 9, 14, 16, 21, 24, 26, 31, 33, 36, 38, 43, 45
+                          ];
+
+IntArray def_note_tbl_min = [
+   0, 3, 7, 10, 14, 17, 21, 24, 28, 31, 35
+                          ];
+
+IntArray def_note_tbl_maj = [
+   0, 4, 7, 11, 14, 18, 21, 25, 28, 32, 35
+   // (note) real maj11/13/ use f instead of f# (17 instead of 18): (not as useful, though)
+   // 0, 4, 7, 11, 14, 17, 21, 25, 28, 32, 35
+                          ];
+
+IntArray def_note_tbl_sus4 = [
+   0, 5, 7, 10, 12, 14, 17, 19, 21, 24, 26, 29, 31, 36, 41
+                          ];
+
+IntArray def_note_tbl_dim = [
+   0, 3, 6, 9, 13, 15, 18, 20, 24, 28, 32, 36, 39, 45
+                          ];
+
+IntArray def_note_tbl_7th = [
+   0, 7, 12, 19, 24, 31, 36, 43, 48, 55, 60, 67, 72
+                          ];
+
+// indexed by interval 1..7
+PointerArray def_note_tables <= [
+   def_note_tbl_majmin,  // 1
+   def_note_tbl_sus2,    // 2
+   def_note_tbl_min,     // 3
+   def_note_tbl_maj,     // 4
+   def_note_tbl_sus4,    // 5
+   def_note_tbl_dim,     // 6
+   def_note_tbl_7th,     // 7
+                             ];
+
+
+// User note tables (recorded via UI)
+//  (note) persistent (saved / restored with node state)
+IntArray usr1_note_tbl_majmin = def_note_tbl_majmin;
+IntArray usr1_note_tbl_sus2   = def_note_tbl_sus2;
+IntArray usr1_note_tbl_min    = def_note_tbl_min;
+IntArray usr1_note_tbl_maj    = def_note_tbl_maj;
+IntArray usr1_note_tbl_sus4   = def_note_tbl_sus4;
+IntArray usr1_note_tbl_dim    = def_note_tbl_dim;
+IntArray usr1_note_tbl_7th    = def_note_tbl_7th;
+
+PointerArray usr1_note_tables <= [
+   usr1_note_tbl_majmin,  // 1
+   usr1_note_tbl_sus2,    // 2
+   usr1_note_tbl_min,     // 3
+   usr1_note_tbl_maj,     // 4
+   usr1_note_tbl_sus4,    // 5
+   usr1_note_tbl_dim,     // 6
+   usr1_note_tbl_7th,     // 7
+                                    ];
+
+IntArray usr2_note_tbl_majmin = def_note_tbl_majmin;
+IntArray usr2_note_tbl_sus2   = def_note_tbl_sus2;
+IntArray usr2_note_tbl_min    = def_note_tbl_min;
+IntArray usr2_note_tbl_maj    = def_note_tbl_maj;
+IntArray usr2_note_tbl_sus4   = def_note_tbl_sus4;
+IntArray usr2_note_tbl_dim    = def_note_tbl_dim;
+IntArray usr2_note_tbl_7th    = def_note_tbl_7th;
+
+PointerArray usr2_note_tables <= [
+   usr2_note_tbl_majmin,  // 1
+   usr2_note_tbl_sus2,    // 2
+   usr2_note_tbl_min,     // 3
+   usr2_note_tbl_maj,     // 4
+   usr2_note_tbl_sus4,    // 5
+   usr2_note_tbl_dim,     // 6
+   usr2_note_tbl_7th,     // 7
+                                    ];
+
+IntArray usr3_note_tbl_majmin = def_note_tbl_majmin;
+IntArray usr3_note_tbl_sus2   = def_note_tbl_sus2;
+IntArray usr3_note_tbl_min    = def_note_tbl_min;
+IntArray usr3_note_tbl_maj    = def_note_tbl_maj;
+IntArray usr3_note_tbl_sus4   = def_note_tbl_sus4;
+IntArray usr3_note_tbl_dim    = def_note_tbl_dim;
+IntArray usr3_note_tbl_7th    = def_note_tbl_7th;
+
+PointerArray usr3_note_tables <= [
+   usr3_note_tbl_majmin,  // 1
+   usr3_note_tbl_sus2,    // 2
+   usr3_note_tbl_min,     // 3
+   usr3_note_tbl_maj,     // 4
+   usr3_note_tbl_sus4,    // 5
+   usr3_note_tbl_dim,     // 6
+   usr3_note_tbl_7th,     // 7
+                                    ];
+
+IntArray usr4_note_tbl_majmin = def_note_tbl_majmin;
+IntArray usr4_note_tbl_sus2   = def_note_tbl_sus2;
+IntArray usr4_note_tbl_min    = def_note_tbl_min;
+IntArray usr4_note_tbl_maj    = def_note_tbl_maj;
+IntArray usr4_note_tbl_sus4   = def_note_tbl_sus4;
+IntArray usr4_note_tbl_dim    = def_note_tbl_dim;
+IntArray usr4_note_tbl_7th    = def_note_tbl_7th;
+
+PointerArray usr4_note_tables <= [
+   usr4_note_tbl_majmin,  // 1
+   usr4_note_tbl_sus2,    // 2
+   usr4_note_tbl_min,     // 3
+   usr4_note_tbl_maj,     // 4
+   usr4_note_tbl_sus4,    // 5
+   usr4_note_tbl_dim,     // 6
+   usr4_note_tbl_7th,     // 7
+                                    ];
+
+// indexed by p_notetbl_idx (selected via UI)
+PointerArray all_note_tables <= [
+   def_note_tables,   // 0
+   usr1_note_tables,  // 1
+   usr2_note_tables,  // 2
+   usr3_note_tables,  // 3
+   usr4_note_tables,  // 4
+                                 ];
+
+int cur_rec_notetbl_interval_idx = 0;
+int usr_tbl_rec_idx;  // -1=none, 0..3
+
+IntArray tbl_clipboard;
+
+ui::XMLForm *g_xfm;  // null until UI is shown
+
+
+function OnUIInit(ui::XMLForm _xfm) {
+   ui::ComboBox *cm;
+
+   g_xfm <= _xfm;
+
+   cm <= _xfm.findLayerById("p_num_cc");
+   if(null != cm)
+   {
+      cm.setOptions(MIDI.cc_names);
+   }
+
+   cm <= _xfm.findLayerById("p_inv_cc");
+   if(null != cm)
+   {
+      cm.setOptions(MIDI.cc_names);
+   }
+
+   cm <= _xfm.findLayerById("p_scatter_cc");
+   if(null != cm)
+   {
+      cm.setOptions(MIDI.cc_names);
+   }
+}
+
+function GetRecUsrTbl() {
+   PointerArray noteTables <= all_note_tables.get(usr_tbl_rec_idx + 1/*skip default*/);
+   IntArray noteTbl <= noteTables.get(cur_rec_notetbl_interval_idx);
+   return noteTbl;
+}
+
+function HandleCopyTblToClipboard() {
+   PointerArray noteTables <= all_note_tables.get(p_notetbl_idx);
+   IntArray noteTbl <= noteTables.get(p_rec_notetbl_interval_idx);
+   tbl_clipboard = noteTbl;
+}
+
+function /*=replay=*/ HandlePasteClipboardToTbl() {
+   TKS.lockNamedMutex("=replay"); // (note) global functions don't support '=<mutexname>=' decorators
+   PointerArray noteTables <= all_note_tables.get(p_notetbl_idx);
+   IntArray noteTbl <= noteTables.get(p_rec_notetbl_interval_idx);
+   noteTbl = tbl_clipboard;
+   TKS.unlockNamedMutex("=replay=");
+}
+
+function PostProcessRecUsrTbl() {
+   // Make notes relative (find min and subtract from all notes)
+   IntArray noteTbl <= GetRecUsrTbl();
+   if(noteTbl.numElements > 0)
+   {
+      int minNote;
+      if(p_rec_min)
+      {
+         minNote = noteTbl.getMin();
+      }
+      else
+      {
+         // // minNote = noteTbl.get(0);
+         minNote = 12*5;//(minNote/12)*12;
+      }
+      int noteTblIdx = 0;
+      loop(noteTbl.numElements)
+      {
+         noteTbl[noteTblIdx] = noteTbl[noteTblIdx] - minNote;
+         noteTblIdx++;
+      }
+   }
+}
+
+function HandleStartStopRecording(ui::Button bt, int nr) {
+   if(p_notetbl_idx >= 1)
+   {
+      IntArray *noteTbl;
+      if(bt.getToggleState())
+      {
+         // Start recording
+         usr_tbl_rec_idx = nr - 1;
+         cur_rec_notetbl_interval_idx = p_rec_notetbl_interval_idx;
+         noteTbl <= GetRecUsrTbl();
+         noteTbl.empty();
+         Global.Print("User note table "+nr+" recording STARTED.");
+         bt.setBackgroundTint(#30ff0000);
+         bt.redraw();
+      }
+      else
+      {
+         // Stop recording
+         PostProcessRecUsrTbl();
+         usr_tbl_rec_idx = -1;
+         bt.setBackgroundTint(0);
+         bt.redraw();
+         Global.Print("User note table "+nr+" recording STOPPED.");
+      }
+   }
+   else
+   {
+      bt.setToggleState(false);
+      Global.Error("Cannot record / overwrite \"Default\" note tables");
+   }
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+
+   switch(id)
+   {
+      case "bt_rec_usr":
+         HandleStartStopRecording(layer, p_notetbl_idx);
+         break;
+
+      case "bt_copy_tbl":
+         HandleCopyTblToClipboard();
+         break;
+
+      case "bt_paste_tbl":
+         HandlePasteClipboardToTbl();
+         break;
+
+      case "p_rec_notetbl_interval_idx":
+         if(-1 != usr_tbl_rec_idx)
+         {
+            PostProcessRecUsrTbl();  // Finish previous table
+            cur_rec_notetbl_interval_idx = p_rec_notetbl_interval_idx;
+            IntArray noteTbl <= GetRecUsrTbl();
+            noteTbl.empty();
+         }
+         break;
+   }
+}
+
+function SaveUsrNoteTables(Stream ofs, PointerArray _tbl) {
+   int idx = 0;
+   loop(7)
+   {
+      Utils.WriteIntArray(ofs, _tbl.get(idx++));
+   }
+}
+
+function LoadUsrNoteTables(Stream ofs, PointerArray _tbl) {
+   int idx = 0;
+   loop(7)
+   {
+      Utils.ReadIntArray(ofs, _tbl.get(idx++));
+   }
+}
+
+function OnSaveState(Stream ofs) {
+   // Version
+   ofs.i16 = 2;
+
+   // Write user note table 1
+   SaveUsrNoteTables(ofs, usr1_note_tables);
+
+   // Write user note table 2
+   SaveUsrNoteTables(ofs, usr2_note_tables);
+
+   // Write user note table 3
+   SaveUsrNoteTables(ofs, usr3_note_tables);
+
+   // Write user note table 4
+   SaveUsrNoteTables(ofs, usr4_note_tables);
+
+   // Note Num Threshold (v2+)
+   ofs.f32 = note_num_threshold;
+
+   // Force Kbd Note Num (v2+)
+   ofs.i8 = force_kbd_note_num;
+
+   // Inversion Amount (v2+)
+   ofs.f32 = inversion_amount;
+
+   // Force Kbd Inv (v2+)
+   ofs.i8 = force_kbd_inv;
+
+   // Force Kbd NonInv (v2+)
+   ofs.i8 = force_kbd_non_inv;
+
+   // Scatter Amount (v2+)
+   ofs.f32 = scatter_amount;
+}
+
+function OnLoadState(Stream ifs) {
+   // Version
+   short ver = ifs.i16;
+
+   if(ver >= 1)
+   {
+      // Load user note table 1
+      LoadUsrNoteTables(ifs, usr1_note_tables);
+
+      // Load user note table 2
+      LoadUsrNoteTables(ifs, usr2_note_tables);
+
+      // Load user note table 3
+      LoadUsrNoteTables(ifs, usr3_note_tables);
+
+      // Load user note table 4
+      LoadUsrNoteTables(ifs, usr4_note_tables);
+
+      if(ver >= 2)
+      {
+         // Note Num Threshold (v2+)
+         note_num_threshold= ifs.f32;
+
+         // Force Kbd Note Num (v2+)
+         force_kbd_note_num = ifs.s8;
+
+         // Inversion Amount (v2+)
+         inversion_amount = ifs.f32;
+
+         // Force Kbd Inv (v2+)
+         force_kbd_inv = ifs.s8;
+
+         // Force Kbd NonInv (v2+)
+         force_kbd_non_inv = ifs.s8;
+
+         // Scatter Amount (v2+)
+         scatter_amount = ifs.f32;
+      }
+   }
+}
+
+function QueueNoteOn(int   _note,
+                     float _vel,
+                     int   _duration,
+                     boolean _bForceRetrig
+                     ) {
+   int deltaTicks = rand(mathClampf(p_max_scatter + 2*rand(p_max_scatter_rand) - p_max_scatter_rand, 0.0f, 1.0f)
+                         * current_song.getNumTicksPerBeat() * scatter_amount);
+   _vel = _vel + (_vel * (rand(2*p_vel_rand)-p_vel_rand));
+   // // if(0 == deltaTicks)
+   // // {
+   // //    if(_bForceRetrig)
+   // //    {
+   // //       frame_new.noteOn(true/*bSet*/, out_dev, out_ch, _note,
+   // //                        _vel,
+   // //                        _duration
+   // //                        );
+   // //    }
+   // //    frame_new.noteOn(true/*bSet*/, out_dev, out_ch, _note,
+   // //                     _vel,
+   // //                     _duration
+   // //                     );
+   // // }
+   // // else
+   {
+      note_on_todo_tick.add(tick_nr + deltaTicks);
+      note_on_todo_note.add(_note);
+      note_on_todo_vel .add(_vel);
+      note_on_todo_dur .add(_duration);
+      note_on_todo_force.add(_bForceRetrig);
+   }
+
+}
+
+function AddOrRemoveNotes(IntArray sortedNotes,
+                          int _forceNewNote,
+                          int _duration,
+                          float _vel,
+                          float _lastNoteNumThreshold,
+                          boolean _bAllowOtherOff,
+                          boolean _bForceRetrigLastTblNote
+                          ) {
+   if(sortedNotes.numElements >= 1)
+   {
+      // Now playing 2 notes (new note will be added shortly after)
+      int baseNote;
+      int interval;
+
+      if(-1 != _forceNewNote)
+      {
+         int lastNote = sortedNotes.get(0);
+         if(lastNote == _forceNewNote)
+            lastNote = sortedNotes.get(1);
+         if(lastNote > _forceNewNote)
+         {
+            interval = (lastNote - _forceNewNote);
+            baseNote = _forceNewNote;
+         }
+         else
+         {
+            interval = (_forceNewNote - lastNote);
+            baseNote = lastNote;
+         }
+      }
+      else
+      {
+         baseNote = sortedNotes.get(0);
+         interval = sortedNotes.get(1) - baseNote;
+      }
+
+      if(b_debug) trace "xxx interval="+interval+" p_notetbl_idx="+p_notetbl_idx;
+      PointerArray noteTables <= all_note_tables.get(p_notetbl_idx);
+      IntArray noteTblOrig <= noteTables.get(interval - 1);
+      p_rec_notetbl_interval_idx = interval - 1; // update UI
+      if((null != noteTblOrig) && (noteTblOrig.numElements > 0))
+      {
+         int note;
+         int tblNote;
+         int tblNoteIdx;
+         IntArray noteTblInv;
+         IntArray noteTbl <= noteTblOrig;
+
+         if(b_debug) trace "xxx noteTbl="+#(noteTbl)+" baseNote="+baseNote+" numOct="+num_octaves;
+
+         // Add table notes
+         tblNoteIdx = 0;
+         int tblNoteNum;
+         int tblNoteRetrigOff;
+
+         if(-1 != force_kbd_note_num)
+         {
+            tblNoteNum = mathMini(2 + int(force_kbd_note_num * p_max_num + 0.5), noteTbl.numElements);
+            tblNoteRetrigOff = tblNoteNum;
+         }
+         else
+         {
+            tblNoteNum = 2 + int((noteTbl.numElements-2) * note_num_threshold * p_max_num + 0.5);
+            tblNoteRetrigOff = tblNoteNum;
+            if(_lastNoteNumThreshold > note_num_threshold)
+            {
+               tblNoteNum = 2+ int((noteTbl.numElements-2) * _lastNoteNumThreshold * p_max_num + 0.5);
+               if(tblNoteNum < 2)
+                  tblNoteNum = 2;
+               if(b_debug) trace "xxx tblNoteRetrigOff="+tblNoteRetrigOff+" tblNoteNum="+tblNoteNum;
+            }
+         }
+
+         // Inversion
+         int numInvertedNotes;
+         int numNonInvertedNotes = 0;
+         int numExtraOctNotes = 0;
+         if(force_kbd_inv > 0)
+         {
+            numInvertedNotes = mathMini(force_kbd_inv, tblNoteNum);
+            numExtraOctNotes = mathMaxi(0, force_kbd_inv - tblNoteNum);
+            if(-1 != force_kbd_non_inv)
+               numNonInvertedNotes = force_kbd_non_inv;
+         }
+         else
+         {
+            numInvertedNotes = int(inversion_amount * p_max_inversion * tblNoteNum + 0.5);
+            numNonInvertedNotes = 0;
+         }
+         if(b_debug) trace "xxx invAmt="+inversion_amount+" numInvertedNotes="+numInvertedNotes;
+         if(numInvertedNotes > 0)
+         {
+            noteTblInv.empty();
+            tblNoteIdx = 0;
+            if(numNonInvertedNotes > 0)
+            {
+               foreach note in noteTblOrig
+               {
+                  if(tblNoteIdx >= numNonInvertedNotes)
+                     break;
+                  noteTblInv.add(note);
+                  tblNoteIdx++;
+               }
+            }
+            if(numExtraOctNotes > 0)
+            {
+               loop(numExtraOctNotes)
+               {
+                  tblNoteIdx = (tblNoteIdx % noteTblOrig.numElements);
+                  note = noteTblOrig.get(tblNoteIdx++);
+                  noteTblInv.add(note+24);
+               }
+               numNonInvertedNotes += numExtraOctNotes;
+            }
+            tblNoteIdx = 0;
+            foreach note in noteTblOrig
+            {
+               if(tblNoteIdx < numInvertedNotes)
+               {
+                  noteTblInv.add(note+12);
+               }
+               else
+                  noteTblInv.add(note);
+               tblNoteIdx++;
+            }
+            noteTbl <= noteTblInv;
+         }
+         else
+         {
+            noteTbl <= noteTblOrig;
+         }
+
+         tblNoteNum += numNonInvertedNotes;
+
+         if(b_debug) trace "xxx trig noteTbl="+#(noteTbl);
+
+         // Start / stop notes
+         tblNoteIdx = 0;
+         loop(tblNoteNum)
+         {
+            tblNote = noteTbl.get(tblNoteIdx);
+            note = baseNote + tblNote;
+
+            int octIdx = 0;
+
+            loop(num_octaves)
+            {
+               int octNote = note + octIdx*12;
+               boolean bForceRetrig = (_bForceRetrigLastTblNote && (tblNoteIdx == (tblNoteNum-1)));
+
+               if(!ans_out.isNoteActive(octNote) || bForceRetrig)
+               {
+                  QueueNoteOn(octNote, _vel, _duration, bForceRetrig);
+                  last_trig_note = note;
+               }
+               // this_frame_noteons.add(note);
+               else if(tblNoteIdx >= tblNoteRetrigOff)
+               {
+                  // Retrig note(s) when swiping modwheel down
+                  if(note != last_trig_note)
+                  {
+                     frame_new.noteOffPre(true/*bSet*/, out_dev, out_ch, octNote, 1/*vel*/);
+                     QueueNoteOn(octNote, _vel, _duration, bForceRetrig);
+                  }
+               }
+               octIdx++;
+            }
+            tblNoteIdx++;
+         }
+         if(_bAllowOtherOff)
+         {
+            tblNoteNum = noteTbl.numElements - tblNoteNum;
+            loop(tblNoteNum)
+            {
+               tblNote = noteTbl.get(tblNoteIdx);
+               note = baseNote + tblNote;
+               if(ans_out.isNoteActive(note))
+               {
+                  frame_new.noteOff(true/*bSet*/, out_dev, out_ch, note, _vel);
+                  int todoIdx = note_on_todo_note.indexOf(note, 0);
+                  if(-1 != todoIdx)
+                  {
+                     note_on_todo_tick.delete(todoIdx);
+                     note_on_todo_note.delete(todoIdx);
+                     note_on_todo_vel.delete(todoIdx);
+                     note_on_todo_dur.delete(todoIdx);
+                     note_on_todo_force.delete(todoIdx);
+                  }
+               }
+               tblNoteIdx++;
+            }
+         }
+         // ans_out.process(frame_tmp, -1/*fltDev*/, -1/*fltCh*/);
+      } // if noteTblOrig
+   } // if sortedNotes.numElements >= 1
+}
+
+delegate ActiveNoteState:ProcessInputNoteOff(int _activeNoteIdx, byte _note, float _vel) {
+   // frame_tmp.noteOff(true/*bSet*/, io_dev, cur_ch, _note + transpose, _vel);
+   if(b_debug) trace "xxx noteoff: ans.numActive before off is "+ans_in.getNumActiveNotes();
+   if(2 == ans_in.getNumActiveNotes())
+   {
+      ans_out.releaseAllNotesAndReset(frame_new, out_dev, out_ch, _vel);
+      last_noteon_sorted_notes.empty();
+      last_trig_note = -1;
+      note_on_todo_tick.empty();
+      note_on_todo_note.empty();
+      note_on_todo_vel.empty();
+      note_on_todo_dur.empty();
+      note_on_todo_force.empty();
+   }
+}
+
+delegate ActiveNoteState:ProcessInputNoteOnPre(byte _note, int _duration, float _vel) {
+
+}
+
+delegate ActiveNoteState:ProcessInputNoteOn(int _activeNoteIdx, byte _note, int _duration, float _vel) {
+
+   if(b_debug) trace "xxx noteon: ans.numActive after on is "+ans_in.getNumActiveNotes();
+   ans_in.getActiveNotesSorted(last_noteon_sorted_notes);
+   if(b_debug) trace "xxx last_noteon_sorted_notes="+#(last_noteon_sorted_notes);
+
+   last_noteon_duration = _duration;
+   last_noteon_vel = _vel;
+
+   int forceNewNote = _note;
+
+   num_octaves = 1;
+   int note;
+   foreach note in last_noteon_sorted_notes
+   {
+      if((num_octaves < 2) && last_noteon_sorted_notes.contains(note + 12))
+      {
+         num_octaves = 2;
+         if( (note+12) == _note)
+            forceNewNote = -1;
+      }
+
+      if((num_octaves < 3) && last_noteon_sorted_notes.contains(note + 24))
+      {
+         num_octaves = 3;
+         if( (note+24) == _note)
+            forceNewNote = -1;
+      }
+
+      if((num_octaves < 4) && last_noteon_sorted_notes.contains(note + 36))
+      {
+         num_octaves = 4;
+         if( (note+36) == _note)
+            forceNewNote = -1;
+      }
+   }
+
+   if(b_debug) trace "xxx p_vel_rand="+p_vel_rand;
+
+   AddOrRemoveNotes(last_noteon_sorted_notes,
+                    forceNewNote,
+                    _duration, _vel,
+                    note_num_threshold,
+                    p_other_off/*bAllowOtherOff*/,
+                    false/*bForceRetrigLastTblNote*/
+                    );
+}
+
+delegate ActiveNoteState:ProcessOutputNoteOff(int _activeNoteIdx, byte _note, float _vel) {
+   // // frame_tmp.noteOff(true/*bSet*/, io_dev, cur_ch, _note + transpose, _vel);
+   if(b_debug) trace "xxx noteoff<out>: ans.numActive before off is "+ans_out.getNumActiveNotes();
+}
+
+function OnReset() {
+   // delegate ans_in:"note_on_pre"  = ProcessInputNoteOnPre;
+   delegate ans_in:"note_on"      = ProcessInputNoteOn;
+   delegate ans_in:"note_off"     = ProcessInputNoteOff;
+   // delegate ans_out:"note_on_pre"  = ProcessInputNoteOnPre;
+   delegate ans_out:"note_off"     = ProcessOutputNoteOff;
+   ans_in.reset();
+   ans_out.reset();
+   note_num_threshold_cc = -1;
+   // // note_num_threshold = 0.25;
+   inversion_cc = -1;
+   // // inversion_amount = 0.0;
+   last_noteon_sorted_notes.empty();
+   last_noteon_duration = 1;
+   last_noteon_vel = 64;
+   last_trig_note = -1;
+   // // force_kbd_note_num = -1;
+   kbd_inv_note1 = -1;
+   kbd_inv_note2 = -1;
+   // // force_kbd_inv = -1;
+   // // force_kbd_non_inv = -1;
+   // // default_kbd_non_inv = -1;
+   // // scatter_amount = 1.0;
+   note_on_todo_tick.empty();
+   note_on_todo_note.empty();
+   note_on_todo_vel.empty();
+   note_on_todo_dur.empty();
+   note_on_todo_force.empty();
+   tick_nr = 0;
+   usr_tbl_rec_idx = -1;
+}
+
+// // function OnSeek(int ticks) {
+// // }
+
+function HandleRecUsrTbl(MIDIPipeFrame fr) {
+   local MIDIPipeEvent pev;
+   int evIdx = 0;
+   loop(fr.getNumEventsNoteOnByFlt(in_dev, in_ch))
+   {
+      if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_dev, in_ch))
+      {
+         IntArray noteTbl <= GetRecUsrTbl();
+         if(noteTbl.numElements < 12)
+         {
+            noteTbl.add(pev.note);
+         }
+      }
+      evIdx++;
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(-1 != usr_tbl_rec_idx)
+   {
+      HandleRecUsrTbl(frameRec);
+      return;
+   }
+   if(!bMuted)
+   {
+      frame_new.empty();
+      MIDIPipeFrame frameIO <= p_frame_type ? framePlay : frameRec;
+      MIDIPipeFrame *fr;
+
+      boolean bAddOrRemoveNotes = false;
+      boolean bForceRetrigLastTblNote = false;
+
+      // Num Notes CC
+      float lastNoteNumThreshold = note_num_threshold;
+      int cc;
+      fr <= frameRec;
+      loop(2)
+      {
+         cc = fr.getFilteredCC(num_cc_dev, num_cc_ch, p_num_cc);
+         if(-1 != cc)
+         {
+            note_num_threshold = (cc / 127.0);
+            bAddOrRemoveNotes |= (cc != note_num_threshold_cc);
+            note_num_threshold_cc = cc;
+            force_kbd_note_num = -1;
+         }
+
+         // Inversion CC
+         cc = fr.getFilteredCC(inv_cc_dev, inv_cc_ch, p_inv_cc);
+         if(-1 != cc)
+         {
+            inversion_amount = cc / 127.0;
+            bAddOrRemoveNotes |= (cc != inversion_cc);
+            inversion_cc = cc;
+         }
+
+         // Scatter CC
+         cc = fr.getFilteredCC(scatter_cc_dev, scatter_cc_ch, p_scatter_cc);
+         if(-1 != cc)
+         {
+            scatter_amount = cc / 127.0;
+         }
+
+         MIDIPipeEvent pev;
+         int evIdx;
+
+         evIdx = 0;
+         loop(fr.getNumEventsNoteOnByFlt(inv_cc_dev, inv_cc_ch))
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, inv_cc_dev, inv_cc_ch))
+            {
+               if(oct_4 <= pev.note < (oct_4 + 12))
+               {
+                  int newKbdNoteNum = pev.note  - oct_4;
+                  bForceRetrigLastTblNote = true;////(newKbdNoteNum < force_kbd_note_num);
+                  force_kbd_note_num = newKbdNoteNum;
+                  if(b_debug) trace "xxx bForceRetrigLastTblNote="+bForceRetrigLastTblNote;
+                  bAddOrRemoveNotes = true;
+               }
+               else if(oct_5 <= pev.note < (oct_5 + 12))
+               {
+                  if(-1 == kbd_inv_note1)
+                  {
+                     kbd_inv_note1 = pev.note;
+                     force_kbd_inv = pev.note - oct_5;
+                     force_kbd_non_inv = default_kbd_non_inv;
+                     if(b_debug) trace "xxx inv_note1="+kbd_inv_note1+" kbd_inv="+force_kbd_inv;
+                     bAddOrRemoveNotes = true;
+                  }
+                  else
+                  {
+                     kbd_inv_note2 = pev.note;
+                     force_kbd_non_inv = abs(kbd_inv_note1 - pev.note);
+                     if(b_debug) trace "xxx non_inv="+force_kbd_non_inv;
+                     bAddOrRemoveNotes = true;
+                  }
+               }
+               else if(oct_6 <= pev.note < (oct_6 + 12))
+               {
+                  default_kbd_non_inv = pev.note - oct_6;
+                  force_kbd_non_inv = default_kbd_non_inv;
+                  if(b_debug) trace "xxx non_inv="+force_kbd_non_inv+" (via oct6)";
+                  bAddOrRemoveNotes = true;
+               }
+               else if(oct_7 <= pev.note < (oct_7 + 12))
+               {
+                  p_notetbl_idx = Scale.WhiteToIndex(pev.note, oct_7/*base*/) % 5/*num tables*/;
+                  if(b_debug) trace "xxx select notetbl "+p_notetbl_idx+" via oct7";
+               }
+            }
+            evIdx++;
+         }
+
+         evIdx = 0;
+         loop(fr.getNumEventsNoteOffByFlt(inv_cc_dev, inv_cc_ch))
+         {
+            if(fr.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, inv_cc_dev, inv_cc_ch))
+            {
+               if(pev.note == kbd_inv_note1)
+               {
+                  kbd_inv_note1 = -1;
+               }
+               else if(pev.note == kbd_inv_note2)
+               {
+                  kbd_inv_note2 = -1;
+               }
+            }
+         }
+
+         fr <= framePlay;
+
+      } // loop(2) (frameRec + framePlay)
+
+      ans_in.process(frameIO, in_dev, in_ch);
+
+      frameIO.deleteNoteOnsByFlt(in_dev, in_ch);
+      frameIO.deleteNoteOffsByFlt(in_dev, in_ch);
+
+      if(bAddOrRemoveNotes)
+         AddOrRemoveNotes(last_noteon_sorted_notes,
+                          -1/*forceNewNote*/,
+                          last_noteon_duration,
+                          last_noteon_vel,
+                          lastNoteNumThreshold,
+                          false/*bAllowOtherOff*/,
+                          bForceRetrigLastTblNote
+                          );
+
+      // Play scattered notes
+      int todoIdx = 0;
+      while(todoIdx < note_on_todo_note.numElements)
+      {
+         if(note_on_todo_tick[todoIdx] == tick_nr)
+         {
+            if(b_debug) trace "xxx play scattered note "+note_on_todo_note.get(todoIdx)+" tick_nr="+tick_nr;
+            boolean bForce = note_on_todo_force.get(todoIdx);
+            if(!ans_out.isNoteActive(note_on_todo_note.get(todoIdx)) || bForce)
+            {
+               if(bForce)
+                  frame_new.noteOffPre(true/*bSet*/, out_dev, out_ch,
+                                       note_on_todo_note.get(todoIdx),
+                                       1/*vel*/
+                                       );
+
+               frame_new.noteOn(true/*bSet*/, out_dev, out_ch,
+                                note_on_todo_note.get(todoIdx),
+                                note_on_todo_vel.get(todoIdx),
+                                note_on_todo_dur.get(todoIdx)
+                                );
+            }
+            note_on_todo_tick.delete(todoIdx);
+            note_on_todo_note.delete(todoIdx);
+            note_on_todo_vel .delete(todoIdx);
+            note_on_todo_dur .delete(todoIdx);
+            note_on_todo_force.delete(todoIdx);
+         }
+         else
+         {
+            todoIdx++;
+         }
+      }
+
+      ans_out.process(frame_new, -1/*fltDev*/, -1/*fltCh*/);
+      frameIO.mergeFrame(frame_new);
+   }
+
+   tick_nr++;
+}

@@ -1,0 +1,1458 @@
+// ----
+// ---- file   : NodeModularEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 26Mar2021
+// ---- changed: 29Mar2021, 30Mar2021, 08May2021, 13May2021, 14May2021, 07Dec2021, 27Dec2021
+// ----          28Dec2021, 11Feb2023, 23Jun2023, 21Sep2023, 03Oct2023, 08Oct2023, 06Oct2024
+// ----          23Oct2024
+// ----
+// ----
+// ----
+
+module MNodeModularEditor;
+
+use namespace ui;
+use namespace st2;
+use namespace modularcv;
+
+
+// <class.png>
+class NodeModularEditor extends NodeEditor, ActionProvider, KeyboardFocusListener, MIDIMapEventListener, MIDIMapDefs {
+
+   define String TA_UPDATE_RPN;
+   protected TimerAction *ta_update_rpn;
+
+   define int TAB_PATTERN   = 0;
+   define int TAB_IO        = 1;
+   define int TAB_PATCH     = 2;
+   define int TAB_PLAY      = 3;
+
+   public NodeModular *node;
+
+   protected TabSwitch *ts_groups;
+
+
+   // Pattern:
+   protected ComboBox   *cm_pattern_nr;
+   protected Label      *lb_pat_nr;
+   protected TextField  *tf_pat_name;
+   protected Button     *bt_clear;
+
+   protected Button    *bt_pat_alloc;
+   protected Button    *bt_pat_tools;
+   protected PopupMenu *pm_pat_tools;
+   protected Button    *bt_pat_free;
+
+   // IO:
+   protected CtlIOForm *[] io_forms;
+
+   // Patch:
+   protected ModularRack *rack;
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected CheckBox *cb_play_change_reset;
+   protected CheckBox *cb_play_framerec;
+
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeModularEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            f_autodev.initAutoDeviceForm();
+
+            cm_pattern_nr.setOptions(Node.patnr_options);
+
+            rack.init(this);
+
+            CtlIOForm *ioForm;
+            int ioFormNr = 1;
+            loop(NodeModular.NUM_PORTS)
+            {
+               ioForm <= findLayerById("p_"+ioFormNr);
+               if(!ioForm.init(this/*listener*/,
+                               false/*bAllowAllCh*/,
+                               true/*bShowId*/,
+                               true/*bShowEnable*/,
+                               null/*idLabelOrNull*/
+                               )
+                  )
+               {
+                  return false;
+               }
+               io_forms.add(ioForm);
+               ioFormNr++;
+            }
+
+            initMMC();
+
+            initTimers();
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_update_rpn <= TimerAction.New(TA_UPDATE_RPN, this, 100);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeModularEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      ///trace "xxx NodeModularEditor::mmcHandleEvent";
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      NodeModularPattern pat <= getEditPattern();
+
+      if(null != boundEv)
+      {
+         String tgtName <= boundEv.bound_target.target_name;
+
+         switch(tgtName)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+         }
+      }
+
+      // // trace "xxx NodeModularEditor::mmcHandleEvent: unhandled";
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cm_pattern_nr,
+                             tf_pat_name,
+                             bt_pat_alloc,
+                             bt_pat_tools,
+                             bt_pat_free
+                           ]
+                          );
+            return layers;
+
+         case TAB_IO:
+            layers.add(ts_groups);
+            addIOFormsToTabCycleOverrides(layers);
+            return layers;
+
+         case TAB_PATCH:
+            layers.add(ts_groups);
+            addPatchModulesToTabCycleOverrides(layers);
+            return layers;
+
+         case TAB_PLAY:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cm_node_class,
+                             cb_node_class_show,
+                             cm_node_class_show_in,
+
+                             cb_play_change_reset,
+                             cb_play_framerec
+                           ]
+                          );
+            f_autodev.addTabCycleOverrides(layers);
+            return layers;
+      }
+   }
+
+   // <method_add.png>
+   protected method addIOFormsToTabCycleOverrides(PointerArray _layers) {
+      CtlIOForm *f;
+      foreach f in io_forms
+      {
+         f.addTabCycleOverrides(_layers);
+      }
+   }
+
+   // <method_add.png>
+   protected =replay= method addPatchModulesToTabCycleOverrides(PointerArray _layers) {
+      Patch patch <= rack.patch;
+      if(null != patch)
+      {
+         local IntArray ia;
+         patch.sortModulesByPosition(ia);
+         int idx;
+         foreach idx in ia
+            _layers.add(patch.all_modules.get(idx));
+      }
+   }
+
+   // <ui_show.png>
+   public virtual showNode(Node _node) {
+      node <= _node;
+
+      updatePatternNrComboBox();
+      cm_pattern_nr.setSelectedOption(node.nodeGetCurrentEditPatternNr());
+
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      f_autodev.showNode(node, devAll, bgcolorsAll);
+
+      showPorts();
+
+      rack.showNode(_node);
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(node);
+      cb_play_change_reset.setSelected(node.b_change_reset);
+      cb_play_framerec.setSelected(node.b_framerec);
+
+      MIDI.AddMIDIMapEventListener(this);
+
+      if(!NodeEditor.b_lock_kbdfocus)
+         refocusDefault();
+
+      ta_update_rpn.reschedule();
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+      Global.Debug("NodeModularEditor::showNodePost");
+
+      // workaround to fix "lctrl-home/end" pattern-selection-not-working  issue
+      int tabIndex = ts_groups.getActiveTabIndex();
+      ts_groups.setActiveTabIndex(TAB_PATTERN/*0*/);
+      ts_groups.setActiveTabIndex(tabIndex);
+
+      if(null != node)
+      {
+         if(!node.b_shown)
+         {
+            node.b_shown = true;
+            NodeModularPattern pat <= getEditPattern();
+            if((null != pat) && !pat.isEmpty())
+               ts_groups.setActiveTabIndex(TAB_PATCH);
+            else
+               ts_groups.setActiveTabIndex(TAB_IO);
+         }
+      }
+
+      relayout();
+      handlePatternChanged();
+      updateTabOverlays(true/*bShow*/);
+      ts_groups.relayoutActiveTab();
+      refocusDefault();
+
+      UI.SetKeyboardFocusListener(this);
+   }
+
+   // <method.png>
+   protected method updateTabOverlays(boolean _bShow) {
+      if(_bShow && (TAB_PATCH == ts_groups.getActiveTabIndex()))
+         root_form.addOverlay(rack);
+      else
+         root_form.removeOverlay(rack);
+   }
+
+   // <ui_show.png>
+   protected method showPorts() {
+      int pIdx = 0;
+      CtlIOForm *f;
+      foreach f in io_forms
+      {
+         f.showPort(node.io_ports[pIdx++]);
+      }
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         switch(ts_groups.getActiveTabIndex())
+         {
+            case TAB_PATTERN:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+
+            case TAB_IO:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+
+            case TAB_PATCH:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+
+            case TAB_PLAY:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+         }
+
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrComboBox() {
+      local StringArray patNrOptionsShort;
+      local StringArray patNrOptionsLong;
+      local IntArray patNrColors;
+      Node.CalcPatNrOptions(node, patNrOptionsShort, patNrOptionsLong, patNrColors);
+      cm_pattern_nr.setOptions(patNrOptionsShort);
+      cm_pattern_nr.setOptionsLong(patNrOptionsLong);
+      cm_pattern_nr.setOptionBGColors(patNrColors);
+   }
+
+   // <method_get.png>
+   protected method getEditPattern() : NodeModularPattern {
+      NodeModularPattern pat <= node.nodeGetCurrentEditPattern();
+      return pat;
+   }
+
+   // <method.png>
+   protected method stopAllMIDILearnExcept(CtlIOForm _cur) {
+      CtlIOForm *f;
+      foreach f in io_forms
+      {
+         if(@(_cur) != @(f))
+            f.setLearnMode(CtlIOForm.LEARN_NONE, true/*bQuiet*/);
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual isNodeEditorLocked() : boolean {
+      return false;
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+
+      // (note) keep current button states
+
+      UI.SetKeyboardFocusListener(null);
+
+      ta_update_rpn.cancel();
+
+      rack.leaveNode();
+
+      updateTabOverlays(false/*bShow*/);
+
+      MIDI.RemoveMIDIMapEventListener(this);
+      stopAllMIDILearnExcept(null);
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      node <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mml.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(_ev.isReservedEvent())
+         return false;
+
+      MIDIMapEvent evXForm = _ev;
+      MIDIMorphScene.TransformEvent(evXForm);
+      evXForm.echoTransformForced();
+
+      if(STConfig.b_show_ctl_info)
+      {
+         if(STConfig.b_show_ctl_info_hifreq || !evXForm.isHiFreqEvent())
+         {
+            Global.PrintFast(evXForm.getInfoStringForPipeMap());
+         }
+      }
+
+      CtlIOForm *f;
+      foreach f in io_forms
+      {
+         if(f.mmlHandleEventUI(evXForm))
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected =replay= method handleTimerUpdateRPN() {
+
+      IntArray queueIds <= node.queued_ui_rpn_ids;
+
+      if(!queueIds.isEmpty())
+      {
+         FloatArray queueValues <= node.queued_ui_rpn_values;
+         Patch patch <= rack.patch;
+         if(null != patch)
+         {
+            int idx = 0;
+            loop(queueIds.numElements)
+            {
+               short rpn = queueIds[idx];
+               float rpnValue = queueValues[idx++];
+
+               int ctlIdx = rpn - Node.RPN_CTL_BASE/*100*/;
+               // trace "xxx handleTimerUpdateRPN: queued rpn="+rpn+" rpnValue="+rpnValue;
+               ModCV_AutoRPNSlider *mod;
+               foreach mod in patch.all_modules
+               {
+                  if(mod instanceof ModCV_AutoRPNSlider)
+                  {
+                     if(mod.ctl_idx == ctlIdx)
+                     {
+                        mod.handleValueChangedViaMIDIUI(rpnValue);
+                     }
+                  }
+               }
+            }
+         }
+
+         queueIds.empty();
+         queueValues.empty();
+      }
+
+      ta_update_rpn.reschedule();
+   }
+
+   // <ui_handle.png>
+   public virtual nodeHandleEditPatternChanged() {
+      handlePatternChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternChanged() {
+      NodeModularPattern pat <= getEditPattern();
+
+      updatePatNrLabel();
+
+      if(null != pat)
+      {
+         tf_pat_name.setText(pat.pat_name);
+         tf_pat_name.setEditable(true);
+
+         bt_pat_free.setEditable(true);
+
+         queueUpdateBidirectionalControls();
+      }
+      else
+      {
+         tf_pat_name.setEditable(false);
+
+         bt_pat_free.setEditable(true);
+      }
+
+      rack.showNode(node);
+
+      redraw();
+
+      root_form.pg_node.handleEditPatternChanged();
+
+      refocusDefault();
+   }
+
+   // <ui_update.png>
+   protected method updatePatNrLabel() {
+      Integer io = node.nodeGetCurrentEditPatternNr();
+      lb_pat_nr.setCaption("Pattern:\n  ("+io.printf("0x%02x")+")");
+      lb_pat_nr.redraw();
+   }
+
+   // <ui_update.png>
+   public virtual updateBidirectionalControls() {
+      // // trace "xxx NodeModularEditor::updateBidirectionalControls";
+
+      NodeModularPattern pat <= getEditPattern();
+      // // trace "xxx pat="+#(pat);
+      if(null != pat)
+      {
+         Patch patch <= pat.patch;
+         if(null != patch)
+         {
+            // Update RPN sliders (e.g. <autodev_a>, <autodev_b> fader targets)
+            ModCV_AutoRPNSlider *modRPN;
+            foreach modRPN in patch.all_modules
+            {
+               if(modRPN instanceof ModCV_AutoRPNSlider)
+               {
+                  node.nodeQueueBidirectionalAutoDevRPNUpdate(Node.RPN_CTL_BASE+modRPN.ctl_idx,
+                                                              modRPN.valToRPN(modRPN.value),
+                                                              "autorpn "+(modRPN.ctl_idx+1)
+                                                              );
+               }
+            }
+
+            // Update focused module sliders (<editfocus> fader targets)
+            Module mod <= node.nodeGetLastEditFocus();
+            if(mod instanceof Module)
+            {
+               Object paramNames <= mod.getNormalizedParamNames();
+               // trace "xxx paramNames="+#(paramNames);
+               int paramIdx = 0;
+               if(null != paramNames)
+               {
+                  loop(paramNames.yacArrayGetNumElements())
+                  {
+                     node.nodeQueueBidirectionalEditFocusRPNUpdate(Node.RPN_CTL_BASE+paramIdx,
+                                                                   mod.getNormalizedParamByIndex(paramIdx),
+                                                                   paramNames[paramIdx]
+                                                                   );
+
+                     // Next param
+                     paramIdx++;
+                  }
+               }
+
+               if(1)
+               {
+                  // Reset other fader positions
+                  while(paramIdx < 32)
+                  {
+                     node.nodeQueueBidirectionalEditFocusRPNUpdate(Node.RPN_CTL_BASE+paramIdx, 8192, null/*labelOrNull*/);
+                     paramIdx++;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternAlloc(boolean _bSub) : NodeModularPattern {
+      local NodeModularPattern p;
+
+      p.patInit(node, 0/*patNr placeholder*/);
+
+      int patIdx;
+
+      NodeModularPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(true == _bSub)
+         {
+            // Find unused A..D sub pattern
+            patIdx = node.nodeFindFirstUnusedPatternSub(node.nodeGetCurrentEditPatternNr());
+         }
+         else
+         {
+            // Find unused 1..32 pattern group
+            patIdx = node.nodeFindFirstUnusedPatternGroup(node.nodeGetCurrentEditPatternNr());
+         }
+
+         if(-1 == patIdx)
+         {
+            patIdx = node.findFirstUnusedPattern(0);
+         }
+      }
+      else
+      {
+         patIdx = node.nodeGetCurrentEditPatternNr();
+      }
+
+      if(-1 != patIdx)
+      {
+         p.pat_nr = patIdx;
+         node.nodeSetPattern(patIdx, deref p);
+
+         node.nodeSetCurrentEditPatternNr(patIdx);
+         node.nodeSetCurrentPlayPatternNr(patIdx);
+
+         cm_pattern_nr.setSelectedOption(patIdx);
+
+         selectPatternByIdx(patIdx);
+
+         handlePatternChanged();
+
+         updatePatternNrComboBox();
+
+         Global.SuccessShort("New: Allocated pattern "+cm_pattern_nr.getSelectedOptionName()+" ("+(patIdx+1)+").");
+         return p;
+      }
+      else
+      {
+         Global.Error("New: All patterns in use.");
+         return null;
+      }
+   }
+
+   // <ui_show.png>
+   protected method showPatternToolsMenu(boolean _bFocusFirst) {
+
+      pm_pat_tools <= PopupMenu.New(this);
+      PopupMenu pm <= pm_pat_tools;
+      PopupMenuButton *pmb;
+
+      NodeModularPattern pat <= node.nodeGetCurrentEditPattern();
+      boolean bHavePat = (null != pat);
+
+      pmb <= pm.addDefaultButton("Copy pattern", "copy");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= pm.addDefaultButton("Paste pattern", "paste");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lctrl-v", "");
+
+      if(bHavePat)
+      {
+         pmb.setActive(null != pat.patGetClipboard());
+      }
+      else
+      {
+         pmb.setActive(false);
+      }
+
+      pmb <= pm.addDefaultButton("Clone pattern", "clone");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("Clone pattern (sub)", "clone_sub");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lshift-lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("New pattern (sub)", "new_sub");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lshift-lctrl-n", "");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_pat_tools);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show pattern tools menu.");
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternCopy() {
+
+      NodeModularPattern pat <= getEditPattern();
+
+      // // trace "xxx nb: handlePatternCopy: pat="+#(pat);
+
+      if(null != pat)
+      {
+         pat.patCopyToClipboard();
+
+         Global.Print("Pattern copied to clipboard.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternPaste() {
+      NodeModularPattern pat <= getEditPattern();
+
+      // // trace "xxx nb: handlePatternPaste: pat="+#(pat);
+
+      if(null == pat)
+      {
+         handlePatternNew(false/*bSub*/);
+         pat <= getEditPattern();
+      }
+
+      if(null != pat)
+      {
+         if(pat.patCopyFromClipboard())
+         {
+            handlePatternChanged();
+
+            updatePatternNrComboBox();
+
+            Global.SuccessShort("Clipboard pasted to pattern.");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatternNew(boolean _bSub) {
+      NodeModularPattern pat <= handlePatternAlloc(_bSub);
+      // if(null != pat)
+      // {
+      // }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatternClone(boolean _bSub) {
+      NodeModularPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         local NodeModularPattern tmp;
+
+         tmp.patInit(node, 0);
+
+         tmp.patCopyFrom(pat, false/*bClear*/);
+
+         if(null != handlePatternAlloc(_bSub))
+         {
+            pat <= getEditPattern();
+
+            pat.patCopyFrom(tmp, false/*bClear*/);
+            pat.patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+
+            handlePatternChanged();
+
+            Global.SuccessShort("Pattern cloned to "+cm_pattern_nr.getSelectedOptionName()+".");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternFree() {
+      NodeModularPattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         node.nodeSetPattern(node.edit_pattern_nr, null);
+
+         pat <= null;
+
+         handlePatternChanged();
+
+         updatePatternNrComboBox();
+
+         Global.Print("Delete pattern");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPattern() {
+
+      int patNr = cm_pattern_nr.getSelectedOption();
+
+      node.nodeSetCurrentEditPatternNr(patNr);
+      node.nodeSetCurrentPlayPatternNr(patNr);
+
+      node.nodeQueuePrgChgOut(patNr);
+      // // replay.handleNodeStateChangedUI(node, -1/*active*/, patNr/*pat*/);
+
+      handlePatternChanged();
+
+      NodeModularPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" \""+pat.pat_name+"\".");
+      }
+      else
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" <empty>.");
+      }
+   }
+
+   // <method.png>
+   public virtual selectPatternByIdx(int _idx) {
+
+      cm_pattern_nr.setSelectedOption(_idx);
+
+      handleSelectPattern();
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPreviousUsedPattern() {
+      int patIdx = node.nodeGetCurrentEditPatternNr();
+      patIdx = node.nodeFindPreviousPatternNrByUsedIdxWithOffset(patIdx-1, 0);
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextUsedPattern() {
+      int patIdx = node.nodeGetCurrentEditPatternNr();
+      patIdx = node.nodeFindNextPatternNrByUsedIdxWithOffset(patIdx+1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <method.png>
+   public virtual selectPatternByUsedIdx(int _idx) {
+      if(_idx >= 0)
+      {
+         int patNr = node.nodeGetPatternNrByUsedIdx(_idx);
+
+         if(-1 != patNr)
+         {
+            selectPatternByIdx(patNr);
+         }
+      }
+      else
+      {
+         selectPatternByIdx(127); // --/
+      }
+   }
+
+   // <method.png>
+   protected method playPatternByIdx(int _idx) {
+
+      selectPatternByIdx(_idx);
+
+      NodeModularPattern pat <= getEditPattern();
+
+      node.nodeSetCurrentPlayPatternNr(_idx);
+
+      Global.Print("Play pattern "+cm_pattern_nr.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNameChanged() {
+      NodeModularPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pat_name.getText();
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(node.getNodeClassId());
+      cb_node_class_show.setSelected(node.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      node.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+node.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      node.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(node.getEnableNodeClassShow()));
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayChangeResetChanged() {
+      node.setEnableChangeReset(cb_play_change_reset.isSelected());
+
+      Global.Print("Play change/reset is "+Utils.GetEnableString(node.b_change_reset)+".");
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayFrameRecChanged() {
+      node.setEnableFrameRec(cb_play_framerec.isSelected());
+
+      Global.Print("Output to FrameRec is "+Utils.GetEnableString(node.b_framerec)+".");
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+
+      Global.Debug3("NodeModularEditor::handleStartPlaying");
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+
+      Global.Debug3("NodeModularEditor::handleStopPlaying");
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+      // called from UI thread while =replay= is locked
+
+      Global.Debug3("NodeModularEditor::handleSongPosSelected");
+
+      // node.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+      node.nodeSetLastPatternStartEditorSongOffset(current_song.getBeatQuantizedOffset());
+   }
+
+   // <method_handle.png>
+   public virtual handlePlayPatChanged() {
+      Global.Debug3("NodeModularEditor::handlePlayPatChanged");
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+
+      if(replay.b_playing)
+      {
+         if(node.checkResetNodePatternChanged())
+         {
+            cm_pattern_nr.setSelectedOption(node.nodeGetCurrentEditPatternNr());
+            handlePatternChanged();
+         }
+      }
+
+      // Handle queued param updates (e.g. via FaderPort <editfocus> RPN fader events)
+      Patch patch <= rack.patch;
+      if(null != patch)
+      {
+         patch.handleQueuedNormalizedParamUpdates();
+      }
+
+      handleQueuedBidirectionalControls();
+   }
+
+   // <ui_handle.png>
+   protected method handleActiveTabChanged() {
+
+      if(TAB_IO == ts_groups.getActiveTabIndex())
+      {
+         showPorts();  // e.g. revert invalid varnames
+      }
+      else if(TAB_PATCH == ts_groups.getActiveTabIndex())
+      {
+         // relayout();
+      }
+
+      updateTabOverlays(true/*bShow*/);
+   }
+
+   // <method.png>
+   public =replay= method beginOutputCapture() {
+      // (note) capture stops when replay is stopped
+      mon_capture.captureBegin();
+      node.b_capture = true;
+      Global.Print("Start output capture");
+   }
+
+   // <method.png>
+   public method unrefModuleUIs() {
+      // Called by NodeModular::nodeLoadState()
+      //  - remove Module references from UI hierarchy before the instances are deleted
+      rack.removeChildren();
+   }
+
+   // <method.png>
+   protected method handlePortSelectionChanged() {
+      rack.handlePortSelectionChanged();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      //trace "xxx onMouse: _ev.changed_state="+_ev.changed_state+" _ev.current_state="+_ev.current_state;
+
+      if(VMOD_LCTRL == UI.GetKeyMod())
+      {
+         if(_ev.wheelUp())
+         {
+            handleSelectPreviousUsedPattern();
+            return true;
+         }
+         else if(_ev.wheelDown())
+         {
+            handleSelectNextUsedPattern();
+            return true;
+         }
+      }
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyHome(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectNextUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            MMTListener.MMTHandleLayerInc(cm_pattern_nr);
+            MMTListener.MMTHandleLayerInc(cm_pattern_nr);
+            MMTListener.MMTHandleLayerInc(cm_pattern_nr);
+         }
+         MMTListener.MMTHandleLayerInc(cm_pattern_nr); //selectNextPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyEnd(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectPreviousUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            MMTListener.MMTHandleLayerDec(cm_pattern_nr);
+            MMTListener.MMTHandleLayerDec(cm_pattern_nr);
+            MMTListener.MMTHandleLayerDec(cm_pattern_nr);
+         }
+         MMTListener.MMTHandleLayerDec(cm_pattern_nr); //selectPrevPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual handleKeyboardFocusChanged(Layer _newKeyboardLayer) {
+      // trace "xxx NodeModularEditor::handleKeyboardFocusChanged: newKeyboardLayer="+#(_newKeyboardLayer);
+      if(_newKeyboardLayer instanceof Module)
+         node.nodeSetLastEditFocus(_newKeyboardLayer);
+      else if(null != _newKeyboardLayer)
+      {
+         Layer p <= _newKeyboardLayer.getParentLayerType(Module);
+         if(null != p)
+            node.nodeSetLastEditFocus(p);
+         else
+            node.nodeSetLastEditFocus(null);
+      }
+      else
+         node.nodeSetLastEditFocus(null);
+      queueUpdateBidirectionalControls();
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Begin output capture (stops when replay is stopped)
+          d         :   Toggle pattern manager
+          z         :   Switch between pipenodes A/B
+          F3        :   Delete current pattern
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case 'c':
+               beginOutputCapture();
+               return true;
+
+            case VKEY_F3:
+               handlePatternFree();
+               return true;
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxx NodeModularEditor::onKey: k.pressed="+_k.pressed+" mod="+_k.mod;
+
+      switch(_k.pressed)
+      {
+         // case 'q':
+         // case VKEY_ESCAPE:
+         //    break;
+
+         case VKEY_ESCAPE:
+            if(TAB_PATCH != ts_groups.getActiveTabIndex())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATCH);
+               handleActiveTabChanged();
+               return true;
+            }
+            // let PageNode handle it
+            break;
+
+         case VKEY_HOME:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyEnd(_k.mod);
+            else
+               handlePatternKeyHome(_k.mod);
+            return true;
+
+         case VKEY_END:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyHome(_k.mod);
+            else
+               handlePatternKeyEnd(_k.mod);
+            return true;
+
+         case 'a':
+            if(_k.modNone())
+            {
+               if(TAB_PATTERN == ts_groups.getActiveTabIndex())
+                  showPatternToolsMenu(true/*bFocusFirst*/);
+               else if(TAB_PATCH == ts_groups.getActiveTabIndex())
+                  rack.showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            return true;
+
+         case 'h':
+         case VKEY_BACKSPACE:
+            rack.toggleShowConnectionLines();
+            return true;
+
+         case 'c':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternPaste();
+               return true;
+            }
+            break;
+
+         case 'n':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternAlloc(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternAlloc(false/*bSub*/);
+               }
+               return true;
+            }
+            else if(_k.modShiftOnly())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATTERN);
+               // handleViewEnter();
+               tf_pat_name.onTabFocus();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternClone(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternClone(false/*bSub*/);
+               }
+               return true;
+            }
+            break;
+
+         case '1':
+            if(_k.modCtrl())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATTERN);
+               handleActiveTabChanged();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modCtrl())
+            {
+               ts_groups.setActiveTabIndex(TAB_IO);
+               handleActiveTabChanged();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modCtrl())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATCH);
+               handleActiveTabChanged();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+         case '4':
+            if(_k.modCtrl())
+            {
+               ts_groups.setActiveTabIndex(TAB_PLAY);
+               handleActiveTabChanged();
+               refocusDefault();
+               return true;
+            }
+            break;
+
+      }
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+            switch(_k.pressed)
+            {
+            }
+            break;
+
+         case TAB_IO:
+            break;
+
+         case TAB_PATCH:
+            break;
+
+         case TAB_PLAY:
+            break;
+      }
+
+      if(trySelectPatternByUsedIdx(_k))
+         return true;
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+         }
+      }
+
+      // Try module handleRackKey()
+      Patch patch <= rack.patch;
+      if(null != patch)
+      {
+         Module *mod;
+         boolean bHandled = false;
+         foreach mod in patch.all_modules
+         {
+            bHandled |= mod.handleRackKey(_k);
+         }
+         if(bHandled)
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      boolean bWantKeyRepeat = maybe;
+
+      // Try module wantRackKeyRepeat()
+      Patch patch <= rack.patch;
+      if(null != patch)
+      {
+         Module *mod;
+         boolean bHandled = false;
+         foreach mod in patch.all_modules
+         {
+            boolean b = mod.wantRackKeyRepeat(_k);
+            if(maybe != b)
+               bWantKeyRepeat = b;
+         }
+         if(maybe != bWantKeyRepeat)
+            return bWantKeyRepeat;
+      }
+
+      return NodeEditor::wantKeyRepeat(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      if(CtlIOForm.ACTION_MIDI_LEARN_START == acName)
+      {
+         // New MIDI learn started, stop all others
+         stopAllMIDILearnExcept(ap);
+         return true;
+      }
+      else if(CtlIOForm.ACTION_PORT_CHANGED == acName)
+      {
+         handlePortSelectionChanged();
+         return true;
+      }
+      else if(CtlIOForm.ACTION_PORT_RENAMED == acName)
+      {
+         handlePortSelectionChanged();
+         return true;
+      }
+      else if(TA_UPDATE_RPN == acName)
+      {
+         handleTimerUpdateRPN();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(ts_groups):
+            Global.Print("Active tab is \""+ts_groups.getActiveViewCaption()+"\".");
+            handleActiveTabChanged();
+            return true;
+
+         case @(bt_pat_alloc):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handlePatternClone(false/*bSub*/);
+            }
+            else
+            {
+               handlePatternAlloc(false/*bSub*/);
+            }
+            return true;
+
+         case @(bt_pat_tools):
+            showPatternToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_pat_tools):
+            Global.Debug2("modular: pm_pat_tools acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close pattern tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handlePatternCopy();
+                  return true;
+
+               case "paste":
+                  handlePatternPaste();
+                  return true;
+
+               case "clone":
+                  handlePatternClone(false/*bSub*/);
+                  return true;
+
+               case "clone_sub":
+                  handlePatternClone(true/*bSub*/);
+                  return true;
+
+               case "new_sub":
+                  handlePatternAlloc(true/*bSub*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_pat_free):
+            handlePatternFree();
+            return true;
+
+            // Pattern:
+         case @(cm_pattern_nr):
+            handleSelectPattern();
+            return true;
+
+         case @(tf_pat_name):
+            handlePatternNameChanged();
+            updatePatternNrComboBox();
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+
+            // Patch:
+
+
+
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(node);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+         case @(cb_play_change_reset):
+            handlePlayChangeResetChanged();
+            return true;
+
+         case @(cb_play_framerec):
+            handlePlayFrameRecChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

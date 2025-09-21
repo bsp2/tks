@@ -1,0 +1,746 @@
+// ----
+// ---- file   : NodeProxy.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 07May2017, 09May2017, 26May2017, 27May2017, 04Jan2018, 27May2018, 27Jan2019
+// ----          25Jun2019, 07Nov2019, 17Nov2019, 11Jul2021, 01Jan2022, 02Jan2022, 24Apr2022
+// ----          03Nov2022, 14Nov2022, 24Nov2022, 25Sep2023, 17Nov2023, 30May2025
+// ----
+// ----
+// ----
+
+module MNodeProxy;
+
+use namespace ui;
+use namespace st2;
+
+// boolean b_debug = true;
+boolean b_debug = false;
+
+
+// <class.png>
+class NodeProxy : Node {
+   // (note) RPN_PROXY_* moved to Node class
+
+   int in_dev;  // 
+   int in_ch;   // 0..15
+
+   int out_dev;  // 
+   int out_ch;   // 0..15
+
+   EditMIDISynthForm *cached_synthform;
+
+   static NodeProxyEditor *editor;
+
+   protected boolean b_queued_reset;
+
+   public short multi_morph_offset_resetval;
+   public short multi_morph_offset;
+
+   public short multi_morph_range_resetval;
+   public short multi_morph_range;
+
+   public short multi_morph_pos_resetval;
+   public short multi_morph_pos;
+   public short queued_multi_morph_pos;
+   public boolean b_multi_morph_pos_send;   // true=send position when node is reset
+
+   public byte bank_min;     // 1 (default) or 0
+   public byte program_min;  // 1 (default) or 0
+
+   // when edited from UI:
+   public short queued_src_bank;   // 0=none, 1..n
+   public short queued_src_prg;    // 0=none, 1..n
+   public short queued_dst_bank;   // 0=none, 1..n
+   public short queued_dst_prg;    // 0=none, 1..n
+   public short queued_dst_amt;    // -1=none, 0..16383
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      in_dev = 0;
+      in_ch  = 0;
+
+      out_dev = 0;
+      out_ch  = 0;
+
+      multi_morph_offset_resetval = 0;
+      multi_morph_range_resetval  = 4;
+      multi_morph_pos_resetval    = 0;
+      b_multi_morph_pos_send      = false;
+
+      bank_min    = 1;
+      program_min = 1;
+
+      queued_dst_amt = -1;
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+
+      Node::nodeUIInit();
+
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName("<play_a>");
+      if(null != outDev)
+      {
+         in_dev = outDev.dev_idx;
+         in_ch  = 0;
+      }
+
+      findCachedSynthForm(false/*bShowData*/);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeProxyEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_proxy_mono");
+      else
+         return UI.GetIcon("node_proxy");
+   }
+
+   // <method_set.png>
+   public =replay= method setInputDev(int _devIdx) {
+      in_dev = _devIdx;
+   }
+
+   // <method_set.png>
+   public =replay= method setInputCh(int _ch) {
+      in_ch = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setOutputDev(int _devIdx) {
+      out_dev = _devIdx;
+
+      findCachedSynthForm(false/*bShowData*/);
+   }
+
+   // <method_set.png>
+   public =replay= method setOutputCh(int _ch) {
+      out_ch = _ch;
+
+      findCachedSynthForm(false/*bShowData*/);
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphOffset(short _val) {
+      multi_morph_offset_resetval = _val;
+      multi_morph_offset = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphRange(short _val) {
+      multi_morph_range_resetval = _val;
+      multi_morph_range = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphPos(short _val) {
+      multi_morph_pos_resetval = _val;
+      multi_morph_pos = _val;
+      queued_multi_morph_pos = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMultiMorphPosSend(boolean _bEnable) {
+      b_multi_morph_pos_send = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setBankMin(byte _min) {
+      bank_min = _min;
+   }
+
+   // <method_set.png>
+   public =replay= method setProgramMin(byte _min) {
+      program_min = _min;
+   }
+
+   // <method.png>
+   public =replay= method findCachedSynthForm(boolean _bShowData) {
+      cached_synthform <= null;
+
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(out_dev);
+
+      if(null != dev)
+      {
+         MIDISynthProfile profile <= dev.getMIDISynthProfile(out_ch);
+
+         if(null != profile)
+         {
+            MIDI.LazyAccessSynthEditor(profile.midi_profile_id);
+
+            // // if(null == profile.edit_form)
+            // // {
+            // //    profile.lazyLoadSynthEditor();
+            // // }
+
+            cached_synthform <= profile.edit_form;
+
+            if(null != cached_synthform)
+            {
+               if(_bShowData)
+               {
+                  // // if(!profile.b_edit_form_init_done)
+                  // // {
+                  // //    Global.Debug("NodeProxy::findCachedSynthForm: lazy init synth editor (profile_id="+profile.midi_profile_id+")");
+                  // //    dev.lazyInitSynthEditors();
+                  // // }
+
+                  MIDISynthProfileData profData <= MIDI.GetMIDISynthProfileData(profile.midi_profile_id);
+
+                  if(null != profData)
+                  {
+                     STX_MIDIInDevice inDev <=  MIDI.FindInDeviceForOutDevice(dev.getAliasOrDeviceName());
+                     cached_synthform.showDataStatic(profData,
+                                                     inDev,
+                                                     dev/*outDev*/,
+                                                     out_ch
+                                                     );
+
+                     // Used by Montage editor to inject part/scene variation changes back into next tick frameRec (for seq recording)
+                     if(b_auto_filter_a)
+                     {
+                        cached_synthform.setInjectFrameRecDevChHint(auto_dev_filter_a, auto_ch_filter_a);
+                     }
+                     if(b_auto_filter_b)
+                     {
+                        cached_synthform.setInjectFrameRecDevChHint(auto_dev_filter_b, auto_ch_filter_b);
+                     }
+
+                  }
+               }
+            }
+
+            Global.Debug3("NodeProxy::findCachedSynthForm: cached_synthform="+#(cached_synthform));
+         }
+      }
+   }
+
+   // <method.png>
+   public virtual nodeHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      findCachedSynthForm(true/*bShowData*/);
+
+      b_queued_reset = true;
+
+      multi_morph_offset = multi_morph_offset_resetval;
+      multi_morph_range  = multi_morph_range_resetval;
+      multi_morph_pos    = multi_morph_pos_resetval;
+      queued_multi_morph_pos = -1;
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPatternNr() : int {
+      return Node.EMPTY_PAT_NR/*127*/; // --/
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentEditPatternNr(int _patNr) {
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPatternNr() : int {
+      return Node.EMPTY_PAT_NR/*127*/; // --/
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) {
+      return null;
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() {
+      return null;
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() {
+      return null;
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 3; // Version
+
+      Node::nodeSaveState(ofs);
+
+      ofs.i8 = in_dev;  // v1+
+      ofs.i8 = in_ch;   // v1+
+
+      ofs.i8 = out_dev;  // v1+
+      ofs.i8 = out_ch;   // v1+
+
+      ofs.i8  = multi_morph_offset_resetval;  // v2+
+      ofs.i8  = multi_morph_range_resetval;   // v2+
+      ofs.i16 = multi_morph_pos_resetval;     // v2+
+      ofs.i8  = b_multi_morph_pos_send;       // v2+
+
+      ofs.i8 = program_min;  // v3+
+      ofs.i8 = bank_min;     // v3+
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // Read input device+ch
+         in_dev = ifs.s8;
+         in_ch  = ifs.s8;
+
+         // // trace "xxx read auto_dev_filter="+auto_dev_filter;
+         // // trace "xxx _outDevIdxMap="+#(_outDevIdxMap);
+
+         _outDevUseCount.inc(in_dev);
+         in_dev = _outDevIdxMap.get(in_dev);
+
+
+         // Read output device+ch
+         out_dev = ifs.s8;
+         out_ch  = ifs.s8;
+
+         _outDevUseCount.inc(out_dev);
+         out_dev = _outDevIdxMap.get(out_dev);
+
+         if(ver >= 2)
+         {
+            multi_morph_offset_resetval = ifs.u8 & 127;
+            multi_morph_range_resetval  = ifs.u8 & 127;
+            multi_morph_pos_resetval    = ifs.u16 & 127;
+            b_multi_morph_pos_send      = ifs.b8;
+         }
+
+         if(ver >= 3)
+         {
+            program_min = ifs.u8 & 1;  // v3+
+            bank_min    = ifs.u8 & 1;  // v3+
+         }
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [
+         // RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+         // RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+         RPN_COMMON_UI_PRGCHG,
+         RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+         RPN_COMMON_MUTE_TEMP_TOGGLE,
+         // RPN_COMMON_MUTE_TEMP_1_8,
+         // RPN_COMMON_MUTE_TEMP_9_16,
+         // RPN_COMMON_SOLO_TEMP_1_8,
+         // RPN_COMMON_SOLO_TEMP_9_16,
+         RPN_COMMON_UI_NODE_MUTE,
+         RPN_COMMON_UI_NODE_SOLO,
+         RPN_COMMON_UI_PIPE_MUTE,
+         RPN_COMMON_UI_PIPE_SOLO,
+
+         // RPN_COMMON_TRANSPOSE,  // nodeParseRPN_Transpose
+
+         // RPN_COMMON_VELOCITY_OFF,  // nodeParseRPN_Vel_Dur_Speed
+         // RPN_COMMON_VELOCITY_SCL,
+         // RPN_COMMON_DURATION_OFF,
+         // RPN_COMMON_DURATION_SCL,
+         // RPN_COMMON_SPEED,
+         // RPN_COMMON_POSITION,
+         // RPN_COMMON_SPEEDSYNCRATE,
+
+         // RPN_COMMON_PROB_ALL_REL,  // nodeParseRPN_Probability
+         // RPN_COMMON_PROB_TRACK_1,
+         // RPN_COMMON_PROB_TRACK_2,
+         // RPN_COMMON_PROB_TRACK_3,
+         // RPN_COMMON_PROB_TRACK_4,
+         // RPN_COMMON_PROB_TRACK_5,
+         // RPN_COMMON_PROB_TRACK_6,
+         // RPN_COMMON_PROB_TRACK_7,
+         // RPN_COMMON_PROB_TRACK_8,
+         // RPN_COMMON_PROB_TRACK_9,
+         // RPN_COMMON_PROB_TRACK_10,
+         // RPN_COMMON_PROB_TRACK_11,
+         // RPN_COMMON_PROB_TRACK_12,
+         // RPN_COMMON_PROB_TRACK_13,
+         // RPN_COMMON_PROB_TRACK_14,
+         // RPN_COMMON_PROB_TRACK_15,
+         // RPN_COMMON_PROB_TRACK_16,
+
+         RPN_COMMON_RESET,
+         // RPN_COMMON_RUN,
+         // RPN_COMMON_LENGTH,
+         // RPN_COMMON_OFFSET,
+         // RPN_COMMON_RESTART,
+         // RPN_COMMON_OFFSET_ADD,
+         // RPN_COMMON_SEEK_OFFSET,
+         // RPN_COMMON_SEEK_REL_PRE,
+         // RPN_COMMON_GATE,
+         // RPN_COMMON_SEEK_REL_POST,
+
+         Node.RPN_PROXY_BANKSELECT,
+         Node.RPN_PROXY_PROGRAMCHANGE,
+         Node.RPN_PROXY_BANKSELECT_DST,
+         Node.RPN_PROXY_PROGRAMCHANGE_DST,
+         Node.RPN_PROXY_AMOUNT_DST,
+         Node.RPN_PROXY_MULTI_MORPH_OFFSET,
+         Node.RPN_PROXY_MULTI_MORPH_RANGE,
+         Node.RPN_PROXY_MULTI_MORPH_POS,
+         Node.RPN_PROXY_LAYER_1_PRGCHG,
+         Node.RPN_PROXY_LAYER_2_PRGCHG,
+         Node.RPN_PROXY_LAYER_3_PRGCHG,
+         Node.RPN_PROXY_LAYER_4_PRGCHG,
+         Node.RPN_PROXY_LAYER_5_PRGCHG,
+         Node.RPN_PROXY_LAYER_6_PRGCHG,
+         Node.RPN_PROXY_LAYER_7_PRGCHG,
+         Node.RPN_PROXY_LAYER_8_PRGCHG,
+         Node.RPN_PROXY_LAYER_9_PRGCHG,
+         Node.RPN_PROXY_LAYER_10_PRGCHG,
+         Node.RPN_PROXY_LAYER_11_PRGCHG,
+         Node.RPN_PROXY_LAYER_12_PRGCHG,
+         Node.RPN_PROXY_LAYER_13_PRGCHG,
+         Node.RPN_PROXY_LAYER_14_PRGCHG,
+         Node.RPN_PROXY_LAYER_15_PRGCHG,
+         Node.RPN_PROXY_LAYER_16_PRGCHG,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      short queuedBank       = -1;  // -1 or 1..128
+      short queuedProgram    = -1;  // -1 or 1..128
+      short queuedBankDst    = -1;  // -1 or 1..128
+      short queuedProgramDst = -1;  // -1 or 1..128
+      short queuedAmountDst  = -1;
+      IntArray queuedLayerPrgChg;
+      boolean bQueuedLayerPrgChg = false;
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0) ||
+         ((queued_src_bank > 0) ||
+          (queued_dst_bank > 0) ||
+          (queued_src_prg  > 0) ||
+          (queued_dst_prg  > 0) ||
+          (queued_dst_amt >= 0)
+          )
+         )
+      {
+         short t;
+
+         t = getRPN(_framePlay, _frameRec, RPN_COMMON_RESET);
+         if(t >= 1)
+         {
+            nodeReset(true/*bSoft*/);
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_BANKSELECT);
+         if(t >= bank_min)
+         {
+            queuedBank = t + (1 - bank_min);
+
+            if(b_debug)
+               Global.Debug("Proxy: RPN_PROXY_BANKSELECT t="+t);
+         }
+         if(queued_src_bank)
+         {
+            queuedBank = queued_src_bank;
+            queued_src_bank = 0;
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_PROGRAMCHANGE);
+         if(t >= program_min)
+         {
+            queuedProgram = t + (1 - program_min);
+
+            if(b_debug)
+               Global.Debug("Proxy: RPN_PROXY_PROGRAMCHANGE t="+t);
+         }
+         if(queued_src_prg)
+         {
+            queuedProgram = queued_src_prg;
+            queued_src_prg = 0;
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_BANKSELECT_DST);
+         if(t >= bank_min)
+         {
+            queuedBankDst = t + (1 - bank_min);
+         }
+         if(queued_dst_bank)
+         {
+            queuedBankDst = queued_dst_bank;
+            queued_dst_bank = 0;
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_PROGRAMCHANGE_DST);
+         if(t >= program_min)
+         {
+            queuedProgramDst = t + (1 - program_min);
+         }
+         if(queued_dst_prg)
+         {
+            queuedProgramDst = queued_dst_prg;
+            queued_dst_prg = 0;
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_AMOUNT_DST);
+         if(t >= 0)
+         {
+            queuedAmountDst = t;
+         }
+         if(queued_dst_amt >= 0)
+         {
+            queuedAmountDst = queued_dst_amt;
+            // // trace "xxx got queuedAmountDst="+queuedAmountDst;
+            queued_dst_amt = -1;
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_MULTI_MORPH_OFFSET);
+         if(t >= 0)
+         {
+            multi_morph_offset = mathClampi(t, 0, 126);
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_MULTI_MORPH_RANGE);
+         if(t >= 0)
+         {
+            multi_morph_range = mathClampi(t, 2, 126);
+         }
+
+         t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_MULTI_MORPH_POS);
+         if(t >= 0)
+         {
+            queued_multi_morph_pos = t;
+
+            if(b_debug)
+               Global.Debug("Proxy: RPN_PROXY_MULTI_MORPH_POS t="+t);
+         }
+
+         // Layer program change
+         if(queuedLayerPrgChg.isEmpty())
+            queuedLayerPrgChg.allocAndFill(16, -1);
+         else
+            queuedLayerPrgChg.fill(-1);
+
+         int layerIdx = 0;
+         loop(16)
+         {
+            t = getRPN(_framePlay, _frameRec, Node.RPN_PROXY_LAYER_1_PRGCHG + layerIdx);
+            if(t >= program_min)
+            {
+               queuedLayerPrgChg[layerIdx] = t - program_min;
+               bQueuedLayerPrgChg = true;
+            }
+            layerIdx++;
+         }
+
+         // Handle MUTE, MUTE_TOGGLE, MUTE_TEMP, MUTE_TEMP_TOGGLE
+         nodeParseRPN_Mute(_framePlay, _frameRec);
+      }
+
+      // Convert program change on automation port to 'virtual' program change (usually in syntheditor per-project bank 'P')
+      byte prgChg;
+      if(b_auto_filter_a)
+      {
+         prgChg = _framePlay.getFilteredPrgChg(auto_dev_filter_a, auto_ch_filter_a);
+         if(prgChg >= program_min)
+         {
+            queuedProgram = prgChg + (1 - program_min);
+            _framePlay.deletePrgChgByFlt(auto_dev_filter_a, auto_ch_filter_a);
+         }
+
+         prgChg = _frameRec.getFilteredPrgChg(auto_dev_filter_a, auto_ch_filter_a);
+         if(prgChg >= program_min)
+         {
+            queuedProgram = prgChg + (1 - program_min);
+            _frameRec.deletePrgChgByFlt(auto_dev_filter_a, auto_ch_filter_a);
+         }
+      }
+
+      if(b_auto_filter_b)
+      {
+         prgChg = _framePlay.getFilteredPrgChg(auto_dev_filter_b, auto_ch_filter_b);
+         if(prgChg >= program_min)
+         {
+            queuedProgram = prgChg + (1 - program_min);
+            _framePlay.deletePrgChgByFlt(auto_dev_filter_b, auto_ch_filter_b);
+         }
+
+         prgChg = _frameRec.getFilteredPrgChg(auto_dev_filter_b, auto_ch_filter_b);
+         if(prgChg >= program_min)
+         {
+            queuedProgram = prgChg + (1 - program_min);
+            _frameRec.deletePrgChgByFlt(auto_dev_filter_b, auto_ch_filter_b);
+         }
+      }
+
+      _bMuted |= nodeHandleQueuedMuteTemp();
+
+      if(b_queued_reset)
+      {
+         // // trace "xxx NodeProxy: b_queued_reset="+b_queued_reset;
+         b_queued_reset = false;
+
+         if(null != cached_synthform)
+         {
+            cached_synthform.handleProxyReset(out_ch, _framePlay);
+
+            if(b_multi_morph_pos_send)
+            {
+               if(-1 == queued_multi_morph_pos)
+               {
+                  queued_multi_morph_pos = multi_morph_pos;
+               }
+            }
+         }
+      }
+
+      if(null != cached_synthform)
+      {
+         if(!_bMuted)
+         {
+            MIDIPipeFrame fr;
+            fr.empty();
+
+            boolean bCalcMorph = false;
+
+            if(-1 != queued_multi_morph_pos)
+            {
+               short rangeM1 = multi_morph_range - 1;
+               multi_morph_pos  = queued_multi_morph_pos;
+               queuedBank       = cached_synthform.proxy_multimorph_bank; //17;
+               queuedProgram    = floor(multi_morph_pos / (16384/rangeM1)) +  multi_morph_offset;
+               queuedBankDst    = cached_synthform.proxy_multimorph_bank;
+               queuedProgramDst = floor(multi_morph_pos / (16384/rangeM1)) + 1 + multi_morph_offset;
+               queuedAmountDst  = (multi_morph_pos % (16384/rangeM1)) * rangeM1;
+               // // trace "xxx Proxy: t="+t+" prgSrc="+queuedProgram+" dst="+queuedProgramDst+" amount="+(queuedAmountDst/16383.0);
+               bCalcMorph = true;
+            }
+
+            if(-1 != queuedBank)
+            {
+               cached_synthform.handleProxyBankSelect(out_ch, queuedBank);
+            }
+
+            if(-1 != queuedProgram)
+            {
+               // (note) expects program in range 1..128
+               cached_synthform.handleProxyProgramChange(out_ch, queuedProgram,
+                                                         fr,
+                                                         (-1 != queuedAmountDst)/*bMorphFollows*/
+                                                         );
+            }
+
+            if(-1 != queuedBankDst)
+            {
+               // (note) expects bank in range 1..128
+               cached_synthform.handleProxyBankSelectDst(out_ch, queuedBankDst);
+            }
+
+            if(-1 != queuedProgramDst)
+            {
+               // (note) expects program in range 1..128
+               cached_synthform.handleProxyProgramChangeDst(out_ch, queuedProgramDst);
+            }
+
+            if(-1 != queuedAmountDst)
+            {
+               cached_synthform.handleProxyAmountDst(out_ch, queuedAmountDst / 16383.0);
+               bCalcMorph = true;
+
+               if(b_debug)
+               {
+                  // Global.Debug("Proxy: t="+t+" prgSrc="+queuedProgram+" dst="+queuedProgramDst+" amount="+(queuedAmountDst/16383.0));
+                  Global.Debug("Proxy: t="+t+" prgSrc="+(cached_synthform.proxy_bank+1)+":"+(cached_synthform.proxy_program+1)+" dst="+(cached_synthform.proxy_bank_dst+1)+":"+(cached_synthform.proxy_program_dst+1)+" amount="+(queuedAmountDst/16383.0));
+               }
+               cached_synthform.handleProxyMorph(out_ch, fr);
+            }
+
+            if(bQueuedLayerPrgChg)
+            {
+               cached_synthform.handleProxyLayerPrgChg(out_ch, queuedLayerPrgChg, fr/*frameOut*/);
+            }
+
+            cached_synthform.handleProxyEvents(out_ch, _framePlay, false/*bFrameRec*/, in_dev, in_ch, fr/*frameOut*/);
+            cached_synthform.handleProxyEvents(out_ch, _frameRec,  true/*bFrameRec*/,  in_dev, in_ch, fr/*frameOut*/);
+
+            _framePlay.mergeFrame(fr);
+         }
+
+         // (note) used by Montage editor to play layered notes
+         // (note) GenericSynthEdit also forwards these to synth
+         if(b_auto_filter_a)
+         {
+            cached_synthform.handleProxyNotes(auto_dev_filter_a, auto_ch_filter_a, _framePlay, _bMuted);
+            cached_synthform.handleProxyNotes(auto_dev_filter_a, auto_ch_filter_a, _frameRec,  _bMuted);
+         }
+
+         if(b_auto_filter_b)
+         {
+            cached_synthform.handleProxyNotes(auto_dev_filter_b, auto_ch_filter_b, _framePlay, _bMuted);
+            cached_synthform.handleProxyNotes(auto_dev_filter_b, auto_ch_filter_b, _frameRec,  _bMuted);
+         }
+      }
+
+      queued_multi_morph_pos = -1;
+   }
+
+}

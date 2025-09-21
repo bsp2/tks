@@ -1,0 +1,3379 @@
+// ----
+// ---- file   : NodeBuffer.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 13Oct2015, 14Oct2015, 16Oct2015, 17Oct2015, 18Oct2015, 19Oct2015, 20Oct2015
+// ----          21Oct2015, 22Oct2015, 09Nov2015, 16Nov2015, 17Nov2015, 13Mar2016, 19Mar2016
+// ----          09Apr2016, 09Jul2016, 12Jul2016, 21Jan2017, 04Feb2017, 06Mar2017, 12Aug2017
+// ----          03Sep2017, 04Jan2018, 07Mar2018, 27May2018, 17Jun2018, 07Nov2019, 30Oct2020
+// ----          21Jun2021, 01Jan2022, 03Feb2024
+// ----
+// ----
+// ----
+
+module MNodeBuffer;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeBufferOutput extends Scale {
+
+   NodeBufferPattern *parent_pat;
+   NodeBuffer        *parent_node;
+
+   define int PLAY_MODE_FORWARD       = 0;
+   define int PLAY_MODE_BACKWARD      = 1;
+   define int PLAY_MODE_FWD_BWD       = 2;
+   define int PLAY_MODE_BWD_FWD       = 3;
+   define int PLAY_MODE_FWD_BWD_INCL  = 4;
+   define int PLAY_MODE_BWD_FWD_INCL  = 5;
+   define int PLAY_MODE_FWD_BWD_EXCL  = 6;
+   define int PLAY_MODE_BWD_FWD_EXCL  = 7;
+   define int PLAY_MODE_FWD_BWD2      = 8;
+   define int PLAY_MODE_BWD_FWD2      = 9;
+
+   define int SPEED_2_0  = 0;
+   define int SPEED_1_5  = 1;
+   define int SPEED_1    = 2;
+   define int SPEED_0_5  = 3;
+   define int SPEED_0_25 = 4;
+
+   static FloatArray speed_div_tbl = [2.0, 1.5, 1.0, 0.5, 0.25];
+
+   define int KEY_MODE_DISCARD      = 0;
+   define int KEY_MODE_NEAREST_UP   = 1;
+   define int KEY_MODE_NEAREST_DOWN = 2;
+
+   int output_idx;
+
+   byte    dev_idx; // -1=keep orig event dev
+   boolean b_enable;
+   byte    dev_ch;  // -1=keep orig event ch
+
+   int     play_mode;
+   int     speed_div;
+   float   speed;
+   boolean b_scalenotelen;
+   float   note_length;  // extra notelen scaling
+
+   int     offset;        // 1/16
+   int     micro_offset;  // 1/256
+   int     buffer_offset; // 1/16
+
+   int     length;  // number of 16th notes
+   boolean b_length;
+   int     arp_dynaoff_scl;  // number of 16th notes (added to pattern_offset_16th)
+   int     arp_dynalen_scl;  // number of 16th notes
+
+   int     octave;
+   byte    octave_rand;
+   byte    octave_rand_prob; // probability, 0..99
+   boolean b_octave_rand_rep; // true=allow random value repeat
+   int     note;
+   float   pressure_scl;
+   byte    pressure_off;
+
+   int     scale;     // should be called "mode" ?
+   int     key;       // C..A#
+   int     key_mode;  // KEY_MODE_xxx
+   boolean b_arp_dynakey; // true=scale filter key follows first arp note (resp. arp note#out_idx in transpose mode)
+
+   float out_tick_nr;
+
+   int last_played_tick_nr_first;
+   int last_played_tick_nr_last;
+
+   protected byte last_rand_oct;
+
+
+   // <method_init.png>
+   public method init(NodeBufferPattern _parent, int _idx) {
+      parent_pat  <= _parent;
+      parent_node <= _parent.parent_node;
+
+      output_idx = _idx; // for arp_transpose mode
+
+      dev_idx  = -1;
+      b_enable = false;
+      dev_ch   = -1;
+
+      play_mode      = PLAY_MODE_FORWARD;
+      speed_div      = SPEED_1;
+      speed          = 1.0;
+      b_scalenotelen = true;
+      note_length    = 1.0;
+
+      offset        = 0;
+      micro_offset  = 0;
+      buffer_offset = 0;
+
+      length          = 0;
+      b_length        = false;
+      arp_dynaoff_scl = 0;
+      arp_dynalen_scl = 1;
+
+      octave    = 0;
+      octave_rand = 0;
+      octave_rand_prob = 50;
+      b_octave_rand_rep = false;
+      note      = 0;
+      pressure_scl = 1.0;
+      pressure_off = 0;
+   }
+
+   // <ui_init.png>
+   public method uiInit() {
+   }
+
+   // <method_set.png>
+   public =replay= method setDevIdx(int _idx) {
+      dev_idx = _idx;
+   }
+
+   // <method_get.png>
+   public method getDevIdx() : int {
+      return dev_idx;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnable() : boolean {
+      return b_enable;
+   }
+
+   // <method_set.png>
+   public =replay= method setDevCh(byte _ch) {
+      dev_ch = _ch;
+   }
+
+   // <method_get.png>
+   public method getDevCh() : byte {
+      return dev_ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setPlayMode(int _playMode) {
+      play_mode = _playMode;
+   }
+
+   // <method_get.png>
+   public method getPlayMode() : int {
+      return play_mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setSpeed(float _speed) {
+      float oldSpeed = speed;
+
+      speed = _speed;
+
+      out_tick_nr = (out_tick_nr / oldSpeed) * speed;
+   }
+
+   // <method_get.png>
+   public method getSpeed() : float {
+      return speed;
+   }
+
+   // <method_set.png>
+   public =replay= method setSpeedDiv(int _speedDiv) {
+      float oldSpeedDiv = speed_div_tbl.get(speed_div);
+
+      speed_div = _speedDiv;
+
+      out_tick_nr = (out_tick_nr / oldSpeedDiv) * speed_div_tbl.get(speed_div);
+   }
+
+   // <method_get.png>
+   public method getSpeedDiv() : int {
+      return speed_div;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableScaleNoteLen(boolean _bEnable) {
+      b_scalenotelen = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableScaleNoteLen() : boolean {
+      return b_scalenotelen;
+   }
+
+   // <method_set.png>
+   public =replay= method setNoteLength(float _len) {
+      note_length = _len;
+   }
+
+   // <method_get.png>
+   public method getNoteLength() : float {
+      return note_length;
+   }
+
+   // <method_set.png>
+   public =replay= method setOffset(int _offset) {
+      offset = _offset;
+   }
+
+   // <method_get.png>
+   public method getOffset() : int {
+      return offset;
+   }
+
+   // <method_set.png>
+   public =replay= method setMicroOffset(int _offset) {
+      micro_offset = _offset;
+   }
+
+   // <method_get.png>
+   public method getMicroOffset() : int {
+      return micro_offset;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferOffset(int _bufOff) {
+      buffer_offset = _bufOff;
+   }
+
+   // <method_get.png>
+   public method getBufferOffset() : int {
+      return buffer_offset;
+   }
+
+   // <method_set.png>
+   public =replay= method setLength(int _length) {
+      length = _length;
+   }
+
+   // <method_get.png>
+   public method getLength() : int {
+      return length;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableLength(boolean _bEnable) {
+      b_length = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableLength() : boolean {
+      return b_length;
+   }
+
+   // <method_set.png>
+   public =replay= method setOctave(int _octave) {
+      octave = _octave;
+   }
+
+   // <method_get.png>
+   public method getOctave() : int {
+      return octave;
+   }
+
+   // <method_set.png>
+   public =replay= method setOctaveRand(byte _oct) {
+      octave_rand = _oct;
+   }
+
+   // <method_get.png>
+   public method getOctaveRand() : byte {
+      return octave_rand;
+   }
+
+   // <method_set.png>
+   public =replay= method setOctaveRandProb(byte _oct) {
+      octave_rand_prob = _oct;
+   }
+
+   // <method_get.png>
+   public method getOctaveRandProb() : byte {
+      return octave_rand_prob;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableOctaveRandRep(boolean _bEnable) {
+      b_octave_rand_rep = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableOctaveRandRep() : boolean {
+      return b_octave_rand_rep;
+   }
+
+   // <method_set.png>
+   public =replay= method setNote(int _note) {
+      note = _note;
+   }
+
+   // <method_get.png>
+   public method getNote() : int {
+      return note;
+   }
+
+   // <method_set.png>
+   public =replay= method setPressureScl(float _scl) {
+      pressure_scl = _scl;
+   }
+
+   // <method_get.png>
+   public method getPressureScl() : float {
+      return pressure_scl;
+   }
+
+   // <method_set.png>
+   public =replay= method setPressureOff(byte _off) {
+      pressure_off = _off;
+   }
+
+   // <method_get.png>
+   public method getPressureOff() : byte {
+      return pressure_off;
+   }
+
+   // <method_set.png>
+   public =replay= method setScale(int _scale) {
+      scale = _scale;
+   }
+
+   // <method_get.png>
+   public method getScale() : int {
+      return scale;
+   }
+
+   // <method_set.png>
+   public =replay= method setKey(int _key) {
+      key = _key;
+   }
+
+   // <method_get.png>
+   public method getKey() : int {
+      return key;
+   }
+
+   // <method_set.png>
+   public =replay= method setKeyMode(int _keyMode) {
+      key_mode = _keyMode;
+   }
+
+   // <method_get.png>
+   public method getKeyMode() : int {
+      return key_mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpDynaKey(boolean _bEnabled) {
+      b_arp_dynakey = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableArpDynaKey() : boolean {
+      return b_arp_dynakey;
+   }
+
+   // <method_set.png>
+   public =replay= method setArpDynaOffScl(int _scl) {
+      arp_dynaoff_scl = _scl;
+   }
+
+   // <method_get.png>
+   public method getArpDynaOffScl() : int {
+      return arp_dynaoff_scl;
+   }
+
+   // <method_set.png>
+   public =replay= method setArpDynaLenScl(int _scl) {
+      arp_dynalen_scl = _scl;
+   }
+
+   // <method_get.png>
+   public method getArpDynaLenScl() : int {
+      return arp_dynalen_scl;
+   }
+
+   // <method.png>
+   public method copyFrom(NodeBufferOutput _o) {
+      dev_idx  = _o.dev_idx;
+      b_enable = _o.b_enable;
+      dev_ch   = _o.dev_ch;
+
+      play_mode      = _o.play_mode;
+      speed          = _o.speed;
+      speed_div      = _o.speed_div;
+      b_scalenotelen = _o.b_scalenotelen;
+      note_length    = _o.note_length;
+
+      offset        = _o.offset;
+      micro_offset  = _o.micro_offset;
+      buffer_offset = _o.buffer_offset;
+
+      length          = _o.length;
+      b_length        = _o.b_length;
+      arp_dynaoff_scl = _o.arp_dynaoff_scl;
+      arp_dynalen_scl = _o.arp_dynalen_scl;
+
+      octave            = _o.octave;
+      octave_rand       = _o.octave_rand;
+      octave_rand_prob  = _o.octave_rand_prob;
+      b_octave_rand_rep = _o.b_octave_rand_rep;
+      note              = _o.note;
+
+      pressure_scl = _o.pressure_scl;
+      pressure_off = _o.pressure_off;
+
+      scale         = _o.scale;
+      key           = _o.key;
+      key_mode      = _o.key_mode;
+      b_arp_dynakey = _o.b_arp_dynakey;
+   }
+
+   // <replay.png>
+   module method getArpPatternLength16th(NodeBufferStorage _bst) : int {
+      if(parent_node.b_arp && parent_node.b_arp_dynaofflen && (arp_dynalen_scl > 0))
+      {
+         return (parent_node.arp_sorted_notes.numElements) * arp_dynalen_scl;
+      }
+      else
+      {
+         if(0 != parent_pat.pattern_length_16th)
+            return parent_pat.pattern_length_16th;
+         else
+            return _bst.buffer_rec_length;
+      }
+   }
+
+   // <replay.png>
+   module method getArpPatternOffset16th() : int {
+      if(parent_node.b_arp && parent_node.b_arp_dynaofflen && (arp_dynaoff_scl > 0))
+      {
+         if((parent_node.arp_sorted_notes.numElements ) > 0)
+         {
+            return parent_pat.pattern_offset_16th + ((parent_node.arp_sorted_notes.numElements) - 1) * arp_dynaoff_scl;
+         }
+         else
+         {
+            return parent_pat.pattern_offset_16th;
+         }
+      }
+      else
+      {
+         return parent_pat.pattern_offset_16th;
+      }
+   }
+
+
+   // <replay.png>
+   module method seek(int _ticks) {
+
+      out_tick_nr = _ticks * (speed*speed_div_tbl.get(speed_div));
+
+      last_played_tick_nr_first = -1;
+      last_played_tick_nr_last = -1;
+   }
+
+   // <replay.png>
+   module method applyPlayMode(int _origTickNr, int _tickNr, int _numTicks, NodeBufferStorage _bst) {
+
+      int numRasterTicks = (current_song.ppq * 4) / (1 << _bst.buffer_raster);
+
+      int modTicks;
+
+      switch(play_mode)
+      {
+         default:
+         case PLAY_MODE_FORWARD:
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+            break;
+
+         case PLAY_MODE_BACKWARD:
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            _tickNr = _numTicks - _tickNr - 1;
+            break;
+
+         case PLAY_MODE_FWD_BWD:
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            if( (_origTickNr / _numTicks) & 1 )
+            {
+               _tickNr = _numTicks - _tickNr - 1;
+            }
+            break;
+
+         case PLAY_MODE_BWD_FWD:
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            if!( (_origTickNr / _numTicks) & 1 )
+            {
+               _tickNr = _numTicks - _tickNr - 1;
+            }
+            break;
+
+         case PLAY_MODE_FWD_BWD2:
+            // Added for drum beats
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            modTicks = (_origTickNr % (2*_numTicks));
+            if( modTicks >= (_numTicks - numRasterTicks) )
+            {
+               _tickNr = _numTicks - _tickNr - 1;
+
+               if(modTicks >= ((2*_numTicks) - numRasterTicks))
+               {
+                  _tickNr = -10000;
+               }
+            }
+            break;
+
+         case PLAY_MODE_BWD_FWD2:
+            // Added for drum beats
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            modTicks = ((_origTickNr + _numTicks) % (2*_numTicks));
+            if( modTicks >= (_numTicks - numRasterTicks) )
+            {
+               _tickNr = _numTicks - _tickNr - 1;
+
+               if(modTicks >= ((2*_numTicks) - numRasterTicks))
+               {
+                  _tickNr = -10000;
+               }
+            }
+            break;
+
+         case PLAY_MODE_FWD_BWD_INCL:
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            if( (_origTickNr / _numTicks) & 1 )
+            {
+               _tickNr += numRasterTicks -1;
+               _tickNr = _numTicks - _tickNr - 1;
+            }
+            break;
+
+         case PLAY_MODE_BWD_FWD_INCL:
+            while(_tickNr < 0)
+               _tickNr += _numTicks;
+            _tickNr = _tickNr % _numTicks;
+
+            if!( (_origTickNr / _numTicks) & 1 )
+            {
+               _tickNr += numRasterTicks -1;
+               _tickNr = _numTicks - _tickNr - 1;
+            }
+            break;
+
+         case PLAY_MODE_FWD_BWD_EXCL:
+            _tickNr = (_tickNr % (_numTicks + (_numTicks - numRasterTicks*2)));
+            if(_tickNr >= _numTicks)
+            {
+               _tickNr -= _numTicks;
+               _tickNr += (numRasterTicks*2) -1;
+               _tickNr = _numTicks - _tickNr - 1;
+            }
+            break;
+
+         case PLAY_MODE_BWD_FWD_EXCL:
+            _tickNr = (_tickNr % (_numTicks + (_numTicks - numRasterTicks*2)));
+            if(_tickNr >= (_numTicks - (1*numRasterTicks)))
+            {
+               _tickNr -= (_numTicks - (1*numRasterTicks));
+            }
+            else
+            {
+               _tickNr = _numTicks - _tickNr - numRasterTicks;
+            }
+            break;
+      }
+      return _tickNr;
+   }
+
+   // <method.png>
+   protected method scaleNote(byte _note) : byte {
+
+      IntArray tbl <= mode_tables.get(scale);
+
+      byte k;
+
+      if(parent_node.b_arp && b_arp_dynakey)
+      {
+         byte aanIdx = 0;
+
+         if(NodeBuffer.ARP_MODE_TRANSPOSE == parent_node.arp_mode)
+         {
+            aanIdx = output_idx;
+
+            if(aanIdx >= (parent_node.arp_sorted_notes.numElements))
+            {
+               if(parent_node.b_arp_wrap)
+               {
+                  aanIdx = (aanIdx % (parent_node.arp_sorted_notes.numElements));
+               }
+               else
+               {
+                  return -1;
+               }
+            }
+         }
+         k = parent_node.arp_sorted_notes.get(aanIdx) % 12;
+      }
+      else
+      {
+         k = key;
+      }
+
+      _note -= k;
+
+      int bestIdx = -1;
+
+      byte n = _note % 12;
+
+      byte tn;
+      byte mn = -1;
+      byte bd = 9999;
+
+      int tblIdx = 0;
+      byte tblOct = 0;
+      loop(tbl.numElements + 2)
+      {
+         if(0 == tblIdx)
+            tn = tbl.get(tbl.numElements -1) - 12;
+         else
+            tn = tbl.get(tblIdx - 1) + tblOct;
+
+         if(n == tn)
+         {
+            mn = tn;
+            bd = 0;
+            break;
+         }
+
+         byte nd = abs(tn - n);
+
+         if(nd <= bd)
+         {
+            if((n < tn) && (KEY_MODE_NEAREST_UP == key_mode))
+            {
+               mn = tn;
+               bd = nd;
+            }
+            else if((n > tn) && (KEY_MODE_NEAREST_DOWN == key_mode))
+            {
+               mn = tn;
+               bd = nd;
+            }
+         }
+
+         tblIdx++;
+         if(tblIdx > tbl.numElements)
+         {
+            tblIdx = 1;
+            tblOct = 12;
+         }
+      }
+
+      if(-1 != mn)
+      {
+         _note = (_note/12)*12 + mn + k;
+      }
+      else
+      {
+         _note = -1;
+      }
+
+      return _note;
+   }
+
+   // <replay.png>
+   module method processFrameEvents(MIDIPipeFrame _frame, MIDIPipeFrame fr, int frDevIdx, int frCh) {
+      int numEv;
+      int evIdx;
+      MIDIPipeEvent ev;
+      byte devIdx;
+      byte midiCh;
+      byte n;
+
+      // Process note-on events
+      numEv = fr.getNumEventsNoteOnByFlt(frDevIdx, frCh);
+
+      if(numEv > 0)
+      {
+         evIdx = 0;
+
+         loop(numEv)
+         {
+            fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, frDevIdx, frCh);
+
+            int dur = ev.duration;
+
+            if(b_scalenotelen)
+            {
+               dur *= 1.0 / speed;
+            }
+
+            dur *= 1.0 / (speed_div_tbl.get(speed_div));
+
+            dur *= note_length;
+
+            if(dur < 1)
+               dur = 1;
+
+            n = ev.note;
+
+            if(parent_node.b_arp)
+            {
+               n = parent_node.mapArpNote(n, output_idx);
+            }
+
+            if(n >= 0)
+            {
+               n =  n + (note);
+
+               if(n >= 0)
+               {
+                  if(MODE_CHROMATIC != scale)
+                  {
+                     n = scaleNote(n);
+                  }
+               }
+
+               if(n >= 0)
+               {
+                  byte oct = octave;
+
+                  if(0 != octave_rand)
+                  {
+                     byte octPr = rand(100);
+                     if(octPr >= (100 - octave_rand_prob))
+                     {
+                        if(b_octave_rand_rep || (1 == abs(octave_rand)))
+                        {
+                           if(octave_rand < 0)
+                              oct -= 1 + rand(- octave_rand);
+                           else
+                              oct += 1 + rand(octave_rand);
+                        }
+                        else
+                        {
+                           for(;;)
+                           {
+                              oct = octave;
+
+                              if(octave_rand < 0)
+                                 oct -= 1 + rand(- octave_rand);
+                              else
+                                 oct += 1 + rand(octave_rand);
+
+                              if(oct != last_rand_oct)
+                              {
+                                 last_rand_oct = oct;
+                                 break;
+                              }
+                           }
+                        }
+                        // trace "xxx oct="+oct+" maxoctave="+octave_rand;
+                     }
+                  }
+
+                  n = n + (oct*12);
+
+                  if(note < 0)
+                     note = 0;
+                  else if(note > 127)
+                     note = 127;
+
+                  if(-1 != dev_idx)
+                     devIdx = dev_idx;
+                  else
+                     devIdx = ev.devIdx;
+
+                  if(-1 != dev_ch)
+                     midiCh = dev_ch;
+                  else
+                     midiCh = ev.midiCh;
+
+                  // // trace "xxx play note="+n+" vel="+ev.velocity+" dur="+dur+" dev="+devIdx+" ch="+midiCh+" ev.midiCh="+ev.midiCh;
+
+                  _frame.noteOn(true/*bSet*/, devIdx, midiCh, n, ev.velocity, dur);
+
+               } // if n >= 0
+            } // if n >= 0
+
+            evIdx++;
+         }
+      } // if numEv
+
+      // Process poly-pressure events
+      numEv = fr.getNumEventsPolyPressureByFlt(frDevIdx, frCh);
+
+      if(numEv > 0)
+      {
+         evIdx = 0;
+
+         loop(numEv)
+         {
+            fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, frDevIdx, frCh);
+
+            n = ev.polyPressureNote;
+
+            if(parent_node.b_arp)
+               n = parent_node.mapArpNote(n, output_idx);
+
+            n = n + (note);
+
+            if(n >= 0)
+            {
+               if(MODE_CHROMATIC != scale)
+                  n = scaleNote(n);
+            }
+
+            if(n >= 0)
+            {
+               n = n + (octave*12);
+
+               if(note < 0)
+                  note = 0;
+               else if(note > 127)
+                  note = 127;
+
+               if(-1 != dev_idx)
+                  devIdx = dev_idx;
+               else
+                  devIdx = ev.devIdx;
+
+               if(-1 != dev_ch)
+                  midiCh = dev_ch;
+               else
+                  midiCh = ev.midiCh;
+
+               // trace "xxx play note="+n+" vel="+ev.velocity+" dur="+dur+" dev="+devIdx+" ch="+midiCh+" ev.midiCh="+ev.midiCh;
+
+               byte p = ev.polyPressureValue;
+
+               p = pressure_off + (p * pressure_scl);
+
+               if(p < 0)
+                  p = 0;
+               else if(p > 127)
+                  p = 127;
+
+               _frame.polyPressure(true/*bSet*/, devIdx, midiCh, n, p);
+            }
+
+            evIdx++;
+         }
+      }
+
+   }
+
+   // <replay.png>
+   module method processFrame(MIDIPipeFrame     _frame,
+                              boolean           _bMuted,
+                              boolean           _bPlaySeq,
+                              NodeBufferStorage _bst,
+                              Envelope          _playEnv,
+                              PointerArray      _playEvents,
+                              boolean           _bEnableTemp
+                              ) {
+
+      if(_bPlaySeq)
+      {
+         if((maybe == _bEnableTemp && b_enable) || (true == _bEnableTemp))
+         {
+            int numTicks16th = (current_song.ppq / 4);
+            float numTicks256th = (current_song.ppq / 64.0);
+
+            float tickNrCur = out_tick_nr;
+            float tickNrEnd = (out_tick_nr + speed*speed_div_tbl.get(speed_div));
+
+            boolean bFirst = true;
+
+            // trace "xxx tickNr cur="+tickNrCur+" end="+tickNrEnd;
+
+            while(tickNrCur < tickNrEnd)
+            {
+               int tickNr = tickNrCur;
+
+               tickNr += (offset * numTicks16th);
+               tickNr += (micro_offset * numTicks256th);
+
+               boolean bPMHandled = false;
+
+               int origTickNr = tickNr;
+
+               if(b_length)
+               {
+                  if(length > 0)
+                  {
+                     tickNr = applyPlayMode(origTickNr, tickNr, numTicks16th * length, _bst);
+                     bPMHandled = true;
+                  }
+               }
+
+               tickNr += (buffer_offset * numTicks16th);
+
+               int bufLen = getArpPatternLength16th(_bst);
+               int bufOff = getArpPatternOffset16th();
+
+               // trace "xxx arp bufOff="+bufOff+" bufLen="+bufLen;
+
+               // // if(bufOff < bufLen)
+               // //    bufLen = (bufLen - bufOff);
+               // // else
+               // //    bufOff = 0;
+
+               // 1.2.
+               if(!bPMHandled)
+               {
+                  tickNr = applyPlayMode(origTickNr, tickNr, numTicks16th * bufLen, _bst);
+                  bPMHandled = true;
+               }
+               else
+               {
+                  tickNr = tickNr % (numTicks16th * bufLen);
+               }
+
+               tickNr += (numTicks16th * bufOff);
+
+               // if(!_bMuted)
+               //    trace "xxx tickNr="+tickNr+" out_tick_nr="+out_tick_nr+" bufOff="+bufOff+" offset="+offset+" last_played_tick_nr_first="+last_played_tick_nr_first+" last="+last_played_tick_nr_last;
+
+               if!(last_played_tick_nr_first <= tickNr <= last_played_tick_nr_last)
+               {
+                  // trace "xxx try play tickNr="+tickNr;//+" playEnv="+#(_playEnv);
+
+                  if(bFirst)
+                  {
+                     last_played_tick_nr_first = tickNr;
+                  }
+                  // else
+                     last_played_tick_nr_last = tickNr;
+
+                  if(!_bMuted)
+                  {
+                     var val = _playEnv.valueAtTimeRaster(tickNr, 1);
+
+                     if(YAC_TYPE_VOID != typeid(val))
+                     {
+                        MIDIPipeFrame fr <= _playEvents.get(val);
+
+                        // // trace "xxx have event tickNr="+tickNr+" evId="+val;
+
+                        processFrameEvents(_frame, fr, -1/*frDev*/, -1/*frCh*/);
+                     }
+                  } // !bMuted
+               } // if !=last_played_tick_nr
+
+               tickNrCur += 1.0;
+            } // while tickNrCur < tickNrEnd
+         } // if b_enable
+
+         out_tick_nr += (speed*speed_div_tbl.get(speed_div));
+      } // if bPlaySeq
+      else
+      {
+         last_played_tick_nr_first = -1;
+         last_played_tick_nr_last = -1;
+      }
+
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      ofs.i16 = 11; // Version
+
+      ofs.i8 = dev_idx;
+      ofs.i8 = b_enable;
+      ofs.i8 = dev_ch;
+
+      ofs.i8  = play_mode;
+      ofs.f32 = speed;
+      ofs.i8  = speed_div;
+      ofs.i8  = b_scalenotelen;
+      ofs.f32 = note_length; // v2+
+
+      ofs.i32 = offset;
+      ofs.i32 = micro_offset; // v4+
+      ofs.i32  = buffer_offset; // v3+ (prev3: b_buffer)
+
+      ofs.i32 = length;
+      ofs.i8  = b_length;
+      ofs.i8  = arp_dynaoff_scl; // v11+
+      ofs.i8  = arp_dynalen_scl; // v11+
+
+      ofs.i8  = octave;
+      ofs.i8  = octave_rand; // v8+
+      ofs.i8  = octave_rand_prob; // v9+
+      ofs.i8  = b_octave_rand_rep; // v10+
+      ofs.i8  = note;
+      ofs.f32 = pressure_scl; // pre v6: pitchbend
+      ofs.i8  = pressure_off; // v6+
+
+      ofs.i16 = scale;
+      ofs.i8  = key;
+      ofs.i8  = key_mode;
+      ofs.i8  = b_arp_dynakey; // v7+
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         dev_idx  = ifs.s8;
+
+         if(-1 != dev_idx)
+         {
+            _outDevUseCount.inc(dev_idx);
+
+            dev_idx = _outDevIdxMap.get(dev_idx);
+         }
+
+         b_enable = ifs.u8;
+         dev_ch   = ifs.s8;
+
+         play_mode      = ifs.u8;
+         speed          = ifs.f32;
+
+         if(ver >= 5)
+         {
+            speed_div = ifs.u8;
+         }
+
+         b_scalenotelen = ifs.u8;
+
+         if(ver >= 2)
+         {
+            note_length = ifs.f32;
+         }
+
+         offset   = ifs.i32;
+         if(ver >= 4)
+         {
+            micro_offset = ifs.i32;
+         }
+
+         if(ver >= 3)
+         {
+            buffer_offset = ifs.i32;
+         }
+         else
+         {
+            int t1 = ifs.u8; // pre v3: b_buffer
+         }
+
+         length   = ifs.i32;
+         b_length = ifs.u8;
+
+         if(ver >= 11)
+         {
+            arp_dynaoff_scl = ifs.i8; // v11+
+            arp_dynalen_scl = ifs.i8; // v11+
+         }
+
+         octave    = ifs.s8;
+         if(ver >= 8)
+         {
+            octave_rand = ifs.s8;
+
+            if(ver >= 9)
+            {
+               octave_rand_prob = ifs.u8;
+
+               if(ver >= 10)
+               {
+                  b_octave_rand_rep = ifs.u8;
+               }
+            }
+         }
+         note      = ifs.s8;
+
+         pressure_scl = ifs.f32;
+         if(ver >= 6)
+         {
+            pressure_off = ifs.s8;
+         }
+
+         scale    = ifs.u16;
+         key      = ifs.i8;
+         key_mode = ifs.i8;
+         if(ver >= 7)
+         {
+            b_arp_dynakey = ifs.i8;
+         }
+
+         return true;
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NodeBufferStorage {
+
+   define int BUFFER_MODE_PASSTHROUGH = 0;
+   define int BUFFER_MODE_RECORD      = 1;
+   define int BUFFER_MODE_HOLD        = 2;
+
+   NodeBuffer *parent_node;
+
+   int     buffer_dev_idx;
+   boolean b_buffer;
+   int     buffer_ch;
+   boolean b_buffer_lock;
+
+   int     buffer_mode;
+   boolean b_buffer_dbl;
+   int     buffer_rec_offset;  // number of 16th notes
+   int     buffer_rec_length;  // number of 16th notes
+   int     buffer_raster;  // 1/(1<<n) (1/64, 1/32, 1/16, ..)
+   boolean b_buffer_polypressure; // true=record polypressure events
+
+   Envelope buffer_env_a;  // event value = index into buffer_events array
+   Envelope buffer_env_b;  // event value = index into buffer_events array
+
+   PointerArray buffer_events_a;
+   PointerArray buffer_events_b;
+
+   Envelope *buffer_env;        // reference to either buffer_env_a or buffer_env_b
+   PointerArray *buffer_events; // reference to either buffer_events_a or buffer_events_b
+
+
+   // <method_init.png>
+   public method init(NodeBuffer _parentNode) {
+      parent_node <= _parentNode;
+
+      buffer_env <= buffer_env_a;
+      buffer_events <= buffer_events_a;
+
+      b_buffer_polypressure = true;
+
+      buffer_dev_idx = -1;
+      b_buffer       = false;
+      buffer_ch      = -1;
+      b_buffer_lock  = false;
+
+      buffer_mode    = BUFFER_MODE_RECORD;
+      b_buffer_dbl   = false;
+      buffer_rec_offset  = 0;
+      buffer_rec_length  = 16;
+      buffer_raster  = 4; // 1/16
+   }
+
+   // <method_init.png>
+   public method uiInit() {
+   }
+
+   // <method.png>
+   public method copyFrom(NodeBufferStorage _o) {
+
+      buffer_dev_idx        = _o.buffer_dev_idx;
+      b_buffer              = _o.b_buffer;
+      buffer_ch             = _o.buffer_ch;
+      b_buffer_lock         = _o.b_buffer_lock;
+      buffer_mode           = _o.buffer_mode;
+      b_buffer_dbl          = _o.b_buffer_dbl;
+      buffer_rec_offset     = _o.buffer_rec_offset;
+      buffer_rec_length     = _o.buffer_rec_length;
+      buffer_raster         = _o.buffer_raster;
+      b_buffer_polypressure = _o.b_buffer_polypressure;
+
+      buffer_env_a = _o.buffer_env_a;
+      buffer_env_b = _o.buffer_env_b;
+
+      copyEvents(buffer_events_a, _o.buffer_events_a);
+      copyEvents(buffer_events_b, _o.buffer_events_b);
+   }
+
+   // <method.png>
+   protected method copyEvents(PointerArray _d, PointerArray _o) {
+      MIDIPipeFrame *ofr;
+
+      _d.free();
+
+      foreach ofr in _o
+      {
+         if(null != ofr)
+         {
+            MIDIPipeFrame fr <= new MIDIPipeFrame;
+
+            fr = ofr;
+
+            _d.add(#(deref fr));
+         }
+         else
+         {
+            _d.add(null);
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferDevIdx(int _idx) {
+      buffer_dev_idx = _idx;
+   }
+
+   // <method_get.png>
+   public method getBufferDevIdx() : int {
+      return buffer_dev_idx;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBuffer(boolean _bEnable) {
+      b_buffer = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableBuffer() : boolean {
+      return b_buffer;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferCh(int _ch) {
+      buffer_ch = _ch;
+   }
+
+   // <method_get.png>
+   public method getBufferCh() : int {
+      return buffer_ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBufferLock(boolean _bEnable) {
+      b_buffer_lock = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableBufferLock() : boolean {
+      return b_buffer_lock;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferMode(int _mode) {
+      buffer_mode = _mode;
+   }
+
+   // <method_get.png>
+   public method getBufferMode() : int {
+      return buffer_mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBufferDbl(boolean _bEnable) {
+      b_buffer_dbl = _bEnable;
+
+      if(!b_buffer_dbl)
+      {
+         buffer_env <= buffer_env_a;
+         buffer_events <= buffer_events_a;
+      }
+   }
+
+   // <method_get.png>
+   public method getEnableBufferDbl() : boolean {
+      return b_buffer_dbl;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferRecOffset(int _off) {
+      buffer_rec_offset = _off;
+   }
+
+   // <method_get.png>
+   public method getBufferRecOffset() : int {
+      return buffer_rec_offset;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferRecLength(int _len) {
+      buffer_rec_length = _len;
+   }
+
+   // <method_get.png>
+   public method getBufferRecLength() : int {
+      return buffer_rec_length;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferRaster(int _raster) {
+      buffer_raster = _raster;
+   }
+
+   // <method_get.png>
+   public method getBufferRaster() : int {
+      return buffer_raster;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBufferPolyPressure(boolean _bEnable) {
+      b_buffer_polypressure = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableBufferPolyPressure() : boolean {
+      return b_buffer_polypressure;
+   }
+
+   // <method.png>
+   module method swapBuffers(boolean _bPlaySeq) {
+      if(@(buffer_env_a) == @(buffer_env))
+      {
+         buffer_env <= buffer_env_b;
+         buffer_events <= buffer_events_b;
+      }
+      else
+      {
+         buffer_env <= buffer_env_a;
+         buffer_events <= buffer_events_a;
+      }
+
+      // Clear current buffer
+      if(b_buffer_dbl && !b_buffer_lock && (BUFFER_MODE_RECORD == buffer_mode) && _bPlaySeq)
+      {
+         buffer_env.free();
+         buffer_events.free();
+      }
+   }
+
+   // <method.png>
+   module method clearRaster(int numRasterTicks, int numTicks16th) {
+      int bufTicks = (buffer_rec_offset * numTicks16th) + (parent_node.rec_tick_nr % (buffer_rec_length * numTicks16th));
+      int bufRasterTickOff = (bufTicks / numRasterTicks) * numRasterTicks;
+      var val = buffer_env.valueAtTimeRaster(bufRasterTickOff, numRasterTicks);
+
+      if(YAC_TYPE_VOID != typeid(val))
+      {
+         buffer_events[val] = null; // delete frame
+         buffer_env.removeRange(bufRasterTickOff, numRasterTicks);
+         buffer_env.shiftEvents(bufRasterTickOff, numRasterTicks);
+         // trace "xxx clear raster evId="+val;
+      }
+   }
+
+   // <method.png>
+   protected method storeEvent(int _bufTicks, MIDIPipeEvent _ev, int _type) {
+
+      int numRasterTicks = (current_song.ppq * 4) / (1 << buffer_raster);
+
+      int bufRasterTickOff = (_bufTicks / numRasterTicks) * numRasterTicks;
+
+      // trace "xxx storeEventNoteOn: bufRasterTickOff="+bufRasterTickOff+" bufTicks="+_bufTicks+" note="+_ev.note;
+
+      var val = buffer_env.valueAtTimeRaster(bufRasterTickOff, numRasterTicks);
+      int evId;
+      MIDIPipeFrame *fr;
+
+      if(YAC_TYPE_VOID != typeid(val))
+      {
+         // Re-use previous event
+         evId = val;
+
+         // Store exact time
+         buffer_env.insertReplaceEvent(_bufTicks, evId, 1);
+
+         //trace "xxx store env bufTicks="+_bufTicks+" env="+#(buffer_env);
+
+         fr <= buffer_events.get(evId);
+
+         if(parent_node.b_first_raster_ev)
+         {
+            fr.empty();
+         }
+      }
+      else
+      {
+         // Add new event
+         evId = buffer_events.indexOfPointer(null, 0);
+         if(-1 == evId)
+            evId = buffer_events.numElements;
+
+         fr <= new MIDIPipeFrame;
+         buffer_events[evId] = deref fr;
+         // trace "xxx alloc evId="+evId+" numElements is now "+buffer_events.numElements;
+
+         buffer_env.insertReplaceEvent(_bufTicks, evId, 1);
+      }
+
+      if(MIDIMapDefs.TYPE_NOTE_ON == _type)
+      {
+         fr.noteOn(true/*bSet*/, _ev.devIdx, _ev.midiCh, _ev.note, _ev.velocity, _ev.duration);
+      }
+      else if(MIDIMapDefs.TYPE_POLY_PRESSURE == _type)
+      {
+         fr.polyPressure(true/*bSet*/, _ev.devIdx, _ev.midiCh, _ev.polyPressureNote, _ev.polyPressureValue);
+      }
+   }
+
+   // <method.png>
+   module method record(MIDIPipeFrame _frame) {
+      int numEv;
+      int evIdx;
+      MIDIPipeEvent ev;
+
+      int numTicks16th = (current_song.ppq / 4);
+
+      int bufTicks = (buffer_rec_offset * numTicks16th) + (parent_node.rec_tick_nr % (buffer_rec_length * numTicks16th));
+
+      // Record note-on events
+      numEv = _frame.getNumEventsNoteOnByFlt(buffer_dev_idx, buffer_ch);
+
+      if(numEv > 0)
+      {
+         evIdx = 0;
+
+         loop(numEv)
+         {
+            _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, buffer_dev_idx, buffer_ch);
+
+            if(ev.duration > 0)
+            {
+               storeEvent(bufTicks, ev, MIDIMapDefs.TYPE_NOTE_ON);
+               parent_node.b_first_raster_ev = false;
+            }
+
+            evIdx++;
+         }
+      }
+
+      // Record poly-pressure events
+      if(b_buffer_polypressure)
+      {
+         numEv = _frame.getNumEventsPolyPressureByFlt(buffer_dev_idx, buffer_ch);
+
+         if(numEv > 0)
+         {
+            evIdx = 0;
+
+            loop(numEv)
+            {
+               _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, buffer_dev_idx, buffer_ch);
+
+               storeEvent(bufTicks, ev, MIDIMapDefs.TYPE_POLY_PRESSURE);
+               parent_node.b_first_raster_ev = false;
+
+               evIdx++;
+            }
+         }
+      }
+
+   }
+
+   // <method.png>
+   protected method saveBufferState(Stream ofs, Envelope _env, PointerArray _events) {
+
+      // Version
+      ofs.i16 = 1;
+
+      // Start envelope chunk
+      int envStartOff = ofs.offset;
+      ofs.i32 = 0;
+
+      Utils.WriteEnvelope(ofs, _env);
+
+      Utils.FixChunkSize(ofs, envStartOff);
+
+      // Write events
+      ofs.i32 = _events.numElements;
+      int evIdx = 0;
+      loop(_events.numElements)
+      {
+         MIDIPipeFrame fr <= _events.get(evIdx);
+
+         // Start frame chunk
+         int frStartOff = ofs.offset;
+         ofs.i32 = 0;
+
+         if(null != fr)
+         {
+            fr.saveState(ofs);
+         }
+
+         Utils.FixChunkSize(ofs, frStartOff);
+
+         evIdx++;
+      }
+   }
+
+   // <method.png>
+   module method loadBufferState(Stream       ifs,
+                                 Envelope     _env,
+                                 PointerArray _events,
+                                 IntArray     _outDevIdxMap,
+                                 IntArray     _outDevUseCount
+                                 ) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         int envSz = ifs.i32 - 4;
+
+         Utils.ReadEnvelope(ifs, envSz, _env);
+
+         int numEv = ifs.i32;
+
+         if(numEv > 0)
+         {
+            if(_events.alloc(numEv))
+            {
+               int evIdx = 0;
+
+               loop(numEv)
+               {
+                  int evSz = ifs.i32;
+
+                  if(evSz > 4)
+                  {
+                     MIDIPipeFrame fr <= new MIDIPipeFrame;
+                     _events.add(#(deref fr));
+
+                     if(!fr.loadState(ifs))
+                     {
+                        trace "[---] NodeBufferStorage::loadBufferState: failed to read event "+evIdx+" (sz="+evSz+")";
+                        return false;
+                     }
+                     else
+                     {
+                        fr.remapDeviceIndices(_outDevIdxMap, _outDevUseCount);
+                     }
+                  }
+                  else
+                  {
+                     _events.add(null);
+                  }
+
+                  evIdx++;
+               }
+
+               return true;
+            }
+            else
+            {
+               trace "[---] NodeBufferStorage::loadBufferState: failed to allocate "+numEv+" events";
+            }
+         }
+         else
+         {
+            // No events
+            return true;
+         }
+      }
+      else
+      {
+         trace "[---] NodeBufferStorage::loadBufferState: invalid version ("+ver+")";
+      }
+      return false;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      ofs.i16 = 1; // Version
+
+      ofs.i8  = buffer_dev_idx;
+      ofs.i8  = b_buffer;
+      ofs.i8  = buffer_ch;
+      ofs.i8  = b_buffer_lock;
+      ofs.i8  = buffer_mode;
+      ofs.i8  = b_buffer_dbl;
+      ofs.i32 = buffer_rec_offset;
+      ofs.i32 = buffer_rec_length;
+      ofs.i8  = buffer_raster;
+      ofs.i8  = b_buffer_polypressure;
+
+      saveBufferState(ofs, buffer_env_a, buffer_events_a);
+      saveBufferState(ofs, buffer_env_b, buffer_events_b);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         buffer_dev_idx = ifs.s8;
+
+         if(-1 != buffer_dev_idx)
+         {
+            _outDevUseCount.inc(buffer_dev_idx);
+
+            buffer_dev_idx = _outDevIdxMap.get(buffer_dev_idx);
+         }
+
+         b_buffer          = ifs.i8;
+         buffer_ch         = ifs.i8;
+         b_buffer_lock     = ifs.i8;
+         buffer_mode       = ifs.i8;
+         b_buffer_dbl      = ifs.i8;
+         buffer_rec_offset = ifs.i32;
+         buffer_rec_length = ifs.i32;
+         buffer_raster     = ifs.i8;
+         b_buffer_polypressure = ifs.u8;
+
+         if(!loadBufferState(ifs, buffer_env_a, buffer_events_a, _outDevIdxMap, _outDevUseCount))
+         {
+            trace "[---] NodeBufferStorage::nodeLoadState: failed to read buffer A";
+            return false;
+         }
+
+         if(!loadBufferState(ifs, buffer_env_b, buffer_events_b, _outDevIdxMap, _outDevUseCount))
+         {
+            trace "[---] NodeBufferStorage::nodeLoadState: failed to read buffer B";
+            return false;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class NodeBufferPattern : NodePattern {
+
+   define int BUFFER_STORAGE_SHARED  = 0;
+   define int BUFFER_STORAGE_PATTERN = 1;
+
+   NodeBuffer *parent_node;
+
+   int pattern_offset_16th;
+   int pattern_length_16th;  // 0=parent_node.buffer_rec_length
+
+   int buffer_storage;
+
+   NodeBufferStorage *storage;
+
+   PointerArray outputs; // NodeBufferOutput instances (4)
+
+
+   // <method_init.png>
+   public method patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+
+      parent_node <= _parent;
+
+      buffer_storage = BUFFER_STORAGE_SHARED;
+
+      outputs.alloc(4);
+
+      storage <= new NodeBufferStorage;
+      storage.init(parent_node);
+
+      int outIdx = 0;
+      loop(4)
+      {
+         NodeBufferOutput out <= new NodeBufferOutput;
+         out.init(this, outIdx++);
+         outputs.add(#(deref out));
+      }
+
+      if(replay.b_playing)
+      {
+         seek(parent_node.rec_tick_nr);
+      }
+   }
+
+   // <ui_init.png>
+   public method uiInit() {
+   }
+
+   // <method_get.png>
+   public method getOutput(int _idx) : NodeBufferOutput {
+      return outputs.get(_idx);
+   }
+
+   // <method.png>
+   public virtual patCopyFrom(NodeBufferPattern _o, boolean _bClear) {
+      NodePattern::patCopyFrom(_o, _bClear);
+
+      pattern_offset_16th = _o.pattern_offset_16th;
+      pattern_length_16th = _o.pattern_length_16th;
+      buffer_storage      = _o.buffer_storage;
+
+      // Copy storage
+      storage.copyFrom(_o.storage);
+
+      int outIdx = 0;
+
+      // Copy outputs
+      loop(4)
+      {
+         NodeBufferOutput out   <=    outputs.get(outIdx);
+         NodeBufferOutput outO  <= _o.outputs.get(outIdx);
+
+         out.copyFrom(outO);
+
+         // Next output
+         outIdx++;
+      }
+   }
+
+   // <method.png>
+   public method clear() {
+   }
+
+   // <method_set.png>
+   public =replay= method setPatternOffset16th(int _off) {
+      pattern_offset_16th = _off;
+   }
+
+   // <method_get.png>
+   public method getPatternOffset16th() : int {
+      return pattern_offset_16th;
+   }
+
+   // <method_set.png>
+   public =replay= method setPatternLength16th(int _len) {
+      pattern_length_16th = _len;
+   }
+
+   // <method_get.png>
+   public method getPatternLength16th() : int {
+      return pattern_length_16th;
+   }
+
+   // <method_set.png>
+   public =replay= method setBufferStorage(int _storage) {
+      buffer_storage = _storage;
+   }
+
+   // <method_get.png>
+   public method getBufferStorage() : int {
+      return buffer_storage;
+   }
+
+   // <replay.png>
+   module method seek(int _ticks) {
+      NodeBufferOutput *out;
+      foreach out in outputs
+      {
+         out.seek(_ticks);
+      }
+   }
+
+   // <save.png>
+   public virtual patSaveState(Stream ofs) {
+
+      NodePattern::patSaveState(ofs);
+
+      ofs.i16 = 4; // Version
+
+      ofs.i32 = pattern_offset_16th; // v3+
+      ofs.i32 = pattern_length_16th;
+
+      ofs.i8 = buffer_storage; // v4+
+
+      storage.saveState(ofs); // v4+
+
+      // v2+:
+      int outIdx = 0;
+      loop(4)
+      {
+         NodeBufferOutput out  <= outputs.get(outIdx);
+
+         out.saveState(ofs);
+
+         // Next output
+         outIdx++;
+      }
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            if(ver >= 3)
+            {
+               pattern_offset_16th = ifs.i32; // v3+
+            }
+
+            pattern_length_16th = ifs.i32;
+
+            if(ver >= 4)
+            {
+               buffer_storage = ifs.u8; // v4+
+
+               if(!storage.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeBufferPattern::patLoadState: failed to read storage";
+                  return false;
+               }
+            }
+
+            // Read outputs
+            if(ver >= 2)
+            {
+               int outIdx = 0;
+
+               loop(4)
+               {
+                  NodeBufferOutput out  <= outputs.get(outIdx);
+
+                  if(!out.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+                  {
+                     trace "[---] NodeBufferPattern::patLoadState: failed to read output "+outIdx;
+                     return false;
+                  }
+
+                  // Next output
+                  outIdx++;
+               }
+            }
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <replay.png>
+   module method processFrameEvents(MIDIPipeFrame _frame, MIDIPipeFrame fr, int frDevIdx, int frCh, boolean _bProcessOnlyIfEnabled/*for passthrough*/) {
+      // Called in passthrough mode
+
+      NodeBufferOutput *out;
+      foreach out in outputs
+      {
+         if(!_bProcessOnlyIfEnabled || out.b_enable)
+         {
+            out.processFrameEvents(_frame, fr, frDevIdx, frCh);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method processFrame(MIDIPipeFrame     _frame,
+                              boolean           _bMuted,
+                              boolean           _bPlaySeq,
+                              NodeBufferStorage _bst,
+                              Envelope          _playEnv,
+                              PointerArray      _playEvents
+                              ) {
+
+      NodeBufferOutput *out;
+
+      out <= outputs.get(0);
+      if(null != out)
+      {
+         out.processFrame(_frame, _bMuted, _bPlaySeq, _bst, _playEnv, _playEvents, parent_node.b_rpn_out1_enable_temp);
+      }
+
+      out <= outputs.get(1);
+      if(null != out)
+      {
+         out.processFrame(_frame, _bMuted, _bPlaySeq, _bst, _playEnv, _playEvents, parent_node.b_rpn_out2_enable_temp);
+      }
+
+      out <= outputs.get(2);
+      if(null != out)
+      {
+         out.processFrame(_frame, _bMuted, _bPlaySeq, _bst, _playEnv, _playEvents, parent_node.b_rpn_out3_enable_temp);
+      }
+
+      out <= outputs.get(3);
+      if(null != out)
+      {
+         out.processFrame(_frame, _bMuted, _bPlaySeq, _bst, _playEnv, _playEvents, parent_node.b_rpn_out4_enable_temp);
+      }
+   }
+}
+
+
+// <class.png>
+class NodeBuffer : Node {
+
+   // define int RPN_xxx     = RPN_BUFFER_BASE + 0;
+
+   define int RPN_BUFFER_LOCK   = RPN_BUFFER_BASE + 0;  // unused
+   define int RPN_BUFFER_OFFSET = RPN_BUFFER_BASE + 1;  // unused
+   define int RPN_BUFFER_LENGTH = RPN_BUFFER_BASE + 2;
+
+   define int RPN_BUFFER_OUTPUT1_ENABLE          = RPN_BUFFER_BASE + 100;
+   define int RPN_BUFFER_OUTPUT1_DISABLE         = RPN_BUFFER_BASE + 101;
+   // define int RPN_BUFFER_OUTPUT1_PLAYMODE        = RPN_BUFFER_BASE + 102;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_SPEED           = RPN_BUFFER_BASE + 103;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_SCALELEN        = RPN_BUFFER_BASE + 104;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_LENSCALE        = RPN_BUFFER_BASE + 105;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_BUFOFFSET       = RPN_BUFFER_BASE + 106;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_PLAYMICROOFFSET = RPN_BUFFER_BASE + 107;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_PLAYOFFSET      = RPN_BUFFER_BASE + 108;  // (todo)
+   // define int RPN_BUFFER_OUTPUT1_PLAYLENGTH      = RPN_BUFFER_BASE + 109;  // (todo)
+
+   define int RPN_BUFFER_OUTPUT2_ENABLE          = RPN_BUFFER_BASE + 200;
+   define int RPN_BUFFER_OUTPUT2_DISABLE         = RPN_BUFFER_BASE + 201;
+
+   define int RPN_BUFFER_OUTPUT3_ENABLE          = RPN_BUFFER_BASE + 300;
+   define int RPN_BUFFER_OUTPUT3_DISABLE         = RPN_BUFFER_BASE + 301;
+
+   define int RPN_BUFFER_OUTPUT4_ENABLE          = RPN_BUFFER_BASE + 400;
+   define int RPN_BUFFER_OUTPUT4_DISABLE         = RPN_BUFFER_BASE + 401;
+
+   define int ARP_MODE_DEFAULT   = 0;
+   define int ARP_MODE_TRANSPOSE = 1;
+   define int ARP_MODE_ADD       = 2;
+   define int ARP_MODE_SUB       = 3;
+
+   static NodeBufferEditor *editor;
+
+   PointerArray patterns;
+
+   int tick_nr;  // resets when arp reset is enabled (and in nodeReset/nodeSeek)
+   int rec_tick_nr;  // only reset in nodeReset() or nodeSeek()
+   protected boolean b_arp_reset_pending;
+
+   NodeBufferStorage *storage;
+
+   boolean b_first_raster_ev; // becomes true on first raster tick
+
+   // Arpeggiator:
+   public int arp_dev_idx;
+   public int arp_ch;
+
+   public IntArray   tick_ext_note_ons;     // temporary array: ext note ons received
+   public FloatArray tick_ext_note_on_vels;
+   public FloatArray tick_ext_note_on_durs;
+   public IntArray   tick_ext_note_offs;    // temporary array: ext note offs received
+   public FloatArray tick_ext_note_off_vels;
+
+   public boolean b_tick_ext_first_note; // temporary, true=first ext note recv'd on this tick
+   public boolean b_tick_ext_new_note; // temporary, true=new ext note recv'd on this tick
+
+   public IntArray ext_active_notes;
+   public IntArray ext_active_notes_dur;
+   public IntArray arp_active_notes;  // ==ext_active_notes, except in arp latch mode
+   public IntArray arp_sorted_notes;  // arp_active_notes, sorted when b_arp_order=true
+   public int arp_latch_next_idx;
+
+   boolean         b_arp;           // true=map triggered note to arp_note_table to get idx which
+                                    //  is then mapped to arp_active_notes
+   public IntArray arp_note_table;  //
+   public int      arp_base_octave;
+   public boolean  b_arp_reset;     // true=reset sequence when first note-on is received
+   public boolean  b_arp_reset_q;   // true=quantize sequence reset to 1/16 note
+   public boolean  b_arp_wrap;      // true=wrap around arpIdx if #active_notes < #arp_notes
+   public boolean  b_arp_order;     // true=order notes
+   public int      arp_latch_num_notes;  // >0 = ignore note-offs and wrap-around add to arp_active_notes
+   public boolean  b_arp_latch_reset; // true = reset active notes when first note is played
+   public boolean  b_arp_play_arp_notes;     // true=play notes even if they are not currently mapped to an ext note
+   public boolean  b_arp_play_non_arp_notes; // true=play notes that cannot be mapped to ext notes
+   public boolean  b_arp_dynaofflen;         // true=adjust pattern length and/or offset to #active_notes
+   public boolean  arp_mode;          // 0=normal, 1=outputs 1..4 follow arp notes 1..4; arp_note_table idx 0 is used as sequence base note; 2=add arp notes to buffer output, 3=sub arp notes from buffer output
+
+   boolean b_rpn_out1_enable_temp;  // maybe = b_enable, 0=disable, 1=enable. reset when node is reset.
+   boolean b_rpn_out2_enable_temp;  // maybe = b_enable, 0=disable, 1=enable. reset when node is reset.
+   boolean b_rpn_out3_enable_temp;  // maybe = b_enable, 0=disable, 1=enable. reset when node is reset.
+   boolean b_rpn_out4_enable_temp;  // maybe = b_enable, 0=disable, 1=enable. reset when node is reset.
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(128);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      storage <= new NodeBufferStorage;
+      storage.init(this);
+
+      b_arp = false;
+      arp_dev_idx = -1;
+      arp_ch = -1;
+      arp_note_table.empty();
+      arp_base_octave = 4;
+      b_arp_reset = false;
+      b_arp_reset_q = false;
+      b_arp_wrap  = true;
+      b_arp_order  = false;
+      arp_latch_num_notes = 0;
+      b_arp_latch_reset = true;
+      b_arp_play_arp_notes = false;
+      b_arp_play_non_arp_notes = false;
+      b_arp_dynaofflen = false;
+      arp_mode = ARP_MODE_DEFAULT;
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+      local NodeBufferPattern pat;
+
+      Node::nodeUIInit();
+
+      storage.uiInit();
+
+      arp_note_table.alloc(12);
+      arp_note_table.useAll();
+      arp_note_table.identity(12);
+
+      // Allocate first pattern
+      pat.patInit(this, 0);
+
+      pat.uiInit();
+
+      nodeSetPattern(0, deref pat);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeBufferEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_buffer_mono");
+      else
+         return UI.GetIcon("node_buffer");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NodeBufferPattern";
+   }
+
+   // <method_get.png>
+   public method getEditStorage() : NodeBufferStorage {
+      NodeBufferPattern pat <= nodeGetCurrentEditPattern();
+
+      if(null != pat)
+      {
+         if(NodeBufferPattern.BUFFER_STORAGE_PATTERN == pat.buffer_storage)
+         {
+            return pat.storage;
+         }
+      }
+
+      return storage;
+   }
+
+   // <method_get.png>
+   public method getPlayStorage() : NodeBufferStorage {
+      NodeBufferPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         if(NodeBufferPattern.BUFFER_STORAGE_PATTERN == pat.buffer_storage)
+            return pat.storage;
+      }
+      return storage;
+   }
+
+   // <replay.png>
+   public virtual nodeRestart() {
+      nodeSetLastPatternStartSongOffset(current_song.song_offset);
+      nodeSeek(nodeGetLastPatternStartSongOffset() + 0);
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      // // trace "xxx nb: nodeReset";
+
+      tick_ext_note_ons.empty();
+      tick_ext_note_on_vels.empty();
+      tick_ext_note_on_durs.empty();
+
+      tick_ext_note_offs.empty();
+      tick_ext_note_off_vels.empty();
+
+      ext_active_notes.empty();
+      ext_active_notes_dur.empty();
+
+      arp_active_notes.empty();
+      arp_sorted_notes.empty();
+
+      arp_latch_next_idx = 0;
+
+      b_arp_reset_pending = false;
+
+      b_rpn_out1_enable_temp = maybe;
+      b_rpn_out2_enable_temp = maybe;
+      b_rpn_out3_enable_temp = maybe;
+      b_rpn_out4_enable_temp = maybe;
+
+      nodeSeek(0);
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+
+      rec_tick_nr = _ticks - nodeGetLastPatternStartSongOffset();
+      tick_nr = rec_tick_nr;
+
+      NodeBufferPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(_ticks);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      NodeBufferPattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(tick_nr);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPattern(int _startOff) : int {
+      int patIdx = patterns.indexOfPointer(null, _startOff);
+
+      return patIdx;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NodeBufferPattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NodeBufferPattern {
+      NodeBufferPattern pat <= patterns.get(edit_pattern_nr);
+
+      if(null == pat)
+      {
+         pat <= new NodeBufferPattern;
+         pat.patInit(this, edit_pattern_nr);
+         patterns[edit_pattern_nr] = deref pat;
+      }
+
+      return pat;
+   }
+
+   // <method.png>
+   public =replay= method insertEmptyPatternSlotAt(int _idx) {
+      patterns.insert(_idx, null); // may inc patcnt > 128 (so deleting the slot gets back the last pat)
+   }
+
+   // <method.png>
+   public =replay= method deletePatternSlotAt(int _idx) {
+      patterns.delete(_idx);
+      patterns.insert(127, null);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NodeBufferPattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NodeBufferPattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NodeBufferPattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // // // <method_get.png>
+   // // protected method arePatternsEmpty(PointerArray _patterns) : boolean {
+   // //    boolean ret = true;
+
+   // //    NodeBufferPattern *pat;
+   // //    foreach pat in _patterns
+   // //    {
+   // //       if(null != pat)
+   // //       {
+   // //          ret = false;
+   // //          break;
+   // //       }
+   // //    }
+
+   // //    return ret;
+   // // }
+
+   // // // <method.png>
+   // // protected method copyPatterns(PointerArray _dst, PointerArray _src) {
+   // //    boolean ret = true;
+
+   // //    _dst.alloc(_src.numElements);
+
+   // //    NodeBufferPattern *pat;
+   // //    foreach pat in _src
+   // //    {
+   // //       if(null != pat)
+   // //       {
+   // //          NodeBufferPattern npat <= new NodeBufferPattern;
+   // //          npat.patInit(this, pat.pat_nr);
+   // //          npat.patCopyFrom(pat, false/*bClear*/);
+
+   // //          _dst.add(#(deref npat));
+   // //       }
+   // //       else
+   // //       {
+   // //          _dst.add(null);
+   // //       }
+   // //    }
+
+   // //    return ret;
+   // // }
+
+   // <method_set.png>
+   public =replay= method setArpDevIdx(int _idx) {
+      arp_dev_idx = _idx;
+   }
+
+   // <method_get.png>
+   public method getArpDevIdx() : int {
+      return arp_dev_idx;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArp(boolean _bEnable) {
+      b_arp = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableArp() : boolean {
+      return b_arp;
+   }
+
+   // <method_set.png>
+   public =replay= method setArpCh(int _ch) {
+      arp_ch = _ch;
+   }
+
+   // <method_get.png>
+   public method getArpCh() : int {
+      return arp_ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setArpBaseOctave(int _oct) {
+      arp_base_octave = _oct;
+   }
+
+   // <method_get.png>
+   public method getArpBaseOctave() : int {
+      return arp_base_octave;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpReset(boolean _bEnabled) {
+      b_arp_reset = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableArpReset() : boolean {
+      return b_arp_reset;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpResetQ(boolean _bEnabled) {
+      b_arp_reset_q = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableArpResetQ() : boolean {
+      return b_arp_reset_q;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpWrap(boolean _bEnabled) {
+      b_arp_wrap = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableArpWrap() : boolean {
+      return b_arp_wrap;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpOrder(boolean _bEnabled) {
+      b_arp_order = _bEnabled;
+      sortArpActiveNotes();
+   }
+
+   // <method_get.png>
+   public method getEnableArpOrder() : boolean {
+      return b_arp_order;
+   }
+
+   // <method_set.png>
+   public =replay= method setArpLatchNumNotes(int _num) {
+      arp_latch_num_notes = _num;
+
+      if(0 == _num)
+      {
+         arp_active_notes = ext_active_notes;
+         sortArpActiveNotes();
+         arp_latch_next_idx = 0;
+      }
+   }
+
+   // <method_get.png>
+   public method getArpLatchNumNotes() : int {
+      return arp_latch_num_notes;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpLatchReset(boolean _bEnabled) {
+      b_arp_latch_reset = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableArpLatchReset() : boolean {
+      return b_arp_latch_reset;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePlayArpNotes(boolean _bEnabled) {
+      b_arp_play_arp_notes = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnablePlayArpNotes() : boolean {
+      return b_arp_play_arp_notes;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePlayNonArpNotes(boolean _bEnabled) {
+      b_arp_play_non_arp_notes = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnablePlayNonArpNotes() : boolean {
+      return b_arp_play_non_arp_notes;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableArpDynaOffLen(boolean _bEnabled) {
+      b_arp_dynaofflen = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableArpDynaOffLen() : boolean {
+      return b_arp_dynaofflen;
+   }
+
+   // <method_set.png>
+   public =replay= method setArpMode(boolean _mode) {
+      arp_mode = _mode;
+   }
+
+   // <method_get.png>
+   public method getArpMode() : int {
+      return arp_mode;
+   }
+
+   // <method.png>
+   public =replay= method incArpNote(int _idx) {
+      if(_idx <= arp_note_table.numElements)
+      {
+         int note = arp_note_table[_idx];
+         note++;
+         if(note >= 12)
+            note = 0;
+         arp_note_table[_idx] = note;
+      }
+   }
+
+   // <method.png>
+   public =replay= method decArpNote(int _idx) {
+      if(_idx <= arp_note_table.numElements)
+      {
+         int note = arp_note_table[_idx];
+         note--;
+         if(note < 0)
+            note = 11;
+         arp_note_table[_idx] = note;
+      }
+   }
+
+   // <method.png>
+   public =replay= method copyArpNotes(IntArray _newNotes) {
+      arp_note_table = _newNotes;
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 10; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // // // v2+
+      // // ofs.i8  = buffer_dev_idx;
+      // // ofs.i8  = b_buffer;
+      // // ofs.i8  = buffer_ch;
+      // // ofs.i8  = b_buffer_lock;
+      // // ofs.i8  = buffer_mode;
+      // // ofs.i8  = b_buffer_dbl;
+      // // ofs.i32 = buffer_rec_offset;
+      // // ofs.i32 = buffer_rec_length;
+      // // ofs.i8  = buffer_raster;
+      // // ofs.i8  = b_buffer_polypressure; // v6+
+
+      // // // v3+
+      // // saveBufferState(ofs, buffer_env_a, buffer_events_a);
+      // // saveBufferState(ofs, buffer_env_b, buffer_events_b);
+
+      storage.saveState(ofs); // v9+
+
+      // Patterns
+      NodeBufferPattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+
+      // Write arp settings (v4+)
+      ofs.i8 = arp_dev_idx; // v5+
+      ofs.i8 = arp_ch; // v5+
+      ofs.i8 = b_arp;
+      ofs.i8 = b_arp_reset;
+      ofs.i8 = b_arp_reset_q; // v10+
+      ofs.i8 = arp_base_octave;
+      ofs.i8 = b_arp_wrap;
+      ofs.i8 = b_arp_order; // v8+
+      ofs.i8 = arp_latch_num_notes;
+      ofs.i8 = b_arp_latch_reset;
+      ofs.i8 = b_arp_play_arp_notes;
+      ofs.i8 = b_arp_play_non_arp_notes;
+      ofs.i8 = b_arp_dynaofflen;
+      ofs.i8 = arp_mode; // v7+
+      Utils.WriteIntArray(ofs, arp_note_table);
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         if(ver < 9)
+         {
+            if(ver >= 2)
+            {
+               storage.buffer_dev_idx = ifs.s8;
+
+               if(-1 != storage.buffer_dev_idx)
+               {
+                  _outDevUseCount.inc(storage.buffer_dev_idx);
+
+                  storage.buffer_dev_idx = _outDevIdxMap.get(storage.buffer_dev_idx);
+               }
+
+               storage.b_buffer          = ifs.i8;
+               storage.buffer_ch         = ifs.i8;
+               storage.b_buffer_lock     = ifs.i8;
+               storage.buffer_mode       = ifs.i8;
+               storage.b_buffer_dbl      = ifs.i8;
+               storage.buffer_rec_offset = ifs.i32;
+               storage.buffer_rec_length = ifs.i32;
+               storage.buffer_raster     = ifs.i8;
+
+               if(ver >= 6)
+               {
+                  storage.b_buffer_polypressure = ifs.u8;
+               }
+            }
+
+            if(ver >= 3)
+            {
+               if(!storage.loadBufferState(ifs, storage.buffer_env_a, storage.buffer_events_a, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeBuffer::nodeLoadState: failed to read buffer A";
+                  return false;
+               }
+
+               if(!storage.loadBufferState(ifs, storage.buffer_env_b, storage.buffer_events_b, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeBuffer::nodeLoadState: failed to read buffer B";
+                  return false;
+               }
+            }
+         }
+         else
+         {
+            // ver >= 9
+            if(!storage.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            {
+               trace "[---] NodeBuffer::nodeLoadState: failed to read storage";
+               return false;
+            }
+         }
+
+
+         int patIdx;
+         NodeBufferPattern *pat;
+         boolean bPatUsed;
+
+         // Patterns
+         patIdx = 0;
+         loop(128)
+         {
+            bPatUsed = ifs.i8;
+            if(bPatUsed)
+            {
+               pat <= new NodeBufferPattern;
+               pat.patInit(this, patIdx);
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeBuffer::loadState: patLoadState failed (patIdx="+patIdx+")";
+                  return false;
+               }
+            }
+
+            // Next pattern
+            patIdx++;
+         }
+
+         // (note) [21Jun2021] moved to Node base class
+         edit_pattern_nr = ifs.u8;
+         play_pattern_nr = ifs.u8;
+
+         if(ver >= 4)
+         {
+            // Read arp settings (v4+)
+            if(ver >= 5)
+            {
+               arp_dev_idx = ifs.s8;
+
+               if(-1 != arp_dev_idx)
+               {
+                  _outDevUseCount.inc(arp_dev_idx);
+
+                  arp_dev_idx = _outDevIdxMap.get(arp_dev_idx);
+               }
+
+               arp_ch = ifs.s8;
+            }
+            b_arp                    = ifs.i8;
+            b_arp_reset              = ifs.i8;
+            if(ver >= 10)
+            {
+               b_arp_reset_q         = ifs.i8;
+            }
+            arp_base_octave          = ifs.i8;
+            b_arp_wrap               = ifs.i8;
+            if(ver >= 8)
+            {
+               b_arp_order           = ifs.i8;
+            }
+            arp_latch_num_notes      = ifs.i8;
+            b_arp_latch_reset        = ifs.i8;
+            b_arp_play_arp_notes     = ifs.i8;
+            b_arp_play_non_arp_notes = ifs.i8;
+            b_arp_dynaofflen         = ifs.i8;
+            if(ver >= 7)
+            {
+               arp_mode = ifs.i8;
+            }
+            Utils.ReadIntArray(ifs, arp_note_table);
+         }
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeBuffer: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeBuffer: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         Events.SendPlayPat();
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <method_handle.png>
+   protected method handleExtNotes(MIDIPipeFrame _frame) {
+
+      if(b_arp)
+      {
+         MIDIPipeEvent ev;
+         int noteIdx;
+
+         // Process auto note-off (duration)
+         noteIdx = 0;
+         loop(ext_active_notes.numElements)
+         {
+            int dur = ext_active_notes_dur.get(noteIdx);
+
+            if(dur > 0)
+            {
+               dur--;
+
+               if(0 == dur)
+               {
+                  tick_ext_note_offs.add(ext_active_notes.get(noteIdx));
+                  tick_ext_note_off_vels.add(0);
+               }
+
+               ext_active_notes_dur[noteIdx] = dur;
+            }
+
+            noteIdx++;
+         }
+
+         // Process all-notes-off events
+         int numAllNotesOff = _frame.getNumEventsAllNotesOffByFlt(arp_dev_idx, arp_ch);
+
+         noteIdx = 0;
+
+         loop(numAllNotesOff)
+         {
+            _frame.getEventByIdxAndFlt(noteIdx, ev, MIDIPIPE_EVENT_TYPE_ALL_NOTES_OFF, arp_dev_idx, arp_ch);
+
+            // trace "xxx ext all notes off 1 ev.devIdx="+ev.devIdx+" ev.midiCh="+ev.midiCh+" dev="+arp_dev;
+
+            // trace "xxx ext all notes off";
+            int enote;
+            foreach enote in ext_active_notes
+            {
+               tick_ext_note_offs.add(enote);
+               tick_ext_note_off_vels.add(0);
+            }
+
+            noteIdx++;
+         }
+
+
+         // Process note-on events
+         int numNoteOn = _frame.getNumEventsNoteOnByFlt(arp_dev_idx, arp_ch);
+         noteIdx = 0;
+
+         loop(numNoteOn)
+         {
+            _frame.getEventByIdxAndFlt(noteIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, arp_dev_idx, arp_ch);
+
+            trace "xxx NB: add tick_ext_note_ons";
+            tick_ext_note_ons.add(ev.arg1);
+            tick_ext_note_on_vels.add(ev.arg2);
+            tick_ext_note_on_durs.add(ev.arg3);
+
+            noteIdx++;
+         }
+
+         // Process note-off events
+         int numNoteOff = _frame.getNumEventsNoteOffByFlt(arp_dev_idx, arp_ch);
+         noteIdx = 0;
+
+         loop(numNoteOff)
+         {
+            _frame.getEventByIdxAndFlt(noteIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, arp_dev_idx, arp_ch);
+
+            trace "xxx NB: remove tick_ext_note_ons";
+            tick_ext_note_offs.add(ev.arg1);
+            tick_ext_note_off_vels.add(ev.arg2);
+
+            noteIdx++;
+         }
+
+      }
+   }
+
+   // <method.png>
+   protected method sortArpActiveNotes() {
+      arp_sorted_notes = arp_active_notes;
+
+      if(b_arp_order)
+      {
+         IntArray reorder;
+         reorder.realloc(arp_active_notes.numElements);
+         arp_active_notes.sortByValue(reorder);
+         arp_sorted_notes.rearrange(reorder);
+      }
+   }
+
+   // <method_handle.png>
+   protected method handleExtActiveNotes() {
+
+      int noteNr;
+      int noteIdx;
+      int activeNoteIdx;
+
+      // Process note offs
+      foreach noteNr in tick_ext_note_offs
+      {
+         activeNoteIdx = ext_active_notes.indexOf(noteNr, 0);
+         if(-1 != activeNoteIdx)
+         {
+            ext_active_notes.delete(activeNoteIdx);
+            ext_active_notes_dur.delete(activeNoteIdx);
+            trace "xxx REMOVE noteNr="+noteNr+" ext_active_notes="+#(ext_active_notes);
+
+            if(0 == arp_latch_num_notes)
+            {
+               arp_active_notes.delete(arp_active_notes.indexOf(noteNr, 0));
+               sortArpActiveNotes();
+            }
+
+            // if(ARP_MODE_ADD == arp_mode)
+            //    trace "xxx delete: arp_active_notes="+#(arp_active_notes);
+         }
+      }
+
+      // Process note ons
+      noteIdx = 0;
+
+      foreach noteNr in tick_ext_note_ons
+      {
+         // Hack to cover the case where there are no notes off at all, just note ons
+         activeNoteIdx = ext_active_notes.indexOf(noteNr, 0);
+         if(-1 != activeNoteIdx)
+         {
+            ext_active_notes.delete(activeNoteIdx);
+            ext_active_notes_dur.delete(activeNoteIdx);
+            // trace "xxx REMOVE noteNr="+noteNr+" ext_active_notes="+#(ext_active_notes);
+
+            if(0 == arp_latch_num_notes)
+            {
+               arp_active_notes.delete(arp_active_notes.indexOf(noteNr, 0));
+               sortArpActiveNotes();
+            }
+         }
+
+         if(-1 == ext_active_notes.indexOf(noteNr, 0))
+         {
+            b_tick_ext_first_note |= (0 == ext_active_notes.numElements);
+            b_tick_ext_new_note = true;
+
+            ext_active_notes.add(noteNr);
+            ext_active_notes_dur.add(tick_ext_note_on_durs.get(noteIdx));
+            trace "xxx ADD noteNr="+noteNr+" ext_active_notes="+#(ext_active_notes);
+
+            if(arp_latch_num_notes > 0)
+            {
+               if((1 == ext_active_notes.numElements) && b_arp_latch_reset)
+               {
+                  arp_latch_next_idx = 0;
+                  arp_active_notes.empty();
+               }
+
+               if(arp_latch_next_idx < arp_active_notes.numElements)
+               {
+                  arp_active_notes[arp_latch_next_idx] = noteNr;
+               }
+               else
+               {
+                  arp_active_notes.add(noteNr);
+               }
+
+               sortArpActiveNotes();
+
+               arp_latch_next_idx = (arp_latch_next_idx + 1) % arp_latch_num_notes;
+            }
+            else
+            {
+               arp_active_notes.add(noteNr);
+               sortArpActiveNotes();
+            }
+
+            // // // trace "xxx add: ext_active_notes="+#(ext_active_notes);
+            // // if(ARP_MODE_ADD == arp_mode)
+            // //    trace "xxx add: arp_active_notes="+#(arp_active_notes);
+         }
+
+         noteIdx++;
+      } // foreach note on
+
+   }
+
+   // <method.png>
+   public method mapArpNote(int _note, int _outIdx) : int {
+
+      if(!replay.b_playing)
+         return _note;
+
+      byte arpNote;
+
+      if(ARP_MODE_TRANSPOSE == arp_mode) {
+
+         // (note) basically the same as ARP_MODE_ADD
+
+         // // trace "xxx mapArpNote: arp_sorted_notes="+#(arp_sorted_notes);
+         if(arp_sorted_notes.numElements > 0)
+         {
+            byte trBaseNote = arp_note_table.get(0) + (arp_base_octave * 12);
+            if(_outIdx < arp_sorted_notes.numElements)
+               arpNote = arp_sorted_notes.get(_outIdx);
+            else if(b_arp_wrap)
+               arpNote = arp_sorted_notes.get(_outIdx % arp_sorted_notes.numElements);
+            else
+               arpNote = 0;
+            // // trace "xxx note="+_note+" trBaseNote="+trBaseNote+" arpNote="+arpNote+" outIdx="+_outIdx;
+            if(arpNote > 0)
+            {
+               return arpNote + (_note - trBaseNote);
+            }
+         }
+
+         return -1;
+      }
+      else if((ARP_MODE_ADD == arp_mode) || (ARP_MODE_SUB == arp_mode)) {
+         if(arp_sorted_notes.numElements > 0)
+         {
+            // trace "xxx add: arp_sorted_notes="+#(arp_sorted_notes);
+            if(_outIdx < arp_sorted_notes.numElements)
+               arpNote = arp_sorted_notes.get(_outIdx);
+            else if(b_arp_wrap)
+               arpNote = arp_sorted_notes.get(_outIdx % arp_sorted_notes.numElements);
+            else
+               arpNote = -1;
+            if(arpNote >= 0)
+            {
+               _note -= arp_base_octave * 12;
+               // // trace "xxx note="+_note+" arpNote="+arpNote+" outIdx="+_outIdx;
+               if(ARP_MODE_ADD == arp_mode)
+               {
+                  arpNote += _note;
+               }
+               else
+               {
+                  arpNote -= _note;
+               }
+               return arpNote;
+            }
+         }
+         return -1;
+      }
+
+
+      boolean bSign;
+      int origNote = _note;
+
+      // (note) this method is only called for note-on events
+      if(_note < 0)
+      {
+         _note = -_note;
+         bSign = true;
+      }
+      else
+      {
+         bSign = false;
+      }
+
+      int arpIdx = arp_note_table.indexOf(_note % 12, 0);
+
+      // trace "xxx mapArpNote(note="+_note+") arpIdx="+arpIdx;
+
+      if(-1 != arpIdx)
+      {
+         if(arp_sorted_notes.numElements > 0)
+         {
+            if(arpIdx >= arp_sorted_notes.numElements)
+            {
+               if(b_arp_wrap)
+               {
+                  // // trace "xxx nb: wrap arpIdx="+arpIdx+", #arp_sorted_notes="+arp_sorted_notes.numElements;
+                  arpIdx = arpIdx % arp_sorted_notes.numElements;
+               }
+               else
+               {
+                  if(b_arp_play_arp_notes)
+                  {
+                     // Note is currently not mapped to an ext note
+                     return origNote;
+                  }
+                  return -1;
+               }
+            }
+
+            byte oct = (_note / 12) - arp_base_octave;  // octave-delta of pattern sequence note
+
+            _note = arp_sorted_notes.get(arpIdx) + (12 * oct);
+            // // trace "xxx oct="+oct+" newNote="+_note;
+
+            if(bSign)
+               _note = - _note;
+
+            return _note;
+         }
+         else
+         {
+            if(b_arp_play_arp_notes)
+            {
+               // Note is currently not mapped to an ext note
+               return origNote;
+            }
+         }
+      }
+      else
+      {
+         // Note cannot be mapped to an ext note
+         if(b_arp_play_non_arp_notes)
+         {
+            return origNote;
+         }
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [RPN_COMMON_UI_PRGCHG,
+              RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+              RPN_COMMON_MUTE_TEMP_TOGGLE,
+              // RPN_COMMON_MUTE_TEMP_1_8,
+              // RPN_COMMON_MUTE_TEMP_9_16,
+              // RPN_COMMON_SOLO_TEMP_1_8,
+              // RPN_COMMON_SOLO_TEMP_9_16,
+              RPN_COMMON_UI_NODE_MUTE,
+              RPN_COMMON_UI_NODE_SOLO,
+              RPN_COMMON_UI_PIPE_MUTE,
+              RPN_COMMON_UI_PIPE_SOLO,
+
+              RPN_BUFFER_OUTPUT1_ENABLE,
+              RPN_BUFFER_OUTPUT2_ENABLE,
+              RPN_BUFFER_OUTPUT3_ENABLE,
+              RPN_BUFFER_OUTPUT4_ENABLE,
+              RPN_BUFFER_OUTPUT1_DISABLE,
+              RPN_BUFFER_OUTPUT2_DISABLE,
+              RPN_BUFFER_OUTPUT3_DISABLE,
+              RPN_BUFFER_OUTPUT4_DISABLE,
+              // RPN_COMMON_SEEK_OFFSET,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      // trace "xxx tick_nr="+tick_nr+" rec_tick_nr="+rec_tick_nr;
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      if(bAllowSeekPrgChgAndMute)
+      {
+         handlePrgChg(_framePlay);
+         handlePrgChg(_frameRec);
+      }
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         // // short t = getRPN(_framePlay, _frameRec, RPN_MONOPOLY_OUTPUT);
+         // // if(t >= 0)
+         // // {
+         // //    next_out_idx = (t & 3);
+         // // }
+
+         short t;
+
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // Handle MUTE, MUTE_TOGGLE, MUTE_TEMP, MUTE_TEMP_TOGGLE
+            nodeParseRPN_Mute(_framePlay, _frameRec);
+         }
+
+         // Output Enable
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT1_ENABLE);
+         if(-1 != t)
+         {
+            b_rpn_out1_enable_temp = (0 != t) ? true : maybe;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT2_ENABLE);
+         if(-1 != t)
+         {
+            b_rpn_out2_enable_temp = (0 != t) ? true : maybe;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT3_ENABLE);
+         if(-1 != t)
+         {
+            b_rpn_out3_enable_temp = (0 != t) ? true : maybe;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT4_ENABLE);
+         if(-1 != t)
+         {
+            b_rpn_out4_enable_temp = (0 != t) ? true : maybe;
+         }
+
+         // Output Disable
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT1_DISABLE);
+         if(-1 != t)
+         {
+            b_rpn_out1_enable_temp = (0 != t) ? false : maybe;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT2_DISABLE);
+         if(-1 != t)
+         {
+            b_rpn_out2_enable_temp = (0 != t) ? false : maybe;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT3_DISABLE);
+         if(-1 != t)
+         {
+            b_rpn_out3_enable_temp = (0 != t) ? false : maybe;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_BUFFER_OUTPUT4_DISABLE);
+         if(-1 != t)
+         {
+            b_rpn_out4_enable_temp = (0 != t) ? false : maybe;
+         }
+      }
+
+      if(bAllowSeekPrgChgAndMute)
+         _bMuted |= nodeHandleQueuedMuteTemp();
+
+      NodeBufferPattern pat <= nodeGetCurrentPlayPattern();
+
+      int numTicks16th = (current_song.ppq / 4);
+      int c16th = tick_nr / numTicks16th;
+      int c16thRec = rec_tick_nr / numTicks16th;
+
+      int queueSeekTicks = -1;
+
+                     // pat.seek(0);
+                     // tick_nr = 0;
+                     // c16th = 0;
+
+      // Handle external notes / arpeggiator
+      if(b_arp)
+      {
+         tick_ext_note_ons.empty();
+         tick_ext_note_on_vels.empty();
+         tick_ext_note_on_durs.empty();
+
+         tick_ext_note_offs.empty();
+         tick_ext_note_off_vels.empty();
+
+         handleExtNotes(_framePlay); // fill tick_ext* arrays
+         handleExtNotes(_frameRec);
+
+         b_tick_ext_first_note = false;
+         b_tick_ext_new_note = false;
+         handleExtActiveNotes();
+
+         if(b_tick_ext_first_note || ((arp_latch_num_notes <= 1) && b_tick_ext_new_note))
+         {
+            if(b_arp_reset)
+            {
+               if(null != pat)
+               {
+                  // trace "xxx ----------------- FIRST NOTE";
+                  if(b_arp_reset_q)
+                  {
+                     b_arp_reset_pending = true;
+                     // // tick_nr = 0;
+                     // // c16th = 0 / numTicks16th;
+                     // // pat.seek(0);
+                     // // queueSeekTicks = rec_tick_nr % numTicks16th;
+
+                     // // tick_nr = rec_tick_nr % numTicks16th;
+                     // // pat.seek(tick_nr);
+                     // // c16th = 0;
+                  }
+                  else
+                  {
+                     // trace "xxx b_arp_reset";
+                     tick_nr = 0;
+                     c16th = 0;
+                     pat.seek(0);
+                  }
+               }
+            }
+         }
+
+         // if(arp_active_notes.numElements)
+         //    trace "xxx arp_active_notes="+#(arp_active_notes);
+      }
+
+      if(b_arp_reset_pending)
+      {
+         if( (rec_tick_nr%numTicks16th) < (numTicks16th/2) )
+         {
+            b_arp_reset_pending = false;
+            tick_nr = 0;
+            c16th = 0;
+            pat.seek(0);
+            queueSeekTicks = (rec_tick_nr % numTicks16th);
+         }
+         else if(0 == (rec_tick_nr % numTicks16th))
+         {
+            b_arp_reset_pending = false;
+            tick_nr = 0;
+            c16th = 0;
+            pat.seek(0);
+            queueSeekTicks = (numTicks16th) + (rec_tick_nr % numTicks16th);
+         }
+      }
+
+      NodeBufferStorage bst <= getPlayStorage();
+
+      // // int ticks = current_song.song_offset - last_pattern_start_song_offset;
+      // // if(ticks < 0)
+      // //    ticks = 0;
+
+      int numRasterTicks = (current_song.ppq * 4) / (1 << bst.buffer_raster);
+
+      if(0 == (rec_tick_nr % numRasterTicks))
+      {
+         b_first_raster_ev = true;
+      }
+
+      // Handle buffer swap
+      if(bst.b_buffer_dbl)
+      {
+         if(_bPlaySeq)
+         {
+            if(0 == (rec_tick_nr % numTicks16th))
+            {
+               if(0 == (c16thRec % bst.buffer_rec_length))
+               {
+                  bst.swapBuffers(_bPlaySeq);
+               }
+            }
+         }
+      }
+
+      // Play buffer
+      // trace "xxx nb: nodeGetCurrentPlayPatternNr()="+nodeGetCurrentPlayPatternNr();
+      MIDIPipeFrame frPT;
+      frPT.empty();
+
+      // Handle buffer recording
+      if((NodeBufferStorage.BUFFER_MODE_RECORD == bst.buffer_mode) && replay.b_playing)
+      {
+         if(_bPlaySeq)
+         {
+            // Process note-on events
+            if(!bst.b_buffer_lock)
+            {
+               if(!bst.b_buffer_dbl)
+               {
+                  if(0 == (rec_tick_nr % numRasterTicks))
+                  {
+                     bst.clearRaster(numRasterTicks, numTicks16th);
+                  }
+               }
+
+               if(bst.b_buffer)
+               {
+                  bst.record(_framePlay);
+                  bst.record(_frameRec);
+               }
+            }
+         }
+      }
+      else if((NodeBufferStorage.BUFFER_MODE_PASSTHROUGH == bst.buffer_mode) || !replay.b_playing)
+      {
+         // Pass-through
+         if(!_bMuted)
+         {
+            if(null != pat)
+            {
+               if(bst.b_buffer)
+               {
+                  pat.processFrameEvents(frPT, _framePlay,
+                                         bst.buffer_dev_idx, bst.buffer_ch,
+                                         true/*bProcessOnlyIfEnabled*/
+                                         );
+                  pat.processFrameEvents(frPT, _frameRec,
+                                         bst.buffer_dev_idx, bst.buffer_ch,
+                                         true/*bProcessOnlyIfEnabled*/
+                                         );
+               }
+            }
+         }
+      }
+
+      if(!_bMuted && bst.b_buffer)
+      {
+         _frameRec.deleteNoteOnsByFlt(bst.buffer_dev_idx, bst.buffer_ch);
+         _framePlay.deleteNoteOnsByFlt(bst.buffer_dev_idx, bst.buffer_ch);
+      }
+
+      _framePlay.mergeFrame(frPT);
+
+      if(null != pat)
+      {
+         Envelope *playEnv;
+         PointerArray *playEvents;
+
+         if(bst.b_buffer_dbl)
+         {
+            if(@(bst.buffer_env_a) == @(bst.buffer_env))
+            {
+               playEnv <= bst.buffer_env_b;
+               playEvents <= bst.buffer_events_b;
+            }
+            else
+            {
+               playEnv <= bst.buffer_env_a;
+               playEvents <= bst.buffer_events_a;
+            }
+         }
+         else
+         {
+            playEnv <= bst.buffer_env_a;
+            playEvents <= bst.buffer_events_a;
+         }
+
+         pat.processFrame(_framePlay,
+                          _bMuted || (NodeBufferStorage.BUFFER_MODE_PASSTHROUGH == bst.buffer_mode),
+                          _bPlaySeq,
+                          bst,
+                          playEnv,
+                          playEvents
+                          );
+
+         // // if(-1 != queueSeekTicks)
+         // // {
+         // //    // Seek after quantized pattern restart
+         // //    pat.seek(queueSeekTicks + 1);
+         // //    tick_nr = queueSeekTicks;
+         // // }
+      }
+
+      if(_bPlaySeq)
+      {
+         tick_nr++;
+         rec_tick_nr++;
+      }
+   }
+
+}

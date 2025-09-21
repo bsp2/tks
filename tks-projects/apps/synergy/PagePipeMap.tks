@@ -1,0 +1,5612 @@
+// ----
+// ---- file   : PagePipeMap.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 20Sep2014, 21Sep2014, 22Sep2014, 23Sep2014, 27Sep2014, 25Nov2014, 12Feb2015
+// ----          23Feb2015, 14Mar2015, 19Apr2015, 27Apr2015, 13May2015, 16May2015, 26Jul2015
+// ----          11Nov2015, 12Nov2015, 14Nov2015, 23Dec2015, 13Mar2016, 12Jul2016, 03Feb2017
+// ----          04Feb2017, 09Feb2017, 10Feb2017, 04Mar2017, 05Mar2017, 09Mar2017, 12Mar2017
+// ----          13Mar2017, 14Mar2017, 17Mar2017, 19Apr2017, 16Jun2017, 01Jul2017, 30Jul2017
+// ----          28Oct2017, 04Jan2018, 15Apr2018, 28Apr2018, 24Jun2018, 27Nov2018, 13Jan2019
+// ----          19Jun2019, 27Aug2019, 29Aug2019, 14Sep2019, 21Sep2019, 22Sep2019, 16Oct2019
+// ----          20Oct2019, 28Oct2019, 01Nov2019, 02Nov2019, 05Nov2019, 13Mar2020, 26Apr2020
+// ----          08May2020, 11Nov2020, 12Nov2020, 27Nov2020, 26Jan2021, 01Feb2021, 10May2021
+// ----          13May2021, 14May2021, 31May2021, 26Jun2021, 25Jul2021, 28Jul2021, 30Dec2021
+// ----          18Mar2022, 26Jun2022, 08Nov2022, 09Dec2022, 04Feb2023, 11Feb2023, 18Feb2023
+// ----          14Mar2023, 18Mar2023, 21Jun2023, 29Jul2023, 25Sep2023, 03Oct2023, 06Oct2023
+// ----          13Oct2023, 14Oct2023, 15Oct2023, 20Oct2023, 21Oct2023, 24Oct2023, 30Oct2023
+// ----          31Oct2023, 02Nov2023, 05Nov2023, 10Nov2023, 24Nov2023, 03Feb2024, 06Feb2024
+// ----          22Mar2024, 24Mar2024, 02Oct2024, 16Jan2025, 23Jan2025, 26Jan2025, 28Feb2025
+// ----          07Jun2025, 08Jun2025, 12Jun2025, 11Sep2025
+// ----
+// ----
+// ----
+
+module MPagePipeMap;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class OutlineButton : Button {
+   // (note) label caption = node name
+
+   module boolean b_is_pipe;  // true=pipe button, false=node button
+   module boolean b_remark;   // true=has remark/comment (draw info icon)
+   module boolean b_rec;      // true=is recording
+   module boolean b_muted;
+
+   int node_x;  // position of node button within pipe (for cursor key navigation)
+   int node_y;  // within pipe
+   int map_node_y;  // within map
+   Node *sci;
+
+   String s_nodetype;  // "Trk", "Mon", ..
+   String s_patnr;     // 01A, ..
+   int c32_nodetype_bg;
+   int c32_nodetype_fg;
+
+
+   // <ui_init.png>
+   public method initOutlineButton(boolean _bPipe) {
+      b_is_pipe = _bPipe;
+      initButton();
+      setEnableClipCaption(true);
+      if(_bPipe)
+      {
+         setIconPlacement(Layout.LEFT | Layout.BOTTOM);
+         setTextPlacement(Layout.LEFT | Layout.TOP);
+      }
+      else
+      {
+         setIconPlacement(Layout.LEFT | Layout.TOP);
+         setTextPlacement(Layout.LEFT | Layout.BOTTOM);
+      }
+      setEnableDrawKeyboardFocus(false);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTabFocus() {
+      Button::onTabFocus();
+
+      PagePipeMap pm <= root_form.pg_pipemap;
+      pm.setLastSelectedBt(this);
+      pm.setLastSelectedBtPrev(null);
+      pm.selectPipeOrNodeByButton(this);
+   }
+
+   // <ui_handle.png>
+   public method newPipeOrNode(boolean _bShift) {
+
+      PagePipe     pgPipe     <= root_form.pg_pipe;
+      PageNode     pgNode     <= root_form.pg_node;
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+      PagePipeMap  pmap       <= root_form.pg_pipemap;
+
+      pmap.selectPipeOrNodeByButton(this);
+      pmap.setLastSelectedBt(this);
+
+      if(b_is_pipe && !pgPipeRoot.isSelectedPipeEmpty())
+      {
+         // Pipe
+         if(_bShift)
+            pgPipeRoot.handleClone();
+         else
+            pgPipeRoot.handleAdd();
+      }
+      else
+      {
+         // Node
+         if(_bShift)
+            pgPipe.handleClone();
+         else
+            pgPipe.handleAdd();
+      }
+   }
+
+   // <ui_render.png>
+   protected method drawProgress() : boolean {
+      boolean ret = false;
+      int patLen  = sci.nodeGetCurrentPlayPatternNumTicks();
+      if(patLen > 0)
+      {
+         // // if(!isLookAndFeelLight() && hasKeyboardFocus())
+         if(hasKeyboardFocus())
+         {
+            // Dark/Mono: Clear focus rectangle rendered by Button::onDraw() (overlaps with progress outline)
+            //     Light: Simply make progress bar a little easier to see
+            UIRenderer.DrawRectangle(0, 0, size_x, size_y, 1,
+                                     lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG, 0)
+                                     );
+         }
+
+         int playOff = sci.nodeGetCurrentPlayPatternTickOffset();
+         playOff = playOff % patLen;
+         // trace "xxx node="+sci.getNodeGID()+" playPos="+playOff+"/"+patLen;
+         int ticks16th = current_song.getNumTicksPer16th();
+
+         if(sci.getEnableNodeClassShow() && STConfig.pipemap_progress_warn_16th > 0)
+         {
+            int ticksWarn = STConfig.pipemap_progress_warn_16th * ticks16th;
+            if(playOff >= (patLen - ticksWarn))
+            {
+               float warnA;
+               int ticksFadeOut = ticks16th / 4;
+               if(playOff >= (patLen - ticksFadeOut))
+               {
+                  // Fade out
+                  warnA = float(playOff - (patLen - ticksFadeOut)) / ticksFadeOut;
+                  warnA *= warnA * warnA;
+                  warnA = 1.0 - warnA;
+               }
+               else
+               {
+                  // Fade in
+                  warnA = float(playOff - (patLen - ticksWarn)) / ticksWarn;
+                  warnA = 1.0 - warnA;
+                  warnA *= warnA * warnA;
+                  warnA = 1.0 - warnA;
+               }
+               UIRenderer.EnableBlending();
+               int c32Warn;
+               if(UI.IsDarkOrMono())
+                  c32Warn = argb(warnA*STConfig.pipemap_progress_warn_alpha, #ff, #ff, #ff);
+               else
+                  c32Warn = argb(warnA*STConfig.pipemap_progress_warn_alpha, #bf, #4f, #4f);
+               UIRenderer.DrawFilledRectangle(2, 2, size_x-4, size_y-4, c32Warn);
+               UIRenderer.DisableBlending();
+            }
+         }
+
+         // // playOff = (playOff / ticks16th) * ticks16th;
+
+         float px = 1;
+         float py = UI.IsHiDPI() ? 1 : 0;
+         float sx = size_x - 1 - px;
+         if(isLookAndFeelLight())// && hasKeyboardFocus())
+            sx += 1.0;
+         float sy = size_y - 1 - py;
+         if(UI.IsHiDPI())
+            sx -= 1.0f;
+
+         int totalNumPix = sx*2 + sy*2;
+         int curPix = float(playOff * totalNumPix) / patLen;
+         float rel = float(playOff) / patLen;
+         rel = (1.0 - rel);
+         rel *= rel;
+         rel = (1.0 - rel);
+         // (todo) move color to AppLookAndFeel
+         int c32;
+         if(UI.IsDarkOrMono())
+            c32 = argb(214, #af*rel, #ff*rel, #ff*rel);
+         else
+            c32 = argb(144, #ff * rel, #af - #af*rel, #00);
+         float r;
+
+         c32 = lnf.getTintedColor(LookAndFeel.COLOR_WINDOW_BG, c32);
+
+         // top
+         UIRenderer.SetLineWidth(UI.IsHiDPI() ? 2 : 1);
+         if(curPix < sx)
+            UIRenderer.DrawLine(px, py, curPix+px, py, c32);
+         else
+         {
+            UIRenderer.DrawLine(px, py, sx+px, py, c32);
+            // right
+            if(curPix < (sx + sy))
+               UIRenderer.DrawLine(sx+px, py, sx+px, curPix-sx+py, c32);
+            else
+            {
+               UIRenderer.DrawLine(sx+px, py, sx+px, sy+py, c32);
+               // bottom
+               if(curPix < (sx*2 + sy))
+               {
+                  r = curPix - sx - sy;
+                  UIRenderer.DrawLine(sx-r+px, sy+py, sx+px, sy+py, c32);
+               }
+               else
+               {
+                  UIRenderer.DrawLine(px, sy+py, sx+px, sy+py, c32);
+                  // left
+                  r = curPix - sx*2 - sy;
+                  UIRenderer.DrawLine(px, sy-r+py, px, sy+py, c32);
+               }
+            }
+         }
+         UIRenderer.SetLineWidth(1.0f);
+         ret = true;
+      }
+      return ret;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+      // draw pipe/node name
+      Button::onDraw();
+
+      boolean bDrawProgress = false;
+      if(replay.b_playing && STConfig.b_pipemap_progress && null != sci && (MIDIPIPE_STATE_PLAY == sci.parent_pipe.state))
+         bDrawProgress = drawProgress();
+
+      UIRenderer.EnableBlending();
+      UIRenderer.DrawFilledRectangle(2*UI.font_scaling, 5, 27*UI.font_scaling, 14*UI.font_scaling, c32_nodetype_bg);
+      UIRenderer.DrawText(s_nodetype,
+                          font,
+                          c32_nodetype_fg,
+                          c32_nodetype_fg,
+                          4*UI.font_scaling, 5,
+                          0/*availW*/, 0/*align*/
+                          );
+
+      UIRenderer.DrawText(s_patnr,
+                          font,
+                          c32_fg,
+                          c32_fg,
+                          4*UI.font_scaling+27*UI.font_scaling, 5,
+                          0/*availW*/, 0/*align*/
+                          );
+      UIRenderer.DisableBlending();
+
+      int c32Icon = lnf.getColor(LookAndFeel.COLOR_DEFAULT_ICON_BLEND_C32);
+
+      float iconXShift =  2;
+      float iconYShift = -2;
+      int c32;
+
+      if(b_remark)
+      {
+         Icon infoIcon <= UI.GetIcon(UI.PreferMonoIcons() ? "pipemap_info_mono" : "pipemap_info");
+         if(null != infoIcon)
+         {
+            c32 = app_lnf.getTintedColor(AppLookAndFeel.COLOR_PIPEMAP_PIPENODE_BT_INFOICON, c32Icon);
+
+            if(b_is_pipe)
+            {
+               infoIcon.drawIconScaledC32(getSizeX() - 28/**UI.icon_scaling*/ + iconXShift,
+                                          2+iconYShift,
+                                          // // 0.5, 0.5,
+                                          1.0, 1.0, ///UI.icon_scaling, UI.icon_scaling,
+                                          c32
+                                          );
+            }
+            else
+            {
+               infoIcon.drawIconScaledC32(getSizeX() - 28/**UI.icon_scaling*/ + iconXShift,
+                                          2+iconYShift,
+                                          // // 0.5, 0.5,
+                                          // UI.icon_scaling, UI.icon_scaling,
+                                          1.0, 1.0,
+                                          c32
+                                          );
+            }
+         }
+      }
+
+      if(b_rec)
+      {
+         Icon recIcon <= UI.GetIcon(UI.IsDarkOrMono() ? "record_1_noicons_mono" : "record_1_noicons");
+         if(null != recIcon)
+         {
+            float iconX;
+            iconX = getSizeX() - recIcon.getIconWidth() - (b_remark ? 24 : 6);
+
+            recIcon.drawIconScaledC32(iconX + iconXShift,
+                                      5+iconYShift,
+                                      1.0, 1.0,
+                                      #ffffffff
+                                      );
+         }
+      }
+
+      if(b_muted && !isLookAndFeelLight())
+      {
+         // Dim button (dark / mono LookAndFeel)
+         UIRenderer.EnableBlending();
+         UIRenderer.DrawFilledRectangle(0, 0, size_x, size_y,
+                                        #68000000
+                                        );
+         UIRenderer.DisableBlending();
+      }
+
+      // UIRenderer.DrawRectangle(-1, -1, size_x+2, size_y+2, 1,
+      UIRenderer.DrawRectangle(0, 0, size_x, size_y, 1,
+                               lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG,
+                                                 app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPENODE_BT_OUTLINE)
+                                                 )
+                               );
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.code)
+      {
+         case VKEY_UP:
+         case VKEY_DOWN:
+         case VKEY_LEFT:
+         case VKEY_RIGHT:
+            return false;
+      }
+
+      PagePipe     pgPipe     <= root_form.pg_pipe;
+      PageNode     pgNode     <= root_form.pg_node;
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+      PagePipeMap  pmap       <= root_form.pg_pipemap;
+
+      switch(_k.pressed)
+      {
+         case VKEY_DELETE:
+            pmap.selectPipeOrNodeByButton(this);
+            pmap.setLastSelectedBt(this);
+
+            if(b_is_pipe)
+            {
+               // Pipe
+               pgPipeRoot.confirmDeleteSelectedPipe();
+            }
+            else
+            {
+               // Node
+               pgPipe.confirmDeleteSelectedNode();
+            }
+            return true;
+
+         case VKEY_INSERT:
+            newPipeOrNode(_k.modShift());
+            return true;
+
+         case 'c':
+            pmap.selectPipeOrNodeByButton(this);
+            pmap.editPipeOrNodeComment(b_is_pipe);
+            break;
+      }
+
+      return Button::onKey(_k);
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if(_ev.isLeftButtonDown())
+      {
+         UI.ShowCursor(UIConstants.CURSOR_MOVE);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      OutlineButton btDst <= root_form.layerAt2f(_currentEv.mouse_abs_x, _currentEv.mouse_abs_y);
+
+      if(btDst instanceof OutlineButton)
+      {
+         // Update highlight
+         PagePipeMap pipemap <= root_form.pg_pipemap;
+         UI.LockRedraw();
+         pipemap.setLastSelectedBt(btDst);
+         pipemap.setLastSelectedBtPrev(this);
+         pipemap.scheduleUpdateMapState();
+         UI.UnlockRedraw();
+      }
+
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+
+      UI.RevertCursor();
+
+      OutlineButton btDst <= root_form.layerAt2f(_ev.mouse_abs_x, _ev.mouse_abs_y);
+      if(btDst instanceof OutlineButton)
+      {
+         if(@(btDst) != @(this))
+         {
+            // Move this after btDst
+            //  (same as first selecting this, then dbl-clicking btDst)
+            PagePipeMap pipemap <= root_form.pg_pipemap;
+            pipemap.setLastSelectedBt(btDst);
+            pipemap.setLastSelectedBtPrev(this);
+            pipemap.handleExecAction(PagePipeMap.EXEC_MOVE);
+            // (note) 'this' is not valid anymore
+         }
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+
+      if(_ev.rightButtonUp())
+      {
+         PagePipeMap pmap <= root_form.pg_pipemap;
+
+         pmap.selectPipeOrNodeByButton(this);
+         pmap.setLastSelectedBt(this);
+
+         UI.SetKeyboardFocus(this);
+         UI.RedrawAll();
+
+         pmap.showPipeOrNodeContextMenu(false/*bFocusFirst*/, false/*bNearButton*/);
+
+         return true;
+      }
+
+      return Button::onMouse(_ev);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      PagePipeMap pmap <= root_form.pg_pipemap;
+
+      if(VMOD_LCTRL == UI.GetKeyMod())
+      {
+         if(_ev.wheelUp())
+         {
+            if(STConfig.b_key_swap_pattern_home_end)
+               pmap.selectPreviousUsedPattern();
+            else
+               pmap.selectNextUsedPattern();
+            return true;
+         }
+         else if(_ev.wheelDown())
+         {
+            if(STConfig.b_key_swap_pattern_home_end)
+               pmap.selectNextUsedPattern();
+            else
+               pmap.selectPreviousUsedPattern();
+            return true;
+         }
+      }
+
+      return Button::onMouse(_ev);
+   }
+
+   // <ui_timer.png>
+   protected virtual scheduleToolTipTimer() {
+      // no tooltips
+      Global.Print(getToolTipCaption());
+   }
+}
+
+
+// <class.png>
+class PagePipeMap extends Page, MIDIMapContext, MIDIMapEventListener {
+
+   define String MMT_ROOT;
+
+   define String MMT_PIPEORNODE;
+   define String MMT_PIPEORNODE_INV;
+   define String MMT_PIPEORNODE_DELTA;
+   define String MMT_PIPEORNODE_PREV;
+   define String MMT_PIPEORNODE_NEXT;
+
+   define String MMT_PIPE;
+   define String MMT_PIPE_INV;
+   define String MMT_PIPE_DELTA;
+   define String MMT_PIPE_PREV;
+   define String MMT_PIPE_NEXT;
+
+   define String MMT_NODE;
+   define String MMT_NODE_INV;
+   define String MMT_NODE_DELTA;
+   define String MMT_NODE_PREV;
+   define String MMT_NODE_NEXT;
+
+   define String MMT_ACTION;
+   define String MMT_ACTION_INV;
+   define String MMT_ACTION_DELTA;
+   define String MMT_ACTION_INC;
+   define String MMT_ACTION_DEC;
+
+   define String MMT_ACTION_EXEC;
+   define String MMT_ACTION_IMMEDIATE;
+
+   define String MMT_ACTION_SET_SELECT;
+   define String MMT_ACTION_SET_EDIT;
+   define String MMT_ACTION_SET_MUTE;
+   define String MMT_ACTION_SET_SOLO;
+   define String MMT_ACTION_SET_MOVE;
+
+   define String MMT_SOURCE_SELECT;
+   define String MMT_SELECT_NONE;
+   define String MMT_SELECT_CURRENT;
+
+   define String MMT_EXEC_SELECT;
+   define String MMT_EXEC_EDIT;
+   define String MMT_EXEC_MUTE;
+   define String MMT_EXEC_SOLO;
+   define String MMT_EXEC_MOVE;
+
+   define String MMT_PATTERN_NR;
+   define String MMT_PATTERN_NR_INV;
+   define String MMT_PATTERN_NR_DELTA;
+   define String MMT_PATTERN_NR_INC;
+   define String MMT_PATTERN_NR_DEC;
+
+   define String MMT_PATTERN_NR_GROUP;
+   define String MMT_PATTERN_NR_GROUP_INV;
+   define String MMT_PATTERN_NR_GROUP_DELTA;
+   define String MMT_PATTERN_NR_GROUP_INC;
+   define String MMT_PATTERN_NR_GROUP_DEC;
+
+   define String MMT_PATTERN_NR_SUB;
+   define String MMT_PATTERN_NR_SUB_INV;
+   define String MMT_PATTERN_NR_SUB_DELTA;
+   define String MMT_PATTERN_NR_SUB_INC;
+   define String MMT_PATTERN_NR_SUB_DEC;
+
+   define String MMT_PATTERN_NR_1;
+   define String MMT_PATTERN_NR_2;
+   define String MMT_PATTERN_NR_3;
+   define String MMT_PATTERN_NR_4;
+   define String MMT_PATTERN_NR_5;
+   define String MMT_PATTERN_NR_6;
+   define String MMT_PATTERN_NR_7;
+   define String MMT_PATTERN_NR_8;
+   define String MMT_PATTERN_NR_9;
+   define String MMT_PATTERN_NR_10;
+   define String MMT_PATTERN_NR_11;
+   define String MMT_PATTERN_NR_12;
+   define String MMT_PATTERN_NR_13;
+   define String MMT_PATTERN_NR_14;
+   define String MMT_PATTERN_NR_15;
+   define String MMT_PATTERN_NR_16;
+
+   define String MMT_PATTERN_USED_NR_INC;
+   define String MMT_PATTERN_USED_NR_DEC;
+
+   define String MMT_PATTERN_USED_NR_1;
+   define String MMT_PATTERN_USED_NR_2;
+   define String MMT_PATTERN_USED_NR_3;
+   define String MMT_PATTERN_USED_NR_4;
+   define String MMT_PATTERN_USED_NR_5;
+   define String MMT_PATTERN_USED_NR_6;
+   define String MMT_PATTERN_USED_NR_7;
+   define String MMT_PATTERN_USED_NR_8;
+   define String MMT_PATTERN_USED_NR_9;
+   define String MMT_PATTERN_USED_NR_10;
+   define String MMT_PATTERN_USED_NR_11;
+   define String MMT_PATTERN_USED_NR_12;
+   define String MMT_PATTERN_USED_NR_13;
+   define String MMT_PATTERN_USED_NR_14;
+   define String MMT_PATTERN_USED_NR_15;
+   define String MMT_PATTERN_USED_NR_16;
+
+   define String MMT_GLOBAL_REC;
+   define String MMT_GLOBAL_REC_MMC;
+   define String MMT_GLOBAL_UNDO;
+
+   define int EXEC_SELECT = 0;
+   define int EXEC_EDIT   = 1;
+   define int EXEC_MUTE   = 2;
+   define int EXEC_SOLO   = 3;
+   define int EXEC_MOVE   = 4;
+
+   protected Panel *pn_toolbar;
+
+   protected ComboBox *cm_action;
+   protected Button *bt_exec;
+
+   protected CheckBox *cb_initpc;
+   protected CheckBox *cb_autolock_keyjazz;
+
+   protected Button *bt_newtrack;
+
+   protected Button *bt_rec_start;
+   protected Button *bt_rec_save;
+   protected Button *bt_rec_undo;
+
+   protected int rec_save_timestamp;
+
+   static StringArray patnr_display_names = [
+      "Group , Sub",
+      "Group + Sub"
+                                             ];
+   protected Button *bt_patnr;
+   protected LayerSwitch *ls_patnr;
+   protected ComboBox *cm_patnr;
+   protected ComboBox *cm_patnr_num;
+   protected ComboBox *cm_patnr_group;
+   protected ComboBox *cm_patnr_sub;
+
+   protected ScrollPane *sp_map;
+
+   protected PointerArray pipe_widgets; // array of PointerArrays (Pipe button + node buttons refs)
+   protected PointerArray all_pipenode_buttons;
+   int total_num_pipe_widgets;
+
+   // (note) updated in onLookAndFeelChanged()
+   static IntArray state_tints_bg = [#30006f00/*play*/,
+                                     #507f0000/*mute*/,
+                                     #98000000/*solo*/,
+                                     #30006f00/*play_seq*/,
+                                     #507f0000/*mute_seq*/,
+                                     ];
+
+   static IntArray state_tints_fg = [#ff000000/*play*/,
+                                     #ff000000/*mute*/,
+                                     #ff000000/*solo*/,
+                                     #ff000000/*play_seq*/,
+                                     #ff000000/*mute_seq*/,
+                                     ];
+
+   int c32_node_caption_fg;
+
+   protected OutlineButton *last_selected_bt;
+   protected OutlineButton *last_selected_bt_prev;
+
+   protected int preferred_node_x;
+
+   protected boolean b_action_immediate;
+
+   define String TA_UPDATEMAPSTATE;
+   protected TimerAction *ta_updatemapstate;
+
+   protected PopupMenu *pm_pipe;
+   protected PopupMenu *pm_node;
+   protected PopupMenu *pm_root;
+
+   protected int  quickadd_dev_idx;  // see handleQuickAddNodeByClassAndDevChString1()
+   protected byte quickadd_dev_ch;
+
+   define int DLG_FILENAME_MODE_PIPE_LOAD = 1;
+   define int DLG_FILENAME_MODE_PIPE_SAVE = 2;
+   define int DLG_FILENAME_MODE_NODE_LOAD = 3;
+   define int DLG_FILENAME_MODE_NODE_SAVE = 4;
+   int dlg_filename_mode;
+
+   public NewTrackDialog *dlg_new_track;
+
+   protected boolean b_dont_unset_nodes;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PagePipeMap.xfm"))
+      {
+         trace "[---] failed to parse PagePipeMap.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      StringArray patNrOptions;
+      Integer patNr = 0;
+      loop(128)
+      {
+         patNrOptions.add(patNr.printf("%3d"));
+         patNr++;
+      }
+      cm_patnr_num.setOptions(patNrOptions);
+
+      cm_patnr.setOptions(MNT_PatternView.patnr3_strings);
+
+      patNrOptions.free();
+      patNr=1;
+      loop(128/4)
+      {
+         if(patNr == 32)
+         {
+            patNrOptions.add("--");
+         }
+         else
+         {
+            patNrOptions.add(patNr.printf("%3d"));
+         }
+         patNr++;
+      }
+      cm_patnr_group.setOptions(patNrOptions);
+      patNrOptions.free();
+
+      ls_patnr.switchToLayerNr(STConfig.pipemap_patnr_display % ls_patnr.getNumSwitchLayers());
+
+      recursiveBuildTabCycleLists();
+
+      if(!initNewTrackDialog())
+         return false;
+
+      initMMC();
+
+      initTimers();
+
+      onLookAndFeelChanged();
+
+      return true;
+   }
+
+   // <midi.png>
+   protected method initMMC() {
+
+      mmcInit("PagePipeMap");
+
+      mmcAddTargetEx(MMT_ROOT,  CLASS_BUTTON, SYN_BUTTON_CLICK, "Root", "Show Pipe Root", DPY_DEFAULT);
+
+      // PipeOrNode
+      mmcAddTargetEx(MMT_PIPEORNODE,            CLASS_VALUE,  SYN_NONE,
+                     "PipeNode", "Pipe or Node", DPY_DEFAULT
+                     );
+      mmcAddTargetEx(MMT_PIPEORNODE_INV,        CLASS_VALUE,  SYN_NONE,
+                     "PipeNode", "Pipe or Node", DPY_DEFAULT
+                     );
+      mmcAddTargetEx(MMT_PIPEORNODE_DELTA,      CLASS_DELTA,  4,
+                     "PipeNode", "Pipe or Node", DPY_DEFAULT
+                     );
+      mmcAddTarget(MMT_PIPEORNODE_PREV,         CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_PIPEORNODE_NEXT,         CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      // Pipe
+      mmcAddTargetEx(MMT_PIPE,            CLASS_VALUE,  SYN_NONE,
+                     "Pipe", "Pipe", DPY_DEFAULT
+                     );
+      mmcAddTargetEx(MMT_PIPE_INV,        CLASS_VALUE,  SYN_NONE,
+                     "Pipe", "Pipe", DPY_DEFAULT
+                     );
+      mmcAddTargetEx(MMT_PIPE_DELTA,      CLASS_DELTA,  8,
+                     "Pipe", "Pipe", DPY_DEFAULT
+                     );
+      mmcAddTarget(MMT_PIPE_PREV,         CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_PIPE_NEXT,         CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      // Node
+      mmcAddTargetEx(MMT_NODE,            CLASS_VALUE,  SYN_NONE,
+                     "Node", "Node", DPY_DEFAULT
+                     );
+      mmcAddTargetEx(MMT_NODE_INV,        CLASS_VALUE,  SYN_NONE,
+                     "Node", "Node", DPY_DEFAULT
+                     );
+      mmcAddTargetEx(MMT_NODE_DELTA,      CLASS_DELTA,  8,
+                     "Node", "Node", DPY_DEFAULT
+                     );
+      mmcAddTarget(MMT_NODE_PREV,         CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_NODE_NEXT,         CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      // Action
+      mmcAddTargetExO(MMT_ACTION,                CLASS_VALUE,  SYN_NONE,
+                      "Action", "Action", DPY_DEFAULT, cm_action
+                      );
+      mmcAddTargetExO(MMT_ACTION_INV,         CLASS_VALUE,  SYN_NONE,
+                      "Action", "Action", DPY_DEFAULT, cm_action
+                      );
+      mmcAddTargetExO(MMT_ACTION_DELTA,       CLASS_DELTA,  8,
+                      "Action", "Action", DPY_DEFAULT, cm_action
+                      );
+      mmcAddTarget(MMT_ACTION_INC,            CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_ACTION_DEC,            CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      mmcAddTargetEx(MMT_ACTION_EXEC,         CLASS_BUTTON, SYN_BUTTON_CLICK, "Exec", "Execute Action", DPY_DEFAULT);
+      mmcAddTargetEx(MMT_ACTION_IMMEDIATE,    CLASS_BUTTON, SYN_BUTTON_SELECT, "Exec Immediately", "Exec Immediately", DPY_DEFAULT);
+
+      mmcAddTarget(MMT_ACTION_SET_SELECT,     CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_ACTION_SET_EDIT,       CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_ACTION_SET_MUTE,       CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_ACTION_SET_SOLO,       CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_ACTION_SET_MOVE,       CLASS_BUTTON, SYN_BUTTON_SELECT);
+
+      mmcAddTargetEx(MMT_SOURCE_SELECT,   CLASS_BUTTON, SYN_BUTTON_CLICK, "Select Source", "Select Source", DPY_DEFAULT);
+      mmcAddTargetEx(MMT_SELECT_NONE,     CLASS_BUTTON, SYN_BUTTON_CLICK, "Select None", "Select None", DPY_DEFAULT);
+      mmcAddTargetEx(MMT_SELECT_CURRENT,  CLASS_BUTTON, SYN_BUTTON_CLICK, "Select Current", "Select Current", DPY_DEFAULT);
+
+      mmcAddTargetEx(MMT_EXEC_SELECT,   CLASS_BUTTON, SYN_BUTTON_CLICK, "Select", "Select", DPY_DEFAULT);
+      mmcAddTargetEx(MMT_EXEC_EDIT,     CLASS_BUTTON, SYN_BUTTON_CLICK, "Edit",   "Edit",   DPY_DEFAULT);
+      mmcAddTargetEx(MMT_EXEC_MUTE,     CLASS_BUTTON, SYN_BUTTON_CLICK, "Mute",   "Mute",   DPY_DEFAULT);
+      mmcAddTargetEx(MMT_EXEC_SOLO,     CLASS_BUTTON, SYN_BUTTON_CLICK, "Solo",   "Solo",   DPY_DEFAULT);
+      mmcAddTargetEx(MMT_EXEC_MOVE,     CLASS_BUTTON, SYN_BUTTON_CLICK, "Move",   "Move",   DPY_WARN);
+
+      mmcAddTargetExO(MMT_PATTERN_NR,             CLASS_VALUE,  SYN_NONE,
+                      "PatNr", "Pattern number", DPY_DEFAULT, cm_patnr
+                      );
+      mmcAddTargetExO(MMT_PATTERN_NR_INV,         CLASS_VALUE,  SYN_NONE,
+                      "PatNr", "Pattern number", DPY_DEFAULT, cm_patnr
+                      );
+      mmcAddTargetExO(MMT_PATTERN_NR_DELTA,       CLASS_DELTA,  1,
+                      "PatNr", "Pattern number", DPY_DEFAULT, cm_patnr
+                      );
+      mmcAddTarget(MMT_PATTERN_NR_INC,            CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_PATTERN_NR_DEC,            CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      // Pat Group Nr
+      mmcAddTargetExO(MMT_PATTERN_NR_GROUP,       CLASS_VALUE,  SYN_NONE,
+                      "PatGroup", "Pattern group id", DPY_DEFAULT, cm_patnr_group
+                      );
+      mmcAddTargetExO(MMT_PATTERN_NR_GROUP_INV,   CLASS_VALUE,  SYN_NONE,
+                      "PatGroup", "Pattern group id", DPY_DEFAULT, cm_patnr_group
+                      );
+      mmcAddTargetExO(MMT_PATTERN_NR_GROUP_DELTA, CLASS_DELTA,  4,
+                      "PatGroup", "Pattern group id", DPY_DEFAULT, cm_patnr_group
+                      );
+      mmcAddTarget(MMT_PATTERN_NR_GROUP_INC,      CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_PATTERN_NR_GROUP_DEC,      CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      // Pattern Sub nr
+      mmcAddTargetExO(MMT_PATTERN_NR_SUB,         CLASS_VALUE,  SYN_NONE,
+                      "PatSub", "Pattern group sub id", DPY_DEFAULT, cm_patnr_sub
+                      );
+      mmcAddTargetExO(MMT_PATTERN_NR_SUB_INV,     CLASS_VALUE,  SYN_NONE,
+                      "PatSub", "Pattern group sub id", DPY_DEFAULT, cm_patnr_sub
+                      );
+      mmcAddTargetExO(MMT_PATTERN_NR_SUB_DELTA,   CLASS_DELTA,  4,
+                      "PatSub", "Pattern group sub id", DPY_DEFAULT, cm_patnr_sub
+                      );
+      mmcAddTarget(MMT_PATTERN_NR_SUB_INC,        CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_PATTERN_NR_SUB_DEC,        CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      mmcAddTarget(MMT_PATTERN_NR_1,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_2,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_3,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_4,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_5,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_6,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_7,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_8,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_9,              CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_10,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_11,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_12,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_13,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_14,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_15,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_NR_16,             CLASS_BUTTON, SYN_BUTTON_SELECT);
+
+      mmcAddTarget(MMT_PATTERN_USED_NR_INC,       CLASS_BUTTON, SYN_BUTTON_REPEAT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_DEC,       CLASS_BUTTON, SYN_BUTTON_REPEAT);
+
+      mmcAddTarget(MMT_PATTERN_USED_NR_1,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_2,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_3,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_4,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_5,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_6,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_7,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_8,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_9,         CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_10,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_11,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_12,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_13,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_14,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_15,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+      mmcAddTarget(MMT_PATTERN_USED_NR_16,        CLASS_BUTTON, SYN_BUTTON_SELECT);
+
+      mmcAddTargetEx(MMT_GLOBAL_REC,     CLASS_BUTTON, SYN_BUTTON_CLICK, "Glb Rec",  "Global Record",            DPY_DEFAULT);
+      mmcAddTargetEx(MMT_GLOBAL_REC_MMC, CLASS_BUTTON, SYN_BUTTON_CLICK, "Glb RecM", "Global Record (Send MMC)", DPY_DEFAULT);
+      mmcAddTargetEx(MMT_GLOBAL_UNDO,    CLASS_BUTTON, SYN_BUTTON_CLICK, "Glb Undo", "Global Undo",              DPY_DEFAULT);
+   }
+
+   // <midi.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         // trace "xxx PagePipeMap: boundEv target="+(boundEv.bound_target.target_name);
+
+         String tName <= boundEv.bound_target.target_name;
+
+         switch(tName)
+         {
+            case MMT_ROOT:
+               handleShowPipeRoot();
+               return true;
+
+            case MMT_PIPEORNODE:
+            case MMT_PIPEORNODE_DELTA:
+               selectPipeOrNodeByEvent(_ev, false/*bInv*/);
+               return true;
+
+            case MMT_PIPEORNODE_INV:
+               selectPipeOrNodeByEvent(_ev, true/*bInv*/);
+               return true;
+
+            case MMT_PIPEORNODE_PREV:
+               selectPreviousPipeOrNode(true/*bAllowUpdatePrefX*/);
+               return true;
+
+            case MMT_PIPEORNODE_NEXT:
+               selectNextPipeOrNode(true/*bAllowUpdatePrefX*/);
+               return true;
+
+            case MMT_PIPE:
+            case MMT_PIPE_DELTA:
+               selectPipeByEvent(_ev, false/*bInv*/);
+               return true;
+
+            case MMT_PIPE_INV:
+               selectPipeByEvent(_ev, true/*bInv*/);
+               return true;
+
+            case MMT_PIPE_PREV:
+               selectPreviousPipe();
+               return true;
+
+            case MMT_PIPE_NEXT:
+               selectNextPipe();
+               return true;
+
+            case MMT_NODE:
+            case MMT_NODE_DELTA:
+               selectNodeByEvent(_ev, false/*bInv*/);
+               return true;
+
+            case MMT_NODE_INV:
+               selectNodeByEvent(_ev, true/*bInv*/);
+               return true;
+
+            case MMT_NODE_PREV:
+               selectPreviousNode();
+               return true;
+
+            case MMT_NODE_NEXT:
+               selectNextNode();
+               return true;
+
+            case MMT_ACTION:
+            case MMT_ACTION_DELTA:
+               MMTListener.MMTHandleLayerEvent(cm_action, _ev, false/*bInv*/);
+               return true;
+
+            case MMT_ACTION_INV:
+               MMTListener.MMTHandleLayerEvent(cm_action, _ev, true/*bInv*/);
+               return true;
+
+            case MMT_ACTION_INC:
+               MMTListener.MMTHandleLayerInc(cm_action);
+               return true;
+
+            case MMT_ACTION_DEC:
+               MMTListener.MMTHandleLayerDec(cm_action);
+               return true;
+
+            case MMT_ACTION_SET_SELECT:
+               cm_action.setSelectedOptionAction(EXEC_SELECT);
+               return true;
+
+            case MMT_ACTION_SET_EDIT:
+               cm_action.setSelectedOptionAction(EXEC_EDIT);
+               return true;
+
+            case MMT_ACTION_SET_MUTE:
+               cm_action.setSelectedOptionAction(EXEC_MUTE);
+               return true;
+
+            case MMT_ACTION_SET_SOLO:
+               cm_action.setSelectedOptionAction(EXEC_SOLO);
+               return true;
+
+            case MMT_ACTION_SET_MOVE:
+               cm_action.setSelectedOptionAction(EXEC_MOVE);
+               return true;
+
+            case MMT_ACTION_EXEC:
+               handleExec();
+               return true;
+
+            case MMT_ACTION_IMMEDIATE:
+               handleToggleActionImmediate();
+               return true;
+
+            case MMT_SOURCE_SELECT:
+               selectSourceButton();
+               return true;
+
+            case MMT_SELECT_NONE:
+               setLastSelectedBt(null);
+               setLastSelectedBtPrev(null);
+               updateMapState();
+               Global.Print("Select none.");
+               return true;
+
+            case MMT_SELECT_CURRENT:
+               setLastSelectedBtToCurrent();
+               return true;
+
+            case MMT_EXEC_SELECT:
+               handleExecAction(EXEC_SELECT);
+               return true;
+
+            case MMT_EXEC_EDIT:
+               handleExecAction(EXEC_EDIT);
+               return true;
+
+            case MMT_EXEC_MUTE:
+               handleExecAction(EXEC_MUTE);
+               return true;
+
+            case MMT_EXEC_SOLO:
+               handleExecAction(EXEC_SOLO);
+               return true;
+
+            case MMT_EXEC_MOVE:
+               handleExecAction(EXEC_MOVE);
+               return true;
+
+            case MMT_PATTERN_NR:
+            case MMT_PATTERN_NR_DELTA:
+               MMTListener.MMTHandleLayerEvent(cm_patnr, _ev, false/*bInv*/);
+               return true;
+
+            case MMT_PATTERN_NR_INV:
+               MMTListener.MMTHandleLayerEvent(cm_patnr, _ev, true/*bInv*/);
+               return true;
+
+            case MMT_PATTERN_NR_INC:
+               MMTListener.MMTHandleLayerInc(cm_patnr);
+               return true;
+
+            case MMT_PATTERN_NR_DEC:
+               MMTListener.MMTHandleLayerDec(cm_patnr);
+               return true;
+
+            case MMT_PATTERN_NR_GROUP:
+            case MMT_PATTERN_NR_GROUP_DELTA:
+               MMTListener.MMTHandleLayerEvent(cm_patnr_group, _ev, false/*bInv*/);
+               return true;
+
+            case MMT_PATTERN_NR_GROUP_INV:
+               MMTListener.MMTHandleLayerEvent(cm_patnr_group, _ev, true/*bInv*/);
+               return true;
+
+            case MMT_PATTERN_NR_GROUP_INC:
+               MMTListener.MMTHandleLayerInc(cm_patnr_group);
+               return true;
+
+            case MMT_PATTERN_NR_GROUP_DEC:
+               MMTListener.MMTHandleLayerDec(cm_patnr_group);
+               return true;
+
+            case MMT_PATTERN_NR_SUB:
+            case MMT_PATTERN_NR_SUB_DELTA:
+               MMTListener.MMTHandleLayerEvent(cm_patnr_sub, _ev, false/*bInv*/);
+               return true;
+
+            case MMT_PATTERN_NR_SUB_INV:
+               MMTListener.MMTHandleLayerEvent(cm_patnr_sub, _ev, true/*bInv*/);
+               return true;
+
+            case MMT_PATTERN_NR_SUB_INC:
+               MMTListener.MMTHandleLayerInc(cm_patnr_sub);
+               return true;
+
+            case MMT_PATTERN_NR_SUB_DEC:
+               MMTListener.MMTHandleLayerDec(cm_patnr_sub);
+               return true;
+
+            case MMT_PATTERN_NR_1:
+            case MMT_PATTERN_NR_2:
+            case MMT_PATTERN_NR_3:
+            case MMT_PATTERN_NR_4:
+            case MMT_PATTERN_NR_5:
+            case MMT_PATTERN_NR_6:
+            case MMT_PATTERN_NR_7:
+            case MMT_PATTERN_NR_8:
+            case MMT_PATTERN_NR_9:
+            case MMT_PATTERN_NR_10:
+            case MMT_PATTERN_NR_11:
+            case MMT_PATTERN_NR_12:
+            case MMT_PATTERN_NR_13:
+            case MMT_PATTERN_NR_14:
+            case MMT_PATTERN_NR_15:
+            case MMT_PATTERN_NR_16:
+               selectPatternByIdx(int(tName.replace("MMT_PATTERN_NR_", "")) - 1,
+                                  true/*bSelectNodePat*/
+                                  );
+               return true;
+
+            case MMT_PATTERN_USED_NR_INC:
+               selectNextUsedPattern();
+               return true;
+
+            case MMT_PATTERN_USED_NR_DEC:
+               selectPreviousUsedPattern();
+               return true;
+
+            case MMT_PATTERN_USED_NR_1:
+            case MMT_PATTERN_USED_NR_2:
+            case MMT_PATTERN_USED_NR_3:
+            case MMT_PATTERN_USED_NR_4:
+            case MMT_PATTERN_USED_NR_5:
+            case MMT_PATTERN_USED_NR_6:
+            case MMT_PATTERN_USED_NR_7:
+            case MMT_PATTERN_USED_NR_8:
+            case MMT_PATTERN_USED_NR_9:
+            case MMT_PATTERN_USED_NR_10:
+            case MMT_PATTERN_USED_NR_11:
+            case MMT_PATTERN_USED_NR_12:
+            case MMT_PATTERN_USED_NR_13:
+            case MMT_PATTERN_USED_NR_14:
+            case MMT_PATTERN_USED_NR_15:
+            case MMT_PATTERN_USED_NR_16:
+               selectPatternByUsedIdx(int(tName.replace("MMT_PATTERN_USED_NR_", "")) - 1);
+               return true;
+
+            case MMT_GLOBAL_REC:
+               startRecording(false/*sendmmc*/);
+               return true;
+
+            case MMT_GLOBAL_REC_MMC:
+               startRecording(true/*sendmmc*/);
+               return true;
+
+            case MMT_GLOBAL_UNDO:
+               recUndoStateLoad(true/*bClearAfterwards*/);
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_updatemapstate <= TimerAction.New(TA_UPDATEMAPSTATE, this, 100);
+   }
+
+   // <ui_init.png>
+   protected method initNewTrackDialog() {
+      dlg_new_track <= new NewTrackDialog;
+      if(!dlg_new_track.init())
+      {
+         Global.Error("NewTrackDialog::init() failed");
+         return false;
+      }
+      return true;
+   }
+
+   // <method_find.png>
+   public method findUniqueAutoDevByCategoryName(String _name, Integer _retCh) : STX_MIDIOutDevice {
+      // called by AutoDeviceForm
+      STX_MIDIOutDevice ret <= dlg_new_track.findPreferredAutoDevByCategoryName(_name, _retCh);
+      if(null != ret)
+      {
+         if(STConfig.pipe_local_auto_devicename/*"<Pipe>"*/ == ret.getAliasOrDeviceName())
+         {
+            // Device is local to current pipe
+            MIDIPipe curPipe <= Global.GetCurrentPipe();
+            _retCh = current_song.findUniqueAutoCh(ret.dev_idx, _retCh, curPipe/*fltPipe*/);
+         }
+         else
+         {
+            _retCh = current_song.findUniqueAutoCh(ret.dev_idx, _retCh, null/*fltPipe*/);
+         }
+         if(-1 == _retCh)
+            ret <= null;  // should not be reachable
+      }
+      return ret;
+   }
+
+   // <ui_timer.png>
+   module method scheduleUpdateMapState() {
+      ta_updatemapstate.schedule();
+   }
+
+   // <method.png>
+   public method lazyShowMasterPipeWarning() {
+      // called when page is entered and after adding first pipe
+      if(1 == current_pipe_root.numPipes)
+      {
+         Global.Warning("Master (first) pipe output will not be sent to MIDI-out !");
+      }
+   }
+
+   // <ui.png>
+   public virtual pageEnter() {
+
+      b_dont_unset_nodes = false;
+
+      updateMap();
+
+      Page::pageEnter();
+
+      updateMapState();
+
+      MIDI.AddMIDIMapEventListener(this);
+
+      root_form.clearPageHistory();
+
+      cb_initpc.setSelected(STConfig.b_node_send_play_pattern_prgchg_when_replay_starts);
+      cb_autolock_keyjazz.setSelected(STConfig.b_autolock_keyjazz);
+      // // cb_icons.setSelected(STConfig.b_pipemap_icons);
+
+      bt_rec_undo.setEditable(Node.HaveAnyRecUndoStates());
+
+      lazyShowMasterPipeWarning();
+   }
+
+   // <ui.png>
+   public virtual pageLeave() {
+      Page::pageLeave();
+
+      MIDI.RemoveMIDIMapEventListener(this);
+
+      ta_updatemapstate.cancel();
+   }
+
+   // <ui.png>
+   public virtual pageFocusDefault() {
+      if(null != last_selected_bt)
+      {
+         UI.SetKeyboardFocus(last_selected_bt);
+      }
+      else
+      {
+         selectPipeByValue(0);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         cm_action,
+         bt_exec,
+
+         cb_initpc,
+
+         bt_newtrack,
+
+         bt_rec_save,
+         bt_rec_undo
+                              ];
+
+      if(0 == ls_patnr.getCurrentChildNr())
+      {
+         _retLayers.add(cm_patnr_group);
+         _retLayers.add(cm_patnr_sub);
+      }
+      else if(1 == ls_patnr.getCurrentChildNr())
+      {
+         _retLayers.add(cm_patnr);
+      }
+      else
+      {
+         _retLayers.add(cm_patnr_num);
+      }
+
+      PointerArray *paPipe;
+      foreach paPipe in pipe_widgets
+      {
+         Button *bt;
+         foreach bt in paPipe
+         {
+            _retLayers.add(bt);
+         }
+      }
+   }
+
+   // <method.png>
+   module method setPreferredNodeX(int _x) {
+      // trace "xxx setPreferredNodeX("+_x+") (was "+preferred_node_x+")";
+      // Utils.Backtrace();
+      preferred_node_x = _x;
+   }
+
+   // <method.png>
+   module method setLastSelectedBt(Button _bt) {
+      last_selected_bt <= _bt;
+
+      if(null != last_selected_bt)
+      {
+         bt_exec.setEditable(true);
+      }
+      else
+      {
+         bt_exec.setEditable(false);
+      }
+
+      Node sn <= getLastSelectedScriptNode();
+
+      cm_patnr      .setEditable(false);
+      cm_patnr_num  .setEditable(false);
+      cm_patnr_group.setEditable(false);
+      cm_patnr_sub  .setEditable(false);
+
+      if(sn instanceof Node)
+      {
+         cm_patnr      .setEditable(true);
+         cm_patnr_num  .setEditable(true);
+         cm_patnr_group.setEditable(true);
+         cm_patnr_sub  .setEditable(true);
+
+         updatePatNr(true/*bForceEditPatternNr*/);
+      }
+
+      if(@(this) == @(root_form.getCurrentPage()))
+      {
+         UI.SetKeyboardFocus(last_selected_bt);
+      }
+
+      makeSelectionVisible();
+   }
+
+   // <method.png>
+   module method setLastSelectedBtPrev(Button _bt) {
+      last_selected_bt_prev <= _bt;
+   }
+
+   // <method.png>
+   protected method setLastSelectedBtToCurrent() {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+
+      setLastSelectedBt(null);
+      setLastSelectedBtPrev(null);
+
+      if(null != pipe)
+      {
+         PagePipe pgPipe <= root_form.pg_pipe;
+
+         MIDIPipeNode node <= pgPipe.getSelectedNode();
+
+         if(null != node)
+         {
+            selectNodeButtonByPipeAndNodeIdx(pipe.pipeUsedIdx, node.nodeIdx);
+         }
+         else
+         {
+            selectPipeButtonByPipeUsedIdx(pipe.pipeUsedIdx);
+         }
+
+         if(null != last_selected_bt)
+         {
+            Global.Print("Select "+getButtonInfoString(last_selected_bt)+".");
+         }
+      }
+      else
+      {
+         Global.Warning("Select current: No pipe/node is current.");
+      }
+
+      updateMapState();
+   }
+
+   // <ui_show.png>
+   module method editPipeOrNodeComment(boolean _bIsPipe) {
+      PagePipe pgPipe <= root_form.pg_pipe;
+      PageNode pgNode <= root_form.pg_node;
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+      if(_bIsPipe)
+      {
+         root_form.showPage(RootForm.PAGE_PIPE, false/*bAllowHistory*/);
+      }
+      else
+      {
+         root_form.showPage(RootForm.PAGE_NODE, false/*bAllowHistory*/);
+      }
+
+      handleExecAction(PagePipeMap.EXEC_EDIT);
+
+      if(_bIsPipe)
+      {
+         pgPipe.toggleRemarkEditor(true/*bFromKeyboard*/, true/*bReturnToPipeMap*/);
+      }
+      else
+      {
+         pgNode.toggleRemarkEditor(true/*bFromKeyboard*/, true/*bReturnToPipeMap*/);
+      }
+   }
+
+   // <ui_handle.png>
+   module method togglePipeFinalOutput() {
+      MIDIPipe pipe <= getLastSelectedPipe();
+      if(null != pipe)
+      {
+         pipe.finalOutput = !pipe.finalOutput;
+
+         Global.Print("Pipe final-output mode is "+Utils.GetEnableString(pipe.finalOutput));
+      }
+   }
+
+   // <method.png>
+   public method selectNextArranger() {
+      // (note) prioritize unmuted arrangers, fall back to muted if no unmuted node was found
+
+      boolean bAllowMuted = false;
+      loop(2)
+      {
+         if(null != last_selected_bt)
+         {
+            int idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+
+            if(-1 != idx)
+            {
+               loop(all_pipenode_buttons.numElements)
+               {
+                  idx++;
+                  if(idx >= all_pipenode_buttons.numElements)
+                     idx = 0;
+
+                  OutlineButton ob <= all_pipenode_buttons.get(idx);
+
+                  if(!ob.b_is_pipe)
+                  {
+                     MIDIPipeNodeScriptProxy node <= ob.getUserData();
+                     if(node instanceof MIDIPipeNodeScriptProxy)
+                     {
+                        if(bAllowMuted || !node.isNodeOrPipeMuted())
+                        {
+                           Node sn <= node.sci;
+
+                           if(sn instanceof NodeArranger)
+                           {
+                              setLastSelectedBt(ob);
+                              setLastSelectedBtPrev(ob);
+                              selectPipeOrNodeByButton(ob);
+                              setPreferredNodeX(ob.node_x);
+
+                              Global.Print("Select next arranger, GID="+sn.getNodeGID()+" name=\""+sn.nodeGetName()+"\"");
+                              return;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+         bAllowMuted = true;
+      }
+   }
+
+   // <method.png>
+   public method selectNextInstrumentNode() {
+
+      if(null != last_selected_bt)
+      {
+         int idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+
+         if(-1 != idx)
+         {
+            loop(all_pipenode_buttons.numElements)
+            {
+               idx++;
+               if(idx >= all_pipenode_buttons.numElements)
+                  idx = 0;
+
+               OutlineButton ob <= all_pipenode_buttons.get(idx);
+
+               if(!ob.b_is_pipe)
+               {
+                  MIDIPipeNodeScriptProxy node <= ob.getUserData();
+                  if(node instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     if(!node.isNodeOrPipeMuted())
+                     {
+                        Node sn <= node.sci;
+
+                        String *sNodeTypeName;
+                        foreach sNodeTypeName in STConfig.newtrackdialog_node_types_instr
+                        {
+                           Object *clazz;
+                           if("Freeform" == sNodeTypeName)
+                              clazz <= NodeSeq;
+                           else
+                              clazz <= TKS.findScriptClass(null/*nsp*/, "Node"+sNodeTypeName);
+
+                           if(sn instanceof clazz)
+                           {
+                              setLastSelectedBt(ob);
+                              setLastSelectedBtPrev(ob);
+                              selectPipeOrNodeByButton(ob);
+                              setPreferredNodeX(ob.node_x);
+
+                              Global.Print("Select next unmuted instrument-type node, GID="+sn.getNodeGID()+" name=\""+sn.nodeGetName()+"\"");
+                              return;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectNextArrangerEnabledNode() {
+
+      if(null != last_selected_bt)
+      {
+         int idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+
+         if(-1 != idx)
+         {
+            loop(all_pipenode_buttons.numElements)
+            {
+               idx++;
+               if(idx >= all_pipenode_buttons.numElements)
+                  idx = 0;
+
+               OutlineButton ob <= all_pipenode_buttons.get(idx);
+
+               if(!ob.b_is_pipe)
+               {
+                  MIDIPipeNodeScriptProxy node <= ob.getUserData();
+                  if(node instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     if(!node.isNodeOrPipeMuted())
+                     {
+                        Node sn <= node.sci;
+
+                        if(sn.getEnableNodeClassShow())
+                        {
+                           setLastSelectedBt(ob);
+                           setLastSelectedBtPrev(ob);
+                           selectPipeOrNodeByButton(ob);
+                           setPreferredNodeX(ob.node_x);
+
+                           Global.Print("Select next arranger-enabled node, GID="+sn.getNodeGID()+" name=\""+sn.nodeGetName()+"\"");
+                           return;
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePatNr(boolean _bForceEditPatternNr) {
+      Node sn <= getLastSelectedScriptNode();
+
+      if(sn instanceof Node)
+      {
+         int patNr;
+
+         if(_bForceEditPatternNr)
+         {
+            // When called immediately after pattern has changed
+            patNr = sn.nodeGetCurrentEditPatternNr();
+         }
+         else
+         {
+            // When called from replay timer
+            patNr = sn.nodeGetCurrentPlayPatternNr();
+         }
+
+         cm_patnr      .setSelectedOption(patNr);
+         cm_patnr_num  .setSelectedOption(patNr);
+         cm_patnr_group.setSelectedOption(patNr >> 2);
+         cm_patnr_sub  .setSelectedOption(patNr & 3);
+
+         if(127 == patNr)
+         {
+            cm_patnr_sub.setOptions(["A","B","C","/"]);
+         }
+         else
+         {
+            cm_patnr_sub.setOptions(["A","B","C","D"]);
+         }
+      }
+   }
+
+   // <method_get.png>
+   protected static GetPipeNodeSizeY() : int {
+      if(UI.font_scaling == 2.0)
+         return 68;
+      return 40 * UI.font_scaling;
+   }
+
+   // <ui_update.png>
+   public method updateMap() {
+
+      int oldVX = sp_map.getViewOffsetX();
+      int oldVY = sp_map.getViewOffsetY();
+
+      setLastSelectedBt(null);
+      setLastSelectedBtPrev(null);
+
+      MIDIPipe curPipe <= Global.GetCurrentPipe();
+      MIDIPipeNode curNode <= Global.GetCurrentNode();
+
+      UI.LoseKeyboardFocusIfWithin(sp_map.getInnerLayer(), true/*bQuiet*/);
+
+      sp_map.removeChildHierarchy();
+      sp_map.setEnableAdaptiveViewSize(true);
+
+      MIDIPipe *pipe;
+      int pipeIdx = 0;
+
+      Panel pnAllOuter <= new Panel;
+      pnAllOuter.initPanel();
+      pnAllOuter.setLayout(SuperBorderLayout);
+      pnAllOuter.setAlignment(Layout.EXPANDX);
+      pnAllOuter.setPadding4fUnscaled(4,4,4,4);
+      pnAllOuter.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_BG_TINT));
+
+      Panel pnAll <= new Panel;
+      pnAll.initPanel();
+      pnAll.setLayout(SuperBorderLayout);
+      pnAll.setAlignment(Layout.EXPANDX);
+      pnAll.setPadding4f(0,0,0,0);
+
+      pnAllOuter.addLayer(deref pnAll, Layout.TOP);
+
+      pipe_widgets.free();
+      all_pipenode_buttons.free();
+      total_num_pipe_widgets = 0;
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("PagePipeMap::updateMap: numPipes="+current_pipe_root.numPipes);
+
+      int mapNodeY = 0;
+
+      loop(current_pipe_root.numPipes)
+      {
+         PointerArray paPipe <= new PointerArray;
+
+         pipe_widgets.add(#(deref paPipe));
+
+         pipe <= current_pipe_root.getPipeByUsedIdx(pipeIdx);
+
+         Panel pnPipe <= new Panel;
+         pnPipe.initPanel();
+         pnPipe.setLayout(SuperBorderLayout);
+         pnPipe.setAlignment(Layout.EXPANDX);
+         // // if(isLookAndFeelLight())
+         // //    pnPipe.setPadding4fUnscaled(4,8,0,0);
+         // // else
+            pnPipe.setPadding4fUnscaled(2,8,0,0);
+
+         pnAll.addLayer(deref pnPipe, Layout.BOTTOM);
+
+         OutlineButton btPipe <= new OutlineButton;
+         btPipe.initOutlineButton(true/*bPipe*/);
+         btPipe.node_x = -1;
+         btPipe.node_y = -1;
+         btPipe.map_node_y = mapNodeY;
+
+         all_pipenode_buttons.add(btPipe);
+
+         total_num_pipe_widgets++;
+
+         int numNodesPerRow;
+         if(STConfig.pipemap_num_nodes_per_row > 0)
+            numNodesPerRow = STConfig.pipemap_num_nodes_per_row;
+         else
+            numNodesPerRow = ((root_form.getSizeX()-114*UI.font_scaling) / (97.0*UI.font_scaling));
+         if(numNodesPerRow < 7)
+            numNodesPerRow = 7;
+         // trace "xxx numNodesPerRow="+numNodesPerRow+" STConfig.pipemap_num_nodes_per_row="+STConfig.pipemap_num_nodes_per_row;
+
+         btPipe.setRequiredSizeY(GetPipeNodeSizeY());
+         btPipe.setForegroundColor(state_tints_fg.get(pipe.state));
+         btPipe.setInnerPadding4f(1, 4, 2, 1);
+         // // if(isLookAndFeelLight())
+         // //    btPipe.setPadding4fUnscaled(3,3,3,3);
+         // // else
+            btPipe.setPadding4fUnscaled(2,3,2,3);
+         btPipe.setCaptionSizeReserve("ABCDEFGHIJKLMN");
+
+         btPipe.setUserData(pipe);
+         btPipe.setToolTipCaption("Pipe "+(pipeIdx+1)+"/"+current_pipe_root.getNumPipes()+": \""+pipe.name+"\"");
+         btPipe.setBackgroundTint(UI.TintColor32(state_tints_bg.get(pipe.state),
+                                                 app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_BG_TINT)
+                                                 )
+                                  );
+         btPipe.b_remark = (null != pipe.remark);
+
+         paPipe.add(btPipe);
+
+         Panel pnPipeBorder <= new Panel;
+         pnPipeBorder.initPanel();
+         pnPipeBorder.setLayout(SuperBorderLayout);
+         pnPipeBorder.setAlignment(Layout.LEFT);
+         pnPipeBorder.setPadding4f(0,0,0,0);
+         pnPipeBorder.addLayer(deref btPipe, Layout.CENTER);
+
+         if(@(pipe) == @(curPipe))
+         {
+            pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_CUR_BORDER_TINT));
+
+            setLastSelectedBt(btPipe);
+         }
+
+         pnPipe.addLayer(deref pnPipeBorder, Layout.LEFT);
+
+         Panel pnNodes <= new Panel;
+         pnNodes.initPanel();
+         pnNodes.setLayout(SuperBorderLayout);
+         pnNodes.setAlignment(Layout.LEFT);
+         pnNodes.setPadding4fUnscaled(0,4,0,0);
+         pnNodes.setEnableCollapse(true);
+
+         pnPipe.addLayer(deref pnNodes, Layout.CENTER);
+
+         int nodeIdx = 0;
+         int nodeX = 0;
+         int nodeY = -1;
+
+         Panel *pnNodeRow;
+
+         boolean bOverflowFirstCol = false;
+
+         loop(pipe.numNodes)
+         {
+            MIDIPipeNodeScriptProxy node <= pipe.getNodeByIdx(nodeIdx);
+
+            if(node instanceof MIDIPipeNodeScriptProxy)
+            {
+               Node sn <= node.sci;
+               if(sn instanceof Node)
+               {
+                  // Unset node ref in editor
+                  NodeEditor nodeEditor <= sn.nodeGetEditor();
+                  if(null != nodeEditor)
+                  {
+                     if(!b_dont_unset_nodes)
+                        nodeEditor.unsetNode();
+                  }
+
+                  if(0 == (nodeIdx % numNodesPerRow))
+                  {
+                     pnNodeRow <= new Panel;
+                     pnNodeRow.initPanel();
+                     pnNodeRow.setLayout(SuperBorderLayout);
+                     pnNodeRow.setAlignment(Layout.LEFT);
+                     pnNodeRow.setPadding4f(0,0,0,0);
+                     pnNodes.addLayer(deref pnNodeRow, Layout.BOTTOM);
+                     nodeX = 0;
+                     nodeY++;
+                  }
+
+                  OutlineButton btNode <= new OutlineButton;
+                  btNode.initOutlineButton(false/*bPipe*/);
+                  btNode.node_x     = nodeX++;
+                  btNode.node_y     = nodeY;
+                  btNode.map_node_y = mapNodeY;
+                  btNode.sci       <= sn;
+
+                  all_pipenode_buttons.add(btNode);
+
+                  total_num_pipe_widgets++;
+
+
+                  Icon *nodeIcon;
+
+                  nodeIcon <= UI.GetIcon("pipemap_no_icons");
+                  btNode.setRequiredSizeY(GetPipeNodeSizeY());
+                  btNode.setIconPadRight(11);
+
+                  if(null != nodeIcon)
+                  {
+                     btNode.setIcon(nodeIcon);
+                     btNode.setIconScale(STConfig.font_scaling);
+                     btNode.setEnableIconBlendAdd(true);
+                     btNode.setIconBlendC32(app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_ICON_BLEND_C32));
+                  }
+                  else
+                  {
+                     btNode.setCaption("N");
+                  }
+
+                  // // btNode.setIconPlacement(Layout.TOP);
+                  // // btNode.setTextPlacement(Layout.BOTTOM);
+                  btNode.setForegroundColor(state_tints_fg[node.state]);
+
+                  btNode.setInnerPadding4f(4, 4, 4, 4);
+                  // // if(isLookAndFeelLight())
+                  // //    btNode.setPadding4fUnscaled(3,3,3,3);
+                  // // else
+                     btNode.setPadding4fUnscaled(2,3,2,3);
+                  if(UI.font_scaling == 2.0)
+                     btNode.setCaptionSizeReserve("ABCDEFGHIJMii");
+                  else
+                     btNode.setCaptionSizeReserve("ABCDEFGHIJ");
+
+                  String nodeName;
+                  nodeName.empty();
+
+                  nodeName.append(node.yacMetaClassName().getc(0));
+
+                  Integer ioPatNr = (sn.nodeGetCurrentPlayPatternNr() + 1);
+                  ioPatNr.printf("%3d:") => nodeName;
+
+                  // // nodeName.append("\n");
+
+                  btNode.setCaption(nodeName);
+                  btNode.setEnableAbbreviation(false);
+                  btNode.setToolTipCaption("Node "+(nodeIdx+1)+"/"+pipe.getNumNodes()+": \""+node.name+"\" "+sn.getAutoPortString());
+                  btNode.setBackgroundTint(state_tints_bg.get(node.state));
+                  btNode.setUserData(node);
+                  btNode.b_remark = (null != node.remark);
+
+                  paPipe.add(btNode);
+
+                  Panel pnNodeBorder <= new Panel;
+                  pnNodeBorder.initPanel();
+                  pnNodeBorder.setLayout(SuperBorderLayout);
+                  pnNodeBorder.setAlignment(Layout.LEFT);
+                  pnNodeBorder.setPadding4f(0,0,0,0);
+                  pnNodeBorder.addLayer(deref btNode, Layout.CENTER);
+
+                  if(@(node) == @(curNode))
+                  {
+                     pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_CUR_BORDER_TINT));
+
+                     setLastSelectedBt(btNode);
+                  }
+
+                  pnNodeRow.addLayer(deref pnNodeBorder, Layout.RIGHT);
+               }
+            }
+
+            // Next node
+            nodeIdx++;
+         }
+
+         // Next pipe
+         mapNodeY++;
+         pipeIdx++;
+      }
+
+      sp_map.setInnerLayer(deref pnAllOuter);
+      sp_map.updateLayout();
+
+      queueRelayout();
+
+      sp_map.setViewOffset(oldVY/*top*/, oldVX/*left*/);
+
+      makeSelectionVisible();
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("PagePipeMap::updateMap: LEAVE");
+
+      // trace "xxx sp_map.geo="+sp_map.getGeometryString();
+      // trace "xxx pnAll.geo="+pnAll.getGeometryString();
+   }
+
+   // <midi.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(STConfig.b_show_ctl_info)
+      {
+         MIDIMapEvent evXForm = _ev;
+         MIDIMorphScene.TransformEvent(evXForm);
+         if(evXForm.isValid())
+         {
+            // trace "xxx mmlHandleEventUI: _ev.arg1="+_ev.arg1+" evXForm.type="+evXForm.type+" evXForm.arg1="+evXForm.arg1;
+
+            evXForm.echoTransformForced();
+            if(STConfig.b_show_ctl_info_hifreq || !evXForm.isHiFreqEvent())
+            {
+               if(evXForm.isValid())
+                  Global.PrintFast(evXForm.getInfoStringForPipeMap());
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_update.png>
+   public method updateMapState() {
+
+      // trace "xxx PagePipeMap::updateMapState: ENTER";
+
+      MIDIPipe curPipe <= Global.GetCurrentPipe();
+      MIDIPipeNode curNode <= Global.GetCurrentNode();
+
+      MIDIPipe *pipe;
+      int pipeIdx = 0;
+
+      loop(current_pipe_root.numPipes)
+      {
+         PointerArray paPipe <= pipe_widgets.get(pipeIdx);
+
+         if(null != paPipe)
+         {
+            pipe <= current_pipe_root.getPipeByUsedIdx(pipeIdx);
+
+            int nodeIdx = 0;
+
+            OutlineButton btPipe <= paPipe.get(0);
+            btPipe.b_muted = (MIDIPIPE_STATE_MUTE == pipe.state);
+
+            Panel pnPipeBorder <= btPipe.getParent();
+
+            if(@(pipe) == @(curPipe))
+            {
+               if(@(btPipe) == @(last_selected_bt))
+               {
+                  pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_CUR_SEL_BORDER_TINT));
+               }
+               else if(@(btPipe) == @(last_selected_bt_prev))
+               {
+                  pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_CUR_SEL_PREV_BORDER_TINT));
+               }
+               else
+               {
+                  pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_CUR_BORDER_TINT));
+               }
+            }
+            else
+            {
+               if(@(btPipe) == @(last_selected_bt))
+               {
+                  pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_OTHER_SEL_BORDER_TINT));
+               }
+               else if(@(btPipe) == @(last_selected_bt_prev))
+               {
+                  pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_OTHER_SEL_PREV_BORDER_TINT));
+               }
+               else
+               {
+                  pnPipeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_OTHER_BORDER_TINT));
+               }
+            }
+
+
+            btPipe.setBackgroundTint(UI.TintColor32(state_tints_bg.get(pipe.state),
+                                                    app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPE_BG_TINT)
+                                                    )
+                                     );
+            btPipe.setForegroundColor(state_tints_fg.get(pipe.state));
+
+            String pipeName <= pipe.name;
+            if(null != pipeName)
+            {
+               btPipe.setCaption((pipe.pipeIdx+1)+":"+pipeName.abbrev(16));
+               btPipe.setToolTipCaption(pipeName);
+            }
+            else
+            {
+               btPipe.setCaption((pipe.pipeIdx+1)+":-");
+               btPipe.setToolTipCaption("-");
+            }
+
+            loop(pipe.numNodes)
+            {
+               MIDIPipeNodeScriptProxy node <= pipe.getNodeByIdx(nodeIdx);
+
+               if(node instanceof MIDIPipeNodeScriptProxy)
+               {
+                  Node sn <= node.sci;
+                  if(sn instanceof Node)
+                  {
+                     OutlineButton btNode <= paPipe.get(nodeIdx + 1);
+                     btNode.b_muted = node.isNodeOrPipeMuted();
+
+                     btNode.setToolTipCaption((nodeIdx+1)+"/"+pipe.getNumNodes()+": \""+node.name+"\" "+sn.getAutoPortString());
+
+                     Panel pnNodeBorder <= btNode.getParent();
+
+                     String nodeName;
+                     nodeName.empty();
+
+                     int cPatNr = sn.nodeGetCurrentPlayPatternNr();
+                     String sPatNr <= btNode.s_patnr;
+                     if(cPatNr > 126)
+                     {
+                        // Empty pattern
+                        sPatNr = "--/";
+                     }
+                     else
+                     {
+                        Integer ioPatNrGroup = (cPatNr >> 2) + 1;
+                        Integer patNrSub     = (cPatNr  & 3) ;
+                        ioPatNrGroup.printf("%02d") => sPatNr;
+                        sPatNr.append(tcchar("ABCD".getc(patNrSub)));
+                     }
+                     if(sn.b_node_ignore_seek_prgchg_mute)
+                        sPatNr.append("*i");
+
+                     // // nodeName.append("\n");
+
+                     if(null != node.getName())
+                     {
+                        nodeName.append(node.getName().abbrev(20));
+                     }
+
+                     btNode.s_nodetype = sn.nodeGetTypeNameShort().toUpper();
+                     if(MIDIPIPE_STATE_MUTE == node.state)
+                     {
+                        btNode.c32_nodetype_bg = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPENODE_BT_NODETYPE_MUTE_BG);
+                        btNode.c32_nodetype_fg = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPENODE_BT_NODETYPE_MUTE_FG);
+                     }
+                     else
+                     {
+                        btNode.c32_nodetype_bg = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPENODE_BT_NODETYPE_BG);
+                        btNode.c32_nodetype_fg = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_PIPENODE_BT_NODETYPE_FG);
+                     }
+
+                     btNode.setCaption(nodeName);
+
+                     if((MIDIPIPE_STATE_PLAY == node.state) && sn.nodeIsSequencer())
+                     {
+                        btNode.setBackgroundTint(state_tints_bg.get(3/*play_seq*/));
+                        btNode.setForegroundColor(state_tints_fg.get(3/*play_seq*/));
+                     }
+                     else if((MIDIPIPE_STATE_MUTE == node.state) && sn.nodeIsSequencer())
+                     {
+                        btNode.setBackgroundTint(state_tints_bg.get(4/*mute_seq*/));
+                        btNode.setForegroundColor(state_tints_fg.get(4/*mute_seq*/));
+                     }
+                     else
+                     {
+                        btNode.setBackgroundTint(state_tints_bg.get(node.state));
+                        btNode.setForegroundColor(state_tints_fg[node.state]);
+                     }
+
+                     btNode.b_rec = sn.nodeIsArmedForRecording();
+
+                     if(@(node) == @(curNode))
+                     {
+                        if(@(btNode) == @(last_selected_bt))
+                           pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_CUR_SEL_BORDER_TINT));
+                        else if(@(btNode) == @(last_selected_bt_prev))
+                           pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_CUR_SEL_PREV_BORDER_TINT));
+                        else
+                           pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_CUR_BORDER_TINT));
+                     }
+                     else
+                     {
+                        if(@(btNode) == @(last_selected_bt))
+                           pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_OTHER_SEL_BORDER_TINT));
+                        else if(@(btNode) == @(last_selected_bt_prev))
+                           pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_OTHER_SEL_PREV_BORDER_TINT));
+                        else
+                           pnNodeBorder.setPanelAlphaAndTint(255, app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_NODE_OTHER_BORDER_TINT));
+                     }
+                  } // if sn instanceof Node
+               } // if node instance MIDIPipeNodeScriptProxy
+
+               // Next node
+               nodeIdx++;
+            }
+         }
+
+         // Next pipe
+         pipeIdx++;
+      }
+
+      redraw();
+
+      // trace "xxx PagePipeMap::updateMapState: LEAVE";
+   }
+
+   // <method.png>
+   module method makeSelectionVisible() {
+      if(null != last_selected_bt)
+      {
+         sp_map.makeWidgetVisible(last_selected_bt.parent);
+      }
+   }
+
+   // <method.png>
+   module method selectPipeOrNodeByButton(Button _bt) {
+
+      MIDIPipe pipe <= _bt.getUserData();
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+      if(pipe instanceof MIDIPipe)
+      {
+         pgRoot.selectPipeByIdx(pipe.pipeIdx);
+      }
+      else
+      {
+         MIDIPipeNode node <= pipe;
+         pgRoot.selectPipeAndNodeByIdx(node.parent.pipeIdx, node.nodeIdx);
+      }
+
+      makeSelectionVisible();
+
+      updateMapState();
+   }
+
+   // <method.png>
+   protected method selectPipeOrNodeByValue(float _value) {
+      int idx = total_num_pipe_widgets * _value;
+
+      if(idx >= total_num_pipe_widgets)
+         idx = total_num_pipe_widgets - 1;
+
+      if(idx >= 0)
+      {
+         int cIdx = 0;
+         PointerArray *paPipe;
+
+         foreach paPipe in pipe_widgets
+         {
+            OutlineButton *bt;
+
+            foreach bt in paPipe
+            {
+               if(cIdx == idx)
+               {
+                  setLastSelectedBt(bt);
+                  selectPipeOrNodeByButton(bt);
+                  setPreferredNodeX(bt.node_x);
+                  return;
+               }
+
+               cIdx++;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectNextPipeOrNode(boolean _bAllowUpdatePrefX) {
+      // trace "xxx selectNextPipeOrNode: bAllowUpdatePrefX="+_bAllowUpdatePrefX+" prefNodeX="+preferred_node_x;
+      if(null != last_selected_bt)
+      {
+         PointerArray *paPipe;
+         OutlineButton btPrev <= null;
+
+         foreach paPipe in pipe_widgets
+         {
+            OutlineButton *bt;
+
+            foreach bt in paPipe
+            {
+               if(@(btPrev) == @(last_selected_bt))
+               {
+                  setLastSelectedBt(bt);
+                  selectPipeOrNodeByButton(bt);
+
+                  if(_bAllowUpdatePrefX)
+                     setPreferredNodeX(bt.node_x);
+                  else if(bt.b_is_pipe)
+                     selectNodeByValueDelta(preferred_node_x);
+
+                  return;
+               }
+
+               btPrev <= bt;
+            }
+         }
+      }
+      else
+      {
+         // Select first
+         selectPipeOrNodeByValue(0);
+      }
+   }
+
+   // <method.png>
+   public method selectPreviousPipeOrNode(boolean _bAllowUpdatePrefX) {
+      if(null != last_selected_bt)
+      {
+         PointerArray *paPipe;
+         OutlineButton btPrev <= null;
+
+         foreach paPipe in pipe_widgets
+         {
+            OutlineButton *bt;
+
+            foreach bt in paPipe
+            {
+               if(@(bt) == @(last_selected_bt))
+               {
+                  if(null != btPrev)
+                  {
+                     setLastSelectedBt(btPrev);
+                     selectPipeOrNodeByButton(btPrev);
+
+                     if(_bAllowUpdatePrefX)
+                        setPreferredNodeX(btPrev.node_x);
+                     else if(btPrev.b_is_pipe)
+                        selectNodeByValueDelta(preferred_node_x);
+                  }
+
+                  return;
+               }
+
+               btPrev <= bt;
+            }
+         }
+      }
+      else
+      {
+         // Select last
+         selectPipeOrNodeByValue(1.0);
+      }
+   }
+
+   // <method.png>
+   protected method selectPipeOrNodeByValueDelta(int _delta) {
+      if(_delta > 0)
+      {
+         loop(_delta)
+            selectNextPipeOrNode(true/*bAllowUpdatePrefX*/);
+      }
+      else if(_delta < 0)
+      {
+         loop(-_delta)
+            selectPreviousPipeOrNode(true/*bAllowUpdatePrefX*/);
+      }
+   }
+
+   // <method.png>
+   protected method selectPipeOrNodeByEvent(MIDIMapEvent _ev, boolean _bInv) {
+      if(MIDIMapDefs.CLASS_DELTA == _ev.class_type)
+      {
+         return selectPipeOrNodeByValueDelta(_ev.getDeltaValue());
+      }
+      else
+      {
+         float val = _ev.getNormalizedFloatValue();
+
+         if(_bInv)
+            val = 1.0f - val;
+
+         return selectPipeOrNodeByValue(val);
+      }
+   }
+
+   // <method.png>
+   protected method selectPipeButtonByPipeUsedIdx(int _pipeIdx) {
+      PointerArray paPipe <= pipe_widgets.get(_pipeIdx);
+
+      // Global.Debug("PagePipeMap::selectPipeButtonByPipeUsedIdx: pipeIdx="+_pipeIdx+" paPipe="+#(paPipe));
+
+      if(null != paPipe)
+      {
+         setLastSelectedBt(paPipe.get(0));
+
+         makeSelectionVisible();
+      }
+   }
+
+   // <method.png>
+   public method selectPipeNodeButtonByIndices(int _pipeIdx, int _nodeIdx) {
+      selectNodeButtonByPipeAndNodeIdx(_pipeIdx, _nodeIdx);
+      updateMapState();
+   }
+
+   // <method.png>
+   protected method getLastSelectedPipe() : MIDIPipe {
+      if(null != last_selected_bt)
+      {
+         MIDIPipe pipe <= last_selected_bt.getUserData();
+
+         if(pipe instanceof MIDIPipe)
+         {
+            return pipe;
+         }
+         else
+         {
+            MIDIPipeNode node <= pipe;
+            return node.parent;
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method selectPipeByValue(float _value) {
+
+      int idx = current_pipe_root.numPipes * _value;
+
+      if(idx >= current_pipe_root.numPipes)
+      {
+         idx = current_pipe_root.numPipes - 1;
+      }
+
+      if(idx >= 0)
+      {
+         PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+         pgRoot.selectPipeByUsedIdx(idx);
+
+         selectPipeButtonByPipeUsedIdx(idx);
+
+         updateMapState();
+      }
+   }
+
+   // <method.png>
+   protected method selectPreviousPipe() : boolean {
+      boolean ret = false;
+      MIDIPipe pipe <= getLastSelectedPipe();
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+      if(null != pipe)
+      {
+         if(pipe.pipeUsedIdx > 0)
+         {
+            // Try to maintain cell x position
+            int pipeX = -1;
+            PagePipe pgPipe <= root_form.pg_pipe;
+            MIDIPipeNode node <= pgPipe.getSelectedNode();
+            if(null != node)
+            {
+               pipeX = node.nodeIdx;
+            }
+            Object lastSel <= null;
+            if(null != last_selected_bt)
+            {
+               lastSel <= last_selected_bt.getUserData();
+            }
+
+            pipe <= current_pipe_root.getPipeByUsedIdx(pipe.pipeUsedIdx - 1);
+
+            pgRoot.selectPipeByIdx(pipe.pipeIdx);
+
+            selectPipeButtonByPipeUsedIdx(pipe.pipeUsedIdx);
+
+            if(lastSel instanceof MIDIPipeNode)
+            {
+               if(-1 != pipeX)
+               {
+                  if(pipe.numNodes > 0)
+                  {
+                     // Select first node
+                     selectNextPipeOrNode(false/*bAllowUpdatePrefX*/);
+
+                     loop(mathMini( (pipe.numNodes-1), pipeX))
+                        selectNextPipeOrNode(false/*bAllowUpdatePrefX*/);
+                  }
+               }
+            }
+
+            updateMapState();
+            ret = true;
+
+         } // pipeUsedIdx > 0
+      }
+      else
+      {
+         // Select last
+
+         int lastUsedIdx = current_pipe_root.findLastUsedIdx();
+
+         if(-1 != lastUsedIdx)
+         {
+            pgRoot.selectPipeByIdx(lastUsedIdx);
+
+            pipe <= current_pipe_root.getPipeByIdx(lastUsedIdx);
+
+            selectPipeButtonByPipeUsedIdx(pipe.pipeUsedIdx);
+
+            updateMapState();
+            ret = true;
+         }
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method selectPipe() {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+      if(null != pipe)
+      {
+         selectPipeButtonByPipeUsedIdx(pipe.pipeUsedIdx);
+         updateMapState();
+      }
+   }
+
+   // <method.png>
+   protected method selectLastPipeNode() {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+      if(null != pipe)
+      {
+         loop(50)
+         {
+            if(!selectNextNode())
+               break;
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectPreviousNodeRowOrPipe() {
+      int curNodeX = preferred_node_x;
+      int curNodeY;
+      int idx;
+      OutlineButton *pb;
+
+      // trace "xxx selectPreviousNodeRowOrPipe: curNodeX="+curNodeX+" last_selected_bt="+#(last_selected_bt);
+
+      // Try to select previous node row within same pipe
+      if(null != last_selected_bt)
+      {
+         if(-1 != curNodeX)
+         {
+            curNodeY = last_selected_bt.node_y;
+            // trace "xxx selectPreviousNodeRowOrPipe: curNodeX="+curNodeX+" curNodeY="+curNodeY;
+            if(curNodeY > 0)
+            {
+               idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+               if(-1 != idx)
+               {
+                  OutlineButton pbMatch <= null;
+                  while(--idx > 0)
+                  {
+                     pb <= all_pipenode_buttons.get(idx);
+                     if(-1 != pb.node_y) // not pipe header ?
+                     {
+                        // trace "xxx try pb.node_x="+pb.node_x+" pb.node_y="+pb.node_y+" curNodeX="+curNodeX+" curNodeY="+curNodeY;
+                        if(pb.node_y == (curNodeY - 1))
+                        {
+                           if(pb.node_x == curNodeX)
+                              pbMatch <= pb;
+                        }
+                     }
+                     else
+                        break;
+                  }
+
+                  if(null != pbMatch)
+                  {
+                     // trace "xxx  => select pbMatch.node_x="+pbMatch.node_x+" pbMatch.node_y="+pbMatch.node_y;
+                     setLastSelectedBt(pbMatch);
+                     selectPipeOrNodeByButton(pbMatch);
+                     return;
+                  }
+
+               }
+            }
+         }
+      }
+
+      if(selectPreviousPipe())  // updates last_selected_bt
+      {
+         // Try to find button at same horizontal cell
+         if(-1 != curNodeX)
+         {
+            if(null != last_selected_bt)
+            {
+               // trace "xxx last_selected_bt.node_x="+last_selected_bt.node_x;
+               OutlineButton pbLast <= null;
+               idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+               if(-1 != idx)
+               {
+                  while(++idx < all_pipenode_buttons.numElements)
+                  {
+                     pb <= all_pipenode_buttons.get(idx);
+                     if(-1 != pb.node_y)
+                     {
+                        if(pb.node_x <= curNodeX)
+                           pbLast <= pb;
+                     }
+                     else
+                        break;
+                  }
+               }
+               if(null != pbLast)
+               {
+                  setLastSelectedBt(pbLast);
+                  selectPipeOrNodeByButton(pbLast);
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectNextNodeRowOrPipe() {
+      int curNodeX = preferred_node_x;
+      int curNodeY;
+      int curMapNodeY;
+      int idx;
+      OutlineButton *pb;
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe lastPipe <= pgRoot.getSelectedPipe();
+
+      // trace "xxx selectNextNodeRowOrPipe: curNodeX="+curNodeX+" last_selected_bt="+#(last_selected_bt);
+
+      // Try to select next node row within same pipe
+      if(null != last_selected_bt)
+      {
+         // // curNodeX = last_selected_bt.node_x;
+
+         if(-1 != curNodeX)
+         {
+            curNodeY    = last_selected_bt.node_y;
+            curMapNodeY = last_selected_bt.map_node_y;
+            // trace "xxx selectNextNodeRowOrPipe: curNodeX="+curNodeX+" curNodeY="+curNodeY;
+            idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+            if(-1 != idx)
+            {
+               OutlineButton pbMatch <= null;
+               while(++idx < all_pipenode_buttons.numElements)
+               {
+                  pb <= all_pipenode_buttons.get(idx);
+                  // trace "xxx curNodeY="+curNodeY+" idx="+idx+" pb.node_y="+pb.node_y;
+                  if(-1 != pb.node_y) // not pipe header ?
+                  {
+                     if(pb.map_node_y == curMapNodeY)
+                     {
+                        if(pb.node_y == (curNodeY + 1))
+                        {
+                           if(pb.node_x <= curNodeX)
+                           {
+                              pbMatch <= pb;
+                           }
+                        }
+                     }
+                     else
+                        break;
+                  }
+                  else
+                     break;
+               }
+
+               if(null != pbMatch)
+               {
+                  // trace "xxx  => select pbMatch.node_x="+pbMatch.node_x+" pbMatch.node_y="+pbMatch.node_y;
+                  setLastSelectedBt(pbMatch);
+                  selectPipeOrNodeByButton(pbMatch);
+                  return;
+               }
+
+            }
+         }
+      }
+
+      if(selectNextPipe())
+      {
+         if(@(pgRoot.getSelectedPipe()) != @(lastPipe))
+         {
+            // Try to find button at same horizontal cell
+            if(-1 != curNodeX)
+            {
+               if(null != last_selected_bt)
+               {
+                  if(-1 != last_selected_bt.node_x)
+                  {
+                     // Find pipe header
+                     idx = all_pipenode_buttons.indexOfPointer(last_selected_bt, 0);
+                     while(--idx > 0)
+                     {
+                        pb <= all_pipenode_buttons.get(idx);
+                        if(-1 == pb.node_x)
+                           break;
+                     }
+                  }
+                  else
+                  {
+                     pb <= last_selected_bt;
+                  }
+
+                  OutlineButton pbLast <= null;
+                  idx = all_pipenode_buttons.indexOfPointer(pb, 0);
+                  if(-1 != idx)
+                  {
+                     while(++idx < all_pipenode_buttons.numElements)
+                     {
+                        pb <= all_pipenode_buttons.get(idx);
+                        if(0 == pb.node_y)
+                        {
+                           if(pb.node_x <= curNodeX)
+                           {
+                              pbLast <= pb;
+                           }
+                        }
+                        else
+                           break;
+                     }
+                  }
+                  if(null != pbLast)
+                  {
+                     setLastSelectedBt(pbLast);
+                     selectPipeOrNodeByButton(pbLast);
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method selectNextPipe() : boolean {
+
+      boolean ret = false;
+      MIDIPipe pipe <= getLastSelectedPipe();
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+      if(null != pipe)
+      {
+         if(pipe.pipeUsedIdx != (current_pipe_root.numPipes - 1))
+         {
+            // Try to maintain cell x position
+            int pipeX = -1;
+            PagePipe pgPipe <= root_form.pg_pipe;
+            MIDIPipeNode node <= pgPipe.getSelectedNode();
+
+            // // trace "xxx selectNextPipe: node="+#(node);
+
+            if(null != node)
+               pipeX = node.nodeIdx;
+
+            Object lastSel <= null;
+            if(null != last_selected_bt)
+               lastSel <= last_selected_bt.getUserData();
+
+            pipe <= current_pipe_root.getPipeByUsedIdx(pipe.pipeUsedIdx + 1);
+            pgRoot.selectPipeByIdx(pipe.pipeIdx);
+            selectPipeButtonByPipeUsedIdx(pipe.pipeUsedIdx);
+
+            if(lastSel instanceof MIDIPipeNode)
+            {
+               if(-1 != pipeX)
+               {
+                  if(pipe.numNodes > 0)
+                  {
+                     // trace "xxx pipemap: select first node pipeX="+pipeX;
+                     selectNextPipeOrNode(false/*bAllowUpdatePrefX*/);
+
+                     loop(mathMini( (pipe.numNodes-1), pipeX))
+                     {
+                        selectNextPipeOrNode(false/*bAllowUpdatePrefX*/);
+                     }
+                  }
+               }
+            }
+            // updateMap();
+            updateMapState();
+            ret = true;
+         }
+      }
+      else
+      {
+         // Select first
+         int firstIdx = current_pipe_root.findFirstUsedIdx();
+         if(-1 != firstIdx)
+         {
+            pgRoot.selectPipeByIdx(firstIdx);
+
+            pipe <= current_pipe_root.getPipeByIdx(firstIdx);
+
+            selectPipeButtonByPipeUsedIdx(pipe.pipeUsedIdx);
+
+            updateMapState();
+            ret = true;
+         }
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method selectPipeByValueDelta(int _delta) {
+      if(_delta > 0)
+      {
+         loop(_delta)
+            selectNextPipe();
+      }
+      else if(_delta < 0)
+      {
+         loop(-_delta)
+            selectPreviousPipe();
+      }
+   }
+
+   // <method.png>
+   protected method selectPipeByEvent(MIDIMapEvent _ev, boolean _bInv) {
+      if(MIDIMapDefs.CLASS_DELTA == _ev.class_type)
+      {
+         return selectPipeByValueDelta(_ev.getDeltaValue());
+      }
+      else
+      {
+         float val = _ev.getNormalizedFloatValue();
+
+         if(_bInv)
+            val = 1.0f - val;
+
+         return selectPipeByValue(val);
+      }
+   }
+
+   // <method.png>
+   protected method getLastSelectedNode() : MIDIPipeNode {
+      if(null != last_selected_bt)
+      {
+         MIDIPipeNode node <= last_selected_bt.getUserData();
+         if(node instanceof MIDIPipeNode)
+            return node;
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getLastSelectedScriptNode() : Node {
+      MIDIPipeNodeScriptProxy node <= getLastSelectedNode();
+      if(node instanceof MIDIPipeNodeScriptProxy)
+      {
+         Node sn <= node.sci;
+         if(sn instanceof Node)
+            return sn;
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method selectNodeButtonByPipeAndNodeIdx(int _pipeUsedIdx, int _nodeIdx) {
+
+      // trace "xxx selectNodeButtonByPipeAndNodeIdx";
+
+      PointerArray paPipe <= pipe_widgets.get(_pipeUsedIdx);
+
+      if(null != paPipe)
+      {
+         setLastSelectedBt(paPipe.get(1 + _nodeIdx));
+
+         makeSelectionVisible();
+      }
+   }
+
+   // <method.png>
+   protected method selectNodeByValue(float _value) {
+
+      MIDIPipe pipe <= getLastSelectedPipe();
+
+      if(null != pipe)
+      {
+         int idx = pipe.numNodes * _value;
+
+         if(idx >= pipe.numNodes)
+            idx = pipe.numNodes - 1;
+
+         if(idx >= 0)
+         {
+            PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+            pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, idx);
+
+            selectNodeButtonByPipeAndNodeIdx(pipe.pipeUsedIdx, idx);
+
+            updateMapState();
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectPreviousNode() {
+
+      MIDIPipeNode node <= getLastSelectedNode();
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+      if(null != node)
+      {
+         if(node.nodeIdx > 0)
+         {
+            pgRoot.selectPipeAndNodeByIdx(node.parent.pipeIdx, node.nodeIdx - 1);
+
+            selectNodeButtonByPipeAndNodeIdx(node.parent.pipeUsedIdx, node.nodeIdx - 1);
+
+            updateMapState();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method selectNextNode() : boolean {
+      boolean ret = false;
+      MIDIPipeNode node <= getLastSelectedNode();
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+      MIDIPipe *pipe;
+
+      if(null != node)
+      {
+         pipe <= node.parent;
+
+         if(node.nodeIdx != (pipe.numNodes - 1))
+         {
+            pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, node.nodeIdx + 1);
+
+            selectNodeButtonByPipeAndNodeIdx(pipe.pipeUsedIdx, node.nodeIdx + 1);
+
+            updateMapState();
+
+            ret = true;
+         }
+      }
+      else
+      {
+         pipe <= getLastSelectedPipe();
+         if(null != pipe)
+         {
+            // Select first pipe node
+            if(pipe.numNodes > 0)
+            {
+               pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, 0);
+
+               selectNodeButtonByPipeAndNodeIdx(pipe.pipeUsedIdx, 0);
+
+               updateMapState();
+
+               ret = true;
+            }
+         }
+         else
+         {
+            // Select first pipe
+            pgRoot.selectPipeByUsedIdx(0);
+
+            selectPipeButtonByPipeUsedIdx(0);
+
+            updateMapState();
+
+            ret = true;
+         }
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method selectNodeByValueDelta(int _delta) {
+      if(_delta > 0)
+      {
+         loop(_delta)
+            selectNextNode();
+      }
+      else if(_delta < 0)
+      {
+         loop(-_delta)
+            selectPreviousNode();
+      }
+   }
+
+   // <method.png>
+   protected method selectNodeByEvent(MIDIMapEvent _ev, boolean _bInv) {
+      if(MIDIMapDefs.CLASS_DELTA == _ev.class_type)
+      {
+         return selectNodeByValueDelta(_ev.getDeltaValue());
+      }
+      else
+      {
+         float val = _ev.getNormalizedFloatValue();
+         if(_bInv)
+         {
+            val = 1.0f - val;
+         }
+         return selectNodeByValue(val);
+      }
+   }
+
+   // <method.png>
+   protected method selectPipeNodeA() {
+      PageNode pgNode <= root_form.pg_node;
+      pgNode.handlePipeNodeASet();
+   }
+
+   // <method.png>
+   protected method selectPipeNodeB() {
+      PageNode pgNode <= root_form.pg_node;
+      pgNode.handlePipeNodeBSet();
+   }
+
+   // <method.png>
+   protected method editPipeNodeA() {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      PagePipe pgPipe <= root_form.pg_pipe;
+      PageNode pgNode <= root_form.pg_node;
+
+      if(-1 != pgNode.getAPipeIdx())
+      {
+         if(-1 != pgNode.getANodeIdx())
+         {
+            pgRoot.selectPipeAndNodeByIdx(pgNode.getAPipeIdx(), pgNode.getANodeIdx());
+
+            MIDIPipeNode node <= pgPipe.getSelectedNode();
+            if(null != node)
+            {
+               selectNodeButtonByPipeAndNodeIdx(node.parent.pipeUsedIdx, node.nodeIdx - 1);
+
+               updateMapState();
+
+               pgRoot.handleEditPipeNode();
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method getButtonInfoString(Button _bt) : String {
+      if(null != _bt)
+      {
+         MIDIPipe pipe <= _bt.getUserData();
+         if(pipe instanceof MIDIPipe)
+         {
+            return "Pipe "+(pipe.pipeIdx+1)+"/"+current_pipe_root.numPipes+" \""+pipe.name+"\"";
+         }
+         else
+         {
+            MIDIPipeNode node <= pipe;
+            return "Node "+(node.nodeIdx+1)+"/"+(node.parent.numNodes)+" \""+node.name+"\"";
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getButtonInfoStringShort(Button _bt) : String {
+      if(null != _bt)
+      {
+         MIDIPipe pipe <= _bt.getUserData();
+         if(pipe instanceof MIDIPipe)
+         {
+            return "Pi "+(pipe.pipeIdx+1)+"/"+current_pipe_root.numPipes;
+         }
+         else
+         {
+            MIDIPipeNode node <= pipe;
+            return "No "+(node.nodeIdx+1)+"/"+(node.parent.numNodes);
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getButtonPipeInfoStringShort(Button _bt) : String {
+      if(null != _bt)
+      {
+         MIDIPipe pipe <= _bt.getUserData();
+         if(pipe instanceof MIDIPipeNode)
+         {
+            MIDIPipeNode node <= pipe;
+            pipe <= node.parent;
+         }
+
+         return (pipe.pipeIdx+1)+"/"+current_pipe_root.numPipes;
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method getButtonNodeInfoStringShort(Button _bt) : String {
+      if(null != _bt)
+      {
+         MIDIPipeNode node <= _bt.getUserData();
+         if(node instanceof MIDIPipeNode)
+         {
+            return (node.nodeIdx+1)+"/"+(node.parent.numNodes);
+         }
+
+         return "-";
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method selectSourceButton() {
+      if(null != last_selected_bt)
+      {
+         setLastSelectedBtPrev(last_selected_bt);
+
+         Global.Print("Source set to "+getButtonInfoString(last_selected_bt_prev)+".");
+      }
+      else
+      {
+         Global.Warning("Select source: no pipe or node selected.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleActionChanged() {
+
+      Global.Print("Select action \""+cm_action.getSelectedOptionName()+"\".");
+   }
+
+   // <ui_handle.png>
+   protected method handleExecPipe(MIDIPipe _pipe, int _action) {
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+
+      switch(_action)
+      {
+         case EXEC_SELECT:
+            pgRoot.selectPipeByIdx(_pipe.pipeIdx);
+
+            updateMapState();
+            break;
+
+         case EXEC_EDIT:
+            pgRoot.selectPipeByIdx(_pipe.pipeIdx);
+
+            updateMapState();
+
+            if(@(last_selected_bt_prev) == @(last_selected_bt))
+            {
+               pgRoot.handleEditPipe(true/*bWarn*/);
+            }
+            break;
+
+         case EXEC_MUTE:
+            pgRoot.selectPipeByIdx(_pipe.pipeIdx);
+
+            pgRoot.toggleSelectedPipeMuteState();
+
+            updateMapState();
+            break;
+
+         case EXEC_SOLO:
+            pgRoot.selectPipeByIdx(_pipe.pipeIdx);
+
+            pgRoot.toggleSelectedPipeSoloState();
+
+            updateMapState();
+            break;
+
+         case EXEC_MOVE:
+            if(@(last_selected_bt_prev) != @(last_selected_bt))
+            {
+               if(null != last_selected_bt_prev)
+               {
+                  if(null != last_selected_bt)
+                  {
+                     // Insert prev after current
+                     MIDIPipeNode nodePrev <= last_selected_bt_prev.getUserData();
+
+                     MIDIPipe *pipePrev;
+                     PointerArray *paPipe;
+
+                     if(nodePrev instanceof MIDIPipeNode)
+                     {
+                        // Move node into target pipe
+                        pipePrev <= nodePrev.parent;
+                        MIDIPipeNode unlinkPrev <= pipePrev.unlinkNode(nodePrev);
+
+                        _pipe.addNode(#(deref unlinkPrev));
+
+                        // [15Oct2017] update script class "parent_pipe" reference
+                        //              (should fix crash after moving node to other pipe and deleting old pipe,
+                        //               then editing node via NodeArranger)
+                        if(nodePrev instanceof MIDIPipeNodeScriptProxy)
+                        {
+                           Global.Debug("handleExecPipe: move node: update script-side parent_pipe ref");
+                           MIDIPipeNodeScriptProxy nodePrevPr <= nodePrev;
+                           Node nodePrevSCI <= nodePrevPr.sci;
+                           nodePrevSCI.parent_pipe <= _pipe;  //
+                        }
+
+                        updateMap();
+
+                        paPipe <= pipe_widgets.get(_pipe.pipeUsedIdx);
+
+                        setLastSelectedBt(paPipe.get(nodePrev.nodeIdx+1));
+                        setLastSelectedBtPrev(last_selected_bt);
+
+                        pgRoot.selectPipeAndNodeByIdx(_pipe.pipeIdx, nodePrev.nodeIdx);
+
+                        updateMapState();
+
+                        Global.Print("Moved node \""+nodePrev.name+"\" into pipe "+(_pipe.pipeIdx+1)+" \""+_pipe.name+"\".");
+                     }
+                     else
+                     {
+                        pipePrev <= last_selected_bt_prev.getUserData();
+
+                        // Insert pipe after target pipe
+                        pgRoot.selectPipeByIdx(pipePrev.pipeIdx);
+
+                        if(pipePrev.pipeIdx < _pipe.pipeIdx)
+                        {
+                           // Move down
+                           loop(_pipe.pipeIdx - pipePrev.pipeIdx)
+                           {
+                              pgRoot.handleMoveDown();
+                           }
+                        }
+                        else
+                        {
+                           // Move left/up
+                           int moveUpNum = (pipePrev.pipeIdx - _pipe.pipeIdx) - 1;
+                           if(moveUpNum > 0)
+                           {
+                              loop(moveUpNum)
+                              {
+                                 pgRoot.handleMoveUp();
+                              }
+                           }
+                        }
+
+                        updateMap();
+
+                        paPipe <= pipe_widgets.get(pipePrev.pipeIdx);
+
+                        if(null != paPipe)
+                        {
+                           setLastSelectedBt(paPipe.get(0));
+                           setLastSelectedBtPrev(last_selected_bt);
+                        }
+                        else
+                        {
+                           // Should not be reached but apparently is (move pipe?!)
+                           setLastSelectedBt(null);
+                           setLastSelectedBtPrev(null);
+                        }
+
+                        pgRoot.selectPipeByIdx(pipePrev.pipeIdx);
+
+                        updateMapState();
+
+                        Global.Print("Moved pipe \""+pipePrev.name+"\" to slot "+(pipePrev.pipeIdx+1)+"/"+(current_pipe_root.numPipes));
+                     }
+
+                  }
+               }
+            }
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleExecNode(MIDIPipeNode _node, int _action) {
+
+      MIDIPipe pipe <= _node.parent;
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      PagePipe     pgPipe <= root_form.pg_pipe;
+
+      switch(_action)
+      {
+         case EXEC_SELECT:
+            pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, _node.nodeIdx);
+
+            updateMapState();
+            break;
+
+         case EXEC_EDIT:
+            int t = milliSeconds();
+            pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, _node.nodeIdx);
+
+            updateMapState();
+
+            pgRoot.handleEditPipeNode();
+
+            Global.Profile("PagePipeMap::handleExecNode: EXEC_EDIT took "+(milliSeconds() - t)+"ms.");
+            break;
+
+         case EXEC_MUTE:
+            pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, _node.nodeIdx);
+
+            pgPipe.toggleSelectedNodeMuteState();
+
+            updateMapState();
+            break;
+
+         case EXEC_SOLO:
+            pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, _node.nodeIdx);
+
+            pgPipe.toggleSelectedNodeSoloState();
+
+            updateMapState();
+            break;
+
+         case EXEC_MOVE:
+            if(@(last_selected_bt_prev) != @(last_selected_bt))
+            {
+               if(null != last_selected_bt_prev)
+               {
+                  if(null != last_selected_bt)
+                  {
+                     // Insert prev after current
+                     MIDIPipeNode nodePrev <= last_selected_bt_prev.getUserData();
+
+                     if(nodePrev instanceof MIDIPipe)
+                     {
+                        Global.Error("Cannot move pipe to pipenode.");
+                     }
+                     else
+                     {
+                        // Insert nodePrev after node
+                        if(@(nodePrev.parent) != @(_node.parent))
+                        {
+                           // Move node into target pipe
+                           MIDIPipe pipePrev <= nodePrev.parent;
+                           MIDIPipeNode unlinkPrev <= pipePrev.unlinkNode(nodePrev);
+
+                           pipe.addNode(#(deref unlinkPrev));
+
+                           // [15Oct2017] update script class "parent_pipe" reference
+                           //              (should fix crash after moving node to other pipe and deleting old pipe,
+                           //               then editing node via NodeArranger)
+                           if(nodePrev instanceof MIDIPipeNodeScriptProxy)
+                           {
+                              Global.Debug("handleExecNode: move node: update script-side parent_pipe ref");
+                              MIDIPipeNodeScriptProxy nodePrevPr <= nodePrev;
+                              Node nodePrevSCI <= nodePrevPr.sci;
+                              nodePrevSCI.parent_pipe <= pipe;  //
+                           }
+                        }
+
+                        pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, nodePrev.nodeIdx);
+
+                        if(nodePrev.nodeIdx < _node.nodeIdx)
+                        {
+                           // Move right/down
+                           loop(_node.nodeIdx - nodePrev.nodeIdx)
+                              pgPipe.handleMoveDown();
+                        }
+                        else
+                        {
+                           // Move left/up
+                           int moveUpNum = (nodePrev.nodeIdx - _node.nodeIdx) - 1;
+                           if(moveUpNum > 0)
+                           {
+                              loop(moveUpNum)
+                                 pgPipe.handleMoveUp();
+                           }
+                        }
+
+                        updateMap();
+
+                        PointerArray paPipe <= pipe_widgets.get(pipe.pipeUsedIdx);
+
+                        setLastSelectedBt(paPipe.get(nodePrev.nodeIdx+1));
+                        setLastSelectedBtPrev(last_selected_bt);
+
+                        pgRoot.selectPipeAndNodeByIdx(pipe.pipeIdx, nodePrev.nodeIdx);
+
+                        updateMapState();
+
+                        Global.Print("Moved node \""+nodePrev.name+"\" to position "+(nodePrev.nodeIdx+1)+"/"+(nodePrev.parent.numNodes));
+                     }
+                  }
+               }
+            }
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleExecAction(int _action) {
+
+      if(null != last_selected_bt)
+      {
+         Global.Print("Exec \""+cm_action.getOptionNameByIdx(_action)+"\".");
+
+         MIDIPipe pipe <= last_selected_bt.getUserData();
+         MIDIPipeNode node <= last_selected_bt.getUserData();
+
+         if(pipe instanceof MIDIPipe)
+            handleExecPipe(pipe, _action);
+         else if(node instanceof MIDIPipeNode)
+            handleExecNode(node, _action);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleExec() {
+      handleExecAction(cm_action.getSelectedOption());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleInitPCChanged() {
+      STConfig.b_node_send_play_pattern_prgchg_when_replay_starts = cb_initpc.isSelected();
+      Global.Print("Send pattern prgchg when replay starts is "+Utils.GetEnableString(STConfig.b_node_send_play_pattern_prgchg_when_replay_starts));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleToggleInitPC() {
+      STConfig.b_node_send_play_pattern_prgchg_when_replay_starts =
+      !STConfig.b_node_send_play_pattern_prgchg_when_replay_starts;
+      cb_initpc.setSelected(STConfig.b_node_send_play_pattern_prgchg_when_replay_starts);
+      Global.Print("Send pattern prgchg when replay starts is "+Utils.GetEnableString(STConfig.b_node_send_play_pattern_prgchg_when_replay_starts));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleActionImmediate() {
+      b_action_immediate = ! b_action_immediate;
+
+      Global.Print("Immediate exec mode is "+(b_action_immediate ? "enabled." : "disabled."));
+   }
+
+   // <method.png>
+   protected method togglePipeSolo() {
+      if(null != last_selected_bt)
+      {
+         MIDIPipe pipe <= last_selected_bt.getUserData();
+         MIDIPipeNode node <= last_selected_bt.getUserData();
+
+         if(pipe instanceof MIDIPipe)
+         {
+            handleExecPipe(pipe, EXEC_SOLO);
+         }
+         else if(node instanceof MIDIPipeNode)
+         {
+            pipe <= node.parent;
+            handleExecPipe(pipe, EXEC_SOLO);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method togglePipeOrNodeSolo() {
+      if(null != last_selected_bt)
+      {
+         MIDIPipe pipe <= last_selected_bt.getUserData();
+         MIDIPipeNode node <= last_selected_bt.getUserData();
+
+         if(pipe instanceof MIDIPipe)
+         {
+            handleExecPipe(pipe, EXEC_SOLO);
+         }
+         else if(node instanceof MIDIPipeNode)
+         {
+            handleExecNode(pipe, EXEC_SOLO);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method togglePipeMute() {
+      if(null != last_selected_bt)
+      {
+         MIDIPipe pipe <= last_selected_bt.getUserData();
+         MIDIPipeNode node <= last_selected_bt.getUserData();
+
+         if(pipe instanceof MIDIPipe)
+         {
+            handleExecPipe(pipe, EXEC_MUTE);
+         }
+         else if(node instanceof MIDIPipeNode)
+         {
+            pipe <= node.parent;
+            handleExecPipe(pipe, EXEC_MUTE);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method togglePipeOrNodeMute() {
+      if(null != last_selected_bt)
+      {
+         MIDIPipe pipe <= last_selected_bt.getUserData();
+         MIDIPipeNode node <= last_selected_bt.getUserData();
+
+         if(pipe instanceof MIDIPipe)
+            handleExecPipe(pipe, EXEC_MUTE);
+         else if(node instanceof MIDIPipeNode)
+            handleExecNode(pipe, EXEC_MUTE);
+      }
+   }
+
+   // <method.png>
+   protected method moveNodeLeft() {
+      if(null != getLastSelectedNode())
+      {
+         root_form.pg_pipe.handleMoveUp();
+         updateMap();
+         updateMapState();
+      }
+   }
+
+   // <method.png>
+   protected method moveNodeRight() {
+      if(null != getLastSelectedNode())
+      {
+         root_form.pg_pipe.handleMoveDown();
+         updateMap();
+         updateMapState();
+      }
+   }
+
+   // <method.png>
+   protected method movePipeUp() {
+      root_form.pg_piperoot.handleMoveUp();
+      updateMap();
+      updateMapState();
+   }
+
+   // <method.png>
+   protected method movePipeDown() {
+      root_form.pg_piperoot.handleMoveDown();
+      updateMap();
+      updateMapState();
+   }
+
+   // <ui_handle.png>
+   protected method handleShowPipeRoot() {
+      root_form.showPage(RootForm.PAGE_PIPEROOT, true);
+   }
+
+   // <ui_handle.png>
+   protected method tryButtonClick(Button _bt) : boolean {
+      if(_bt instanceof Button)
+      {
+         PointerArray *paPipe;
+
+         foreach paPipe in pipe_widgets
+         {
+            int idx = paPipe.indexOfPointer(_bt, 0);
+
+            if(-1 != idx)
+            {
+               Button newLast <= paPipe.get(idx);
+
+               if( (@(last_selected_bt) == @(newLast)) || b_action_immediate )
+               {
+                  if(b_action_immediate)
+                     setLastSelectedBt(newLast);
+
+                  handleExec();
+
+                  setLastSelectedBtPrev(last_selected_bt);
+               }
+               else
+               {
+                  setLastSelectedBtPrev(last_selected_bt);
+                  setLastSelectedBt(newLast);
+
+                  if(newLast.getUserData() instanceof MIDIPipe)
+                     Global.Print("Select pipe "+newLast.getToolTipCaption()+".");
+                  else
+                     Global.Print("Select node "+newLast.getToolTipCaption());
+               }
+
+               if(pageIsCurrent())
+                  updateMapState();
+
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method toggleNodeArmForRecording() {
+      Node sn <= getLastSelectedScriptNode();
+      if(null != sn)
+      {
+         sn.nodeArmForRecording(!sn.nodeIsArmedForRecording());
+         updateMapState();
+         Global.Print((sn.nodeIsArmedForRecording()?"Arm":"Disarm")+" node");
+      }
+   }
+
+   // <method.png>
+   protected =replay= method toggleNodeIgnorePrgChg() {
+      Node sn <= getLastSelectedScriptNode();
+      if(null != sn)
+      {
+         sn.b_node_ignore_seek_prgchg_mute = !sn.b_node_ignore_seek_prgchg_mute;
+         updateMapState();
+         Global.Print("Ignore PrgChg+Mutes is "+Utils.GetEnableString(sn.b_node_ignore_seek_prgchg_mute));
+      }
+   }
+
+   // <method.png>
+   protected method selectPatternByIdx(int _idx, boolean _bSelectNodePat) {
+      Node sn <= getLastSelectedScriptNode();
+
+      Global.Debug2("PagePipeMap: selectPatternByIdx("+_idx+") sn="+#(sn));
+
+      if(null != sn)
+      {
+         if(_bSelectNodePat)
+         {
+            sn.nodeQueuePatternUI(_idx, -1, false/*bMuteTemp*/);
+            sn.nodeSetCurrentEditPatternNr(_idx);
+            sn.nodeQueuePrgChgOut(_idx);
+         }
+
+         updatePatNr(true/*bForceEditPatternNr*/);
+
+         updateMapState();
+
+         Global.Print("Select pattern "+cm_patnr_group.getSelectedOptionName()+cm_patnr_sub.getSelectedOptionName()+" ("+(_idx + 1)+") \""+sn.nodeGetCurrentPlayPatternName()+"\""+(sn.nodeIsPatternEmpty(_idx) ? " <empty>." : "."));
+      }
+   }
+
+   // <method.png>
+   protected method selectPatternByUsedIdx(int _idx) {
+      Node sn <= getLastSelectedScriptNode();
+
+      Global.Debug2("PagePipeMap: selectPatternByUsedIdx("+_idx+") sn="+#(sn));
+
+      if(null != sn)
+      {
+         if(!sn.nodeSetCurrentUsedEditPatternNr(_idx, 0))
+         {
+            sn.nodeSetCurrentEditPatternNr(Node.EMPTY_PAT_NR);
+            replay.handleNodeStateChangedUI(sn, -1/*active*/, Node.EMPTY_PAT_NR/*pat*/);
+         }
+         else
+         {
+            replay.handleNodeStateChangedUI(sn, -1/*active*/, sn.nodeGetCurrentEditPatternNr()/*pat*/);
+         }
+         sn.nodeQueuePatternUI(sn.nodeGetCurrentEditPatternNr(), -1, false/*bMuteTemp*/);
+         sn.nodeQueuePrgChgOut(sn.nodeGetCurrentEditPatternNr());
+
+         _idx = sn.nodeGetCurrentEditPatternNr();
+
+         selectPatternByIdx(_idx, false/*bSelectNodePat*/);
+      }
+   }
+
+   // <method.png>
+   public method selectNextUsedPattern() {
+
+      Node sn <= getLastSelectedScriptNode();
+
+      if((null != sn) && sn.nodeCanCopyPatterns())
+      {
+         int patNr = sn.nodeGetCurrentPlayPatternNr();
+         int relOff = 1;
+
+         if(Node.EMPTY_PAT_NR == patNr)
+         {
+            patNr = 0;
+            relOff = 0;
+         }
+
+         if(sn.nodeSetCurrentUsedEditPatternNr(relOff, patNr))
+         {
+            replay.handleNodeStateChangedUI(sn, -1/*active*/, sn.nodeGetCurrentEditPatternNr()/*pat*/);
+
+            sn.nodeQueuePatternUI(sn.nodeGetCurrentEditPatternNr(), -1, false/*bMuteTemp*/);
+            sn.nodeQueuePrgChgOut(sn.nodeGetCurrentEditPatternNr());
+
+            selectPatternByIdx(sn.nodeGetCurrentEditPatternNr(), false/*bSelectNodePat*/);
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectPreviousUsedPattern() {
+
+      Node sn <= getLastSelectedScriptNode();
+
+      if((null != sn) && sn.nodeCanCopyPatterns())
+      {
+         int patNr = sn.nodeGetCurrentPlayPatternNr();
+         int relOff = -1;
+
+         if(Node.EMPTY_PAT_NR == patNr)
+         {
+            patNr  = -124;
+            relOff = 0;
+         }
+
+         if(sn.nodeSetCurrentUsedEditPatternNr(relOff, patNr))
+         {
+            replay.handleNodeStateChangedUI(sn, -1/*active*/, sn.nodeGetCurrentEditPatternNr()/*pat*/);
+
+            sn.nodeQueuePatternUI(sn.nodeGetCurrentEditPatternNr(), -1, false/*bMuteTemp*/);
+            sn.nodeQueuePrgChgOut(sn.nodeGetCurrentEditPatternNr());
+
+            selectPatternByIdx(sn.nodeGetCurrentEditPatternNr(), false/*bSelectNodePat*/);
+         }
+         else
+         {
+            sn.nodeQueuePatternUI(Node.EMPTY_PAT_NR, -1, false/*bMuteTemp*/);
+            selectPatternByIdx(Node.EMPTY_PAT_NR, false/*bSelectNodePat*/);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNrDisplayChanged() {
+      ls_patnr.switchToNextLayer();
+
+      STConfig.pipemap_patnr_display = ls_patnr.getCurrentChildNr();
+
+      Global.Print("PatNr display is "+
+                   patnr_display_names.get(ls_patnr.getCurrentChildNr())
+                   );
+
+      pn_toolbar.queueRelayout();
+      pn_toolbar.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNrChanged() {
+      selectPatternByIdx(cm_patnr.getSelectedOption(), true/*bSelectNodePat*/);
+
+      updateMapState();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNrNumChanged() {
+      selectPatternByIdx(cm_patnr_num.getSelectedOption(), true/*bSelectNodePat*/);
+
+      updateMapState();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNrGroupOrSubChanged() {
+      selectPatternByIdx((cm_patnr_group.getSelectedOption() << 2) + cm_patnr_sub.getSelectedOption(),
+                         true/*bSelectNodePat*/
+                         );
+
+      updateMapState();
+   }
+
+   // <ui_handle.png>
+   protected method toggleIgnoreSeekPrgChgMute() {
+      // selectPatternByIdx(cm_patnr.getSelectedOption(), true/*bSelectNodePat*/);
+      Node sn <= getLastSelectedScriptNode();
+      if(null != sn)
+      {
+         sn.nodeToggleIgnoreSeekPrgChgMute();
+         Global.Print("Ignore seek-prgchg-mute is "+Utils.GetEnableString(sn.b_node_ignore_seek_prgchg_mute));
+
+         updateMapState();
+      }
+   }
+
+   // <ui_show.png>
+   module method showPipeOrNodeContextMenu(boolean _bFocusFirst, boolean _bNearButton) {
+      if(null != last_selected_bt)
+      {
+         selectPipeOrNodeByButton(last_selected_bt);
+
+         if(last_selected_bt.b_is_pipe)
+            showPipeContextMenu(_bFocusFirst, _bNearButton ? last_selected_bt : null);
+         else
+            showNodeContextMenu(_bFocusFirst, _bNearButton ? last_selected_bt : null);
+      }
+   }
+
+   // <ui_show.png>
+   protected method handleShowTrackerNodeSampleImport() {
+      Node sn <= getLastSelectedScriptNode();
+      if(sn instanceof NodeTracker)
+      {
+         handleExecAction(EXEC_EDIT);
+         NodeTrackerEditor editor <= sn.nodeGetEditor();
+         if(editor instanceof NodeTrackerEditor)
+         {
+            if(editor.isPatternViewActive())
+            {
+               editor.toggleViews();
+               NT_InstrumentView iv <= editor.instrument_view;
+               iv.handleInstrSmpImport(false/*bUIDOnly*/);
+            }
+         }
+      }
+   }
+
+   // <ui_show.png>
+   module method showPipeContextMenu(boolean _bFocusFirst, Layer _nearLayerOrNull) {
+      // Create context-sensitive popupmenu
+      pm_pipe <= PopupMenu.New(this);
+
+      PopupMenuButton *pmb;
+      MIDIPipe pipe <= getLastSelectedPipe();
+
+      pmb <= pm_pipe.addDefaultButton("Toggle mute", "pipecm_mute");
+      pmb.setAccelerators("d", "lctrl-d");
+      pmb <= pm_pipe.addDefaultButton("Toggle solo", "pipecm_solo");
+      pmb.setAccelerators("s", "lctrl-s");
+
+      MIDI.AppendOutDevSubMenu(pm_pipe, true/*bSeparator*/,  "New Tracker",  ""/*captionPrefix*/, "newtracker_");
+      MIDI.AppendOutDevSubMenu(pm_pipe, false/*bSeparator*/, "New TrigSeq",  ""/*captionPrefix*/, "newtrigseq_");
+      MIDI.AppendOutDevSubMenu(pm_pipe, false/*bSeparator*/, "New Freeform", ""/*captionPrefix*/, "newseq_");
+
+      String sIcon_add    <= UI.PreferMonoIcons() ? "adds_mono"    : "adds";
+      String sIcon_remove <= UI.PreferMonoIcons() ? "removes_mono" : "trashcan_sm";
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addIconButton("New pipe or node", sIcon_add, "pipecm_new_auto");
+      pmb.setAccelerators(null, "INSERT");
+      pmb <= pm_pipe.addIconButton("New pipe", sIcon_add, "pipecm_new");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addDefaultButton("Clone pipe", "pipecm_clone");
+      pmb.setAccelerators(null, "lshift-INSERT");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addDefaultButton("Copy pipe to global clipboard", "pipecm_copy");
+
+      pm_pipe.addSeparator();
+
+      pmb <= pm_pipe.addDefaultButton("Paste global clipboard to pipe", "pipecm_paste");
+      pmb <= pm_pipe.addDefaultButton("Paste global clipboard to new pipe", "pipecm_paste_new");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addIconButton("Delete pipe", sIcon_remove, "pipecm_delete");
+      pmb.setAccelerators(null, "DELETE");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addDefaultButton("Load preset..", "pipecm_load");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addDefaultButton("Save preset..", "pipecm_save");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addDefaultButton("Edit pipe comment", "pipecm_comment");
+      pmb.setAccelerators(null, "c");
+
+      pm_pipe.addSeparator();
+      boolean bFinal = (null != pipe) && pipe.finalOutput;
+      pmb <= pm_pipe.addCheckButton("Final Output", bFinal, "pipecm_final");
+      pmb.setToolTipCaption("Toggle pipe final-output mode\n\n (note) when checked, process all MIDI output (framePlay) through final output pipe\n\n (note) pipe name will be enclosed in <> on PipeRoot page\n\n (note) pipes named \"output\" will automatically default to final-output mode\n\n (note) there can only be one final-output pipe");
+
+      pm_pipe.addSeparator();
+      pmb <= pm_pipe.addDefaultButton("Select instrument node", "pipecm_selectnextinstrnode");
+      pmb.setToolTipCaption("Select next unmuted instrument node");
+      pmb.setAccelerators(null, "w");
+
+      pmb <= pm_pipe.addDefaultButton("Select next arranger", "pipecm_selectnextarranger");
+      pmb.setToolTipCaption("Select next unmuted arranger");
+      pmb.setAccelerators(null, "f");
+
+      if(null != _nearLayerOrNull)
+         pm_pipe.showNearLayerOffset(_nearLayerOrNull, 100, -109);
+      else
+         pm_pipe.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+
+      if(_bFocusFirst)
+         pm_pipe.focusNextMenuItem();
+   }
+
+   // <ui_handle.png>
+   namespace method pipeCopyToClipboard() {
+      Global.Debug("PagePipeMap::pipeCopyToClipboard");
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+
+      if(null != pipe)
+      {
+         if(SongFileWriter.SavePipeFile(Global.GetPipeClipboardFileName(),
+                                        pipe
+                                        )
+            )
+         {
+            Global.Success("Pipe saved to global clipboard");
+         }
+         else
+         {
+            Global.Error("Failed to save pipe to global clipboard");
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   namespace =replay= method pipePasteClipboard(boolean _bNewPipe) {
+      Global.Debug("PagePipeMap::pipePasteClipboard");
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe *pipe;
+
+      if(_bNewPipe)
+      {
+         // (note) name will be overwritten by LoadPipeFile()
+         pipe <= pgRoot.handleAdd2("pasted pipe", true/*bEdit*/, true/*bUpdatePipeMap*/);
+      }
+      else
+      {
+         pipe <= pgRoot.getSelectedPipe();
+      }
+
+      if(null != pipe)
+      {
+         Node.StartClone();
+
+         if(SongFileReader.LoadPipeFile(Global.GetPipeClipboardFileName(),
+                                        pipe
+                                        )
+            )
+         {
+            Node.UpdateClonedGIDs();
+
+            Global.Success("Pipe loaded from global clipboard");
+
+            updateMap();
+            updateMapState();
+         }
+         else
+         {
+            Global.Error("Failed to load pipe from global clipboard");
+         }
+
+         Node.EndClone();
+      }
+   }
+
+   // <ui_show.png>
+   module method showLoadPipePresetDialog() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         PagePipeRoot pgRoot <= root_form.pg_piperoot;
+         MIDIPipe pipe <= pgRoot.getSelectedPipe();
+         Dialogs.ShowFileNameDialog("Load pipe preset",
+                                    STConfig.pipe_rootpath + "/"+pipe.getSuggestedPresetName(),
+                                    false/*bDir*/,
+                                    this,
+                                    false/*bSave*/,
+                                    Global.PIPE_FILE_SUFFIX,
+                                    STConfig.pipe_rootpath
+                                    );
+         dlg_filename_mode = DLG_FILENAME_MODE_PIPE_LOAD;
+
+         Global.Print("Load pipe preset (enter name)");
+      }
+   }
+
+   // <ui_show.png>
+   module method showSavePipePresetDialog() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         PagePipeRoot pgRoot <= root_form.pg_piperoot;
+         MIDIPipe pipe <= pgRoot.getSelectedPipe();
+         Dialogs.ShowFileNameDialog("Save pipe preset",
+                                    STConfig.pipe_rootpath + "/" + pipe.getSuggestedPresetName(),
+                                    false/*bDir*/,
+                                    this,
+                                    true/*bSave*/,
+                                    Global.PIPE_FILE_SUFFIX,
+                                    STConfig.pipe_rootpath
+                                    );
+         dlg_filename_mode = DLG_FILENAME_MODE_PIPE_SAVE;
+
+         Global.Print("Save pipe preset (enter name)");
+      }
+   }
+
+   // <ui_show.png>
+   module method showLoadNodePresetDialog() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         Node sn <= getLastSelectedScriptNode();
+         if(null != sn)
+         {
+            local String typeName = (sn.yacMetaClassName().toLower().replace("node",""));
+            local String nodeBaseDir = Utils.FixFileName(STConfig.node_rootpath+"/"+typeName+"/");
+            MIDIPipeNode n <= sn.parent_pipenode;
+            Dialogs.ShowFileNameDialog("Load node preset",
+                                       nodeBaseDir + n.getSuggestedPresetName(),
+                                       false/*bDir*/,
+                                       this,
+                                       false/*bSave*/,
+                                       Global.NODE_FILE_SUFFIX,
+                                       nodeBaseDir
+                                       );
+            dlg_filename_mode = DLG_FILENAME_MODE_NODE_LOAD;
+
+            Global.Print("Load node preset (enter name)");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   module method showSaveNodePresetDialog() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         Node sn <= getLastSelectedScriptNode();
+         if(null != sn)
+         {
+            String typeName = (sn.yacMetaClassName().toLower().replace("node",""));
+            String nodeBaseDir = Utils.FixFileName(STConfig.node_rootpath+"/"+typeName+"/");
+            MIDIPipeNode n <= sn.parent_pipenode;
+            Global.Debug("nodeBaseDir=\""+nodeBaseDir+"\" suggestedPresetName=\""+n.getSuggestedPresetName()+"\"");
+            Dialogs.ShowFileNameDialog("Save node preset",
+                                       nodeBaseDir + n.getSuggestedPresetName(),
+                                       false/*bDir*/,
+                                       this,
+                                       true/*bSave*/,
+                                       Global.NODE_FILE_SUFFIX,
+                                       nodeBaseDir
+                                       );
+            dlg_filename_mode = DLG_FILENAME_MODE_NODE_SAVE;
+
+            Global.Print("Save node preset (enter name)");
+         }
+      }
+   }
+
+   // <load.png>
+   module method loadPipePreset(String _fileName) {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe *pipe;
+
+      pipe <= pgRoot.getSelectedPipe();
+
+      if(null != pipe)
+      {
+         int oldPipeIdx = pgRoot.getSelectedPipeIdx();
+         PagePipe pgPipe <= root_form.pg_pipe;
+         pgPipe.selectNodeByIdx(0);
+         pgPipe.deleteAllPipeNodes();
+
+         Node.StartClone();
+         MIDI.LockUpdateOutDeviceNames();
+
+         if(SongFileReader.LoadPipeFile(Utils.ToNativePathName(_fileName), pipe))
+         {
+            local String pipeBaseDir <= Utils.FixFileName(STConfig.pipe_rootpath + "/");
+            pipe.setSuggestedPresetName(_fileName.replace(pipeBaseDir, ""));
+
+            Node.UpdateClonedGIDs();
+
+            Global.Success("Pipe loaded from \""+_fileName+"\"");
+
+            pgRoot.updateTable();
+            pgRoot.selectPipeByIdx(oldPipeIdx);
+
+            int oldNodeIdx = pgPipe.getSelectedNodeIdx();
+            pgPipe.unsetPipe();
+            pgPipe.showPipeInt(pipe, false/*bLog*/);
+            pgPipe.updateTable();
+            pgPipe.selectNodeByIdx(oldNodeIdx);
+
+            updateMap();
+            updateMapState();
+
+            if(null != last_selected_bt)
+               UI.SetKeyboardFocus(last_selected_bt);
+         }
+         else
+         {
+            Global.Error("Failed to load pipe from \""+Utils.ToNativePathName(_fileName)+"\"");
+         }
+
+         MIDI.UnlockUpdateOutDeviceNames();
+         Node.EndClone();
+      }
+   }
+
+   // <save.png>
+   module method savePipePreset1(String _fileName) {
+      if(Utils.CanFileBeRead(Utils.ToNativePathName(_fileName)))
+      {
+         // Overwrite existing file
+         dialog_overwritepipepreset.run(_fileName);
+      }
+      else
+      {
+         // New file
+         savePipePreset2(_fileName);
+      }
+   }
+
+   // <save.png>
+   public =replay= method savePipePreset2(String _fileName) {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+
+      if(null != pipe)
+      {
+         _fileName = Utils.FixFileName(_fileName);  // remove double and backward slashs
+         if(SongFileWriter.SavePipeFile(Utils.ToNativePathName(_fileName), pipe))
+         {
+            local String pipeBaseDir <= Utils.FixFileName(STConfig.pipe_rootpath + "/");
+            pipe.setSuggestedPresetName((_fileName.replace(pipeBaseDir, "")));
+
+            Global.Success("Pipe saved to \""+_fileName+"\"");
+
+            if(null != last_selected_bt)
+               UI.SetKeyboardFocus(last_selected_bt);
+         }
+         else
+         {
+            Global.Error("Failed to save pipe to \""+Utils.ToNativePathName(_fileName)+"\"");
+         }
+      }
+   }
+
+   // <load.png>
+   public method loadNodePreset(String _fileName) {
+      MIDIPipeNode n <= getLastSelectedNode();
+      Node sn <= getLastSelectedScriptNode();
+      if(null != sn)
+      {
+         _fileName = Utils.FixFileName(_fileName);  // remove double and backward slashs
+
+         String typeName = (sn.yacMetaClassName().toLower().replace("node",""));
+
+         Node.StartClone();
+         MIDI.LockUpdateOutDeviceNames();
+
+         // Load node state from file (must be same type)
+         if(SongFileReader.LoadNodeFile(Utils.ToNativePathName(_fileName), sn))
+         {
+            local String nodeBaseDir = Utils.FixFileName(STConfig.node_rootpath+"/"+typeName+"/");
+            n.setSuggestedPresetName(_fileName.replace(nodeBaseDir, ""));
+
+            Node.UpdateClonedGIDs();
+
+            Global.Success("Node loaded from \""+_fileName+"\"");
+
+            PagePipe pgPipe <= root_form.pg_pipe;
+            int oldIdx = pgPipe.getSelectedNodeIdx();
+            pgPipe.updateTable();
+            pgPipe.selectNodeByIdx(oldIdx);
+
+            updateMap();
+            updateMapState();
+
+            if(null != last_selected_bt)
+               UI.SetKeyboardFocus(last_selected_bt);
+         }
+         else
+         {
+            Global.Error("Failed to load node from \""+Utils.ToNativePathName(_fileName)+"\"");
+         }
+
+         MIDI.UnlockUpdateOutDeviceNames();
+         Node.EndClone();
+      }
+   }
+
+   // <method.png>
+   public =replay= method tryAutoLoadNodePreset() {
+      if(STConfig.b_autoload_node_default_preset)
+      {
+         if(0 == UI.GetKeyMod())
+         {
+            Node sn <= getLastSelectedScriptNode();
+            if(null != sn)
+            {
+               local String typeName = (sn.yacMetaClassName().toLower().replace("node",""));
+               local String nodeBaseDir = Utils.FixFileName(STConfig.node_rootpath+"/"+typeName+"/");
+               local String pathName <= nodeBaseDir+"default.sno";
+               if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+                  loadNodePreset(pathName);
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   module method saveNodePreset1(String _fileName) {
+      if(Utils.CanFileBeRead(Utils.ToNativePathName(_fileName)))
+      {
+         // Overwrite existing file
+         dialog_overwritenodepreset.run(_fileName);
+      }
+      else
+      {
+         // New file
+         saveNodePreset2(_fileName);
+      }
+   }
+
+   // <save.png>
+   public =replay= method saveNodePreset2(String _fileName) {
+      MIDIPipeNode n <= getLastSelectedNode();
+      Node sn <= getLastSelectedScriptNode();
+      if(null != sn)
+      {
+         _fileName = Utils.FixFileName(_fileName);  // remove double and backward slashs
+
+         String typeName = (sn.yacMetaClassName().toLower().replace("node",""));
+
+         // Save state to file
+         if(SongFileWriter.SaveNodeFile(Utils.ToNativePathName(_fileName), n))
+         {
+            local String nodeBaseDir = Utils.FixFileName(STConfig.node_rootpath+"/"+typeName+"/");
+            n.setSuggestedPresetName(_fileName.replace(nodeBaseDir, ""));
+
+            Global.Success("Node saved to \""+_fileName+"\"");
+
+            if(null != last_selected_bt)
+               UI.SetKeyboardFocus(last_selected_bt);
+         }
+         else
+         {
+            Global.Error("Failed to save node to \""+Utils.ToNativePathName(_fileName)+"\"");
+         }
+      }
+
+   }
+
+   // <ui_show.png>
+   module method showNodeContextMenu(boolean _bFocusFirst, Layer _nearLayerOrNull) {
+      // Create context-sensitive popupmenu
+      pm_node <= PopupMenu.New(this);
+
+      Node sn <= getLastSelectedScriptNode();
+      boolean bTracker = (sn instanceof NodeTracker);
+
+      PopupMenuButton *pmb;
+
+      String sIcon_add    <= UI.PreferMonoIcons() ? "adds_mono"    : "adds";
+      String sIcon_remove <= UI.PreferMonoIcons() ? "removes_mono" : "trashcan_sm";
+
+      pmb <= pm_node.addDefaultButton("Toggle mute", "nodecm_mute");
+      pmb.setAccelerators(null, "d");
+      pmb <= pm_node.addDefaultButton("Toggle solo", "nodecm_solo");
+      pmb.setAccelerators(null, "s");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addCheckButton("Arm for recording", sn.nodeIsArmedForRecording(), "nodecm_arm");
+      pmb.setAccelerators(null, "rctrl");
+
+      pmb <= pm_node.addCheckButton("Ignore Seek+PrgChg+Mute", sn.b_node_ignore_seek_prgchg_mute, "nodecm_ignorepc");
+      pmb.setToolTipCaption("Ignore program changes and seek/mute RPNs\n\n (note) '*i' next to pattern number indicates ignore state");
+      pmb.setAccelerators(null, "lctrl-x BACKSPACE");
+
+      MIDI.AppendOutDevSubMenu(pm_node, true/*bSeparator*/,  "New Tracker",  ""/*captionPrefix*/, "newtracker_");
+      MIDI.AppendOutDevSubMenu(pm_node, false/*bSeparator*/, "New TrigSeq",  ""/*captionPrefix*/, "newtrigseq_");
+      MIDI.AppendOutDevSubMenu(pm_node, false/*bSeparator*/, "New Freeform", ""/*captionPrefix*/, "newseq_");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addIconButton("New node", sIcon_add, "nodecm_new");
+      pmb.setAccelerators(null, "INSERT");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Move left", "nodecm_moveleft");
+      pmb.setAccelerators(null, "lshift-LEFT");
+      pmb <= pm_node.addDefaultButton("Move right", "nodecm_moveright");
+      pmb.setAccelerators(null, "lshift-RIGHT");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Move pipe up", "nodecm_movepipeup");
+      pmb.setAccelerators(null, "lshift-UP");
+      pmb <= pm_node.addDefaultButton("Move pipe down", "nodecm_movepipedown");
+      pmb.setAccelerators(null, "lshift-DOWN");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Clone node", "nodecm_clone");
+      pmb.setAccelerators(null, "lshift-INSERT");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addIconButton("Delete node", sIcon_remove, "nodecm_delete");
+      pmb.setAccelerators(null, "DELETE");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Load preset..", "nodecm_load");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Save preset..", "nodecm_save");
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Edit node comment", "nodecm_comment");
+      pmb.setAccelerators(null, "c");
+
+      if(bTracker)
+      {
+         pm_node.addSeparator();
+         pmb <= pm_node.addDefaultButton("Import tracker samples..", "nodecm_trackersmpimport");
+         pmb.setAccelerators(null, "q");
+      }
+
+      pm_node.addSeparator();
+      pmb <= pm_node.addDefaultButton("Select arranger-enabled node", "nodecm_selectnextarrnode");
+      pmb.setToolTipCaption("Select next unmuted, arranger-enabled node");
+      pmb.setAccelerators(null, "lshift-a");
+
+      pmb <= pm_node.addDefaultButton("Select instrument node", "nodecm_selectnextinstrnode");
+      pmb.setToolTipCaption("Select next unmuted instrument node");
+      pmb.setAccelerators(null, "w");
+
+      pmb <= pm_node.addDefaultButton("Select next arranger", "nodecm_selectnextarranger");
+      pmb.setToolTipCaption("Select next unmuted arranger node");
+      pmb.setAccelerators(null, "f");
+
+      if(null != _nearLayerOrNull)
+         pm_node.showNearLayerOffset(_nearLayerOrNull, 80, -130);
+      else
+         pm_node.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+
+      if(_bFocusFirst)
+         pm_node.focusNextMenuItem();
+   }
+
+   // <ui_handle.png>
+   public method createNewTrack1(ActionConsumer _recipient, boolean _bCurrentPipe, boolean _bShowAllNodeTypes) {
+      Global.Debug("createNewTrack1: bCurrentPipe="+_bCurrentPipe);
+      dlg_new_track.showNewTrackDialog(_recipient, _bCurrentPipe, _bShowAllNodeTypes);
+   }
+
+   // <ui_handle.png>
+   public method createNewTrack2() {
+      createNewTrack3(dlg_new_track.createGetPipeName(),
+                      dlg_new_track.createGetNodeName(),
+                      dlg_new_track.createGetPresetPathName(),
+                      dlg_new_track.createGetNodeClass(),
+                      dlg_new_track.doAutoAssign(),
+                      dlg_new_track.createGetAutoDev(),
+                      dlg_new_track.createGetAutoCh(),
+                      true/*bEdit*/
+                      );
+   }
+
+   // <ui_handle.png>
+   public method createNewTrack3(String            _pipeName,
+                                 String            _nodeName,
+                                 String            _presetPathOrNull,
+                                 Object            _nodeClazz,
+                                 boolean           _bAutoAssign,
+                                 STX_MIDIOutDevice _autoDev,
+                                 byte              _autoChPref,
+                                 boolean           _bEdit
+                                 ) : boolean {
+      // (note) also called by NodeSeqEditor::explode()
+      boolean ret = false;
+
+      b_dont_unset_nodes = true;  // when called from NodeSeqEditor
+
+      local String pipeName <= _pipeName;
+      local String nodeBaseName <= _nodeName;
+      local String presetPathName <= _presetPathOrNull;
+      local Object nodeClass <= _nodeClazz;
+      Global.Debug("createNewTrack3: pipe=\""+pipeName+"\" node=\""+nodeBaseName+"\" nodeClass="+#(_nodeClazz)+" bAutoAssign="+_bAutoAssign+" autoDev="+#(_autoDev)+" autoChPref="+(_autoChPref+1)+" preset=\""+presetPathName+"\"");
+      local String nodeClassName <= nodeClass.yacMetaClassName().replace("Node","");
+
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+      MIDIPipe pipe <= current_song.findPipeByName(pipeName);
+      boolean bPipeAdded = false;
+      if(null == pipe)
+      {
+         // Lazy-create pipe
+         pipe <= pgPipeRoot.handleAdd2(pipeName, _bEdit, true/*bUpdatePipeMap*/);
+         bPipeAdded = true;
+      }
+      else
+      {
+         // Select existing pipe
+         pgPipeRoot.selectPipeByIdx(pipe.pipeIdx);
+
+         if(0 == pipe.pipeUsedIdx) // master ?
+            _bAutoAssign = false;
+      }
+
+      if(null != pipe)
+      {
+         // Determine new node name (Keys, Keys2, ..)
+         int nodeCount = 1;
+         local String nodeName = nodeBaseName;
+         MIDIPipeNode n <= current_song.findPipeNodeByName(pipe, nodeName);
+         while((null != n) || ((null != n) && !(n instanceof MIDIPipeNodeScriptProxy)))
+         {
+            nodeCount++;
+            nodeName = nodeBaseName+nodeCount;
+            n <= current_song.findPipeNodeByName(pipe, nodeName);
+         }
+
+         // Create node
+         PagePipe pgPipe <= root_form.pg_pipe;
+         n <= pgPipe.handleAdd3(nodeClass, nodeName, false/*bEdit*/);
+
+         if(null != n)
+         {
+            MIDIPipeNodeScriptProxy np <= n;
+            Node sn <= np.sci;
+
+            // Load preset
+            if(null != presetPathName)
+               loadNodePreset(presetPathName);
+
+            // Assign node name
+            n.name = nodeName;
+
+            // Assign unique automation port
+            boolean bDoAutoAssign = _bAutoAssign;
+
+            if(maybe == bDoAutoAssign)
+            {
+               trace "[>>>] PagePipeMap::createNewTrack3: bDoAutoAssign="+bDoAutoAssign;
+               StringArray aInstr <= STConfig.newtrackdialog_node_types_instr;
+               HashTable htDpyNames <= STConfig.node_type_display_names;
+               bDoAutoAssign = aInstr.containsObject(htDpyNames.get(nodeClass.yacMetaClassName()));
+               trace "[>>>] PagePipeMap::createNewTrack3: nodeClass="+#(nodeClass)+" => instr type => bDoAutoAssign="+bDoAutoAssign;
+            }
+
+            STX_MIDIOutDevice autoDev <= null;
+            byte autoChPref;
+
+            if(bDoAutoAssign)
+            {
+               autoDev   <= _autoDev;
+               autoChPref = _autoChPref;
+            }
+
+            if(bDoAutoAssign)
+            {
+               byte autoCh;
+               if(null != autoDev)
+               {
+                  if(STConfig.pipe_local_auto_devicename/*"<Pipe>"*/ == autoDev.getAliasOrDeviceName())
+                  {
+                     // Device is local to current pipe
+                     autoCh = current_song.findUniqueAutoCh(autoDev.dev_idx, autoChPref, pipe/*fltPipe*/);
+                     trace "[>>>] PagePipeMap::createNewTrack3: dev is local to current pipe => autoCh="+autoCh;
+                  }
+                  else
+                  {
+                     autoCh = current_song.findUniqueAutoCh(autoDev.dev_idx, autoChPref, null/*fltPipe*/);
+                     trace "[>>>] PagePipeMap::createNewTrack3: dev is global => autoCh="+autoCh;
+                  }
+               }
+               else
+                  autoCh = -1;
+
+               if(null != autoDev)
+               {
+                  if(-1 != autoCh)
+                  {
+                     sn.setEnableAutoFilterA(true);
+                     sn.setAutoDevFilterA(autoDev.dev_idx);
+                     sn.setAutoChFilterA(autoCh);
+
+                     sn.setEnableAutoFilterB(false);
+
+                     // Enable "show in arranger" flag
+                     sn.setEnableNodeClassShow(true);
+                  }
+                  else
+                  {
+                     // Failed to find (globally) unique automation port midi ch
+                     Global.Error("Failed to assign unique auto ch (dev=\""+autoDev.getAliasOrDeviceName()+"\")");
+                  }
+               }
+               else
+               {
+                  // Failed to resolve auto-dev
+                  // (note) error's already been printed by dialog class
+                  // Global.Error("Failed to resolve auto-dev for category \""+pipeName+"\" (check config!)");
+               }
+            }
+            else
+            {
+               sn.setEnableAutoFilterA(false);
+               sn.setEnableAutoFilterB(false);
+
+               // Disable "show in arranger" flag
+               sn.setEnableNodeClassShow(false);
+            }
+
+            sn.setNodeClassShowInGID(-1);
+            sn.setNodeClassIdFromString(pipeName);  // e.g. "keys"
+
+            // Rebuild pipe map
+            updateMap();
+            updateMapState();
+
+            if(bDoAutoAssign && (null != autoDev))
+               Global.Success("Create "+(bPipeAdded?"pipe+":"")+"node \""+pipeName+"."+nodeName+"\" type="+nodeClassName+" auto="+autoDev.getAliasOrDeviceName()+":"+(autoCh+1));
+            else
+               Global.Success("Create "+(bPipeAdded?"pipe+":"")+"node \""+pipeName+"."+nodeName+"\" type="+nodeClassName+" auto=<none>");
+
+            // Succceeded
+            ret = true;
+         }
+         else
+         {
+            // Should not be reachable
+            Global.Error("Failed to create node \""+nodeName+"\" type="+nodeClassName);
+         }
+      }
+      else
+      {
+         if(current_pipe_root.numPipes == current_pipe_root.maxPipes)
+         {
+            Global.Error("Failed to create pipe \""+pipeName+"\" (max number of pipes exceeded)");
+         }
+         else
+         {
+            // Should not be reachable
+            Global.Error("Failed to create pipe \""+pipeName+"\"");
+         }
+      }
+
+      pageFocusDefault();
+
+      b_dont_unset_nodes = false;
+
+      return ret;
+   }
+
+   // <ui_show.png>
+   module method showRootContextMenu(boolean _bFocusFirst) {
+      // Create context-sensitive popupmenu
+      pm_root <= PopupMenu.New(this);
+
+      PopupMenuButton *pmb;
+
+      String sIcon_add    <= UI.IsDarkOrMono() ? "adds_mono"    : "adds";
+      String sIcon_remove <= UI.IsDarkOrMono() ? "removes_mono" : "trashcan_sm";
+
+      pmb <= pm_root.addIconButton("New pipe", sIcon_add, "rootcm_new");
+      pmb.setAccelerators(null, "INSERT");
+
+      pm_root.addSeparator();
+      pmb <= pm_root.addDefaultButton("Paste global clipboard to new pipe", "rootcm_paste_new");
+
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+      if(null != pipe)
+      {
+         MIDI.AppendOutDevSubMenu(pm_root, true/*bSeparator*/,  "New Tracker",  ""/*captionPrefix*/, "newtracker_");
+         MIDI.AppendOutDevSubMenu(pm_root, false/*bSeparator*/, "New TrigSeq",  ""/*captionPrefix*/, "newtrigseq_");
+         MIDI.AppendOutDevSubMenu(pm_root, false/*bSeparator*/, "New Freeform", ""/*captionPrefix*/, "newseq_");
+      }
+
+      pm_root.addSeparator();
+      pmb <= pm_root.addCheckButton("Show ctl info", STConfig.b_show_ctl_info, "rootcm_ctlinfo");
+      pmb.setToolTipCaption("Show incoming note on / off controller info in status bar");
+      pmb <= pm_root.addCheckButton("Show hi-freq ctl info", STConfig.b_show_ctl_info_hifreq, "rootcm_ctlinfo_hifreq");
+      pmb.setToolTipCaption("Show incoming pitchbend, aftertouch, CC, (N)RPN controller info in status bar");
+
+      pm_root.addSeparator();
+      pmb <= pm_root.addDefaultButton("Show Pipe Root", "rootcm_root");
+      pmb.setAccelerators(null, "r");
+
+      pm_root.addSeparator();
+      PopupMenu spm <= PopupMenu.New(pm_root);
+      pmb <= pm_root.addMenu("Sub-Song", deref spm);
+      ST_Song *subsong;
+      int subsongIdx = 0;
+      foreach subsong in all_songs
+      {
+         pmb <= spm.addDefaultButton(subsong.sub_name, "rootcm_subsong_"+subsongIdx);
+         if(!STConfig.b_lctrlx_kp_select_multimorph)
+            pmb.setAccelerators(null, "lctrl-x (NUMPAD) "+subsongIdx);
+         subsongIdx++;
+      }
+
+      pm_root.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+
+      if(_bFocusFirst)
+         pm_root.focusNextMenuItem();
+   }
+
+   // <ui_handle.png>
+   protected method tryHandleQuickAddNodeByAction(String acName) : boolean {
+      if(acName <= "newtracker_")
+      {
+         handleQuickAddNodeByClassAndDevChString1(NodeTracker, acName.replace("newtracker_", ""));
+         return true;
+      }
+      else if(acName <= "newtrigseq_")
+      {
+         handleQuickAddNodeByClassAndDevChString1(NodeTrigSeq, acName.replace("newtrigseq_", ""));
+         return true;
+      }
+      else if(acName <= "newseq_")
+      {
+         handleQuickAddNodeByClassAndDevChString1(NodeSeq, acName.replace("newseq_", ""));
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   public method handleQuickAddNodeByClassAndDevChString1(Object _clazz, String _sDevCh) {
+      PagePipeRoot pgRoot <= root_form.pg_piperoot;
+      MIDIPipe pipe <= pgRoot.getSelectedPipe();
+      if(null != pipe)
+      {
+         // "<devidx>_<midich>"
+         local StringArray aDevCh <= _sDevCh.splitChar('_');
+         quickadd_dev_idx = aDevCh.get(0);
+         quickadd_dev_ch  = aDevCh.get(1);
+
+         // // root_form.showPageNav(RootForm.PAGE_PIPE);
+         PagePipe pgPipe <= root_form.pg_pipe;
+         STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(quickadd_dev_idx);
+         if(null != outDev)
+         {
+            pgPipe.handleQuickAddByClassFromPipeMap(_clazz, outDev.getAlias()/*suggestedName*/);
+            // unless canceled, PagePipe calls handleQuickAddNodeByClassAndDevChString2() after node has been created
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleQuickAddNodeByClassAndDevChString2(Node _sn) {
+      Global.Debug2("handleQuickAddNodeByClassAndDevChString2: sn="+#(_sn)+" devIdx="+quickadd_dev_idx+" ch="+quickadd_dev_ch);
+
+      if(_sn instanceof NodeTracker)
+      {
+         // Create instrument
+         NodeTracker nodeTracker <= _sn;
+         NT_Instrument ins <= nodeTracker.lazyCreateInstrumentByDevChAndName(quickadd_dev_idx, quickadd_dev_ch, ""/*name*/);
+         if(null != ins)
+            ins.name = ins.getAutoName();
+      }
+      else if(_sn instanceof NodeTrigSeq)
+      {
+         // Set output port
+         NodeTrigSeq nodeTrigSeq <= _sn;
+         nodeTrigSeq.setOutDevIdx(quickadd_dev_idx);
+         nodeTrigSeq.setOutCh(quickadd_dev_ch);
+      }
+      else if(_sn instanceof NodeSeq)
+      {
+         // Set output port
+         NodeSeq nodeSeq <= _sn;
+         DeviceIOPort io <= nodeSeq.getOutPortByTrackIdx(0);
+         io.setDevIdx(quickadd_dev_idx);
+         io.setDevCh(quickadd_dev_ch);
+         io.setEnable(true);
+         nodeSeq.clearPortNames();
+         io.setInfo(nodeSeq.nodeGetName());
+      }
+
+      PagePipe pgPipe <= root_form.pg_pipe;
+      pgPipe.editSelectedNode();
+   }
+
+   // <ui_handle.png>
+   public =replay= method togglePreCount() {
+      STConfig.b_pipemap_precount = !STConfig.b_pipemap_precount;
+      Global.Print("Global recording Pre-Count is "+Utils.GetEnableString(STConfig.b_pipemap_precount));
+   }
+
+   // <ui_handle.png>
+   protected method toggleAutoLockKeyJazz() {
+      cb_autolock_keyjazz.toggleSelectionAction();
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoLockKeyJazzChanged() {
+      Global.Print("Auto-lock KeyJazz is "+Utils.GetEnableString(cb_autolock_keyjazz.isSelected()));
+      STConfig.b_autolock_keyjazz = cb_autolock_keyjazz.isSelected();
+      toggleKeyJazzLock(false/*bAlwaysVerbose*/);
+   }
+
+   // <ui_handle.png>
+   public method toggleKeyJazzLock(boolean _bAlwaysVerbose) {
+      Node n <= getLastSelectedScriptNode();
+      if(null != n)
+      {
+         if(!n.nodeIsKeyJazzLocked())
+         {
+            // Lock
+            n.nodeToggleKeyJazzLock();
+            if(n.nodeIsKeyJazzLocked())
+            {
+               Global.PrintFast("Lock KeyJazz to node \""+n.nodeGetName()+"\", track "+(current_song.locked_keyjazz_track+1));
+               return;
+            }
+         }
+      }
+
+      // Release
+      if(current_song.isKeyJazzLocked())
+      {
+         Node lockNode <= current_song.findNodeByGID(current_song.locked_keyjazz_node_gid);
+         if(null != lockNode)
+            Global.PrintFast("Release KeyJazz lock from node \""+lockNode.nodeGetName()+"\"");
+         else
+            Global.PrintFast("Release KeyJazz lock from nodeGID="+current_song.locked_keyjazz_node_gid); // should not be reachable
+         current_song.releaseKeyJazzLock();
+      }
+      else if(_bAlwaysVerbose)
+         Global.Print("KeyJazz not locked");
+   }
+
+   // <save.png>
+   public =replay= method recUndoStateSave(boolean _bArmedOnly) {
+      rec_save_timestamp = milliSeconds();
+
+      Global.Debug2("PagePipeMap::recUndoStateSave: BEGIN ms="+rec_save_timestamp);
+
+      int numSaved = Node.SaveRecUndoStates(_bArmedOnly);
+
+      Global.Debug2("PagePipeMap::recUndoStateSave: END");
+      bt_rec_undo.setEditable(Node.HaveAnyRecUndoStates());
+
+      Global.Print(numSaved+" node state"+Utils.GetPluralString(numSaved)+" saved for undo");
+   }
+
+   // <load.png>
+   public =replay= method recUndoStateLoad2(boolean _bClearAfterwards) {
+      Global.Debug2("PagePipeMap::recUndoStateLoad: BEGIN");
+
+      int numLoaded = Node.LoadRecUndoStates(_bClearAfterwards);
+
+      Global.Debug2("PagePipeMap::recUndoStateLoad: END");
+      if(_bClearAfterwards)
+         bt_rec_undo.setEditable(false);
+
+      Global.Print("Undo (reload "+numLoaded+" node state"+Utils.GetPluralString(numLoaded)+")");
+   }
+
+   // <load.png>
+   public =replay= method recUndoStateLoad(boolean _bClearAfterwards) {
+      local Float deltaMs = milliSeconds() - rec_save_timestamp;
+      if(deltaMs > STConfig.pipemap_undo_state_warning_delta_ms)
+      {
+         trace "xxx warning: undo state is "+deltaMs.printf("%3.2f")+" seconds old";
+         // (todo) show confirmation dialog
+      }
+
+      recUndoStateLoad2(_bClearAfterwards);
+   }
+
+   // <ui_handle.png>
+   public =replay= method startRecording(boolean _bSendMMC) {
+      Global.Debug("PagePipeMap::startRecording");
+      if(!replay.b_global_recording)
+      {
+         recUndoStateSave(true/*_bArmedOnly*/);
+         replay.global_recording_start_song_offset = current_song.song_offset;
+         Global.Print("Start global recording");
+      }
+      else
+      {
+         recUndoStateLoad(false/*bClearAfterwards*/);
+         Global.Print("Undo and restart global recording");
+      }
+      if(replay.b_playing)
+      {
+         // Stop replay, undo and restart recording
+         root_form.handleToggleReplay(_bSendMMC);
+         current_song.seek(replay.global_recording_start_song_offset);
+         root_form.updateReplayTimeLabel(true/*bForceUpdate*/);
+      }
+
+      // Start replay + precount
+      root_form.handleToggleReplay(_bSendMMC);
+      if(STConfig.b_pipemap_precount)
+         replay.startPreCount(STConfig.pipemap_precount_num_bars);
+      replay.b_global_recording = true;
+   }
+
+   // <ui_timer.png>
+   static boolean b_pattern_changed = false; // written by replay (see Node)
+   public method pageHandleReplayTimer() {
+      if(b_pattern_changed)
+      {
+         b_pattern_changed = false;
+         scheduleUpdateMapState();
+
+         updatePatNr(false/*bForceEditPatternNr*/);
+      }
+
+      if(replay.b_playing && STConfig.b_pipemap_progress)
+         redraw();
+   }
+
+   // <ui_page.png>
+   public virtual pageHandleMuteSoloChanged() {
+      scheduleUpdateMapState();
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return ["debug_print_t_avg",
+              "resize_window",
+              "stashed_syntheditor_list",
+              "stashed_syntheditor_free",
+              "stashed_node_mmc_list",
+              "stashed_node_mmc_free",
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetDefaultActions() : StringArray {
+      return ["debug_print_t_avg",
+              "resize_window 960 600",
+              "resize_window 960 900"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   protected method cmdResizeWindow(int _w, int _h) {
+      Global.Debug("cmdResizeWindow(w="+_w+" h="+_h+")");
+      if(960 <= _w < 4000)
+      {
+         if(600 <= _h < 4000)
+         {
+            if(!Viewport.isFullScreen())
+            {
+               Global.Debug("cmdResizeWindow: call UI.OpenWindow("+_w+", "+_h+")");
+               UI.QueueResize(_w, _h);
+            }
+         }
+         else
+            Global.Warning("height must be 600..4000");
+      }
+      else
+         Global.Warning("width must be 960..4000");
+   }
+
+   // <ui_cmd.png>
+   protected method cmdStashedSynthEditorList() {
+      String *profileId;
+      int i = 0;
+      int totalSz = 0;
+      foreach profileId in g_stashed_raw_project_midiprofiledata
+      {
+         Buffer b <= g_stashed_raw_project_midiprofiledata[profileId];
+         trace "[...] cmdStashedSynthEditorList: stash["+i+"] profileId=\""+profileId+"\" size="+b.size;
+         totalSz += b.size;
+         i++;
+      }
+      trace "[...] cmdStashedSynthEditorList: total stashed size is "+totalSz+" ("+(totalSz/1024)+"kb)";
+   }
+
+   // <ui_cmd.png>
+   protected method cmdStashedSynthEditorFree(String _profileId) {
+      if(g_stashed_raw_project_midiprofiledata.exists(_profileId))
+      {
+         g_stashed_raw_project_midiprofiledata.delete(_profileId);
+         trace "[...] deleted stashed syntheditor project profile data for profileId=\""+_profileId+"\"";
+         Global.Print("Delete stashed syntheditor data for profile \""+_profileId+"\"");
+      }
+      else
+      {
+         Global.Print("Profile \""+_profileId+"\" has no stashed syntheditor data");
+      }
+   }
+
+   // <ui_cmd.png>
+   protected method cmdStashedNodeMMCList() {
+      String *className;
+      int i = 0;
+      int totalSz = 0;
+      foreach className in g_stashed_raw_project_node_mmc_data
+      {
+         Buffer b <= g_stashed_raw_project_node_mmc_data[className];
+         trace "[...] cmdStashedNodeMMCList: stash["+i+"] className=\""+className+"\" size="+b.size;
+         totalSz += b.size;
+         i++;
+      }
+      trace "[...] cmdStashedNodeMMCList: total stashed size is "+totalSz+" ("+(totalSz/1024)+"kb)";
+   }
+
+   // <ui_cmd.png>
+   protected method cmdStashedNodeMMCFree(String _className) {
+      if(g_stashed_raw_project_node_mmc_data.exists(_className))
+      {
+         g_stashed_raw_project_node_mmc_data.delete(_className);
+         trace "[...] deleted stashed node MMC data for className=\""+_className+"\"";
+         Global.Print("Delete stashed node MMC data for class \""+_className+"\"");
+      }
+      else
+      {
+         Global.Print("Class \""+_className+"\" has no stashed node MMC data");
+      }
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      Global.Debug("PagePipeMap::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "layout":
+            UI.LayoutRootLayer();
+            return true;
+
+         case "debug_print_t_avg":
+            String msg = "replay.t_avg="+replay.t_avg+" ("+int(100.0*replay.t_avg/MIDI.tick_duration)+"%)";
+            trace "[dbg] "+msg;
+            Global.Print(msg);
+            return true;
+
+         case "resize_window":
+            cmdResizeWindow(int(_argv.get(1)), int(_argv.get(2)));
+            return true;
+
+         case "stashed_syntheditor_list":
+            cmdStashedSynthEditorList();
+            return true;
+
+         case "stashed_syntheditor_free":
+            // arg1: MIDI synth profile id
+            cmdStashedSynthEditorFree(_argv.get(1));
+            return true;
+
+         case "stashed_node_mmc_list":
+            cmdStashedNodeMMCList();
+            return true;
+
+         case "stashed_node_mmc_free":
+            // arg1: node class name
+            cmdStashedNodeMMCFree(_argv.get(1));
+            return true;
+      }
+      return false;
+   }
+
+   // <ui.png>
+   public virtual onLookAndFeelChanged() {
+      Layer::onLookAndFeelChanged();
+
+      state_tints_bg[0] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_PLAY_TINT_BG_NOICONS);
+      state_tints_bg[1] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_MUTE_TINT_BG_NOICONS);
+      state_tints_bg[2] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_SOLO_TINT_BG_NOICONS);
+      state_tints_bg[3] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_PLAY_SEQ_TINT_BG_NOICONS);
+      state_tints_bg[4] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_MUTE_SEQ_TINT_BG_NOICONS);
+
+      state_tints_fg[0] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_PLAY_TINT_FG_NOICONS);
+      state_tints_fg[1] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_MUTE_TINT_FG_NOICONS);
+      state_tints_fg[2] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_SOLO_TINT_FG_NOICONS);
+      state_tints_fg[3] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_PLAY_SEQ_TINT_FG_NOICONS);
+      state_tints_fg[4] = app_lnf.getColor(AppLookAndFeel.COLOR_PIPEMAP_STATE_MUTE_SEQ_TINT_FG_NOICONS);
+
+      updateMap();
+      updateMapState();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         if(VMOD_LSHIFT == UI.GetKeyMod())
+            selectNextUsedPattern();
+         else
+            selectPreviousPipeOrNode(true/*bAllowUpdatePrefX*/);
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         if(VMOD_LSHIFT == UI.GetKeyMod())
+            selectPreviousUsedPattern();
+         else
+            selectNextPipeOrNode(true/*bAllowUpdatePrefX*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showRootContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          1         :   Set pipenode A
+          2         :   Set pipenode B
+          z         :   Edit pipenode A (e.g. last used arranger)
+          s         :   Toggle send-initial-program-change
+          t         :   Create new track (/pipe /node)
+          k or l    :   Toggle KeyJazz Lock
+          RCTRL     :   Toggle pre-count
+          BACKSPACE :   Toggle ignore prgchg/mute mode of selected node
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case '1':
+               selectPipeNodeA();
+               r = true;
+               break;
+
+            case '2':
+               selectPipeNodeB();
+               r = true;
+               break;
+
+            case 'z':
+            case 'y':
+               editPipeNodeA();
+               r = true;
+               break;
+
+            case 's':
+               handleToggleInitPC();
+               r = true; break;
+
+            case 't':
+               if(0 == current_pipe_root.numPipes)
+               {
+                  // "master" pipe does not exist, yet
+                  pgPipeRoot.handleAdd();
+               }
+               else
+               {
+                  createNewTrack1(this,
+                                  false/*bCurrentPipe*/,
+                                  ((null != last_selected_bt) && last_selected_bt.b_is_pipe) ? false : maybe /*bShowAllTypes*/
+                                  );
+               }
+               r = true; break;
+
+            case 'k':
+            case 'l':
+               toggleKeyJazzLock(true/*bAlwaysVerbose*/);
+               r = true; break;
+
+            case VKEY_RCTRL:
+               togglePreCount();
+               r = true; break;
+
+            case VKEY_BACKSPACE:
+               toggleIgnoreSeekPrgChgMute();
+               r = true; break;
+
+            default:
+               r = maybe; break;
+         }
+
+         if(true == r)
+            return true;
+         else if(maybe == r)
+            Global.Print("");
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_INSERT:
+               // only reachable when there are not pipes/nodes
+               pgPipeRoot.handleAdd();
+               return true;
+
+            case VKEY_UP:
+               selectPreviousNodeRowOrPipe();
+               return true;
+
+            case VKEY_DOWN:
+               selectNextNodeRowOrPipe();
+               return true;
+
+            case VKEY_LEFT:
+               selectPreviousPipeOrNode(true/*bAllowUpdatePrefX*/);
+               return true;
+
+            case VKEY_RIGHT:
+               selectNextPipeOrNode(true/*bAllowUpdatePrefX*/);
+               return true;
+
+            case VKEY_PAGEUP:
+               selectPipeOrNodeByValue(0.0f);
+               return true;
+
+            case VKEY_PAGEDOWN:
+               selectPipeOrNodeByValue(1.0f);
+               return true;
+
+            case VKEY_1:
+               cm_action.setSelectedOptionAction(EXEC_SELECT);
+               return true;
+
+            case VKEY_2:
+               cm_action.setSelectedOptionAction(EXEC_EDIT);
+               return true;
+
+            case VKEY_3:
+               cm_action.setSelectedOptionAction(EXEC_MUTE);
+               return true;
+
+            case VKEY_4:
+               cm_action.setSelectedOptionAction(EXEC_SOLO);
+               return true;
+
+            case VKEY_5:
+               cm_action.setSelectedOptionAction(EXEC_MOVE);
+               return true;
+
+            case VKEY_HOME:
+               if(STConfig.b_key_swap_pattern_home_end)
+                  selectPreviousUsedPattern();
+               else
+                  selectNextUsedPattern();
+               return true;
+
+            case VKEY_END:
+               if(STConfig.b_key_swap_pattern_home_end)
+                  selectNextUsedPattern();
+               else
+                  selectPreviousUsedPattern();
+               return true;
+
+            case 'a':
+               showPipeOrNodeContextMenu(true/*bFocusFirst*/, true/*bNearButton*/);
+               return true;
+
+            case 'e':
+               root_form.showPageNav(RootForm.PAGE_PIPE);
+               return true;
+
+            case 'f':
+               selectNextArranger();
+               return true;
+
+            case 'l':
+               toggleAutoLockKeyJazz();
+               return true;
+
+            case 't':
+               if(0 == current_pipe_root.numPipes)
+               {
+                  // "master" pipe does not exist, yet
+                  pgPipeRoot.handleAdd();
+               }
+               else
+               {
+                  createNewTrack1(this,
+                                  true/*bCurrentPipe*/,
+                                  ((null != last_selected_bt) && last_selected_bt.b_is_pipe) ? false : maybe /*bShowAllTypes*/
+                                  );
+               }
+               return true;
+
+            case 'w':
+               selectNextInstrumentNode();
+               return true;
+
+            case VKEY_RCTRL:
+               toggleNodeArmForRecording();
+               return true;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case 'q':
+            if(_k.modNone())
+            {
+               handleShowTrackerNodeSampleImport();
+               return true;
+            }
+            return false;
+
+         case 'r':
+            handleShowPipeRoot();
+            return true;
+
+         case 's':
+            if(_k.modCtrl())
+            {
+               togglePipeSolo();
+            }
+            else
+            {
+               togglePipeOrNodeSolo();
+            }
+            return true;
+
+         case 'd':
+            if(_k.modCtrl())
+            {
+               togglePipeMute();
+            }
+            else
+            {
+               togglePipeOrNodeMute();
+            }
+            return true;
+
+         case VKEY_UP:
+            if(_k.modShift())
+            {
+               movePipeUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modShift())
+            {
+               movePipeDown();
+               return true;
+            }
+            break;
+
+         case VKEY_LEFT:
+            if(_k.modShift())
+            {
+               moveNodeLeft();
+               return true;
+            }
+            break;
+
+         case VKEY_RIGHT:
+            if(_k.modShift())
+            {
+               moveNodeRight();
+               return true;
+            }
+            break;
+
+         case VKEY_RSHIFT:
+            startRecording(_k.modCtrl()/*sendmmc*/);
+            return true;
+
+         case 'y':  // 'z' on german kbd
+            if(_k.modCtrl())
+            {
+               recUndoStateLoad(true/*bClearAfterwards*/);
+               return true;
+            }
+            break;
+      }
+
+
+      if(_k.modShiftOnly())
+      {
+         switch(_k.pressed)
+         {
+            case 'a':
+               selectNextArrangerEnabledNode();
+               return true;
+
+            case VKEY_KP1:
+               selectPatternByUsedIdx(0);
+               return true;
+
+            case VKEY_KP2:
+               selectPatternByUsedIdx(1);
+               return true;
+
+            case VKEY_KP3:
+               selectPatternByUsedIdx(2);
+               return true;
+
+            case VKEY_KP4:
+               selectPatternByUsedIdx(3);
+               return true;
+
+            case VKEY_KP5:
+               selectPatternByUsedIdx(4);
+               return true;
+
+            case VKEY_KP6:
+               selectPatternByUsedIdx(5);
+               return true;
+
+            case VKEY_KP7:
+               selectPatternByUsedIdx(6);
+               return true;
+
+            case VKEY_KP8:
+               selectPatternByUsedIdx(7);
+               return true;
+
+            case VKEY_KP9:
+               selectPatternByUsedIdx(8);
+               return true;
+
+            case VKEY_KP0:
+               selectPatternByUsedIdx(-1);
+               return true;
+
+            case VKEY_HOME:
+               selectPipeOrNodeByValue(0.0f);
+               return true;
+
+            case VKEY_END:
+               selectPipeOrNodeByValue(1.0f);
+               return true;
+
+            case VKEY_PAGEUP:
+               MMTListener.MMTHandleLayerInc(cm_action);
+               return true;
+
+            case VKEY_PAGEDOWN:
+               MMTListener.MMTHandleLayerDec(cm_action);
+               return true;
+         }
+      }
+
+      if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case 'a':
+               showRootContextMenu(true/*bFocusFirst*/);
+               return true;
+
+            case VKEY_LEFT:
+               selectPipe();
+               return true;
+
+            case VKEY_RIGHT:
+               selectLastPipeNode();
+               return true;
+
+            case VKEY_HOME:
+               selectNodeByValue(0.0f);
+               return true;
+
+            case VKEY_END:
+               selectNodeByValue(1.0f);
+               return true;
+
+            case VKEY_TAB:
+               root_form.showPageNav(RootForm.PAGE_SYSEX);
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction *sac;
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+      if(TA_UPDATEMAPSTATE == acName)
+      {
+         updateMapState();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            if(tryButtonClick(ap))
+            {
+               return true;
+            }
+            break;
+
+         case @(dlg_new_track):
+            if(NewTrackDialog.ACTION_CREATE_NEW_TRACK == acName)
+            {
+               createNewTrack2();
+            }
+            else
+            {
+               Global.Debug("NewTrackDialog was canceled.");
+            }
+            return true;
+
+         case @(pm_pipe):
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(tryHandleQuickAddNodeByAction(acName))
+               return true;
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  if(null != last_selected_bt)
+                     UI.SetKeyboardFocus(last_selected_bt);
+                  return true;
+
+               default:
+                  return true;
+
+               case "pipecm_new":
+                  root_form.pg_piperoot.handleAdd();
+                  return true;
+
+               case "pipecm_new_auto":
+                  if(null != last_selected_bt)
+                     last_selected_bt.newPipeOrNode(false/*bShift*/);
+                  return true;
+
+               case "pipecm_solo":
+                  togglePipeOrNodeSolo();
+                  return true;
+
+               case "pipecm_mute":
+                  togglePipeOrNodeMute();
+                  return true;
+
+               case "pipecm_clone":
+                  root_form.pg_piperoot.handleClone();
+                  return true;
+
+               case "pipecm_copy":
+                  pipeCopyToClipboard();
+                  return true;
+
+               case "pipecm_paste":
+                  pipePasteClipboard(false/*bNewPipe*/);
+                  return true;
+
+               case "pipecm_paste_new":
+                  pipePasteClipboard(true/*bNewPipe*/);
+                  return true;
+
+               case "pipecm_delete":
+                  root_form.pg_piperoot.confirmDeleteSelectedPipe();
+                  return true;
+
+               case "pipecm_comment":
+                  editPipeOrNodeComment(true/*bIsPipe*/);
+                  return true;
+
+               case "pipecm_final":
+                  togglePipeFinalOutput();
+                  return true;
+
+               case "pipecm_selectnextarrnode":
+                  selectNextArrangerEnabledNode();
+                  return true;
+
+               case "pipecm_selectnextinstrnode":
+                  selectNextInstrumentNode();
+                  return true;
+
+               case "pipecm_selectnextarranger":
+                  selectNextArranger();
+                  return true;
+
+               case "pipecm_load":
+                  showLoadPipePresetDialog();
+                  return true;
+
+               case "pipecm_save":
+                  showSavePipePresetDialog();
+                  return true;
+            }
+            return true;
+
+         case @(pm_node):
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(tryHandleQuickAddNodeByAction(acName))
+               return true;
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  if(null != last_selected_bt)
+                     UI.SetKeyboardFocus(last_selected_bt);
+                  return true;
+
+               default:
+                  return true;
+
+               case "nodecm_arm":
+                  toggleNodeArmForRecording();
+                  return true;
+
+               case "nodecm_ignorepc":
+                  toggleNodeIgnorePrgChg();
+                  return true;
+
+               case "nodecm_mute":
+                  togglePipeOrNodeMute();
+                  return true;
+
+               case "nodecm_solo":
+                  togglePipeOrNodeSolo();
+                  return true;
+
+               case "nodecm_new":
+                  root_form.pg_pipe.handleAdd();
+                  return true;
+
+               case "nodecm_moveleft":
+                  moveNodeLeft();
+                  return true;
+
+               case "nodecm_moveright":
+                  moveNodeRight();
+                  return true;
+
+               case "nodecm_movepipeup":
+                  movePipeUp();
+                  return true;
+
+               case "nodecm_movepipedown":
+                  movePipeDown();
+                  return true;
+
+               case "nodecm_clone":
+                  root_form.pg_pipe.handleClone();
+                  return true;
+
+               case "nodecm_delete":
+                  root_form.pg_pipe.confirmDeleteSelectedNode();
+                  return true;
+
+               case "nodecm_comment":
+                  editPipeOrNodeComment(false/*bIsPipe*/);
+                  return true;
+
+               case "nodecm_trackersmpimport":
+                  handleShowTrackerNodeSampleImport();
+                  return true;
+
+               case "nodecm_selectnextarrnode":
+                  selectNextArrangerEnabledNode();
+                  return true;
+
+               case "nodecm_selectnextinstrnode":
+                  selectNextInstrumentNode();
+                  return true;
+
+               case "nodecm_selectnextarranger":
+                  selectNextArranger();
+                  return true;
+
+               case "nodecm_load":
+                  showLoadNodePresetDialog();
+                  return true;
+
+               case "nodecm_save":
+                  showSaveNodePresetDialog();
+                  return true;
+            }
+            return true;
+
+         case @(pm_root):
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(tryHandleQuickAddNodeByAction(acName))
+               return true;
+
+            if(acName <= "rootcm_subsong_")
+            {
+               root_form.selectSubSongByIdxAndShowPipeMap(acName.replace("rootcm_subsong_", ""));
+            }
+            else switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  if(null != last_selected_bt)
+                     UI.SetKeyboardFocus(last_selected_bt);
+                  return true;
+
+               case "rootcm_new":
+                  root_form.pg_piperoot.handleAdd();
+                  return true;
+
+               case "rootcm_paste_new":
+                  pipePasteClipboard(true/*bNewPipe*/);
+                  return true;
+
+               case "rootcm_ctlinfo":
+                  STConfig.b_show_ctl_info = !STConfig.b_show_ctl_info;
+                  Global.Print("Show controller info is "+Utils.GetEnableString(STConfig.b_show_ctl_info));
+                  return true;
+
+               case "rootcm_ctlinfo_hifreq":
+                  STConfig.b_show_ctl_info_hifreq = !STConfig.b_show_ctl_info_hifreq;
+                  Global.Print("Show hi-freq controller info is "+Utils.GetEnableString(STConfig.b_show_ctl_info_hifreq));
+                  return true;
+
+               case "rootcm_root":
+                  handleShowPipeRoot();
+                  return true;
+            }
+            return true;
+
+         case @(cm_action):
+            handleActionChanged();
+            return true;
+
+         case @(bt_exec):
+            handleExec();
+            return true;
+
+         case @(cb_initpc):
+            handleInitPCChanged();
+            return true;
+
+         case @(cb_autolock_keyjazz):
+            handleAutoLockKeyJazzChanged();
+            return true;
+
+         case @(bt_newtrack):
+            if(0 == current_pipe_root.numPipes)
+            {
+               // "master" pipe does not exist, yet
+               pgPipeRoot.handleAdd();
+            }
+            else
+            {
+               createNewTrack1(this,
+                               false/*bCurrentPipe*/,
+                               ((null != last_selected_bt) && last_selected_bt.b_is_pipe) ? false : maybe /*bShowAllTypes*/
+                               );
+            }
+            return true;
+
+         case @(bt_rec_start):
+            startRecording((Button.ACTION_HOLD_CLICK == acName)/*sendmmc*/);
+            return true;
+
+         case @(bt_rec_save):
+            recUndoStateSave(false/*_bArmedOnly*/);
+            return true;
+
+         case @(bt_rec_undo):
+            recUndoStateLoad(true/*bClearAfterwards*/);
+            return true;
+
+         case @(bt_patnr):
+            handlePatternNrDisplayChanged();
+            return true;
+
+         case @(cm_patnr):
+            handlePatternNrChanged();
+            return true;
+
+         case @(cm_patnr_num):
+            handlePatternNrNumChanged();
+            return true;
+
+         case @(cm_patnr_group):
+         case @(cm_patnr_sub):
+            handlePatternNrGroupOrSubChanged();
+            return true;
+
+         case @(Dialogs.dialog_filename):
+            StringAction sa <= _action;
+            String fileName;
+            if(FileNameDialog.ACTION_RETURN == acName)
+            {
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_PIPE_SAVE:
+                     fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PIPE_FILE_SUFFIX);
+                     savePipePreset1(fileName);
+                     break;
+
+                  case DLG_FILENAME_MODE_PIPE_LOAD:
+                     fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PIPE_FILE_SUFFIX);
+                     loadPipePreset(fileName);
+                     break;
+
+                  case DLG_FILENAME_MODE_NODE_SAVE:
+                     fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.NODE_FILE_SUFFIX);
+                     saveNodePreset1(fileName);
+                     break;
+
+                  case DLG_FILENAME_MODE_NODE_LOAD:
+                     fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.NODE_FILE_SUFFIX);
+                     loadNodePreset(fileName);
+                     break;
+               }
+            }
+
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,571 @@
+// ----
+// ---- file   : NodeProxyEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 07May2017
+// ---- changed: 27May2017, 16Jun2017, 12Oct2017, 13Oct2017, 28Jan2019, 29Aug2019, 20Sep2019
+// ----          08Nov2019, 26Oct2020, 13May2021, 24Apr2022, 23Jun2023, 30May2025
+// ----
+// ----
+// ----
+
+module MNodeProxyEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeProxyEditor extends NodeEditor, ActionProvider, MIDIMapDefs {
+
+   define String TA_UPDATE;
+   protected TimerAction *ta_update;
+   protected int ta_update_count;
+
+   public NodeProxy *proxy;
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected ComboBox *cm_in_dev;
+   protected ComboBox *cm_in_ch;
+
+   protected ComboBox *cm_out_dev;
+   protected ComboBox *cm_out_ch;
+
+   protected ComboBox *cm_bank_min;
+   protected ComboBox *cm_program_min;
+
+   protected FloatParam *fp_mm_off;
+   protected FloatParam *fp_mm_range;
+   protected FloatParam *fp_mm_pos;
+   protected CheckBox   *cb_mm_pos_send;
+
+   protected Panel      *pn_morph;
+   protected ComboBox   *cm_morph_src_bank;
+   protected ComboBox   *cm_morph_src_prg;
+   protected ComboBox   *cm_morph_dst_bank;
+   protected ComboBox   *cm_morph_dst_prg;
+   protected FloatParam *fp_morph_amt;
+   protected Button     *bt_morph_update;
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeProxyEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            f_autodev.initAutoDeviceForm();
+
+            initMMC();
+            initTimers();
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_update <= TimerAction.New(TA_UPDATE, this, 1000.0/20);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeProxyEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       cm_node_class,
+                       cb_node_class_show,
+                       cm_node_class_show_in,
+
+                       cm_in_dev,
+                       cm_in_ch,
+
+                       cm_out_dev,
+                       cm_out_ch,
+
+                       cm_bank_min,
+                       cm_program_min,
+
+                       fp_mm_off,
+                       fp_mm_range,
+                       fp_mm_pos,
+                       cb_mm_pos_send,
+
+                       cm_morph_src_bank,
+                       cm_morph_src_prg,
+                       cm_morph_dst_bank,
+                       cm_morph_dst_prg,
+                       fp_morph_amt,
+                       bt_morph_update,
+                     ]
+                    );
+      f_autodev.addTabCycleOverrides(layers);
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeProxy _proxy) {
+      proxy <= _proxy;
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(proxy);
+
+      cm_in_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_in_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      cm_in_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(proxy.in_dev));
+      cm_in_ch.setSelectedOption(proxy.in_ch);
+
+      cm_out_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_out_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      cm_out_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(proxy.out_dev));
+      cm_out_ch.setSelectedOption(proxy.out_ch);
+
+      // Program+Bank ranges / offsets (0 or 1):
+      cm_bank_min   .setSelectedOption(proxy.bank_min);
+      cm_program_min.setSelectedOption(proxy.program_min);
+
+      // Multi-Morph:
+      fp_mm_off  .setValue(proxy.multi_morph_offset_resetval);
+      fp_mm_range.setValue(proxy.multi_morph_range_resetval);
+      fp_mm_pos  .setValue(proxy.multi_morph_pos_resetval);
+      cb_mm_pos_send.setSelected(proxy.b_multi_morph_pos_send);
+
+      updateMorphSettings();
+      pn_morph.relayout();
+
+      // auto:
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      f_autodev.showNode(proxy, devAll, bgcolorsAll);
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         UI.SetKeyboardFocus(cm_in_dev);
+      }
+
+      ta_update.schedule();
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         UI.SetKeyboardFocus(bt_morph_update);
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+      ta_update.cancel();
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      proxy <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updateMorphSettings() {
+      EditMIDISynthForm *f <= proxy.cached_synthform;
+      if(null != f)
+      {
+         proxy.findCachedSynthForm(true/*bShowData*/);
+
+         cm_morph_src_bank.setOptions(f.getBankNames());
+         cm_morph_src_bank.setSelectedOption(f.proxy_bank);
+
+         cm_morph_dst_bank.setOptions(f.getBankNames());
+         cm_morph_dst_bank.setSelectedOption(f.proxy_bank_dst);
+
+         cm_morph_src_prg.setOptions(f.getProgramNames(f.proxy_bank));
+         cm_morph_src_prg.setSelectedOption(f.proxy_program);
+
+         cm_morph_dst_prg.setOptions(f.getProgramNames(f.proxy_bank_dst));
+         cm_morph_dst_prg.setSelectedOption(f.proxy_program_dst);
+
+         fp_morph_amt.setValue(f.proxy_amount_dst * 16383);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(proxy.getNodeClassId());
+      cb_node_class_show.setSelected(proxy.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      proxy.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+proxy.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      proxy.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(proxy.getEnableNodeClassShow()));
+   }
+
+   // <ui_handle.png>
+   protected method handleInputDevChanged() {
+      proxy.setInputDev(MIDI.SortedToUnsortedDevIdx(cm_in_dev.getSelectedOption()));
+
+      Global.Print("Input device is "+cm_in_dev.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handleInputChChanged() {
+      proxy.setInputCh(cm_in_ch.getSelectedOption());
+
+      Global.Print("Input channel is "+cm_in_ch.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handleOutputDevChanged() {
+      proxy.setOutputDev(MIDI.SortedToUnsortedDevIdx(cm_out_dev.getSelectedOption()));
+
+      ta_update_count = 10;
+      ta_update.reschedule();
+
+      Global.Print("Output device is "+cm_out_dev.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handleOutputChChanged() {
+      proxy.setOutputCh(cm_out_ch.getSelectedOption());
+
+      ta_update_count = 10;
+      ta_update.reschedule();
+
+      Global.Print("Output channel is "+cm_out_ch.getSelectedOptionName()+".");
+   }
+
+   // <ui_handle.png>
+   protected method handleBankMinChanged() {
+      proxy.setBankMin(cm_bank_min.getSelectedOption());
+
+      Global.Print("Bank-select range is "+cm_bank_min.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleProgramMinChanged() {
+      proxy.setProgramMin(cm_program_min.getSelectedOption());
+
+      Global.Print("Program-change range is "+cm_program_min.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleMMOffsetChanged() {
+      proxy.setMultiMorphOffset(fp_mm_off.getFloatValue());
+
+      Global.Print("Multi-Morph offset is "+proxy.multi_morph_offset_resetval);
+   }
+
+   // <ui_handle.png>
+   protected method handleMMRangeChanged() {
+      proxy.setMultiMorphRange(fp_mm_range.getFloatValue());
+
+      ta_update_count = 10;
+      ta_update.reschedule();
+
+      Global.Print("Multi-Morph range is "+proxy.multi_morph_range_resetval);
+   }
+
+   // <ui_handle.png>
+   protected method handleMMPosChanged() {
+      proxy.setMultiMorphPos(fp_mm_pos.getFloatValue());
+
+      ta_update_count = 10;
+      ta_update.reschedule();
+
+      Global.Print("Multi-Morph position is "+proxy.multi_morph_pos_resetval);
+   }
+
+   // <ui_handle.png>
+   protected method handleMMPosSendChanged() {
+      proxy.setEnableMultiMorphPosSend(cb_mm_pos_send.isSelected());
+
+      ta_update_count = 10;
+      ta_update.reschedule();
+
+      Global.Print("Multi-Morph position send-during-reset is "+Utils.GetEnableString(proxy.b_multi_morph_pos_send));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMorphSrcBankChanged() {
+      int idx = cm_morph_src_bank.getSelectedOption();
+      proxy.queued_src_bank = idx + 1;
+
+      EditMIDISynthForm *f <= proxy.cached_synthform;
+      if(null != f)
+      {
+         cm_morph_src_prg.setOptions(f.getProgramNames(idx));
+         cm_morph_src_prg.setSelectedOption(f.proxy_program);
+         pn_morph.relayout();
+         proxy.queued_src_prg = f.proxy_program + 1;
+         proxy.queued_dst_amt = f.proxy_amount_dst * 16383;
+      }
+
+      Global.Print("Morph Src Bank is \""+cm_morph_src_bank.getSelectedOptionName()+" ("+(idx+1)+")\"");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMorphSrcPrgChanged() {
+      int idx = cm_morph_src_prg.getSelectedOption();
+      proxy.queued_src_prg = idx + 1;
+
+      EditMIDISynthForm *f <= proxy.cached_synthform;
+      if(null != f)
+      {
+         proxy.queued_dst_amt = f.proxy_amount_dst * 16383;
+      }
+
+      Global.Print("Morph Src Program is \""+cm_morph_src_prg.getSelectedOptionName()+" ("+(idx+1)+")\"");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMorphDstBankChanged() {
+      int idx = cm_morph_dst_bank.getSelectedOption();
+      proxy.queued_dst_bank = idx + 1;
+
+      EditMIDISynthForm *f <= proxy.cached_synthform;
+      if(null != f)
+      {
+         cm_morph_dst_prg.setOptions(f.getProgramNames(idx));
+         cm_morph_dst_prg.setSelectedOption(f.proxy_program_dst);
+         pn_morph.relayout();
+         proxy.queued_dst_prg = f.proxy_program_dst + 1;
+         proxy.queued_dst_amt = f.proxy_amount_dst * 16383;
+      }
+
+      Global.Print("Morph Dst Bank is \""+cm_morph_dst_bank.getSelectedOptionName()+" ("+(idx+1)+")\"");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMorphDstPrgChanged() {
+      int idx = cm_morph_dst_prg.getSelectedOption();
+      proxy.queued_dst_prg = idx + 1;
+
+      EditMIDISynthForm *f <= proxy.cached_synthform;
+      if(null != f)
+      {
+         proxy.queued_dst_amt = f.proxy_amount_dst * 16383;
+      }
+
+      Global.Print("Morph Dst Program is \""+cm_morph_dst_prg.getSelectedOptionName()+" ("+(idx+1)+")\"");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMorphAmtChanged() {
+      short amt = fp_morph_amt.getFloatValue();
+      proxy.queued_dst_amt = amt;
+      Global.Print("Morph Dst Amount is "+amt);
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+      // ta_replay.schedule();
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+      proxy.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction *sac;
+
+      if(TA_UPDATE == acName)
+      {
+         if(ta_update_count > 0)
+         {
+            ta_update_count--;
+            updateMorphSettings();
+            ta_update.reschedule();
+         }
+         return true;
+      }
+
+      switch(@(ap))
+      {
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(proxy);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+            // input device+ch:
+         case @(cm_in_dev):
+            handleInputDevChanged();
+            return true;
+
+         case @(cm_in_ch):
+            handleInputChChanged();
+            return true;
+
+            // output device+ch:
+         case @(cm_out_dev):
+            handleOutputDevChanged();
+            return true;
+
+         case @(cm_out_ch):
+            handleOutputChChanged();
+            return true;
+
+            // Bank / Program ranges:
+         case @(cm_bank_min):
+            handleBankMinChanged();
+            return true;
+
+         case @(cm_program_min):
+            handleProgramMinChanged();
+            return true;
+
+            // Multi-Morph:
+         case @(fp_mm_off):
+            handleMMOffsetChanged();
+            return true;
+
+         case @(fp_mm_range):
+            handleMMRangeChanged();
+            return true;
+
+         case @(fp_mm_pos):
+            handleMMPosChanged();
+            return true;
+
+         case @(cb_mm_pos_send):
+            handleMMPosSendChanged();
+            return true;
+
+            // Morph
+         case @(cm_morph_src_bank):
+            handleMorphSrcBankChanged();
+            return true;
+
+         case @(cm_morph_src_prg):
+            handleMorphSrcPrgChanged();
+            return true;
+
+         case @(cm_morph_dst_bank):
+            handleMorphDstBankChanged();
+            return true;
+
+         case @(cm_morph_dst_prg):
+            handleMorphDstPrgChanged();
+            return true;
+
+         case @(fp_morph_amt):
+            handleMorphAmtChanged();
+            return true;
+
+         case @(bt_morph_update):
+            updateMorphSettings();
+            pn_morph.relayout();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

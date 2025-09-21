@@ -1,0 +1,1575 @@
+// ----
+// ---- file   : NMM_ArgForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 30Oct2015, 31Oct2015, 01Nov2015, 02Nov2015, 03Nov2015, 04Nov2015, 06Nov2015
+// ----          07Nov2015, 08Jul2016, 16Jan2017, 09Feb2017, 04Mar2017, 11Mar2017, 14Mar2017
+// ----          22Sep2017, 04Jan2018, 28Apr2018, 21May2018, 08Jun2019, 25Jun2019, 20Sep2019
+// ----          05Oct2019, 26Jan2021, 21Sep2023, 15Oct2023, 20Oct2023, 21Oct2023, 22Mar2024
+// ----          28Feb2025
+// ----
+// ----
+// ----
+
+module MNMM_ArgForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NMM_ArgForm extends XMLForm, ActionProvider, MIDIMapDefs {
+
+   protected NMM_Arg *arg;
+
+   define String ACTION_ARG_CHANGED;
+   define String ACTION_MIDI_LEARN_START;
+
+   define String TA_MIDI_LEARN;
+   protected TimerAction ta_midi_learn;
+   define int LEARN_TIMEOUT = 49;  // number of ta_midi_learn timeouts (=> 50*200 = 10 sec)
+   define int TINT32_LEARN = #58ef6467;
+   protected int learn_timeout;
+   define int LEARN_NONE = 0;
+   define int LEARN_MIDI = 1;
+   protected int learn_mode;
+
+   protected NodeModMatrixEditor *parent_editor;
+
+   protected boolean b_dst;
+   protected boolean b_is_macro;
+
+   protected Panel *pn_type;
+
+   protected NMM_SignalTapFloatParam *fp_last;
+
+   protected LayerSwitch *ls_macro;
+   protected ComboBox    *cm_mod;
+   protected ComboBox    *cm_def;
+   protected ComboBox    *cm_sh;
+
+   protected ComboBox    *cm_type;
+   protected LayerSwitch *ls_type;
+
+   // Const:
+   protected ComboBox    *cm_const_val_type;
+   protected FloatParam  *fp_const_val;
+   protected ComboBox    *cm_const_val;
+   protected LayerSwitch *ls_const_val_type;
+   protected ComboBox    *cm_const_val_range;
+   protected CheckBox    *cb_const_val_signed;
+
+   // Rand:
+   protected FloatParam *fp_rand_min;
+   protected FloatParam *fp_rand_max;
+   protected FloatParam *fp_rand_min_time;
+   protected FloatParam *fp_rand_max_time;
+   protected ComboBox   *cm_rand_val_range;
+   protected CheckBox   *cb_rand_val_signed;
+
+   // MIDI:
+   protected LayerSwitch *ls_macro_dev;
+   protected ComboBox    *cm_dev;
+   protected ComboBox    *cm_ch;
+   protected ComboBox    *cm_macro_ch;
+   protected LayerSwitch *ls_midi_type;
+
+   // MIDI.CC:
+   protected ComboBox    *cm_midi_cc_nr;
+
+   // MIDI.RPN:
+   protected ComboBox    *cm_midi_rpn_nr;
+   protected FloatParam  *fp_midi_rpn_nr;
+
+   // MIDI.NRPN:
+   protected ComboBox    *cm_midi_nrpn_nr;
+   protected FloatParam  *fp_midi_nrpn_nr;
+
+   protected Button *bt_learn;
+
+   // Reg:
+
+   // Macro
+   protected Label       *lb_macro;
+
+   protected PopupMenu *pm_context;
+
+   protected static NMM_Arg *arg_clipboard;
+
+
+   // <init.png>
+   public method init(NodeModMatrixEditor _parentEditor, boolean _bDst, boolean _bIsMacro) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      b_dst = _bDst;
+      b_is_macro = _bIsMacro;
+
+      if(!initPakFile("NMM_ArgForm.xfm"))
+      {
+         trace "[---] failed to parse \"NMM_ArgForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      local PointerArray allArgs;
+
+      if(b_dst)
+         allArgs = NMM_Arg.type_names;
+      else
+         allArgs.joinRR(NMM_Arg.extra_src_type_names, NMM_Arg.type_names);
+
+      if(!_bIsMacro)
+         allArgs.joinRR(allArgs, NMM_Arg.extra_macro_type_names);
+
+      cm_type.setOptions(allArgs);
+
+      cm_mod.setOptions(NMM_Arg.modifier_names);
+      cm_mod.setToolTipCaptions(NMM_Arg.modifier_tooltips);
+      cm_sh.setOptions(NMM_Arg.sh_type_names);
+
+      cm_const_val_type.setOptions(NMM_Arg.const_val_type_names);
+
+      cm_const_val_range.setOptions(NMM_Arg.val_range_names);
+      cm_rand_val_range.setOptions(NMM_Arg.val_range_names);
+
+      cb_const_val_signed.setCaption(tcchar(177)); // +-
+      cb_rand_val_signed.setCaption(tcchar(177)); // +-
+
+
+      ls_macro.switchToLayerNr(_bIsMacro ? 0 : 1);
+
+      recursiveBuildTabCycleLists();
+
+      initTimers();
+
+      return true;
+   }
+
+   // <method_set.png>
+   public method setSignalTapSizeX(int _w) {
+      fp_last.setRequiredSizeX(_w);
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_midi_learn <= TimerAction.New(TA_MIDI_LEARN, this, 200);
+   }
+
+   // <ui.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_ARG_CHANGED, ACTION_MIDI_LEARN_START];
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      if(!b_is_macro)
+      {
+         layers.joinRR(layers,
+                       [
+                          cm_mod,
+                          cm_def,
+                          cm_sh
+                        ]
+                       );
+      }
+
+      layers.add(cm_type);
+
+      boolean bUsesMacroDev = !( ((-1 == arg.disp_dev_idx) || (arg.disp_dev_idx >= 4)) );
+
+      switch(arg.disp_type)
+      {
+         case NMM_Arg.TYPE_CONST:
+            layers.add(cm_const_val_type);
+            if( (arg.const_val_type <= NMM_Arg.CONST_TYPE_INT_HEX) || (arg.const_val_type == NMM_Arg.CONST_TYPE_BINARY))
+            {
+               layers.add(fp_const_val);
+               layers.add(cm_const_val_range);
+               layers.add(cb_const_val_signed);
+            }
+            else
+            {
+               layers.add(cm_const_val);
+            }
+            break;
+
+         case NMM_Arg.TYPE_RANDOM:
+            layers.add(fp_rand_min);
+            layers.add(fp_rand_max);
+            layers.add(cm_rand_val_range);
+            layers.add(cb_rand_val_signed);
+            layers.add(fp_rand_min_time);
+            layers.add(fp_rand_max_time);
+            break;
+
+         case NMM_Arg.TYPE_SONGPOS:
+            break;
+
+         case NMM_Arg.TYPE_MACRO1:
+         case NMM_Arg.TYPE_MACRO2:
+         case NMM_Arg.TYPE_MACRO3:
+         case NMM_Arg.TYPE_MACRO4:
+            break;
+
+         case NMM_Arg.TYPE_NOTE:
+         case NMM_Arg.TYPE_NOTE_ADD:
+         case NMM_Arg.TYPE_NOTE_ON:
+         case NMM_Arg.TYPE_NOTE_ON_ADD:
+         case NMM_Arg.TYPE_NOTE_OFF:
+         case NMM_Arg.TYPE_NOTE_OFF_ADD:
+         case NMM_Arg.TYPE_VELOCITY:
+         case NMM_Arg.TYPE_VELOCITY_ADD:
+         case NMM_Arg.TYPE_DURATION:
+         case NMM_Arg.TYPE_DURATION_ADD:
+         case NMM_Arg.TYPE_POLYPRESSURE:
+         case NMM_Arg.TYPE_POLYPRESSURE_ADD:
+         case NMM_Arg.TYPE_PRGCHG:
+         case NMM_Arg.TYPE_CHPRESSURE:
+         case NMM_Arg.TYPE_PITCHBEND:
+            layers.add(cm_dev);
+            if(!bUsesMacroDev)
+               layers.add(cm_ch);
+            layers.add(bt_learn);
+            break;
+
+         case NMM_Arg.TYPE_CC:
+            layers.add(cm_dev);
+            if(!bUsesMacroDev)
+               layers.add(cm_ch);
+            layers.add(cm_midi_cc_nr);
+            layers.add(bt_learn);
+            break;
+
+         case NMM_Arg.TYPE_RPN:
+            layers.add(cm_dev);
+            if(!bUsesMacroDev)
+               layers.add(cm_ch);
+            layers.add(fp_midi_rpn_nr);
+            layers.add(cm_midi_rpn_nr);
+            layers.add(bt_learn);
+            break;
+
+         case NMM_Arg.TYPE_NRPN:
+            layers.add(cm_dev);
+            if(!bUsesMacroDev)
+               layers.add(cm_ch);
+            layers.add(fp_midi_nrpn_nr);
+            layers.add(cm_midi_nrpn_nr);
+            layers.add(bt_learn);
+            break;
+
+         case NMM_Arg.TYPE_BPM:
+            break;
+
+         case NMM_Arg.TYPE_REG1:
+         case NMM_Arg.TYPE_REG2:
+         case NMM_Arg.TYPE_REG3:
+         case NMM_Arg.TYPE_REG4:
+         case NMM_Arg.TYPE_REG5:
+         case NMM_Arg.TYPE_REG6:
+         case NMM_Arg.TYPE_REG7:
+         case NMM_Arg.TYPE_REG8:
+            break;
+      }
+   }
+
+   // <method_set.png>
+   public method showArg(NMM_Arg _arg) {
+      arg <= _arg;
+
+      if(!b_is_macro)
+      {
+         PointerArray allDevs;
+         allDevs.joinRR(["Macro 1 Dev", "Macro 2 Dev", "Macro 3 Dev", "Macro 4 Dev"],
+                        MIDI.out_device_names_sorted
+                        );
+         cm_dev.setOptions(allDevs);
+
+         IntArray allDevColors;
+         allDevColors.join([#2000003f, #2000003f, #2000003f, #2000003f],
+                           MIDI.out_device_bgcolors_sorted
+                           );
+         cm_dev.setOptionBGColors(allDevColors);
+      }
+      else
+      {
+         cm_dev.setOptions(MIDI.out_device_names_sorted);
+         cm_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+      }
+
+      if(null != arg)
+      {
+         cm_mod.setSelectedOption(arg.modifier);
+         cm_mod.setEditable(true);
+
+         updateDefOptions();
+         cm_def.setSelectedOption(arg.def_value_id);
+         cm_def.setEditable(true);
+
+         cm_sh.setSelectedOption(arg.sh_type);
+         cm_sh.setEditable(true);
+
+         if(b_dst)
+         {
+            cm_type.setSelectedOption(arg.disp_type - NMM_Arg.NUM_SRC_TYPES); // skip TYPE_CONST, TYPE_RANDOM
+         }
+         else
+         {
+            cm_type.setSelectedOption(arg.disp_type);
+         }
+         cm_type.setEditable(true);
+         handleTypeChanged(true/*bQuiet*/); // Update layerswitch
+
+         if(b_is_macro)
+         {
+            cm_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(arg.disp_dev_idx - 4));
+            ls_macro_dev.switchToLayerNr(1);
+         }
+         else
+         {
+            cm_dev.setSelectedOption((arg.disp_dev_idx >= 4) ? (MIDI.UnsortedToSortedDevIdx(arg.disp_dev_idx-4)+4) : arg.disp_dev_idx);
+            ls_macro_dev.switchToLayerNr(((-1 == arg.disp_dev_idx) || (arg.disp_dev_idx >= 4)) ? 1 : 0);
+         }
+         cm_dev.setEditable(true);
+         updateChOptions();
+         cm_ch.setSelectedOption(arg.dev_ch + 1);
+         cm_ch.setEditable(true);
+
+         cm_macro_ch.setSelectedOption(arg.macro_dev_ch + 2);
+         cm_macro_ch.setEditable(true);
+
+         updateConstValWidgetsAfterTypeChange();
+
+         fp_rand_min.setMinValue(arg.getRandValRangeMin());
+         fp_rand_min.setMaxValue(arg.getRandValRangeMax());
+         fp_rand_max.setMinValue(arg.getRandValRangeMin());
+         fp_rand_max.setMaxValue(arg.getRandValRangeMax());
+         fp_rand_min.setValue(arg.rand_min);
+         fp_rand_max.setValue(arg.rand_max);
+         fp_rand_min.setEditable(true);
+         fp_rand_max.setEditable(true);
+         fp_rand_min_time.setValue(arg.rand_min_time);
+         fp_rand_max_time.setValue(arg.rand_max_time);
+         fp_rand_min_time.setEditable(true);
+         fp_rand_max_time.setEditable(true);
+         cm_rand_val_range.setSelectedOption(arg.rand_val_range);
+         cm_rand_val_range.setEditable(true);
+         cb_rand_val_signed.setSelected(arg.b_rand_val_signed);
+         cb_rand_val_signed.setEditable(true);
+
+         cm_midi_cc_nr.setSelectedOption(arg.cc_nr);
+         cm_midi_cc_nr.setEditable(true);
+
+         fp_midi_rpn_nr.setValue(arg.rpn_nr);
+         fp_midi_rpn_nr.setEditable(true);
+         handleMIDIRPNNrValChanged(true/*bQuiet*/); // update combobox
+         cm_midi_rpn_nr.setEditable(true);
+
+         fp_midi_nrpn_nr.setValue(arg.nrpn_nr);
+         fp_midi_nrpn_nr.setEditable(true);
+         handleMIDINRPNNrValChanged(true/*bQuiet*/); // update combobox
+         cm_midi_nrpn_nr.setEditable(true);
+
+         lb_macro.setCaption(arg.getMacroCtlName());
+
+         fp_last.resetSignalTap();
+      }
+      else
+      {
+         cm_mod.setSelectedOption(-1);
+         cm_mod.setEditable(false);
+         cm_def.setSelectedOption(-1);
+         cm_def.setEditable(false);
+         cm_sh.setSelectedOption(-1);
+         cm_sh.setEditable(false);
+         cm_type.setSelectedOption(-1);
+         cm_type.setEditable(false);
+
+         cm_const_val_type.setSelectedOption(-1);
+         ls_const_val_type.switchToLayerNr(1);
+         cm_const_val_type.setEditable(false);
+         fp_const_val.setEditable(false);
+         cm_const_val.setEditable(false);
+         cm_const_val_range.setSelectedOption(-1);
+         cm_const_val_range.setEditable(false);
+         cb_const_val_signed.setSelected(false);
+         cb_const_val_signed.setEditable(false);
+
+         fp_rand_min.setValue(0);
+         fp_rand_max.setValue(0);
+         fp_rand_min_time.setValue(0);
+         fp_rand_max_time.setValue(0);
+         fp_rand_min.setEditable(false);
+         fp_rand_max.setEditable(false);
+         fp_rand_min_time.setEditable(false);
+         fp_rand_max_time.setEditable(false);
+         cm_rand_val_range.setSelectedOption(-1);
+         cm_rand_val_range.setEditable(false);
+         cb_rand_val_signed.setSelected(false);
+         cb_rand_val_signed.setEditable(false);
+
+         cm_dev.setSelectedOption(-1);
+         cm_dev.setEditable(false);
+         cm_ch.setSelectedOption(-1);
+         cm_ch.setEditable(false);
+         cm_macro_ch.setSelectedOption(-1);
+         cm_macro_ch.setEditable(false);
+
+         cm_midi_cc_nr.setSelectedOption(-1);
+         cm_midi_cc_nr.setEditable(false);
+
+         cm_midi_rpn_nr.setSelectedOption(-1);
+         cm_midi_rpn_nr.setEditable(false);
+         fp_midi_rpn_nr.setValue(-1);
+         fp_midi_rpn_nr.setEditable(false);
+
+         cm_midi_nrpn_nr.setSelectedOption(-1);
+         cm_midi_nrpn_nr.setEditable(false);
+         fp_midi_nrpn_nr.setValue(-1);
+         fp_midi_nrpn_nr.setEditable(false);
+
+         lb_macro.setCaption("-");
+      }
+   }
+
+   // <method.png>
+   protected method initFromCtlTagEntry(int _idx) {
+      CtlTagEntry en <= current_song.getCtlTagEntryByIdx(_idx);
+      MIDIMapEvent ev <= en.mm_event;
+      learnFromEvent(ev);
+   }
+
+   // <method_set.png>
+   public method setLearnMode(int _mode, boolean _bQuiet) {
+
+      if(learn_mode == _mode)
+      {
+         // Toggle off
+         if(!_bQuiet)
+            Global.Print("Stop MIDI learn");
+
+         learn_mode = LEARN_NONE;
+      }
+      else
+      {
+         if(!_bQuiet)
+         {
+            if(learn_mode != LEARN_NONE)
+            {
+               if(LEARN_NONE == _mode)
+                  Global.Print("Stop MIDI learn");
+            }
+         }
+
+         learn_mode = _mode;
+
+         if(!_bQuiet)
+         {
+            if(LEARN_NONE != _mode)
+            {
+               // Stop all other MIDI learn timers
+               provideAction(Action.New(getProvidedActionAlias(ACTION_MIDI_LEARN_START), this));
+
+               Global.Print("Start MIDI learn");
+            }
+         }
+      }
+
+      String caption = " Learn ";
+
+      bt_learn.setBackgroundTint(0);
+      bt_learn.setCaption(caption);
+      bt_learn.redraw();
+
+      Button bt <= null;
+
+      if(LEARN_NONE != learn_mode)
+      {
+         bt <= bt_learn;///getLearnButton();
+      }
+
+      if(null != bt)
+      {
+         bt.setCaption(" Stop ");
+         bt.setBackgroundTint(TINT32_LEARN);
+         bt.redraw();
+         learn_timeout = LEARN_TIMEOUT;
+         ta_midi_learn.schedule();
+      }
+      else
+      {
+         ta_midi_learn.cancel();
+         learn_timeout = -1;
+      }
+   }
+
+   // <ui_timer.png>
+   protected method handleMIDILearnTimer() {
+
+      // trace "xxx handleMIDILearnTimer: learn_timeout="+learn_timeout+" mode="+parent_node.learn_mode;
+
+      if(LEARN_NONE != learn_mode)
+      {
+         learn_timeout--;
+
+         if(learn_timeout <= 0)
+         {
+            setLearnMode(LEARN_NONE, false/*bQuiet*/);
+         }
+         else
+         {
+            Button bt <= bt_learn;
+
+            if(learn_timeout & 1)
+               bt.setBackgroundTint(TINT32_LEARN);
+            else
+               bt.setBackgroundTint(0);
+
+            if(0 == (learn_timeout & 1))
+            {
+               if(0 != (learn_timeout & 2))
+                  bt.setCaption(" "+(learn_timeout/2)+" ");
+               else
+                  bt.setCaption(" Stop ");
+            }
+
+            bt.redraw();
+
+            ta_midi_learn.schedule();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method toggleMIDILearn() {
+      setLearnMode(LEARN_MIDI, false/*bQuiet*/);
+   }
+
+   // <method.png>
+   protected method learnFromEvent(MIDIMapEvent _ev) : boolean {
+      boolean bLearnt = false;
+
+      switch(_ev.type)
+      {
+         case MIDIMapDefs.TYPE_NOTE_OFF:
+            arg.type         = NMM_Arg.TYPE_NOTE_OFF;
+            arg.disp_type    = arg.type;
+            arg.orig_note    = _ev.arg1;
+            arg.b_orig_note_state = false;
+            arg.orig_vel     = _ev.arg2;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_NOTE_ON:
+            arg.type         = NMM_Arg.TYPE_NOTE_ON;
+            arg.disp_type    = arg.type;
+            arg.orig_note    = _ev.arg1;
+            arg.b_orig_note_state = true;
+            arg.orig_vel     = _ev.arg2;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_POLY_PRESSURE:
+            arg.type         = NMM_Arg.TYPE_POLYPRESSURE;
+            arg.disp_type    = arg.type;
+            arg.orig_note    = _ev.arg1;
+            arg.b_orig_note_state = true;
+            arg.orig_vel     = _ev.arg2;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_CC:
+            arg.type         = NMM_Arg.TYPE_CC;
+            arg.disp_type    = arg.type;
+            arg.cc_nr        = _ev.ext_type;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            arg.type         = NMM_Arg.TYPE_PRGCHG;
+            arg.disp_type    = arg.type;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+            arg.type         = NMM_Arg.TYPE_CHPRESSURE;
+            arg.disp_type    = arg.type;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_PITCHBEND:
+            arg.type         = NMM_Arg.TYPE_PITCHBEND;
+            arg.disp_type    = arg.type;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+            arg.type         = NMM_Arg.TYPE_RPN;
+            arg.disp_type    = arg.type;
+            arg.rpn_nr       = _ev.ext_type;
+            bLearnt = true;
+            break;
+
+         case MIDIMapDefs.TYPE_NRPN:
+            arg.type         = NMM_Arg.TYPE_NRPN;
+            arg.disp_type    = arg.type;
+            arg.nrpn_nr      = _ev.ext_type;
+            bLearnt = true;
+            break;
+      }
+
+      if(bLearnt)
+      {
+         arg.dev_idx      = _ev.getDevIdx();
+         arg.disp_dev_idx = 4 + arg.dev_idx;
+         arg.dev_ch       = _ev.dev_ch;
+
+         showArg(arg);
+      }
+
+      return bLearnt;
+   }
+
+   // <midi_mml.png>
+   public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      // Called by NodeModMatrixEditor.mmlHandleEventUI()
+
+      if(null == arg)
+      {
+         // Ooops
+         return false;
+      }
+
+      if(LEARN_MIDI == learn_mode)
+         return learnFromEvent(_ev);
+
+      return false;
+   }
+
+   // <ui_update.png>
+   public method updateValue() {
+      if(null != arg)
+      {
+         float cval = b_dst ? arg.ui_out_val : arg.ui_cur_val;
+
+         // trace "xxx ui arg.ui_out_val="+arg.ui_out_val;
+
+         if(NMM_Arg.INVALID_VALUE == cval)
+         {
+            fp_last.setNonEditableText("-");
+         }
+         else
+         {
+            if(arg.isNoteType())
+            {
+               // trace "xxx NMM_ArgForm: update MIDI note";
+               fp_last.setNonEditableText(MIDI.midi_notes.get(cval));
+            }
+            else
+            {
+               fp_last.setNonEditableText(null);
+               fp_last.setValue(cval);
+            }
+         }
+
+         fp_last.redraw();
+      }
+   }
+
+   // <ui_update.png>
+   public method captureSignalTapValue() {
+      if(null != arg)
+      {
+         float cval = b_dst ? arg.ui_out_val : arg.ui_cur_val;
+
+         // trace "xxx ui arg.ui_out_val="+arg.ui_out_val;
+
+         // can be NMM_Arg.INVALID_VALUE
+         fp_last.captureSignalTapValue(cval);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateChOptions() {
+      local StringArray chOptions = MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(arg.dev_idx, "*"/*firstOptionOrNull*/);
+      cm_ch.setOptionsLong(chOptions);
+      chOptions.insert(0, "<Macro>");
+      cm_macro_ch.setOptionsLong(chOptions);
+   }
+
+   // <ui_update.png>
+   protected method updateCCOptions() {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+
+      if(null != dev)
+      {
+         cm_midi_cc_nr.setOptions(dev.getCCNamesSingle( (-1 == arg.dev_ch) ? 0 : arg.dev_ch));
+         cm_midi_cc_nr.setSelectedOption(arg.cc_nr);
+      }
+      else
+      {
+         cm_midi_cc_nr.setOptions(null);
+         cm_midi_cc_nr.setSelectedOption(-1);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateRPNOptions() {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile( (-1 == arg.dev_ch) ? 0 : arg.dev_ch );
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         cm_midi_rpn_nr.setOptions(msp.rpn_captions);
+         cm_midi_rpn_nr.setToolTipCaptions(msp.rpn_infos);
+         cm_midi_rpn_nr.setSelectedOption(msp.getRPNCaptionIndex(arg.rpn_nr));
+         fp_midi_rpn_nr.setValue(arg.rpn_nr);
+      }
+      else
+      {
+         cm_midi_rpn_nr.setOptions(null);
+         cm_midi_rpn_nr.setSelectedOption(-1);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateNRPNOptions() {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile( (-1 == arg.dev_ch) ? 0 : arg.dev_ch );
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         cm_midi_nrpn_nr.setOptions(msp.nrpn_captions);
+         cm_midi_nrpn_nr.setToolTipCaptions(msp.nrpn_infos);
+         cm_midi_nrpn_nr.setSelectedOption(msp.getNRPNCaptionIndex(arg.nrpn_nr));
+         fp_midi_nrpn_nr.setValue(arg.nrpn_nr);
+      }
+      else
+      {
+         cm_midi_nrpn_nr.setOptions(null);
+         cm_midi_nrpn_nr.setSelectedOption(-1);
+      }
+   }
+
+   // <method.png>
+   protected method provideChanged() {
+      provideAction(Action.New(getProvidedActionAlias(ACTION_ARG_CHANGED), this));
+   }
+
+   // <ui_handle.png>
+   protected method handleModifierChanged(boolean _bQuiet) {
+      arg.setModifier(cm_mod.getSelectedOption());
+
+      updateDefOptions();
+
+      if(!_bQuiet)
+      {
+         provideChanged();
+
+         Global.Print("Modifier is "+cm_mod.getSelectedOptionName());
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateDefOptions() {
+      cm_def.setOptions(arg.getDefOptions());
+   }
+
+   // <ui_handle.png>
+   protected method handleDefValueIdChanged(boolean _bQuiet) {
+      arg.setDefValueId(cm_def.getSelectedOption());
+
+      if(!_bQuiet)
+      {
+         provideChanged();
+
+         Global.Print("Default value is "+cm_def.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSHChanged(boolean _bQuiet) {
+      arg.setSH(cm_sh.getSelectedOption());
+
+      if(!_bQuiet)
+      {
+         provideChanged();
+
+         Global.Print("SH is "+cm_sh.getSelectedOptionName());
+      }
+   }
+
+   // <ui_update.png>
+   public method updateMacroCtlName() {
+      if(null != arg)
+      {
+         lb_macro.setCaption(arg.getMacroCtlName());
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateConstValWidgetsAfterTypeChange() {
+      // trace "xxx updateConstValWidgetsAfterTypeChange: arg.const_val_type="+arg.const_val_type;
+
+      cm_const_val_type.setSelectedOption(arg.const_val_type);
+      cm_const_val_type.setEditable(true);
+
+      if(arg.const_val_type <= NMM_Arg.CONST_TYPE_INT_DEC)
+      {
+         ls_const_val_type.switchToLayerNr(0);
+         fp_const_val.setDisplayType(FloatParam.DISPLAY_FLOAT);
+      }
+      else if(NMM_Arg.CONST_TYPE_INT_HEX == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(0);
+         fp_const_val.setDisplayType(FloatParam.DISPLAY_HEX);
+      }
+      else if(NMM_Arg.CONST_TYPE_NOTE == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(1);
+         cm_const_val.setOptions(MIDI.midi_notes);
+         cm_const_val.setEditable(true);
+         cm_const_val.setSelectedOption(arg.const_val);
+      }
+      else if(NMM_Arg.CONST_TYPE_PATNR == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(1);
+         cm_const_val.setOptions(Node.patnr_options);
+         cm_const_val.setEditable(true);
+         cm_const_val.setSelectedOption(arg.const_val);
+      }
+      else if(NMM_Arg.CONST_TYPE_KEY == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(1);
+         cm_const_val.setOptions(Scale.key_names);
+         cm_const_val.setEditable(true);
+         cm_const_val.setSelectedOption(arg.const_val % 12);
+      }
+      else if(NMM_Arg.CONST_TYPE_MODE == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(1);
+         cm_const_val.setOptions(Scale.mode_names);
+         cm_const_val.setEditable(true);
+         cm_const_val.setSelectedOption(arg.const_val % Scale.NUM_MODES);
+      }
+      else if(NMM_Arg.CONST_TYPE_BINARY == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(0);
+         fp_const_val.setDisplayType(FloatParam.DISPLAY_BINARY255);
+      }
+      else if(NMM_Arg.CONST_TYPE_CHORD == arg.const_val_type)
+      {
+         ls_const_val_type.switchToLayerNr(1);
+         cm_const_val.setOptions(Chord.chord_names_short);
+         cm_const_val.setEditable(true);
+         cm_const_val.setSelectedOption(arg.const_val % Chord.NUM_CHORDS);
+      }
+
+      fp_const_val.setMinValue(arg.getConstValRangeMin());
+      fp_const_val.setMaxValue(arg.getConstValRangeMax());
+      fp_const_val.setStep(arg.getConstValStep());
+      fp_const_val.setPrecision((NMM_Arg.CONST_TYPE_FLOAT == arg.const_val_type) ? 7 : 0);
+      fp_const_val.setValue(arg.const_val);
+      fp_const_val.setEditable(true);
+      cb_const_val_signed.setSelected(arg.b_const_val_signed);
+      cb_const_val_signed.setEditable(true);
+      cm_const_val_range.setSelectedOption(arg.const_val_range);
+      cm_const_val_range.setEditable(true);
+
+      pn_type.queueRelayout();
+   }
+
+   // <ui_handle.png>
+   protected method handleTypeChanged(boolean _bQuiet) {
+      int type = cm_type.getSelectedOption();
+
+      if(b_dst)
+      {
+         type += NMM_Arg.NUM_SRC_TYPES; // skip TYPE_CONST, TYPE_RANDOM
+      }
+
+      arg.setDispType(type);
+
+      switch(type)
+      {
+         case NMM_Arg.TYPE_NONE:
+            ls_type.switchToLayerNr(0);
+            break;
+
+         case NMM_Arg.TYPE_CONST:
+            ls_type.switchToLayerNr(1);
+            break;
+
+         case NMM_Arg.TYPE_RANDOM:
+            ls_type.switchToLayerNr(2);
+            break;
+
+         case NMM_Arg.TYPE_SONGPOS:
+            ls_type.switchToLayerNr(0);
+            break;
+
+         case NMM_Arg.TYPE_NOTE:
+         case NMM_Arg.TYPE_NOTE_ADD:
+         case NMM_Arg.TYPE_NOTE_ON:
+         case NMM_Arg.TYPE_NOTE_ON_ADD:
+         case NMM_Arg.TYPE_NOTE_OFF:
+         case NMM_Arg.TYPE_NOTE_OFF_ADD:
+         case NMM_Arg.TYPE_VELOCITY:
+         case NMM_Arg.TYPE_VELOCITY_ADD:
+         case NMM_Arg.TYPE_DURATION:
+         case NMM_Arg.TYPE_DURATION_ADD:
+         case NMM_Arg.TYPE_POLYPRESSURE:
+         case NMM_Arg.TYPE_POLYPRESSURE_ADD:
+         case NMM_Arg.TYPE_PRGCHG:
+         case NMM_Arg.TYPE_CHPRESSURE:
+         case NMM_Arg.TYPE_PITCHBEND:
+            ls_type.switchToLayerNr(3);
+            ls_midi_type.switchToLayerNr(0);
+            pn_type.queueRelayout();
+            break;
+
+         case NMM_Arg.TYPE_CC:
+            ls_type.switchToLayerNr(3);
+            ls_midi_type.switchToLayerNr(1);
+            updateCCOptions();
+            pn_type.queueRelayout();
+            break;
+
+         case NMM_Arg.TYPE_RPN:
+            ls_type.switchToLayerNr(3);
+            ls_midi_type.switchToLayerNr(2);
+            updateRPNOptions();
+            pn_type.queueRelayout();
+            break;
+
+         case NMM_Arg.TYPE_NRPN:
+            ls_type.switchToLayerNr(3);
+            ls_midi_type.switchToLayerNr(3);
+            updateNRPNOptions();
+            pn_type.queueRelayout();
+            break;
+
+         case NMM_Arg.TYPE_BPM:
+            ls_type.switchToLayerNr(0);
+            break;
+
+         case NMM_Arg.TYPE_REG1:
+         case NMM_Arg.TYPE_REG2:
+         case NMM_Arg.TYPE_REG3:
+         case NMM_Arg.TYPE_REG4:
+         case NMM_Arg.TYPE_REG5:
+         case NMM_Arg.TYPE_REG6:
+         case NMM_Arg.TYPE_REG7:
+         case NMM_Arg.TYPE_REG8:
+            ls_type.switchToLayerNr(4);
+            break;
+
+         case NMM_Arg.TYPE_MACRO1:
+         case NMM_Arg.TYPE_MACRO2:
+         case NMM_Arg.TYPE_MACRO3:
+         case NMM_Arg.TYPE_MACRO4:
+            ls_type.switchToLayerNr(5);
+            updateMacroCtlName();
+            break;
+      }
+
+      updateChOptions();
+
+      pn_type.redraw();
+
+      if(!_bQuiet)
+      {
+         provideChanged();
+
+         Global.Print("Type is "+cm_type.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleConstValChanged(float _f) {
+      arg.setConstVal(_f);
+
+      provideChanged();
+
+      Global.Print("Const val is "+arg.const_val);
+   }
+
+   // <ui_handle.png>
+   protected method handleConstValTypeChanged() {
+      arg.setConstValType(cm_const_val_type.getSelectedOption());
+
+      fp_const_val.setMinValue(arg.getConstValRangeMin());
+      fp_const_val.setMaxValue(arg.getConstValRangeMax());
+      fp_const_val.setStep(arg.getConstValStep());
+      fp_const_val.setPrecision((NMM_Arg.CONST_TYPE_FLOAT == arg.const_val_type) ? 7 : 0);
+      fp_const_val.validateValues();
+
+      updateConstValWidgetsAfterTypeChange();
+
+      provideChanged();
+
+      Global.Print("Const val type is "+arg.getConstValTypeString());
+   }
+
+   // <ui_handle.png>
+   protected method handleConstValRangeChanged() {
+      arg.setConstValRange(cm_const_val_range.getSelectedOption());
+
+      fp_const_val.setMinValue(arg.getConstValRangeMin());
+      fp_const_val.setMaxValue(arg.getConstValRangeMax());
+      fp_const_val.setStep(arg.getConstValStep());
+      fp_const_val.validateValues();
+
+      provideChanged();
+
+      Global.Print("Const val range is "+cm_const_val_range.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleConstValSignedChanged() {
+      arg.setEnableConstValSigned(cb_const_val_signed.isSelected());
+
+      fp_const_val.setMinValue(arg.getConstValRangeMin());
+      fp_const_val.setMaxValue(arg.getConstValRangeMax());
+      fp_const_val.setStep(arg.getConstValStep());
+      fp_const_val.validateValues();
+
+      provideChanged();
+
+      Global.Print("Const val range is "+cm_const_val_range.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMinChanged() {
+      arg.setRandMin(fp_rand_min.getFloatValue());
+
+      provideChanged();
+
+      Global.Print("Rand min is "+arg.rand_min);
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMaxChanged() {
+      arg.setRandMax(fp_rand_max.getFloatValue());
+
+      provideChanged();
+
+      Global.Print("Rand max is "+arg.rand_max);
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMinTimeChanged() {
+      arg.setRandMinTime(fp_rand_min_time.getFloatValue());
+
+      provideChanged();
+
+      Global.Print("Rand min time is "+arg.rand_min_time);
+   }
+
+   // <ui_handle.png>
+   protected method handleRandMaxTimeChanged() {
+      arg.setRandMaxTime(fp_rand_max_time.getFloatValue());
+
+      provideChanged();
+
+      Global.Print("Rand max time is "+arg.rand_max_time);
+   }
+
+   // <ui_handle.png>
+   protected method handleRandValRangeChanged() {
+      arg.setRandValRange(cm_rand_val_range.getSelectedOption());
+
+      fp_rand_min.setMinValue(arg.getRandValRangeMin());
+      fp_rand_min.setMaxValue(arg.getRandValRangeMax());
+      fp_rand_max.setMinValue(arg.getRandValRangeMin());
+      fp_rand_max.setMaxValue(arg.getRandValRangeMax());
+      fp_rand_min.setStep(arg.getRandValStep());
+      fp_rand_min.validateValues();
+      fp_rand_max.setStep(arg.getRandValStep());
+      fp_rand_max.validateValues();
+
+      provideChanged();
+
+      Global.Print("Rand val range is "+cm_rand_val_range.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleRandValSignedChanged() {
+      arg.setEnableRandValSigned(cb_rand_val_signed.isSelected());
+
+      fp_rand_min.setMinValue(arg.getRandValRangeMin());
+      fp_rand_min.setMaxValue(arg.getRandValRangeMax());
+      fp_rand_max.setMinValue(arg.getRandValRangeMin());
+      fp_rand_max.setMaxValue(arg.getRandValRangeMax());
+      fp_rand_min.setStep(arg.getRandValStep());
+      fp_rand_min.validateValues();
+      fp_rand_max.setStep(arg.getRandValStep());
+      fp_rand_max.validateValues();
+
+      provideChanged();
+
+      Global.Print("Rand val range is "+cm_rand_val_range.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleDevChanged() {
+      int opt = cm_dev.getSelectedOption();
+
+      if(b_is_macro)
+      {
+         opt = MIDI.SortedToUnsortedDevIdx(opt);
+         opt = (opt < 0) ? -1 : (opt + 4); // skip macro 1..4 devs
+      }
+      else
+      {
+         if(opt >= 4)
+            opt = MIDI.SortedToUnsortedDevIdx(opt-4)+4;
+      }
+
+      arg.setDispDevIdx(opt);
+
+      ls_macro_dev.switchToLayerNr(((-1 == arg.disp_dev_idx) || (arg.disp_dev_idx >= 4)) ? 1 : 0);
+
+      updateCCOptions();
+      updateRPNOptions();
+      updateNRPNOptions();
+      updateChOptions();
+      pn_type.queueRelayout();
+      pn_type.redraw();
+
+      provideChanged();
+
+      Global.Print("Dev is "+cm_dev.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleChChanged() {
+      arg.setDevCh(cm_ch.getSelectedOption() - 1);
+
+      updateCCOptions();
+      updateRPNOptions();
+      updateNRPNOptions();
+      pn_type.queueRelayout();
+      pn_type.redraw();
+
+      provideChanged();
+
+      Global.Print("Ch is "+cm_ch.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleMacroChChanged() {
+      arg.setMacroDevCh(cm_macro_ch.getSelectedOption() - 2);
+
+      arg.updateMacroCtlDevIdxAndCh();
+
+      updateCCOptions();
+      updateRPNOptions();
+      updateNRPNOptions();
+      pn_type.queueRelayout();
+      pn_type.redraw();
+
+      provideChanged();
+
+      Global.Print("Macro Ch is "+cm_macro_ch.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDICCNrChanged(boolean _bQuiet) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(arg.dev_ch);
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         arg.setCC(cm_midi_cc_nr.getSelectedOption());
+
+         if(!_bQuiet)
+         {
+            provideChanged();
+
+            Global.Print("CC is "+arg.cc_nr);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIRPNNrChanged(boolean _bQuiet) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(arg.dev_ch);
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         arg.setRPN(msp.getRPNByCaptionIndex(cm_midi_rpn_nr.getSelectedOption()));
+         fp_midi_rpn_nr.setValue(arg.rpn_nr);
+
+         if(!_bQuiet)
+         {
+            provideChanged();
+
+            Global.Print("RPN is "+arg.rpn_nr);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIRPNNrValChanged(boolean _bQuiet) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(arg.dev_ch);
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         arg.setRPN(fp_midi_rpn_nr.getFloatValue());
+         cm_midi_rpn_nr.setSelectedOption(msp.getRPNCaptionIndex(arg.rpn_nr));
+
+         if(!_bQuiet)
+         {
+            provideChanged();
+
+            Global.Print("RPN is "+arg.rpn_nr);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDINRPNNrChanged(boolean _bQuiet) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(arg.dev_ch);
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         arg.setNRPN(msp.getNRPNByCaptionIndex(cm_midi_nrpn_nr.getSelectedOption()));
+         fp_midi_nrpn_nr.setValue(arg.nrpn_nr);
+
+         if(!_bQuiet)
+         {
+            provideChanged();
+
+            Global.Print("NRPN is "+arg.nrpn_nr);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDINRPNNrValChanged(boolean _bQuiet) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(arg.dev_idx);
+      if(null != dev)
+      {
+         MIDISynthProfile msp <= dev.getMIDISynthProfile(arg.dev_ch);
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         arg.setNRPN(fp_midi_nrpn_nr.getFloatValue());
+         cm_midi_nrpn_nr.setSelectedOption(msp.getNRPNCaptionIndex(arg.nrpn_nr));
+
+         if(!_bQuiet)
+         {
+            provideChanged();
+
+            Global.Print("NRPN is "+arg.nrpn_nr);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null != arg)
+      {
+         if(null == arg_clipboard)
+            arg_clipboard <= new NMM_Arg;
+
+         arg_clipboard.parent_pat <= arg.parent_pat;
+         arg_clipboard.copyFrom(arg, false/*bMacroCtlOnly*/);
+
+         Global.Print("Copy Arg to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePaste() {
+      if(null != arg)
+      {
+         if(null != arg_clipboard)
+         {
+            arg_clipboard.parent_pat <= arg.parent_pat;
+            arg.copyFrom(arg_clipboard, false/*bMacroCtlOnly*/);
+
+            showArg(arg);
+
+            Global.Print("Paste Arg from clipboard");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtl(boolean _bClipboardB) {
+      if(null != arg)
+      {
+         NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+         cb.clipboardCopyTypeAndPortFrom(arg);
+
+         Global.Print("Copy type+port to Ctl.Clipboard "+(_bClipboardB?"B":"A"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePasteCtl(boolean _bClipboardB) {
+      if(null != arg)
+      {
+         NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+         arg.clipboardCopyTypeAndPortFrom(cb);
+
+         showArg(arg);
+
+         Global.Print("Paste type+port from Ctl.Clipboard "+(_bClipboardB?"B":"A"));
+      }
+   }
+
+   // <method.png>
+   public method hasSignalTap() : boolean {
+      return fp_last.hasSignalTap();
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+      if(null != arg)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pmb <= pm.addDefaultButton("Copy to Ctl.Clipboard A", "copyctl_a");
+         pmb.setToolTipCaption("Copy arg port+type to Ctl.Clipboard A");
+
+         pmb <= pm.addDefaultButton("Copy to Ctl.Clipboard B", "copyctl_b");
+         pmb.setToolTipCaption("Copy arg port+type to Ctl.Clipboard B");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         pmb.setActive(null != arg_clipboard);
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         local String info <= mmarg_clipboard_a.getStringForClipboardMenu();
+         info <= info.isBlank()?"":(" ("+info+")");
+         pmb <= pm.addDefaultButton("Paste from Ctl.Clipboard A"+info, "pastectl_a");
+         pmb.setToolTipCaption("Paste arg port+type from Ctl.Clipboard A");
+
+         info <= mmarg_clipboard_b.getStringForClipboardMenu();
+         info <= info.isBlank()?"":(" ("+info+")");
+         pmb <= pm.addDefaultButton("Paste from Ctl.Clipboard B"+info, "pastectl_b");
+         pmb.setToolTipCaption("Paste arg port+type from Ctl.Clipboard A");
+
+         MIDI.AppendCtlTagSubMenu(pm, "CtlTag");
+
+         // Present
+         pm.resizeToMinimum();
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show Arg context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      StringAction *sac;
+
+      switch(acName)
+      {
+         case TA_MIDI_LEARN:
+            handleMIDILearnTimer();
+            return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("NMM_ArgForm::consumeAction: pm_context acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(acName <= "ctltagentry_")
+            {
+               initFromCtlTagEntry(int(acName.replace("ctltagentry_", "")));
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtl(true/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_a":
+                  handlePasteCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_b":
+                  handlePasteCtl(true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+
+         case @(cm_mod):
+            handleModifierChanged(false/*bQuiet*/);
+            return true;
+
+         case @(cm_def):
+            handleDefValueIdChanged(false/*bQuiet*/);
+            return true;
+
+         case @(cm_sh):
+            handleSHChanged(false/*bQuiet*/);
+            return true;
+
+         case @(cm_type):
+            handleTypeChanged(false/*bQuiet*/);
+            return true;
+
+         case @(fp_const_val):
+            handleConstValChanged(fp_const_val.getFloatValue());
+            return true;
+
+         case @(cm_const_val):
+            handleConstValChanged(cm_const_val.getSelectedOption());
+            return true;
+
+         case @(cm_const_val_type):
+            handleConstValTypeChanged();
+            return true;
+
+         case @(cm_const_val_range):
+            handleConstValRangeChanged();
+            return true;
+
+         case @(cb_const_val_signed):
+            handleConstValSignedChanged();
+            return true;
+
+         case @(fp_rand_min):
+            handleRandMinChanged();
+            return true;
+
+         case @(fp_rand_max):
+            handleRandMaxChanged();
+            return true;
+
+         case @(fp_rand_min_time):
+            handleRandMinTimeChanged();
+            return true;
+
+         case @(fp_rand_max_time):
+            handleRandMaxTimeChanged();
+            return true;
+
+         case @(cm_rand_val_range):
+            handleRandValRangeChanged();
+            return true;
+
+         case @(cb_rand_val_signed):
+            handleRandValSignedChanged();
+            return true;
+
+         case @(cm_dev):
+            handleDevChanged();
+            return true;
+
+         case @(cm_ch):
+            handleChChanged();
+            return true;
+
+         case @(cm_macro_ch):
+            handleMacroChChanged();
+            return true;
+
+         case @(cm_midi_cc_nr):
+            handleMIDICCNrChanged(false/*bQuiet*/);
+            return true;
+
+         case @(cm_midi_rpn_nr):
+            handleMIDIRPNNrChanged(false/*bQuiet*/);
+            return true;
+
+         case @(fp_midi_rpn_nr):
+            handleMIDIRPNNrValChanged(false/*bQuiet*/);
+            return true;
+
+         case @(cm_midi_nrpn_nr):
+            handleMIDINRPNNrChanged(false/*bQuiet*/);
+            return true;
+
+         case @(fp_midi_nrpn_nr):
+            handleMIDINRPNNrValChanged(false/*bQuiet*/);
+            return true;
+
+         case @(bt_learn):
+            toggleMIDILearn();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

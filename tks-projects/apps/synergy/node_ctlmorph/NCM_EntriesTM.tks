@@ -1,0 +1,483 @@
+// ----
+// ---- file   : NCM_EntriesTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 10Apr2016, 13Apr2016, 02Apr2018, 08Dec2018, 27Jan2021, 03Jun2021, 22Mar2024
+// ----
+// ----
+// ----
+
+module MNCM_EntriesTM;
+
+use namespace ui;
+use namespace st2;
+
+
+class NCM_EntriesFloatParamDialog : FloatingLayer {
+
+   NCM_EntriesTM *tm;
+   FloatParam *fp;
+
+   public method showFP(FloatParam _fp, int _posX, int _posY, int _sx, int _sy) {
+      removeChildHierarchy();
+      fp <= _fp;
+      addLayer(_fp, Layout.CENTER);
+      _fp.setRequiredSize2f(_sx, _sy);
+      setRequiredSize2f(_sx, _sy);
+      showAtXY(_posX, _posY);
+      UI.SetMouseFocus(_fp);
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public method handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer):boolean {
+      if(0 == _ev.current_state)
+      {
+         hide();
+         UI.SetKeyboardFocus(tm.table_view);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(@(ap) == @(fp))
+      {
+         tm.handleFloatParamEdited(fp);
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+
+class NCM_EntriesTM : TableModel, MIDIMapDefs {
+
+   define int COL_ID     = 0;
+   define int COL_DEV    = 1;
+   define int COL_CH     = 2;
+   define int COL_TYPE   = 3;
+   define int COL_ASYM   = 4;
+   define int COL_MIN    = 5;
+   define int COL_CENTER = 6;
+   define int COL_MAX    = 7;
+   define int COL_EDITED = 8;
+
+   NodeCtlMorphEditor *editor;
+   PointerArray *entries;  // reference to NCM_Group.entries
+
+   protected FloatParam fp_min_edit;
+   protected FloatParam fp_center_edit;
+   protected FloatParam fp_max_edit;
+
+   protected NCM_EntriesFloatParamDialog fp_dialog;
+   protected int fp_dialog_row;
+
+
+   public virtual getNumColumns() : int {
+      return 9;
+   }
+
+   public virtual getColumnCaption(int _col) : String {
+      return ["Id", "Device", "Ch.", "Event Type", "Asym", "Min Delta", "Center", "Max Delta", "Edited"][_col];
+   }
+
+   public virtual getNumRows() : int {
+      if(null != entries)
+      {
+         return entries.numElements;
+      }
+      else
+      {
+         return 0;
+      }
+   }
+
+   public virtual getCellCaption(int _col, _row) : String {
+      if(null != entries)
+      {
+         NCM_Entry entry <= entries.get(_row);
+
+         switch(_col)
+         {
+            case COL_ID
+               int outIdx = NCM_Group.GetOutputIndexByEntry(entries, entry);
+               if( -1 != outIdx)
+               {
+                  return (outIdx + 1);
+               }
+               return "-";
+
+            case COL_DEV:
+               return entry.getDevName();
+
+            case COL_CH:
+               return entry.getMidiChString();
+
+            case COL_TYPE:
+               return entry.getTypeName();
+
+            case COL_ASYM:
+               return "";////entry.b_asym;
+
+            case COL_MIN:
+               return entry.min_delta;
+
+            case COL_CENTER:
+               String s <= entry.mm_event.getEditOptionStringByIndex(entry.mm_event.arg1);
+               if(null != s)
+                  return deref s;
+               else
+                  return entry.center_value;
+
+            case COL_MAX:
+               return entry.max_delta;
+
+            case COL_EDITED:
+               return "";////entry.b_edited;
+         }
+      }
+   }
+
+   protected method initFloatParam(FloatParam _fp) {
+      _fp.initFloatParam();
+      _fp.setStepFine(8);
+      _fp.setStepCoarse(1);
+      _fp.setMinMaxValues(0, 127); // entry dependent
+      _fp.setPrecision(0);
+      _fp.setInnerPadTop(4.0f);
+      _fp.setInnerPadLeft(1.0f);
+      _fp.setPositionX(0.0f);
+      _fp.setEnableBorders(false);
+      _fp.setEnableTableMode(true);
+      _fp.b_skip_kbdfocus = true; // (todo) not working, need setkeyboardfocus hack
+      _fp.setFontByName("big8");
+   }
+
+   public virtual initTableModel() {
+
+      initFloatParam(fp_min_edit);
+      initFloatParam(fp_center_edit);
+      initFloatParam(fp_max_edit);
+
+      fp_dialog <= new NCM_EntriesFloatParamDialog;
+      fp_dialog.initFloatingLayer();
+      fp_dialog.tm <= this;
+      fp_dialog_row = -1;
+
+      TableModel::initTableModel();
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 20;
+
+         case COL_DEV:
+            return 100;
+
+         case COL_CH:
+            return 18;
+
+         case COL_TYPE:
+            return 170;
+
+         case COL_ASYM:
+            return 32;
+
+         case COL_MIN:
+            return 60;
+
+         case COL_CENTER:
+            return 60;
+
+         case COL_MAX:
+            return 60;
+
+         case COL_EDITED:
+            return 32;
+      }
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ID:
+            return 20;
+
+         case COL_DEV:
+            return 160;
+
+         case COL_CH:
+            return 18;
+
+         case COL_TYPE:
+            return 240;
+
+         case COL_ASYM:
+            return 24;
+
+         case COL_MIN:
+            return 50;
+
+         case COL_CENTER:
+            return 140;
+
+         case COL_MAX:
+            return 50;
+
+         case COL_EDITED:
+            return 24;
+      }
+   }
+
+   protected method updateFPMinMax(NCM_Entry _e) {
+      switch(_e.mm_event.type)
+      {
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_ON:
+         case TYPE_POLY_PRESSURE:
+         case TYPE_CC:
+         case TYPE_PROGRAM_CHANGE:
+         case TYPE_CHANNEL_PRESSURE:
+            fp_min_edit   .setMinMaxValues(-127, 127);
+            fp_center_edit.setMinMaxValues(0, 127);
+            fp_max_edit   .setMinMaxValues(-127, 127);
+            break;
+
+         case TYPE_PITCHBEND:
+         case TYPE_RPN:
+         case TYPE_NRPN:
+            fp_min_edit   .setMinMaxValues(-16383, 16383);
+            fp_center_edit.setMinMaxValues(0, 16383);
+            fp_max_edit   .setMinMaxValues(-16383, 16383);
+            break;
+      }
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+
+      lb.setIcon(null);
+
+      if((COL_MIN == _col) || (COL_CENTER == _col) || (COL_MAX == _col))
+      {
+          lb.setFontByName("big8");
+      }
+      else
+      {
+         lb.setFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+      }
+
+      lb.setBackgroundTint(0);
+
+      if(null != entries)
+      {
+         NCM_Entry entry <= entries.get(_row);
+
+         if(entry.b_input)
+         {
+            if(null == (entry.mm_event.dev))
+            {
+               lb.setBackgroundTint(#50af7f00);
+            }
+            else
+            {
+               lb.setBackgroundTint(#5000af2f);
+            }
+         }
+         else
+         {
+            int t32 = lb.getBackgroundTint();
+
+            if(null == (entry.mm_event.dev))
+               t32 = UI.TintColor32(t32, #405f0000);
+            else if(!entry.b_edited)
+               t32 = UI.TintColor32(t32, #10000000);
+
+            lb.setBackgroundTint(t32);
+         }
+
+         if(COL_ASYM == _col)
+         {
+            if(entry.b_asym)
+               lb.setIcon(UI.GetIcon("mgrctl_celvis_2x"));
+         }
+         else if(COL_EDITED == _col)
+         {
+            if(entry.b_edited)
+               lb.setIcon(UI.GetIcon("mgrctl_celvis_2x"));
+         }
+
+         if(COL_CENTER == _col)
+         {
+            String s <= entry.mm_event.getEditOptionStringByIndex(entry.mm_event.arg1);
+            if(null != s)
+               lb.setFontByName("big7");
+         }
+
+         if(_row == cursor_index)
+         {
+            if(COL_MIN == _col)
+            {
+               updateFPMinMax(entry);
+               fp_min_edit.setValue(entry.min_delta);
+            }
+
+            if(COL_CENTER == _col)
+            {
+               updateFPMinMax(entry);
+               fp_center_edit.setValue(entry.center_value);
+            }
+
+            if(COL_MAX == _col)
+            {
+               updateFPMinMax(entry);
+               fp_max_edit.setValue(entry.max_delta);
+            }
+         }
+      }
+
+      return lb;
+   }
+
+   protected method showFPDialog(FloatParam _fp, MouseEvent _ev, int _col, int _row) {
+
+      // Global.Debug2("NCM_EntriesTM::showFPDialog: dialog_row="+fp_dialog_row+" new row="+_row);
+
+      if(_row != fp_dialog_row) {
+         fp_dialog.hide();
+         fp_dialog_row = _row;
+      }
+
+
+      if(!fp_dialog.isFloatingLayerVisible())
+      {
+         Point2f p;
+         calcAbsCellPosition(_col, _row, p);
+
+         Point2f s;
+         getCellSize(_col, _row, s);
+
+         fp_dialog.showFP(_fp, p.x, p.y, s.x, s.y);
+
+         _fp.onMouse(_ev);
+
+         UI.b_try_drag = true; // xxx hack
+         UI.drag_layer_candidate <= _fp;
+      }
+   }
+
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+
+      if(null != entries)
+      {
+         NCM_Entry entry <= entries.get(_row);
+
+         if(null != entry)
+         {
+            if(COL_ASYM == _col)
+            {
+               if(_ev.leftButtonDown())
+               {
+                  entry.setEnableAsym(!entry.b_asym);
+
+                  Global.Print("Asym mode "+Utils.GetEnableString(entry.b_asym)+" for entry idx="+_row);
+
+                  return true;
+               }
+            }
+            else if(COL_EDITED == _col)
+            {
+               if(_ev.leftButtonDown())
+               {
+                  entry.b_edited = !entry.b_edited;
+
+                  Global.Print((entry.b_edited?"Set":"Clear")+" edited flag for entry idx="+_row);
+               }
+
+               return true;
+            }
+            else if(COL_MIN == _col)
+            {
+               if(_ev.isAnyButtonDown())
+               {
+                  showFPDialog(fp_min_edit, _ev, _col, _row);
+                  return true;
+               }
+            }
+            else if(COL_CENTER == _col)
+            {
+               if(_ev.isAnyButtonDown())
+               {
+                  fp_center_edit.setDisplayType(FloatParam.DISPLAY_FLOAT);
+                  MIDISynthProfileCtlAlias alias <= entry.mm_event.getAlias();
+                  if(null != alias)
+                  {
+                     if(null != alias.edit_options_str)
+                     {
+                        fp_center_edit.setDisplayType(FloatParam.DISPLAY_USER);
+                        fp_center_edit.setUserTable(deref alias.getEditOptionsAsArray());
+                        fp_center_edit.setStep(1.0);
+                     }
+                  }
+                  showFPDialog(fp_center_edit, _ev, _col, _row);
+                  return true;
+               }
+            }
+            else if(COL_MAX == _col)
+            {
+               if(_ev.isAnyButtonDown())
+               {
+                  showFPDialog(fp_max_edit, _ev, _col, _row);
+                  return true;
+               }
+            }
+         }
+      }
+
+      return false;
+   }
+
+   public method handleFloatParamEdited(FloatParam _fp) {
+
+      switch(@(_fp))
+      {
+         case @(fp_min_edit):
+            editor.fp_min.setValue(_fp.getFloatValue());
+            editor.handleMinChanged();
+            break;
+
+         case @(fp_center_edit):
+            editor.fp_center.setValue(_fp.getFloatValue());
+            editor.handleCenterChanged();
+            break;
+
+         case @(fp_max_edit):
+            editor.fp_max.setValue(_fp.getFloatValue());
+            editor.handleMaxChanged();
+            break;
+      }
+   }
+}

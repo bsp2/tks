@@ -1,0 +1,411 @@
+// ----
+// ---- file   : PageEditMidiDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 13Aug2014, 18Aug2014, 19Aug2014, 31Aug2014, 05Sep2014, 16Sep2014, 19Sep2014
+// ----          17Feb2015, 21Feb2015, 18Apr2015, 17May2015, 14Sep2015, 13Jan2017, 09Feb2017
+// ----          03Mar2017, 22Jan2019, 22Sep2019, 10Nov2020, 24Nov2022, 13Oct2023
+// ----
+// ----
+// ----
+
+module MPageEditMidiDevice;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageEditMidiDevice extends Page, MIDIMapContext {
+
+   define String ACTION_DEVICE_EDITED;
+
+   protected CheckBox *cb_project;
+
+   protected CheckBox *cb_midicache;
+   protected CheckBox *cb_global;
+
+   protected TextField *tf_devicealias;
+   protected TextField *tf_devicename;
+
+   protected ComboBox *cm_noteoffmode;
+
+   protected LayerSwitch *ls_outdev;
+   protected Label *lb_outdev_auto;
+   protected ComboBox *cm_outdev;
+
+   protected ComboBox *[] cm_channels;
+
+   protected Button *bt_1all;
+   protected Button *bt_close;
+
+   protected STX_MIDIDevice *midi_dev;
+
+   protected ActionConsumer *listener;
+
+   protected StringArray profile_ids;
+   protected StringArray profile_captions;
+
+   protected boolean b_handle_edited_queued;
+
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageEditMidiDevice.xfm"))
+      {
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      // Create MIDI profiles options array
+      profile_ids.empty();
+      profile_captions.empty();
+      MIDISynthProfile *msp;
+
+      foreach msp in MIDI.midi_synth_profiles
+      {
+         profile_ids.add(msp.midi_profile_id);
+         profile_captions.add(msp.profile_caption);
+      }
+
+      // Resolve channel combo boxes
+      int chNr = 1;
+      loop(16)
+      {
+         ComboBox cm <= findLayerById("cm_ch"+chNr);
+         cm_channels.add(#(cm));
+
+         cm.setOptions(profile_captions);
+         cm.setToolTipCaptions(profile_captions);
+
+         chNr++;
+      }
+
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showDevice(STX_MIDIDevice _dev, ActionConsumer _listener) {
+
+      midi_dev <= _dev;
+      listener <= _listener;
+
+      updateWidgets();
+
+      root_form.showPage(RootForm.PAGE_EDITMIDIDEVICE, false/*bAllowHistory*/);
+   }
+
+   // <ui_update.png>
+   protected method updateWidgets() {
+      tf_devicename.setText(midi_dev.getDeviceName());
+
+      String alias = midi_dev.getAlias();
+      alias.replace("<", "");
+      alias.replace(">", "");
+      tf_devicealias.setText(alias);
+
+      // Update profile selections
+      ComboBox *cm;
+      int chIdx = 0;
+      loop(16)
+      {
+         cm <= cm_channels.get(chIdx);
+         cm.setSelectedOption(profile_ids.indexOfObject(midi_dev.getProfileId(chIdx), 0));
+         chIdx++;
+      }
+
+      if(midi_dev instanceof STX_VirtualMIDIOutDevice)
+      {
+         cb_project.setSelected(true);
+         cb_project.setEditable(false);
+      }
+      else
+      {
+         cb_project.setSelected(midi_dev.isProjectSpecific());
+         cb_project.setEditable(true);
+      }
+
+      if(midi_dev instanceof STX_MIDIInDevice)
+      {
+         ls_outdev.switchToLayerNr(1);
+
+         cm_outdev.setOptions(["<auto>"] + MIDI.out_device_names);
+         cm_outdev.setEditable(true);
+
+         STX_MIDIInDevice inDev <= midi_dev;
+         int outIdx;
+         if(null != inDev.cached_out_dev)
+            outIdx = inDev.cached_out_dev.dev_idx;
+         else
+            outIdx = MIDI.FindOutDeviceIdxForInDevice(midi_dev.getAliasOrDeviceName());
+
+         if(MIDI.HaveOutDeviceMapping(midi_dev.getAliasOrDeviceName()))
+         {
+            cm_outdev.setSelectedOption((outIdx >= 0) ? (outIdx + 1) : 0);
+         }
+         else
+         {
+            cm_outdev.setSelectedOption(0);
+         }
+
+         cm_outdev.setEditable(true);
+
+         STX_MIDIOutDevice autoDev <= inDev.findOutDeviceByNativeIdx();
+         if(null != autoDev)
+            lb_outdev_auto.setCaption(autoDev.getAliasOrDeviceName());
+         else
+            lb_outdev_auto.setCaption("-");
+      }
+      else
+      {
+         STX_MIDIOutDevice outDev <= midi_dev;
+
+         // Output device
+         ls_outdev.switchToLayerNr(0);
+
+         cm_outdev.setSelectedOption(-1);
+         cm_outdev.setEditable(false);
+
+         cm_noteoffmode.setSelectedOption(outDev.getNoteOffMode());
+
+         cb_midicache.setSelected(outDev.getEnableMIDICache());
+         cb_global.setSelected(outDev.getEnableGlobal());
+      }
+
+      layoutHierarchy(true, false);
+      layoutHierarchy(true, false);
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_MIDIDEVS;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      b_handle_edited_queued = false;
+
+      MIDI.LockUpdateOutDeviceNames();
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(bt_close);
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      MIDI.UnlockUpdateOutDeviceNames();
+      handleProfileEdited();
+
+      if(b_handle_edited_queued)
+      {
+         MIDI.FindAutoDevDevices();
+         handleEdited();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+
+      _retLayers.add(tf_devicealias);
+      _retLayers.add(tf_devicename);
+
+      int chIdx = 0;
+      loop(16)
+         _retLayers.add(cm_channels.get(chIdx++));
+
+      _retLayers.add(bt_1all);
+      _retLayers.add(bt_close);
+   }
+
+   // <ui_handle.png>
+   protected method handleEdited() {
+      if(null != listener)
+         listener.consumeAction(Action.New(ACTION_DEVICE_EDITED, this));
+   }
+
+   // <ui_handle.png>
+   protected method handleProfileEdited() {
+
+      ComboBox *cm;
+      int chIdx = 0;
+      loop(16)
+      {
+         cm <= cm_channels.get(chIdx);
+         midi_dev.setProfileId(chIdx, profile_ids.get(cm.getSelectedOption()));
+         chIdx++;
+      }
+
+      midi_dev.buildCtlNames();
+
+      MIDI.UpdateMIDIInEnableParam();  // Enable/disable (N)RPN parser according to synth profile(s)
+      MIDI.UpdateMIDIParamMode();      // configure (N)RPN MSB/LSB I/O mode according to MIDI synth profile(s)
+
+      handleEdited();
+   }
+
+   // <ui_handle.png>
+   protected method handleProjectFlagChanged() {
+      midi_dev.setProjectSpecific(cb_project.isSelected());
+
+      Global.Print("Alias/Profiles are "+(midi_dev.isProjectSpecific() ? "project specific." : "global."));
+
+      updateWidgets();
+   }
+
+   // <ui_handle.png>
+   protected method handleDeviceAliasChanged() {
+      String alias = tf_devicealias.getText();
+      midi_dev.updateDeviceAlias(alias);
+
+      b_handle_edited_queued = true;
+   }
+
+   // <ui_handle.png>
+   protected method handleNoteOffModeChanged() {
+      STX_MIDIOutDevice outDev <= midi_dev;
+      outDev.setNoteOffMode(cm_noteoffmode.getSelectedOption());
+
+      Global.Print("Note-Off Mode is "+cm_noteoffmode.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDICacheChanged() {
+      STX_MIDIOutDevice outDev <= midi_dev;
+
+      outDev.setEnableMIDICache(cb_midicache.isSelected());
+
+      Global.Print("MIDI cache is "+Utils.GetEnableString(cb_midicache.isSelected()));
+   }
+
+   // <ui_handle.png>
+   protected method handleGlobalChanged() {
+      STX_MIDIOutDevice outDev <= midi_dev;
+      outDev.setEnableGlobal(cb_global.isSelected());
+
+      Global.Print("Global is "+Utils.GetEnableString(cb_global.isSelected()));
+   }
+
+   // <ui_handle.png>
+   protected method handleOutDevChanged() {
+      HashTable ht <= STConfig.midi_in_out_device_mapping;
+
+      int selIdx = cm_outdev.getSelectedOption();
+
+      String devOrAlias <= midi_dev.getAliasOrDeviceName();
+
+      if(selIdx > 0)
+      {
+         String outDevName <= MIDI.out_device_names.get(selIdx - 1);
+         ht[devOrAlias] = outDevName;
+
+         Global.Print("Input device \""+devOrAlias+"\" is now mapped to output device \""+outDevName+"\".");
+      }
+      else
+      {
+         // Not mapped to any outdev
+         if(ht.exists(devOrAlias))
+         {
+            ht.delete(devOrAlias);
+
+            Global.Print("Removed out device mapping for \""+devOrAlias+"\".");
+         }
+      }
+
+      STX_MIDIInDevice inDev <= midi_dev;
+      inDev.findOutDeviceAndCache();
+   }
+
+   // <ui_handle.png>
+   protected method handle1All() {
+      int chIdx=1;
+      ComboBox cm <= cm_channels.get(0);
+      int srcOpt = cm.getSelectedOption();
+
+      loop(15)
+      {
+         cm <= cm_channels.get(chIdx);
+         cm.setSelectedOption(srcOpt);
+         chIdx++;
+      }
+
+      redraw();
+
+      handleProfileEdited();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+        case VKEY_ESCAPE:
+           root_form.showPageParent();
+           return true;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            int chIdx = cm_channels.indexOfPointer(ap, 0);
+            if(-1 != chIdx)
+            {
+               handleProfileEdited();
+               return true;
+            }
+            break;
+
+         case @(cb_project):
+            handleProjectFlagChanged();
+            return true;
+
+         case @(cb_midicache):
+            handleMIDICacheChanged();
+            return true;
+
+         case @(cb_global):
+            handleGlobalChanged();
+            return true;
+
+         case @(tf_devicealias):
+            handleDeviceAliasChanged();
+            return true;
+
+         case @(cm_noteoffmode):
+            handleNoteOffModeChanged();
+            return true;
+
+         case @(cm_outdev):
+            handleOutDevChanged();
+            return true;
+
+         case @(bt_1all):
+            handle1All();
+            return true;
+
+         case @(bt_close):
+            root_form.showPageParent();
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

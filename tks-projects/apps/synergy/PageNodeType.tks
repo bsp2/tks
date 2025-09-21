@@ -1,0 +1,311 @@
+// ----
+// ---- file   : PageNodeType.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 05Sep2014, 16Sep2014, 19Sep2014, 23Sep2014, 09Mar2015, 17May2015, 12Nov2015
+// ----          09Feb2017, 05Mar2017, 01Sep2017, 04Jan2018, 13Nov2018, 27Aug2019, 06Apr2020
+// ----          25Sep2023
+// ----
+// ----
+// ----
+
+module MPageNodeType;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageNodeType extends Page {
+
+   define String ACTION_SELECTED = "onNodeTypeSelected";
+   define String ACTION_CANCEL   = "onNodeTypeCancel";
+
+   protected Button *bt_cancel;
+
+   public TableView *tv_nodetypes;
+   protected NodeTypesTM tm_nodetypes;
+
+   protected int parent_page;
+
+   protected NodeTypesEntry *[] types;
+
+   protected ActionConsumer *listener;
+
+   protected boolean b_update;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageNodeType.xfm"))
+      {
+         trace "[---] failed to parse PageNodeType.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tm_nodetypes.types <= types;
+      tm_nodetypes.initTableModel();
+      tv_nodetypes.setTableModel(tm_nodetypes);
+
+      recursiveBuildTabCycleLists();
+
+      b_update = true;
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageIsModal() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showNodeTypeSelector(int _parentPage, ActionConsumer _listener) {
+
+      Global.Debug("PageNodeType::showNodeTypeSelector: parentPage="+_parentPage);
+
+      parent_page = _parentPage;
+
+      listener <= _listener;
+
+      root_form.showPageSub(RootForm.PAGE_NODETYPE, false/*bQuiet*/);
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return parent_page;
+   }
+
+   // <ui_update.png>
+   public method updateTable() {
+
+      types.empty();
+      local StringArray classNames;
+
+      // local PointerArray classes;
+
+      // classes.joinDD(TKS.findClassesByPrefix(null/*nsp*/, "MIDIPipeNode"),
+      //                TKS.findClassesByPrefix(null/*nsp*/, "Node")
+      //                )
+      //                ;
+
+      // if(null != classes)
+      // {
+      //    Object *cl;
+      //    NodeTypesEntry *en;
+      //    local String clsName;
+
+      //    foreach cl in classes
+      //    {
+      //       en <= null;
+
+      //       clsName <= Node.GetNodeTypeName(cl);
+
+      //       if(null != clsName)
+      //       {
+      //          en <= new NodeTypesEntry;
+      //          en.name = clsName;
+      //          en.clazz <= cl;
+      //          classNames.add(clsName);
+      //       }
+
+      //       if(null != en)
+      //       {
+      //          types.add(#(deref en));
+      //       }
+      //    }
+
+      // }
+
+      HashTable htNames <= STConfig.node_type_display_names;
+      HashTable htIcons <= STConfig.node_type_icons;
+      String *className;
+      foreach className in htNames
+      {
+         classNames.add(className);
+         NodeTypesEntry en <= new NodeTypesEntry;
+         local String iconId = htIcons.get(className);
+         if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+            iconId.append("_mono");
+         en.s_class  = className;
+         en.s_name   = htNames[className];
+         en.icon    <= UI.GetIcon(iconId);
+         types.add(#(deref en));
+      }
+
+      // Sort by name
+      local IntArray ia;
+      classNames.sortByValue(ia, false/*bCaseSensitive*/);
+      types.rearrange(ia);
+
+      tv_nodetypes.tableModelChanged();
+      tv_nodetypes.moveCursorToFirstRow();
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      if(b_update)
+      {
+         b_update = false;
+
+         updateTable();
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_nodetypes);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_cancel,
+         tv_nodetypes
+                              ];
+   }
+
+   // <method_get.png>
+   protected method getSelectedNodeTypeEntry() : NodeTypesEntry {
+      int idx = tm_nodetypes.getCursorIndex();
+      if(-1 != idx)
+      {
+         NodeTypesEntry en <= types.get(idx);
+         return en;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedNodeType() : Object {
+      // called by PagePipe
+      NodeTypesEntry en <= getSelectedNodeTypeEntry();
+      if(null != en)
+      {
+         if(Global.LazyAccessNodeClass(en.s_class))
+         {
+            // // return en.clazz;
+            return TKS.findScriptClass(null/*nsp*/, en.s_class);
+         }
+         else
+         {
+            Global.Error("Failed to load TSL(s) for node class \""+en.s_class+"\"");
+         }
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   protected method handleSelect(boolean _bOk) {
+
+      root_form.showPageParent();
+
+      if(null != listener)
+      {
+         listener.consumeAction(Action.New(_bOk ? ACTION_SELECTED : ACTION_CANCEL, this));
+      }
+   }
+
+   // <method_select.png>
+   protected method selectNextTypeByChar(int _c) {
+      int idx = tm_nodetypes.getCursorIndex();
+
+      int bestMatchIdx = -1;
+      int bestMatchOff = 99999;
+
+      loop(types.numElements - 1)
+      {
+         idx = (idx + 1) % types.numElements;
+
+         NodeTypesEntry en <= types.get(idx);
+
+         String enName = en.s_name.toLower();
+
+         int off = enName.indexOfChar(_c, 0);
+         if(-1 != off)
+         {
+            if(off < bestMatchOff)
+            {
+               bestMatchOff = off;
+               bestMatchIdx = idx;
+            }
+         }
+      }
+
+      if(-1 != bestMatchIdx)
+      {
+         tv_nodetypes.moveCursorToRow(bestMatchIdx);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+
+      if(0 == _key.mod)
+      {
+         if('a' <= _key.unicode <= 'z')
+         {
+            selectNextTypeByChar(_key.unicode);
+            return true;
+         }
+
+         if(VKEY_ESCAPE == _key.code)
+         {
+            handleSelect(false);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(tv_nodetypes):
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               handleSelect(true);
+            }
+            else
+            {
+               NodeTypesEntry en <= getSelectedNodeTypeEntry();
+
+               if(null != en)
+               {
+                  Global.Print("Select node type \""+en.s_name+"\".");
+               }
+            }
+            return true;
+
+         case @(bt_cancel):
+            handleSelect(false);
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

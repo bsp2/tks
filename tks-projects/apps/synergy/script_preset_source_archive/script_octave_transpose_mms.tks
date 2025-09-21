@@ -1,0 +1,247 @@
+//
+// Octave-Transpose
+//  - I/O port is selected via RPN_PRE_SCENETARGET_[A..H]
+//  - currently held notes are retriggered when transpose changes
+//  - Only process notes in record frame
+//  - Transpose note on, note off, and polypressure
+//  - MPE / multichannel mode ("p_all_ch")
+//
+
+tag int p_group_idx;
+tag boolean p_all_ch;
+tag int p_note_oct_dec = (12*2)+6;  // f#2
+tag int p_note_oct_inc = (12*2)+7;  // g-2
+
+int transpose;
+int io_dev;
+int io_ch;
+int io_ch_orig;
+
+PointerArray ans_all;  // 16x ActiveNoteState
+
+MIDIPipeFrame frame_tmp;
+ActiveNoteState *ans;
+int cur_ch;
+
+function OnUIInit(ui::XMLForm _xfm) {
+   ui::ComboBox *cm;
+
+   cm <= _xfm.findLayerById("p_note_oct_dec");
+   if(null != cm)
+   {
+      cm.setOptions(MIDI.midi_notes);
+   }
+
+   cm <= _xfm.findLayerById("p_note_oct_inc");
+   if(null != cm)
+   {
+      cm.setOptions(MIDI.midi_notes);
+   }
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   if("p_all_ch" == id)
+   {
+      ui::CheckBox cb; cb <= layer;
+      if(!cb.isSelected())
+      {
+         io_ch = io_ch_orig;
+         if(io_ch < 0)
+         {
+            p_all_ch = true;
+         }
+      }
+   }
+}
+
+function HandleTransposeChanged(ActiveNoteState _ans, int _ch, int newTranspose) {
+   // Release current notes and retrigger them using new transpose
+   IntArray activeNotes <= _ans.active_notes;
+   IntArray activeNoteVels <= _ans.active_note_vels;
+   IntArray activeNoteTicks <= _ans.active_note_ticks;
+   int noteIdx = 0;
+   // trace "xxx HandleTransposeChanged: activeNotes.numElements="+activeNotes.numElements;
+   loop(activeNotes.numElements)
+   {
+      if(0 == activeNoteTicks[noteIdx])
+      {
+         frame_tmp.noteOff(true/*bSet*/, io_dev, _ch, activeNotes[noteIdx] + transpose, 0/*vel*/);
+      }
+      noteIdx++;
+   }
+
+   // Retrigger notes using new transpose
+   noteIdx = 0;
+   loop(activeNotes.numElements)
+   {
+      if(0 == activeNoteTicks[noteIdx])
+      {
+         if(0 <= (activeNotes[noteIdx] + newTranspose) < 128)
+         {
+            frame_tmp.noteOn(true/*bSet*/, io_dev, _ch, activeNotes[noteIdx] + newTranspose, activeNoteVels[noteIdx], 0/*dur*/);
+         }
+      }
+      noteIdx++;
+   }
+}
+
+function HandleTransposeChangedAll(int newTranspose) {
+   if(p_all_ch)
+   {
+      int chIdx = 0;
+      loop(16)
+      {
+         HandleTransposeChanged(ans_all.get(chIdx), chIdx, newTranspose);
+         chIdx++;
+      }
+   }
+   else
+   {
+      HandleTransposeChanged(ans, cur_ch, newTranspose);
+   }
+}
+ 
+ 
+delegate ActiveNoteState:ProcessNoteOff(int _activeNoteIdx, byte _note, byte _vel) { 
+   if(_note == p_note_oct_dec)
+   {
+   }
+   else if(_note == p_note_oct_inc)
+   {
+   }
+   else
+   {
+      if(0 <= (_note + transpose) < 128)
+      {
+         frame_tmp.noteOff(true/*bSet*/, io_dev, cur_ch, _note + transpose, _vel);
+      }
+   }
+   
+} 
+
+delegate ActiveNoteState:ProcessNoteOn(int _activeNoteIdx, byte _note, int _duration, byte _vel) { 
+
+   int noteIdx;
+
+   if(_note == p_note_oct_dec)
+   {
+      ans.forgetNote(_note);
+      Global.Print("script_octave_transpose_mms: transpose down ("+transpose+")");
+      if(transpose >= -(3*12))
+      {
+         HandleTransposeChangedAll(transpose - 12);
+         transpose -= 12;
+      }
+      ans.forgetNote(_note);
+   }
+   else if(_note == p_note_oct_inc)
+   {
+      ans.forgetNote(_note);
+      Global.Print("script_octave_transpose_mms: transpose up ("+transpose+")");
+      if(transpose <= (3*12))
+      {
+         HandleTransposeChangedAll(transpose + 12);
+         transpose += 12;
+      }
+   }
+   else
+   {
+      // trace "xxx note on note="+_note+" transpose="+transpose+" dur="+_duration+" dev="+io_dev+" ch="+cur_ch;
+      frame_tmp.noteOn(true/*bSet*/, io_dev, cur_ch, _note + transpose, _vel, _duration);
+   }
+} 
+
+function OnReset() {
+   ActiveNoteState *ans;
+   if(ans_all.numElements != 16)
+   {
+      ans_all.free();
+      loop(16)
+      {
+         ans <= new ActiveNoteState;
+         delegate ans:"note_on"  = ProcessNoteOn; 
+         delegate ans:"note_off" = ProcessNoteOff; 
+         ans_all.add(#(deref ans));
+      }
+   }
+
+   foreach ans in ans_all
+   {
+      ans.reset();
+   }
+
+}
+
+function TransposePolyPressure(MIDIPipeFrame frame) {
+   int numEv = frame.getNumEventsPolyPressureByFlt(io_dev, cur_ch);
+   if(numEv > 0)
+   {
+      int evIdx = 0;
+      loop(numEv)
+      {
+         MIDIPipeEvent pev;
+         frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, io_dev, cur_ch);
+         if(0 <= (pev.polyPressureNote + transpose) < 128)
+         {
+            frame.polyPressureReplace(io_dev, pev.midiCh,
+                                      pev.polyPressureNote,
+                                      pev.polyPressureNote + transpose,
+                                      pev.polyPressureValue
+                                      );
+         }
+         evIdx++;
+      }
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+
+   MIDIPipeEvent pev;
+   // // if(framePlay.numEventsRPN > 0)
+   // //    trace "xxx framePlay.numEventsRPN="+framePlay.numEventsRPN;
+
+   if(framePlay.getRPNEventByIdxAndFlt(0/*evIdx*/, pev, Node.RPN_PRE_SCENETARGET_A + p_group_idx, -1/*dev*/, -1/*ch*/))
+   {
+      io_dev     = pev.devIdx;
+      io_ch_orig = pev.midiCh;
+      io_ch = p_all_ch ? 0 : io_ch_orig;
+      if(io_ch < 0)
+      {
+         p_all_ch = true;
+      }
+      trace "[dbg] script_octave_transpose_mms: io_dev="+io_dev+" io_ch="+io_ch;
+   }
+
+   if(!bMuted)
+   {
+      frame_tmp.empty();
+
+      cur_ch = 0;
+      loop(16)
+      {
+         if(p_all_ch || (cur_ch == io_ch))
+         {
+            ans <= ans_all.get(cur_ch);
+
+            ans.process(frameRec, io_dev, cur_ch);
+            
+            frameRec.deleteNoteOnsByFlt(io_dev, cur_ch);
+            frameRec.deleteNoteOffsByFlt(io_dev, cur_ch);
+
+            // Transpose polyphonic aftertouch
+            if(frameRec.numEventsPolyPressure > 0)
+            {
+               TransposePolyPressure(frameRec);
+            }
+         }
+
+         cur_ch++;
+      }
+
+      frameRec.mergeFrame(frame_tmp);
+   }
+}

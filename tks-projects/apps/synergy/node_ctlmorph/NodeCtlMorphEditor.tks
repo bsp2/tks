@@ -1,0 +1,4773 @@
+// ----
+// ---- file   : NodeCtlMorphEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 09Apr2016, 10Apr2016, 11Apr2016, 13Apr2016, 08Sep2016, 09Sep2016, 15Oct2016
+// ----          19Jan2017, 23Jan2017, 09Feb2017, 18Mar2017, 21May2017, 16Jun2017, 14Jul2017
+// ----          25Aug2017, 01Sep2017, 12Oct2017, 13Oct2017, 04Jan2018, 08Dec2018, 09Dec2018
+// ----          29Aug2019, 08Sep2019, 10Sep2019, 20Sep2019, 03Oct2019, 05Oct2019, 08Nov2019
+// ----          17May2020, 18May2020, 26Oct2020, 27Jan2021, 13May2021, 01Jun2021, 02Jun2021
+// ----          16Jun2021, 17Jun2021, 18Jun2021, 26Jun2021, 30Dec2021, 21Feb2022, 23Oct2022
+// ----          11Feb2023, 23Jun2023, 28Jul2023, 21Sep2023, 03Oct2023, 22Mar2024, 06Oct2024
+// ----          28Feb2025
+// ----
+// ----
+// ----
+
+module MNodeCtlMorphEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeCtlMorphEditor extends NodeEditor, MIDIMapEventListener, RemoteQueryCtlTargetsListener, ActionProvider, MIDIMapDefs {
+
+   define String TA_UPDATE_STATE;
+   define String TA_UPDATE_PERIODIC;
+   define String TA_MIDI_LEARN;
+
+   protected TimerAction *ta_update_state;
+   protected TimerAction *ta_update_periodic;
+   protected TimerAction *ta_midi_learn;
+
+   protected int ta_update_state_count;
+
+   define int TAB_PATTERN     = 0;
+   define int TAB_CONTROLLERS = 1;
+   define int TAB_PLAY        = 2;
+
+   public NodeCtlMorph *morph;
+
+   protected Panel      *pn_groups;
+   protected TabSwitch  *ts_groups;
+   protected TextField  *tf_pattern_name2;
+
+   // Pattern:
+   protected ComboBox   *cm_pattern_nr;
+   protected Label      *lb_pattern_nr;
+   protected TextField  *tf_pattern_name;
+   protected CheckBox   *cb_autosend_center_values;
+
+   protected Button    *bt_pattern_alloc;
+   protected Button    *bt_pattern_tools;
+   protected PopupMenu *pm_pattern_tools;
+   protected Button    *bt_pattern_free;
+
+
+   // Controllers:
+   protected ComboField     *cf_group;
+   protected ComboBox       *cm_tickmod;
+   protected ComboBox       *cm_tickshift;
+   protected ComboBox       *cm_ctllimit;
+   protected CheckBox       *cb_group;
+   protected Button         *bt_group_queryremoteall;
+   protected Button         *bt_group_learn;
+   protected Button         *bt_group_tools;
+   protected PopupMenu      *pm_group_tools;
+   protected Button         *bt_group_reset;
+   protected CheckBox       *cb_group_patsel;
+   protected FloatParam     *fp_group_t;
+   protected CheckBox       *cb_ui_t_all_groups;
+   protected NCM_EntriesTM  *tm_entries;
+   protected TableView      *tv_entries;
+   protected PopupMenu      *pm_ctlclipboard_entry;
+   protected Button         *bt_en_add;
+   protected Button         *bt_en_remove;
+   protected Button         *bt_en_moveup;
+   protected Button         *bt_en_movedown;
+
+   protected Panel       *pn_midi;
+   protected ComboBox    *cm_type;
+   protected ComboBox    *cm_midi_dev;
+   protected ComboBox    *cm_midi_ch;
+   protected ComboBox    *cm_midi_type;
+   protected LayerSwitch *ls_midi_type;
+   protected ComboBox    *cm_midi_cc_nr;
+   protected ComboBox    *cm_midi_rpn_nr;
+   protected FloatParam  *fp_midi_rpn_nr;
+   protected ComboBox    *cm_midi_nrpn_nr;
+   protected FloatParam  *fp_midi_nrpn_nr;
+
+   FloatParam *fp_min;
+   FloatParam *fp_center;
+   FloatParam *fp_max;
+
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   protected ComboBox   *cm_mm_off;
+   protected FloatParam *fp_mm_range;
+   protected FloatParam *fp_mm_pos;
+   protected CheckBox   *cb_mm_pos_send;
+
+   protected FloatParam *fp_mm_pos_grp1;
+   protected FloatParam *fp_mm_pos_grp2;
+   protected FloatParam *fp_mm_pos_grp3;
+   protected FloatParam *fp_mm_pos_grp4;
+   protected FloatParam *fp_mm_pos_grp5;
+   protected FloatParam *fp_mm_pos_grp6;
+   protected FloatParam *fp_mm_pos_grp7;
+   protected FloatParam *fp_mm_pos_grp8;
+
+   Dialog_DeletePattern           *dlg_deletepattern;
+   Dialog_NCM_GroupClear          *dlg_groupclear;
+   Dialog_NCM_GroupDeleteUnedited *dlg_groupdeleteunedited;
+   CM_CyclicMorphDialog           *dlg_cyclic_morph;
+   ImportSynthProfileDialog       *dlg_importmsp;
+   NCM_GroupCopyDialog            *dlg_groupcopy;
+
+   define int LEARN_NONE    = 0;
+   define int LEARN_GROUP   = 1;
+   // (note) learn_mode is stored in node (needed by midi recording)
+
+   static StringArray learn_mode_names = ["None",
+                                          "Group"
+                                          ];
+   protected boolean b_learning; // true while scanning MIDI input
+   define int LEARN_TIMEOUT = 49;  // number of ta_midi_learn timeouts (=> 50*200 = 10 sec)
+   define int TINT32_LEARN = #58ef6467;
+   protected int learn_timeout;
+   protected boolean b_learn_infinite;
+
+   static NCM_Group *group_clipboard;
+   static NCM_Entry *entry_clipboard;
+
+   protected boolean b_query_remote_values_or_names;  // true=query values, false=query names
+   protected boolean b_query_remote_values_add;  // true=add ctls, false=update ctl values
+   protected boolean b_query_remote_all;         // true=add ctls, update ctls, update names
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeCtlMorphEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            // Move pattern name textfield into TabSwitch
+            tf_pattern_name2 <= pn_groups.unlinkChildLayer(tf_pattern_name2);
+            pn_groups.removeChildLayer(tf_pattern_name2);
+            Panel pnLabels <= ts_groups.getPnLabels();
+            pnLabels.addLayer(tf_pattern_name2, Layout.RIGHT);
+
+            f_autodev.initAutoDeviceForm();
+
+            tm_entries <= new NCM_EntriesTM;
+            tm_entries.initTableModel();
+            tm_entries.editor <= this;
+            tv_entries.setTableModel(tm_entries);
+
+            cm_pattern_nr.setOptions(Node.patnr_options);
+            cm_midi_type.setOptions(MIDIMapEventType.type_names_short);
+            cm_mm_off.setOptions(Node.patnr_options);
+
+            initMMC();
+
+            initTimers();
+
+            dlg_cyclic_morph <= new CM_CyclicMorphDialog;
+
+            if(dlg_cyclic_morph.init())
+            {
+               dlg_cyclic_morph.setRecipient(this);
+
+               ts_groups.setActiveTabIndex(TAB_CONTROLLERS);
+               return true;
+            }
+            else
+            {
+               trace "[---] NodeCtlMorphEditor::init: failed to init CyclicMorphDialog.";
+            }
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_update_state     <= TimerAction.New(TA_UPDATE_STATE,    this, 100);
+      ta_update_periodic  <= TimerAction.New(TA_UPDATE_PERIODIC, this, 100);
+      ta_midi_learn       <= TimerAction.New(TA_MIDI_LEARN,      this, 200);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeCtlMorphEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      // trace "xxx NodeCtlMorphEditor::mmcHandleEvent";
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             tf_pattern_name2,
+
+                             cm_pattern_nr,
+                             tf_pattern_name,
+                             cb_autosend_center_values,
+                             bt_pattern_alloc,
+                             bt_pattern_tools,
+                             bt_pattern_free
+                           ]
+                          );
+            break;
+
+         case TAB_CONTROLLERS:
+
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             tf_pattern_name2,
+
+                             cf_group,
+
+                             bt_group_tools,
+
+                             cm_tickmod,
+                             cm_tickshift,
+                             cm_ctllimit,
+
+                             cb_group,
+                             bt_group_queryremoteall,
+                             bt_group_learn,
+                             bt_group_reset,
+                             cb_group_patsel,
+
+                             fp_group_t,
+                             cb_ui_t_all_groups,
+
+                             tv_entries,
+
+                             cm_type,
+                             cm_midi_dev,
+                             cm_midi_ch,
+                             cm_midi_type,
+
+                           ]
+                          );
+
+            switch(ls_midi_type.getCurrentChildNr())
+            {
+               case 1:
+                  layers.add(cm_midi_cc_nr);
+                  break;
+
+               case 2:
+                  layers.add(fp_midi_rpn_nr);
+                  layers.add(cm_midi_rpn_nr);
+                  break;
+
+               case 3:
+                  layers.add(fp_midi_nrpn_nr);
+                  layers.add(cm_midi_nrpn_nr);
+                  break;
+            }
+
+            layers.add(fp_min);
+            layers.add(fp_center);
+            layers.add(fp_max);
+
+            break;
+
+         case TAB_PLAY:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                             tf_pattern_name2,
+
+                             cm_node_class,
+                             cb_node_class_show,
+                             cm_node_class_show_in,
+
+                             cm_mm_off,
+                             fp_mm_range,
+                             fp_mm_pos,
+                             cb_mm_pos_send,
+
+                             fp_mm_pos_grp1,
+                             fp_mm_pos_grp2,
+                             fp_mm_pos_grp3,
+                             fp_mm_pos_grp4,
+                             fp_mm_pos_grp5,
+                             fp_mm_pos_grp6,
+                             fp_mm_pos_grp7,
+                             fp_mm_pos_grp8,
+                           ]
+                          );
+            f_autodev.addTabCycleOverrides(layers);
+            return layers;
+      }
+
+      return layers;
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeCtlMorph _morph) {
+      morph <= _morph;
+
+      // Pattern:
+      updatePatternNrComboBox();
+      cm_pattern_nr.setSelectedOption(morph.nodeGetCurrentEditPatternNr());
+
+      cm_midi_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_midi_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      f_autodev.showNode(morph, devAll, bgcolorsAll);
+
+      tv_entries.setLeadSelection(-1);
+
+      cb_autosend_center_values.setSelectedAndEditable(morph.b_autosend_center_values);
+      cb_ui_t_all_groups.setSelectedAndEditable(morph.b_ui_t_all_groups);
+
+      handlePatternChanged(false/*bFromUI*/);
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(morph);
+
+      // Play / Multi-Morph:
+      cm_mm_off  .setSelectedOption(morph.multi_morph_offset_resetval);
+      fp_mm_range.setValue(morph.multi_morph_range_resetval);
+      fp_mm_pos  .setValue(morph.multi_morph_pos_resetvals.get(0));
+      updateMorphPosResetVals();
+      cb_mm_pos_send.setSelected(morph.b_multi_morph_pos_send);
+
+      MIDI.AddMIDIMapEventListener(this);
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+      // trace "xxx NodeCtlMorphEditor::showNodePost";
+
+      // // ta_update_state.schedule();
+
+      ta_update_periodic.schedule();
+
+      refocusDefault();
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         if(TAB_CONTROLLERS == ts_groups.getActiveTabIndex())
+         {
+            UI.SetKeyboardFocus(tv_entries);
+            return;
+         }
+
+         UI.SetKeyboardFocus(ts_groups);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateMorphPosResetVals() {
+      fp_mm_pos_grp1.setValue(morph.multi_morph_pos_resetvals.get(0));
+      fp_mm_pos_grp2.setValue(morph.multi_morph_pos_resetvals.get(1));
+      fp_mm_pos_grp3.setValue(morph.multi_morph_pos_resetvals.get(2));
+      fp_mm_pos_grp4.setValue(morph.multi_morph_pos_resetvals.get(3));
+      fp_mm_pos_grp5.setValue(morph.multi_morph_pos_resetvals.get(4));
+      fp_mm_pos_grp6.setValue(morph.multi_morph_pos_resetvals.get(5));
+      fp_mm_pos_grp7.setValue(morph.multi_morph_pos_resetvals.get(6));
+      fp_mm_pos_grp8.setValue(morph.multi_morph_pos_resetvals.get(7));
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrComboBox() {
+      local StringArray patNrOptionsShort;
+      local StringArray patNrOptionsLong;
+      local IntArray patNrColors;
+      Node.CalcPatNrOptions(morph, patNrOptionsShort, patNrOptionsLong, patNrColors);
+      cm_pattern_nr.setOptions(patNrOptionsShort);
+      cm_pattern_nr.setOptionsLong(patNrOptionsLong);
+      cm_pattern_nr.setOptionBGColors(patNrColors);
+   }
+
+   // <method_get.png>
+   public method getEditPattern() : NCM_Pattern {
+      if(null != morph)
+      {
+         NCM_Pattern pat <= morph.nodeGetCurrentEditPattern();
+         return pat;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedGroup() : NCM_Group {
+      NCM_Pattern pat <= getEditPattern();
+
+      // trace "xxx getSelectedGroup: pat="+#(pat);
+
+      if(null != pat)
+      {
+         NCM_Group grp <= pat.getGroupByIndex(cf_group.getSelectedOption());
+
+         // trace "xxx getSelectedGroup: grp="+#(grp);
+
+         return grp;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedEntriesArray() : PointerArray {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         return grp.entries;
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedEntry() : NCM_Entry {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         int row = tm_entries.getCursorIndex();
+
+         if(-1 != row)
+         {
+            NCM_Entry en <= grp.getEntryByIndex(row);
+
+            return en;
+         }
+      }
+
+      return null;
+   }
+
+   // <ui_handle.png>
+   public virtual nodeHandleEditPatternChanged() {
+      handlePatternChanged(false/*bFromUI*/);
+
+      // // if(morph.b_autosend_center_values)
+      // //    morph.sendAllCenterValues();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternChanged(boolean _bFromUI) {
+
+      NCM_Pattern pat <= morph.nodeGetCurrentEditPattern();
+
+      updatePatternNrLabel();
+
+      if(!_bFromUI)
+      {
+         cm_pattern_nr.setSelectedOption(morph.nodeGetCurrentEditPatternNr());
+         cm_pattern_nr.redraw();
+      }
+
+      if(null != pat)
+      {
+         updateGroupOptions();
+         cf_group.setEditable(true);
+
+         NCM_Group grp <= getSelectedGroup();
+
+         cb_group.setSelected(grp.b_enable);
+         cb_group.setEditable(true);
+
+         cm_tickmod.setSelectedOption(grp.tick_mod - 1);
+         cm_tickmod.setEditable(true);
+         cm_tickshift.setSelectedOption(grp.tick_shift);
+         cm_tickshift.setEditable(true);
+         cm_ctllimit.setSelectedOption(grp.ctl_limit / 4);
+         cm_ctllimit.setEditable(true);
+
+         bt_group_learn.setEditable(true);
+         bt_group_tools.setEditable(true);
+         bt_group_reset.setEditable(true);
+
+         cb_group_patsel.setSelectedAndEditable(grp.b_patsel);
+         fp_group_t.setValueAndEnable(grp.last_sent_t);
+
+         tm_entries.entries <= getSelectedEntriesArray();
+         tv_entries.tableModelChanged();
+         tv_entries.setEditable(true);
+
+         tv_entries.moveCursorToFirstRowIfNoneSelected();
+
+         tf_pattern_name.setText(pat.pat_name);
+         tf_pattern_name.setEditable(true);
+
+         tf_pattern_name2.setText(pat.pat_name);
+         tf_pattern_name2.setEditable(true);
+      }
+      else
+      {
+         cf_group.setSelectedOption(-1);
+         cf_group.setEditable(false);
+
+         cb_group.setSelected(false);
+         cb_group.setEditable(false);
+
+         cm_tickmod.setSelectedOption(-1);
+         cm_tickmod.setEditable(false);
+         cm_tickshift.setSelectedOption(-1);
+         cm_tickshift.setEditable(false);
+         cm_ctllimit.setSelectedOption(-1);
+         cm_ctllimit.setEditable(false);
+
+         bt_group_learn.setEditable(false);
+         bt_group_tools.setEditable(false);
+         bt_group_reset.setEditable(false);
+
+         cb_group_patsel.setSelectedAndDisable(false);
+         fp_group_t.setValueAndDisable(0.5);
+
+         tm_entries.entries <= null;
+         tv_entries.tableModelChanged();
+         tv_entries.setEditable(false);
+
+         tf_pattern_name.setText("");
+         tf_pattern_name.setEditable(false);
+
+         tf_pattern_name2.setText("");
+         tf_pattern_name2.setEditable(false);
+      }
+
+      handleEntryChanged(false/*bFromUI*/);
+
+      setLearnMode(LEARN_NONE, true/*bQuiet*/, false/*bInfinite*/);
+
+      redraw();
+
+      root_form.pg_node.handleEditPatternChanged();
+   }
+
+   // <ui_update.png>
+   protected method updateGroupOptions() {
+      NCM_Pattern pat <= morph.nodeGetCurrentEditPattern();
+      local StringArray groupOptions;
+      NCM_Group *grp;
+      int grpNr = 1;
+      if(null != pat)
+      {
+         loop(NCM_Pattern.NUM_GROUPS)
+         {
+            grp <= pat.getGroupByIndex(grpNr-1);
+            groupOptions.add("Group "+grpNr+": "+grp.name);
+            grpNr++;
+         }
+      }
+      else
+      {
+         loop(NCM_Pattern.NUM_GROUPS)
+         {
+            groupOptions.add("Group "+grpNr+": -");
+            grpNr++;
+         }
+      }
+      cf_group.setOptions(groupOptions);
+      cf_group.setSelectedOption(morph.last_selected_group);
+   }
+
+   // <method_get.png>
+   protected method getLearnButton() : Button {
+      Button *bt;
+
+      switch(morph.learn_mode)
+      {
+         default:
+         case LEARN_NONE:
+            bt <= null;
+            break;
+
+         case LEARN_GROUP:
+            bt <= bt_group_learn;
+            break;
+      }
+
+      return bt;
+   }
+
+   // <method_set.png>
+   protected method setLearnMode(int _mode, boolean _bQuiet, boolean _bInfinite) {
+
+      if(null != morph)
+      {
+         if(morph.learn_mode == _mode)
+         {
+            // Toggle off
+            if(!_bQuiet)
+            {
+               Global.Print("Stop learn <"+learn_mode_names.get(morph.learn_mode)+">");
+            }
+
+            morph.learn_mode = LEARN_NONE;
+         }
+         else
+         {
+            if(!_bQuiet)
+            {
+               if(morph.learn_mode != LEARN_NONE)
+               {
+                  if(LEARN_NONE == _mode)
+                  {
+                     Global.Print("Stop learn <"+learn_mode_names.get(morph.learn_mode)+">");
+                  }
+               }
+            }
+
+            morph.learn_mode = _mode;
+
+            if(!_bQuiet)
+            {
+               if(LEARN_NONE != _mode)
+               {
+                  Global.Print("Start learn <"+learn_mode_names.get(morph.learn_mode)+">");
+               }
+            }
+         }
+      }
+
+      String caption = " Learn ";
+
+      bt_group_learn    .setBackgroundTint(0);
+      bt_group_learn    .setCaption(caption);
+      bt_group_learn    .redraw();
+      // // bt_mapac_learn    .setBackgroundTint(0);
+      // // bt_mapac_learn    .setCaption(caption);
+      // // bt_mapac_learn    .redraw();
+
+      Button bt <= getLearnButton();
+
+      if(null != bt)
+      {
+         bt.setCaption(" Stop ");
+         bt.setBackgroundTint(TINT32_LEARN);
+         bt.redraw();
+         learn_timeout = LEARN_TIMEOUT;
+         b_learn_infinite = _bInfinite;
+         ta_midi_learn.schedule();
+      }
+      else
+      {
+         ta_midi_learn.cancel();
+         learn_timeout = -1;
+      }
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+      MIDI.RemoveMIDIMapEventListener(this);
+
+      ta_update_state.cancel();
+      ta_update_periodic.cancel();
+
+      if(null != morph)
+      {
+         setLearnMode(LEARN_NONE, true/*bQuiet*/, false/*bInfinite*/);
+      }
+
+      tm_entries.entries <= null;
+
+      dlg_cyclic_morph.hide();
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      morph <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      return false;
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrLabel() {
+      Integer io = morph.nodeGetCurrentEditPatternNr();
+      lb_pattern_nr.setCaption("Pattern:\n  ("+io.printf("0x%02x")+")");
+      lb_pattern_nr.redraw();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatternAlloc(boolean _bSub) : NCM_Pattern {
+      local NCM_Pattern p;
+
+      p.patInit(morph, 0/*patNr placeholder*/);
+
+      int patIdx;
+
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(true == _bSub)
+         {
+            // Find unused A..D sub pattern
+            patIdx = morph.nodeFindFirstUnusedPatternSub(morph.nodeGetCurrentEditPatternNr());
+         }
+         else
+         {
+            // Find unused 1..32 pattern group
+            patIdx = morph.nodeFindFirstUnusedPatternGroup(morph.nodeGetCurrentEditPatternNr());
+         }
+
+         if(-1 == patIdx)
+         {
+            patIdx = morph.nodeFindFirstUnusedPattern(0);
+         }
+      }
+      else
+      {
+         patIdx = morph.nodeGetCurrentEditPatternNr();
+      }
+
+      // trace "xxx findFirstUnusedPattern: patIdx="+patIdx+" currentEditNr="+morph.nodeGetCurrentEditPatternNr();
+
+      if(-1 != patIdx)
+      {
+         p.pat_nr = patIdx;
+         morph.nodeSetPattern(patIdx, deref p);
+
+         morph.nodeSetCurrentEditPatternNr(patIdx);
+
+         ////if(!replay.b_playing)
+         morph.nodeSetCurrentPlayPatternNr(patIdx);
+
+         cm_pattern_nr.setSelectedOption(patIdx);
+
+         selectPatternByIdx(patIdx);
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         updatePatternNrComboBox();
+
+         Global.SuccessShort("New: Allocate pattern "+cm_pattern_nr.getSelectedOptionName()+" ("+(patIdx+1)+").");
+         return p;
+      }
+      else
+      {
+         Global.Error("New: All patterns in use.");
+         return null;
+      }
+   }
+
+   // <ui_show.png>
+   protected method showPatternToolsMenu(boolean _bFocusFirst) {
+
+      pm_pattern_tools <= PopupMenu.New(this);
+      PopupMenu pm <= pm_pattern_tools;
+      PopupMenuButton *pmb;
+
+      NCM_Pattern pat <= morph.nodeGetCurrentEditPattern();
+      boolean bHavePat = (null != pat);
+
+      pmb <= pm.addDefaultButton("Copy pattern", "copy");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= pm.addDefaultButton("Paste pattern", "paste");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lctrl-v", "");
+
+      if(bHavePat)
+      {
+         pmb.setActive(null != pat.patGetClipboard());
+      }
+      else
+      {
+         pmb.setActive(false);
+      }
+
+      pmb <= pm.addDefaultButton("Clone pattern", "clone");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("Clone pattern (sub)", "clone_sub");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lshift-lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("New pattern (sub)", "new_sub");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lshift-lctrl-n", "");
+
+      // pm.addSeparator();
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_pattern_tools);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show pattern tools menu.");
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternCopy() {
+
+      NCM_Pattern pat <= getEditPattern();
+
+      // trace "xxx nmm: handlePatternCopy: pat="+#(pat);
+
+      if(null != pat)
+      {
+         pat.patCopyToClipboard();
+
+         Global.Print("Pattern copied to clipboard.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternPaste() {
+      NCM_Pattern pat <= getEditPattern();
+
+      // trace "xxx nmm: handlePatternPaste: pat="+#(pat);
+
+      if(null == pat)
+      {
+         handlePatternAlloc(false/*bSub*/);
+         pat <= getEditPattern();
+      }
+
+      if(null != pat)
+      {
+         if(pat.patCopyFromClipboard())
+         {
+            handlePatternChanged(false/*bFromUI*/);
+
+            if(cb_group_patsel.isSelected())
+            {
+               handleGroupReset();
+            }
+
+            updatePatternNrComboBox();
+
+            Global.SuccessShort("Clipboard pasted to pattern.");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatternClone(boolean _bSub) {
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         local NCM_Pattern tmp;
+
+         tmp.patInit(morph, 0);
+
+         tmp.patCopyFrom(pat, false/*bClear*/);
+
+         if(null != handlePatternAlloc(_bSub))
+         {
+            pat <= getEditPattern();
+
+            pat.patCopyFrom(tmp, false/*bClear*/);
+
+            handlePatternChanged(false/*bFromUI*/);
+
+            Global.SuccessShort("Pattern cloned to "+cm_pattern_nr.getSelectedOptionName()+".");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternFree() {
+
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         dlg_deletepattern <= new Dialog_DeletePattern;
+         dlg_deletepattern.run(this, pat.pat_name);
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handlePatternFree2() {
+
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         morph.nodeSetPattern(morph.edit_pattern_nr, null);
+
+         pat <= null;
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         updatePatternNrComboBox();
+
+         Global.Print("Delete pattern");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPattern() {
+
+      // trace "xxx cm_pattern_nr.getSelectedOption()="+cm_pattern_nr.getSelectedOption();
+      int patNr = cm_pattern_nr.getSelectedOption();
+
+      morph.nodeSetCurrentEditPatternNr(patNr);
+      morph.nodeSetCurrentPlayPatternNr(patNr);
+
+      morph.nodeQueuePrgChgOut(patNr);
+      // // replay.handleNodeStateChangedUI(morph, -1/*active*/, patNr/*pat*/);
+
+      // trace "xxx AR:selectpattern: 1 morph.nodeGetCurrentEditPatternNr()="+morph.nodeGetCurrentEditPatternNr();
+
+      handlePatternChanged(true/*bFromUI*/);
+
+      NCM_Pattern pat <= getEditPattern();
+
+      // trace "xxx AR:selectpattern: 2 morph.nodeGetCurrentEditPatternNr()="+morph.nodeGetCurrentEditPatternNr();
+
+      if(null != pat)
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" \""+pat.pat_name+"\".");
+      }
+      else
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" <empty>.");
+      }
+
+      // // if(morph.b_autosend_center_values)
+      // //    morph.sendAllCenterValues();
+   }
+
+   // <method.png>
+   public virtual selectPatternByIdx(int _idx) {
+
+      cm_pattern_nr.setSelectedOption(_idx);
+
+      handleSelectPattern();
+   }
+
+   // <method.png>
+   public virtual selectPatternByUsedIdx(int _idx) {
+      if(_idx >= 0)
+      {
+         int patNr = morph.nodeGetPatternNrByUsedIdx(_idx);
+
+         if(-1 != patNr)
+         {
+            selectPatternByIdx(patNr);
+         }
+      }
+      else
+      {
+         selectPatternByIdx(127); // --/
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectPreviousPattern() {
+      byte patNr = morph.nodeGetCurrentEditPatternNr();
+
+      if(patNr > 0)
+      {
+         patNr--;
+
+         morph.nodeSetCurrentEditPatternNr(patNr);
+         morph.nodeSetCurrentPlayPatternNr(patNr);
+
+         morph.nodeQueuePrgChgOut(patNr);
+         // // replay.handleNodeStateChangedUI(morph, -1/*active*/, patNr/*pat*/);
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         // // if(morph.b_autosend_center_values)
+         // //    morph.sendAllCenterValues();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectNextPattern() {
+      byte patNr = morph.nodeGetCurrentEditPatternNr();
+
+      if(patNr < 127)
+      {
+         patNr++;
+
+         morph.nodeSetCurrentEditPatternNr(patNr);
+         morph.nodeSetCurrentPlayPatternNr(patNr);
+
+         morph.nodeQueuePrgChgOut(patNr);
+         // // replay.handleNodeStateChangedUI(morph, -1/*active*/, patNr/*pat*/);
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         // // if(morph.b_autosend_center_values)
+         // //    morph.sendAllCenterValues();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPreviousUsedPattern() {
+      int patIdx = morph.nodeGetCurrentEditPatternNr();
+      patIdx = morph.nodeFindPreviousPatternNrByUsedIdxWithOffset(patIdx-1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+
+         // // if(morph.b_autosend_center_values)
+         // //    morph.sendAllCenterValues();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextUsedPattern() {
+      int patIdx = morph.nodeGetCurrentEditPatternNr();
+      patIdx = morph.nodeFindNextPatternNrByUsedIdxWithOffset(patIdx+1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+
+         // // if(morph.b_autosend_center_values)
+         // //    morph.sendAllCenterValues();
+      }
+   }
+
+   // // <method.png>
+   // protected method playPatternByIdx(int _idx) {
+
+   //    selectPatternByIdx(_idx);
+
+   //    NMM_Pattern pat <= getEditPattern();
+
+   //    modmatrix.nodeSetCurrentPlayPatternNr(_idx);
+
+   //    Global.Print("Play pattern "+cm_pattern_nr.getSelectedOptionName());
+   // }
+
+   // <ui_handle.png>
+   protected method handlePatternNameChanged() {
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pattern_name.getText();
+
+         tf_pattern_name2.setText(pat.pat_name);
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternName2Changed() {
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pattern_name2.getText();
+
+         tf_pattern_name.setText(pat.pat_name);
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAutoSendCenterValuesChanged() {
+      morph.b_autosend_center_values = cb_autosend_center_values.isSelected();
+      Global.Print("Auto-send center values is "+Utils.GetEnableString(morph.b_autosend_center_values));
+   }
+
+   // <ui_handle.png>
+   protected method handleTAllGroupsChanged() {
+      morph.b_ui_t_all_groups = cb_ui_t_all_groups.isSelected();
+      Global.Print("Update-all-groups is "+Utils.GetEnableString(morph.b_ui_t_all_groups));
+   }
+
+   // <ui_handle.png>
+   public method handleEntryCopy() {
+      NCM_Entry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         entry_clipboard <= new NCM_Entry;
+         entry_clipboard.init();
+         entry_clipboard.copyFrom(en);
+
+         Global.Print("Entry Copy to Clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleEntryPaste() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         if(null != entry_clipboard)
+         {
+            NCM_Entry en <= grp.addEntry(tm_entries.getCursorIndex());
+            en.copyFrom(entry_clipboard);
+            tv_entries.tableModelChanged();
+            int enIdx = grp.findEntryIdx(en);
+            tv_entries.moveCursorToRow(enIdx);
+
+            Global.Print("Entry Paste from Clipboard");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupChanged() {
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         morph.last_selected_group = cf_group.getSelectedOption();
+
+         Global.Print("Group is "+(morph.last_selected_group + 1));
+
+         handlePatternChanged(false/*bFromUI*/);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupSelectNext() {
+      cf_group.selectNextOptionAction();
+      UI.SetKeyboardFocus(tv_entries);
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupSelectPrevious() {
+      cf_group.selectPreviousOptionAction();
+      UI.SetKeyboardFocus(tv_entries);
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupNameChanged(String _name) {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         int idx = _name.indexOfChar(':', 0);
+         if(-1 != idx)
+         {
+            local String name; _name.substring(idx+1, -1) => name;  // remove "Group n:" prefix
+            grp.name = name.trim();
+         }
+         else
+         {
+            grp.name = _name;
+         }
+
+         Global.Print("Group name is \""+grp.name+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupEnableChanged() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.setEnable(cb_group.isSelected());
+
+         Global.Print("Group is "+Utils.GetEnableString(grp.b_enable));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupTickModChanged(boolean _bAllGroups) {
+
+      int tickMod = cm_tickmod.getSelectedOption() + 1;
+
+      NCM_Group *grp;
+
+      if(_bAllGroups)
+      {
+         NCM_Pattern pat <= getEditPattern();
+         if(null != pat)
+         {
+            foreach grp in pat.groups
+            {
+               grp.setTickMod(tickMod);
+            }
+            Global.Print("Tick mod is "+tickMod+" (update all groups)");
+         }
+      }
+      else
+      {
+         grp <= getSelectedGroup();
+
+         if(null != grp)
+         {
+            grp.setTickMod(tickMod);
+
+            Global.Print("Tick mod is "+grp.tick_mod);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupTickShiftChanged(boolean _bAllGroups) {
+
+      int tickShift = cm_tickshift.getSelectedOption();
+
+      NCM_Group *grp;
+
+      if(_bAllGroups)
+      {
+         NCM_Pattern pat <= getEditPattern();
+         if(null != pat)
+         {
+            foreach grp in pat.groups
+            {
+               grp.setTickShift(tickShift);
+            }
+            Global.Print("Tick shift is "+tickShift+" (update all groups)");
+         }
+      }
+      else
+      {
+         grp <= getSelectedGroup();
+
+         if(null != grp)
+         {
+            grp.setTickShift(tickShift);
+            Global.Print("Tick shift is "+grp.tick_shift);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupCtlLimitChanged(boolean _bAllGroups) {
+
+      int ctlLimit = cm_ctllimit.getSelectedOption();
+      ctlLimit *= 4;
+
+      NCM_Group *grp;
+
+      if(_bAllGroups)
+      {
+         NCM_Pattern pat <= getEditPattern();
+         if(null != pat)
+         {
+            foreach grp in pat.groups
+            {
+               grp.setCtlLimit(ctlLimit);
+            }
+            Global.Print("Ctl limit is "+ctlLimit+" (update all groups)");
+         }
+      }
+      else
+      {
+         grp <= getSelectedGroup();
+
+         if(null != grp)
+         {
+            grp.setCtlLimit(ctlLimit);
+
+            Global.Print("Ctl limit is "+grp.ctl_limit);
+         }
+      }
+
+   }
+
+   // <method.png>
+   protected method toggleGroupLearn(boolean _bInfinite) {
+      setLearnMode(LEARN_GROUP, false/*bQuiet*/, _bInfinite);
+   }
+
+   // <method.png>
+   protected method showEventString(MIDIMapEvent _ev) {
+      MIDIMapEvent evRec = _ev;
+      MIDIMorphScene.TransformEvent(evRec);
+      evRec.echoTransformForced();
+      evRec.classify();
+
+      Global.Print("Val="+evRec.arg1+" Type="+evRec.getExtTypeName());
+   }
+
+   // <method.png>
+   protected method handleGroupLearn(MIDIMapEvent _ev) {
+
+      MIDIMapEvent evRec = _ev;
+      MIDIMorphScene.TransformEvent(evRec);
+      evRec.echoTransformForced();
+      evRec.classify();
+
+      // trace "xxx ncm: evRec: "+evRec.getDebugString();
+
+      if(evRec.class_type == MIDIMapDefs.CLASS_UNKNOWN)
+      {
+         evRec.class_type = MIDIMapDefs.CLASS_VALUE;
+      }
+
+      if(MIDIMapDefs.CLASS_VALUE == evRec.class_type)
+      {
+         NCM_Group grp <= getSelectedGroup();
+
+         if(null != grp)
+         {
+            NCM_Entry *en;
+            boolean bFound = false;
+            foreach en in grp.entries
+            {
+               if(en.mm_event.matchTypeOfIgnoreClass(evRec))
+               {
+                  bFound = true;
+                  break;
+               }
+            }
+
+            // trace "xxx NCM: bFound="+bFound+" en="+#(en);
+
+            switch(evRec.type)
+            {
+               case MIDIMapDefs.TYPE_CC:
+               case MIDIMapDefs.TYPE_PITCHBEND:
+               case MIDIMapDefs.TYPE_RPN:
+               case MIDIMapDefs.TYPE_NRPN:
+                  if(!bFound)
+                  {
+                     en <= grp.addEntry(-1/*rowHint*/);
+                  }
+
+                  // trace "xxx NCM: update center_value to "+evRec.arg1;
+
+                  en.mm_event.copyFrom(evRec);
+                  en.setCenterValue(evRec.arg1);
+
+                  // In case local control is off
+                  if(!en.b_input)
+                  {
+                     morph.queueEntryToUISendFrame(en, -1/*last_queued_t*/);
+                  }
+
+                  tv_entries.tableModelChanged();
+                  handleEntryChanged(false/*bFromUI*/);
+
+                  int enIdx = grp.findEntryIdx(en);
+                  tv_entries.moveCursorToRow(enIdx);
+
+                  learn_timeout = LEARN_TIMEOUT;
+                  ta_midi_learn.schedule();
+                  break;
+            }
+         }
+      } // is CLASS_VALUE
+   }
+
+   // <ui_handle.png>
+   protected method handleImportParamsFromProfile1() {
+
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         NCM_Entry firstOutEn <= grp.getEntryByIndex(tm_entries.getCursorIndex());
+         if((null == firstOutEn) || firstOutEn.b_input)
+            firstOutEn <= grp.getOutputEntryByIndex(0);
+         if(null != firstOutEn)
+         {
+            MIDIMapEvent mmEv <= firstOutEn.mm_event;
+            STX_MIDIOutDevice outDev <= mmEv.dev;
+            if(null != outDev)
+            {
+               // Show import dialog
+               MIDISynthProfile msp <= outDev.getMIDISynthProfile(mmEv.dev_ch);
+               if(null != msp)
+               {
+                  if(null == dlg_importmsp)
+                  {
+                     dlg_importmsp <= new ImportSynthProfileDialog;
+                     dlg_importmsp.init();
+                  }
+                  dlg_importmsp.showMSP(msp, mmEv.dev, mmEv.dev_ch, this);
+               }
+               else
+               {
+                  Global.Warning("No MIDI synth profile");
+               }
+            }
+            else
+            {
+               Global.Warning("No output device");
+            }
+         }
+         else
+         {
+            Global.Warning("No output entry");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportParamsFromProfile2() {
+
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         // (note) validate in handleImportParamsFromProfile1()
+         NCM_Entry firstOutEn <= grp.getEntryByIndex(tm_entries.getCursorIndex());
+         if((null == firstOutEn) || firstOutEn.b_input)
+            firstOutEn <= grp.getOutputEntryByIndex(0);
+
+         MIDIMapEvent mmEvFirst <= firstOutEn.mm_event;
+         STX_MIDIOutDevice outDev <= mmEvFirst.dev;
+
+         int numSkipped = 0;
+         int numAdded = 0;
+
+         local PointerArray selectedAliases <= dlg_importmsp.getSelectedAliases();
+         MIDISynthProfileCtlAlias *alias;
+         NCM_Entry *en;
+         local MIDIMapEvent mmEvTmp;
+         int rowHint = tm_entries.getCursorIndex();
+
+         foreach alias in selectedAliases
+         {
+            mmEvTmp.initFromMIDISynthProfileCtlAlias(alias);
+            mmEvTmp.dev   <= outDev;
+            mmEvTmp.dev_ch = mmEvFirst.dev_ch;
+
+            if(null == grp.findEntryByEvent(mmEvTmp, false/*bInput*/))
+            {
+               en <= grp.addEntry(rowHint);
+               MIDIMapEvent mmEv <= en.mm_event;
+               mmEv.copyFrom(mmEvTmp);
+
+               numAdded++;
+
+               if(-1 != rowHint)
+                  rowHint++;
+            }
+            else
+            {
+               numSkipped++;
+            }
+         }
+
+         handlePatternChanged(false/*bFromUI*/);
+
+         Global.Warning("importprofile: "+numAdded+" added, "+numSkipped+" skipped");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showGroupCopyDialog() {
+      NCM_Pattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         if(null == dlg_groupcopy)
+         {
+            dlg_groupcopy <= new NCM_GroupCopyDialog;
+            dlg_groupcopy.init();
+         }
+         dlg_groupcopy.showGroupCopyDialog(morph, this, pat);
+      }
+   }
+
+   // <ui_show.png>
+   protected method showGroupToolsMenu(boolean _bFocusFirst) {
+
+      pm_group_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+      PopupMenu pm <= pm_group_tools;
+
+      boolean bHaveGrpCB = (null != group_clipboard);
+      boolean bHaveEntryCB = (null != entry_clipboard);
+      boolean bHavePatCB = !morph.nodeIsPatternClipboardEmpty();
+
+      pmb <= pm.addDefaultButton("Clear \'edited\' flags", "clear_edited");
+      pmb <= pm.addDefaultButton("Clear group", "clear");
+      pmb <= pm.addDefaultButton("Delete unedited entries", "delete_unedited");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Clear asym flags", "asym_clear");
+      pmb.setAccelerators("lctrl-lshift-m", "");
+      pmb <= pm.addDefaultButton("Set asym flags", "asym_set");
+      pmb.setAccelerators("lctrl-m", "");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy group", "copy");
+      pmb.setAccelerators("lshift-c", "");
+      pmb.setFontByName("big7");
+
+      pmb <= pm.addDefaultButton("Paste group", "paste");
+      pmb.setAccelerators("lshift-v", "");
+      pmb.setFontByName("big7");
+      pmb.setActive(bHaveGrpCB);
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Merge group clipboard (keep)", "merge_keep");
+      pmb.setActive(bHaveGrpCB);
+      pmb <= pm.addDefaultButton("Merge group clipboard (keep / ignore ch)", "merge_keep_ignorech");
+      pmb.setActive(bHaveGrpCB);
+
+      pmb <= pm.addDefaultButton("Merge group clipboard (replace)", "merge_replace");
+      pmb.setActive(bHaveGrpCB);
+      pmb <= pm.addDefaultButton("Merge group clipboard (replace / ignore ch)", "merge_replace_ignorech");
+      pmb.setActive(bHaveGrpCB);
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Current to center + reset min/max", "currenttoctr");
+      // pmb.setFontByName("big7");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Clear min", "clear_min");
+      pmb <= pm.addDefaultButton("Clear max", "clear_max");
+      pmb <= pm.addDefaultButton("Clear min+max", "clear_minmax");
+
+      pm.addSeparator();
+
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("To Min/Max (Asym)..", deref spm);
+
+      pmb <= spm.addDefaultButton("(Group Clipboard - This) To Min (Asym)", "difftomin_asym");
+      pmb.setActive(bHaveGrpCB);
+      pmb <= spm.addDefaultButton("(Group Clipboard - This) To Max (Asym)", "difftomax_asym");
+      pmb.setActive(bHaveGrpCB);
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("(This - Group Clipboard) To Min (Asym)", "difftomin_rev_asym");
+      pmb.setActive(bHaveGrpCB);
+      pmb <= spm.addDefaultButton("(This - Group Clipboard) To Max (Asym)", "difftomax_rev_asym");
+      pmb.setActive(bHaveGrpCB);
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("(Pattern Clipboard - This) To Min (Asym) (All Groups)", "difftomin_asym_all");
+      pmb.setActive(bHavePatCB);
+      pmb <= spm.addDefaultButton("(Pattern Clipboard - This) To Max (Asym) (All Groups)", "difftomax_asym_all");
+      pmb.setActive(bHavePatCB);
+
+      pm.addSeparator();
+
+      // "Cyclic Pattern Morph.."
+      pmb <= pm.addDefaultButton("Generate Cyclic Morph..", "cyclic_morph");
+      pmb.setAccelerators("lctrl-g", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Show Group Copy Dialog..", "group_copy_dlg");
+      pmb.setAccelerators("lctrl-lshift-g", "");
+
+      pm.addSeparator();
+
+      // "More.."
+      spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("More..", deref spm);
+      pmb.setFontByName("big7");
+
+      pmb <= spm.addDefaultButton("Copy entry", "entry_copy");
+      pmb.setAccelerators("c", "");
+
+      pmb <= spm.addDefaultButton("Paste entry", "entry_paste");
+      pmb.setAccelerators("v", "");
+      pmb.setActive(bHaveEntryCB);
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Min To Center", "mintocenter");
+      // pmb.setFontByName("big8");
+
+      pmb <= spm.addDefaultButton("Max To Center", "maxtocenter");
+      // pmb.setFontByName("big8");
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("(Clipboard - This) To Min", "difftomin");
+      pmb.setActive(bHaveGrpCB);
+      pmb <= spm.addDefaultButton("(Clipboard - This) To Max", "difftomax");
+      pmb.setActive(bHaveGrpCB);
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("(This - Clipboard) To Min", "difftomin_rev");
+      pmb.setActive(bHaveGrpCB);
+      pmb <= spm.addDefaultButton("(This - Clipboard) To Max", "difftomax_rev");
+      pmb.setActive(bHaveGrpCB);
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("Copy MIDI output state to center values", "copy_state");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-o", "");
+
+      pmb <= spm.addDefaultButton("Copy MIDI output state to center values (all groups)", "copy_state_all");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-lshift-o", "");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Import from MIDI synth profile..", "import_msp");
+      pmb.setToolTipCaption("Import from MIDI Synth profile\n\n (note) device / channel / profile is determined by first output entry");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-a", "");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Copy Remote ModMatrix target names", "query_remotectl_names");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-t", "");
+
+      pmb <= spm.addDefaultButton("Copy Remote ModMatrix controllers to center values", "update_remotectl_values");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-f", "");
+
+      pmb <= spm.addDefaultButton("Add Remote ModMatrix controllers", "add_remotectls");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-e", "");
+
+      pmb <= spm.addDefaultButton("Add / Update Remote ModMatrix ctls+names", "remote_all");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-q", "");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Send center values (all groups)", "send_all");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-w", "");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_group_tools);
+
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show group tools menu.");
+   }
+
+   // <ui_handle.png>
+   public method handleGroupClearEditedFlags() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.clearEditedFlags();
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Clear \'edited\' flags");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupClear1() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         dlg_groupclear <= new Dialog_NCM_GroupClear;
+         dlg_groupclear.run(this, grp.name);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupClear2() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.removeAllOutputEntries(false/*bUneditedOnly*/);
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Clear");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupDeleteUnedited1() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         dlg_groupdeleteunedited <= new Dialog_NCM_GroupDeleteUnedited;
+         dlg_groupdeleteunedited.run(this, grp.name);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupDeleteUnedited2() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.removeAllOutputEntries(true/*bUneditedOnly*/);
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Delete unedited entries");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupClearMinMax(boolean _bMin, boolean _bMax) {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.clearMinMax(_bMin, _bMax);
+         grp.queueReset();
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Group Clear "+(_bMin?"Min":"-")+"/"+(_bMax?"Max":"-"));
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupInitAsym(boolean _bEnable) {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.initAsym(_bEnable);
+         // // grp.queueT(grp.last_queued_t);
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Group Init "+(_bEnable?"Asymmetric":"Symmetric"));
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupCopy() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         group_clipboard <= new NCM_Group;
+         group_clipboard.init();
+         group_clipboard.copyFrom(grp);
+
+         Global.Print("Group Copy to Clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupPaste() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         if(null != group_clipboard)
+         {
+            grp.copyFrom(group_clipboard);
+
+            tv_entries.tableModelChanged();
+
+            handleGroupChanged();
+
+            if(cb_group_patsel.isSelected())
+            {
+               handleGroupReset();
+            }
+
+            Global.Print("Group Paste Clipboard");
+         }
+         else
+         {
+            Global.Warning("Group Clipboard is empty");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method groupMerge(NCM_Group _dst, NCM_Group _src, boolean _bReplace, boolean _bIgnoreCh) {
+
+      if(null != _dst)
+      {
+         if(null != _src)
+         {
+            Integer numReplaced = 0;
+            Integer numAdded = 0;
+            _dst.merge(_src, _bReplace, _bIgnoreCh, numReplaced, numAdded);
+
+            tv_entries.tableModelChanged();
+
+            handleGroupChanged();
+
+            Global.Print("Group Merge "+(_bReplace?"(replace)":"(keep)")+" ("+(_bReplace?(numReplaced+" replaced, "):"")+numAdded+" added)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupMerge(boolean _bReplace, boolean _bIgnoreCh) {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         if(null != group_clipboard)
+         {
+            groupMerge(grp, group_clipboard, _bReplace, _bIgnoreCh);
+         }
+         else
+         {
+            Global.Warning("Group Clipboard is empty");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupCurrentToCenter() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.currentToCenter();
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Current to Center");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupMinToCenter() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.minToCenter();
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Min to Center");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupMaxToCenter() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.maxToCenter();
+
+         tv_entries.tableModelChanged();
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         Global.Print("Max to Center");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupDiffToMin(boolean _bRev, boolean _bAsym) {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         if(null != group_clipboard)
+         {
+            grp.diffToMinMax(group_clipboard, false/*bMax*/, _bRev, _bAsym);
+
+            tv_entries.tableModelChanged();
+
+            handleEntryChanged(false/*bFromUI*/);
+
+            Global.Print("Diff to Min"+(_bAsym?" (asym)":""));
+         }
+         else
+         {
+            Global.Warning("Group Clipboard is empty");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupDiffToMax(boolean _bRev, boolean _bAsym) {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         if(null != group_clipboard)
+         {
+            grp.diffToMinMax(group_clipboard, true/*bMax*/, _bRev, _bAsym);
+
+            tv_entries.tableModelChanged();
+
+            handleEntryChanged(false/*bFromUI*/);
+
+            Global.Print("Diff to Max"+(_bAsym?" (asym)":""));
+         }
+         else
+         {
+            Global.Warning("Group Clipboard is empty");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePatternDiffToMin(boolean _bRev, boolean _bAsym) {
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         NCM_Group *grp;
+         NCM_Pattern patCB <= pat.patGetClipboard();
+
+         if(null != patCB)
+         {
+            int grpIdx = 0;
+            foreach grp in pat.groups
+            {
+               NCM_Group grpCB <= patCB.groups.get(grpIdx++);
+               grp.diffToMinMax(grpCB, false/*bMax*/, _bRev, _bAsym);
+            }
+
+            tv_entries.tableModelChanged();
+
+            handleEntryChanged(false/*bFromUI*/);
+
+            Global.Print("Pattern Diff to Min"+(_bAsym?" (asym)":""));
+         }
+         else
+         {
+            Global.Warning("Pattern Clipboard is empty");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePatternDiffToMax(boolean _bRev, boolean _bAsym) {
+      NCM_Pattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         NCM_Group *grp;
+         NCM_Pattern patCB <= pat.patGetClipboard();
+
+         if(null != patCB)
+         {
+            int grpIdx = 0;
+            foreach grp in pat.groups
+            {
+               NCM_Group grpCB <= patCB.groups.get(grpIdx++);
+               grp.diffToMinMax(grpCB, true/*bMax*/, _bRev, _bAsym);
+            }
+
+            tv_entries.tableModelChanged();
+
+            handleEntryChanged(false/*bFromUI*/);
+
+            Global.Print("Pattern Diff to Max"+(_bAsym?" (asym)":""));
+         }
+         else
+         {
+            Global.Warning("Pattern Clipboard is empty");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGroupCopyStateInternal(NCM_Group grp) : int {
+      int numCopied = 0;
+
+      NCM_Entry *en;
+      foreach en in grp.entries
+      {
+         MIDIMapEvent ev <= en.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDIPipeDevice pipeDev <= ev.dev.getMIDIPipeDevice();
+
+            if(null != pipeDev)
+            {
+               short val;
+
+               switch(ev.type)
+               {
+                  case TYPE_PROGRAM_CHANGE:
+                     val = pipeDev.getPrg(ev.dev_ch);
+                     break;
+
+                  case TYPE_CHANNEL_PRESSURE:
+                     val = pipeDev.getChPressure(ev.dev_ch);
+                     break;
+
+                  case TYPE_PITCHBEND:
+                     val = pipeDev.getPitchbend(ev.dev_ch);
+                     break;
+
+                  case TYPE_CC:
+                     val = pipeDev.getCCState(ev.dev_ch, ev.ext_type);
+                     // trace "xxx handleGroupCopy: TYPE_CC ev.ext_type="+ev.ext_type+" val="+val;
+                     break;
+
+                  case TYPE_RPN:
+                     val = pipeDev.getRPNState(ev.dev_ch, ev.ext_type);
+                     break;
+
+                  case TYPE_NRPN:
+                     val = pipeDev.getNRPNState(ev.dev_ch, ev.ext_type);
+                     break;
+
+                  case TYPE_POLY_PRESSURE:
+                     val = pipeDev.getPolyPressure(ev.dev_ch, ev.arg1/*note*/);
+                     break;
+               }
+
+               if(-1 != val)
+               {
+                  switch(ev.type)
+                  {
+                     case TYPE_PROGRAM_CHANGE:
+                     case TYPE_CHANNEL_PRESSURE:
+                     case TYPE_PITCHBEND:
+                     case TYPE_CC:
+                     case TYPE_RPN:
+                     case TYPE_NRPN:
+                        ev.arg1 = val;
+                        en.setCenterValue(val);
+                        numCopied++;
+                        break;
+
+                     case TYPE_POLY_PRESSURE:
+                        ev.arg2 = val;
+                        en.setCenterValue(val);
+                        numCopied++;
+                        break;
+                  }
+               }
+            } // if pipedev
+         } // if dev
+      } // foreach entry
+
+      return numCopied;
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleGroupCopyState(boolean _bAllGroups) {
+      NCM_Group *grp;
+
+      if(_bAllGroups)
+      {
+         NCM_Pattern pat <= getEditPattern();
+         if(null != pat)
+         {
+            int totalNumCopied = 0;
+            foreach grp in pat.groups
+            {
+               totalNumCopied += handleGroupCopyStateInternal(grp);
+            }
+
+            Global.Print("Copy "+totalNumCopied+" output state(s) to all groups");
+
+            tv_entries.tableModelChanged();
+            handleEntryChanged(false/*bFromUI*/);
+         }
+      }
+      else
+      {
+         grp <= getSelectedGroup();
+         if(null != grp)
+         {
+            int numCopied = handleGroupCopyStateInternal(grp);
+
+            Global.Print("Copy "+numCopied+" output state(s) to group \""+grp.name+"\"");
+
+            tv_entries.tableModelChanged();
+            handleEntryChanged(false/*bFromUI*/);
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   public method handleGroupCyclicPatternMorph() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         dlg_cyclic_morph.setOffsetAndRange(morph.multi_morph_offset_resetval, morph.multi_morph_range_resetval);
+         // // dlg_cyclic_morph.setEnableAllGroups(morph.b_ui_morph_all_groups);
+         dlg_cyclic_morph.show();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupCyclicPatternMorph2() {
+      // called when dialog was closed
+
+      int     off        = dlg_cyclic_morph.getOffset();
+      int     range      = dlg_cyclic_morph.getRange();
+      boolean bAllGroups = dlg_cyclic_morph.getEnableAllGroups();
+
+      if( (off + range) < 127 )
+      {
+         int origEditPatIdx = morph.nodeGetCurrentEditPatternNr();
+         int groupIdx;
+         int oldGroupIdx = cf_group.getSelectedOption();
+
+         if(bAllGroups)
+            groupIdx = 0;
+         else
+            groupIdx = oldGroupIdx; // 0..7
+
+         loop(NCM_Pattern.NUM_GROUPS)
+         {
+            cf_group.setSelectedOption(groupIdx);
+
+            int relIdx = 1;
+            int leftPatIdx = off;
+            int rightPatIdx = morph.nodeFindNextPatternNrByUsedIdxWithOffset(off, relIdx);
+            int prevPatIdx = leftPatIdx;
+
+            loop(range)
+            {
+               if(off == leftPatIdx)
+               {
+                  morph.nodeSetCurrentEditPatternNr(leftPatIdx);
+                  handleGroupClearMinMax(true/*bMin*/, false/*bMax*/);
+               }
+               else
+               {
+                  // Morph to previous pattern (min)
+                  morph.nodeSetCurrentEditPatternNr(prevPatIdx);
+                  handleGroupCopy();
+                  morph.nodeSetCurrentEditPatternNr(leftPatIdx);
+                  handleGroupDiffToMin(false/*bRev*/, true/*bAsym*/);
+               }
+
+               // Morph to next pattern (max)
+               morph.nodeSetCurrentEditPatternNr(rightPatIdx);
+               handleGroupCopy();
+               morph.nodeSetCurrentEditPatternNr(leftPatIdx);
+               handleGroupDiffToMax(false/*bRev*/, true/*bAsym*/);
+
+               prevPatIdx = leftPatIdx;
+               leftPatIdx = rightPatIdx;
+               relIdx++;
+
+               if(relIdx >= range)
+               {
+                  rightPatIdx = off;
+               }
+               else
+               {
+                  rightPatIdx = morph.nodeFindNextPatternNrByUsedIdxWithOffset(off, relIdx);
+               }
+            }
+
+            if(bAllGroups)
+               groupIdx++;
+            else
+               break;
+         }
+
+         // Restore edit group
+         cf_group.setSelectedOption(oldGroupIdx);
+
+         // Restore current edit pattern
+         morph.nodeSetCurrentEditPatternNr(origEditPatIdx);
+
+         Global.Print("Generate cyclic pattern morph ("+range+" patterns)"+(bAllGroups?" (all groups)":""));
+      }
+      else
+      {
+         Global.Error("Cyclic Morph: offset + range ("+(off + range)+") > 127");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupReset() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.queueReset();
+
+         Global.Print("Reset group \""+grp.name+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupPatSel() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         grp.setEnablePatSel(cb_group_patsel.isSelected());
+
+         Global.Print("Group send ctl on pattern select is "+Utils.GetEnableString(grp.b_patsel));
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleGroupTChanged(boolean _bAllGroups) {
+
+      NCM_Group *grp;
+
+      if(_bAllGroups)
+      {
+         NCM_Pattern pat <= getEditPattern();
+
+         if(null != pat)
+         {
+            foreach grp in pat.groups
+            {
+               grp.queueT(fp_group_t.getFloatValue());
+            }
+            Global.Print("Queue t="+fp_group_t.getFloatValue()+" (all groups)");
+         }
+      }
+      else
+      {
+         grp <= getSelectedGroup();
+
+         if(null != grp)
+         {
+            grp.queueT(fp_group_t.getFloatValue());
+
+            Global.Print("Queue group t="+fp_group_t.getFloatValue());
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryChanged(boolean _bFromUI) {
+
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         cm_type.setSelectedOption(e.b_input);
+         cm_type.setEditable(true);
+
+         cm_midi_type.setSelectedOption(e.mm_event.type);
+         cm_midi_type.setEditable(true);
+
+         STX_MIDIDevice dev <= e.mm_event.dev;
+
+         MIDISynthProfile msp <= null;
+
+         if(null != dev)
+         {
+            msp <= dev.getMIDISynthProfile(e.mm_event.dev_ch);
+
+            cm_midi_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(e.mm_event.dev.dev_idx));
+
+            cm_midi_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(dev.dev_idx, null/*firstOptionOrNull*/));
+         }
+         else
+         {
+            cm_midi_ch.setOptionsLong(null);
+         }
+
+         cm_midi_dev.setEditable(true);
+
+         cm_midi_ch.setSelectedOption(e.mm_event.dev_ch);
+         cm_midi_ch.setEditable(true);
+
+         if(null == msp)
+         {
+            msp <= MIDI.GetDefaultSynthProfile();
+         }
+
+         // trace "xxx msp.cc_captions="+#(msp.cc_captions);
+
+         switch(e.mm_event.type)
+         {
+            case TYPE_NOTE_OFF:
+            case TYPE_NOTE_ON:
+            case TYPE_POLY_PRESSURE:
+               ls_midi_type.switchToLayerNr(0);
+
+               fp_min   .setMinMaxValues(-127, 127);
+               fp_center.setMinMaxValues(0, 127);
+               fp_max   .setMinMaxValues(-127, 127);
+               break;
+
+            case TYPE_CC:
+               ls_midi_type.switchToLayerNr(1);
+               if(null != dev)
+               {
+                  // trace "xxx msp.getCCNamesSingle="+#(dev.getCCNamesSingle(e.mm_event.dev_ch));
+
+                  cm_midi_cc_nr.setOptions(dev.getCCNamesSingle(e.mm_event.dev_ch));
+                  cm_midi_cc_nr.setToolTipCaptions(dev.getCCNamesMulti(e.mm_event.dev_ch));
+               }
+               else
+               {
+                  cm_midi_cc_nr.setOptions(MIDI.cc_names);
+                  cm_midi_cc_nr.setToolTipCaptions(MIDI.cc_names);
+               }
+               cm_midi_cc_nr.setSelectedOption(e.mm_event.ext_type);
+
+               fp_min   .setMinMaxValues(-127, 127);
+               fp_center.setMinMaxValues(0, 127);
+               fp_max   .setMinMaxValues(-127, 127);
+               break;
+
+            case TYPE_PROGRAM_CHANGE:
+            case TYPE_CHANNEL_PRESSURE:
+               ls_midi_type.switchToLayerNr(0);
+               fp_min   .setMinMaxValues(-127, 127);
+               fp_center.setMinMaxValues(0, 127);
+               fp_max   .setMinMaxValues(-127, 127);
+               break;
+
+            case TYPE_PITCHBEND:
+               ls_midi_type.switchToLayerNr(0);
+               fp_min   .setMinMaxValues(-16383, 16383);
+               fp_center.setMinMaxValues(0, 16383);
+               fp_max   .setMinMaxValues(-16383, 16383);
+               break;
+
+            case TYPE_SYSEX:
+            case TYPE_SYSCOM_TIMECODE:
+            case TYPE_SYSCOM_SONG_POSITION:
+            case TYPE_SYSCOM_SONG_SELECT:
+            case TYPE_SYSCOM_F4:
+            case TYPE_SYSCOM_F5:
+            case TYPE_SYSCOM_TUNE_REQUEST:
+            case TYPE_SYSRT_TIMING_CLOCK:
+            case TYPE_SYSRT_F9:
+            case TYPE_SYSRT_START:
+            case TYPE_SYSRT_CONTINUE:
+            case TYPE_SYSRT_STOP:
+            case TYPE_SYSRT_FD:
+            case TYPE_SYSRT_ACTIVE_SENSING:
+            case TYPE_SYSRT_SYSTEM_RESET:
+            default:
+               ls_midi_type.switchToLayerNr(0);
+               break;
+
+            case TYPE_RPN:
+               ls_midi_type.switchToLayerNr(2);
+               cm_midi_rpn_nr.setOptions(msp.rpn_captions);
+               cm_midi_rpn_nr.setToolTipCaptions(msp.rpn_infos);
+               cm_midi_rpn_nr.setSelectedOption(msp.getRPNCaptionIndex(e.mm_event.ext_type));
+               fp_midi_rpn_nr.setValue(e.mm_event.ext_type);
+
+               fp_min   .setMinMaxValues(-16383, 16383);
+               fp_center.setMinMaxValues(0, 16383);
+               fp_max   .setMinMaxValues(-16383, 16383);
+               break;
+
+            case TYPE_NRPN:
+               ls_midi_type.switchToLayerNr(3);
+               cm_midi_nrpn_nr.setOptions(msp.nrpn_captions);
+               cm_midi_nrpn_nr.setToolTipCaptions(msp.nrpn_infos);
+               cm_midi_nrpn_nr.setSelectedOption(msp.getNRPNCaptionIndex(e.mm_event.ext_type));
+               fp_midi_nrpn_nr.setValue(e.mm_event.ext_type);
+
+               fp_min   .setMinMaxValues(-16383, 16383);
+               fp_center.setMinMaxValues(0, 16383);
+               fp_max   .setMinMaxValues(-16383, 16383);
+               break;
+         }
+
+         fp_min.setValue(e.min_delta);
+         fp_min.setEditable(true);
+
+         fp_center.setValue(e.center_value);
+         fp_center.setEditable(true);
+
+         fp_max.setValue(e.max_delta);
+         fp_max.setEditable(true);
+      }
+      else
+      {
+         cm_type.setSelectedOption(-1);
+         cm_type.setEditable(false);
+
+         ls_midi_type.switchToLayerNr(0);
+
+         cm_midi_dev.setSelectedOption(-1);
+         cm_midi_dev.setEditable(false);
+
+         cm_midi_ch.setSelectedOption(-1);
+         cm_midi_ch.setEditable(false);
+
+         cm_midi_type.setSelectedOption(-1);
+         cm_midi_type.setEditable(false);
+
+         ls_midi_type.switchToLayerNr(0);
+
+         fp_min.setEditable(false);
+         fp_center.setEditable(false);
+         fp_max.setEditable(false);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryAdd() {
+      NCM_Group grp <= getSelectedGroup();
+      String addMsg = "";
+
+      if(null != grp)
+      {
+         NCM_Entry enTempl <= grp.findTemplateOutputEntry(tm_entries.getCursorIndex());
+
+         NCM_Entry en <= grp.addEntry(tm_entries.getCursorIndex());
+
+         boolean bInitDevCh = false;
+         boolean bInitType = false;
+
+         if(null != en)
+         {
+            MIDIMapEvent enEv <= en.mm_event;
+
+            if(null != enTempl)
+            {
+               MIDIMapEvent templEv <= enTempl.mm_event;
+
+               // Copy device+channel from template event
+               enEv.setDev(templEv.dev);
+               enEv.setDevCh(templEv.dev_ch);
+               addMsg.append(" port=("+templEv.getDevIdx()+";"+(templEv.dev_ch+1)+")");
+
+               bInitDevCh = true;
+
+               // Auto-assign VST/Remote RPN
+               if(MIDIMapDefs.TYPE_RPN == templEv.type)
+               {
+                  enEv.setType(MIDIMapDefs.TYPE_RPN);
+                  en.min_delta    = -8192;
+                  en.center_value =  8192;
+                  en.max_delta    =  8191;
+
+                  if(Node.RPN_CTL_BASE <= templEv.ext_type < (Node.RPN_CTL_BASE + Node.RPN_CTL_NUM))
+                  {
+                     int rpn = grp.findTemplateNextUnusedRPNCtl();
+                     if(-1 != rpn)
+                     {
+                        enEv.setExtType(rpn);
+                        addMsg.append(" RPN_CTL_n="+rpn);
+                     }
+                  }
+
+                  bInitType = true;
+               }
+            }
+
+            if(!bInitDevCh)
+            {
+               STX_MIDIOutDevice defDev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.node_ctlmorph_default_output_dev);
+               if(null != defDev)
+               {
+                  enEv.setDev(defDev);
+               }
+               enEv.setDevCh(STConfig.node_ctlmorph_default_output_ch);
+            }
+
+            if(!bInitType)
+            {
+               enEv.setType(STConfig.node_ctlmorph_default_output_type);
+               enEv.setExtType(STConfig.node_ctlmorph_default_output_ext_type);
+
+               if(MIDIMapDefs.TYPE_CC == enEv.type)
+               {
+                  en.min_delta    = -64;
+                  en.center_value =  64;
+                  en.max_delta    =  63;
+               }
+               else if((MIDIMapDefs.TYPE_RPN == enEv.type) || (MIDIMapDefs.TYPE_NRPN == enEv.type))
+               {
+                  en.min_delta    = -8192;
+                  en.center_value =  8192;
+                  en.max_delta    =  8191;
+               }
+            }
+
+            tv_entries.tableModelChanged();
+            tv_entries.moveCursorToRow(grp.findEntryIdx(en));
+            tv_entries.redraw();
+
+            if(!addMsg.isBlank())
+            {
+               addMsg.replace("  ", " ");
+               addMsg.replace("( ", "(");
+               addMsg = " ("+addMsg+")";
+            }
+            Global.Print("Add Entry"+addMsg);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryClone() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         NCM_Entry curEn <= getSelectedEntry();
+
+         if(null != curEn)
+         {
+            NCM_Entry en <= grp.addEntry(tm_entries.getCursorIndex());
+
+            if(null != en)
+            {
+               en.copyFrom(curEn);
+
+               tv_entries.tableModelChanged();
+               tv_entries.moveCursorToRow(grp.findEntryIdx(en));
+               tv_entries.redraw();
+
+               Global.Print("Clone Entry");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryRemove() {
+
+      NCM_Entry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         NCM_Group grp <= getSelectedGroup();
+
+         if(null != grp)
+         {
+            int enNr = tm_entries.getCursorIndex();
+
+            if(-1 != enNr)
+            {
+               if((enNr > 0) && (enNr == (tm_entries.getNumRows() - 1)))
+               {
+                  tv_entries.moveCursorToPreviousRow();
+               }
+
+               grp.removeEntryByIdx(enNr);
+
+               tv_entries.tableModelChanged();
+
+               handleEntryChanged(false/*bFromUI*/);
+
+               Global.Print("Remove Entry");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryMoveUp() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         int enNr = tm_entries.getCursorIndex();
+
+         if(-1 != enNr)
+         {
+            if(grp.moveEntryUp(enNr))
+            {
+               tv_entries.moveCursorToPreviousRow();
+               tv_entries.tableModelChanged();
+
+               Global.Print("Move entry up");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEntryMoveDown() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         int enNr = tm_entries.getCursorIndex();
+
+         if(-1 != enNr)
+         {
+            if(grp.moveEntryDown(enNr))
+            {
+               tv_entries.moveCursorToNextRow();
+               tv_entries.tableModelChanged();
+
+               Global.Print("Move entry down");
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleTypeChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         boolean bOldType = e.b_input;
+         e.b_input = cm_type.getSelectedOption();
+
+         if(e.b_input ^ bOldType)
+         {
+            if(e.b_input)
+            {
+               // Changed to input
+               if((e.mm_event.type) == MIDIMapDefs.TYPE_CC)
+               {
+                  e.setMinDelta(0);
+                  e.setMaxDelta(127);
+               }
+               else
+               {
+                  e.setMinDelta(0);
+                  e.setMaxDelta(16383);
+               }
+            }
+         }
+
+         handleEntryChanged(false/*bFromUI*/);
+
+         tv_entries.tableModelChanged();
+
+         Global.Print("Type is "+(e.b_input?"Input":"Output"));
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIDevChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         STX_MIDIOutDevice oldDev <= ev.dev;
+
+         STX_MIDIOutDevice newDev <= MIDI.GetMIDIOutDeviceByIndex(MIDI.SortedToUnsortedDevIdx(cm_midi_dev.getSelectedOption()));
+         ev.setDev(newDev);
+
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            // Update matching entries
+            NCM_Group grp <= getSelectedGroup();
+            NCM_Entry *oe;
+            foreach oe in grp.entries
+            {
+               if(@(oe.mm_event.dev) == @(oldDev))
+               {
+                  oe.mm_event.setDev(newDev);
+               }
+            }
+         }
+
+         cm_midi_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(e.mm_event.dev.dev_idx, null/*firstOptionOrNull*/));
+
+         tv_entries.tableModelChanged();
+         handleEntryChanged(false/*bFromUI*/);
+         pn_midi.relayout();
+
+         Global.Print("MIDI dev is \""+cm_midi_dev.getSelectedOptionName()+"\" ("+ev.getDevIdx()+")");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIChChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         STX_MIDIOutDevice oldDev <= ev.dev;
+         byte oldCh = ev.dev_ch;
+
+         byte newCh = cm_midi_ch.getSelectedOption();
+         ev.setDevCh(newCh);
+
+         if(VMOD_LALT == UI.GetKeyMod())
+         {
+            // Update matching entries
+            NCM_Group grp <= getSelectedGroup();
+            NCM_Entry *oe;
+            foreach oe in grp.entries
+            {
+               if(@(oe.mm_event.dev) == @(oldDev))
+               {
+                  if((oe.mm_event.dev_ch) == oldCh)
+                  {
+                     oe.mm_event.setDevCh(newCh);
+                  }
+               }
+            }
+         }
+
+         tv_entries.tableModelChanged();
+         handleEntryChanged(false/*bFromUI*/);
+         pn_midi.relayout();
+
+         Global.Print("MIDI channel is "+cm_midi_ch.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDITypeChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+         ev.type = cm_midi_type.getSelectedOption();
+
+         if(null != ev.dev)
+         {
+            ev.dev.buildCtlNames();
+         }
+
+         tv_entries.tableModelChanged();
+         handleEntryChanged(false/*bFromUI*/);
+         pn_midi.relayout();
+
+         Global.Print("MIDI type is "+cm_midi_type.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDICCNrChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+         ev.ext_type = cm_midi_cc_nr.getSelectedOption();
+
+         if(null != ev.dev)
+         {
+            ev.dev.buildCtlNames();
+         }
+
+         tv_entries.tableModelChanged();
+
+         Global.Print("CC is "+cm_midi_cc_nr.getSelectedOptionName());
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIRPNNrChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+            {
+               msp <= MIDI.GetDefaultSynthProfile();
+            }
+
+            ev.ext_type = msp.getRPNByCaptionIndex(cm_midi_rpn_nr.getSelectedOption());
+            fp_midi_rpn_nr.setValue(ev.ext_type);
+
+            if(null != ev.dev)
+            {
+               ev.dev.buildCtlNames();
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("RPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIRPNNrValChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+            {
+               msp <= MIDI.GetDefaultSynthProfile();
+            }
+
+            ev.ext_type = fp_midi_rpn_nr.getFloatValue();
+            cm_midi_rpn_nr.setSelectedOption(msp.getRPNCaptionIndex(ev.ext_type));
+
+            if(null != ev.dev)
+            {
+               ev.dev.buildCtlNames();
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("RPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDINRPNNrChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+            {
+               msp <= MIDI.GetDefaultSynthProfile();
+            }
+
+            ev.ext_type = msp.getRPNByCaptionIndex(cm_midi_nrpn_nr.getSelectedOption());
+            fp_midi_nrpn_nr.setValue(ev.ext_type);
+
+            if(null != ev.dev)
+            {
+               ev.dev.buildCtlNames();
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("NRPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDINRPNNrValChanged() {
+      NCM_Entry e <= getSelectedEntry();
+
+      if(null != e)
+      {
+         MIDIMapEvent ev <= e.mm_event;
+
+         if(null != ev.dev)
+         {
+            MIDISynthProfile msp <= ev.dev.getMIDISynthProfile(ev.dev_ch);
+
+            if(null == msp)
+            {
+               msp <= MIDI.GetDefaultSynthProfile();
+            }
+
+            ev.ext_type = fp_midi_nrpn_nr.getFloatValue();
+            cm_midi_nrpn_nr.setSelectedOption(msp.getNRPNCaptionIndex(ev.ext_type));
+
+            if(null != ev.dev)
+            {
+               ev.dev.buildCtlNames();
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("NRPN is "+ev.ext_type);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleMinChanged() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         NCM_Entry e <= getSelectedEntry();
+
+         if(null != e)
+         {
+            e.setMinDelta(fp_min.getFloatValue());
+
+            if(e.b_input)
+            {
+               float t = (e.center_value - e.min_delta) / (float(e.max_delta) - e.min_delta);
+               grp.queueT(t);
+            }
+            else
+            {
+               morph.queueEntryToUISendFrame(e, grp.last_queued_t);
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("Min"+(e.b_input?"":" delta")+" is "+e.min_delta);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleCenterChanged() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         NCM_Entry e <= getSelectedEntry();
+
+         if(null != e)
+         {
+            e.setCenterValue(fp_center.getFloatValue());
+
+            if(e.b_input)
+            {
+               float t = (e.center_value - e.min_delta) / (float(e.max_delta) - e.min_delta);
+               grp.queueT(t);
+            }
+            else
+            {
+               morph.queueEntryToUISendFrame(e, grp.last_queued_t);
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("Center is "+e.center_value);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleMaxChanged() {
+      NCM_Group grp <= getSelectedGroup();
+
+      if(null != grp)
+      {
+         NCM_Entry e <= getSelectedEntry();
+
+         if(null != e)
+         {
+            e.setMaxDelta(fp_max.getFloatValue());
+
+            if(e.b_input)
+            {
+               float t = (e.center_value - e.min_delta) / (float(e.max_delta) - e.min_delta);
+               grp.queueT(t);
+            }
+            else
+            {
+               morph.queueEntryToUISendFrame(e, grp.last_queued_t);
+            }
+
+            tv_entries.tableModelChanged();
+
+            Global.Print("Max"+(e.b_input?"":" delta")+" is "+e.max_delta);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdateRemoteCtlValues(PointerArray _ctlTargets) {
+      // Update center values
+      int numUpdated = 0;
+      int numAdded = 0;
+      int numSkipped = 0;
+      NCM_Group grp <= getSelectedGroup();
+
+      IntArray vstDevs <= MIDI.FindVSTDeviceIndices();
+
+      if(null != grp)
+      {
+         NCM_Entry *en;
+         foreach en in grp.entries
+         {
+            if(!en.b_input)
+            {
+               int enDevIdx = en.mm_event.getDevIdx();
+               if(-1 != enDevIdx)
+               {
+                  if(vstDevs.contains(enDevIdx))
+                  {
+                     enDevIdx = vstDevs.indexOf(enDevIdx, 0);  // map dev idx to vst dev idx (0..7)
+                     int enMidiCh = en.mm_event.dev_ch;
+                     int ctType = 0;
+                     switch(en.mm_event.type)
+                     {
+                        default:
+                           break;
+
+                        case MIDIMapDefs.TYPE_CC:
+                           ctType = SysExRemoteCtlTarget.TYPE_CC;
+                           break;
+
+                        case MIDIMapDefs.TYPE_RPN:
+                           ctType = SysExRemoteCtlTarget.TYPE_RPN;
+                           break;
+
+                        case MIDIMapDefs.TYPE_NRPN:
+                           ctType = SysExRemoteCtlTarget.TYPE_NRPN;
+                           break;
+                     }
+
+                     SysExRemoteCtlTarget *ct;
+                     foreach ct in _ctlTargets
+                     {
+                        // trace "xxx compare dev "+ct.dev_idx+" to "+enDevIdx;
+                        if(ct.dev_idx == enDevIdx)
+                        {
+                           // trace "xxx compare ch "+ct.midi_ch+" to "+enMidiCh;
+                           if( (-1 == ct.midi_ch) || (ct.midi_ch == enMidiCh) )
+                           {
+                              // trace "xxx compare type "+ct.type+" to "+enMidiCh;
+                              if(ct.type == ctType)
+                              {
+                                 // trace "xxx compare ext_type "+ct.ext_type+" to "+(en.mm_event.ext_type);
+                                 if(ct.ext_type == (en.mm_event.ext_type))
+                                 {
+                                    if(en.center_value != ct.unmap_ctlval)
+                                    {
+                                       en.setCenterValue(ct.unmap_ctlval);
+                                       numUpdated++;
+                                    }
+                                 } // if ext type match
+                              } // if type match
+                           } // if ch match
+                        } // if dev match
+                     } // foreach ct
+                  } // if en uses vst dev
+                  else
+                  {
+                     numSkipped++;
+                  }
+               }
+               else
+               {
+                  numSkipped++;
+               }
+            } // if !input
+         } // loop group entries
+      } // if group
+      // Global.Debug("NodeCtlMorphEditor::handleRemoteQueryCtlTargets: update center values: "+numUpdated+" updated, "+numSkipped+" skipped");
+      Global.Print("Query Remote ModMatrix ctls: "+numUpdated+" updated, "+numSkipped+" skipped");
+   }
+
+   // <ui_handle.png>
+   protected method handleAddRemoteCtls(PointerArray _ctlTargets) {
+      // Update center values
+      int numAdded = 0;
+      int numSkipped = 0;
+      NCM_Group grp <= getSelectedGroup();
+
+      IntArray vstDevIndices <= MIDI.FindVSTDeviceIndices();
+      PointerArray vstDevs <= MIDI.FindVSTDevices();
+
+      if(null != grp)
+      {
+         NCM_Entry enFlt <= grp.findTemplateOutputEntry(tm_entries.getCursorIndex()/*prefIdx*/);
+         if(null == enFlt)
+         {
+            Global.Warning("Add Remote ctls: filter entry not found (dev/ch flt)");
+            return;
+         }
+         MIDIMapEvent enEvFlt <= enFlt.mm_event;
+         if(null == enEvFlt.dev)
+         {
+            Global.Warning("Add Remote ctls: invalid filter dev");
+            return;
+         }
+         int enFltDevIdx = vstDevIndices.indexOf(enEvFlt.getDevIdx(), 0);
+         if(-1 == enFltDevIdx)
+         {
+            Global.Warning("Add Remote ctls: not a remote device (dev flt)");
+            return;
+         }
+
+         SysExRemoteCtlTarget *ct;
+         foreach ct in _ctlTargets
+         {
+            // trace "xxx comp dev "+ct.dev_idx+" to "+enFltDevIdx;
+            if(ct.dev_idx == enFltDevIdx)
+            {
+               // trace "xxx comp ch "+ct.midi_ch+" to "+enEvFlt.dev_ch;
+               if( (-1 == ct.midi_ch) || (ct.midi_ch == enEvFlt.dev_ch) )
+               {
+                  boolean bAdd = true;
+
+                  // Find existing entry
+                  NCM_Entry *en;
+                  MIDIMapEvent *enEv;
+
+                  foreach en in grp.entries
+                  {
+                     if(!en.b_input)
+                     {
+                        int enDevIdx = en.mm_event.getDevIdx();
+                        if(-1 != enDevIdx)
+                        {
+                           if(vstDevIndices.contains(enDevIdx))
+                           {
+                              enDevIdx = vstDevIndices.indexOf(enDevIdx, 0);  // map dev idx to vst dev idx (0..7)
+                              int enMidiCh = en.mm_event.dev_ch;
+                              int ctType = 0;
+                              switch(en.mm_event.type)
+                              {
+                                 default:
+                                    break;
+
+                                 case MIDIMapDefs.TYPE_CC:
+                                    ctType = SysExRemoteCtlTarget.TYPE_CC;
+                                    break;
+
+                                 case MIDIMapDefs.TYPE_RPN:
+                                    ctType = SysExRemoteCtlTarget.TYPE_RPN;
+                                    break;
+
+                                 case MIDIMapDefs.TYPE_NRPN:
+                                    ctType = SysExRemoteCtlTarget.TYPE_NRPN;
+                                    break;
+                              }
+
+                              // trace "xxx compare dev "+ct.dev_idx+" to "+enDevIdx;
+                              if(ct.dev_idx == enDevIdx)
+                              {
+                                 // trace "xxx compare ch "+ct.midi_ch+" to "+enMidiCh;
+                                 if( (-1 == ct.midi_ch) || (ct.midi_ch == enMidiCh) )
+                                 {
+                                    // trace "xxx compare type "+ct.type+" to "+enMidiCh;
+                                    if(ct.type == ctType)
+                                    {
+                                       // trace "xxx compare ext_type "+ct.ext_type+" to "+(en.mm_event.ext_type);
+                                       if(ct.ext_type == (en.mm_event.ext_type))
+                                       {
+                                          bAdd = false;
+                                          numSkipped++;
+                                          break;
+                                       } // if ext type match
+                                    } // if type match
+                                 } // if ch match
+                              } // if dev match
+                           } // if en uses vst dev
+                        } // if valid dev
+                     } // if !input
+                  } // loop group entries
+
+                  if(bAdd)
+                  {
+                     switch(ct.type)
+                     {
+                        default:
+                           break;
+
+                        case SysExRemoteCtlTarget.TYPE_CC:
+                           en <= grp.addEntry(-1);
+                           enEv <= en.mm_event;
+                           enEv.setDev(vstDevs.get(ct.dev_idx));
+                           enEv.setDevCh( (-1 == ct.midi_ch) ? 0 : (ct.midi_ch & 15) );
+                           enEv.setType(MIDIMapDefs.TYPE_CC);
+                           enEv.setExtType(ct.ext_type);
+                           en.setMinDelta(-64);
+                           en.setCenterValue(ct.unmap_ctlval);
+                           en.setMaxDelta(63);
+                           numAdded++;
+                           break;
+
+                        case SysExRemoteCtlTarget.TYPE_RPN:
+                           en <= grp.addEntry(-1);
+                           enEv <= en.mm_event;
+                           enEv.setDev(vstDevs.get(ct.dev_idx));
+                           enEv.setDevCh( (-1 == ct.midi_ch) ? 0 : (ct.midi_ch & 15) );
+                           enEv.setType(MIDIMapDefs.TYPE_RPN);
+                           enEv.setExtType(ct.ext_type);
+                           en.setMinDelta(-8192);
+                           en.setCenterValue(ct.unmap_ctlval);
+                           en.setMaxDelta(8191);
+                           numAdded++;
+                           break;
+
+                        case SysExRemoteCtlTarget.TYPE_NRPN:
+                           en <= grp.addEntry(-1);
+                           enEv <= en.mm_event;
+                           enEv.setDev(vstDevs.get(ct.dev_idx));
+                           enEv.setDevCh( (-1 == ct.midi_ch) ? 0 : (ct.midi_ch & 15) );
+                           enEv.setType(MIDIMapDefs.TYPE_NRPN);
+                           enEv.setExtType(ct.ext_type);
+                           en.setMinDelta(-8192);
+                           en.setCenterValue(ct.unmap_ctlval);
+                           en.setMaxDelta(8191);
+                           numAdded++;
+                           break;
+                     } // switch ct.type
+                  } // if bAdd
+               } // if flt ch
+            } // if flt dev
+         } // loop ctlTargets
+      } // if group
+
+      if(numAdded > 0)
+      {
+         tv_entries.tableModelChanged();
+         tv_entries.moveCursorToLastRow();
+      }
+
+      // Global.Debug("NodeCtlMorphEditor::handleRemoteQueryCtlTargets: update center values: "+numUpdated+" updated, "+numSkipped+" skipped");
+      Global.Print("Add Remote ModMatrix ctls: "+numAdded+" added, "+numSkipped+" skipped");
+   }
+
+   // <ui_handle.png>
+   protected method handleQueryRemoteCtlNames1() {
+      trace "xxx NodeCtlMorphEditor::handleQueryRemoteCtlNames1: send query";
+      b_query_remote_values_or_names = false;
+      b_query_remote_values_add      = false;
+      b_query_remote_all             = false;
+      SysEx.QueueSendRemoteQueryCtlTargets(this);
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdateRemoteCtlValues1() {
+      trace "xxx NodeCtlMorphEditor::handleUpdateRemoteCtlValues1: send query";
+      b_query_remote_values_or_names = true;
+      b_query_remote_values_add      = false;
+      b_query_remote_all             = false;
+      SysEx.QueueSendRemoteQueryCtlTargets(this);
+   }
+
+   // <ui_handle.png>
+   protected method handleAddRemoteCtls1() {
+      trace "xxx NodeCtlMorphEditor::handleAddRemoteCtls1: send query";
+      b_query_remote_values_or_names = true;
+      b_query_remote_values_add      = true;
+      b_query_remote_all             = false;
+      SysEx.QueueSendRemoteQueryCtlTargets(this);
+   }
+
+   // <ui_handle.png>
+   protected method handleRemoteAllCtls1() {
+      trace "xxx NodeCtlMorphEditor::handleRemoteAllCtls1: send query";
+      b_query_remote_values_or_names = false;
+      b_query_remote_values_add      = false;
+      b_query_remote_all             = true;
+      SysEx.QueueSendRemoteQueryCtlTargets(this);
+   }
+
+   // <ui_handle.png>
+   public virtual handleRemoteQueryCtlTargets(PointerArray _ctlTargets) {
+      // Overwrites RemoteQueryCtlTargetsListener::handleRemoteQueryCtlTargets
+      if(b_query_remote_all)
+      {
+         // trace "xxx query_remote_all: 1";
+         root_form.pg_ctltag.handleRemoteQueryCtlTargets(_ctlTargets); // add/update entries
+         // trace "xxx query_remote_all: 2";
+         handleAddRemoteCtls(_ctlTargets);
+         // trace "xxx query_remote_all: 3";
+         handleUpdateRemoteCtlValues(_ctlTargets);
+         // trace "xxx query_remote_all: 4";
+      }
+      else if(b_query_remote_values_or_names)
+      {
+         if(b_query_remote_values_add)
+         {
+            handleAddRemoteCtls(_ctlTargets);
+         }
+         else
+         {
+            handleUpdateRemoteCtlValues(_ctlTargets);
+         }
+      }
+      else
+      {
+         root_form.pg_ctltag.handleRemoteQueryCtlTargets(_ctlTargets); // add/update entries
+      }
+      tv_entries.tableModelChanged();
+      tv_entries.redraw();
+      handleEntryChanged(false/*bFromUI*/);
+      redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(morph.getNodeClassId());
+      cb_node_class_show.setSelected(morph.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      morph.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+morph.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      morph.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(morph.getEnableNodeClassShow()));
+   }
+
+   // <ui_handle.png>
+   protected method handleMMOffsetChanged() {
+      morph.setMultiMorphOffset(cm_mm_off.getSelectedOption());
+
+      Global.Print("Multi-Morph offset is "+cm_mm_off.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleMMRangeChanged() {
+      morph.setMultiMorphRange(fp_mm_range.getFloatValue());
+
+      Global.Print("Multi-Morph range is "+morph.multi_morph_range_resetval);
+   }
+
+   // <ui_handle.png>
+   protected method handleMMPosChanged() {
+      float f = fp_mm_pos.getFloatValue();
+      morph.setMultiMorphPos(f);
+
+      updateMorphPosResetVals();
+
+      Global.Print("Multi-Morph position is "+f);
+   }
+
+   // <ui_handle.png>
+   protected method handleMMPosGrpChanged(int _grpIdx, float _val) {
+      morph.setMultiMorphPosGrp(_grpIdx, _val);
+
+      Global.Print("Multi-Morph Group "+(_grpIdx+1)+" position is "+_val);
+   }
+
+   // <ui_handle.png>
+   protected method handleMMPosSendChanged() {
+      morph.setEnableMultiMorphPosSend(cb_mm_pos_send.isSelected());
+
+      Global.Print("Multi-Morph position send-during-reset is "+Utils.GetEnableString(morph.b_multi_morph_pos_send));
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtl(boolean _bClipboardB) {
+      local String msgPrefix = "copyctl<"+(_bClipboardB?"B":"A")+">: ";
+      NCM_Entry en <= getSelectedEntry();
+      if(null != en)
+      {
+         if(null != en.mm_event.dev)
+         {
+            NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+            cb.copyFromMIDIMapEvent(en.mm_event);
+
+            Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+         }
+         else
+         {
+            Global.Warning(msgPrefix+"no device");
+         }
+      }
+      else
+      {
+         Global.Warning(msgPrefix+"no entry");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteCtl(boolean _bClipboardB) {
+      local String msgPrefix = "pastectl<"+(_bClipboardB?"B":"A")+">: ";
+      NCM_Entry en <= getSelectedEntry();
+      if(null != en)
+      {
+         NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+         MIDIMapEvent ev <= en.mm_event;
+         if(ev.initFromNodeModMatrixArg(cb))
+         {
+            handleSelectPattern();
+
+            Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+         }
+         else
+         {
+            Global.Warning(msgPrefix+"invalid device or type");
+         }
+      }
+      else
+      {
+         Global.Warning(msgPrefix+"no entry");
+      }
+   }
+
+   // <method.png>
+   public method sendAllCenterValues() {
+      morph.sendAllCenterValues();
+      Global.Print("Send center values (all groups)");
+   }
+
+   // <ui_show.png>
+   protected method showCtlClipboardEntryMenu() {
+
+      pm_ctlclipboard_entry <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_ctlclipboard_entry;
+      boolean bHaveEntry = (null != getSelectedEntry());
+
+      pmb <= pm.addDefaultButton("Copy to Ctl.Clipboard A", "copyctl_a");
+      pmb.setToolTipCaption("Copy entry port+type to Ctl.Clipboard A");
+      pmb.setActive(bHaveEntry);
+
+      pmb <= pm.addDefaultButton("Copy to Ctl.Clipboard B", "copyctl_b");
+      pmb.setToolTipCaption("Copy entry port+type to Ctl.Clipboard B");
+      pmb.setActive(bHaveEntry);
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Paste from Ctl.Clipboard A", "pastectl_a");
+      pmb.setToolTipCaption("Paste entry port+type from Ctl.Clipboard A");
+      pmb.setActive(bHaveEntry);
+
+      pmb <= pm.addDefaultButton("Paste from Ctl.Clipboard B", "pastectl_b");
+      pmb.setToolTipCaption("Paste entry port+type from Ctl.Clipboard A");
+      pmb.setActive(bHaveEntry);
+
+      // Present
+      pm.resizeToMinimum();
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show Ctl.Clipboard entry menu.");
+   }
+
+   // <ui_cmd.png>
+   public method handlePageCmdResetEnableAll(boolean _bEnable) {
+      NCM_Pattern *pat;
+      foreach pat in morph.patterns
+      {
+         if(null != pat)
+         {
+            NCM_Group *grp;
+            foreach grp in pat.groups
+            {
+               grp.setEnablePatSel(_bEnable);
+            }
+         }
+      }
+      handlePatternChanged(false/*bFromUI*/);
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return ["reset_enable_all",
+              "reset_disable_all",
+              ];
+   }
+
+   // <ui_cmd.png>
+   public method cmdGetDefaultActions() : StringArray {
+      return ["reset_enable_all",
+              "reset_disable_all",
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      Global.Debug2("NodeCtlMorphEditor::cmdGetAvailableArgs: cmd=\""+_cmd+"\" argIdx="+_argIdx);
+      switch(_cmd)
+      {
+         case "reset_enable_all":
+            return null;
+      }
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      Global.Debug("NodeCtlMorphEditor::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "reset_enable_all":
+            return handlePageCmdResetEnableAll(true);
+
+         case "reset_disable_all":
+            return handlePageCmdResetEnableAll(false);
+      }
+      return false;
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+   }
+
+   // <midi_mml.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      // trace "xxx nt:mmlHandleEventUI";
+
+      if(_ev.isReservedEvent())
+         return false;
+
+      switch(morph.learn_mode)
+      {
+         default:
+            showEventString(_ev);
+            return false;////true;
+
+         case LEARN_GROUP:
+            handleGroupLearn(_ev);
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+   }
+
+   // <ui_timer.png>
+   protected method handleMIDILearnTimer() {
+      // trace "xxx handleMIDILearnTimer: learn_timeout="+learn_timeout+" mode="+ar.learn_mode;
+
+      if(LEARN_NONE != morph.learn_mode)
+      {
+         learn_timeout--;
+
+         if(learn_timeout <= 0)
+         {
+            if(!b_learn_infinite)
+            {
+               setLearnMode(LEARN_NONE, false/*bQuiet*/, false/*bInfinite*/);
+               return;
+            }
+
+            learn_timeout = LEARN_TIMEOUT - 1;
+         }
+
+         Button bt <= getLearnButton();
+
+         if(learn_timeout & 1)
+            bt.setBackgroundTint(TINT32_LEARN);
+         else
+            bt.setBackgroundTint(0);
+
+         if(0 == (learn_timeout & 1))
+         {
+            if(0 != (learn_timeout & 2))
+            {
+               if(b_learn_infinite)
+                  bt.setCaption(" INF ");
+               else
+                  bt.setCaption(" "+(learn_timeout/2)+" ");
+            }
+            else
+            {
+               bt.setCaption(" Stop ");
+            }
+         }
+
+         bt.redraw();
+
+         ta_midi_learn.schedule();
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyHome(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectNextUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            handleSelectNextPattern();
+            handleSelectNextPattern();
+            handleSelectNextPattern();
+         }
+         handleSelectNextPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyEnd(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectPreviousUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            handleSelectPreviousPattern();
+            handleSelectPreviousPattern();
+            handleSelectPreviousPattern();
+         }
+         handleSelectPreviousPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual wantTriadKeyRepeat(Key _k) : boolean {
+      switch(_k.code)
+      {
+         case VKEY_LEFT:
+         case VKEY_RIGHT:
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          d         :   Toggle pattern manager
+          n         :   Focus group name
+          z         :   Switch between pipenodes A/B
+          LEFT      :   Select previous controller group
+          RIGHT     :   Select next controller group
+          F3        :   Delete current pattern
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case VKEY_LEFT:
+               handleGroupSelectPrevious();
+               return true;
+
+            case VKEY_RIGHT:
+               handleGroupSelectNext();
+               return true;
+
+            case VKEY_F3:
+               handlePatternFree();
+               return true;
+
+            case 'n':
+               UI.SetKeyboardFocus(cf_group);
+               return true;
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(TAB_CONTROLLERS != ts_groups.getActiveTabIndex())
+            {
+               ts_groups.setActiveTabIndex(TAB_CONTROLLERS);
+               return true;
+            }
+            // let PageNode handle it
+            break;
+
+         case VKEY_END:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyHome(_k.mod);
+            else
+               handlePatternKeyEnd(_k.mod);
+            return true;
+
+         case VKEY_HOME:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyEnd(_k.mod);
+            else
+               handlePatternKeyHome(_k.mod);
+            return true;
+
+         case VKEY_INSERT:
+            if(_k.modShift())
+            {
+               handleEntryClone();
+            }
+            else
+            {
+               handleEntryAdd();
+            }
+            return true;
+
+         case VKEY_DELETE:
+            handleEntryRemove();
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               handleEntryMoveUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               handleEntryMoveDown();
+               return true;
+            }
+            break;
+
+         case 'a':
+            if(TAB_PATTERN == ts_groups.getActiveTabIndex())
+            {
+               showPatternToolsMenu(true/*bFocusFirst*/);
+            }
+            else if(TAB_CONTROLLERS == ts_groups.getActiveTabIndex())
+            {
+               if(VMOD_LCTRL == _k.mod)
+               {
+                  handleImportParamsFromProfile1();
+               }
+               else
+               {
+                  showGroupToolsMenu(true/*bFocusFirst*/);
+               }
+            }
+            return true;
+
+         case '1':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(0); // Pattern
+               refocusDefault();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(0);
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(1); // Controllers
+               refocusDefault();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(1);
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modCtrlOnly())
+            {
+               ts_groups.setActiveTabIndex(2); // Play
+               refocusDefault();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(2);
+               return true;
+            }
+            break;
+
+         case '4':
+            if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(3);
+               return true;
+            }
+            break;
+
+         case '5':
+            if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(4);
+               return true;
+            }
+            break;
+
+         case '6':
+            if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(5);
+               return true;
+            }
+            break;
+
+         case '7':
+            if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(6);
+               return true;
+            }
+            break;
+
+         case '8':
+            if(_k.modNone())
+            {
+               cf_group.setSelectedOptionAction(7);
+               return true;
+            }
+            break;
+
+         case 'n':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternAlloc(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternAlloc(false/*bSub*/);
+               }
+               return true;
+            }
+            else if(_k.modShiftOnly())
+            {
+               if(TAB_PATTERN == ts_groups.getActiveTabIndex())
+                  tf_pattern_name.onTabFocus();
+               else
+                  tf_pattern_name2.onTabFocus();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternClone(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternClone(false/*bSub*/);
+               }
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               handleGroupReset();
+            }
+            break;
+
+         case 'c':
+            if( (VMOD_LCTRL == _k.mod) || (_k.modCmdOnly() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternCopy();
+               return true;
+            }
+            else if(VMOD_LSHIFT == _k.mod)
+            {
+               handleGroupCopy();
+               return true;
+            }
+            else
+            {
+               handleEntryCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternPaste();
+               return true;
+            }
+            else if(VMOD_LSHIFT == _k.mod)
+            {
+               handleGroupPaste();
+               return true;
+            }
+            else
+            {
+               handleEntryPaste();
+               return true;
+            }
+            break;
+
+         case 'w':
+            if(_k.modCtrl())
+            {
+               sendAllCenterValues();
+               return true;
+            }
+            break;
+
+         case 'o':
+            if(_k.modCtrl())
+            {
+               handleGroupCopyState(_k.modShift()/*bAllGroups*/);
+               return true;
+            }
+            break;
+
+         case 't':
+            if(_k.modCtrl())
+            {
+               handleQueryRemoteCtlNames1();
+               return true;
+            }
+            break;
+
+         case 'e':
+            if(_k.modCtrl())
+            {
+               handleAddRemoteCtls1();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               handleUpdateRemoteCtlValues1();
+               return true;
+            }
+            break;
+
+         case 'q':
+            if(_k.modCtrl())
+            {
+               handleRemoteAllCtls1();
+               return true;
+            }
+            break;
+
+         case 'g':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  showGroupCopyDialog();
+               else
+                  handleGroupCyclicPatternMorph();  // Show dialog
+               return true;
+            }
+            break;
+
+         case 'm':
+            if(_k.modCtrl())
+            {
+               handleGroupInitAsym(!_k.modShift()/*bSet*/);
+               refocusDefault();
+               tv_entries.redraw();
+               return true;
+            }
+            break;
+      }
+
+      if(trySelectPatternByUsedIdx(_k))
+         return true;
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      NCM_Group *grp;
+
+      if(TA_UPDATE_STATE == acName)
+      {
+         // trace "[trc] TA_UPDATE_STATE";
+         handlePatternChanged(false/*bFromUI*/);
+
+         if(++ta_update_state_count <= 5)
+         {
+            ta_update_state.schedule();
+         }
+         return true;
+      }
+      else if(TA_UPDATE_PERIODIC == acName)
+      {
+         // trace "[trc] TA_UPDATE_PERIODIC";
+         if(morph.b_ui_update_queued)
+         {
+            Global.Debug2("NodeCtlMorphEditor: TA_UPDATE_PERIODIC: update queued");
+            morph.b_ui_update_queued = false;
+            handlePatternChanged(false/*bFromUI*/);
+            redraw();
+         }
+         else if(null != morph.ui_queued_tablerow_entry)
+         {
+            grp <= getSelectedGroup();
+            if(null != grp)
+            {
+               int enIdx = grp.entries.indexOfPointer(morph.ui_queued_tablerow_entry, 0);
+               if(-1 != enIdx)
+               {
+                  tv_entries.moveCursorToRow(enIdx);
+               }
+            }
+            morph.ui_queued_tablerow_entry <= null;
+         }
+         else
+         {
+            grp <= getSelectedGroup();
+            if(null != grp)
+            {
+               float t = grp.uiGetResetLastSentT();
+               if(t >= 0)
+               {
+                  fp_group_t.setValue(t);
+               }
+            }
+         }
+         ta_update_periodic.schedule();
+         return true;
+      }
+      else if(TA_MIDI_LEARN == acName)
+      {
+         handleMIDILearnTimer();
+         return true;
+      }
+      else if(CM_CyclicMorphDialog.ACTION_CM_GENERATE == acName)
+      {
+         handleGroupCyclicPatternMorph2();
+      }
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+            // Snap:
+         case @(ts_groups):
+            Global.Print("Active tab is \""+ts_groups.getActiveViewCaption()+"\".");
+            return true;
+
+         case @(bt_pattern_alloc):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handlePatternClone(false/*bSub*/);
+            }
+            else
+            {
+               handlePatternAlloc(false/*bSub*/);
+            }
+            return true;
+
+         case @(bt_pattern_tools):
+            showPatternToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_pattern_tools):
+            Global.Debug2("NodeCtlMorphEditor: pm_pattern_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close pattern tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handlePatternCopy();
+                  return true;
+
+               case "paste":
+                  handlePatternPaste();
+                  return true;
+
+               case "clone":
+                  handlePatternClone(false/*bSub*/);
+                  return true;
+
+               case "clone_sub":
+                  handlePatternClone(true/*bSub*/);
+                  return true;
+
+               case "new_sub":
+                  handlePatternAlloc(true/*bSub*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_pattern_free):
+            handlePatternFree();
+            return true;
+
+         case @(cm_pattern_nr):
+            handleSelectPattern();
+            return true;
+
+         case @(tf_pattern_name):
+            handlePatternNameChanged();
+            updatePatternNrComboBox();
+
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+
+            return true;
+
+         case @(tf_pattern_name2):
+            handlePatternName2Changed();
+            updatePatternNrComboBox();
+
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+
+            return true;
+
+         case @(cb_autosend_center_values):
+            handleAutoSendCenterValuesChanged();
+            return true;
+
+         case @(cb_ui_t_all_groups):
+            handleTAllGroupsChanged();
+            return true;
+
+
+            // Controllers:
+         case @(cf_group):
+            if(ComboField.ACTION_OPTIONADDED == acName)
+            {
+               // should not be reachable
+               updateGroupOptions();
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONSELECTED == acName)
+            {
+               handleGroupChanged();
+            }
+            else if(ComboField.ACTION_OPTIONRESELECTED == acName)
+            {
+               refocusDefault();
+            }
+            else if(ComboField.ACTION_OPTIONREMOVED == acName)
+            {
+               // should not be reachable
+               updateGroupOptions();
+               refocusDefault();
+            }
+            else
+            {
+               // Rename group
+               handleGroupNameChanged(cf_group.getSelectedOptionName());
+               if(ComboField.ACTION_OPTIONEDITED/*char typed*/ == acName)
+               {
+               }
+               else
+               {
+                  updateGroupOptions();
+                  refocusDefault();
+               }
+            }
+            return true;
+
+         case @(cb_group):
+            handleGroupEnableChanged();
+            return true;
+
+         case @(cm_tickmod):
+            handleGroupTickModChanged( (VMOD_LALT == UI.GetKeyMod())/*bAllGroups*/ );
+            return true;
+
+         case @(cm_tickshift):
+            handleGroupTickShiftChanged( (VMOD_LALT == UI.GetKeyMod())/*bAllGroups*/ );
+            return true;
+
+         case @(cm_ctllimit):
+            handleGroupCtlLimitChanged( (VMOD_LALT == UI.GetKeyMod())/*bAllGroups*/ );
+            return true;
+
+         case @(bt_group_queryremoteall):
+            handleRemoteAllCtls1();
+            return true;
+
+         case @(bt_group_learn):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               toggleGroupLearn(true/*bInfinite*/);
+            }
+            else
+            {
+               toggleGroupLearn(false/*bInfinite*/);
+            }
+            return true;
+
+         case @(bt_group_tools):
+            showGroupToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_group_tools):
+            Global.Debug2("NodeCtlMorphEditor: group_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close group tools menu.");
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "clear_edited":
+                  handleGroupClearEditedFlags();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "clear":
+                  handleGroupClear1();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "delete_unedited":
+                  handleGroupDeleteUnedited1();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "clear_min":
+                  handleGroupClearMinMax(true, false);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "clear_max":
+                  handleGroupClearMinMax(false, true);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "clear_minmax":
+                  handleGroupClearMinMax(true, true);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "asym_clear":
+                  handleGroupInitAsym(false);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "asym_set":
+                  handleGroupInitAsym(true);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "copy":
+                  handleGroupCopy();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "paste":
+                  handleGroupPaste();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "merge_keep":
+                  handleGroupMerge(false/*bReplace*/, false/*bIgnoreCh*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "merge_keep_ignorech":
+                  handleGroupMerge(false/*bReplace*/, true/*bIgnoreCh*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "merge_replace":
+                  handleGroupMerge(true/*bReplace*/, false/*bIgnoreCh*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "merge_replace_ignorech":
+                  handleGroupMerge(true/*bReplace*/, true/*bIgnoreCh*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "currenttoctr":
+                  handleGroupCurrentToCenter();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "mintocenter":
+                  handleGroupMinToCenter();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "maxtocenter":
+                  handleGroupMaxToCenter();
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomin":
+                  handleGroupDiffToMin(false/*bRev*/, false/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomax":
+                  handleGroupDiffToMax(false/*bRev*/, false/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomin_rev":
+                  handleGroupDiffToMin(true/*bRev*/, false/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomax_rev":
+                  handleGroupDiffToMax(true/*bRev*/, false/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomin_asym":
+                  handleGroupDiffToMin(false/*bRev*/, true/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomax_asym":
+                  handleGroupDiffToMax(false/*bRev*/, true/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomin_rev_asym":
+                  handleGroupDiffToMin(true/*bRev*/, true/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomax_rev_asym":
+                  handleGroupDiffToMax(true/*bRev*/, true/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomin_asym_all":
+                  handlePatternDiffToMin(false/*bRev*/, true/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "difftomax_asym_all":
+                  handlePatternDiffToMax(false/*bRev*/, true/*bAsym*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "copy_state":
+                  handleGroupCopyState(false/*bAllGroups*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "copy_state_all":
+                  handleGroupCopyState(true/*bAllGroups*/);
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "import_msp":
+                  handleImportParamsFromProfile1();
+                  return true;
+
+               case "query_remotectl_names":
+                  handleQueryRemoteCtlNames1();
+                  return true;
+
+               case "add_remotectls":
+                  handleAddRemoteCtls1();
+                  return true;
+
+               case "remote_all":
+                  handleRemoteAllCtls1();
+                  return true;
+
+               case "update_remotectl_values":
+                  handleUpdateRemoteCtlValues1();
+                  return true;
+
+               case "cyclic_morph":
+                  handleGroupCyclicPatternMorph();  // Show dialog
+                  refocusDefault();
+                  tv_entries.redraw();
+                  return true;
+
+               case "group_copy_dlg":
+                  showGroupCopyDialog();
+                  return true;
+
+               case "entry_copy":
+                  handleEntryCopy();
+                  return true;
+
+               case "entry_paste":
+                  handleEntryPaste();
+                  return true;
+
+               case "send_all":
+                  sendAllCenterValues();
+                  return true;
+            }
+            return true;
+
+         case @(bt_group_reset):
+            handleGroupReset();
+            return true;
+
+         case @(cb_group_patsel):
+            handleGroupPatSel();
+            return true;
+
+         case @(fp_group_t):
+            handleGroupTChanged(morph.b_ui_t_all_groups || (VMOD_LALT == UI.GetKeyMod())/*bAllGroups*/ );
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+            {
+               refocusDefault();
+               tv_entries.redraw();
+            }
+            return true;
+
+         case @(tv_entries):
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+            }
+            else if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               handleEntryChanged(true/*bFromUI*/);
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showCtlClipboardEntryMenu();
+            }
+            return true;
+
+         case @(pm_ctlclipboard_entry):
+            Global.Debug2("NodeCtlMorphEditor::consumeAction: pm_ctlclipboard_entry acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close Ctl.Clipboard entry menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtl(true/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_a":
+                  handlePasteCtl(false/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_b":
+                  handlePasteCtl(true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_en_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleEntryClone();
+            }
+            else
+            {
+               handleEntryAdd();
+            }
+            return true;
+
+         case @(bt_en_remove):
+            handleEntryRemove();
+            return true;
+
+         case @(bt_en_moveup):
+            handleEntryMoveUp();
+            return true;
+
+         case @(bt_en_movedown):
+            handleEntryMoveDown();
+            return true;
+
+         // case @(tf_en_name):
+         //    handleEntryNameChanged();
+         //    return true;
+
+         case @(cm_type):
+            handleTypeChanged();
+            return true;
+
+         case @(cm_midi_dev):
+            handleMIDIDevChanged();
+            return true;
+
+         case @(cm_midi_ch):
+            handleMIDIChChanged();
+            return true;
+
+         case @(cm_midi_type):
+            handleMIDITypeChanged();
+            return true;
+
+         case @(cm_midi_cc_nr):
+            handleMIDICCNrChanged();
+            return true;
+
+         case @(cm_midi_rpn_nr):
+            handleMIDIRPNNrChanged();
+            return true;
+
+         case @(fp_midi_rpn_nr):
+            handleMIDIRPNNrValChanged();
+            return true;
+
+         case @(cm_midi_nrpn_nr):
+            handleMIDINRPNNrChanged();
+            return true;
+
+         case @(fp_midi_nrpn_nr):
+            handleMIDINRPNNrValChanged();
+            return true;
+
+         case @(fp_min):
+            handleMinChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+         case @(fp_center):
+            handleCenterChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+         case @(fp_max):
+            handleMaxChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+
+
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(morph);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+
+            // Multi-Morph:
+         case @(cm_mm_off):
+            handleMMOffsetChanged();
+            return true;
+
+         case @(fp_mm_range):
+            handleMMRangeChanged();
+            return true;
+
+         case @(fp_mm_pos):
+            handleMMPosChanged();
+            return true;
+
+         case @(cb_mm_pos_send):
+            handleMMPosSendChanged();
+            return true;
+
+         case @(fp_mm_pos_grp1):
+            handleMMPosGrpChanged(0, fp_mm_pos_grp1.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp2):
+            handleMMPosGrpChanged(1, fp_mm_pos_grp2.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp3):
+            handleMMPosGrpChanged(2, fp_mm_pos_grp3.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp4):
+            handleMMPosGrpChanged(3, fp_mm_pos_grp4.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp5):
+            handleMMPosGrpChanged(4, fp_mm_pos_grp5.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp6):
+            handleMMPosGrpChanged(5, fp_mm_pos_grp6.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp7):
+            handleMMPosGrpChanged(6, fp_mm_pos_grp7.getFloatValue());
+            return true;
+
+         case @(fp_mm_pos_grp8):
+            handleMMPosGrpChanged(7, fp_mm_pos_grp8.getFloatValue());
+            return true;
+
+         case @(dlg_importmsp):
+            if(ImportSynthProfileDialog.ACTION_IMPORT == acName)
+            {
+               handleImportParamsFromProfile2();
+            }
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

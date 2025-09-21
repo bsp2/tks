@@ -1,0 +1,286 @@
+// ----
+// ---- file   : PushKbd.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2018 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 16Jun2017, 17Jun2017, 06Jan2018
+// ----
+// ----
+// ----
+module MPushKbd;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PushKbd : MIDIMapDefs {
+
+   // (note) see STConfig.pushkbd_split_mode
+   define int SPLIT_NONE   = 0;
+   define int SPLIT_DUAL_H = 1;  // horizontal split
+   define int SPLIT_DUAL_V = 2;  // vertical split
+   define int SPLIT_QUAD   = 3;  // quad split
+
+   static StringArray split_mode_names_short = [
+      "-",
+      "Dual H",
+      "Dual V",
+      "Quad"
+                                                ];
+
+   IntArray pad_midi_notes;  // pad idx to note mapping. depends on base oct/key/shift_x
+   IntArray pad_midi_ch_off; // channel offset (for split modes)
+   IntArray pad_colors;
+   IntArray pad_colors_hl;
+
+
+   // <method.png>
+   public method init() {
+      pad_midi_notes.alloc(8*8);
+      pad_midi_notes.useAll();
+
+      pad_midi_ch_off.alloc(8*8);
+      pad_midi_ch_off.useAll();
+
+      pad_colors.alloc(8*8);
+      pad_colors.useAll();
+
+      pad_colors_hl.alloc(8*8);
+      pad_colors_hl.useAll();
+   }
+
+   // <method.png>
+   protected method colorizePadRect(int _padIdx, int _w, int _h, int _ch) {
+      int col = 1;
+      int colHL = 1;
+
+      int rowStartNote = STConfig.push_kbd_base_oct * 12 + STConfig.push_kbd_shift_x;
+
+      loop(_h)
+      {
+         int cNote = rowStartNote;
+
+         loop(_w)
+         {
+            if((cNote % 12) == STConfig.push_kbd_key)
+            {
+               col   = STConfig.push_kbd_color_key_note;
+               colHL = STConfig.push_kbd_color_key_note_hl;
+            }
+            else if(Scale.IsScaleNote(cNote, STConfig.push_kbd_key, STConfig.push_kbd_mode))
+            {
+               col   = STConfig.push_kbd_color_scale_note;
+               colHL = STConfig.push_kbd_color_scale_note_hl;
+            }
+            else
+            {
+               col   = STConfig.push_kbd_color_other_note;
+               colHL = STConfig.push_kbd_color_other_note_hl;
+            }
+
+            push.setSinglePadColor(_padIdx, col);
+
+            pad_colors     [_padIdx] = col;
+            pad_colors_hl  [_padIdx] = colHL;
+            pad_midi_notes [_padIdx] = cNote;
+            pad_midi_ch_off[_padIdx] = _ch;
+
+            cNote++;
+            _padIdx++;
+         }
+
+         rowStartNote += STConfig.push_kbd_row_add;
+         _padIdx += (8 - _w);
+      }
+   }
+
+   // <method.png>
+   protected method colorizePads() {
+      push.padUpdateBegin();
+      push.clearPadStates();
+
+      switch(STConfig.push_kbd_split_mode)
+      {
+         default:
+         case SPLIT_NONE:
+            colorizePadRect( 0/*padIdx*/, 8/*w*/, 8/*h*/, 0/*ch*/);
+            break;
+
+         case SPLIT_DUAL_H:
+            colorizePadRect( 0/*padIdx*/, 4/*w*/, 8/*h*/, 0/*ch*/);  // left
+            colorizePadRect( 4/*padIdx*/, 4/*w*/, 8/*h*/, 1/*ch*/);  // right
+            break;
+
+         case SPLIT_DUAL_V:
+            colorizePadRect( 0/*padIdx*/, 8/*w*/, 4/*h*/, 0/*ch*/);  // lower
+            colorizePadRect(32/*padIdx*/, 8/*w*/, 4/*h*/, 1/*ch*/);  // upper
+            break;
+
+         case SPLIT_QUAD:
+            colorizePadRect( 0/*padIdx*/, 4/*w*/, 4/*h*/, 0/*ch*/);  // LB
+            colorizePadRect( 4/*padIdx*/, 4/*w*/, 4/*h*/, 1/*ch*/);  // RB
+            colorizePadRect(32/*padIdx*/, 4/*w*/, 4/*h*/, 2/*ch*/);  // LT
+            colorizePadRect(36/*padIdx*/, 4/*w*/, 4/*h*/, 3/*ch*/);  // RT
+            break;
+      }
+
+      push.padUpdateEnd();
+   }
+
+   // <method.png>
+   public method handleModeSelected() {
+
+      colorizePads();
+
+      push.lcdFillRow(0, ' ');
+      push.lcdTextEncCell(0, 0, "Oct");
+      push.lcdTextEncCell(0, 1, "Add");
+      push.lcdTextEncCell(0, 2, "Key");
+      push.lcdTextEncCell(0, 3, "Mode");
+      push.lcdTextEncCell(0, 4, "ShiftX");
+      push.lcdTextEncCell(0, 7, "Split");
+
+      push.lcdFillRow(1, ' ');
+      push.lcdTextEncCell(1, 0, STConfig.push_kbd_base_oct);
+      push.lcdTextEncCell(1, 1, STConfig.push_kbd_row_add);
+      push.lcdTextEncCell(1, 2, Scale.key_names.get(STConfig.push_kbd_key));
+      push.lcdTextEncCell(1, 3, Scale.mode_names_short.get(STConfig.push_kbd_mode));
+      push.lcdTextEncCell(1, 4, String(STConfig.push_kbd_shift_x));
+      push.lcdTextEncCell(1, 7, PushKbd.split_mode_names_short.get(STConfig.push_kbd_split_mode));
+   }
+
+   // <replay.png>
+   public method transformRecordedEvent(local MIDIMapEvent _ev) {
+      // Called directly after raw input event has been recorded (before MIDIMorphScene.Transform)
+      // trace "xxx transformRecordedEvent";
+
+      if(_ev.pushIsEvent())
+      {
+         switch(_ev.type)
+         {
+            case TYPE_NOTE_OFF:
+            case TYPE_NOTE_ON:
+            case TYPE_POLY_PRESSURE:
+               if(_ev.pushIsPad8x8NoteOrPressure())
+               {
+                  int padIdx = _ev.pushGetPad8x8Idx();
+                  _ev.arg1 = mathClampi(pad_midi_notes.get(padIdx), 0, 127);
+                  _ev.ext_type = _ev.arg1;
+                  _ev.dev_ch = (_ev.dev_ch + pad_midi_ch_off.get(padIdx)) & 15;
+               }
+               else
+               {
+                  // Touch enc
+                  _ev.discard();
+               }
+               break;
+         }
+      }
+
+   }
+
+   // <method.png>
+   public method handleEventUI(MIDIMapEvent _ev) : boolean {
+      // called by rootform.mmcHandleEvent()
+
+      // trace "xxx PushKbd::handleEventUI";
+
+      if(_ev.pushIsEvent())
+      {
+         switch(_ev.type)
+         {
+            case TYPE_NOTE_ON:
+            case TYPE_NOTE_OFF:
+               if(_ev.pushIsPad8x8NoteOrPressure())
+               {
+                  int padIdx = -1;
+                  do
+                  {
+                     padIdx = pad_midi_notes.indexOf(_ev.arg1, padIdx + 1);
+
+                     if(padIdx >= 0)
+                     {
+                        push.updateSinglePadColorTimeout(padIdx,
+                                                         pad_colors_hl.get(padIdx),
+                                                         pad_colors.get(padIdx)
+                                                         );
+                     }
+                  }
+                  while(padIdx >= 0);
+               }
+               return true;
+
+            case TYPE_PITCHBEND:
+               return true;
+
+            case TYPE_CC:
+               if(MIDIMapDefs.CLASS_DELTA == _ev.class_type)
+               {
+                  if(MIDIMapDefs.TYPE_CC == _ev.type)
+                  {
+                     // trace "xxx TYPE_CC _ev.ext_type="+_ev.ext_type;
+                     if(PushDefs.CC_ENC_1 <= _ev.ext_type <= PushDefs.CC_ENC_9)
+                     {
+                        if(4 == (MIDIMapEvent.delta_count % 8)) // must be even
+                        {
+                           int relEncIdx = (_ev.ext_type - PushDefs.CC_ENC_1);
+                           int encDelta = _ev.getDeltaValue();
+
+                           // trace "xxx relEncIdx="+relEncIdx;
+
+                           switch(relEncIdx)
+                           {
+                              case 0: // Oct
+                                 STConfig.push_kbd_base_oct = mathClampi(STConfig.push_kbd_base_oct + encDelta, 0, 7);
+                                 push.lcdTextEncCell(1, 0, STConfig.push_kbd_base_oct);
+                                 colorizePads(); // colorization does not change but pad_midi_notes array does
+                                 break;
+
+                              case 1: // row_add
+                                 STConfig.push_kbd_row_add = mathClampi(STConfig.push_kbd_row_add + encDelta, 0, 12);
+                                 push.lcdTextEncCell(1, 1, STConfig.push_kbd_row_add);
+                                 colorizePads();
+                                 break;
+
+                              case 2: // key
+                                 STConfig.push_kbd_key = mathClampi(STConfig.push_kbd_key + encDelta, 0, 11);
+                                 push.lcdTextEncCell(1, 2, Scale.key_names.get(STConfig.push_kbd_key));
+                                 colorizePads();
+                                 break;
+
+                              case 3: // mode
+                                 STConfig.push_kbd_mode = mathClampi(STConfig.push_kbd_mode + encDelta, 0, (Scale.mode_names_short.numElements)-1);
+                                 push.lcdTextEncCell(1, 3, Scale.mode_names_short.get(STConfig.push_kbd_mode));
+                                 colorizePads();
+                                 break;
+
+                              case 4: // shift_x
+                                 STConfig.push_kbd_shift_x = mathClampi(STConfig.push_kbd_shift_x + encDelta, -12, 12);
+                                 push.lcdTextEncCell(1, 4, STConfig.push_kbd_shift_x);
+                                 colorizePads();
+                                 break;
+
+                              case 7: // split_mode
+                                 STConfig.push_kbd_split_mode = mathClampi(STConfig.push_kbd_split_mode + encDelta, 0, (PushKbd.split_mode_names_short.numElements)-1);
+                                 push.lcdTextEncCell(1, 7, PushKbd.split_mode_names_short.get(STConfig.push_kbd_split_mode));
+                                 colorizePads();
+                                 break;
+                           }
+                        }
+
+                        return true;
+                     }
+                  }
+               }
+               break;
+         }
+      }
+
+      return false;
+   }
+}

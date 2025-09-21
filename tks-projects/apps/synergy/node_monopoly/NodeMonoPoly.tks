@@ -1,0 +1,1746 @@
+// ----
+// ---- file   : NodeMonoPoly.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 10Apr2015, 12Apr2015, 13Apr2015, 29Apr2015, 11May2015, 13May2015, 15May2015
+// ----          16May2015, 04Oct2015, 09Jul2016, 12Jul2016, 21Jan2017, 13Mar2017, 18Aug2017
+// ----          18Aug2017, 03Sep2017, 04Jan2018, 27May2018, 07Nov2019, 10Nov2020, 01Jan2022
+// ----
+// ----
+// ----
+
+module MNodeMonoPoly;
+
+use namespace ui;
+use namespace st2;
+
+// (note) should've used a class for the note slots ..!
+
+// <class.png>
+class NodeMonoPolyPattern : NodePattern {
+   byte out1_transpose;
+   byte out2_transpose;
+   byte out3_transpose;
+   byte out4_transpose;
+
+
+   // <method_init.png>
+   public virtual patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+
+      out1_transpose = 0;
+      out2_transpose = 0;
+      out3_transpose = 0;
+      out4_transpose = 0;
+   }
+
+   // <method_set.png>
+   public =replay= method setOut1Transpose(byte _val) {
+      out1_transpose = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setOut2Transpose(byte _val) {
+      out2_transpose = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setOut3Transpose(byte _val) {
+      out3_transpose = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setOut4Transpose(byte _val) {
+      out4_transpose = _val;
+   }
+
+   // <save.png>
+   public patSaveState(Stream ofs) {
+
+      NodePattern::patSaveState(ofs);
+
+      ofs.i16 = 1; // Version
+
+      ofs.i8 = out1_transpose;
+      ofs.i8 = out2_transpose;
+      ofs.i8 = out3_transpose;
+      ofs.i8 = out4_transpose;
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            out1_transpose = ifs.s8;
+            out2_transpose = ifs.s8;
+            out3_transpose = ifs.s8;
+            out4_transpose = ifs.s8;
+
+            return true;
+         }
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NodeMonoPoly : Node {
+
+   define int RPN_MONOPOLY_OUTPUT = RPN_MONOPOLY_BASE + 0;
+
+   static NodeMonoPolyEditor *editor;
+
+   byte    in_dev;
+   byte    in_ch;
+   boolean b_in_en;
+
+   byte    out1_dev;
+   byte    out1_ch;
+   boolean b_out1_en;
+
+   byte    out2_dev;
+   byte    out2_ch;
+   boolean b_out2_en;
+
+   byte    out3_dev;
+   byte    out3_ch;
+   boolean b_out3_en;
+
+   byte    out4_dev;
+   byte    out4_ch;
+   boolean b_out4_en;
+
+   byte    dbl_dev;
+   byte    dbl_ch_off;
+   byte    dbl_ch_abs;
+   boolean b_dbl_abs;
+   boolean b_dbl_en;
+
+
+   define int TRIG_MODE_UNISON            = 0;
+   define int TRIG_MODE_ROUNDROBIN        = 1;
+   define int TRIG_MODE_RANDOM            = 2;
+   define int TRIG_MODE_RANDOM_NOREPEAT   = 3;
+   define int TRIG_MODE_RPN               = 4;
+   define int TRIG_MODE_DYNAMIC_NEWEST    = 5;
+   define int TRIG_MODE_DYNAMIC_OLDEST    = 6;
+   define int TRIG_MODE_DYNAMIC_HIGHEST   = 7;
+   define int TRIG_MODE_DYNAMIC_LOWEST    = 8;
+
+   byte trig_mode;
+
+   boolean b_trig_double; // true= trigger two outputs for each incoming note
+   boolean b_trig_paired; // true= link 1+2 / 3+4
+   boolean b_trig_next;   // true= trigger neighbour output (w/ wrap-around)
+
+
+   define int CTL_MODE_ALL    = 0;
+   define int CTL_MODE_ACTIVE = 1;
+   define int CTL_MODE_LAST   = 2;  // Ctls only affect last triggered voice(s)
+
+   byte ctl_mode;
+   boolean b_ctl_gate; // true=send ctls when next note is triggered
+   MIDIPipeFrame ctl_gate_frame;
+
+
+   define int VEL_MODE_NORMAL     = 0;
+   define int VEL_MODE_AFTERTOUCH = 1;
+   define int VEL_MODE_MODWHEEL   = 2;
+   define int VEL_MODE_FIXED      = 3;
+
+   byte vel_mode;
+   boolean b_vel_fixed;
+
+
+   protected int next_out_idx;
+   protected int last_out_idx;
+
+   protected boolean b_first_trig;  // true=clear last_out_ array when first note is triggered. false=(at end of processFrame) one or more notes were triggered
+   protected IntArray last_out_devs_and_chs;
+
+
+   protected STX_MIDIOutDevice *cached_in_dev;
+   protected STX_MIDIOutDevice *cached_out1_dev;
+   protected STX_MIDIOutDevice *cached_out2_dev;
+   protected STX_MIDIOutDevice *cached_out3_dev;
+   protected STX_MIDIOutDevice *cached_out4_dev;
+   protected STX_MIDIOutDevice *cached_dbl_dev;
+
+   protected int cached_num_out;
+
+   protected Integer cur_out1_note;
+   protected Integer cur_out2_note;
+   protected Integer cur_out3_note;
+   protected Integer cur_out4_note;
+
+   protected Integer cur_out1_time;  // time when note was triggered (for dynamic voice alloc)
+   protected Integer cur_out2_time;
+   protected Integer cur_out3_time;
+   protected Integer cur_out4_time;
+
+   protected Integer cur_out1_note_transp;
+   protected Integer cur_out2_note_transp;
+   protected Integer cur_out3_note_transp;
+   protected Integer cur_out4_note_transp;
+
+   PointerArray patterns;
+
+   NodeMonoPolyPattern empty_pattern;
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      b_auto_filter_a = true;
+      auto_dev_filter_a = -1;
+      auto_ch_filter_a = -1;
+
+      in_dev  = -1;
+      in_ch   = 0;
+      b_in_en = true;
+
+      out1_dev  = -1;
+      out1_ch   = 0;
+      b_out1_en = true;
+
+      out2_dev  = -1;
+      out2_ch   = 1;
+      b_out2_en = true;
+
+      out3_dev  = -1;
+      out3_ch   = 2;
+      b_out3_en = true;
+
+      out4_dev  = -1;
+      out4_ch   = 3;
+      b_out4_en = true;
+
+      dbl_dev    = -1;
+      dbl_ch_off = 0;
+      b_dbl_en   = false;
+
+      trig_mode = TRIG_MODE_ROUNDROBIN;
+      b_trig_double = false;
+      b_trig_paired = false;
+      b_trig_next   = false;
+      ctl_mode  = CTL_MODE_ALL;
+      vel_mode  = VEL_MODE_NORMAL;
+      b_vel_fixed = false;
+
+      patterns.alloc(128);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      empty_pattern.patInit(this, 0);
+
+      cur_out1_note = -1;
+      cur_out2_note = -1;
+      cur_out3_note = -1;
+      cur_out4_note = -1;
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+
+      Node::nodeUIInit();
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTypeNameShort() : String {
+      return "MPy";
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeMonoPolyEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_monopoly_mono");
+      else
+         return UI.GetIcon("node_monopoly");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NodeMonoPolyPattern";
+   }
+
+   // <method_get.png>
+   public =replay= method getNextOutput() : int {
+      return next_out_idx;
+   }
+
+   // <method_set.png>
+   public =replay= method setNextOutput(int _idx) {
+      next_out_idx = _idx & 3;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableIn(boolean _bEnabled) {
+      b_in_en = _bEnabled;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setInDev(byte _devIdx) {
+      in_dev = _devIdx;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setInCh(byte _ch) {
+      in_ch = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableOut1(boolean _bEnabled) {
+      b_out1_en = _bEnabled;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut1Dev(byte _devIdx) {
+      out1_dev = _devIdx;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut1Ch(byte _ch) {
+      out1_ch = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableOut2(boolean _bEnabled) {
+      b_out2_en = _bEnabled;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut2Dev(byte _devIdx) {
+      out2_dev = _devIdx;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut2Ch(byte _ch) {
+      out2_ch = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableOut3(boolean _bEnabled) {
+      b_out3_en = _bEnabled;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut3Dev(byte _devIdx) {
+      out3_dev = _devIdx;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut3Ch(byte _ch) {
+      out3_ch = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableOut4(boolean _bEnabled) {
+      b_out4_en = _bEnabled;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut4Dev(byte _devIdx) {
+      out4_dev = _devIdx;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setOut4Ch(byte _ch) {
+      out4_ch = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableDbl(boolean _bEnabled) {
+      b_dbl_en = _bEnabled;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setDblDev(byte _devIdx) {
+      dbl_dev = _devIdx;
+
+      updateCachedDevs();
+   }
+
+   // <method_set.png>
+   public =replay= method setDblChOff(byte _chOff) {
+      dbl_ch_off = _chOff;
+   }
+
+   // <method_set.png>
+   public =replay= method setDblChAbs(byte _ch) {
+      dbl_ch_abs = _ch & 15;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableDblAbs(boolean _bEnable) {
+      b_dbl_abs = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setTrigMode(byte _mode) {
+      trig_mode = _mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableTrigDouble(boolean _bEnable) {
+      b_trig_double = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableTrigPaired(boolean _bEnable) {
+      b_trig_paired = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableTrigNext(boolean _bEnable) {
+      b_trig_next = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setCtlMode(byte _mode) {
+      ctl_mode = _mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableCtlGate(boolean _bEnabled) {
+      b_ctl_gate = _bEnabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setVelMode(byte _mode) {
+      vel_mode = _mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableVelFixed(boolean _bEnable) {
+      b_vel_fixed = _bEnable;
+   }
+
+   // <method_update.png>
+   protected method updateCachedDevs() {
+      cached_in_dev   <= b_in_en   ? (MIDI.GetMIDIOutDeviceByIndex(in_dev))   : null;
+      cached_out1_dev <= b_out1_en ? (MIDI.GetMIDIOutDeviceByIndex(out1_dev)) : null;
+      cached_out2_dev <= b_out2_en ? (MIDI.GetMIDIOutDeviceByIndex(out2_dev)) : null;
+      cached_out3_dev <= b_out3_en ? (MIDI.GetMIDIOutDeviceByIndex(out3_dev)) : null;
+      cached_out4_dev <= b_out4_en ? (MIDI.GetMIDIOutDeviceByIndex(out4_dev)) : null;
+      cached_dbl_dev  <= b_dbl_en  ? (MIDI.GetMIDIOutDeviceByIndex(dbl_dev))  : null;
+
+      cached_num_out =
+         ((null != cached_out1_dev) ? 1 : 0) +
+         ((null != cached_out2_dev) ? 1 : 0) +
+         ((null != cached_out3_dev) ? 1 : 0) +
+         ((null != cached_out4_dev) ? 1 : 0) ;
+   }
+
+   // <method.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      auto_dev_filter_a = in_dev;
+      auto_ch_filter_a = in_ch;
+      b_auto_filter_a = true;
+
+      next_out_idx = 0;
+      last_out_idx = -1;
+
+      last_out_devs_and_chs.empty();
+
+      ctl_gate_frame.empty();
+
+      // // cur_out1_note = -1;
+      // // cur_out2_note = -1;
+      // // cur_out3_note = -1;
+      // // cur_out4_note = -1;
+
+      updateCachedDevs();
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NodeMonoPolyPattern {
+      NodeMonoPolyPattern pat <= patterns.get(edit_pattern_nr);
+
+      if(null == pat)
+      {
+         pat <= new NodeMonoPolyPattern;
+         pat.patInit(this, edit_pattern_nr);
+         patterns[edit_pattern_nr] = deref pat;
+      }
+
+      return pat;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NodeMonoPolyPattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NodeMonoPolyPattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NodeMonoPolyPattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 7; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // Input
+      ofs.i8 = in_dev;
+      ofs.i8 = in_ch;
+      ofs.i8 = b_in_en;
+
+      // Output 1
+      ofs.i8 = out1_dev;
+      ofs.i8 = out1_ch;
+      ofs.i8 = b_out1_en;
+
+      // Output 2
+      ofs.i8 = out2_dev;
+      ofs.i8 = out2_ch;
+      ofs.i8 = b_out2_en;
+
+      // Output 3
+      ofs.i8 = out3_dev;
+      ofs.i8 = out3_ch;
+      ofs.i8 = b_out3_en;
+
+      // Output 4
+      ofs.i8 = out4_dev;
+      ofs.i8 = out4_ch;
+      ofs.i8 = b_out4_en;
+
+      // Double
+      ofs.i8 = dbl_dev;
+      ofs.i8 = dbl_ch_off;
+      ofs.i8 = dbl_ch_abs; // v7+
+      ofs.i8 = b_dbl_abs;  // v7+
+      ofs.i8 = b_dbl_en;
+
+      // Trigger mode
+      ofs.i8 = trig_mode;
+      ofs.i8 = b_trig_double; // v4+
+      ofs.i8 = b_trig_paired; // v4+
+      ofs.i8 = b_trig_next;   // v5+
+
+      // Controller mode
+      ofs.i8 = ctl_mode;
+      ofs.i8 = b_ctl_gate; // v6+
+
+      // Velocity mode
+      ofs.i8 = vel_mode;
+      ofs.i8 = b_vel_fixed; // v2+
+
+      // Patterns (v3+)
+      NodeMonoPolyPattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr; // (v3+)
+      ofs.i8 = play_pattern_nr; // (v3+)
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // Input
+         in_dev  = ifs.s8;
+         in_ch   = ifs.u8;
+         b_in_en = ifs.u8;
+
+         if(-1 != in_dev)
+         {
+            _outDevUseCount.inc(in_dev);
+
+            in_dev = _outDevIdxMap.get(in_dev);
+         }
+
+         // Output 1
+         out1_dev  = ifs.s8;
+         out1_ch   = ifs.u8;
+         b_out1_en = ifs.u8;
+
+         if(-1 != out1_dev)
+         {
+            _outDevUseCount.inc(out1_dev);
+
+            out1_dev = _outDevIdxMap.get(out1_dev);
+         }
+
+         // Output 2
+         out2_dev  = ifs.s8;
+         out2_ch   = ifs.u8;
+         b_out2_en = ifs.u8;
+
+         if(-1 != out2_dev)
+         {
+            _outDevUseCount.inc(out2_dev);
+
+            out2_dev = _outDevIdxMap.get(out2_dev);
+         }
+
+         // Output 3
+         out3_dev  = ifs.s8;
+         out3_ch   = ifs.u8;
+         b_out3_en = ifs.u8;
+
+         if(-1 != out3_dev)
+         {
+            _outDevUseCount.inc(out3_dev);
+
+            out3_dev = _outDevIdxMap.get(out3_dev);
+         }
+
+         // Output 4
+         out4_dev  = ifs.s8;
+         out4_ch   = ifs.u8;
+         b_out4_en = ifs.u8;
+
+         if(-1 != out4_dev)
+         {
+            _outDevUseCount.inc(out4_dev);
+
+            out4_dev = _outDevIdxMap.get(out4_dev);
+         }
+
+         // Double
+         dbl_dev    = ifs.s8;
+         dbl_ch_off = ifs.s8;
+         if(ver >= 7)
+         {
+            dbl_ch_abs = ifs.u8;
+            b_dbl_abs  = ifs.u8;
+         }
+         b_dbl_en   = ifs.u8;
+
+         if(-1 != dbl_dev)
+         {
+            _outDevUseCount.inc(dbl_dev);
+
+            dbl_dev = _outDevIdxMap.get(dbl_dev);
+         }
+
+         // Trig mode
+         trig_mode = ifs.u8;
+
+         if(ver >= 4)
+         {
+            b_trig_double = ifs.i8;
+            b_trig_paired = ifs.i8;
+
+            if(ver >= 5)
+            {
+               b_trig_next = ifs.i8;
+            }
+         }
+
+         // Controller mode
+         ctl_mode = ifs.u8;
+
+         if(ver >= 6)
+         {
+            b_ctl_gate = ifs.u8;
+         }
+
+         // Velocity mode
+         vel_mode = ifs.u8;
+
+         if(ver >= 2)
+         {
+            b_vel_fixed = ifs.u8;
+         }
+
+         if(ver >= 3)
+         {
+            // Patterns
+            int patIdx = 0;
+            loop(128)
+            {
+               NodeMonoPolyPattern *pat;
+
+               boolean bPatUsed = ifs.i8;
+               if(bPatUsed)
+               {
+                  pat <= new NodeMonoPolyPattern;
+                  pat.patInit(this, patIdx);
+                  patterns[patIdx] = deref pat;
+
+                  if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+                  {
+                     trace "[---] NodeMonoPoly::loadState: patLoadState failed (patIdx="+patIdx+")";
+                     return false;
+                  }
+               }
+
+               // Next pattern
+               patIdx++;
+            }
+
+            // (note) [21Jun2021] moved to Node base class
+            edit_pattern_nr = ifs.u8;
+            play_pattern_nr = ifs.u8;
+
+         } // if ver >= 3
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method.png>
+   protected method getDblCh(byte _outCh) : byte {
+      if(b_dbl_abs)
+      {
+         return dbl_ch_abs;
+      }
+      else
+      {
+         byte r = dbl_ch_off + _outCh;
+         return (r > 15) ? 15 : (r < 0) ? 0 : r;
+      }
+   }
+
+   // <method.png>
+   protected method getOutDevByIdx(int _idx, Integer retOutDev, Integer retOutCh, Value retOutNote, Value retOutNoteTransp, Integer rrOutPatTransp, NodeMonoPolyPattern pat, Value rrOutTimeAdr) : STX_MIDIOutDevice {
+      switch(_idx)
+      {
+         default:
+         case 0:
+            retOutDev = out1_dev;
+            retOutCh  = out1_ch;
+            retOutNote.objectValue = cur_out1_note;
+            retOutNoteTransp.objectValue = cur_out1_note_transp;
+            rrOutPatTransp = pat.out1_transpose;
+            rrOutTimeAdr.objectValue = cur_out1_time;
+            return cached_out1_dev;
+
+         case 1:
+            retOutDev = out2_dev;
+            retOutCh  = out2_ch;
+            retOutNote.objectValue = cur_out2_note;
+            retOutNoteTransp.objectValue = cur_out2_note_transp;
+            rrOutPatTransp = pat.out2_transpose;
+            rrOutTimeAdr.objectValue = cur_out2_time;
+            return cached_out2_dev;
+
+         case 2:
+            retOutDev = out3_dev;
+            retOutCh  = out3_ch;
+            retOutNote.objectValue = cur_out3_note;
+            retOutNoteTransp.objectValue = cur_out3_note_transp;
+            rrOutPatTransp = pat.out3_transpose;
+            rrOutTimeAdr.objectValue = cur_out3_time;
+            return cached_out3_dev;
+
+         case 3:
+            retOutDev = out4_dev;
+            retOutCh  = out4_ch;
+            retOutNote.objectValue = cur_out4_note;
+            retOutNoteTransp.objectValue = cur_out4_note_transp;
+            rrOutPatTransp = pat.out4_transpose;
+            rrOutTimeAdr.objectValue = cur_out4_time;
+            return cached_out4_dev;
+      }
+   }
+
+   // <method.png>
+   protected method getNextRROutAndInc(Integer retOutDev, Integer retOutCh, Value retOutNote, Value retOutNoteTransp, Integer rrOutPatTransp, NodeMonoPolyPattern pat, Value rrOutTimeAdr) : STX_MIDIOutDevice {
+      // (note) don't call if there are no out devs
+      STX_MIDIOutDevice ret <= null;
+
+      while(null == ret)
+      {
+         ret <= getOutDevByIdx(next_out_idx, retOutDev, retOutCh, retOutNote, retOutNoteTransp, rrOutPatTransp, pat, rrOutTimeAdr);
+
+         last_out_idx = next_out_idx;
+
+         switch(trig_mode)
+         {
+            default:
+               break;
+
+            case TRIG_MODE_ROUNDROBIN:
+               loop(1 + b_trig_paired)
+               {
+                  next_out_idx = (next_out_idx + 1) & 3;
+               }
+               break;
+
+            case TRIG_MODE_RANDOM:
+               next_out_idx = rand(999999) & 3;
+               break;
+
+            case TRIG_MODE_RANDOM_NOREPEAT:
+               do
+               {
+                  next_out_idx = rand(999999) & 3;
+               } while(next_out_idx == last_out_idx);
+               break;
+         }
+      }
+   }
+
+   // <method.png>
+   protected method processFrameNoteOffs(MIDIPipeFrame _frame, MIDIPipeFrame _origFrame) {
+      int evIdx;
+      MIDIPipeEvent pipeEv;
+      byte vel;
+
+      boolean bMirror = ((null != cached_dbl_dev) && b_dbl_en);
+
+      // Process note-off events
+      evIdx = 0;
+
+      loop(_origFrame.numEventsNoteOff)
+      {
+         if(_origFrame.getEventByIdx(evIdx, pipeEv, MIDIPIPE_EVENT_TYPE_NOTE_OFF))
+         {
+            if(pipeEv.devIdx == in_dev)
+            {
+               if(pipeEv.midiCh == in_ch)
+               {
+                  vel = b_vel_fixed ? 0 : pipeEv.velocity;
+
+                  if(cur_out1_note == pipeEv.note)
+                  {
+                     _frame.noteOff(1/*bSet*/, out1_dev, out1_ch, cur_out1_note_transp, vel);
+                     cur_out1_note = -1;
+
+                     if(bMirror)
+                     {
+                        _frame.noteOff(1/*bSet*/, dbl_dev, getDblCh(out1_ch), cur_out1_note_transp, vel);
+                     }
+                  }
+
+                  if(cur_out2_note == pipeEv.note)
+                  {
+                     _frame.noteOff(1/*bSet*/, out2_dev, out2_ch, cur_out2_note_transp, vel);
+                     cur_out2_note = -1;
+
+                     if(bMirror)
+                     {
+                        _frame.noteOff(1/*bSet*/, dbl_dev, getDblCh(out2_ch), cur_out2_note_transp, vel);
+                     }
+                  }
+
+                  if(cur_out3_note == pipeEv.note)
+                  {
+                     _frame.noteOff(1/*bSet*/, out3_dev, out3_ch, cur_out3_note_transp, vel);
+                     cur_out3_note = -1;
+
+                     if(bMirror)
+                     {
+                        _frame.noteOff(1/*bSet*/, dbl_dev, getDblCh(out3_ch), cur_out3_note_transp, vel);
+                     }
+                  }
+
+                  if(cur_out4_note == pipeEv.note)
+                  {
+                     _frame.noteOff(1/*bSet*/, out4_dev, out4_ch, cur_out4_note_transp, vel);
+                     cur_out4_note = -1;
+
+                     if(bMirror)
+                     {
+                        _frame.noteOff(1/*bSet*/, dbl_dev, getDblCh(out4_ch), cur_out4_note_transp, vel);
+                     }
+                  }
+               } // flt midiCh
+            } // flt devIdx
+         } // if getEventByIdx
+
+         evIdx++;
+      } // loop numOff
+
+   }
+
+   // <method.png>
+   protected method processFrameRR(int evIdx, MIDIPipeFrame _frame, MIDIPipeFrame origFrame, NodeMonoPolyPattern pat, int _forceOutNr) {
+      Integer rrOutDev;
+      Integer rrOutCh;
+      MIDIPipeEvent pipeEv;
+      byte vel;
+      Value rrOutNoteAdr;
+      Integer *rrOutNote;
+      Value rrOutNoteTranspAdr;
+      Integer *rrOutNoteTransp;
+      Integer rrOutPatTransp;
+      Value rrOutTimeAdr;
+      Integer *rrOutTime;
+
+      boolean bMirror = ((null != cached_dbl_dev) && b_dbl_en);
+
+      STX_MIDIOutDevice *outDev;
+
+      if(origFrame.getEventByIdx(evIdx, pipeEv, MIDIPIPE_EVENT_TYPE_NOTE_ON))
+      {
+         if(pipeEv.devIdx == in_dev)
+         {
+            if(pipeEv.midiCh == in_ch)
+            {
+               vel = b_vel_fixed ? 127 : pipeEv.velocity;
+
+               if(-1 == _forceOutNr)
+               {
+                  outDev <= getNextRROutAndInc(rrOutDev, rrOutCh, rrOutNoteAdr, rrOutNoteTranspAdr, rrOutPatTransp, pat, rrOutTimeAdr);
+               }
+               else
+               {
+                  outDev <= getOutDevByIdx(_forceOutNr, rrOutDev, rrOutCh, rrOutNoteAdr, rrOutNoteTranspAdr, rrOutPatTransp, pat, rrOutTimeAdr);
+               }
+
+               // trace "xxx noteon devidx="+rrOutDev+" ch="+rrOutCh+" force="+_forceOutNr;
+
+               rrOutTime <= rrOutTimeAdr.value;
+               rrOutNote <= rrOutNoteAdr.value;
+               rrOutNoteTransp <= rrOutNoteTranspAdr.value;
+
+               if(-1 != rrOutNote)
+               {
+                  // Force note-off
+                  _frame.noteOffPre(1/*bSet*/, rrOutDev, rrOutCh, rrOutNoteTransp, 0);
+                  _frame.noteOn(0/*bSet*/, rrOutDev, rrOutCh, rrOutNoteTransp, 0, 0);
+
+                  if(bMirror)
+                  {
+                     _frame.noteOffPre(1/*bSet*/, dbl_dev, getDblCh(rrOutCh), rrOutNoteTransp, 0);
+                     _frame.noteOn(0/*bSet*/, dbl_dev, getDblCh(rrOutCh), rrOutNoteTransp, 0, 0);
+                  }
+               }
+
+               rrOutTime = milliSeconds();
+               rrOutNote = pipeEv.note;
+               rrOutNoteTransp = rrOutNote + rrOutPatTransp;
+
+               if(b_first_trig)
+               {
+                  b_first_trig = false;
+                  last_out_devs_and_chs.empty();
+               }
+
+               _frame.noteOn(1/*bSet*/, rrOutDev, rrOutCh, rrOutNoteTransp,
+                             vel,
+                             pipeEv.duration
+                             );
+
+               last_out_devs_and_chs.add(rrOutDev);
+               last_out_devs_and_chs.add(rrOutCh);
+
+               if(bMirror)
+               {
+                  _frame.noteOn(1/*bSet*/, dbl_dev, getDblCh(rrOutCh), rrOutNoteTransp,
+                                vel,
+                                pipeEv.duration
+                                );
+
+                  last_out_devs_and_chs.add(dbl_dev);
+                  last_out_devs_and_chs.add(getDblCh(rrOutCh));
+               }
+
+               if(VEL_MODE_AFTERTOUCH == vel_mode)
+               {
+                  _frame.chPressure(1/*bSet*/, rrOutDev, rrOutCh, pipeEv.velocity);
+
+                  if(bMirror)
+                  {
+                     _frame.chPressure(1/*bSet*/, dbl_dev, getDblCh(rrOutCh), pipeEv.velocity);
+                  }
+               }
+               else if(VEL_MODE_MODWHEEL == vel_mode)
+               {
+                  _frame.cc(1/*bSet*/, rrOutDev, rrOutCh, 1/*modulation MSB*/, pipeEv.velocity);
+
+                  if(bMirror)
+                  {
+                     _frame.cc(1/*bSet*/, dbl_dev, getDblCh(rrOutCh), 1/*modulation MSB*/, pipeEv.velocity);
+                  }
+               }
+
+            } // flt midiCh
+         } // flt devIdx
+      } // if getEventByIdx
+
+   }
+
+   // <method.png>
+   protected method allocDynamic() {
+      // Sets next_out_idx
+
+      // Find oldest unused slot
+      int maxTime = -1;
+      int bestIdx = -1;
+      int bestNote;
+
+      int cTime = milliSeconds();
+
+      if(-1 == cur_out1_note)
+      {
+         if( (cTime - cur_out1_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out1_time);
+            bestIdx = 0;
+         }
+      }
+
+      if(-1 == cur_out2_note)
+      {
+         if( (cTime - cur_out2_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out2_time);
+            bestIdx = 1;
+         }
+      }
+
+      if(-1 == cur_out3_note)
+      {
+         if( (cTime - cur_out3_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out3_time);
+            bestIdx = 2;
+         }
+      }
+
+      if(-1 == cur_out4_note)
+      {
+         if( (cTime - cur_out4_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out4_time);
+            bestIdx = 3;
+         }
+      }
+
+      if(-1 != bestIdx)
+      {
+         next_out_idx = bestIdx;
+         return;
+      }
+
+      // All slots in use
+
+
+      if(TRIG_MODE_DYNAMIC_NEWEST == trig_mode)
+      {
+         bestIdx = 0;
+
+         maxTime = 9999999;
+
+         if( (cTime - cur_out1_time) < maxTime)
+         {
+            maxTime = (cTime - cur_out1_time);
+         }
+
+         if( (cTime - cur_out2_time) < maxTime)
+         {
+            maxTime = (cTime - cur_out2_time);
+            bestIdx = 1;
+         }
+
+         if( (cTime - cur_out3_time) < maxTime)
+         {
+            maxTime = (cTime - cur_out3_time);
+            bestIdx = 2;
+         }
+
+         if( (cTime - cur_out4_time) < maxTime)
+         {
+            maxTime = (cTime - cur_out4_time);
+            bestIdx = 3;
+         }
+
+         next_out_idx = bestIdx;
+         return;
+      }
+
+
+      if(TRIG_MODE_DYNAMIC_OLDEST == trig_mode)
+      {
+         bestIdx = 0;
+
+         if( (cTime - cur_out1_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out1_time);
+         }
+
+         if( (cTime - cur_out2_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out2_time);
+            bestIdx = 1;
+         }
+
+         if( (cTime - cur_out3_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out3_time);
+            bestIdx = 2;
+         }
+
+         if( (cTime - cur_out4_time) > maxTime)
+         {
+            maxTime = (cTime - cur_out4_time);
+            bestIdx = 3;
+         }
+
+         next_out_idx = bestIdx;
+         return;
+      }
+
+
+      if(TRIG_MODE_DYNAMIC_HIGHEST == trig_mode)
+      {
+         bestIdx = 0;
+
+         bestNote = -1;
+
+         if(cur_out1_note_transp > bestNote)
+         {
+            bestNote = cur_out1_note_transp;
+            bestIdx = 0;
+         }
+
+         if(cur_out2_note_transp > bestNote)
+         {
+            bestNote = cur_out2_note_transp;
+            bestIdx = 1;
+         }
+
+         if(cur_out3_note_transp > bestNote)
+         {
+            bestNote = cur_out3_note_transp;
+            bestIdx = 2;
+         }
+
+         if(cur_out4_note_transp > bestNote)
+         {
+            bestNote = cur_out4_note_transp;
+            bestIdx = 3;
+         }
+
+         next_out_idx = bestIdx;
+         return;
+      }
+
+
+      if(TRIG_MODE_DYNAMIC_LOWEST == trig_mode)
+      {
+         bestIdx = 0;
+
+         bestNote = 128;
+
+         if(cur_out1_note_transp < bestNote)
+         {
+            bestNote = cur_out1_note_transp;
+            bestIdx = 0;
+         }
+
+         if(cur_out2_note_transp < bestNote)
+         {
+            bestNote = cur_out2_note_transp;
+            bestIdx = 1;
+         }
+
+         if(cur_out3_note_transp < bestNote)
+         {
+            bestNote = cur_out3_note_transp;
+            bestIdx = 2;
+         }
+
+         if(cur_out4_note_transp < bestNote)
+         {
+            bestNote = cur_out4_note_transp;
+            bestIdx = 3;
+         }
+
+         next_out_idx = bestIdx;
+         return;
+      }
+   }
+
+   // <method.png>
+   protected method processFrame(MIDIPipeFrame _frame) {
+
+      MIDIPipeFrame origFrame = _frame;
+
+      _frame.deleteNoteOnsByFlt(in_dev, in_ch);
+      _frame.deleteNoteOffsByFlt(in_dev, in_ch);
+
+      if(cached_num_out >= 1)
+      {
+         boolean bMirror = ((null != cached_dbl_dev) && b_dbl_en);
+
+         NodeMonoPolyPattern pat <= nodeGetCurrentPlayPattern();
+         if(null == pat)
+         {
+            pat <= empty_pattern;
+         }
+
+         // Note-off
+         processFrameNoteOffs(_frame, origFrame);
+
+         // Note-on
+         switch(trig_mode)
+         {
+            case TRIG_MODE_UNISON:
+               int cTime = milliSeconds();
+
+               last_out_devs_and_chs.empty();
+               b_first_trig = false;
+
+               if(null != cached_out1_dev)
+               {
+                  origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, out1_dev, out1_ch,
+                                             pat.out1_transpose,
+                                             vel_mode, b_vel_fixed
+                                             );
+
+                  last_out_devs_and_chs.add(out1_dev);
+                  last_out_devs_and_chs.add(out1_ch);
+
+                  if(bMirror)
+                  {
+                     origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, dbl_dev, getDblCh(out1_ch),
+                                                pat.out1_transpose,
+                                                vel_mode, b_vel_fixed
+                                                );
+
+                     last_out_devs_and_chs.add(dbl_dev);
+                     last_out_devs_and_chs.add(getDblCh(out1_ch));
+                  }
+
+                  cur_out1_time = cTime;
+               }
+
+               if(null != cached_out2_dev)
+               {
+                  origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, out2_dev, out2_ch,
+                                             pat.out2_transpose,
+                                             vel_mode, b_vel_fixed
+                                             );
+
+                  last_out_devs_and_chs.add(out2_dev);
+                  last_out_devs_and_chs.add(out2_ch);
+
+                  if(bMirror)
+                  {
+                     origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, dbl_dev, getDblCh(out2_ch),
+                                                pat.out2_transpose,
+                                                vel_mode, b_vel_fixed
+                                                );
+
+                     last_out_devs_and_chs.add(dbl_dev);
+                     last_out_devs_and_chs.add(getDblCh(out2_ch));
+                  }
+
+                  cur_out2_time = cTime;
+               }
+
+               if(null != cached_out3_dev)
+               {
+                  origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, out3_dev, out3_ch,
+                                             pat.out3_transpose,
+                                             vel_mode, b_vel_fixed
+                                             );
+
+                  last_out_devs_and_chs.add(out3_dev);
+                  last_out_devs_and_chs.add(out3_ch);
+
+                  if(bMirror)
+                  {
+                     origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, dbl_dev, getDblCh(out3_ch),
+                                                pat.out3_transpose,
+                                                vel_mode, b_vel_fixed
+                                                );
+
+                     last_out_devs_and_chs.add(dbl_dev);
+                     last_out_devs_and_chs.add(getDblCh(out3_ch));
+                  }
+
+                  cur_out3_time = cTime;
+               }
+
+               if(null != cached_out4_dev)
+               {
+                  origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, out4_dev, out4_ch,
+                                             pat.out4_transpose,
+                                             vel_mode, b_vel_fixed
+                                             );
+
+                  last_out_devs_and_chs.add(out4_dev);
+                  last_out_devs_and_chs.add(out4_ch);
+
+                  if(bMirror)
+                  {
+                     origFrame.mirrorNoteOnOffs(_frame, in_dev, in_ch, dbl_dev, getDblCh(out4_ch),
+                                                pat.out4_transpose,
+                                                vel_mode, b_vel_fixed
+                                                );
+
+                     last_out_devs_and_chs.add(dbl_dev);
+                     last_out_devs_and_chs.add(getDblCh(out4_ch));
+                  }
+
+                  cur_out4_time = cTime;
+               }
+               break;
+
+            case TRIG_MODE_ROUNDROBIN:
+            case TRIG_MODE_RANDOM:
+            case TRIG_MODE_RANDOM_NOREPEAT:
+            case TRIG_MODE_RPN:
+            case TRIG_MODE_DYNAMIC_NEWEST:
+            case TRIG_MODE_DYNAMIC_OLDEST:
+            case TRIG_MODE_DYNAMIC_HIGHEST:
+            case TRIG_MODE_DYNAMIC_LOWEST:
+
+               // Process note-on events
+               int evIdx = 0;
+
+               loop(origFrame.numEventsNoteOn)
+               {
+                  loop(1 + b_trig_double)
+                  {
+                     if([TRIG_MODE_DYNAMIC_NEWEST, TRIG_MODE_DYNAMIC_OLDEST, TRIG_MODE_DYNAMIC_HIGHEST, TRIG_MODE_DYNAMIC_LOWEST].contains(trig_mode))
+                     {
+                        allocDynamic(); // update next_out_idx
+                     }
+
+                     processFrameRR(evIdx, _frame, origFrame, pat, -1/*forceOutNr*/);
+
+                     if(b_trig_paired)
+                     {
+                        switch(last_out_idx)
+                        {
+                           case 0:
+                              processFrameRR(evIdx, _frame, origFrame, pat, 1/*forceOutNr*/);
+                              break;
+
+                           case 1:
+                              processFrameRR(evIdx, _frame, origFrame, pat, 0/*forceOutNr*/);
+                              break;
+
+                           case 2:
+                              processFrameRR(evIdx, _frame, origFrame, pat, 3/*forceOutNr*/);
+                              break;
+
+                           case 3:
+                              processFrameRR(evIdx, _frame, origFrame, pat, 2/*forceOutNr*/);
+                              break;
+                        }
+                     }
+
+                     if(b_trig_next)
+                     {
+                        processFrameRR(evIdx, _frame, origFrame, pat, ((last_out_idx + 1) & 3)/*forceOutNr*/);
+                     }
+                  }
+
+                  evIdx++;
+               } // loop note on
+
+               break;
+
+         } // switch trig_mode
+
+         MIDIPipeFrame *ctlFrame;
+
+         if(b_ctl_gate)
+         {
+            ctl_gate_frame.mergeFrame(origFrame);
+            ctlFrame <= ctl_gate_frame;
+         }
+         else
+         {
+            ctlFrame <= origFrame;
+         }
+
+
+         if( !b_ctl_gate || (b_ctl_gate && !b_first_trig) )
+         {
+            // Controllers
+            switch(ctl_mode)
+            {
+               case CTL_MODE_ALL:
+                  if(null != cached_out1_dev)
+                  {
+                     _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out1_dev, out1_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+                     if(bMirror)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out1_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                     }
+                  }
+
+                  if(null != cached_out2_dev)
+                  {
+                     _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out2_dev, out2_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+
+                     if(bMirror)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out2_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                     }
+                  }
+
+                  if(null != cached_out3_dev)
+                  {
+                     _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out3_dev, out3_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+                     if(bMirror)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out3_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                     }
+                  }
+
+                  if(null != cached_out4_dev)
+                  {
+                     _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out4_dev, out4_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+
+                     if(bMirror)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out4_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                     }
+                  }
+                  break;
+
+               case CTL_MODE_ACTIVE:
+                  if(null != cached_out1_dev)
+                  {
+                     if(-1 != cur_out1_note)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out1_dev, out1_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+
+                        if(bMirror)
+                        {
+                           _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out1_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                        }
+                     }
+                  }
+
+                  if(null != cached_out2_dev)
+                  {
+                     if(-1 != cur_out2_note)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out2_dev, out2_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+
+                        if(bMirror)
+                        {
+                           _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out2_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                        }
+                     }
+                  }
+
+                  if(null != cached_out3_dev)
+                  {
+                     if(-1 != cur_out3_note)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out3_dev, out3_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+                        if(bMirror)
+                        {
+                           _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out3_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                        }
+                     }
+                  }
+
+                  if(null != cached_out4_dev)
+                  {
+                     if(-1 != cur_out4_note)
+                     {
+                        _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, out4_dev, out4_ch, false/*bMergeNotes*/, true/*bMergeRPN*/);
+                        if(bMirror)
+                        {
+                           _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, dbl_dev, getDblCh(out4_ch), false/*bMergeNotes*/, true/*bMergeRPN*/);
+                        }
+                     }
+                  }
+                  break;
+
+               case CTL_MODE_LAST:
+                  byte lastDev;
+                  byte lastCh;
+                  int lastIdx = 0;
+                  loop(last_out_devs_and_chs.numElements / 2)
+                  {
+                     lastDev = last_out_devs_and_chs.get(lastIdx + 0);
+                     lastCh  = last_out_devs_and_chs.get(lastIdx + 1);
+
+                     // (note) last_out array also contains dbl_dev entries (if enabled)
+                     _frame.mergeFrameFltDst(ctlFrame, in_dev, in_ch, lastDev, lastCh, false/*bMergeNotes*/, true/*bMergeRPN*/);
+
+                     lastIdx += 2;
+                  }
+                  break;
+
+            } // switch ctl_mode
+
+         } // if ctl_gate && note trig or !ctl_gate
+
+      } // if cached_num_out >= 1
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+
+                     ui_b_node_pattern_changed = true;
+
+                     // Events.SendPlayPat();
+
+                     Global.Debug3("mp: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            if(b_auto_filter_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     ui_b_node_pattern_changed = true;
+                     // Events.SendPlayPat();
+
+                     Global.Debug3("mp: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         ui_b_node_pattern_changed = true;
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [
+         // RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+         // RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+         RPN_COMMON_UI_PRGCHG,
+         RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+         RPN_COMMON_MUTE_TEMP_TOGGLE,
+         RPN_COMMON_MUTE_TEMP_1_8,
+         RPN_COMMON_MUTE_TEMP_9_16,
+         RPN_COMMON_SOLO_TEMP_1_8,
+         RPN_COMMON_SOLO_TEMP_9_16,
+         RPN_COMMON_UI_NODE_MUTE,
+         RPN_COMMON_UI_NODE_SOLO,
+         RPN_COMMON_UI_PIPE_MUTE,
+         RPN_COMMON_UI_PIPE_SOLO,
+
+         // RPN_COMMON_TRANSPOSE,  // nodeParseRPN_Transpose
+
+         // RPN_COMMON_VELOCITY_OFF,  // nodeParseRPN_Vel_Dur_Speed
+         // RPN_COMMON_VELOCITY_SCL,
+         // RPN_COMMON_DURATION_OFF,
+         // RPN_COMMON_DURATION_SCL,
+         // RPN_COMMON_SPEED,
+         // RPN_COMMON_POSITION,
+         // RPN_COMMON_SPEEDSYNCRATE,
+
+         // RPN_COMMON_PROB_ALL_REL,  // nodeParseRPN_Probability
+         // RPN_COMMON_PROB_TRACK_1,
+         // RPN_COMMON_PROB_TRACK_2,
+         // RPN_COMMON_PROB_TRACK_3,
+         // RPN_COMMON_PROB_TRACK_4,
+         // RPN_COMMON_PROB_TRACK_5,
+         // RPN_COMMON_PROB_TRACK_6,
+         // RPN_COMMON_PROB_TRACK_7,
+         // RPN_COMMON_PROB_TRACK_8,
+         // RPN_COMMON_PROB_TRACK_9,
+         // RPN_COMMON_PROB_TRACK_10,
+         // RPN_COMMON_PROB_TRACK_11,
+         // RPN_COMMON_PROB_TRACK_12,
+         // RPN_COMMON_PROB_TRACK_13,
+         // RPN_COMMON_PROB_TRACK_14,
+         // RPN_COMMON_PROB_TRACK_15,
+         // RPN_COMMON_PROB_TRACK_16,
+
+         // RPN_COMMON_RESET,
+         // RPN_COMMON_RUN,
+         // RPN_COMMON_LENGTH,
+         // RPN_COMMON_OFFSET,
+         // RPN_COMMON_RESTART,
+         // RPN_COMMON_OFFSET_ADD,
+         // RPN_COMMON_SEEK_OFFSET,
+         // RPN_COMMON_SEEK_REL_PRE,
+         // RPN_COMMON_GATE,
+         // RPN_COMMON_SEEK_REL_POST,
+
+         RPN_MONOPOLY_OUTPUT,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      handlePrgChg(_framePlay);
+      handlePrgChg(_frameRec);
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         short t = getRPN(_framePlay, _frameRec, RPN_MONOPOLY_OUTPUT);
+         if(t >= 0)
+         {
+            next_out_idx = (t & 3);
+         }
+
+         // Handle MUTE, MUTE_TOGGLE, MUTE_TEMP, MUTE_TEMP_TOGGLE
+         nodeParseRPN_Mute(_framePlay, _frameRec);
+      }
+
+      _bMuted |= nodeHandleQueuedMuteTemp();
+
+      if(!_bMuted)
+      {
+         b_first_trig = true;
+
+         if(null != cached_in_dev)
+         {
+            if(_frameRec.hasEvents())
+            {
+               processFrame(_frameRec);
+            }
+
+            if(_framePlay.hasEvents())
+            {
+               processFrame(_framePlay);
+            }
+         }
+      }
+
+   }
+
+}

@@ -1,0 +1,275 @@
+// ----
+// ---- file   : SongFile.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2007-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 04Nov2007, 05Nov2007, 08Nov2007, 09Nov2007, 10Nov2007, 12Nov2007, 13Jan2008
+// ----          15Jan2008, 21Jan2008, 27Jan2008, 01Aug2008, 07Aug2008, 10Aug2008, 11Aug2008
+// ----          13Aug2008, 21Sep2009, 23Sep2009, 27Dec2009, 28Dec2009, 02Jan2010, 07Jan2010
+// ----          13Jan2010, 15Jan2010, 07Feb2010, 08Feb2010, 09Feb2010, 15Feb2010, 20Feb2010
+// ----          21Feb2010, 25Feb2010, 01Mar2010, 29Apr2010, 13Jun2010, 29Jun2010, 01Jul2010
+// ----          02Jul2010, 07Jul2010, 12Jul2010, 13Jul2010, 19Jul2010, 03Sep2010, 04Sep2010
+// ----          05Sep2010, 08Sep2010, 14Sep2010, 15Sep2010, 21Sep2010, 27Sep2010, 10Oct2010
+// ----          13Oct2010, 16Oct2010, 17Oct2010, 24Oct2010, 21Nov2010, 03Feb2011, 17Feb2011
+// ----          18Feb2011, 24Feb2011, 26Feb2011, 09Mar2011, 17Mar2011, 18Mar2011, 20Mar2011
+// ----          28Mar2011, 04Apr2011, 06Apr2011, 22Apr2011, 23Apr2011, 26Jun2011, 05Jan2012
+// ----          07Jan2012, 15Jan2012, 07Feb2012, 13Feb2012, 19Feb2012, 26Jun2012, 06Dec2012
+// ----          08Jan2013, 09Jan2013, 11Jan2013, 25Mar2013, 01Apr2013, 02Apr2013, 06Apr2013
+// ----          17Apr2013, 22Apr2013, 08May2013, 10May2013, 14May2013, 20May2013, 23May2013
+// ----          24May2013, 25May2013, 27May2013, 01Jun2013, 28Jul2014, 09Aug2014, 15Aug2014
+// ----          18Aug2014, 21Aug2014, 09Sep2014, 13Sep2014, 14Sep2014, 19Sep2014, 21Sep2014
+// ----          27Sep2014, 28Sep2014, 29Sep2014, 17Oct2014, 16Nov2014, 11Feb2015, 17Feb2015
+// ----          21Feb2015, 24Feb2015, 01Mar2015, 17May2015, 26Sep2015, 27Sep2015, 03Oct2015
+// ----          14Nov2015, 15Nov2015, 23Dec2015, 19Mar2016, 08Apr2016, 12Mar2017, 09May2017
+// ----          21May2018, 06Jun2018, 08Dec2018, 02Mar2019, 10Feb2021, 31May2021, 19Jul2021
+// ----          13Dec2021, 17Dec2021, 18Dec2021, 20Dec2021, 24Nov2022, 22Apr2023, 13Oct2023
+// ----          14Mar2025
+// ----
+// ----
+// ----
+
+module MSongFile;
+
+use namespace st2;
+
+
+// class.png>
+class SongFile {
+
+   static HashTable trace_once_cache;
+
+   // Note:
+   //   Synergy uses a "chunky" file format.
+   //   The file is split into pseudo-hierarchical sections ("chunks").
+   //   Each chunk starts with a four-cc tag, followed by the chunk size.
+   //   The chunk size is determined by the chunk header (4+4 =8 bytes) plus
+   //   the actual chunk data.
+   //   Files are always stored in little endian format.
+   //
+
+   define int FOURCC_SONG_FILEHEADER    = 0x464C5558; // Song Header 'FLUX'
+   define int FOURCC_PIPE_FILEHEADER    = 0x50464C58; // Pipe Header 'PFLX'
+   define int FOURCC_NODE_FILEHEADER    = 0x4E464C58; // Pipe Header 'NFLX'
+   define int FOURCC_MMS_FILEHEADER     = 0x4D464C58; // Pipe Header 'MFLX'
+   define int FOURCC_SUBSONG_FILEHEADER = 0x53464C58; // Pipe Header 'SFLX'
+
+   //
+   // Sub-Songs
+   //
+   define int FOURCC_SUBSONGS    = 0x0FF10000;
+   define int FOURCC_SUBSONGS_DEFAULT       = 0x0FF10010;
+
+   //
+   // Song
+   //
+   define int FOURCC_SONG        = 0x10000000; // General song attributes
+   define int FOURCC_SONG_NAME              = 0x10000010;
+   define int FOURCC_SONG_SUBNAME           = 0x10000018;
+   define int FOURCC_SONG_AUTHOR            = 0x10000020;
+   define int FOURCC_SONG_COMMENT           = 0x10000030;
+   define int FOURCC_SONG_SMFEXPORTPATH     = 0x10000040;
+   define int FOURCC_SONG_BPM               = 0x10000070;
+   define int FOURCC_SONG_PPQ               = 0x10000080;
+   define int FOURCC_SONG_SIG_BEATS         = 0x10000088;
+   define int FOURCC_SONG_SIG_NOTELEN       = 0x1000008A;
+   define int FOURCC_SONG_AUDIOMASTERVOL    = 0x10000090; // obsolete
+   define int FOURCC_SONG_WAVID             = 0x100000D0; // obsolete
+   define int FOURCC_SONG_WAVNUMTAKES       = 0x100000D2; // obsolete
+   define int FOURCC_SONG_WAVAREA           = 0x100000D4; // obsolete
+   define int FOURCC_SONG_WAVREALTIME       = 0x100000D8; // obsolete
+   define int FOURCC_SONG_WAVNORMALIZE      = 0x100000DA; // obsolete
+   define int FOURCC_SONG_WAVCLEAR          = 0x100000DC; // obsolete
+   define int FOURCC_SONG_MARKERS           = 0x100000E1; // E0 = old version markers
+   define int FOURCC_SONG_MARKER_LABELS     = 0x100000E8;
+   define int FOURCC_SONG_CURSORPOS         = 0x100000F0;
+   define int FOURCC_SONG_CYCLELENGTH       = 0x100000F4;
+   define int FOURCC_SONG_CYCLEENABLE       = 0x100000F6;
+   define int FOURCC_SONG_PIPENODE_AB       = 0x100000F8;
+   define int FOURCC_SONG_PIPENODE_GID_MAX  = 0x100000FA;
+   define int FOURCC_SONG_PIPEROOT          = 0x10000100;
+   define int FOURCC_SONG_SAMPLE_PREFIXES   = 0x10000170;
+   define int FOURCC_SONG_SAMPLE_FILTERS    = 0x10000180;
+   define int FOURCC_SONG_CTLTAGS           = 0x10000200; // CtlTag entries
+   define int FOURCC_SONG_CTLTAG_ENTRY        = 0x10000210;  // also contains FOURCC_MMC_ENTRY_xxx subchunks
+   define int FOURCC_SONG_CTLTAG_ENTRY_NAME            = 0x10000212;
+   define int FOURCC_SONG_CTLTAG_ENTRY_NAME_EDITED     = 0x10000213;
+   define int FOURCC_SONG_CTLTAG_ENTRY_GROUP           = 0x10000214;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD        = 0x10000216;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_COLOR      = 0x10000218;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_TYPE       = 0x1000021A;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_A      = 0x1000021C;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_VAL_B      = 0x1000021E;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_PAD_STATE  = 0x10000220;
+   define int FOURCC_SONG_CTLTAG_ENTRY_PUSH_LAST_SENT  = 0x10000222;
+   define int FOURCC_SONG_CTLTAG_ENTRY_SEND_RESET      = 0x10000240;
+   define int FOURCC_SONG_CTLTAG_ENTRY_RESET_VALUE     = 0x10000242;
+   define int FOURCC_SONG_CTLTAGS_STATE     = 0x10000300;
+
+
+   // Audio.Waveforms (shared by all (sub-)songs)
+   define int FOURCC_WAVEFORMS = 0x60000000;
+   define int FOURCC_WAVEFORM                 = 0x61000000; // See StWaveform.h
+   define int FOURCC_WAVEFORM_TYPE            = 0x61000008;
+   define int FOURCC_WAVEFORM_NAME            = 0x61000010;
+   define int FOURCC_WAVEFORM_NUMCHANNELS     = 0x61000020;
+   define int FOURCC_WAVEFORM_LOOPOFF         = 0x61000030;
+   define int FOURCC_WAVEFORM_LOOPLEN         = 0x61000040;
+   define int FOURCC_WAVEFORM_BASEFREQ        = 0x61000050;
+   define int FOURCC_WAVEFORM_SAMPLERATE      = 0x61000060;
+   //         (TODO) WAVEFORM_DATATYPE  (default is 32bit float)
+   define int FOURCC_WAVEFORM_DATA            = 0x61000064;
+   define int FOURCC_WAVEFORM_PROCSIZE        = 0x61000068;
+   define int FOURCC_WAVEFORM_UIOFFSET        = 0x61000070;
+   define int FOURCC_WAVEFORM_UIZOOM          = 0x61000074;
+   define int FOURCC_WAVEFORM_UIPATHNAME      = 0x61000078;
+
+
+   // PipeRoot out device table
+   define int FOURCC_PIPEROOTDEVMAP = 0x20000000;
+
+   define int FOURCC_PIPEROOTDEVMAP_DEVNAME = 0x20000010;
+
+
+   // Project-specific MIDI device configuration
+   define int FOURCC_MIDIOUTDEVCFGS = 0x21000000;
+   define int FOURCC_MIDIINDEVCFGS  = 0x21100000;
+
+   define int FOURCC_MIDIDEVCFG             = 0x21001000;
+   define int FOURCC_MIDIDEVCFG_DEVNAME     = 0x21001010;
+   define int FOURCC_MIDIDEVCFG_ALIAS       = 0x21001020;
+   define int FOURCC_MIDIDEVCFG_PROFILE_CH  = 0x21001030;  // midich of next profile id
+   define int FOURCC_MIDIDEVCFG_PROFILE_ID  = 0x21001034;  // profile id
+
+
+   // MIDI mapper
+   define int FOURCC_MIDIMAPS = 0x80000000;
+
+   define int FOURCC_MIDIMAP_GLOBAL     = 0x80000010;
+   define int FOURCC_MIDIMAP_PGSTART    = 0x80000020;
+   define int FOURCC_MIDIMAP_PGMORPH    = 0x80000030;
+   define int FOURCC_MIDIMAP_PGPIPEROOT = 0x80000040;
+   define int FOURCC_MIDIMAP_PGPIPE     = 0x80000050;
+   define int FOURCC_MIDIMAP_PGPIPEMAP  = 0x80000060;
+   define int FOURCC_MIDIMAP_PGPROJECT  = 0x80000070;
+   define int FOURCC_MIDIMAP_PGCTLTAG   = 0x80000078;
+   define int FOURCC_MIDIMAP_NTSEQCTX   = 0x80000080; // NodeTrackerEditor mmc_seq
+
+   define int FOURCC_MIDIMAP_NODEEDITOR_CLASSNAME = 0x80001000;
+   define int FOURCC_MIDIMAP_NODEEDITOR_DATA      = 0x80001010;
+
+   // MIDIMapContext
+   define int FOURCC_MIDIMAP_VIEWID    = 0x80000200; // follows 'master' MMC chunk if MMC has sub-views
+
+   define int FOURCC_MMC                  = 0x80010000;
+   define int FOURCC_MMC_NAME             = 0x80010010;
+   define int FOURCC_MMC_MIDIMORPH_GROUP  = 0x80010014;
+   define int FOURCC_MMC_MIDIMORPH_SCENE  = 0x80010015;
+   define int FOURCC_MMC_PUSH_BGCOLS      = 0x80010100;
+   define int FOURCC_MMC_PUSH_FGCOLS      = 0x80010110;
+
+   // MIDIMapContext Entry
+   define int FOURCC_MMC_ENTRY            = 0x80010020;
+   define int FOURCC_MMC_ENTRY_TARGET     = 0x80011000;
+   define int FOURCC_MMC_ENTRY_DEV        = 0x80011010;  // alias or device name
+   define int FOURCC_MMC_ENTRY_CH         = 0x80011020;  // midi channel (0..15)
+   define int FOURCC_MMC_ENTRY_TYPE       = 0x80011030;
+   define int FOURCC_MMC_ENTRY_EXT_TYPE   = 0x80011040;
+   define int FOURCC_MMC_ENTRY_CLASS_TYPE = 0x80011050;
+   define int FOURCC_MMC_ENTRY_SYN_TYPE   = 0x80011060;
+
+
+   // Morph scenes
+   define int FOURCC_MORPHSCENES = 0x90000000;
+
+   // MIDIMorphScene
+   define int FOURCC_MMS          = 0x80020000;
+   define int FOURCC_MMS_ID       = 0x80020010;  // groupId in upper 8 bits
+   define int FOURCC_MMS_NAME     = 0x80020020;
+   define int FOURCC_MMS_LASTROW  = 0x80020030;
+
+   define int FOURCC_MMS_ENTRY     = 0x80020040;
+
+   define int FOURCC_MMS_ENTRY_MORPH_TARGET       = 0x80021020;
+   define int FOURCC_MMS_ENTRY_MORPH_ENABLE       = 0x80021028;
+   define int FOURCC_MMS_ENTRY_MORPH_TYPE         = 0x80021040;
+   define int FOURCC_MMS_ENTRY_MORPH_ARG1         = 0x80021060;
+   define int FOURCC_MMS_ENTRY_MORPH_ARG2         = 0x80021080;
+   define int FOURCC_MMS_ENTRY_MORPH_NOTE_ONOFF   = 0x800210A0;
+   define int FOURCC_MMS_ENTRY_MORPH_LABEL        = 0x800210B0;
+   define int FOURCC_MMS_ENTRY_MORPH_AUTO_LABEL   = 0x800210B1;
+   define int FOURCC_MMS_ENTRY_MORPH_LASTARG1     = 0x800210B8;
+   define int FOURCC_MMS_ENTRY_MORPH_ALL_CH       = 0x800210C0;
+   define int FOURCC_MMS_ENTRY_MORPH_ALL_TYPES    = 0x800210D0;
+   define int FOURCC_MMS_ENTRY_MORPH_ALL_SUBTYPES = 0x800210D8;
+
+   define int FOURCC_MORPHSCENES_CURRENT = 0x90000010; // selected scene indices (groups A..H)
+   define int FOURCC_MORPHSCENES_MULTIS  = 0x90000100; // per-group scene indices (groups A..H)
+
+   define int FOURCC_FADERPORT = 0x90001000; // PreSonus FaderPort state
+   define int FOURCC_CONSOLE1  = 0x90001100; // Softube Console-1 state
+
+   // Per-project MIDI profile data
+   define int FOURCC_PROFILEDATA = 0xa0000000;
+   define int FOURCC_PROFILEDATA_ENTRY = 0xa0001000;
+
+   // Pipe stream specific chunk ids:
+   define int FOURCC_PSTREAM_PIPE = 0xD0001000;
+
+   // Node stream specific chunk ids:
+   define int FOURCC_NSTREAM_NODE = 0xD0002000;
+
+   // // // Subsong stream specific chunk ids:
+   // // define int FOURCC_SUBSTREAM_SUBSONG = 0xD0003000;
+
+
+
+   // <log.png>
+   static DP(String _txt) {
+      // trace _txt;
+   }
+
+   // <log.png>
+   static TraceOnceBegin() {
+      trace_once_cache.alloc(3000);
+   }
+
+   // <log.png>
+   static TraceOnce(String msg) {
+      if(!trace_once_cache.exists(msg))
+      {
+         trace_once_cache[msg] = Object(true);
+
+         trace msg;
+      }
+   }
+
+   // <log.png>
+   static Debug2Once(String msg) {
+      if(!trace_once_cache.exists(msg))
+      {
+         trace_once_cache[msg] = Object(true);
+
+         Global.Debug2(msg);
+      }
+   }
+
+   // <log.png>
+   static Debug3Once(String msg) {
+      if(!trace_once_cache.exists(msg))
+      {
+         trace_once_cache[msg] = Object(true);
+
+         Global.Debug3(msg);
+      }
+   }
+
+   // <log.png>
+   static TraceOnceEnd() {
+      trace_once_cache.free();
+   }
+
+}

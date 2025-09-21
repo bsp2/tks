@@ -1,0 +1,805 @@
+// ----
+// ---- file   : Prophet12_OscForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 16Feb2017
+// ---- changed: 17Feb2017, 19Feb2017, 21Feb2017, 07May2017, 27May2017, 07Jun2017, 04Jan2018
+// ----          21Sep2023
+// ----
+// ----
+// ----
+
+module MProphet12_OscForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Prophet12_OscForm extends XMLForm, ActionProvider, MIDIMapDefs, Prophet12_Defs {
+
+   protected EditMIDISynthFormProphet12 *parent_editor;
+
+   protected Prophet12_Osc *osc;
+
+   protected byte  osc_nr;     // 1..4
+
+   protected ComboBox   *cm_shape;
+   protected FloatParam *fp_shapemod;
+   protected ComboBox   *cm_shape_left;
+   protected ComboBox   *cm_shape_right;
+   protected CheckBox   *cb_sync;
+   protected CheckBox   *cb_keyfollow;
+   protected CheckBox   *cb_wavereset;
+   protected CheckBox   *cb_enable;
+
+   protected FloatParam *fp_pitch;
+   protected FloatParam *fp_fine;
+   protected FloatParam *fp_slop;
+   protected FloatParam *fp_glide;
+   protected FloatParam *fp_fm;
+   protected CheckBox   *cb_fm_ext;
+   protected FloatParam *fp_am;
+   protected CheckBox   *cb_am_ext;
+   protected FloatParam *fp_level;
+
+   protected PopupMenu *pm_context;
+
+   protected static Prophet12_Osc osc_clipboard;
+
+
+   // <init.png>
+   public method init(EditMIDISynthFormProphet12 _parentEditor, byte _oscNr) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      osc_nr    = _oscNr;
+
+      if(!initPakFile("Prophet12_OscForm.xfm"))
+      {
+         trace "[---] failed to parse \"Prophet12_OscForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      fp_pitch.setUserTable(MIDI.midi_notes);
+      fp_pitch.setDisplayType(FloatParam.DISPLAY_USER);
+
+      cm_shape.setOptions(osc_shape_names);
+      cm_shape.setOptionBGColors(osc_shape_colors);
+
+      cm_shape_left.setOptions(osc_shapelr_names);
+      cm_shape_right.setOptions(osc_shapelr_names);
+
+      recursiveBuildTabCycleLists();
+
+      osc_clipboard.loadInit(osc_nr - 1);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       cm_shape,
+                       fp_shapemod,
+                       cm_shape_left,
+                       cm_shape_right,
+                       cb_sync,
+                       cb_keyfollow,
+                       cb_wavereset,
+                       cb_enable,
+
+                       fp_pitch,
+                       fp_fine,
+                       fp_slop,
+                       fp_glide,
+                       fp_fm,
+                       cb_fm_ext,
+                       fp_am,
+                       cb_am_ext,
+                       fp_level
+                     ]
+                    );
+   }
+
+   // <method_set.png>
+   public method showOsc(Prophet12_Osc _osc) {
+      osc <= _osc;
+
+      // trace "xxx showOSC idx="+osc.idx+" b_enabled="+osc.b_enable;
+
+      if(null != osc)
+      {
+         cm_shape      .setSelectedOptionAndEnable(osc.shape);
+         fp_shapemod   .setValueAndEnable(osc.shape_mod - 64);
+         cm_shape_left .setSelectedOptionAndEnable(osc.shape_left);
+         cm_shape_right.setSelectedOptionAndEnable(osc.shape_right);
+         handleShapeChanged(true/*bQuiet*/);
+
+         fp_pitch .setValueAndEnable(osc.pitch);
+         fp_fine  .setValueAndEnable(osc.fine - 50);
+         fp_slop  .setValueAndEnable(osc.slop);
+         fp_glide .setValueAndEnable(osc.glide);
+         cb_fm_ext.setSelectedAndEnable(osc.b_fm_ext);
+         handleFMExtChanged(true/*bQuiet*/);
+         fp_fm    .setValueAndEnable(osc.fm);
+         cb_am_ext.setSelectedAndEnable(osc.b_am_ext);
+         handleAMExtChanged(true/*bQuiet*/);
+         fp_am    .setValueAndEnable(osc.am);
+         fp_level .setValueAndEnable(osc.level);
+
+         cb_sync     .setSelectedAndEnable(osc.b_sync);
+         cb_keyfollow.setSelectedAndEnable(osc.b_keyfollow);
+         cb_wavereset.setSelectedAndEnable(osc.b_wavereset);
+         cb_enable   .setSelectedAndEnable(osc.b_enable);
+      }
+      else
+      {
+         cm_shape      .setSelectedOptionAndDisable(-1);
+         fp_shapemod   .setValueAndDisable(0);
+         cm_shape_left .setSelectedOptionAndDisable(-1);
+         cm_shape_right.setSelectedOptionAndDisable(-1);
+
+         fp_pitch .setValueAndDisable(0);
+         fp_fine  .setValueAndDisable(0);
+         fp_slop  .setValueAndDisable(0);
+         fp_glide .setValueAndDisable(0);
+         fp_fm    .setValueAndDisable(0);
+         cb_fm_ext.setSelectedAndDisable(false);
+         fp_am    .setValueAndDisable(0);
+         cb_am_ext.setSelectedAndDisable(false);
+         fp_level .setValueAndDisable(0);
+
+         cb_sync     .setSelectedAndDisable(false);
+         cb_keyfollow.setSelectedAndDisable(false);
+         cb_wavereset.setSelectedAndDisable(false);
+         cb_enable   .setSelectedAndDisable(false);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleShapeChanged(boolean _bQuiet) {
+      if(null != osc)
+      {
+         osc.shape = cm_shape.getSelectedOption();
+
+         if(!_bQuiet)
+            cb_enable.setSelected(true);
+
+         if(0 != osc.shape)
+         {
+            if(!_bQuiet)
+               osc.b_enable = true;
+            cb_enable.setSelected(true);
+         }
+         else
+         {
+            if(!_bQuiet)
+               osc.b_enable = false;
+            cb_enable.setSelected(false);
+         }
+
+         if(osc.shape >= 5/*tines*/)
+         {
+            cm_shape_left .setEditable(true);
+            cm_shape_right.setEditable(true);
+         }
+         else
+         {
+            cm_shape_left .setEditable(false);
+            cm_shape_right.setEditable(false);
+         }
+
+         if(!_bQuiet)
+            osc.sendShape(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         if(!_bQuiet)
+            Global.Print("Osc "+osc_nr+" Shape is "+cm_shape.getSelectedOptionName());
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleShapeModChanged() {
+      if(null != osc)
+      {
+         osc.shape_mod = fp_shapemod.getFloatValue() + 64;
+
+         osc.sendShapeMod(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Shape Mod is "+osc.shape_mod);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleShapeLeftChanged() {
+      if(null != osc)
+      {
+         osc.shape_left = cm_shape_left.getSelectedOption();
+
+         osc.sendShapeLeft(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Wave Left is "+cm_shape_left.getSelectedOptionName());
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleShapeRightChanged() {
+      if(null != osc)
+      {
+         osc.shape_right = cm_shape_right.getSelectedOption();
+
+         osc.sendShapeRight(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Wave Right is "+cm_shape_right.getSelectedOptionName());
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSyncChanged() {
+      if(null != osc)
+      {
+         osc.b_sync = cb_sync.isSelected();
+
+         osc.sendSyncEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Sync is "+Utils.GetEnableString(osc.b_sync));
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleKeyFollowChanged() {
+      if(null != osc)
+      {
+         osc.b_keyfollow = cb_keyfollow.isSelected();
+
+         osc.sendKeyFollow(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Key Follow is "+Utils.GetEnableString(osc.b_keyfollow));
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleWaveResetChanged() {
+      if(null != osc)
+      {
+         osc.b_wavereset = cb_wavereset.isSelected();
+
+         osc.sendWaveReset(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Wave Reset is "+Utils.GetEnableString(osc.b_wavereset));
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      if(null != osc)
+      {
+         osc.b_enable = cb_enable.isSelected();
+
+         Global.Print("Osc "+osc_nr+" Osc is "+Utils.GetEnableString(osc.b_enable));
+
+         updateAutogenAM();
+         updateAutogenFM();
+         osc.sendEnable(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePitchChanged() {
+      if(null != osc)
+      {
+         osc.pitch = fp_pitch.getFloatValue();
+
+         osc.sendPitch(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Pitch is "+osc.pitch);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFineChanged() {
+      if(null != osc)
+      {
+         osc.fine = fp_fine.getFloatValue() + 50;
+
+         osc.sendFine(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Fine is "+osc.fine);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSlopChanged() {
+      if(null != osc)
+      {
+         osc.slop = fp_slop.getFloatValue();
+
+         osc.sendSlop(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Slop is "+osc.slop);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleGlideChanged() {
+      if(null != osc)
+      {
+         osc.glide = fp_glide.getFloatValue();
+
+         osc.sendGlide(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Glide Amount is "+osc.glide);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <method_update.png>
+   public method updateAutogenFM() {
+      if(null != osc)
+      {
+         Prophet12_Program layer <= parent_editor.getEditLayer();
+
+         if(!osc.sendFM(parent_editor, layer, false/*bProxy*/))
+         {
+            Global.Warning("Osc "+osc_nr+": all mod slots in use (FM)");
+         }
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFMChanged() {
+      if(null != osc)
+      {
+         osc.fm = fp_fm.getFloatValue();
+
+         Global.Print("Osc "+osc_nr+" FM Amount is "+osc.fm);
+
+         updateAutogenFM();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleFMExtChanged(boolean _bQuiet) {
+      if(null != osc)
+      {
+         osc.b_fm_ext = cb_fm_ext.isSelected();
+
+         if(osc.b_fm_ext)
+         {
+            fp_fm.setMaxValue(255 + 3*127);
+         }
+         else
+         {
+            fp_fm.setMaxValue(255);
+         }
+
+         fp_fm.setValue(osc.fm);
+         fp_fm.redraw();
+
+         if(!_bQuiet)
+            Global.Print("Osc "+osc_nr+" FM Ext Amount is "+Utils.GetEnableString(osc.b_fm_ext));
+
+         if(!_bQuiet)
+            updateAutogenFM();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <method_update.png>
+   public method updateAutogenAM() {
+      if(null != osc)
+      {
+         Prophet12_Program layer <= parent_editor.getEditLayer();
+
+         if(!osc.sendAM(parent_editor, layer, false/*bProxy*/))
+         {
+            Global.Warning("Osc "+osc_nr+": all mod slots in use (AM)");
+         }
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAMChanged() {
+      if(null != osc)
+      {
+         osc.am = fp_am.getFloatValue();
+
+         Global.Print("Osc "+osc_nr+" AM Amount is "+osc.am);
+
+         updateAutogenAM();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAMExtChanged(boolean _bQuiet) {
+      if(null != osc)
+      {
+         osc.b_am_ext = cb_am_ext.isSelected();
+
+         if(osc.b_am_ext)
+         {
+            fp_am.setMaxValue(255 + 3*127);
+         }
+         else
+         {
+            fp_am.setMaxValue(255);
+         }
+
+         fp_am.setValue(osc.am);
+         fp_am.redraw();
+
+         if(!_bQuiet)
+            Global.Print("Osc "+osc_nr+" AM Ext Amount is "+Utils.GetEnableString(osc.b_am_ext));
+
+         if(!_bQuiet)
+            updateAutogenAM();
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLevelChanged() {
+      if(null != osc)
+      {
+         osc.level = fp_level.getFloatValue();
+
+         osc.sendLevel(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         Global.Print("Osc "+osc_nr+" Level is "+osc.level);
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null != osc)
+      {
+         osc_clipboard.copyFrom(osc);
+
+         Global.Print("Copy Osc to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != osc)
+      {
+         osc.copyFrom(osc_clipboard);
+
+         osc.send(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         showOsc(osc);
+
+         parent_editor.handlePatchEdited();
+
+         Global.Print("Paste Osc from clipboard");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != osc)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Randomize Osc..", "rand_osc");
+         pmb.setAccelerators("", "r");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show Osc context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // // <midi_mml.png>
+   // public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+   //    if(null == osc)
+   //    {
+   //       // Ooops
+   //       return false;
+   //    }
+
+   //    return false;
+   // }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ////ActionProvider ap <= _action.getActionProvider();
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("Prophet12_OscForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+
+               case "rand_osc":
+                  parent_editor.showRandOscDialog();
+                  return true;
+            }
+            return true;
+
+         case @(cm_shape):
+            handleShapeChanged(false/*bQuiet*/);
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cm_shape.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(fp_shapemod):
+            handleShapeModChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_shapemod.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(cm_shape_left):
+            handleShapeLeftChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cm_shape_left.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(cm_shape_right):
+            handleShapeRightChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cm_shape_right.getSelectedOption(), false/*bExt*/);
+            return true;
+
+         case @(cb_sync):
+            handleSyncChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cb_sync.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cb_keyfollow):
+            handleKeyFollowChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cb_keyfollow.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cb_wavereset):
+            handleWaveResetChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cb_wavereset.isSelected(), false/*bExt*/);
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, cb_enable.isSelected(), false/*bExt*/);
+            return true;
+
+
+         case @(fp_pitch):
+            handlePitchChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_pitch.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_fine):
+            handleFineChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_fine.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_slop):
+            handleSlopChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_slop.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_glide):
+            handleGlideChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_glide.getFloatValue(), false/*bExt*/);
+            return true;
+
+         case @(fp_fm):
+            handleFMChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_fm.getFloatValue(), cb_fm_ext.isSelected()/*bExt*/);
+            return true;
+
+         case @(cb_fm_ext):
+            handleFMExtChanged(false/*bQuiet*/);
+            parent_editor.tryMultiEditOsc(osc_nr, "fp_fm", fp_fm.getFloatValue(), cb_fm_ext.isSelected()/*bExt*/);
+            return true;
+
+         case @(fp_am):
+            handleAMChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, "fp_am", fp_am.getFloatValue(), cb_am_ext.isSelected()/*bExt*/);
+            return true;
+
+         case @(cb_am_ext):
+            handleAMExtChanged(false/*bQuiet*/);
+            parent_editor.tryMultiEditOsc(osc_nr, "fp_am", fp_am.getFloatValue(), cb_am_ext.isSelected()/*bExt*/);
+            return true;
+
+         case @(fp_level):
+            handleLevelChanged();
+            parent_editor.tryMultiEditOsc(osc_nr, ap.layer_id, fp_level.getFloatValue(), false/*bExt*/);
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+   // <ui_handle.png>
+   public method tryMultiEditById(String _id, float _val, boolean _bExt) {
+      switch(_id)
+      {
+         case "cm_shape":
+            cm_shape.setSelectedOption(_val);
+            handleShapeChanged(false/*bQuiet*/);
+            return;
+
+         case "fp_shapemod":
+            fp_shapemod.setValue(_val);
+            handleShapeModChanged();
+            return;
+
+         case "cm_shape_left":
+            cm_shape_left.setSelectedOption(_val);
+            handleShapeLeftChanged();
+            return;
+
+         case "cm_shape_right":
+            cm_shape_right.setSelectedOption(_val);
+            handleShapeRightChanged();
+            return;
+
+         case "cb_sync":
+            cb_sync.setSelected(_val);
+            handleSyncChanged();
+            return;
+
+         case "cb_keyfollow":
+            cb_keyfollow.setSelected(_val);
+            handleKeyFollowChanged();
+            return;
+
+         case "cb_wavereset":
+            cb_wavereset.setSelected(_val);
+            handleWaveResetChanged();
+            return;
+
+         case "cb_enable":
+            cb_enable.setSelected(_val);
+            handleEnableChanged();
+            return;
+
+
+         case "fp_pitch":
+            fp_pitch.setValue(_val);
+            handlePitchChanged();
+            return;
+
+         case "fp_fine":
+            fp_fine.setValue(_val);
+            handleFineChanged();
+            return;
+
+         case "fp_slop":
+            fp_slop.setValue(_val);
+            handleSlopChanged();
+            return;
+
+         case "fp_glide":
+            fp_glide.setValue(_val);
+            handleGlideChanged();
+            return;
+
+         case "fp_fm":
+            cb_fm_ext.setSelected(_bExt);
+            handleFMExtChanged(false/*bQuiet*/);
+            fp_fm.setValue(_val);
+            handleFMChanged();
+            return;
+
+         case "cb_fm_ext":
+            cb_fm_ext.setSelected(_val);
+            handleFMExtChanged(false/*bQuiet*/);
+            return;
+
+         case "fp_am":
+            cb_am_ext.setSelected(_bExt);
+            handleAMExtChanged(false/*bQuiet*/);
+            fp_am.setValue(_val);
+            handleAMChanged();
+            return;
+
+         case "cb_am_ext":
+            cb_am_ext.setSelected(_val);
+            handleAMExtChanged(false/*bQuiet*/);
+            return;
+
+         case "fp_level":
+            fp_level.setValue(_val);
+            handleLevelChanged();
+            return;
+      }
+   }
+
+}

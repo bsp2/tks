@@ -1,0 +1,146 @@
+// 
+// <insert description here> 
+// 
+ 
+int tick_nr; 
+ 
+tag int b_button; 
+tag float p_amount; 
+ 
+ 
+function CalcChecksum(Buffer b) { 
+   byte chk = 0; 
+   int off = 6; 
+   loop(16 + 128*3) 
+   { 
+      chk = chk + b.peekI8(off++); 
+   } 
+   return chk; 
+} 
+ 
+function OnReset() { 
+   b_button = false; 
+} 
+ 
+function OnSeek(int ticks) { 
+   tick_nr = ticks; 
+} 
+ 
+function OnProcess(MIDIPipeFrame framePlay, 
+                   MIDIPipeFrame frameRec, 
+                   boolean       bMuted, 
+                   boolean       bPlaySeq 
+                   ) { 
+   if(bPlaySeq) 
+   { 
+      tick_nr++; 
+   } 
+ 
+   if(b_button) 
+   { 
+      trace "xxx b_button="+b_button; 
+      b_button = false; 
+ 
+      Buffer syx; 
+      syx.size = 6 + 16 + 128*3 + 2; 
+       
+      syx.offset = 0; 
+ 
+      syx.i8 = 0xF0; 
+      syx.i8 = 0x7E; 
+      syx.i8 = 0x00;  // target device id 
+      syx.i8 = 0x08;  // sub-id #1 (MIDI tuning standard) 
+      syx.i8 = 0x01;  // sub-ID #2 (Bulk dump reply) 
+      // syx.i8 = 0x01;  // tuning program number (HrmA1-60 by default) 
+      syx.i8 = 0x04;  // tuning program number (HrmA1-60 by default) 
+      syx.i8 = 't';   // tuning name:  0 
+      syx.i8 = 'm';   // tuning name:  1 
+      syx.i8 = 'p';   // tuning name:  2 
+      syx.i8 = ' ';   // tuning name:  3 
+      syx.i8 = 'd';   // tuning name:  4 
+      syx.i8 = 'e';   // tuning name:  5 
+      syx.i8 = 't';   // tuning name:  6 
+      syx.i8 = 'u';   // tuning name:  7 
+      syx.i8 = 'n';   // tuning name:  8 
+      syx.i8 = 'e';   // tuning name:  9 
+      syx.i8 = 0;     // tuning name: 10 
+      syx.i8 = 0;     // tuning name: 11 
+      syx.i8 = 0;     // tuning name: 12 
+      syx.i8 = 0;     // tuning name: 13 
+      syx.i8 = 0;     // tuning name: 14 
+      syx.i8 = 0;     // tuning name: 15 
+ 
+      float amt = p_amount / 127.0f; 
+ 
+      IntArray frac; 
+      frac.alloc(128); 
+      int noteIdx = 0; 
+      int fracOff = 0; 
+      loop(128) 
+      { 
+         if(0 == (noteIdx % 12)) 
+         { 
+            fracOff = rand(10 * ((127-noteIdx)/40.0) * 127); 
+         } 
+         int octIdx = noteIdx / 12; 
+         //int r = rand(18*127); 
+         int r = ((noteIdx^octIdx)&1) ? (40*127 - rand(20*127)) : (0 + rand(20*127)); 
+         int lastIdx = 0; 
+         loop(noteIdx) 
+         { 
+            if(lastIdx == r) 
+               break; 
+            lastIdx++; 
+         } 
+         if(lastIdx == noteIdx) 
+         { 
+            frac[noteIdx] = (r + fracOff) * amt; 
+         } 
+ 
+         fracOff += 2; 
+         noteIdx++; 
+      } 
+ 
+      // Frequency data 
+      noteIdx = 0; 
+      loop(128) 
+      { 
+         // int fracMSB = rand(20); 
+         // int fracLSB = rand(127); 
+         int fracMSB = (frac[noteIdx] >> 7) & 127; 
+         int fracLSB = frac[noteIdx] & 127; 
+         // int fracMSB = 0; 
+         // int fracLSB = 0; 
+ 
+         trace "xxx noteIdx="+noteIdx+" fracMSB="+fracMSB+" fracLSB="+fracLSB; 
+ 
+         syx.i8 = noteIdx;  // semitone 
+         syx.i8 = fracMSB;  // MSB of fractional part (1/128 semitone = 100/128 cents = .78125 cent units) 
+         syx.i8 = fracLSB;  // LSB of fractional part (1/16384 semitone = 100/16384 cents = .0061 cent units) 
+ 
+         noteIdx++; 
+      } 
+ 
+      syx.i8 = CalcChecksum(syx) & 127; 
+      // trace "xxx 1 syx.offset="+syx.offset; 
+      syx.i8 = 0xF7; 
+ 
+      trace "xxx syx.offset="+syx.offset; 
+ 
+      framePlay.sysex(true/*bSet*/, out_1_dev, syx); 
+ 
+      trace "xxx randomization amt="+p_amount; 
+ 
+      if(0) 
+      { 
+         File f; 
+         if(f.openLocal("f:/tmp/detunedx.syx", IOS_OUT)) 
+         { 
+            f.writeBuffer(syx, 0, syx.offset); 
+            f.close(); 
+         } 
+      } 
+   } 
+ 
+ 
+} 

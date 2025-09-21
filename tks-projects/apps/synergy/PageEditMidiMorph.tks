@@ -1,0 +1,2577 @@
+// ----
+// ---- file   : PageEditMidiMorph.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 19Aug2014, 20Aug2014, 21Aug2014, 22Aug2014, 05Sep2014, 09Sep2014, 16Sep2014
+// ----          19Sep2014, 29Sep2014, 17Oct2014, 21Feb2015, 23Feb2015, 26Jul2015, 29Oct2015
+// ----          09Feb2017, 01Jul2017, 03Jul2017, 04Jan2018, 14Apr2018, 04Jun2018, 06Jun2018
+// ----          11Jan2019, 30Apr2019, 20Sep2019, 14Oct2019, 01Nov2019, 10Nov2020, 26Jan2021
+// ----          10Feb2021, 17Dec2021, 18Dec2021, 19Dec2021, 20Dec2021, 23Dec2021, 31Dec2021
+// ----          02Jan2022, 20Jun2022, 24Nov2022, 14Jun2023, 21Sep2023, 03Oct2023, 15Oct2023
+// ----          20Oct2023, 22Mar2024, 05Oct2024
+// ----
+// ----
+// ----
+
+module MPageEditMidiMorph;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageEditMidiMorph extends Page, ActionProvider, RemoteQueryCtlTargetsListener, MIDIMapEventListener, MIDIMapContext {
+
+   define String ACTION_EVENTCLICKED;
+
+   define String TA_REDRAW;
+   define String TA_ALTERNATE;
+   define String TA_QR_BLINK;
+
+   define int QR_BLINK_TIMEOUT = 35; // ~17 sec
+
+   protected Button    *bt_parent;
+   protected ComboBox  *cm_scenegroup;
+   protected ComboBox  *cm_scene;
+   protected TextField *tf_scene_name;
+   protected ComboBox  *cm_recmode;
+
+   protected PopupMenu *pm_entry;
+
+   protected Button    *bt_add;
+   protected Button    *bt_qr;
+   protected Button    *bt_moveup;
+   protected Button    *bt_movedown;
+   protected Button    *bt_tools;
+   protected PopupMenu *pm_tools;
+   protected Button    *bt_multi;
+   protected Button    *bt_remove;
+
+   public TableView   *tv_map;
+   protected MIDIMorphSceneTM tm_map;
+
+   protected MidiMorphEntryForm *f_src;
+   protected MidiMorphEntryForm *f_dst;
+
+   protected TextField *tf_last_dev;
+   protected TextField *tf_last_ch;
+   protected TextField *tf_last_type;
+   protected TextField *tf_last_ext;
+
+   protected TimerAction *ta_redraw;
+   protected TimerAction *ta_alternate;
+   protected TimerAction *ta_qr_blink;
+
+   public MIDIMorphScene *mms; // reference to current scene
+
+   int parent_page;
+
+   protected MIDIMapEvent last_ev;
+
+   define int REC_NONE    = 0;
+   define int REC_SRC     = 1;
+   define int REC_DST     = 2;
+   define int REC_ALT     = 3;
+   define int REC_SELECT  = 4;
+
+   define int NUM_REC_MODES = 5;
+
+   protected int rec_mode;
+
+   protected boolean b_dst;  // in "alternate" recording mode
+
+   protected int qr_todo; // >0: quick-record mode
+   protected int qr_blink;
+
+   define String MMT_ENTRY_ADD;
+   define String MMT_ENTRY_QUICKRECORD;
+   define String MMT_ENTRY_REMOVE;
+   define String MMT_REC_MODE;
+
+   define String MMT_SRC_FLT_TOGGLE;
+   define String MMT_DST_OP_TOGGLE;
+
+   static PointerArray entries_clipboard;
+
+   define int DLG_FILENAME_MODE_LOAD = 1;
+   define int DLG_FILENAME_MODE_SAVE = 2;
+   int dlg_filename_mode;
+
+   protected ImportSynthProfileDialog *dlg_importmsp;
+   protected STX_MIDIOutDevice *msp_import_dev;  // temporary during important
+   protected byte               msp_import_ch;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageEditMidiMorph.xfm"))
+      {
+         trace "[---] failed to parse PageEditMidiMorph.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(!f_src.init(this, false/*bDst*/))
+      {
+         trace "[---] PageEditMidiMorph::init: f_src.init() failed.";
+         return false;
+      }
+
+      if(!f_dst.init(this, true/*bDst*/))
+      {
+         trace "[---] PageEditMidiMorph::init: f_dst.init() failed.";
+         return false;
+      }
+
+      tm_map.initTableModel();
+      tv_map.setTableModel(tm_map);
+
+      ta_redraw    <= TimerAction.New(TA_REDRAW,     this, 250);
+      ta_alternate <= TimerAction.New(TA_ALTERNATE,  this, 350);
+      ta_qr_blink  <= TimerAction.New(TA_QR_BLINK,   this, 500);
+
+      recursiveBuildTabCycleLists();
+
+      parent_page = RootForm.PAGE_PIPEMAP;
+
+      rec_mode = REC_SELECT;
+      cm_recmode.setSelectedOption(rec_mode);
+
+      initMMC();
+
+      if(app_lnf.b_ascii_back_buttons)
+      {
+         Global.ASCIIBackButton(bt_parent);
+      }
+
+      return true;
+   }
+
+   // <init.png>
+   protected method initMMC() {
+
+      mmcInit("PageEditMidiMorph");
+
+      mmcAddTarget(MMT_ENTRY_ADD,         CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_ENTRY_REMOVE,      CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_ENTRY_QUICKRECORD, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_REC_MODE,          CLASS_BUTTON, SYN_BUTTON_KEYREPEAT);
+      mmcAddTarget(MMT_SRC_FLT_TOGGLE,    CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_DST_OP_TOGGLE,     CLASS_BUTTON, SYN_BUTTON_CLICK);
+   }
+
+   // <midi.png>
+   public virtual mmlOverrideForceGlobal() : boolean {
+      return true;
+   }
+
+   // <midi.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            case MMT_ENTRY_ADD:
+               handleAdd();
+               return true;
+
+            case MMT_ENTRY_REMOVE:
+               handleRemove();
+               return true;
+
+            case MMT_ENTRY_QUICKRECORD:
+               handleQR();
+               return true;
+
+            case MMT_REC_MODE:
+               if(1 == _ev.class_type_ext)
+               {
+                  handleToggleRecMode();
+               }
+               return true;
+
+            case MMT_SRC_FLT_TOGGLE:
+               handleToggleSrcFlt();
+               return true;
+
+            case MMT_DST_OP_TOGGLE:
+               handleToggleDstOp();
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return parent_page;
+   }
+
+   // <ui_show.png>
+   public method showCurrentMMS(int _parentPage) {
+
+      parent_page = _parentPage;
+
+      Global.Debug("PageEditMidiMorph::showCurrentMMS: groupIdx="+MIDIMorphScene.last_changed_group+" sceneIdx="+MIDIMorphScene.GetCurrentSceneIdx(MIDIMorphScene.last_changed_group));
+
+      updateFromLastChanged(MIDIMorphScene.last_changed_group);
+   }
+
+   // <ui_handle.png>
+   public method handleSceneEdited() {
+      // Update FaderPort labels
+      if(faderport.b_connected)
+         faderport.handleSelectOrEditScene();
+   }
+
+   // <ui_update.png>
+   public method updateFromLastChanged(int _groupIdx) {
+
+      if(-1 == _groupIdx)
+      {
+         // When returning from multi page
+         _groupIdx = cm_scenegroup.getSelectedOption();
+      }
+      else
+      {
+         cm_scenegroup.setSelectedOption(_groupIdx);
+      }
+      // trace "xxx updateFromLastChanged: GetCurrentSceneIdx("+_groupIdx+")="+MIDIMorphScene.GetCurrentSceneIdx(_groupIdx);
+      cm_scene.setSelectedOption(MIDIMorphScene.GetCurrentSceneIdx(_groupIdx));
+      updateSceneOptionsLong();
+      handleSceneChanged(_groupIdx, true/*bFocusTV*/);
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      MIDI.AddMIDIMapEventListener(this);
+
+      f_src.updateDeviceNames();
+      f_dst.updateDeviceNames();
+      handleSceneChanged(-1, false/*bFocusTV*/);
+
+      // tv_map.moveCursorToFirstRow();
+      tv_map.moveCursorToRow(mms.last_selected_row_idx);
+
+      // // tm_map.setCursorIndex(-1);
+
+      layoutHierarchy(true, false);
+      layoutHierarchy(true, false);
+
+      updateRecTargets();
+
+      updateSceneOptionsLong();
+
+      qr_todo = 0;
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      MIDI.RemoveMIDIMapEventListener(this);
+
+      if(qr_todo > 0)
+      {
+         handleQRCancel();
+      }
+
+      ta_redraw.cancel();
+      ta_alternate.cancel();
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_map);
+      // UI.SetKeyboardFocus(bt_bind);
+   }
+
+   // <ui_midi.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+
+      if(!MMTListener::mmtHandleGlobalValueDefault(_val))
+      {
+         tv_map.moveCursorToRow(mmtSelectTableRow(tm_map, _val));
+         tv_map.centerRow();
+         mms.last_selected_row_idx = tm_map.getCursorIndex();
+      }
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_parent,
+         cm_scenegroup, cm_scene, cm_recmode, tf_scene_name,
+         bt_add, bt_qr, bt_moveup, bt_movedown, bt_tools, bt_remove,
+         tv_map
+                              ];
+
+      f_src.addMMTFocusLayers(_retLayers);
+      f_dst.addMMTFocusLayers(_retLayers);
+   }
+
+   // <ui_page.png>
+   public virtual pageSceneChanged(int _groupIdx, boolean _bMulti) : boolean {
+      updateFromLastChanged(_bMulti ? -1 : _groupIdx);
+      return true;
+   }
+
+   // <ui_update.png>
+   protected method updateMoveUpDownButtons() {
+      int row = tm_map.getCursorIndex();
+      int numRows = tm_map.getNumRows();
+      bt_moveup.setEditable(row > 0);
+      bt_movedown.setEditable((row+1) < numRows);
+   }
+
+   // <ui_update.png>
+   protected method updateTable(boolean _bPreserveKbdFocus) {
+
+      Layer l <= UI.GetKeyboardFocus();
+
+      mms.mmsBuildTMEntries(tm_map.entries);
+      tv_map.tableModelChanged();
+
+      tv_map.moveCursorToRow(mms.last_selected_row_idx);
+
+      updateMoveUpDownButtons();
+
+      if(_bPreserveKbdFocus)
+      {
+         UI.SetKeyboardFocus(l);
+      }
+   }
+
+   // <ui_update.png>
+   public method updateTableQuiet() {
+
+      mms.mmsBuildTMEntries(tm_map.entries);
+      tv_map.redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateSceneOptionsLong() {
+      PointerArray scenes <= MIDIMorphScene.GetLastChangedSceneGroup();
+      if(null != scenes)
+      {
+         local StringArray options;
+         local Integer io = 1;
+         MIDIMorphScene *scene;
+         foreach scene in scenes
+         {
+            options.add(io.printf("%2d") + ": " + scene.mms_name);
+            io++;
+         }
+         cm_scene.setOptionsLong(options);
+      }
+   }
+
+   // <method.png>
+   protected method recenterEntry() {
+      tv_map.makeCursorRowVisible();
+   }
+
+   // <midi.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(!root_form.mmcMatchFuzzy(_ev)) // don't pass e.g. note on when an event is mapped to click or hold_end
+      {
+         //  (note) called from UI thread (processing UI event queue in Replay.tks)
+
+         // trace "xxx mmlHandleEventUI: _ev.type="+_ev.type+" _ev.dev_ch="+_ev.dev_ch+"  _ev.dev="+#(_ev.dev);
+
+         updateLastEventInfo(_ev);
+
+         if(REC_ALT == rec_mode)
+         {
+            ta_alternate.cancel();
+            ta_alternate.schedule();
+         }
+
+         if(REC_NONE != rec_mode)
+         {
+            if(b_dst)
+            {
+               f_dst.updateFromEvent(_ev, false/*bMapped*/, false/*bToggleFlt*/);
+            }
+            else
+            {
+               f_src.updateFromEvent(_ev, false/*bMapped*/, false/*bToggleFlt*/);
+            }
+
+         }
+
+         // Find best matching map entry and select it
+         if(selectEntryByEvent(_ev,
+                               (REC_SELECT != rec_mode)/*bLeadOnly*/
+                               ))
+         {
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method toggleSrcDst() {
+      b_dst = ! b_dst;
+
+      updateRecTargets();
+
+      if(qr_todo > 0)
+      {
+         if(0 == --qr_todo)
+         {
+            handleQREnd();
+         }
+         else
+         {
+            qr_blink &= 1;
+            Global.Print("Quick-Record: 1 event to go.");
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateRecTargets() {
+
+      if((REC_NONE == rec_mode) || (REC_SELECT == rec_mode))
+      {
+         f_src.setEnableRecTarget(false);
+         f_dst.setEnableRecTarget(false);
+      }
+      else
+      {
+         if(b_dst)
+         {
+            f_src.setEnableRecTarget(false);
+            f_dst.setEnableRecTarget((REC_ALT == rec_mode) ? maybe : true);
+         }
+         else
+         {
+            f_src.setEnableRecTarget((REC_ALT == rec_mode) ? maybe : true);
+            f_dst.setEnableRecTarget(false);
+         }
+      }
+
+      UI.RedrawAll();
+   }
+
+   // <ui_update.png>
+   protected method updateLastEventInfo(MIDIMapEvent _ev) {
+      if(null != _ev)
+      {
+         last_ev = _ev;
+
+         // Set last event info
+         tf_last_dev.setText(_ev.dev.getAliasOrDeviceName());
+
+         Integer io = _ev.dev_ch + 1;
+         tf_last_ch.setText(io.printf("#%02d"));
+
+         String className <= _ev.getClassTypeName();
+
+         if(null == className)
+         {
+            className <= MIDIMapEventType.type_names_short[_ev.type];
+         }
+
+         tf_last_type.setText(className);
+
+         tf_last_ext.setText(_ev.getExtTypeName());
+      }
+      else
+      {
+         tf_last_dev .setText(" ");
+         tf_last_ch  .setText(" ");
+         tf_last_type.setText(" ");
+         tf_last_ext .setText(" ");
+      }
+
+      ta_redraw.schedule();
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneGroupChanged(boolean _bFocusTV) {
+      MIDIMorphScene.SelectSceneByIdx(cm_scenegroup.getSelectedOption(),
+                                      MIDIMorphScene.GetCurrentSceneIdx(cm_scenegroup.getSelectedOption())
+                                      );
+
+      cm_scene.setSelectedOption(MIDIMorphScene.GetCurrentSceneIdx(-1));
+      updateSceneOptionsLong();
+
+      handleSceneChanged(-1, _bFocusTV);
+
+      handleSceneEdited();
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneChanged(int _groupIdxOrMinus1, boolean _bFocusTV) {
+
+      // trace "xxx handleSceneChanged: ENTER  t="+milliSeconds();
+
+      if(_groupIdxOrMinus1 < 0)
+      {
+         _groupIdxOrMinus1 = cm_scenegroup.getSelectedOption();
+      }
+
+      MIDIMorphScene.SelectSceneByIdx(_groupIdxOrMinus1, cm_scene.getSelectedOption());
+
+      mms <= MIDIMorphScene.GetCurrentScene(_groupIdxOrMinus1);
+
+      tf_scene_name.setText(mms.mms_name);
+
+      f_src.updateFromEvent(null, false/*bMapped*/, false/*bToggleFlt*/);
+      f_dst.updateFromEvent(null, false/*bMapped*/, false/*bToggleFlt*/);
+
+      bt_moveup  .setEditable(false);
+      bt_movedown.setEditable(false);
+      bt_remove  .setEditable(false);
+
+      updateTable(false/*bPreserveKbdFocus*/);
+
+      rec_mode = REC_SELECT;
+      cm_recmode.setSelectedOption(rec_mode);
+      handleRecModeChanged(true/*bClearIO*/);
+
+      // // tv_map.moveCursorToFirstRow();
+      tv_map.moveCursorToRow(mms.last_selected_row_idx);
+
+      if(_bFocusTV)
+      {
+         UI.SetKeyboardFocus(tv_map);
+      }
+
+      // trace "xxx handleSceneChanged: LEAVE  t="+milliSeconds();
+
+      handleSceneEdited();
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneNameChanged() {
+      mms.mms_name = tf_scene_name.getText();
+      updateSceneOptionsLong();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleRecMode() {
+
+      rec_mode = (rec_mode + 1) % NUM_REC_MODES;
+      cm_recmode.setSelectedOption(rec_mode);
+
+      handleRecModeChanged(false/*bClearIO*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleRecModeChanged(boolean _bClearIO) {
+
+      int oldRecMode = rec_mode;
+
+      rec_mode = cm_recmode.getSelectedOption();
+
+      switch(rec_mode)
+      {
+         case REC_NONE:
+         case REC_SELECT:
+            break;
+
+         case REC_SRC:
+            b_dst = false;
+            ta_alternate.cancel();
+            break;
+
+         case REC_DST:
+            b_dst = true;
+            ta_alternate.cancel();
+            break;
+
+         case REC_ALT: /* alternate */
+            break;
+      }
+
+      updateRecTargets();
+
+      if(_bClearIO)
+      {
+         if(REC_SELECT == oldRecMode)
+         {
+            f_src.updateFromEvent(null, false/*bMapped*/, false/*bToggleFlt*/);
+            f_dst.updateFromEvent(null, false/*bMapped*/, false/*bToggleFlt*/);
+
+            tv_map.moveCursorToRow(-1);
+            tv_map.setLeadSelection(-1);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleToggleSrcFlt() {
+      cancelAutoSelect();
+      f_src.toggleShowFltOrOp();
+   }
+
+   // <ui_handle.png>
+   public method handleToggleDstOp() {
+      cancelAutoSelect();
+      f_dst.toggleShowFltOrOp();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAdd() : boolean {
+
+      if(f_src.isValidEvent())
+      {
+         if(f_dst.isValidEvent())
+         {
+            int rowIdx = tm_map.getCursorIndex();
+            MIDIMapEvent ev <= mms.mmsAddEntry(f_src.current_ev, f_dst.current_ev, (-1 != rowIdx) ? (rowIdx+1) : -1);
+
+            updateTable(false/*bPreserveKbdFocus*/);
+            tv_map.moveCursorToNextRow();
+
+            if(qr_todo > 0)
+            {
+               handleQRCancel();
+            }
+
+            f_src.updateFromEvent(ev, true/*bMapped*/, false/*bToggleFlt*/);
+            f_dst.updateFromEvent(ev.morph_target, true/*bMapped*/, false/*bToggleFlt*/);
+
+            recenterEntry();
+
+            handleSceneEdited();
+
+            Global.Success("Added new entry.");
+            return true;
+         }
+         else
+         {
+            Global.Error("Cannot add: Output / Target event not valid.");
+         }
+      }
+      else
+      {
+         Global.Error("Cannot add: Input / Source event not valid.");
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleReplaceSource() {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      if(null != en)
+      {
+         en.src_ev.copyFrom(f_src.current_ev);
+
+         f_src.updateFromEvent(en.src_ev, true/*bMapped*/, false/*bToggleFlt*/);
+
+         updateTable(false/*bPreserveKbdFocus*/);
+
+         recenterEntry();
+
+         handleSceneEdited();
+
+         Global.Print("Replace source event");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleQR() {
+      if(qr_todo > 0)
+      {
+         handleQRCancel();
+      }
+      else
+      {
+         handleQRStart();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleQRStart() {
+
+      Global.PrintBegin("Starting Quick-Record (2 events to go).");
+
+      rec_mode = REC_ALT;
+      b_dst = false;
+      cm_recmode.setSelectedOption(rec_mode);
+      handleRecModeChanged(true/*bClearIO*/);
+      updateRecTargets();
+
+      f_src.initEmptyEvent();
+      f_dst.initEmptyEvent();
+
+      bt_qr.setBackgroundTint(#50FFFF00);
+
+      qr_blink = 0;
+
+      ta_qr_blink.schedule();
+
+      bt_remove.setEditable(false);
+      cm_recmode.setEditable(false);
+
+      qr_todo = 2;
+
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleQRBlink() {
+      if(++qr_blink & 1)
+         bt_qr.setBackgroundTint(#00FF0000);
+      else
+         bt_qr.setBackgroundTint(#50FFFF00);
+
+      bt_qr.redraw();
+      ta_qr_blink.schedule();
+
+      if(QR_BLINK_TIMEOUT == qr_blink)
+         handleQRCancel();
+   }
+
+   // <ui_handle.png>
+   protected method handleQREnd() {
+
+      bt_qr.setBackgroundTint(#00000000);
+      ta_qr_blink.cancel();
+
+      bt_remove.setEditable(true);
+      cm_recmode.setEditable(true);
+
+      rec_mode = REC_SELECT;
+      cm_recmode.setSelectedOption(rec_mode);
+      handleRecModeChanged(true/*bClearIO*/);
+      updateRecTargets();
+
+      if(handleAdd())
+      {
+         redraw();
+
+         Global.PrintEndOK("Quick-Record: finished. Added new event.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleQRCancel() {
+
+      Global.PrintEndNOK("Quick-record canceled.");
+
+      bt_qr.setBackgroundTint(#00000000);
+      ta_qr_blink.cancel();
+
+      bt_remove.setEditable(true);
+      cm_recmode.setEditable(true);
+
+      qr_todo = 0;
+
+      rec_mode = REC_SELECT;
+      cm_recmode.setSelectedOption(rec_mode);
+      handleRecModeChanged(true/*bClearIO*/);
+      updateRecTargets();
+
+      redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleRemove() {
+
+      if(tm_map.getNumSelectedRows() > 0)
+      {
+         handleEntriesCopyOrCut(true/*bCut*/, true/*bDelete*/);
+
+         tm_map.selectNone();
+      }
+      else
+      {
+         MIDIMorphSceneTMEntry en <= getSelectedEntry();
+         if(null != en)
+         {
+            mms.mmsRemoveEntry(tm_map.getCursorIndex());
+
+            f_src.updateFromEvent(null, false/*bMapped*/, false/*bToggleFlt*/);
+            f_dst.updateFromEvent(null, false/*bMapped*/, false/*bToggleFlt*/);
+
+            recenterEntry();
+
+            updateTable(false/*bPreserveKbdFocus*/);
+
+            handleSceneEdited();
+         }
+      }
+
+   }
+
+   // <method.png>
+   public method getSelectedEntry() : MIDIMorphSceneTMEntry {
+      int idx = tm_map.getCursorIndex();
+
+      if(-1 != idx)
+      {
+         MIDIMorphSceneTMEntry en <= tm_map.entries.get(idx);
+         return en;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public method selectEntryByEvent(MIDIMapEvent _ev, boolean _bLeadOnly) : boolean {
+
+      MIDIMorphSceneTMEntry *en;
+      int rowIdx = 0;
+      foreach en in tm_map.entries
+      {
+         MIDIMapEvent srcEv <= en.src_ev;
+         if(srcEv.b_morph_enable && srcEv.matchMorphTypeOf(_ev))
+         {
+            if(!_bLeadOnly)
+            {
+               tv_map.moveCursorToRow(rowIdx);
+               tv_map.centerRow();
+               mms.last_selected_row_idx = tm_map.getCursorIndex();
+            }
+            tv_map.setLeadSelection(rowIdx);
+            return true;
+         }
+
+         rowIdx++;
+      }
+
+      // Not found
+      tv_map.setLeadSelection(-1);
+
+      if(!_bLeadOnly)
+      {
+         tm_map.setCursorIndex(-1);
+
+         f_src.updateFromEvent(null, false/*bMapped*/, true/*bToggleFlt*/);
+         f_dst.updateFromEvent(null, false/*bMapped*/, true/*bToggleFlt*/);
+
+         recenterEntry();
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method cancelAutoSelect() {
+      rec_mode = REC_NONE;
+      cm_recmode.setSelectedOption(rec_mode);
+      handleRecModeChanged(false/*bClearIO*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleRowSelected() {
+      int rowIdx = tm_map.getCursorIndex();
+
+      if(-1 != rowIdx)
+      {
+         MIDIMorphSceneTMEntry en <= tm_map.entries.get(rowIdx);
+
+         f_src.updateFromEvent(en.src_ev, true/*bMapped*/, true/*bToggleFlt*/);
+         f_dst.updateFromEvent(en.dst_ev, true/*bMapped*/, true/*bToggleFlt*/);
+
+         tv_map.setLeadSelection(rowIdx);
+
+         bt_moveup  .setEditable(true);
+         bt_movedown.setEditable(true);
+         bt_remove  .setEditable(true);
+
+         mms.last_selected_row_idx = rowIdx;
+
+         recenterEntry();
+      }
+   }
+
+   // <method.png>
+   protected method copySrcEntryTypeAndPortToCtlClipboard(boolean _bClipboardB) {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      String msgPrefix <= _bClipboardB ? "copyctl_src<B>: " : "copyctl_src<A>: ";
+
+      if(null != en)
+      {
+         MIDIMapEvent ev <= en.src_ev;
+         STX_MIDIInDevice inDev <= ev.dev;
+         STX_MIDIOutDevice *outDev;
+         if(inDev instanceof STX_MIDIInDevice)
+            outDev <= inDev.cached_out_dev;
+         else
+            outDev <= inDev;  // should not be reachable
+
+         if(null != outDev)
+         {
+            if(_bClipboardB)
+            {
+               mmarg_clipboard_b.copyFromMIDIMapEvent(ev);
+               mmarg_clipboard_b.dev_idx = outDev.dev_idx;
+            }
+            else
+            {
+               mmarg_clipboard_a.copyFromMIDIMapEvent(ev);
+               mmarg_clipboard_a.dev_idx = outDev.dev_idx;
+            }
+
+            Global.Print(msgPrefix+"type="+ev.getExtTypeName()+" port="+ev.getAliasOrDeviceName()+":"+(1+ev.dev_ch));
+         }
+         else
+         {
+            Global.Print(msgPrefix+"Failed to map to output device");
+         }
+      }
+   }
+
+   // <method.png>
+   protected method copyDstEntryTypeAndPortToCtlClipboard(boolean _bClipboardB) {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      String msgPrefix <= _bClipboardB ? "copyctl_dst<B>: " : "copyctl_dst<A>: ";
+
+      if(null != en)
+      {
+         MIDIMapEvent ev <= en.dst_ev;
+         if(null != ev)
+         {
+            if(_bClipboardB)
+               mmarg_clipboard_b.copyFromMIDIMapEvent(ev);
+            else
+               mmarg_clipboard_a.copyFromMIDIMapEvent(ev);
+
+            Global.Print(msgPrefix+"type="+ev.getExtTypeName()+" port="+ev.getAliasOrDeviceName()+":"+(1+ev.dev_ch));
+         }
+      }
+   }
+
+   // <method.png>
+   protected method pasteCtlClipboardToSrcEntryTypeAndPort(boolean _bClipboardB) {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      String msgPrefix <= _bClipboardB ? "pastectl_src<B>: " : "pastectl_src<A>: ";
+
+      if(null != en)
+      {
+         MIDIMapEvent ev <= en.src_ev;
+         // trace "xxx pasteCtl: src_ev="+#(en.src_ev)+" dst_ev="+#(en.dst_ev);
+         if(null != ev)
+         {
+            MIDIMapEvent dstEv <= ev.unlinkMorphTarget();
+
+            // side-effect: sets morph_target to null
+            if(_bClipboardB)
+               ev.initFromNodeModMatrixArg(mmarg_clipboard_b);
+            else
+               ev.initFromNodeModMatrixArg(mmarg_clipboard_a);
+
+            if(ev.dev instanceof STX_MIDIOutDevice)
+            {
+               Global.Debug("map output dev \""+(ev.dev.getAliasOrDeviceName()+"\""));
+               ev.dev <= MIDI.FindInDeviceForOutDeviceName(ev.dev.getAliasOrDeviceName());
+               Global.Debug("  to input dev "+#(ev.dev));
+            }
+
+            ev.morph_target <= dstEv;
+
+            if(ev.dev instanceof STX_MIDIInDevice)
+            {
+               updateTable(false/*bPreserveKbdFocus*/);
+
+               f_src.updateFromEvent(ev, false/*bMapped*/, false/*bToggleFlt*/);
+
+               Global.Print(msgPrefix+"type="+ev.getExtTypeName()+" port="+ev.getAliasOrDeviceName()+":"+(1+ev.dev_ch));
+            }
+            else
+            {
+               Global.Error(msgPrefix+"Failed to map to input device");
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method pasteCtlClipboardToDstEntryTypeAndPort(boolean _bClipboardB) {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      String msgPrefix <= _bClipboardB ? "pastectl_dst<B>: " : "pastectl_dst<A>: ";
+
+      if(null != en)
+      {
+         MIDIMapEvent ev <= en.dst_ev;
+         if(null != ev)
+         {
+            if(_bClipboardB)
+               ev.initFromNodeModMatrixArg(mmarg_clipboard_b);
+            else
+               ev.initFromNodeModMatrixArg(mmarg_clipboard_a);
+
+            updateTable(false/*bPreserveKbdFocus*/);
+
+            f_dst.updateFromEvent(ev, true/*bMapped*/, false/*bToggleFlt*/);
+
+            Global.Print(msgPrefix+"type="+ev.getExtTypeName()+" port="+ev.getAliasOrDeviceName()+":"+(1+ev.dev_ch));
+         }
+      }
+   }
+
+   // <method.png>
+   protected method pasteRPNCtlToDstEntryTypeAndPort(int _rpnDevIdx, int _rpnDevCh, short _rpn) {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      if(null != en)
+      {
+         MIDIMapEvent ev <= en.dst_ev;
+         if(null != ev)
+         {
+            STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_rpnDevIdx);
+            if(null != dev)  // should not be null
+            {
+               ev.initTransformedFromRPN(dev, _rpnDevCh, _rpn, 0/*value*/);
+
+               updateTable(false/*bPreserveKbdFocus*/);
+
+               f_dst.updateFromEvent(ev, true/*bMapped*/, false/*bToggleFlt*/);
+
+               Global.Print("Paste RPN type="+ev.getExtTypeName()+" port="+ev.getAliasOrDeviceName()+":"+(1+ev.dev_ch));
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveUp() {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      if(null != en)
+      {
+         PointerArray entries <= mms.mms_entries;
+         int idx = tm_map.getCursorIndex();
+
+         if(idx > 0)
+         {
+            entries.swap(idx, idx - 1);
+
+            updateTable(false/*bPreserveKbdFocus*/);
+
+            tv_map.moveCursorToPreviousRow();
+            mms.last_selected_row_idx = tm_map.getCursorIndex();
+
+            Global.Print("Move entry up");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleMoveDown() {
+      MIDIMorphSceneTMEntry en <= getSelectedEntry();
+      if(null != en)
+      {
+         PointerArray entries <= mms.mms_entries;
+         int idx = tm_map.getCursorIndex();
+
+         if(idx < (entries.numElements - 1))
+         {
+            entries.swap(idx, idx + 1);
+
+            updateTable(false/*bPreserveKbdFocus*/);
+
+            tv_map.moveCursorToNextRow();
+            mms.last_selected_row_idx = tm_map.getCursorIndex();
+
+            Global.Print("Move entry down");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneCopy() {
+
+      mms.copyToClipboard();
+
+      Global.Print("Copy scene to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAddEntryToClipboard() {
+      int rowIdx = tm_map.getCursorIndex();
+      PointerArray mmsEntries <= mms.mms_entries;
+      MIDIMapEvent e <= mmsEntries.get(rowIdx);
+      if(null != e)
+      {
+         MIDIMapEvent n <= new MIDIMapEvent;
+         n.copyMMSEntry(e);
+         entries_clipboard.add(#(deref n));
+
+         Global.Print("Add entry to clipboard");
+      }
+   }
+
+   // <method_get.png>
+   public method getSelectedEvents(boolean _bDst) : PointerArray {
+      // called when multi-editing dev/ch/..
+      local MIDIMapEvent *[] ret;
+      PointerArray mmsEntries <= mms.mms_entries;
+      local IntArray selRows <= tm_map.getSelectedRows();
+      int rowIdx;
+      foreach rowIdx in selRows
+      {
+         MIDIMapEvent ev <= mmsEntries.get(rowIdx);
+         if(null != ev)
+         {
+            if(_bDst)
+            {
+               if(null != ev.morph_target)
+                  ret.add(ev.morph_target);
+            }
+            else
+            {
+               ret.add(ev);
+            }
+         }
+      }
+      return deref ret;
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEntriesCopyOrCut(boolean _bCut, boolean _bDelete) {
+
+      local IntArray selRows <= Object(tm_map.getSelectedRows());
+
+      local IntArray si;
+      selRows.sortByValue(si);
+      selRows.rearrange(si);
+
+      int oldCsrIdx = tm_map.getCursorIndex();
+
+      if(0 == selRows.numElements)
+      {
+         // Lazy select current row
+         if(-1 == oldCsrIdx)
+            return;
+         selRows <= [oldCsrIdx];
+      }
+
+      if(!_bDelete)
+         entries_clipboard.empty();
+
+      PointerArray mmsEntries <= mms.mms_entries;
+      PointerArray *mmsEntriesNew;
+
+      if(_bCut)
+      {
+         mmsEntriesNew <= new PointerArray;
+         int enIdx = 0;
+         loop(mmsEntries.numElements)
+         {
+            if(!selRows.contains(enIdx))
+            {
+               MIDIMapEvent eOrig <= mmsEntries.get(enIdx);
+               MIDIMapEvent ePreserve <= new MIDIMapEvent;
+               ePreserve.copyMMSEntry(eOrig);
+               mmsEntriesNew.add(#(deref ePreserve));
+            }
+            enIdx++;
+         }
+      }
+
+      if(!_bDelete)
+      {
+         int rowIdx;
+         foreach rowIdx in selRows
+         {
+            MIDIMapEvent n <= new MIDIMapEvent;
+            MIDIMapEvent e <= mmsEntries.get(rowIdx);
+            n.copyMMSEntry(e);
+            entries_clipboard.add(#(deref n));
+         }
+      }
+
+      if(_bCut)
+      {
+         mms.mms_entries <= deref mmsEntriesNew;
+
+         updateTable(true/*bPreserveKbdFocus*/);
+
+         if(_bDelete)
+            tv_map.moveCursorToRowNoAction(selRows.first);
+         else
+            tv_map.moveCursorToRowNoAction(oldCsrIdx);
+
+         mms.last_selected_row_idx = tm_map.getCursorIndex();
+
+         handleSceneEdited();
+      }
+
+      Global.Print((_bCut?(_bDelete?"Delete":"Cut"):"Copy")+" "+selRows.numElements+" "+Utils.GetPluralStringEx(selRows.numElements, "entry", "entries")+(_bDelete?"":" to clipboard"));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEntriesPaste() {
+      int csrIdx = tm_map.getCursorIndex();
+      boolean bPreInc = true;
+
+      if(-1 == csrIdx)
+      {
+         // Pasting into empty scene ?
+         if(0 == tm_map.getNumRows())
+         {
+            csrIdx = 0;
+            bPreInc = false;
+         }
+      }
+
+      if(-1 != csrIdx)
+      {
+         if(entries_clipboard.numElements > 0)
+         {
+            PointerArray mmsEntries <= mms.mms_entries;
+
+            int origCsrIdx = csrIdx;
+
+            MIDIMapEvent *e;
+            foreach e in entries_clipboard
+            {
+               MIDIMapEvent n <= new MIDIMapEvent;
+               n.copyMMSEntry(e);
+
+               if(bPreInc)
+                  csrIdx++;
+
+               mmsEntries.insert(csrIdx, #(deref n));
+
+               if(!bPreInc)
+                  csrIdx++;
+            }
+
+            updateTable(true/*bPreserveKbdFocus*/);
+            tv_map.moveCursorToRowNoAction(origCsrIdx + entries_clipboard.numElements);
+
+            mms.last_selected_row_idx = tm_map.getCursorIndex();
+
+            handleSceneEdited();
+
+            Global.Print("Paste "+entries_clipboard.numElements+" "+Utils.GetPluralStringEx(entries_clipboard.numElements, "entry", "entries")+" from clipboard");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleAllocFaderPortFader() : boolean {
+      if(faderport.b_connected)
+      {
+         int prefBank = 0;
+         int csrIdx = tm_map.getCursorIndex();
+         PointerArray mmsEntries <= mms.mms_entries;
+
+         // faderIdx, mmsIdx pairs
+         local IntArray faderMap;
+         int numFaders = faderport.b_faderport16 ? 16 : 8;
+         faderMap.allocAndFill(numFaders * numFaders, -1);
+         int faderIdx = 0;
+         loop(faderMap.numElements)
+         {
+            faderMap[2*faderIdx + 0] = faderIdx;
+            faderIdx++;
+         }
+
+         STX_MIDIInDevice inDev <= faderport.in_dev;
+
+         MIDIMapEvent *e;
+         int mmsIdx = 0;
+         foreach e in mmsEntries
+         {
+            if(MIDIMapDefs.TYPE_NRPN == e.type)
+            {
+               if(@(e.dev) == @(inDev))
+               {
+                  faderIdx = e.ext_type;
+                  if(faderIdx < faderMap.numElements)
+                  {
+                     faderMap[faderIdx*2 + 1] = mmsIdx;
+                     if(csrIdx == mmsIdx)
+                        prefBank = (faderIdx / numFaders);
+                  }
+               }
+            }
+            mmsIdx++;
+         }
+
+         STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName("<play_a>");
+         if(null != outDev)
+         {
+            int mapIdx = 0;
+            int lastMmsIdx = -1;
+            MIDIMapEvent *n;
+            MIDIMapEvent *nDst;
+            loop(faderMap.numElements / 2)
+            {
+               // trace "xxx faderMap[mapIdx="+mapIdx+"] bank="+(faderMap[mapIdx + 0] / numFaders)+" mmsIdx="+faderMap[mapIdx + 1];
+               if( (faderMap[mapIdx + 0] / numFaders) == prefBank )
+               {
+                  if(-1 == faderMap[mapIdx + 1])
+                  {
+                     if(-1 == lastMmsIdx)
+                        lastMmsIdx = csrIdx;
+                     lastMmsIdx++;
+
+                     n <= new MIDIMapEvent;
+
+                     MIDIMapEvent eCursor <= mmsEntries.get(csrIdx);
+                     if(null != eCursor)
+                     {
+                        n.copyMMSEntry(eCursor);
+                     }
+
+                     n.dev <= inDev;
+                     n.dev_ch = 0;
+                     n.type = MIDIMapDefs.TYPE_NRPN;
+                     n.ext_type = mapIdx / 2;
+
+                     if(null == eCursor)
+                     {
+                        nDst <= new MIDIMapEvent;
+                        nDst.dev <= outDev;
+                        nDst.dev_ch = 0;
+                        nDst.type = MIDIMapDefs.TYPE_CC;
+                        nDst.ext_type = 1; // modwheel
+                        n.morph_target <= deref nDst;
+                     }
+
+                     mmsEntries.insert(lastMmsIdx, #(deref n));
+
+                     updateTable(true/*bPreserveKbdFocus*/);
+                     tv_map.moveCursorToRowNoAction(lastMmsIdx);
+                     tv_map.setLeadSelection(-1);
+                     mms.last_selected_row_idx = tm_map.getCursorIndex();
+                     handleSceneEdited();
+
+                     Global.Print("Alloc unused FaderPort fader "+(tcchar("ABCDEFGHIJKLMNOP".getc(prefBank))+(((mapIdx/2)%numFaders)+1)));
+
+                     return true;
+                  }
+                  else
+                     lastMmsIdx = faderMap[mapIdx + 1];
+               }
+               mapIdx += 2;
+            }
+         } // if outDev
+      }
+
+      Global.Error("Failed to allocate FaderPort fader (bank="+tcchar("ABCDEFGHIJKLMNOP".getc(prefBank))+")");
+
+      return false;
+   }
+
+   // <method.png>
+   protected method allocFaderPortFaderAndInitFromCtlTagEntry(int _idx) {
+      if(handleAllocFaderPortFader())
+      {
+         MIDIMorphSceneTMEntry en <= getSelectedEntry();
+         if(null != en)  // should not be null
+         {
+            CtlTagEntry enCtl <= current_song.getCtlTagEntryByIdx(_idx);
+            en.dst_ev.copyFrom(enCtl.mm_event);
+
+            MIDIMapEvent srcEv <= en.src_ev;
+            srcEv.setMorphAutoLabel(null);
+            local String sLabel <= enCtl.tag_name.replace("_", " ");
+            srcEv.setMorphLabel(sLabel);
+            en.label = sLabel;
+
+            updateTable(false/*bPreserveKbdFocus*/);
+            handleSceneEdited();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleScenePaste() {
+
+      mms.copyFromClipboard();
+
+      tm_map.selectNone();
+      handleSceneChanged(-1, false/*bFocusTV*/);
+      updateSceneOptionsLong();
+
+      handleSceneEdited();
+
+      Global.Print("Copy scene from clipboard");
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneClear() {
+
+      mms.clear();
+
+      mms.setName("Scene "+cm_scenegroup.getSelectedOptionName()+"-"+cm_scene.getSelectedOptionName());
+
+      handleSceneChanged(-1, false/*bFocusTV*/);
+      updateSceneOptionsLong();
+
+      handleSceneEdited();
+
+      Global.Print("Clear scene");
+   }
+
+   // <ui_show.png>
+   protected method showToolsMenu(boolean _bFocusFirst) {
+
+      pm_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      pmb <= pm.addDefaultButton("Copy scene", "scene_copy");
+      pmb.setAccelerators("", "lctrl-lshift-c");
+
+      pmb <= pm.addDefaultButton("Paste scene", "scene_paste");
+      pmb.setActive(null != MIDIMorphScene.clipboard);
+      pmb.setAccelerators("", "lctrl-lshift-v");
+
+      pmb <= pm.addDefaultButton("Clear scene", "clear");
+      pmb.setAccelerators("", "lshift-BACKSPACE");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Cut entries", "entries_cut");
+      pmb.setAccelerators("", "lctrl-w");
+
+      pmb <= pm.addDefaultButton("Add entry to clipboard", "entry_addtoclipboard");
+      pmb.setAccelerators("dblclick", "RETURN");
+
+      pmb <= pm.addDefaultButton("Copy entries", "entries_copy");
+      pmb.setAccelerators("", "lctrl-c");
+
+      pmb <= pm.addDefaultButton("Paste entries", "entries_paste");
+      pmb.setActive(entries_clipboard.numElements > 0);
+      pmb.setAccelerators("", "lctrl-v");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Load Scene", "scene_load");
+      pmb.setAccelerators("", "lctrl-l");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Save Scene", "scene_save");
+      pmb.setAccelerators("", "lctrl-s");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Query Eureka ModMatrix (VST) labels", "query_labels");
+      pmb.setToolTipCaption("- Send modmatrix mapping query to Eureka DAW\n"
+                            "- Update the labels of all selected, and matching scene entries\n"
+                            "- Update the FaderPort HW controller labels (if available)"
+                            "\n\n (note) matches the modmatrix entries of all plugin instances that listen to an entries destination port\n"
+                            "\n (note) the labels are usually VST parameter names"
+                            );
+      pmb.setAccelerators("", "lctrl-f");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Import from MIDI Synth Profile..", "query_msp");
+      pmb.setToolTipCaption("- Cursor entry determines target device/ch (and synth profile)\n"
+                            "- Show import dialog\n"
+                            "- When one or many scene entries are selected:\n"
+                            "   - keep source event(s)\n"
+                            "   - replace destination event(s) with imported MSP alias(es)\n"
+                            "- When no scene entries are selected:\n"
+                            "   - when cursor row entry has FaderPort source event:\n"
+                            "      - auto-assign up to 256 faders\n"
+                            "      - initial cursor entry source event determines fader bank and offset\n"
+                            "      - update FaderPort labels\n"
+                            "\n (note) this can be used for quickly importing hardware synth parameters (CC, (N)RPN, ..)"
+                            );
+      pmb.setAccelerators("", "lshift-f");
+
+      pm.resizeToMinimum();
+      pm.showBelowLayer(bt_tools);
+
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show tools menu.");
+   }
+
+   // <ui_show.png>
+   protected method showMultiEditor() {
+      root_form.showPageSub(RootForm.PAGE_EDITMIDIMORPHMULTI, false/*bQuiet*/);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSceneLoad1() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         local String suggestedPathName <= STConfig.mms_rootpath + "/" + Utils.ConvertToFileName(mms.mms_name) + Global.MMS_FILE_SUFFIX;
+         Dialogs.ShowFileNameDialog("Load Scene Preset",
+                                    suggestedPathName,
+                                    false/*bDir*/,
+                                    this,
+                                    false/*bSave*/,
+                                    Global.MMS_FILE_SUFFIX,
+                                    STConfig.mms_rootpath
+                                    );
+         dlg_filename_mode = DLG_FILENAME_MODE_LOAD;
+         Global.Print("Load scene (enter filename)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneLoad2(String pathName) {
+      if(SongFileReader.LoadMIDIMorphSceneFile(Utils.ToNativePathName(pathName), mms))
+      {
+         Global.Success("Load scene preset \""+mms.mms_name+"\"");
+      }
+      else
+      {
+         Global.Error("Failed to load scene preset \""+pathName+"\"");
+      }
+      handleSceneChanged(-1/*groupIdxOrMinus1*/, true/*bFocusTV*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneSave1() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         local String suggestedPathName <= STConfig.mms_rootpath + "/" + Utils.ConvertToFileName(mms.mms_name) + Global.MMS_FILE_SUFFIX;
+         Dialogs.ShowFileNameDialog("Save Scene Preset",
+                                    suggestedPathName,
+                                    false/*bDir*/,
+                                    this,
+                                    true/*bSave*/,
+                                    Global.MMS_FILE_SUFFIX,
+                                    STConfig.mms_rootpath
+                                    );
+
+         dlg_filename_mode = DLG_FILENAME_MODE_SAVE;
+         Global.Print("Save scene (enter filename)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSceneSave2(String pathName) {
+      SongFileWriter.SaveMIDIMorphSceneFile(Utils.ToNativePathName(pathName), mms);
+      Global.Print("Save scene preset \""+mms.mms_name+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleQueryRemoteCtlNamesOrMSPAliases1() {
+
+      // trace "xxx SysEx.b_audio_connected="+SysEx.IsAudioConnected();
+
+      if(SysEx.IsAudioConnected())
+      {
+         Global.Debug("PageEditMidiMorph::handleQueryRemoteCtlNamesOrMSPAliases1: send query");
+         SysEx.QueueSendRemoteQueryCtlTargets(this);
+      }
+      else
+      {
+         Global.Debug("PageEditMidiMorph::handleQueryRemoteCtlNamesOrMSPAliases1: update from MSP only");
+
+         local IntArray selRows <= Object(tm_map.getSelectedRows());
+         local IntArray si;
+         selRows.sortByValue(si);
+         selRows.rearrange(si);
+         int oldCsrIdx = tm_map.getCursorIndex();
+
+         if(0 == selRows.numElements)
+         {
+            // Lazy select current row
+            if(-1 == oldCsrIdx)
+               return;
+            selRows <= [oldCsrIdx];
+         }
+
+         int numUpdated = mms.updateLabelsFromMSPAliases(selRows);
+
+         if(numUpdated > 0)
+         {
+            handleLabelUpdatePost();
+         }
+
+         Global.Print("Update "+numUpdated+" label"+Utils.GetPluralString(numUpdated)+" from MIDI synth profile(s)");
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleRemoteQueryCtlTargets(PointerArray _ctlTargets) {
+      // RemoteQueryCtlTargetsListener
+
+      local IntArray selRows <= Object(tm_map.getSelectedRows());
+      local IntArray si;
+      selRows.sortByValue(si);
+      selRows.rearrange(si);
+      int oldCsrIdx = tm_map.getCursorIndex();
+
+      if(0 == selRows.numElements)
+      {
+         // Lazy select current row
+         if(-1 == oldCsrIdx)
+            return;
+         selRows <= [oldCsrIdx];
+      }
+
+      PointerArray vstDevs <= MIDI.FindVSTDevices();
+
+      int numUpdated = mms.updateLabelsFromRemoteCtlTargetsOrMSPAliases(vstDevs, selRows, _ctlTargets);
+
+      if(numUpdated > 0)
+      {
+         handleLabelUpdatePost();
+      }
+
+      Global.Print("Eureka ModMatrix Query: Update "+numUpdated+" label"+Utils.GetPluralString(numUpdated));
+   }
+
+   // <method.png>
+   public method handleLabelUpdatePost() {
+      ////handleSceneChanged(-1, false/*bFocusTV*/);
+      updateTable(true/*bPreserveKbdFocus*/);
+      handleSceneEdited();
+      tm_map.selectNone();
+   }
+
+   // <ui_handle.png>
+   protected method handleImportEntriesFromProfile1() {
+
+      if(f_src.isValidEvent())
+      {
+         if(f_dst.isValidEvent())
+         {
+            MIDIMapEvent dstEv <= f_dst.current_ev;
+            STX_MIDIOutDevice outDev <= dstEv.dev;
+
+            // Show import dialog
+            MIDISynthProfile msp <= outDev.getMIDISynthProfile(dstEv.dev_ch);
+            if(null != msp)
+            {
+               if(null == dlg_importmsp)
+               {
+                  dlg_importmsp <= new ImportSynthProfileDialog;
+                  dlg_importmsp.init();
+               }
+
+               msp_import_dev <= outDev;
+               msp_import_ch   = dstEv.dev_ch;
+
+               dlg_importmsp.showMSP(msp, outDev, dstEv.dev_ch, this);
+            }
+            else
+            {
+               Global.Warning("No MIDI synth profile");
+            }
+         }
+         else
+         {
+            Global.Warning("Invalid target event (No output device)");
+         }
+      }
+      else
+      {
+         Global.Warning("Invalid source event (No input device)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleImportEntriesFromProfile2() {
+
+      local PointerArray selectedAliases <= dlg_importmsp.getSelectedAliases();
+      MIDISynthProfileCtlAlias *alias;
+
+      local IntArray selRows <= Object(tm_map.getSelectedRows());
+      int numSelRows = selRows.numElements;
+
+      int oldCsrIdx = tm_map.getCursorIndex();
+      if(!selRows.contains(oldCsrIdx))
+         selRows.add(oldCsrIdx);
+
+      local IntArray si;
+      selRows.sortByValue(si);
+      selRows.rearrange(si);
+
+      if(numSelRows >= 1)
+      {
+         handleImportEntriesFromProfile2_Replace(selectedAliases, selRows);
+      }
+      else
+      {
+         // (note) cursor entry determines how the entries will be imported
+         MIDIMorphSceneTMEntry en <= getSelectedEntry();
+         if(null != en)
+         {
+            MIDIMapEvent srcEv <= en.src_ev;
+
+            if(faderport.b_connected)
+            {
+               if(@(srcEv.dev) == @(faderport.in_dev))
+               {
+                  int faderIdx;
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                     faderIdx = srcEv.ext_type + 1;
+                  else
+                     faderIdx = 0;
+
+                  handleImportEntriesFromProfile2_Add_FaderPort(selectedAliases, faderIdx);
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportEntriesFromProfile2_Replace(PointerArray _selectedAliases, IntArray _selRows) {
+      int numUpdated = 0;
+
+      PointerArray mmsEntries <= mms.mms_entries;
+
+      int num = mathMini(_selectedAliases.numElements, _selRows.numElements);
+
+      int idx = 0;
+      loop(num)
+      {
+         MIDISynthProfileCtlAlias alias <= _selectedAliases.get(idx);
+         MIDIMapEvent srcEv <= mmsEntries.get(_selRows.get(idx));
+         if(null != srcEv)
+         {
+            MIDIMapEvent dstEv <= srcEv.morph_target;
+            if(null != dstEv)
+            {
+               dstEv.initFromMIDISynthProfileCtlAlias(alias);
+               dstEv.dev    <= msp_import_dev;
+               dstEv.dev_ch  = msp_import_ch;
+               dstEv.autoAdjustMorphTransformToMIDISynthProfileCtlAlias(alias);
+               numUpdated++;
+            }
+         }
+
+         // Next
+         idx++;
+      }
+
+      if(numUpdated > 0)
+      {
+         mms.updateLabelsFromMSPAliases(_selRows);
+         handleLabelUpdatePost();
+      }
+
+      // Restore selection
+      tm_map.setSelectedRows(_selRows);
+
+      Global.Print("Import from MSP: replace "+numUpdated+" "+Utils.GetPluralStringEx(numUpdated, "entry", "entries"));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleImportEntriesFromProfile2_Add_FaderPort(PointerArray _selectedAliases, int _faderOffset) {
+      int numUpdated = 0;
+
+      int insertIdx = tm_map.getCursorIndex();
+
+      PointerArray mmsEntries <= mms.mms_entries;
+
+      int num = mathMini(_selectedAliases.numElements, FaderPort.NUM_FADERS_PER_BANK);
+
+      local IntArray newSelRows;
+
+      int idx = 0;
+      loop(num)
+      {
+         MIDISynthProfileCtlAlias alias <= _selectedAliases.get(idx);
+
+         MIDIMapEvent srcEvTmp;
+         srcEvTmp.dev <= faderport.in_dev;
+         srcEvTmp.dev_ch = 0;
+         srcEvTmp.type = MIDIMapDefs.TYPE_NRPN;
+         srcEvTmp.ext_type = _faderOffset + idx;
+
+         if( (_faderOffset + idx) < (FaderPort.NUM_BANKS * FaderPort.NUM_FADERS_PER_BANK) )
+         {
+            MIDIMapEvent dstEvTmp;
+            dstEvTmp.initFromMIDISynthProfileCtlAlias(alias);
+            dstEvTmp.dev    <= msp_import_dev;
+            dstEvTmp.dev_ch  = msp_import_ch;
+
+            if(insertIdx >= 0)
+               insertIdx++;
+            MIDIMapEvent srcEv <= mms.mmsAddEntry(srcEvTmp, dstEvTmp, insertIdx);
+
+            if(null != srcEv)
+            {
+               MIDIMapEvent dstEv <= srcEv.morph_target;
+               dstEv.autoAdjustMorphTransformToMIDISynthProfileCtlAlias(alias);
+
+               newSelRows.add(mmsEntries.indexOfPointer(srcEv, 0));
+               numUpdated++;
+            }
+         }
+
+         // Next
+         idx++;
+      }
+
+      if(numUpdated > 0)
+      {
+         local IntArray selRows;
+         selRows.identity(mmsEntries.numElements);
+         mms.updateLabelsFromMSPAliases(selRows);
+         handleLabelUpdatePost();
+      }
+
+      tm_map.setSelectedRows(newSelRows);
+
+      Global.Print("Import from MSP: add "+numUpdated+" FaderPort "+Utils.GetPluralStringEx(numUpdated, "entry", "entries"));
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return ["swap_group\t<a> <b>",
+              "swap_scene\t<ax> <by>"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public method cmdGetDefaultActions() : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      switch(_cmd)
+      {
+         case "swap_group":
+            return MIDIMorphScene.all_group_names;
+
+         case "swap_scene":
+            return MIDIMorphScene.all_scene_names;
+      }
+      return null;
+   }
+
+   // <method.png>
+   protected method updateUIAfterPageCmd() {
+      updateSceneOptionsLong();
+
+      if(RootForm.PAGE_EDITMIDIMORPH == root_form.getCurrentPageNr())
+      {
+         handleSceneChanged(-1, false/*bFocusTV*/);
+         // // tv_map.moveCursorToFirstRow();
+      }
+      else if(RootForm.PAGE_EDITMIDIMORPHMULTI == root_form.getCurrentPageNr())
+      {
+         root_form.pg_editmidimorphmulti.updateWidgets(false/*bFocusTV*/);
+      }
+
+      handleSceneEdited();
+   }
+
+
+   // <ui_cmd.png>
+   protected method handlePageCmdGroupSwap(StringArray _argv) : boolean {
+      if(3 == _argv.numElements)
+      {
+         int groupIdxA = MIDIMorphScene.all_group_names.indexOfObject(_argv.get(1).toLower(), 0);
+         int groupIdxB = MIDIMorphScene.all_group_names.indexOfObject(_argv.get(2).toLower(), 0);
+         if((-1 != groupIdxA) && (-1 != groupIdxB))
+         {
+            if(groupIdxA != groupIdxB)
+            {
+               MIDIMorphScene.SwapGroups(groupIdxA, groupIdxB);
+               updateUIAfterPageCmd();
+
+               Global.Print("Swap groups "+_argv.get(1)+" <> "+_argv.get(2));
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_cmd.png>
+   protected method handlePageCmdSceneSwap(StringArray _argv) : boolean {
+      if(3 == _argv.numElements)
+      {
+         int idxA = MIDIMorphScene.all_scene_names.indexOfObject(_argv.get(1).toLower(), 0);
+         int idxB = MIDIMorphScene.all_scene_names.indexOfObject(_argv.get(2).toLower(), 0);
+         if((-1 != idxA) && (-1 != idxB))
+         {
+            if(idxA != idxB)
+            {
+               int groupIdxA = idxA / 16;
+               int groupIdxB = idxB / 16;
+               int sceneIdxA = idxA % 16;
+               int sceneIdxB = idxB % 16;
+
+               MIDIMorphScene.SwapScenes(groupIdxA, sceneIdxA, groupIdxB, sceneIdxB);
+
+               updateUIAfterPageCmd();
+
+               Global.Print("Swap scenes "+_argv.get(1)+" <> "+_argv.get(2));
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      Global.Debug("PageStart::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "swap_group":
+            return handlePageCmdGroupSwap(_argv);
+
+         case "swap_scene":
+            return handlePageCmdSceneSwap(_argv);
+      }
+      return false;
+   }
+
+   // <ui_show.png>
+   protected method showEntryContextMenu(boolean _bFocusFirst) {
+
+      pm_entry <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_entry;
+      boolean bHaveEntry = (null != getSelectedEntry());
+
+      // Source
+      pmb <= pm.addDefaultButton("Copy SRC ctl+port to Ctl.Clipboard A",
+                                 "copy_src_ctl_a"
+                                 );
+
+      pmb <= pm.addDefaultButton("Copy SRC ctl+port to Ctl.Clipboard B",
+                                 "copy_src_ctl_b"
+                                 );
+
+      pm.addSeparator();
+      local String info <= mmarg_clipboard_a.getStringForClipboardMenu();
+      info <= info.isBlank()?"":(" ("+info+")");
+      pmb <= pm.addDefaultButton("Paste Ctl.Clipboard A to SRC ctl+port"+info,
+                                 "paste_src_ctl_a"
+                                 );
+      pmb.setAccelerators("", "lctrl-j");
+      pmb.setActive(mmarg_clipboard_a.isValidClipboardArg());
+
+      info <= mmarg_clipboard_b.getStringForClipboardMenu();
+      info <= info.isBlank()?"":(" ("+info+")");
+      pmb <= pm.addDefaultButton("Paste Ctl.Clipboard B to SRC ctl+port"+info,
+                                 "paste_src_ctl_b"
+                                 );
+      pmb.setAccelerators("", "lctrl-lshift-j");
+      pmb.setActive(mmarg_clipboard_b.isValidClipboardArg());
+
+      // Destination
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Copy DST ctl+port to Ctl.Clipboard A",
+                                 "copy_dst_ctl_a"
+                                 );
+      pmb.setAccelerators("lshift-1", "lctrl-u");
+
+      pmb <= pm.addDefaultButton("Copy DST ctl+port to Ctl.Clipboard B",
+                                 "copy_dst_ctl_b"
+                                 );
+      pmb.setAccelerators("lshift-2", "lctrl-lshift-u");
+
+
+      pm.addSeparator();
+      info <= mmarg_clipboard_a.getStringForClipboardMenu();
+      info <= info.isBlank()?"":(" ("+info+")");
+      pmb <= pm.addDefaultButton("Paste Ctl.Clipboard A to DST ctl+port"+info,
+                                 "paste_dst_ctl_a"
+                                 );
+      pmb.setAccelerators("lshift-3", "lctrl-i");
+      pmb.setActive(mmarg_clipboard_a.isValidClipboardArg());
+
+      info <= mmarg_clipboard_b.getStringForClipboardMenu();
+      info <= info.isBlank()?"":(" ("+info+")");
+      pmb <= pm.addDefaultButton("Paste Ctl.Clipboard B to DST ctl+port"+info,
+                                 "paste_dst_ctl_b"
+                                 );
+      pmb.setAccelerators("lshift-4", "lctrl-lshift-i");
+      pmb.setActive(mmarg_clipboard_b.isValidClipboardArg());
+
+      // Node Remote Control
+      pm.addSeparator();
+      PopupMenu spm <= PopupMenu.New(pm);
+      pmb <= pm.addMenu("Replace Target by Node Remote Control..", deref spm);
+      MIDI.AppendNodeRemoteCtlMenuItems(spm, ""/*actionPrefix*/);  // "rpn_*" menu items
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("New FaderPort fader",
+                                 "alloc_faderport_fader"
+                                 );
+      pmb.setAccelerators("lctrl-INSERT", "lctrl-g");
+      pmb.setToolTipCaption("Alloc next unused FaderPort fader\n\n (note) prefer bank (A..P) under cursor\n\n (note) duplicate destination event under cursor (fallback to <play_a>:1 CC#001 if there is none)");
+      pmb.setActive(faderport.b_connected);
+
+      MIDI.AppendCtlTagSubMenu(pm, "New FaderPort fader from CtlTag");  // "ctltagentry_*"
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      if(_bFocusFirst)
+         pm_entry.focusNextMenuItem();
+
+      Global.Print("Show entry context menu");
+   }
+
+   // <method.png>
+   protected method editSelectedLabel() {
+      int rowIdx = tm_map.getCursorIndex();
+      if(rowIdx >= 0)
+         tm_map.editColumn(MIDIMorphSceneTM.COL_LABEL, rowIdx);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'r':
+            handleToggleRecMode();
+            return true;
+
+         case VKEY_INSERT:
+            if(_k.modCtrl())
+            {
+               handleAllocFaderPortFader();
+            }
+            else
+            {
+               handleAdd();
+            }
+            return true;
+
+         case 'a':
+            if(_k.modShift())
+            {
+               showToolsMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               showEntryContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            return false;
+
+         case VKEY_DELETE:
+            handleRemove();
+            return true;
+
+         // (note) tableview sends ROW_CLICKED action when RETURN is pressed
+         // // case VKEY_RETURN:
+         // //    handleAddEntryToClipboard();
+         // //    return true;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handleSceneCopy();
+               }
+               else
+               {
+                  handleEntriesCopyOrCut(false/*bCut*/, false/*bDelete*/);
+               }
+            }
+            return true;
+
+         case 'd':
+            if(_k.modCtrl())
+            {
+               handleRemove();
+               return true;
+            }
+            return false;
+
+         case 'f':
+            if(_k.modCtrl())
+            {
+               handleQueryRemoteCtlNamesOrMSPAliases1();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               handleImportEntriesFromProfile1();
+               return true;
+            }
+            return false;
+
+         case 'g':
+            if(_k.modCtrl())
+            {
+               handleAllocFaderPortFader();
+               return true;
+            }
+            break;
+
+         case 'i':
+            if(_k.modCtrl())
+            {
+               pasteCtlClipboardToDstEntryTypeAndPort(_k.modShift()/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case 'j':
+            if(_k.modCtrl())
+            {
+               pasteCtlClipboardToSrcEntryTypeAndPort(_k.modShift()/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case 'l':
+            if(_k.modCtrl())
+               handleSceneLoad1();
+            return true;
+
+         case 's':
+            if(_k.modCtrl())
+               handleSceneSave1();
+            else
+               showMultiEditor();
+            return true;
+
+         case 'u':
+            if(_k.modCtrl())
+            {
+               copyDstEntryTypeAndPortToCtlClipboard(_k.modShift()/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case '1':
+            if(_k.modShiftOnly())
+            {
+               copyDstEntryTypeAndPortToCtlClipboard(false/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modShiftOnly())
+            {
+               copyDstEntryTypeAndPortToCtlClipboard(true/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modShiftOnly())
+            {
+               pasteCtlClipboardToDstEntryTypeAndPort(false/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case '4':
+            if(_k.modShiftOnly())
+            {
+               pasteCtlClipboardToDstEntryTypeAndPort(true/*bClipboardB*/);
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handleScenePaste();
+               }
+               else
+               {
+                  handleEntriesPaste();
+               }
+            }
+            return true;
+
+         case 'w':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+               }
+               else
+               {
+                  handleEntriesCopyOrCut(true/*bCut*/, false/*bDelete*/);
+               }
+            }
+            return true;
+
+
+         case VKEY_BACKSPACE:
+            if(_k.modShift())
+            {
+               handleSceneClear();
+            }
+            return true;
+
+         case VKEY_UP:
+            if(_k.modCtrl())
+            {
+               handleMoveUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(_k.modCtrl())
+            {
+               handleMoveDown();
+               return true;
+            }
+            break;
+
+         case VKEY_F2:
+            editSelectedLabel();
+            return true;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            if(TA_REDRAW == acName)
+            {
+               redraw();
+
+               return true;
+            }
+            else if(TA_ALTERNATE == acName)
+            {
+               toggleSrcDst();
+
+               return true;
+            }
+            else if(TA_QR_BLINK == acName)
+            {
+               handleQRBlink();
+
+               return true;
+            }
+            break;
+
+         case @(tv_map):
+            if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleRowSelected();
+               updateMoveUpDownButtons();
+            }
+            else if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               // (note) don't update when ROWSELECTED since adding new events while cause
+               //         the last added row to be selected after adding.
+               //         When Synthetic events are filtered, the last update "LastEventInfo"
+               //         will be e.g. ButtonUp instead of e.g. Hold End, otherwise.
+               // ///updateLastEventInfo(tm_log.events.get(tm_log.getCursorIndex()));
+
+               handleAddEntryToClipboard();
+
+               provideAction(Action.New(ACTION_EVENTCLICKED, this));  // [20Dec2021] not used ??
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showEntryContextMenu(tv_map.b_contextmenu_kbd/*bFocusFirst*/);
+            }
+            return true;
+
+         case @(f_src):
+         case @(f_dst):
+            if(MidiMorphEntryForm.AC_ENTRY_EDITED == acName)
+            {
+               if(VMOD_LALT == UI.GetKeyMod())
+               {
+                  if(@(ap) == @(f_src))
+                  {
+                     if(MidiMorphEntryForm.EDIT_DEV == f_src.getLastEditedParam())
+                     {
+                        mms.updateAllSrcDevs(f_src.getDevIdx(), f_src.last_orig_dev_idx);
+                     }
+                     else if(MidiMorphEntryForm.EDIT_CH == f_src.getLastEditedParam())
+                     {
+                        if( faderport.b_connected && (@(f_src.current_ev.dev) == @(faderport.in_dev)) )
+                        {
+                           mms.updateAllFaderPortBanks(f_src.last_orig_faderport_bank, f_src.last_new_faderport_bank);
+                        }
+                        else
+                        {
+                           mms.updateAllSrcCh(f_src.getMidiCh(), f_src.last_orig_dev_idx, f_src.last_orig_ch);
+                        }
+                     }
+                  }
+                  else if(@(ap) == @(f_dst))
+                  {
+                     if(MidiMorphEntryForm.EDIT_DEV == f_dst.getLastEditedParam())
+                     {
+                        mms.updateAllDstDevs(f_dst.getDevIdx(), f_dst.last_orig_dev_idx);
+                     }
+                     else if(MidiMorphEntryForm.EDIT_CH == f_dst.getLastEditedParam())
+                     {
+                        mms.updateAllDstCh(f_dst.getMidiCh(), f_dst.last_orig_dev_idx, f_dst.last_orig_ch);
+                     }
+                  }
+               }
+
+               updateTable(true/*bPreserveKbdFocus*/);
+
+               return true;
+            }
+            else if(MidiMorphEntryForm.AC_UPDATE_TABLE_QUIET == acName)
+            {
+               updateTableQuiet();
+
+               return true;
+            }
+            else if(MidiMorphEntryForm.AC_CANCEL_AUTOSELECT == acName)
+            {
+               cancelAutoSelect();
+            }
+            break;
+
+         case @(cm_scenegroup):
+            handleSceneGroupChanged(false/*bFocusTV*/);
+            tm_map.selectNone();
+            return true;
+
+         case @(cm_scene):
+            handleSceneChanged(-1, false/*bFocusTV*/);
+            tm_map.selectNone();
+            return true;
+
+         case @(tf_scene_name):
+            handleSceneNameChanged();
+            return true;
+
+         case @(bt_parent):
+            root_form.showPageParent();
+            return true;
+
+         case @(bt_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleReplaceSource();
+            }
+            else
+            {
+               handleAdd();
+            }
+            return true;
+
+         case @(bt_qr):
+            handleQR();
+            return true;
+
+         case @(pm_entry):
+            Global.Debug2("midimorph: pm_entry acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               pageFocusDefault();
+
+            if(acName <= "ctltagentry_")
+            {
+               allocFaderPortFaderAndInitFromCtlTagEntry(int(acName.replace("ctltagentry_", "")));
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close entry menu.");
+                  return true;
+
+               default:
+                  if(acName <= "rpn_")
+                  {
+                     // "rpn_<devidx>_<ch>_<rpn>"
+                     local StringArray rpnWords <= acName.splitChar('_');
+                     int rpnDevIdx = rpnWords.get(1);
+                     int rpnDevCh  = rpnWords.get(2);
+                     int rpn       = rpnWords.get(3);
+                     pasteRPNCtlToDstEntryTypeAndPort(rpnDevIdx, rpnDevCh, rpn);
+                  }
+                  else
+                     Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy_src_ctl_a":
+                  copySrcEntryTypeAndPortToCtlClipboard(false/*bClipboardB*/);
+                  return true;
+
+               case "copy_src_ctl_b":
+                  copySrcEntryTypeAndPortToCtlClipboard(true/*bClipboardB*/);
+                  return true;
+
+               case "copy_dst_ctl_a":
+                  copyDstEntryTypeAndPortToCtlClipboard(false/*bClipboardB*/);
+                  return true;
+
+               case "copy_dst_ctl_b":
+                  copyDstEntryTypeAndPortToCtlClipboard(true/*bClipboardB*/);
+                  return true;
+
+               case "paste_src_ctl_a":
+                  pasteCtlClipboardToSrcEntryTypeAndPort(false/*bClipboardB*/);
+                  return true;
+
+               case "paste_src_ctl_b":
+                  pasteCtlClipboardToSrcEntryTypeAndPort(true/*bClipboardB*/);
+                  return true;
+
+               case "paste_dst_ctl_a":
+                  pasteCtlClipboardToDstEntryTypeAndPort(false/*bClipboardB*/);
+                  return true;
+
+               case "paste_dst_ctl_b":
+                  pasteCtlClipboardToDstEntryTypeAndPort(true/*bClipboardB*/);
+                  return true;
+
+               case "alloc_faderport_fader":
+                  handleAllocFaderPortFader();
+                  return true;
+            }
+            return true;
+
+         case @(bt_remove):
+            handleRemove();
+            return true;
+
+         case @(bt_moveup):
+            handleMoveUp();
+            return true;
+
+         case @(bt_movedown):
+            handleMoveDown();
+            return true;
+
+         case @(bt_tools):
+            showToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_tools):
+            Global.Debug2("PageEditMidiMorph: pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "scene_copy":
+                  handleSceneCopy();
+                  return true;
+
+               case "scene_paste":
+                  handleScenePaste();
+                  return true;
+
+               case "clear":
+                  handleSceneClear();
+                  return true;
+
+               case "entries_copy":
+                  handleEntriesCopyOrCut(false/*bCut*/, false/*bDelete*/);
+                  return true;
+
+               case "entry_addtoclipboard":
+                  handleAddEntryToClipboard();
+                  return true;
+
+               case "entries_cut":
+                  handleEntriesCopyOrCut(true/*bCut*/, false/*bDelete*/);
+                  return true;
+
+               case "entries_paste":
+                  handleEntriesPaste();
+                  return true;
+
+               case "scene_load":
+                  handleSceneLoad1();
+                  return true;
+
+               case "scene_save":
+                  handleSceneSave1();
+                  return true;
+
+               case "query_labels":
+                  handleQueryRemoteCtlNamesOrMSPAliases1();
+                  return true;
+
+               case "query_msp":
+                  handleImportEntriesFromProfile1();
+                  return true;
+            }
+            return true;
+
+         case @(bt_multi):
+            showMultiEditor();
+            return true;
+
+         case @(cm_recmode):
+            handleRecModeChanged(false/*bClearIO*/);
+            return true;
+
+         case @(Dialogs.dialog_filename):
+            Global.Debug("PageEditMidiMorph: Dialogs.dialog_filename acName="+acName);
+
+            if(FileNameDialog.ACTION_RETURN == acName)
+            {
+               StringAction sa <= _action;
+               String fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.MMS_FILE_SUFFIX);
+
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_SAVE:
+                     handleSceneSave2(fileName);
+                     pageFocusDefault();
+                     break;
+
+                  case DLG_FILENAME_MODE_LOAD:
+                     handleSceneLoad2(fileName);
+                     pageFocusDefault();
+                     break;
+               }
+            }
+            else if(FileNameDialog.ACTION_CANCEL == acName)
+            {
+               Global.Debug("PageEditMidiMorph: file dialog was canceled");
+               pageFocusDefault();
+            }
+            return true;
+
+         case @(dlg_importmsp):
+            if(ImportSynthProfileDialog.ACTION_IMPORT == acName)
+               handleImportEntriesFromProfile2();
+            return true;
+
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,568 @@
+// ----
+// ---- file   : MIDISynthProfileCtlAlias.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2013-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 13Apr2013
+// ----
+// ---- changed: 13Aug2014, 14Aug2014, 15Aug2014, 15Sep2014, 29Sep2014, 17Feb2015, 06Mar2015
+// ----          21Jan2016, 18Jan2019, 20Jan2019, 24Jan2019, 26Jan2019, 08Feb2019, 18Feb2019
+// ----          14Jul2019, 20Nov2019, 17Feb2021, 18Feb2021, 03Jun2021, 18Dec2021, 20Apr2022
+// ----          29Sep2022, 23Oct2022, 08Jul2023, 28Feb2025
+// ----
+// ----
+// ----
+
+module MMIDISynthProfileCtlAlias;
+
+use namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class MIDISynthProfileCtlAlias {
+   int    type;    // MIDIMapDefs.TYPE_CC|RPN|NRPN
+   int    nr;      // cc#(msb) / rpn / nrpn / note# / datanr
+   int    nr_lo;   // 0=none, CC LSB otherwise (usually nr+32)
+   int    nr_hi;   // 0=none, CC MSB otherwise (usually nr-32)
+   String id;
+   String caption;
+   String info;
+   int    min;
+   int    max;
+   int    bias;    // subtracted/added when converting from/to sysex
+   int    ui_bias;  // subtracted/added when converting from/to UI (signed 7bit floatparam values)
+   int    ui_zero;  // subtracted/added when converting from/to UI (signed 14bit floatparam values) (added for Moog Sub 37)
+   int    reset;    // reset value
+
+   byte   class_type; // see MIDIMapEventType.CLASS_xxx
+   byte   class_button_down_cond;   // see MIDIMapEventType.FLT_xxx
+   byte   class_button_down_refval;
+
+   boolean b_repeat;
+   boolean b_norelease;  // true=ctl/synth never sends button up/release event
+
+   int cel_style;  // NT_CEL.STYLE_xxx
+   int cel_range;  // NT_CEL.RANGE_xxx
+
+   int editgroup_idx;     // -1 = no group
+   int editsubgroup_idx;  // -1 = no subgroup
+   int randlock_flags;    // 8bit mask (one set bit). see "randLockBit" attribute. def=1 (bit 0)
+
+   int syx_off;     // >=0: byte offset in SysEx patch data buffer
+   int syx_off_lo;  // >=0 when this is the LSB part of a two-byte param
+   int syx_off_hi;  // >=0 when this is the MSB part of a two-byte param
+
+   int syx_bit_off; //
+   int syx_bit_num; // >0: bitfield parameter
+
+   // Moog Sub37 patch decoding:
+   int enc_off;     // offset in (encoded) sysex data (w/o F0 header)
+   int enc_bit_off; //
+   int enc_bit_num; // >0: bitfield parameter
+   int enc_bit_num_ext; // Moog Sub37: number of (low) bits continued left-aligned in next byte (starting with bit 5)
+
+   MIDISynthProfileCtlAlias *nr_lo_alias;
+   MIDISynthProfileCtlAlias *nr_hi_alias;
+
+   boolean b_ui;          // 0=don't show in generic editor+don't send param updates. see "ui" attribute, e.g. "ui=0".
+   String *ui_class;      // override auto-created widget class, see "uiClass" attribute, e.g. "uiClass=FloatParam".
+   String *ui_id;         // used by Montage editor. specifies auto-resolve member name, e.g. "uiId=fp_pan_rand"
+   boolean b_ui_custom_widget;  // true=instantiate ui_class. see "<widget> tag.
+   boolean b_ui_sub_group;  // true=add additional padding (padTop) to widget (e.g. for grouping mod matrix parameters)
+
+   public String *edit_options_str;  // for ComboBox-style params. "item1;item2;itemn" format
+   public Layer  *editor_widget;     // ref to EditMIDISynthFormGeneric param widget
+
+
+
+   // <method_init.png>
+   public method initEmpty(int _type) {
+      type = _type;
+
+      editgroup_idx = -1;
+      editsubgroup_idx = -1;
+
+      syx_off    = -1;
+      syx_off_lo = -1;
+      syx_off_hi = -1;
+
+      enc_off    = -1;
+
+      randlock_flags = 1;
+
+      b_ui = true;
+   }
+
+   // <method_parse.png>
+   protected method parseEditOptions(String _s) : String {
+      if(-1 != _s.indexOfChar('@', 0))
+      {
+         // Expand repeating entries ("@<num>*<str>" or "@<start>..<end>"), e.g. for Nord Drum 3P
+         local StringArray a <= _s.splitChar(';');
+         if(null != a)
+         {
+            local String r;
+            local String optLast;
+            String *w;
+            local String *wStr;
+            int idx = 0;
+            foreach w in a
+            {
+               boolean bFallback = true;
+               if(w <= "@")
+               {
+                  int idxCol = w.indexOfChar(':', 1);
+                  if(-1 != idxCol)
+                  {
+                     // @<idx>:<name>  (auto-repeat last entry up to <idx>)
+                     int nextIdx = w.substring(1, idxCol-1);
+                     wStr <= w.substring(idxCol+1, 99);
+                     // trace "xxx idx="+idx+" nextIdx="+nextIdx+" wStr=\""+wStr+"\"";
+                     if(nextIdx >= idx)
+                     {
+                        while(idx < nextIdx)
+                        {
+                           // Repeat last option
+                           if(!r.isBlank())
+                              r.append(";");
+                           if(optLast.isBlank())
+                              r.append(String(idx));
+                           else
+                              r.append(optLast);
+                           idx++;
+                        }
+                        if(!r.isBlank())
+                           r.append(";");
+                        r.append(wStr);
+                        idx++;
+                        optLast = wStr;
+                        bFallback = false;
+                     }
+                     // else: malformed option
+                  }
+                  else
+                  {
+                     int idxMul = w.indexOfChar('*', 1);
+                     if(-1 != idxMul)
+                     {
+                        int num = w.substring(1, idxMul-1);
+                        wStr <= w.substring(idxMul+1, 99);
+                        if(1 <= num <= 16383)
+                        {
+                           loop(num)
+                           {
+                              if(!r.isBlank())
+                                 r.append(";");
+                              r.append(wStr);
+                              optLast = wStr;
+                              idx++;
+                           }
+                           bFallback = false;
+                        }
+                     }
+                     else
+                     {
+                        int idxDot = w.indexOf("..", 1);
+                        if(-1 != idxDot)
+                        {
+                           int nrStart = w.substring(1, idxDot-1);
+                           int nrEnd = w.substring(idxDot+2, 99);
+                           if(nrEnd >= nrStart)
+                           {
+                              int nr = nrStart;
+                              while(nr <= nrEnd)
+                              {
+                                 if(!r.isBlank())
+                                    r.append(";");
+                                 r.append(String(nr));
+                                 optLast = String(nr);
+                                 nr++;
+                                 idx++;
+                              }
+                              bFallback = false;
+                           }
+                        }
+                     }
+                  }
+               }
+               if(bFallback)
+               {
+                  if(!r.isBlank())
+                     r.append(";");
+                  r.append(w);
+                  optLast = w;
+                  idx++;
+               }
+            }
+            return deref r;
+         }
+      }
+      return Object(_s);
+   }
+
+   // <method_get.png>
+   public method getEditOptionsAsArray() : StringArray {
+      // (todo) cache ?
+      if(null != edit_options_str)
+      {
+         local StringArray a <= edit_options_str.splitChar(';');
+         return deref a;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getEditOptionStringByIndex(int _idx) : String {
+      local StringArray a <= getEditOptionsAsArray();
+      if(null != a)
+      {
+         return Object(a.get(_idx));
+      }
+      return null;
+   }
+
+   // <method_parse.png>
+   public method parse(HashTable attr, String _nrAttrName, int nrMax, int nrShift) : boolean {
+
+      b_repeat = true;
+
+      cel_style = NT_CEL.STYLE_HEX;
+      cel_range = NT_CEL.RANGE_0_127;
+
+      String nrAttrName = _nrAttrName;
+
+      if(null != _nrAttrName)
+      {
+         if(!attr.exists(nrAttrName))
+         {
+            nrAttrName = "nr";
+            if(!attr.exists(nrAttrName))
+            {
+               nrAttrName = "nrHi";
+               if(!attr.exists(nrAttrName))
+               {
+                  trace "[---] MIDISynthProfileCtlAlias::parse: missing \""+_nrAttrName+"\" attribute";
+                  return false;
+               }
+            }
+         }
+
+         nr = attr.get(nrAttrName);
+
+         if(attr.exists(nrAttrName+"2"))
+            nr += attr.get(nrAttrName+"2");  // e.g. layer b shift
+
+         nr += nrShift;  // shift via <nr shift=200/> element
+      }
+
+      if( (0 <= nr <= nrMax) || (null == nrAttrName) )
+      {
+         if(attr.exists("id"))
+         {
+            id = attr.get("id");
+
+            if(attr.exists("caption"))
+            {
+               caption = attr.get("caption");
+            }
+            else
+            {
+               caption = id;
+            }
+
+            if(attr.exists("info"))
+            {
+               info = attr.get("info");
+            }
+
+            if(attr.exists("nrLo"))
+            {
+               nr_lo = attr.get("nrLo");
+
+               if((MIDIMapDefs.TYPE_RPN  == type) ||
+                  (MIDIMapDefs.TYPE_NRPN == type)
+                  )
+               {
+                  nr = (nr << 7) | nr_lo;
+                  nr_lo = 0;
+               }
+            }
+
+            if(attr.exists("min"))
+            {
+               min = attr.get("min");
+            }
+
+            if(attr.exists("max"))
+            {
+               max = attr.get("max");
+            }
+
+            if(attr.exists("reset"))
+            {
+               reset = attr.get("reset");
+            }
+
+            if(attr.exists("bias"))
+            {
+               // bias with 7bit wrap-around
+               bias = attr.get("bias");
+            }
+
+            if(attr.exists("uiBias"))
+            {
+               // display bias (e.g. 14 = map M64_P63 min=0 max=100 value to -50..50 range)
+               ui_bias = attr.get("uiBias");
+            }
+
+            if(attr.exists("uiZero"))
+            {
+               // display zero point (e.g. 8192)
+               ui_zero = attr.get("uiZero");
+            }
+
+            if(attr.exists("ui"))
+            {
+               b_ui = (0 != int(attr.get("ui")));
+            }
+
+            if(attr.exists("uiClass"))
+            {
+               // override default widget class in GenericSynthEdit
+               //  e.g. use FloatParam with user table instead of ComboBox
+               ui_class <= Object(attr.get("uiClass"));
+            }
+
+            if(attr.exists("uiId"))
+            {
+               ui_id <= Object(attr.get("uiId"));
+            }
+
+            if(attr.exists("uiSubGroup"))
+            {
+               b_ui_sub_group = int(attr.get("uiSubGroup"));
+            }
+
+            if(attr.exists("repeat"))
+            {
+               b_repeat = int(attr.get("repeat"));
+            }
+
+            if(attr.exists("norelease"))
+            {
+               b_norelease = int(attr.get("norelease"));
+            }
+
+            if(attr.exists("syxOff"))
+            {
+               syx_off = int(attr.get("syxOff"));
+            }
+
+            if(attr.exists("syxOff2"))
+            {
+               syx_off += int(attr.get("syxOff2"));
+            }
+
+            if(attr.exists("syxOffLo"))
+            {
+               syx_off_lo = int(attr.get("syxOffLo"));
+            }
+
+            if(attr.exists("syxOffHi"))
+            {
+               syx_off_hi = int(attr.get("syxOffHi"));
+            }
+
+            if(attr.exists("syxBitOff"))
+            {
+               syx_bit_off = int(attr.get("syxBitOff"));
+            }
+
+            if(attr.exists("syxBitNum"))
+            {
+               syx_bit_num = int(attr.get("syxBitNum"));
+            }
+
+            if(attr.exists("encOff"))
+            {
+               // Moog Sub37 patch decoding
+               enc_off = int(attr.get("encOff"));
+            }
+
+            if(attr.exists("encBitOff"))
+            {
+               // Moog Sub37 patch decoding
+               enc_bit_off = int(attr.get("encBitOff"));
+            }
+
+            if(attr.exists("encBitNum"))
+            {
+               // Moog Sub37 patch decoding
+               enc_bit_num = int(attr.get("encBitNum"));
+            }
+
+            if(attr.exists("encBitNumExt"))
+            {
+               // Moog Sub37 (number of (low) bits continued left-aligned in next byte (starting with bit 5))
+               enc_bit_num_ext = int(attr.get("encBitNumExt"));
+            }
+
+            if(attr.exists("editOptions"))
+            {
+               edit_options_str <= parseEditOptions(attr.get("editOptions"));
+            }
+
+            if(attr.exists("randLockBit"))
+            {
+               randlock_flags = (1 << int(attr.get("randLockBit")));
+            }
+
+            if(attr.exists("randLockFlags"))
+            {
+               randlock_flags = attr.get("randLockFlags");
+            }
+
+            if(attr.exists("class"))
+            {
+               switch(attr["class"])
+               {
+                  default:
+                     trace "[~~~] MIDISynthProfileCtlAlias::parse: invalid class \""+attr["class"]+"\".";
+                     break;
+
+                  case "value":
+                     class_type = MIDIMapEventType.CLASS_VALUE;
+                     break;
+
+                  case "delta":
+                     class_type = MIDIMapEventType.CLASS_DELTA;
+                     break;
+
+                  case "delta_signbit":
+                     class_type = MIDIMapEventType.CLASS_DELTA_SIGNBIT;
+                     break;
+
+                  case "button":
+                     class_type = MIDIMapEventType.CLASS_BUTTON;
+
+                     // Default 'down' condition: != 0
+                     class_button_down_cond   = MIDIMapEventType.FLT_CNE;
+                     class_button_down_refval = 0;
+
+                     if(attr.exists("down"))
+                     {
+                        StringArray tok <= (attr["down"]).splitSpace(true);
+                        if(tok.numElements >= 2)
+                        {
+                           switch((tok.get(0)).trim())
+                           {
+                              default:
+                                 trace "[~~~] MIDISynthProfileCtlAlias::parse: invalid \"down\" op token (\""+tok.get(0)+"\").";
+                                 break;
+
+                              case "==":
+                                 class_button_down_cond = MIDIMapEventType.FLT_CEQ;
+                                 break;
+
+                              case "!=":
+                                 class_button_down_cond = MIDIMapEventType.FLT_CNE;
+                                 break;
+
+                              case ">=":
+                                 class_button_down_cond = MIDIMapEventType.FLT_CGE;
+                                 break;
+
+                              case ">":
+                                 class_button_down_cond = MIDIMapEventType.FLT_CGT;
+                                 break;
+
+                              case "<=":
+                                 class_button_down_cond = MIDIMapEventType.FLT_CLE;
+                                 break;
+
+                              case "<":
+                                 class_button_down_cond = MIDIMapEventType.FLT_CLT;
+                                 break;
+                           }
+
+                           class_button_down_refval = int(tok.get(1)) & 127;
+                        }
+                        else
+                        {
+                           trace "[~~~] MIDISynthProfileCtlAlias::parse: malformed \"down\" attribute (\""+attr["down"]+"\").";
+                        }
+                     }
+                     break;
+               }
+            }
+
+            if(attr.exists("celRange"))
+            {
+               switch(attr.get("celRange"))
+               {
+                  case "0_255":      cel_range = NT_CEL.RANGE_0_255;      break;
+                  case "0_127":      cel_range = NT_CEL.RANGE_0_127;      break;
+                  case "M128_P127":  cel_range = NT_CEL.RANGE_M128_P127;  break;
+                  case "M64_P63":    cel_range = NT_CEL.RANGE_M64_P63;    break;
+                  case "BINARY_127": cel_range = NT_CEL.RANGE_BINARY_127; break;
+                  case "BINARY_255": cel_range = NT_CEL.RANGE_BINARY_255; break;
+               }
+            }
+
+            if(attr.exists("celStyle"))
+            {
+               switch(attr.get("celStyle"))
+               {
+                  case "NOTE":    cel_style = NT_CEL.STYLE_NOTE;    break;
+                  case "LETTER":  cel_style = NT_CEL.STYLE_LETTER;  break;
+                  case "HEX":     cel_style = NT_CEL.STYLE_HEX;     break;
+                  case "PATNR2":  cel_style = NT_CEL.STYLE_PATNR2;  break;
+                  case "PATNR3":  cel_style = NT_CEL.STYLE_PATNR3;  break;
+                  case "BAR4":    cel_style = NT_CEL.STYLE_BAR4;    break;
+                  case "BAR8":    cel_style = NT_CEL.STYLE_BAR8;    break;
+                  case "BAR16":   cel_style = NT_CEL.STYLE_BAR16;   break;
+                  case "BAR32":   cel_style = NT_CEL.STYLE_BAR32;   break;
+                  case "HI_NIBL": cel_style = NT_CEL.STYLE_HI_NIBBLE; break;
+                  case "LO_NIBL": cel_style = NT_CEL.STYLE_LO_NIBBLE; break;
+               }
+            }
+
+            // Succeeded
+            return true;
+         }
+         else
+         {
+            trace "[---] MIDISynthProfileCtlAlias::parse: missing \"id\" attribute";
+         }
+      }
+      else
+      {
+         trace "[---] MIDISynthProfileCtlAlias::parse: attribute \""+nrAttrName+"\" out of range (max="+nrMax+")";
+      }
+
+      // Failed
+      return false;
+   }
+
+   // <method_find.png>
+   public method findCtlTagForDevCh(STX_MIDIOutDevice _dev, byte _midiCh, boolean _bNameOnly) : String {
+      switch(type)
+      {
+         case MIDIMapDefs.TYPE_CC:
+            return MIDI.GetCtlTagCC(_dev, _midiCh, nr, _bNameOnly);
+
+         case MIDIMapDefs.TYPE_RPN:
+            return MIDI.GetCtlTagRPN(_dev, _midiCh, nr, _bNameOnly);
+
+         case MIDIMapDefs.TYPE_NRPN:
+            return MIDI.GetCtlTagNRPN(_dev, _midiCh, nr, _bNameOnly);
+      }
+
+      return null;
+   }
+}

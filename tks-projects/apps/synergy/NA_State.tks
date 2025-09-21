@@ -1,0 +1,1736 @@
+// ----
+// ---- file   : NA_State.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 03Oct2015, 04Oct2015, 05Oct2015, 06Oct2015, 08Oct2015, 09Oct2015, 10Oct2015
+// ----          11Oct2015, 12Oct2015, 13Oct2015, 11Nov2015, 13Nov2015, 13Mar2016, 09Apr2016
+// ----          09Jul2016, 12Jul2016, 11Apr2017, 12Apr2017, 13Apr2017, 14Apr2017, 15Apr2017
+// ----          16Apr2017, 17Apr2017, 18Apr2017, 19Apr2017, 20Apr2017, 14Jul2017, 15Jul2017
+// ----          12Aug2017, 19Aug2017, 03Sep2017, 12Oct2017, 03Jan2018, 04Jan2018, 05Jan2018
+// ----          06Jan2018, 07Mar2018, 04Apr2018, 05Apr2018, 27May2018, 17Jun2018, 18Nov2018
+// ----          24Nov2018, 25Nov2018, 01Mar2019, 19Jun2019, 29Aug2019, 23Oct2019, 31Oct2019
+// ----          06Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 30Oct2020, 12Nov2020, 22May2021
+// ----          01Jan2022, 13Feb2022, 11Aug2022, 12Aug2022, 13Aug2022, 06Jan2023, 13Oct2023
+// ----          14Oct2023, 16Nov2023, 18Nov2023, 02Feb2024, 03Feb2024, 07Jul2024, 15Nov2024
+// ----          25Jan2025, 26Jan2025, 07Mar2025, 08Mar2025
+// ----
+// ----
+// ----
+
+module MNA_State;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NA_State : NA_Defs {
+
+   define int EDIT_MODE_SELECT = 0;
+   define int EDIT_MODE_DRAW   = 1;
+   define int EDIT_MODE_ERASE  = 2;
+   define int EDIT_MODE_RAZOR  = 3;
+   define int EDIT_MODE_MUTE   = 4;
+
+   define int PLAY_MODE_INFINITE         = 0;  // Infinite
+   define int PLAY_MODE_START_LOOP       = 1;
+   define int PLAY_MODE_LOOP_ONLY        = 2;
+   define int PLAY_MODE_LOOP_ONCE        = 3;
+   define int PLAY_MODE_MARKER_CHANGE    = 4;  // change into queued marker region (offset modulo)
+   define int PLAY_MODE_MARKER_RESET     = 5;  // restart queued marker region
+   define int PLAY_MODE_MARKER_RESET_ALL = 6;  // restart queued marker region + force first clip start offset
+
+   define int PLAY_INF = 99999999;
+
+   static StringArray clip_edit_mode_names = [
+      "Default",
+      "Ctl:MW",
+      "Ctl:BC",
+      "Ctl:FC",
+      "Ctl:EX",
+      "Ctl:GP1",
+      "Ctl:GP2",
+      "Ctl:GP3",
+      "Ctl:GP4",
+                                              ];
+   define int CLIP_EDIT_MODE_DEFAULT     = 0;   // edit seq or sample
+   define int CLIP_EDIT_MODE_INITCTL_MW  = 1;   // edit initial ctl
+   define int CLIP_EDIT_MODE_INITCTL_BC  = 2;   // ^^
+   define int CLIP_EDIT_MODE_INITCTL_FC  = 3;   // ^^
+   define int CLIP_EDIT_MODE_INITCTL_EX  = 4;   // ^^
+   define int CLIP_EDIT_MODE_INITCTL_GP1 = 5;   // ^^
+   define int CLIP_EDIT_MODE_INITCTL_GP2 = 6;   // ^^
+   define int CLIP_EDIT_MODE_INITCTL_GP3 = 7;   // ^^
+   define int CLIP_EDIT_MODE_INITCTL_GP4 = 8;   // ^^
+   define int NUM_CLIP_EDIT_MODES        = 9;
+
+   int     edit_mode;         // see NA_TimelineData.EDIT_MODE_xxx (select/draw/erase/razor/mute)
+   int     clip_edit_mode;    // see CLIP_EDIT_MODE_xxx  (PAGEUP/DOWN)
+   int     vis_ticks;
+   int     view_offset;       // left hand side tick offset
+   int     prev_vis_ticks;    // before "show all"
+   int     prev_view_offset;  // before "show all"
+   float   grid_size;
+   int     grid_unit;         // see GRID_UNIT_xxx
+   boolean grid_snap;
+   float   default_len;
+   int     default_len_unit;  // see GRID_UNIT_xxx
+   float   canvas_size;
+   int     canvas_unit;       // see GRID_UNIT_xxx
+   int     start_len_unit;    // see GRID_UNIT_xxx
+   int     loop_start;
+   int     loop_end;
+   boolean loop_enable;
+   int     edit_offset;       // ticks
+   int     play_mode;         // PLAY_MODE_xxx
+   boolean b_follow;          // true=view offset follows play position, maybe=center display to replay offset
+   boolean b_rec;             // true=record pattern/mute/solo changes
+   boolean b_show_marker;     // true=show marker track
+   boolean b_show_pattern_names;   // true=show pattern names (in addition to patnr)
+   boolean b_grid_cursor_mode;     // true=grid cursor mode, false=selection cursor mode
+   boolean b_edge_selection_mode;  // true=move cursor to clip start/end before selection prev/next clip
+   boolean b_edit_draw_audio; // true=create new samples when drawing audio clips
+
+   NA_Track *[] tracks;  // first track is marker track
+
+   define int UNDO_MINIEDIT_TIMEOUT_MS = 1000;
+   define int UNDO_EDIT_TIMEOUT_MS = 20;
+   protected PointerArray *undo_history;  // points to either main or scratch undo history
+   protected PointerArray *redo_history;  // points to either main or scratch redo history
+   protected PointerArray undo_history_main;  // Buffer instances (serialized timeline + clip_selection states)
+   protected PointerArray redo_history_main;  // Buffer instances (serialized timeline + clip_selection states)
+   protected PointerArray undo_history_scratch;  // Buffer instances (serialized timeline + clip_selection states)
+   protected PointerArray redo_history_scratch;  // Buffer instances (serialized timeline + clip_selection states)
+   protected int undo_start_ms;
+
+   public int play_offset;  // #ticks
+   protected int current_loop_start;
+   protected int current_loop_end;  // 0=done playing
+   protected int queued_play_offset;  // #ticks (or -1)
+   protected boolean b_queued_play_offset_replay;  // true=only apply play offset when replay is running
+   protected boolean b_force_next_tick;  // true=select empty clip when play offset does not intersect with any clip (after seek, loop)
+
+   public int rec_shift_offset;  // for non-master arrangers
+
+   public int  current_marker_ticks;      // total number of ticks played, resets in PLAY_MODE_MARKER_RESET* (used for modulo change)
+   public byte queued_marker_patnr;       // -1, or 0..127  (PLAY_MODE_MARKER_*)
+   public byte last_queued_marker_patnr;  // 0..127  (PLAY_MODE_MARKER_*) (for nodeGetCurrentPlayPatternNr())
+   public byte last_played_marker_patnr;  // 0..127
+
+   int ui_pre_switch_marker_track_nr;  // when switching between marker/regular track with 'z' (de:'y')
+   boolean b_ui_pre_switch_show_marker;  // old marker visibility state before switching to marker track
+
+   boolean b_scratch;  // true=scratchpad active, false=main timeline active
+
+   int ui_bak_drag_start_ticks;  // saved when node editor is hidden, restored when it is shown again
+   int ui_bak_drag_end_ticks;
+   int ui_bak_drag_start_track;
+   int ui_bak_drag_end_track;
+
+   protected int queued_song_seek;  // >=0: seek to new song offset on next replay tick
+
+   // (note) the following are used to prevent the currently recorded liverec sample from being stopped at the end of the clip
+   //         (i.e. so it keeps recording release/delay/reverb trails if the sample is long enough)
+   int queued_record_audio_smp_uid;  // becomes current when replay starts, then reverts to -1
+   int current_record_audio_smp_uid; // set to queued_record_audio_smp_uid when replay starts
+
+
+   // <method_init.png>
+   public method init() {
+      edit_mode             = EDIT_MODE_SELECT;
+      clip_edit_mode        = CLIP_EDIT_MODE_DEFAULT;
+      view_offset           = 0;
+      vis_ticks             = current_song.ppq * 4 * 8;
+      grid_size             = 1;
+      grid_unit             = GRID_UNIT_BEAT;
+      grid_snap             = true;
+      default_len           = 1;
+      default_len_unit      = GRID_UNIT_BEAT;
+      canvas_size           = 128;
+      canvas_unit           = GRID_UNIT_BAR;
+      start_len_unit        = GRID_UNIT_16TH;
+      loop_start            = 0;
+      loop_end              = current_song.ppq * 4 * 2;
+      loop_enable           = false;
+      prev_view_offset      = 0;
+      prev_vis_ticks        = current_song.ppq * 4 * 8;
+      play_mode             = PLAY_MODE_START_LOOP;
+      b_show_marker         = true;
+      b_show_pattern_names  = true;
+      b_edge_selection_mode = true;
+      b_edit_draw_audio     = false;
+
+      queued_song_seek = -1;
+      queued_play_offset = -1;
+
+      queued_marker_patnr  = -1;
+      last_queued_marker_patnr = 0;
+
+      undo_history <= undo_history_main;
+      redo_history <= redo_history_main;
+
+      queued_record_audio_smp_uid = -1;
+      current_record_audio_smp_uid = -1;
+   }
+
+   // <method.png>
+   public =replay= method selectMain() {
+      NA_Track *track;
+      foreach track in tracks
+      {
+         track.selectMain();
+      }
+      undo_history <= undo_history_main;
+      redo_history <= redo_history_main;
+      b_scratch = false;
+   }
+
+   // <method.png>
+   public =replay= method selectScratch() {
+      NA_Track *track;
+      foreach track in tracks
+      {
+         track.selectScratch();
+      }
+      undo_history <= undo_history_scratch;
+      redo_history <= redo_history_scratch;
+      b_scratch = true;
+   }
+
+   // <method_update.png>
+   public =replay= method lazyUpdateTracksFromGIDs(IntArray _availableGIDs) {
+      // Called in NodeArrangerEditor::scanPipeNodes() (when node is shown)
+      //  (note) 'availableGIDs' is in order of pipemap occurence
+
+      int gid;
+      NA_Track *track;
+      NA_Track *markerTrack;
+      Node *sci;
+
+      int numAdded = 0;
+      int numDeleted = 0;
+
+      // Delete tracks
+      boolean bLoop;
+
+      // // Global.Debug("NA_State::lazyUpdateTracksFromGIDs: BEGIN");
+
+      do
+      {
+         bLoop = false;
+
+         foreach track in tracks
+         {
+            if(track.isSeq())
+            {
+               if(!_availableGIDs.contains(track.node_gid))
+               {
+                  // Remove track
+                  //  (note) [01Mar2019] _must_ remove track if node_gid cannot be resolved anymore (deleted),
+                  //          otherwise the trackforms<>tracks mapping will not be 1:1
+                  //  (note) if the node still exists, has clips but is not assigned to an arranger, keep the track
+                  sci <= current_song.findNodeByGID(track.node_gid);
+                  if((0 == track.getNumClipsScratchOrMain()) || (null == sci))
+                  {
+                     bLoop = tracks.remove(track);
+                     if(bLoop)
+                     {
+                        numDeleted++;
+                        Global.Debug("NA_State::lazyUpdateTracksFromGIDs: numDeleted="+numDeleted);
+                        break;
+                     }
+                  }
+               }
+            }
+         }
+
+         // Global.Debug("NA_State::lazyUpdateTracksFromGIDs: bLoop="+bLoop);
+      } while(bLoop);
+
+      // Lazy-add marker track (always the first track)
+      markerTrack <= tracks.getDeref(0);
+      if(null == markerTrack)
+      {
+         markerTrack <= new NA_Track;
+         markerTrack.init(NA_Track.NODE_GID_MARKER);
+         markerTrack.prev_track_gid_hint = -999999;
+      }
+      else
+      {
+         // Will be re-added later
+         tracks.delete(0);
+      }
+
+      // Lazy-add regular node tracks
+      int lastTrackIdx = 0;
+      boolean bFound = false;
+      int trackIdx;
+
+      foreach gid in _availableGIDs
+      {
+         trackIdx = 0;
+         bFound = false;
+
+         foreach track in tracks
+         {
+            if(track.node_gid == gid)
+            {
+               lastTrackIdx = trackIdx + 1;
+               bFound = true;
+               break;
+            }
+            trackIdx++;
+         }
+
+         if(!bFound)
+         {
+            track <= new NA_Track;
+            track.init(gid);
+            tracks.insert(lastTrackIdx++, #(deref track));
+            numAdded++;
+         }
+      }
+
+      if(1)
+      {
+         // Re-order tracks by pipemap occurence
+         updateTrackPrevNodeGIDHints();
+         local IntArray iaAvail;
+         iaAvail.identity(tracks.numElements);
+         int numAvail = 0;
+         local IntArray iaUnavail;
+         trackIdx = 0;
+         foreach track in tracks
+         {
+            // (note) track clips might still exist even if node is not controlled by arranger anymore
+            // (note) new tracks have already been added so "availableGIDs" has <= #elements than 'tracks'
+            int availIdx = _availableGIDs.indexOf(track.node_gid, 0);
+            Global.Debug2("NA_State::lazyUpdateTracksFromGIDs: trackIdx="+trackIdx+"/"+tracks.numElements+" availIdx="+availIdx);
+            if(availIdx >= 0)
+            {
+               iaAvail[availIdx] = trackIdx;
+               numAvail++;
+            }
+            else
+            {
+               iaUnavail.add(trackIdx);
+            }
+            trackIdx++;
+         }
+         iaAvail.numElements = numAvail;
+         // Move all unavailable node tracks to the end
+         iaAvail.join(iaAvail, iaUnavail);
+         Global.Debug2("NA_State::lazyUpdateTracksFromGIDs: ia="+iaAvail);
+         tracks.rearrange(iaAvail);
+      }
+
+      // (Re-)add marker track
+      tracks.insert(0, #(deref markerTrack));
+
+      reorderTracksByPrevGIDHint();
+
+      Global.Debug("NA_State::lazyUpdateTracksFromGIDs: added "+numAdded+", deleted "+numDeleted+" num="+tracks.numElements);
+   }
+
+   // <method_new.png>
+   public =replay= method newAudioTrack() : NA_Track {
+      local NA_Track atrk;
+
+      int gid = NA_Track.NODE_GID_AUDIO_BASE;
+      loop(1000)
+      {
+         NA_Track trk <= findTrackByGID(gid);
+         if(null == trk)
+            break;
+         gid--;
+      }
+
+      atrk.init(gid);
+      atrk.audio_track_name = "new audio track";
+      atrk.audio_dev_idx = 7; // vst_h
+
+      // try to assign unique midi ch
+      IntArray midiChUsed = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+      NA_Track *track;
+      foreach track in tracks
+      {
+         if(track.isAudio())
+         {
+            if(track.audio_dev_idx == atrk.audio_dev_idx)
+            {
+               if(track.audio_midi_ch >= 0)
+                  midiChUsed.remove(track.audio_midi_ch);
+            }
+         }
+      }
+
+      atrk.audio_midi_ch = midiChUsed.get(0);  // get first unused or 0
+
+      tracks.add(#(deref atrk));
+      return atrk;
+   }
+
+   // <method_delete.png>
+   public =replay= method moveAudioTrackUpByNodeGID(int _nodeGID) {
+      NA_Track trk <= findTrackByGID(_nodeGID);
+      int trackIdx = tracks.indexOfPointer(trk, 0);
+      if(trackIdx > 1)  // 0 is marker track
+      {
+         tracks.swap(trackIdx, trackIdx - 1);
+      }
+   }
+
+   // <method_delete.png>
+   public =replay= method moveAudioTrackDownByNodeGID(int _nodeGID) {
+      NA_Track trk <= findTrackByGID(_nodeGID);
+      int trackIdx = tracks.indexOfPointer(trk, 0);
+      if( (trackIdx + 1) < tracks.numElements )
+      {
+         tracks.swap(trackIdx, trackIdx + 1);
+      }
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteAudioTrackByNodeGID(int _nodeGID) {
+      NA_Track *track;
+      int trackIdx = 0;
+      foreach track in tracks
+      {
+         if(track.node_gid == _nodeGID)
+            break;
+         trackIdx++;
+      }
+      tracks.delete(trackIdx);
+   }
+
+   // <method_find.png>
+   public method findAudioClipSampleUIDs(IntArray _retSmpUIDs) {
+      NA_Track *track;
+      foreach track in tracks
+      {
+         if(track.isAudio())
+            track.findAudioClipSampleUIDs(_retSmpUIDs);
+      }
+   }
+
+   // <method_update.png>
+   public method updateEmptyFlags() {
+      NA_Track *track;
+      foreach track in tracks
+         track.updateEmptyFlags();  // update pattern empty hints
+   }
+
+   // <ui_undo.png>
+   protected method undoReset() {
+      undo_history.free();
+      redo_history.free();
+      undo_start_ms = -1;
+   }
+
+   // <ui_undo.png>
+   protected method undoEntryInitFrom(Buffer _en, NA_State _tstate, IntArray _selection) {
+
+      // (note) save state only for current timeline tracks/clips (scratch or main)
+
+      DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      ds << _selection;
+      _tstate.saveStateForUndo(ds);
+
+      _en.size = ds.offset;
+      _en.offset = 0;
+      _tstate.saveStateForUndo(_en);
+
+      _en << _selection;
+   }
+
+   // <ui_undo.png>
+   protected =replay= method undoEntryRestore(Buffer _en, NA_State _tstate, IntArray _selection) {
+      // (todo) remove _tstate param, it's always 'this'
+
+      Buffer tmpState;  // state of other timeline tracks
+      saveStateOfOtherTimelineClipsToBuffer(tmpState);
+
+      _en.offset = 0;
+      _tstate.loadState(_en, true/*bHaveVer*/, true/*bLoadUIDs*/);
+      _selection << _en;
+
+      // trace "xxx undoEntryRestore: tstate.b_scratch="+_tstate.b_scratch;
+
+      if(_tstate.b_scratch)
+         _tstate.selectScratch();
+      else
+         _tstate.selectMain();
+
+      // (note) the restored undo entry may have changed the track array (i.e. the number of tracks / their node GIDs)
+      //         (if a node was added or deleted)
+      tmpState.offset = 0;
+      loadStateOfOtherTimelineClips(tmpState); // restore other timeline tracks
+   }
+
+   // <ui_undo.png>
+   protected method undoAddInt(IntArray _selection) {
+      local Buffer en;
+      undoEntryInitFrom(en, this, _selection);
+      undo_history.add(#(deref en));
+
+      if(undo_history.numElements > STConfig.node_arranger_undo_history_size)
+         undo_history.delete(0);
+
+      undo_start_ms = -1;
+   }
+
+   // <ui_undo.png>
+   public method undoAdd(IntArray _selection) {
+      int tNow = milliSeconds();
+
+      if((-1 == undo_start_ms) ||
+         ((tNow - undo_start_ms) > UNDO_EDIT_TIMEOUT_MS)
+         )
+      {
+         undoAddInt(_selection);
+         undo_start_ms = tNow;
+      }
+
+   }
+
+   // <ui_undo.png>
+   public method undoEnd(IntArray _clipSelection) {
+      // Check if last undo entry really differs from current state and remove it otherwise
+      Buffer enLast <= undo_history.last;
+
+      if(null != enLast)
+      {
+         Buffer ten;
+         undoEntryInitFrom(ten, this, _clipSelection);
+
+         if(!Utils.BufferDiff(ten, enLast, false/*bVerbose*/))
+         {
+            // State did not change, remove undo entry
+            Global.Debug2("NA_State: state did not change, removing undo entry");
+            undo_history.delete(undo_history.numElements - 1);
+         }
+      }
+   }
+
+   // <ui_undo.png>
+   public method undoAddMini(IntArray _selection) {
+      int tNow = milliSeconds();
+
+      if((-1 == undo_start_ms) ||
+         ((tNow - undo_start_ms) > UNDO_MINIEDIT_TIMEOUT_MS)
+         )
+      {
+         undoAddInt(_selection);
+         undo_start_ms = tNow;
+      }
+   }
+
+   // <ui_undo.png>
+   public method undo(IntArray _selection) {
+      Buffer en <= undo_history.last;
+
+      if(null != en)
+      {
+         local Buffer ren;
+         undoEntryInitFrom(ren, this, _selection);
+         undoEntryRestore(en, this, _selection);
+
+         redo_history.add(#(deref ren));
+
+         if(redo_history.numElements > STConfig.node_arranger_undo_history_size)
+            redo_history.delete(0);
+
+         undo_history.delete(undo_history.numElements - 1);
+
+         updateEmptyFlags();
+      }
+   }
+
+   // <ui_undo.png>
+   public method redo(IntArray _selection) {
+      Buffer ren <= redo_history.last;
+
+      if(null != ren)
+      {
+         undoAddInt(_selection);
+         undoEntryRestore(ren, this, _selection);
+
+         redo_history.delete(redo_history.numElements - 1);
+
+         updateEmptyFlags();
+      }
+   }
+
+   // <ui_undo.png>
+   public method getUndoStackIndex() {
+      return undo_history.numElements;
+   }
+
+   // <ui_undo.png>
+   public method getRedoStackIndex() {
+      return redo_history.numElements;
+   }
+
+   // <method.png>
+   public method calcGridTicks() : int {
+      return CalcTicks(grid_size, grid_unit);
+   }
+
+   // <method.png>
+   public method calcDefaultLenTicks() : int {
+      return CalcTicks(default_len, default_len_unit);
+   }
+
+   // <method.png>
+   public method calcCanvasSizeTicks() : int {
+      return CalcTicks(canvas_size, canvas_unit);
+   }
+
+   // <method.png>
+   public method calcStartLenTicks() : int {
+      return CalcTicks(1, start_len_unit);
+   }
+
+   // <method_get.png>
+   public method getNumTracks() : int {
+      return tracks.numElements;
+   }
+
+   // <method_get.png>
+   public method getTrackByIdx(local int _idx) : NA_Track {
+      return tracks.get(_idx);
+   }
+
+   // <method_find.png>
+   public method findTrackByGID(local int _gid) : NA_Track {
+      local NA_Track *track;
+
+      foreach track in tracks
+         if(track.node_gid == _gid)
+            return track;
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getTrackIdxByTrack(local NA_Track _track) : int {
+      return tracks.indexOfPointer(_track, 0);
+   }
+
+   // <method.png>
+   public method getNumSoloTracks() : int {
+      int r = 0;
+      NA_Track *track;
+
+      foreach track in tracks
+         if(track.b_solo)
+            r++;
+
+      return r;
+   }
+
+   // <method.png>
+   public method saveTrackPreSoloMuteStatesAndMute() {
+      NA_Track *track;
+
+      foreach track in tracks
+      {
+         track.b_mute_pre_solo = track.b_mute;
+         track.setEnableMute(true);
+         track.queueMuteSoloUpdate();
+      }
+   }
+
+   // <method.png>
+   public method restoreTrackPreSoloMuteStates() {
+      NA_Track *track;
+
+      foreach track in tracks
+      {
+         track.b_mute = track.b_mute_pre_solo;
+         track.queueMuteSoloUpdate();
+      }
+   }
+
+   // <method_find.png>
+   public =replay= method findMarkerClipByPatternNr(local byte _idx) : NA_Clip {
+      local NA_Track track <= tracks.get(0);  // marker track is always the first track
+      local int clipIdx = 0;
+      loop(track.clips.numElements)
+      {
+         local NA_Clip clip <= track.getClipByIdx(clipIdx);
+
+         if(clip.pattern_nr == _idx)
+            return clip;
+
+         clipIdx++;
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public =replay= method findMarkerClipByUID(int _clipUID) : NA_Clip {
+      local NA_Track track <= tracks.get(0);  // marker track is always the first track
+      return track.findClipByUID(_clipUID);
+   }
+
+   // <method_find.png>
+   public =replay= method findMarkerClipByTickOffset(local int _tickOffset) : NA_Clip {
+      local NA_Track track <= tracks.get(0);  // marker track is always the first track
+      if(null != track) // can (temporarily) be null during NodeSeqEditor::explode()
+      {
+         local int clipIdx = 0;
+         loop(track.clips.numElements)
+         {
+            local NA_Clip clip <= track.getClipByIdx(clipIdx);
+            if(clip instanceof NA_Clip)
+            {
+               if(clip.start_ticks <= _tickOffset < clip.end_ticks)
+                  return clip;
+            }
+            else
+            {
+               trace "[!!!] findMarkerClipByTickOffset: clip="+#(clip)+" is not a clip";  // [04Feb2024] debug
+               break;
+            }
+
+            clipIdx++;
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getRecOffsetMaster() : int {
+      float align = current_song.ppq * STConfig.arranger_timeline_rec_alignment;
+      return int((play_offset + (align*0.5))  / align) * align;
+   }
+
+   // <method_get.png>
+   public method getRecOffset(NodeArranger _parentNode) : int {
+      int r;
+      float align = current_song.ppq * STConfig.arranger_timeline_rec_alignment;
+      r = int((play_offset + (align*0.5))  / align) * align;
+      if(!_parentNode.nodeIsMaster())
+      {
+         r -= rec_shift_offset;
+      }
+      return r;
+   }
+
+   // <method.png>
+   public method recordClip(NodeArranger _parentNode, Node _node, int _active, int _pattern) {
+      // called by Replay::handleNodeStateChangedUI() (from UI thread)
+      int nodeGID = _node.getNodeGID();
+      NA_Track *track;
+
+      int ticks = getRecOffset(_parentNode);
+
+      Global.Debug("NodeArranger::recordClip: nodeGID="+nodeGID+" active="+_active+" pattern="+_pattern+" ticks="+ticks);
+
+      foreach track in tracks
+      {
+         if(!track.b_lock)
+         {
+            if(track.node_gid == nodeGID)
+               track.recordClip(_node, _active, _pattern, ticks);
+         }
+      }
+   }
+
+   // <method_update.png>
+   public method updateRecClipEnds(int _endTicks) {
+      NA_Track *track;
+
+      foreach track in tracks
+      {
+         if(track.isSeq())
+            track.updateRecClipEnds(_endTicks);
+      }
+   }
+
+   // <method.png>
+   public method anyClipsWithinRange(int _startTrackIdx, int _endTrackIdx, int _startTicks, int _endTicks) : boolean {
+      NA_Track *track;
+      int trackIdx = _startTrackIdx;
+
+      // Delete / split clips
+      while(trackIdx <= _endTrackIdx)
+      {
+         track <= tracks.get(trackIdx);
+
+         if(null != track)
+         {
+            if(track.anyClipsWithinRange(_startTicks, _endTicks))
+               return true;
+         }
+         trackIdx++;
+      }
+
+      return false;
+   }
+
+   // <method_find.png>
+   public method findClipNear(int _ticks, boolean _bDown) : NA_Clip {
+      NA_Clip bestClip <= null;
+      NA_Track *track;
+
+      foreach track in tracks
+      {
+         if((b_show_marker && track.isMarker()) || !track.isMarker())
+         {
+            NA_Clip clip <= track.findClipNear(_ticks);
+
+            if(null != clip)
+            {
+               if(null == bestClip)
+               {
+                  bestClip <= clip;
+               }
+               else
+               {
+                  boolean bComp;
+                  if(_bDown)
+                  {
+                     // Prefer lower tracks
+                     bComp =
+                        (abs(clip.start_ticks - _ticks) <= abs(bestClip.start_ticks - _ticks)) ||
+                        (abs(clip.end_ticks - _ticks) <= abs(bestClip.end_ticks - _ticks));
+                  }
+                  else
+                  {
+                     // Prefer upper tracks
+                     bComp =
+                        (abs(clip.start_ticks - _ticks) < abs(bestClip.start_ticks - _ticks)) ||
+                        (abs(clip.end_ticks - _ticks) < abs(bestClip.end_ticks - _ticks));
+                  }
+
+                  if(bComp)
+                     bestClip <= clip;
+               }
+            }
+         }
+      }
+
+      return bestClip;
+   }
+
+   // <method_set.png>
+   public =replay= method setLoopRange(int _start, int _end) {
+      if(_start < 0)
+         _start = 0;
+      if(_end < 0)
+         _end = 0;
+
+      if(_start < _end)
+      {
+         loop_start = _start;
+         loop_end   = _end;
+      }
+      else
+      {
+         loop_start = _end;
+         loop_end   = _start;
+      }
+   }
+
+   // <method_insert.png>
+   public =replay= method insertSilenceAllTracks(int _offset, int _len) {
+      NA_Track *track;
+
+      foreach track in tracks
+      {
+         if((b_show_marker && track.isMarker()) || !track.isMarker())
+         {
+            if(!track.b_lock)
+               track.insertSilence(_offset, _len);
+         }
+      }
+   }
+
+   // <method_insert.png>
+   public =replay= method insertSilenceTrackIdx(int _trackIdx, int _offset, int _len) {
+      NA_Track track <= getTrackByIdx(_trackIdx);
+
+      if(null != track)
+      {
+         if(!track.b_lock)
+            track.insertSilence(_offset, _len);
+      }
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteRange(int _startTrackIdx, int _endTrackIdx,
+                                      int _startTicks, int _endTicks,
+                                      boolean _bMoveClips
+                                      ) {
+      // (note) args must be sorted (=> NA_TimelineForm.sortDragSelection())
+      NA_Track *track;
+      int trackIdx = _startTrackIdx;
+
+      // Delete / split clips
+      while(trackIdx <= _endTrackIdx)
+      {
+         track <= tracks.get(trackIdx);
+
+         if(null != track)
+            track.deleteRange(_startTicks, _endTicks);
+
+         trackIdx++;
+      }
+
+      // Remove silence / move clips
+      if(_bMoveClips)
+      {
+         trackIdx = _startTrackIdx;
+
+         while(trackIdx <= _endTrackIdx)
+         {
+            track <= tracks.get(trackIdx);
+
+            if(null != track)
+               track.insertSilence(_startTicks, -(_endTicks - _startTicks));
+
+            trackIdx++;
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setPlayMode(int _playMode) {
+      play_mode = _playMode;
+   }
+
+   // <method_get.png>
+   public method isMarkerPlayMode() : boolean {
+      return (PLAY_MODE_MARKER_CHANGE <= play_mode <= PLAY_MODE_MARKER_RESET_ALL) && !b_scratch;
+   }
+
+   // <method_update.png>
+   protected method updateTrackPrevNodeGIDHints() {
+      NA_Track *track;
+      int prevNodeGID = -999999;
+      foreach track in tracks
+      {
+         track.prev_track_gid_hint = prevNodeGID;
+         prevNodeGID = track.node_gid;
+      }
+   }
+
+   // <method.png>
+   protected method reorderTracksByPrevGIDHint() {
+      // called by loadState*() to preserve user track ordering (primarily of audio tracks)
+      loop(7000)
+      {
+         boolean bSwapped = false;
+
+         NA_Track *track;
+         NA_Track prevTrack <= null;
+         int trackIdx = 0;
+         foreach track in tracks
+         {
+            // trace "xxx trackidx="+trackIdx+" gid="+track.node_gid+" ch="+track.audio_midi_ch+" prevTrack.node_gid="+((null != prevTrack)?prevTrack.node_gid:"-")+" track.prev_track_gid_hint="+track.prev_track_gid_hint;
+            if(track.isAudio())  // (note) non-audio track order is determined by PipeMap order
+            {
+               NA_Track prevTrackHint <= findTrackByGID(track.prev_track_gid_hint);
+               if(null != prevTrackHint)
+               {
+                  if(@(prevTrackHint) != @(track))
+                  {
+                     if(@(prevTrackHint) != @(prevTrack))
+                     {
+                        int prevTrackHintIdx = tracks.indexOfPointer(prevTrackHint, 0);
+                        track <= tracks.unlink(track);
+                        // trace "xxx trackIdx="+trackIdx+" prevTrackHintIdx="+prevTrackHintIdx;
+                        if(trackIdx < prevTrackHintIdx)
+                           prevTrackHintIdx--;
+                        tracks.insert(prevTrackHintIdx+1, #(deref track));
+                        bSwapped = true;
+                     }
+                  }
+               }
+
+               if(bSwapped)
+                  break;
+            }
+
+            trackIdx++;
+            prevTrack <= track;
+         }
+
+         if(!bSwapped)
+            break;
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs, boolean _bSaveMainClips, boolean _bSaveScratchClips) {
+
+      ofs.i16 = 19; // Version
+
+      // Timeline (v6+)
+      ofs.i8  = edit_mode;         // v6+
+      ofs.i32 = vis_ticks;         // v6+
+      ofs.i32 = view_offset;       // v6+
+      ofs.f32 = grid_size;         // v6+
+      ofs.i8  = grid_unit;         // v6+
+      ofs.i8  = grid_snap;         // v6+
+      ofs.f32 = default_len;       // v6+
+      ofs.i8  = default_len_unit;  // v6+
+      ofs.f32 = canvas_size;       // v6+
+      ofs.i8  = canvas_unit;       // v6+
+      ofs.i8  = start_len_unit;    // v18+
+      ofs.i32 = loop_start;        // v6+
+      ofs.i32 = loop_end;          // v6+
+      ofs.i8  = loop_enable;       // v6+
+      ofs.i8  = play_mode;         // v11+
+      // // ofs.i8  = b_active;          // v11+, removed in v17
+      ofs.i8  = b_follow;          // v12+
+      ofs.i8  = b_show_marker;     // v13+
+      ofs.i8  = b_show_pattern_names;  // v14+
+      ofs.i8  = b_grid_cursor_mode;    // v15+
+      ofs.i8  = b_edge_selection_mode; // v16+
+      ofs.i8  = b_edit_draw_audio;     // v19+
+
+      // Timeline tracks (v7+)
+      ofs.i32 = tracks.numElements;
+      NA_Track *track;
+      int prevTrackGID = -999999;
+      foreach track in tracks
+      {
+         track.saveState(ofs, _bSaveMainClips, _bSaveScratchClips, prevTrackGID);
+         prevTrackGID = track.node_gid;
+      }
+
+      ofs.i32 = edit_offset; // v8+
+
+      ofs.i32 = prev_view_offset;  // v9+
+      ofs.i32 = prev_vis_ticks;    // v9+
+   }
+
+   // <save.png>
+   public method saveStateForUndo(Stream ofs) {
+      // Save clips for current timeline only
+      saveState(ofs, !b_scratch/*bSaveMainClips*/, b_scratch/*bSaveScratchClips*/);
+   }
+
+   // <save.png>
+   protected method saveStateOfOtherTimelineClips(Stream ofs) {
+      // Backup other timeline clips
+      // called before restoring undo entry which creates new Track instances
+      //  (note) this state is restored immediately after undo/redo
+      //  (note) mute/solo/lock etc are always kept current (since the current state is restored immediately)
+      ofs.i16 = 1; // version
+
+      ofs.i32 = tracks.numElements;
+
+      NA_Track *track;
+      int prevTrackGID = -999999;
+      foreach track in tracks
+      {
+         ofs.i32 = track.node_gid;
+         track.saveState(ofs, b_scratch/*bSaveMainClips*/, !b_scratch/*bSaveScratchClips*/, prevTrackGID);
+         prevTrackGID = track.node_gid;
+      }
+   }
+
+   // <save.png>
+   public method saveStateOfOtherTimelineClipsToBuffer(Buffer _b) {
+      DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      saveStateOfOtherTimelineClips(ds);
+
+      _b.size = ds.offset;
+      _b.offset = 0;
+      saveStateOfOtherTimelineClips(_b);
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, boolean _bHaveVer, boolean _bLoadUIDs) : boolean {
+      short ver;
+      int dummy;
+
+      if(_bHaveVer)
+         ver = ifs.u16;
+      else
+         ver = 9;
+
+      edit_mode        = ifs.u8;   // v6+
+      vis_ticks        = ifs.i32;  // v6+
+      view_offset      = ifs.i32;  // v6+
+      grid_size        = ifs.f32;  // v6+
+      grid_unit        = ifs.u8;   // v6+
+      grid_snap        = ifs.b8;   // v6+
+      default_len      = ifs.f32;  // v6+
+      default_len_unit = ifs.u8;   // v6+
+      canvas_size      = ifs.f32;  // v6+
+      canvas_unit      = ifs.u8;   // v6+
+      if(ver >= 18)
+         start_len_unit = ifs.u8;  // v18+
+      loop_start       = ifs.i32;  // v6+
+      loop_end         = ifs.i32;  // v6+
+      loop_enable      = ifs.b8;   // v6+
+
+      if(ver >= 11)
+      {
+         play_mode = ifs.u8;  // v11+
+
+         if(ver < 17)
+            dummy  = ifs.b8;  // b_active, v11+, removed in v17
+      }
+
+      if(ver >= 12)
+      {
+         b_follow = ifs.i8;  // v12+
+      }
+
+      if(ver >= 13)
+      {
+         // Read show/hide marker track state (v13+)
+         b_show_marker = ifs.b8;
+      }
+
+      if(ver >= 14)
+      {
+         // Read show/hide pattern names state (v14+)
+         b_show_pattern_names = ifs.b8;
+      }
+
+      if(ver >= 15)
+      {
+         // Read grid cursor mode
+         b_grid_cursor_mode = ifs.b8; // v15+
+      }
+
+      if(ver >= 16)
+      {
+         // Read edge selection mode
+         b_edge_selection_mode = ifs.b8; // v16+
+      }
+
+      if(ver >= 19)
+      {
+         // Create new samples when drawing audio clips (v19+)
+         b_edit_draw_audio = ifs.b8;  // v19+
+      }
+
+      if(ver >= 7)
+      {
+         // Clips (v7+)
+         int numTracks = ifs.i32 & 1023;
+         tracks.free();
+         int trackIdx = 0;
+         NA_Track *track;
+
+         // Lazy-add marker track
+         if(ver < 13)
+         {
+            track <= new NA_Track;
+            track.init(NA_Track.NODE_GID_MARKER);
+            tracks.add(#(deref track));
+            trackIdx++;
+         }
+
+         loop(numTracks)
+         {
+            track <= new NA_Track;
+            track.init(0/*gid*/);
+            tracks.add(#(deref track));
+
+            if(!track.loadState(ifs, _bLoadUIDs))
+            {
+               trace "[---] NA_State: failed to load timeline track (idx="+trackIdx+")";
+               return false;
+            }
+
+            trackIdx++;
+         }
+
+         reorderTracksByPrevGIDHint();
+
+         if(ver >= 8)
+         {
+            edit_offset = ifs.i32;  // v8+
+
+            if(ver >= 9)
+            {
+               prev_view_offset = ifs.i32;  // v9+
+               prev_vis_ticks   = ifs.i32;  // v9+
+            }
+         }
+      }
+
+      return true;
+   }
+
+   // <load.png>
+   public method loadStateOfOtherTimelineClips(Stream ifs) {
+      // Restore other timeline clips
+      // called after restoring undo entry which creates new Track instances
+      //  (note) this state is restored immediately after undo/redo
+      //  (note) mute/solo/lock etc are always kept current (since the current state is restored immediately)
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         int numTracks = ifs.i32 & 32767;
+
+         loop(numTracks)
+         {
+            int nodeGID = ifs.i32;
+            NA_Track track <= findTrackByGID(nodeGID);
+
+            if(null == track)
+            {
+               // Track did not exist in (old) undo entry, restore it
+               track <= new NA_Track;
+               track.init(nodeGID);
+               tracks.add(#(deref track));
+            }
+
+            track.loadState(ifs, true/*bLoadUIDs*/);
+         }
+
+         reorderTracksByPrevGIDHint();
+      }
+   }
+
+   // <method_get.png>
+   public =replay= method getPlayOffset() : int {
+      return play_offset;
+   }
+
+   // <replay.png>
+   public =replay= method queuePlayOffset(local int _offset, local boolean _bReplay) {
+      // trace "xxx timeline: queuePlayOffset "+_offset;
+      // (note) called when new offset is queued by lshift-clicking in the top area (bars/beats)
+      local int ticks16th = (current_song.ppq / 4);
+      queued_play_offset = int(_offset / ticks16th) * ticks16th;  // Align to 1/16th
+      b_queued_play_offset_replay = _bReplay;
+   }
+
+   // <replay.png>
+   public =replay= method queueMarkerPatNr(local byte _patNr) {
+      // (note) start/change will be aligned to queue_16th
+      // Global.Debug3("NodeArranger::queueMarkerIdx("+_idx+")");
+      queued_marker_patnr = _patNr;
+      if(_patNr >= 0)
+         last_queued_marker_patnr = _patNr;
+   }
+
+   // <method_find.png>
+   public method findMarkerClipByIdx(local int _idx) : NA_Clip {
+      local NA_Track track <= getTrackByIdx(0);  // get marker track
+      local NA_Clip clip <= track.getClipByIdx(_idx);
+      return clip;
+   }
+
+   // <replay.png>
+   public =replay= method queueMarkerByClipIdx(local NodeArranger _parentNode, local int _idx) {
+      local NA_Clip clip <= findMarkerClipByIdx(_idx);
+
+      if(null != clip)
+      {
+         queueMarkerPatNr(clip.pattern_nr);
+         replay.addUIPrgChgEntry(_parentNode.getNodeGID(), clip.pattern_nr);  // for recording clip change in other arranger
+
+         if(_parentNode.nodeIsEditorVisible())
+         {
+            NA_TimelineData.queued_marker_clip_selection_idx = _idx;
+         }
+      }
+      else
+      {
+         // Clip does not exist
+         queueMarkerPatNr(Node.EMPTY_PAT_NR);
+         replay.addUIPrgChgEntry(_parentNode.getNodeGID(), Node.EMPTY_PAT_NR);
+      }
+   }
+
+   // <replay.png>
+   public method reset(NodeArranger _parentNode, boolean _bSoft) {
+      // // // queued_play_offset = -1;
+      b_force_next_tick = true;
+      // // seek(_parentNode, 0, false/*bEditorSeek*/);
+
+      queued_song_seek = -1;
+      current_marker_ticks = 0;
+      queued_marker_patnr = -1;
+   }
+
+   // <replay.png>
+   public =replay= method seek(NodeArranger _parentNode, int _ticks, boolean _bEditorSeek) {
+      // (note) allow "out of bounds" seek when bEditorSeek is true. clamp/wrap to play range otherwise
+      // Utils.Backtrace();
+      // trace "xxx timeline: seek ticks="+_ticks+" prev play_offset="+play_offset+" queued_play_offset="+queued_play_offset+" b_queued_play_offset_replay="+b_queued_play_offset_replay+" b_playing="+replay.b_playing+" bEditorSeek="+_bEditorSeek;
+      play_offset = _ticks;
+      b_force_next_tick = true;
+      queued_song_seek = -1;
+
+      switch(play_mode)
+      {
+         case PLAY_MODE_INFINITE:
+            current_loop_start = 0;
+            current_loop_end   = PLAY_INF;
+            break;
+
+         case PLAY_MODE_START_LOOP:
+            current_loop_start = loop_start;
+            current_loop_end   = loop_end;
+
+            if(_bEditorSeek)
+            {
+               if(play_offset >= current_loop_end)
+               {
+                  // Start playing after end of loop
+                  current_loop_start = 0;
+                  current_loop_end   = PLAY_INF;
+               }
+            }
+            else
+            {
+               // Wrap to loop range
+               if(current_loop_end > 0)
+               {
+                  while(play_offset >= current_loop_end)
+                     play_offset = (play_offset - current_loop_end) + current_loop_start;
+               }
+            }
+            break;
+
+         case PLAY_MODE_LOOP_ONLY:
+         case PLAY_MODE_MARKER_CHANGE:
+         case PLAY_MODE_MARKER_RESET:
+         case PLAY_MODE_MARKER_RESET_ALL:
+            current_loop_start = loop_start;
+            current_loop_end   = loop_end;
+
+            if(_bEditorSeek)
+            {
+               if(play_offset < current_loop_end)
+               {
+                  current_loop_start = loop_start;
+                  current_loop_end   = loop_end;
+               }
+               else
+               {
+                  // Start playing after end of loop
+                  current_loop_start = 0;
+                  current_loop_end   = PLAY_INF;
+               }
+            }
+            else
+            {
+               // Wrap to loop range
+               play_offset += current_loop_start;
+
+               if(current_loop_end > 0)
+               {
+                  while(play_offset >= current_loop_end)
+                  {
+                     play_offset = (play_offset - current_loop_end) + current_loop_start;
+                  }
+               }
+            }
+
+            break;
+
+         case PLAY_MODE_LOOP_ONCE:
+            current_loop_start = loop_start;
+            current_loop_end   = loop_end;
+
+            if(_bEditorSeek)
+            {
+               if(play_offset >= current_loop_end)
+               {
+                  // Start playing after end of loop
+                  current_loop_start = 0;
+                  current_loop_end   = PLAY_INF;
+               }
+            }
+            else
+            {
+               play_offset += current_loop_start;
+
+               if(play_offset >= loop_end)
+               {
+                  // Nothing to play
+                  current_loop_start = 0;
+                  current_loop_end   = 0;
+               }
+            }
+            break;
+      }
+
+      if(_parentNode.nodeIsMaster())
+      {
+         current_song.setSongOffset(play_offset);
+      }
+
+      NA_Clip markerClip <= findMarkerClipByTickOffset(play_offset);
+      if(null != markerClip)
+         last_played_marker_patnr = markerClip.pattern_nr;
+      else
+         last_played_marker_patnr = Node.EMPTY_PAT_NR/*127*/;
+   }
+
+   // <replay.png>
+   public method processFrame(NodeArranger  _parentNode,
+                              MIDIPipeFrame _framePlay,
+                              MIDIPipeFrame _frameRec,
+                              boolean       _bMuted,
+                              boolean       _bPlaySeq,
+                              boolean       _bForceMuteClips,
+                              boolean       _bTrackMuteNode
+                              ) {
+      NA_Clip *clip;
+
+      _bMuted |= NodeArranger.b_force_mute;
+
+      if(-1 != queued_song_seek)
+      {
+         current_song.setSongOffset(queued_song_seek);
+         queued_song_seek = -1;
+      }
+
+      int ticks16th = current_song.ppq / 4;
+
+      boolean bForcePlay = false;
+
+      if(-1 != queued_play_offset)
+      {
+         if(b_queued_play_offset_replay ? replay.b_playing : true)
+         {
+            if((0 == (play_offset % ticks16th)) || !replay.b_playing)
+            {
+               seek(_parentNode, queued_play_offset, true/*bEditorSeek*/);
+               queued_play_offset = -1;
+               bForcePlay = true;
+               b_queued_play_offset_replay = false;
+            }
+         }
+      }
+
+      boolean bForceStartOffset = false;
+      boolean bForceEmpty = false;
+      int qmTickAlign;
+
+      if(isMarkerPlayMode())
+      {
+         if(-1 != queued_marker_patnr)
+         {
+            qmTickAlign = _parentNode.queue_16th * current_song.ppq / 4;
+
+            if((0 == (current_marker_ticks % qmTickAlign)) || !replay.b_playing)
+            {
+               clip <= findMarkerClipByPatternNr(queued_marker_patnr);
+
+               // trace "xxx queued marker clip="+#(clip)+" queued_marker_patnr="+queued_marker_patnr;
+
+               if(null != clip)
+               {
+                  // Global.Debug3("NA_State: play queued marker patnr="+queued_marker_patnr);
+
+                  if(PLAY_MODE_MARKER_RESET <= play_mode <= PLAY_MODE_MARKER_RESET_ALL)
+                  {
+                     // Restart queued marker region
+                     current_marker_ticks = 0;
+                     play_offset = clip.start_ticks;
+                     bForceStartOffset = (PLAY_MODE_MARKER_RESET_ALL == play_mode);
+                  }
+                  else
+                  {
+                     // Module-change to new marker region
+                     int qmNewLoopLen = clip.end_ticks - clip.start_ticks;
+                     play_offset = clip.start_ticks + (current_marker_ticks % qmNewLoopLen);
+                  }
+
+                  current_loop_start = clip.start_ticks;
+                  current_loop_end   = clip.end_ticks;
+                  // // if(!_bMuted)
+                  // // {
+                     loop_start = current_loop_start;  // [24Nov2018] don't set new loop when node is muted
+                     loop_end   = current_loop_end;
+                  // // }
+                  Global.Debug3("NA_TimelineForm: play marker patnr="+queued_marker_patnr+" loopStart="+current_loop_start+" loopEnd="+current_loop_end);
+
+                  b_force_next_tick = true;
+
+                  // Redraw UI (new playpos + loop locators)
+                  Events.SendRedrawAll();
+
+                  // // play_pattern_nr = queued_marker_patnr;
+                  last_played_marker_patnr = queued_marker_patnr;
+                  queued_marker_patnr = -1;
+               }
+               else
+               {
+                  // Clip does not exist, select empty pattern (127, --/) for all nodes
+                  // trace "xxx arr: GID="+_parentNode.getNodeGID()+" play empty marker clip --/";
+                  queued_marker_patnr = -1;
+                  current_loop_start = 0;
+                  current_loop_end = 0;
+                  loop_start = 0;
+                  loop_end = 0;
+                  bForceEmpty = true;
+                  bForcePlay = true;
+                  last_played_marker_patnr = Node.EMPTY_PAT_NR/*127*/;
+               }
+            }
+         }  // if queued_marker_patnr
+
+         if(_bMuted && (current_loop_start != current_loop_end))
+         {
+            // Arranger is muted now, select empty pattern (127, --/) for all nodes
+            // trace "xxx arr: GID="+_parentNode.getNodeGID()+" bMuted=true => force EMPTY_PAT_NR";
+            current_loop_start = 0;
+            current_loop_end = 0;
+            if(!_bMuted)
+            {
+               loop_start = 0;  // [24Nov2018] don't reset loop to canvas size when node is muted
+               loop_end = 0;
+            }
+            bForceEmpty = true;
+            bForcePlay = true;
+         }
+      } // isMarkerPlayMode()
+      else
+      {
+         // When marker was queued in regular play mode
+         //   => just set play offset to clip start
+         if(-1 != queued_marker_patnr)
+         {
+            qmTickAlign = _parentNode.queue_16th * current_song.ppq / 4;
+
+            if((0 == (current_marker_ticks % qmTickAlign)) || !replay.b_playing)
+            {
+               clip <= findMarkerClipByPatternNr(queued_marker_patnr);
+
+               if(null != clip)
+               {
+                  play_offset = clip.start_ticks;
+               }
+
+               last_played_marker_patnr = queued_marker_patnr;
+               queued_marker_patnr = -1;
+            }
+         }
+      }
+
+      if(replay.b_playing || bForcePlay || b_force_next_tick || _bForceMuteClips)
+      {
+         // trace "xxx NA_State: play tick play_offset="+play_offset+" b_queued_play_offset_replay="+b_queued_play_offset_replay+" b_playing="+replay.b_playing;
+
+         bForcePlay |= b_force_next_tick;
+         if(!(b_queued_play_offset_replay && (-1 != queued_play_offset)))
+            b_force_next_tick = false;
+
+         // Play tick
+         NA_Track *track;
+
+         foreach track in tracks
+         {
+            boolean bMarker = track.isMarker();
+            // // if(!bMarker)
+            {
+               if(!bMarker && track.b_queued_mute_solo_update)
+               {
+                  track.handleQueuedMuteSoloUpdate(_framePlay, _bTrackMuteNode);
+               }
+
+               boolean bFoundClip = false;
+               boolean bTrackMuted = bMarker || _bMuted || (track.b_mute && !_bTrackMuteNode) || (b_rec && !track.b_lock);
+
+               if(!(bForceEmpty || _bForceMuteClips))
+               {
+                  if(!(isMarkerPlayMode() || (current_loop_start == current_loop_end)))  // [13Aug2022] fix LOOP_ONCE audio clips (|| instead of &&)
+                  {
+                     foreach clip in track.clips
+                     {
+                        boolean bClipActive = (clip.start_ticks <= play_offset < clip.end_ticks);
+
+                        if(!bMarker && clip.b_queued_clip_mute_update)
+                        {
+                           if(bClipActive)
+                           {
+                              // after toggling mute state in UI
+                              clip.handleQueuedClipMuteUpdate(_framePlay);
+                           }
+                           else
+                           {
+                              // not currently playing
+                              clip.b_queued_clip_mute_update = false;
+                           }
+                        }
+
+                        if(bClipActive && _parentNode.b_send_clip_rel_pos)
+                           clip.sendRelPos(_framePlay, play_offset, track);
+
+                        if(clip.b_queued_audio_clip_change)
+                        {
+                           clip.b_queued_audio_clip_change = false;
+                           if(clip.start_ticks <= play_offset < clip.end_ticks) // still playing ?
+                           {
+                              if(!bTrackMuted)
+                              {
+                                 // Continue audio clip with new sample
+                                 clip.startStopClip(_framePlay, 0/*extraTickOffset*/, true/*bStop*/, false/*bForceStartOffset*/, track, this);
+                                 clip.startStopClip(_framePlay, play_offset - clip.start_ticks/*extraTickOffset*/, false/*bStop*/, false/*bForceStartOffset*/, track, this);
+                              }
+                           }
+                        }
+
+                        if(play_offset == clip.start_ticks)
+                        {
+                           // Start clip
+                           // trace "xxx start clip at off="+play_offset+" bMuted="+_bMuted;
+                           if(!bTrackMuted)
+                           {
+                              clip.startStopClip(_framePlay, 0/*extraTickOffset*/, false/*bStop*/, bForceStartOffset, track, this);
+                           }
+                           else if(bMarker)
+                           {
+                              last_played_marker_patnr = clip.pattern_nr;
+                           }
+
+                           bFoundClip = true;
+                           break;
+                        }
+                        else if(play_offset == clip.end_ticks)
+                        {
+                           // Stop clip
+                           // trace "xxx stop clip at off="+play_offset+" bMuted="+_bMuted;
+                           if(!bTrackMuted)
+                           {
+                              clip.startStopClip(_framePlay, 0/*extraTickOffset*/, true/*bStop*/, false/*bForceStartOffset*/, track, this);
+                           }
+                           else if(bMarker)
+                           {
+                              last_played_marker_patnr = Node.EMPTY_PAT_NR/*127*/;
+                           }
+                        }
+                        else if(bForcePlay)
+                        {
+                           if(clip.start_ticks <= play_offset < clip.end_ticks)
+                           {
+                              // trace "xxx start clip with offset at off="+play_offset+" bMuted="+_bMuted;
+                              // Start clip at offset (play_offset - clip.start_ticks)
+                              if(!bTrackMuted)
+                              {
+                                 clip.startStopClip(_framePlay, (play_offset - clip.start_ticks), false/*bStop*/, bForceStartOffset, track, this);
+                              }
+                              else if(bMarker)
+                              {
+                                 last_played_marker_patnr = clip.pattern_nr;
+                              }
+                              bFoundClip = true;
+                              break;
+                           }
+                        }
+                     }
+                  }
+               }
+
+               if(_bForceMuteClips || (!bFoundClip && bForcePlay))
+               {
+                  // trace "xxx stopClips bMuted="+bTrackMuted;
+                  if(!_bMuted && (_bForceMuteClips || !bTrackMuted || (bForceEmpty && !(b_rec && !track.b_lock))))
+                  {
+                     if(bMarker)
+                        last_played_marker_patnr = Node.EMPTY_PAT_NR/*127*/;
+                     else if(!track.b_mute)
+                        track.stopClips(_framePlay);  // select EMPTY_PAT_NR
+                  }
+               }
+            }
+         }
+
+         // Advance
+         if(_bPlaySeq)
+         {
+            play_offset++;
+            current_marker_ticks++;
+         }
+
+         // Loop
+         if(!_bMuted && !b_rec)
+         {
+            if(current_loop_end > 0)
+            {
+               if(current_loop_end < PLAY_INF)
+               {
+                  if(play_offset == current_loop_end)
+                  {
+                     current_loop_start = loop_start;
+                     current_loop_end   = loop_end;
+                     Global.Debug2("NodeArranger: loop at "+play_offset+"  loopStart="+loop_start+" loopEnd="+loop_end+" play_mode="+play_mode);
+
+                     switch(play_mode)
+                     {
+                        case PLAY_MODE_INFINITE:
+                           break;
+
+                        case PLAY_MODE_START_LOOP:
+                           if(current_loop_end > 0)
+                           {
+                              // // while(play_offset >= current_loop_end)
+                              // // {
+                              // //    play_offset = (play_offset - current_loop_end) + current_loop_start;
+                              // // }
+                              play_offset = current_loop_start;
+
+                              b_force_next_tick = true;
+
+                              if(_parentNode.nodeIsMaster())
+                              {
+                                 queued_song_seek = play_offset;
+                              }
+                           }
+                           break;
+
+                        case PLAY_MODE_LOOP_ONLY:
+                        case PLAY_MODE_MARKER_CHANGE:
+                        case PLAY_MODE_MARKER_RESET:
+                        case PLAY_MODE_MARKER_RESET_ALL:
+                           if(current_loop_end > 0)
+                           {
+                              // // while(play_offset >= current_loop_end)
+                              // // {
+                              // //    play_offset = (play_offset - current_loop_end) + current_loop_start;
+                              // // }
+                              play_offset = current_loop_start;
+
+                              b_force_next_tick = true;
+
+                              if(_parentNode.nodeIsMaster())
+                              {
+                                 queued_song_seek = play_offset;
+                              }
+                           }
+                           break;
+
+                        case PLAY_MODE_LOOP_ONCE:
+                           // trace "xxx LOOP_ONCE: nothing more to play";
+
+                           // Nothing more to play
+                           current_loop_start = 0;
+                           current_loop_end   = 0;
+                           b_force_next_tick = true;
+                           break;
+                     }
+                  } // if offset > loop end
+               } // if have loop end
+            }
+         } // if !done
+      } // playing
+   }
+
+}

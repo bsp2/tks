@@ -1,0 +1,73 @@
+//
+// **experimental**
+//
+// send SYSRT_STOP / prgchg / SYSRT_CONTINUE messages to AnalogRytm (every 1/32 note)
+//
+//  (note) reduces program change latency to ~101ms
+//
+
+use namespace st2;
+
+int tick_nr;
+
+Buffer syx;
+syx.size = 4;  // stop, prgchg, continue
+int prg = -1;
+
+function OnReset() {
+   prg = -1;
+}
+
+function OnSeek(int ticks) {
+   tick_nr = ticks;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bPlaySeq)
+   {
+      int numEv = framePlay.getNumEventsPrgChgByFlt(in_dev, in_ch);
+      if(numEv > 0)
+      {
+         // trace "xxx numEv="+numEv;
+         int evIdx = 0;
+         loop(numEv)
+         {
+            MIDIPipeEvent ev;
+            if(framePlay.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG, in_dev, in_ch))
+            {
+               prg = ev.prgChg;
+            }
+            evIdx++;
+         }
+
+         framePlay.deletePrgChgByFlt(in_dev, in_ch);
+      }
+
+      if(0 == (tick_nr % (current_song.ppq/4)))
+      {
+         // trace "xxx prg="+prg+" out_ch="+out_ch;
+         if(-1 != prg)
+         {
+            syx.offset = 0;
+            syx.i8 = 0xC0 | out_ch; // prgchg
+            syx.i8 = prg & 127;
+            // syx.i8 = 0xFC;  // stop
+            syx.i8 = 0xFB;  // continue
+            // syx.i8 = 0xFA;  // start
+            // syx.i8 = 0xFF;  // reset
+            // // framePlay.sysrt(true/*bSet*/, out_dev, MIDIPIPE_EVENT_SYSRT_CONTINUE);
+            framePlay.sysex(true/*bSet*/, out_dev, syx);
+         }
+      }
+
+      tick_nr++;
+   }
+}

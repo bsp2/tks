@@ -1,0 +1,271 @@
+// ----
+// ---- file   : events.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2023 by Bastian Spiegel. 
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See 
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 14Sep2006, 17Sep2006, 20Sep2006, 15Oct2007, 20Oct2007, 21Oct2007, 22Oct2007, 
+// ---           ...
+// ----          18Feb2011, 20Feb2011, 25Feb2011, 28Feb2011, 02Jul2011, 26Jun2012, 15May2013
+// ----          31May2013, 09Aug2014, 12Aug2014, 15Aug2014, 30Jan2015, 27Feb2015, 26Jul2015
+// ----          24Oct2015, 25Oct2015, 02Sep2017, 04Jan2018, 24Apr2020, 08Apr2022, 09Nov2023
+// ----
+// ----
+// ----
+module MEvents;
+
+use namespace ui;
+use namespace st2;
+
+
+// (note) this is for asynchronous thread notifications
+
+
+function onEvent(String _ev) {
+   ////trace "xxx onEvent: ev="+_ev;
+   switch(_ev)
+   {
+      case Events.EV_REDRAWALL:
+         Events.HandleRedrawAll();
+         break;
+
+      case NodeEditor.EV_REPLAYTICK:
+         Events.HandleNodeEditorReplayTick();
+         break;
+
+      case Replay.EV_REDRAWPATTERN:
+         Events.HandleRedrawPattern();
+         break;
+
+      case Replay.EV_SCROLLDOWNPATTERN:
+         Events.HandleScrollDownPattern();
+         break;
+
+      case Replay.EV_BPMCHANGED:
+         Events.HandleBPMChanged();
+         break;
+
+      // case Audio.EV_RENDERFINISHED:
+      //    Audio.HandleRenderFinished();
+      //    break;
+
+      // case Audio.EV_DEBUGCAPTURE:
+      //    Audio.HandleDebugCapture();
+      //    break;
+
+      // case Audio.EV_STREAMCRASHED:
+      //    Audio.HandleAudioStreamCrashed();
+      //    break;
+
+      case Replay.EV_MIDI:
+         replay.processMidiMapUIEventQueue();
+         replay.processUIMuteQueue();
+         break;
+
+      case RootForm.EV_SYN_KEY:
+         Events.HandleSynKey();
+         break;
+
+      case NodeEditor.EV_PLAYPAT:
+         Events.HandlePlayPat();
+         break;
+
+      case NodeEditor.EV_EDITPAT:
+         Events.HandleEditPat();
+         break;
+
+      case PageNode.EV_UPDATETEXTFIELDNODESTATE:
+         Events.HandleUpdateTextFieldNodeState();
+         break;
+
+      // case NT_PatternView.EV_PV_TARECORDMIDIEND_SCHEDULE:
+      //    Events.Handle_PV_TARecordMidiEnd_Schedule();
+      //    break;
+   }
+}
+
+
+class Events {
+
+   define String EV_REDRAWALL;  // used by e.g. Arranger timeline (in marker play mode)
+
+   protected static boolean b_redraw_all_pending;
+   protected static boolean b_node_editor_replaytick_pending;
+   protected static boolean b_redrawpattern_pending;
+   protected static boolean b_scrolldownpattern_pending;
+   protected static boolean b_bpmchanged_pending;
+   protected static boolean b_synkey_pending;
+   protected static boolean b_playpat_pending;
+   protected static boolean b_editpat_pending;
+   // // protected static boolean b_pv_tarecordmidiend_schedule;
+
+   static ResetAllEvents() {
+      // after viewport change (resize, fullscreen toggle, event queue drained)
+      b_redraw_all_pending             = false;
+      b_node_editor_replaytick_pending = false;
+      b_redrawpattern_pending          = false;
+      b_scrolldownpattern_pending      = false;
+      b_bpmchanged_pending             = false;
+      b_synkey_pending                 = false;
+      b_playpat_pending                = false;
+      b_editpat_pending                = false;
+      // // b_pv_tarecordmidiend_schedule    = false;
+   }
+
+   static SendRedrawAll() {
+      if(!b_redraw_all_pending)
+      {
+         b_redraw_all_pending = true;
+         SDL.sendEvent(EV_REDRAWALL);
+      }
+   }
+
+   static HandleRedrawAll() {
+      b_redraw_all_pending = false;
+      UI.RedrawAll();
+   }
+
+   static SendNodeEditorReplayTick() {
+      // trace "xxx SendNodeEditorReplayTick";
+      // Utils.Backtrace();
+      if(!b_node_editor_replaytick_pending) // avoid event queue overflow
+      {
+         b_node_editor_replaytick_pending = true;
+         SDL.sendEvent(NodeEditor.EV_REPLAYTICK); 
+      }
+   }
+
+   static HandleNodeEditorReplayTick() {
+      // trace "xxx HandleNodeEditorReplayTick";
+      b_node_editor_replaytick_pending = false;
+      root_form.handleReplayTickUI();
+   }
+
+   static SendRedrawPattern() {
+      if(!b_redrawpattern_pending) // avoid event queue overflow
+      {
+         b_redrawpattern_pending = true;
+         SDL.sendEvent(Replay.EV_REDRAWPATTERN); 
+      }
+   }
+
+   static HandleRedrawPattern() {
+      b_redrawpattern_pending = false;
+
+      if(RootForm.PAGE_NODE == root_form.getCurrentPageNr())
+      {
+         root_form.pg_node.evHandleRedrawPattern();
+      }
+   }
+
+   static SendScrollDownPattern() {
+      // used by NT_PatternView::recordMIDINote()
+      if(!b_scrolldownpattern_pending)
+      {
+         b_scrolldownpattern_pending = true;
+         SDL.sendEvent(Replay.EV_SCROLLDOWNPATTERN);
+      }
+   }
+
+   static HandleScrollDownPattern() {
+      b_scrolldownpattern_pending = false;
+
+      if(RootForm.PAGE_NODE == root_form.getCurrentPageNr())
+      {
+         root_form.pg_node.evHandleScrollDownPattern();
+      }
+   }
+
+   static SendBPMChanged() {
+      if(!b_bpmchanged_pending) // avoid event queue overflow
+      {
+         b_bpmchanged_pending = true;
+         SDL.sendEvent(Replay.EV_BPMCHANGED); 
+      }
+   }
+
+   static HandleBPMChanged() {
+      b_bpmchanged_pending = false;
+
+      root_form.pg_project.updateBPMAndPPQ();
+   }
+
+   static SendSynKey() {
+      // (todo) pending flag issue when opening file dialog via synkey (->investigate)
+      // if(!b_synkey_pending)
+      // {
+      //    b_synkey_pending = true;
+         SDL.sendEvent(RootForm.EV_SYN_KEY);
+      // }
+   }
+
+   static HandleSynKey() {
+      b_synkey_pending = false;
+      root_form.processSynKeyQueue();
+   }
+
+   static SendPlayPat() {
+      if(!b_playpat_pending)
+      {
+         b_playpat_pending = true;
+         SDL.sendEvent(NodeEditor.EV_PLAYPAT);
+      }
+   }
+
+   static HandlePlayPat() {
+      b_playpat_pending = false;
+      root_form.handlePlayPatChanged();
+   }
+
+   static SendEditPat() {
+      if(!b_editpat_pending)
+      {
+         b_editpat_pending = true;
+         SDL.sendEvent(NodeEditor.EV_EDITPAT);
+      }
+   }
+
+   static HandleEditPat() {
+      b_editpat_pending = false;
+
+      if(root_form.getCurrentPageNr() == RootForm.PAGE_NODE)
+      {
+         root_form.pg_node.handleEditPatternChanged();
+      }
+   }
+
+   // static =replay= Send_PV_TARecordMidiEnd_Schedule() {
+   //    if(!b_pv_tarecordmidiend_schedule)
+   //    {
+   //       b_pv_tarecordmidiend_schedule = true;
+   //       SDL.sendEvent(NT_PatternView.EV_PV_TARECORDMIDIEND_SCHEDULE);
+   //    }
+   // }
+
+   // static =replay= Handle_PV_TARecordMidiEnd_Schedule() {
+   //    b_pv_tarecordmidiend_schedule = false;
+   //    {
+   //       b_pv_tarecordmidiend_schedule = true;
+   //       root_form.handleRecordMidiEndSchedule(); // forward to current node editor (if any)
+   //    }
+   // }
+
+   static SendHandleUpdateTextFieldNodeState() {
+      // after auto-unmuted audio node (see NT_AudioDialog)
+      SDL.sendEvent(PageNode.EV_UPDATETEXTFIELDNODESTATE);
+   }
+
+   static HandleUpdateTextFieldNodeState() {
+      if(root_form.getCurrentPageNr() == RootForm.PAGE_NODE)
+      {
+         root_form.pg_node.updateTextFieldNodeState();
+      }
+   }
+
+}
+
+
+use onEvent for SDL.onEvent;

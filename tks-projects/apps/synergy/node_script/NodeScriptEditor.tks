@@ -1,0 +1,1899 @@
+// ----
+// ---- file   : NodeScriptEditor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 16Sep2017, 17Sep2017, 21Sep2017, 12Oct2017, 13Oct2017, 09Nov2017, 19Dec2017
+// ----          04Jan2018, 23May2018, 17Jun2018, 15Sep2018, 25Jun2019, 29Aug2019, 08Sep2019
+// ----          10Sep2019, 17Sep2019, 20Sep2019, 22Sep2019, 02Oct2019, 03Oct2019, 08Nov2019
+// ----          06Apr2020, 26Oct2020, 10Nov2020, 27Jan2021, 20Feb2021, 13May2021, 12Aug2021
+// ----          27Jan2023, 11Feb2023, 24Feb2023, 11Jun2023, 12Jun2023, 18Jun2023, 23Jun2023
+// ----          21Sep2023, 03Oct2023, 06Oct2024, 29Mar2025
+// ----
+// ----
+// ----
+
+module MNodeScriptEditor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeScriptEditor extends NodeEditor, ActionProvider, MIDIMapEventListener, MIDIMapDefs {
+
+   define String TA_WATCHFILE;
+   protected TimerAction *ta_watchfile;
+
+   define String TA_REFRESH_UIPARAMS;
+   protected TimerAction *ta_refresh_uiparams;
+
+   define int TAB_PATTERN   = 0;
+   define int TAB_IO        = 1;
+   define int TAB_PARAM     = 2;
+   define int TAB_SCRIPT    = 3;
+   define int TAB_XFM       = 4;
+   define int TAB_PLAY      = 5;
+
+   public NodeScript *node;
+
+   protected TabSwitch *ts_groups;
+
+
+   // Pattern:
+   protected ComboBox   *cm_pattern_nr;
+   protected Label      *lb_pat_nr;
+   protected TextField  *tf_pat_name;
+   protected Button     *bt_clear;
+
+   protected Button    *bt_pat_alloc;
+   protected Button    *bt_pat_tools;
+   protected PopupMenu *pm_pat_tools;
+   protected Button    *bt_pat_free;
+
+   // IO:
+   protected DeviceIOForm *in_1;
+   protected DeviceIOForm *in_2;
+   protected DeviceIOForm *in_3;
+   protected DeviceIOForm *in_4;
+
+   protected DeviceIOForm *out_1;
+   protected DeviceIOForm *out_2;
+   protected DeviceIOForm *out_3;
+   protected DeviceIOForm *out_4;
+
+   protected DeviceIOForm *[] io_forms;  // for cursor up/down focus change
+
+   // Param:
+   protected Panel *pn_param;
+   protected XMLForm *xf_param;
+
+   // Script:
+   protected TextEdit   *tx_script;
+   protected TextField  *tf_script_watchfile;
+   protected CheckBox   *cb_script_watchfile;
+   protected Button     *bt_script_recompile;
+
+   // UI:
+   protected TextEdit   *tx_xfm;
+   protected Button     *bt_xfm_add_button;
+   protected Button     *bt_xfm_add_checkbox;
+   protected Button     *bt_xfm_add_floatparam;
+   protected Button     *bt_xfm_add_combobox;
+   protected TextField  *tf_xfm_watchfile;
+   protected CheckBox   *cb_xfm_watchfile;
+   protected Button     *bt_xfm_recompile;
+
+   // Play:
+   protected ComboBox *cm_node_class;
+   protected CheckBox *cb_node_class_show;
+   // (note) cm_node_class_show_in is declared in NodeEditor base class
+
+   static TKSSyntaxHighlighter syntax_hl_tks;
+   static XFMSyntaxHighlighter syntax_hl_xfm;
+
+
+   // <init.png>
+   public virtual init() : boolean {
+
+      if(initPakFile("NodeScriptEditor.xfm"))
+      {
+         if(autoResolveIds(this))
+         {
+            f_autodev.initAutoDeviceForm();
+
+            cm_pattern_nr.setOptions(Node.patnr_options);
+
+            tx_script.setSyntaxHighlighter(syntax_hl_tks);
+            tx_script.setEnableEditNumber(true);
+
+            tx_xfm.setSyntaxHighlighter(syntax_hl_xfm);
+            tx_xfm.setEnableEditNumber(true);
+
+            initMMC();
+
+            initTimers();
+
+            DeviceIOForm *ioForm;
+            io_forms = [in_1, in_2, in_3, in_4,
+                        out_1, out_2, out_3, out_4
+                        ];
+            foreach ioForm in io_forms
+            {
+               if(!ioForm.init(this/*listener*/,
+                               false/*bAllowAllCh*/,
+                               true/*bShowVarname*/,
+                               true/*bShowEnable*/,
+                               null/*nameLabelOrNull*/
+                               )
+                  )
+                  return false;
+               ioForm.setFormArray(io_forms);
+            }
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_watchfile        <= TimerAction.New(TA_WATCHFILE,       this, STConfig.node_script_watchfile_interval);
+      ta_refresh_uiparams <= TimerAction.New(TA_REFRESH_UIPARAMS,this, STConfig.node_script_refreshuiparams_interval);
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("NodeScriptEditor");
+
+      // From PageNode: (so these show up in the map editor)
+      root_form.pg_node.addBaseMMCTargets(this);
+
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != boundEv)
+      {
+         String tgtName <= boundEv.bound_target.target_name;
+
+         switch(tgtName)
+         {
+            default:
+               return root_form.pg_node.mmcHandleNodeTarget(boundEv.bound_target.target_name);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cm_pattern_nr,
+                             tf_pat_name,
+                             bt_pat_alloc,
+                             bt_pat_tools,
+                             bt_pat_free
+                           ]
+                          );
+            return;
+
+         case TAB_IO:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+                           ]
+                          );
+            DeviceIOForm *ioForm;
+            foreach ioForm in io_forms
+            {
+               ioForm.addTabCycleOverrides(layers);
+            }
+            return;
+
+         case TAB_SCRIPT:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             tx_script,
+                             tf_script_watchfile,
+                             cb_script_watchfile,
+                             bt_script_recompile
+                           ]
+                          );
+            return;
+
+         case TAB_XFM:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             tx_xfm,
+
+                             bt_xfm_add_button,
+                             bt_xfm_add_checkbox,
+                             bt_xfm_add_floatparam,
+                             bt_xfm_add_combobox,
+
+                             tf_xfm_watchfile,
+                             cb_xfm_watchfile,
+                             bt_xfm_recompile
+                           ]
+                          );
+            return;
+
+         case TAB_PLAY:
+            layers.joinRR(layers,
+                          [
+                             ts_groups,
+
+                             cm_node_class,
+                             cb_node_class_show,
+                             cm_node_class_show_in,
+                           ]
+                          );
+            f_autodev.addTabCycleOverrides(layers);
+            return;
+      }
+   }
+
+   // <ui_show.png>
+   public virtual showNode(Node _node) {
+      node <= _node;
+
+      updatePatternNrComboBox();
+      cm_pattern_nr.setSelectedOption(node.nodeGetCurrentEditPatternNr());
+
+      StringArray devAll;
+      devAll.join(["*"], MIDI.out_device_names_sorted);
+      IntArray bgcolorsAll;
+      bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+
+      f_autodev.showNode(node, devAll, bgcolorsAll);
+
+      showPorts();
+
+      tx_script.setText(node.script_source);
+      tx_script.validateCursorPosition();
+      if(null != node)
+         tx_script.setHighlightLineIdx(node.script_last_error_line_idx, #20dd4444);
+      else
+         tx_script.setHighlightLineIdx(-2, #20dd4444);
+
+      tx_xfm.setText(node.xfm_source);
+      tx_xfm.validateCursorPosition();
+
+      tf_script_watchfile.setText(node.script_watchfile_name);
+      tf_xfm_watchfile.setText(node.xfm_watchfile_name);
+
+      // Play:
+      cm_node_class.setOptions(STConfig.node_class_names);
+      updateNodeClass();
+      updateNodeClassShowIn(node);
+
+      MIDI.AddMIDIMapEventListener(this);
+
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         refocusDefault();
+      }
+
+      relayout();
+      tx_script.onResize();
+      tx_xfm.onResize();
+      relayout();
+   }
+
+   // <method.png>
+   public virtual showNodePost() {
+      Global.Debug("NodeScriptEditor::showNodePost");
+
+      relayout();
+      tx_script.onResize();
+      tx_xfm.onResize();
+
+      // Restore cursor positions
+      tx_script.gotoXY(node.script_cursor_x, node.script_cursor_y);
+      tx_xfm.gotoXY(node.xfm_cursor_x, node.xfm_cursor_y);
+
+      ta_watchfile.reschedule();
+      ta_refresh_uiparams.reschedule();
+
+      recompileXFM();
+
+      handlePatternChanged();
+
+      ts_groups.relayoutActiveTab();
+
+      if(!STConfig.b_node_script_exec)
+      {
+         Global.Warning("Script exec is currently disable (see prefs)");
+      }
+
+      refocusDefault();
+   }
+
+   // <ui_show.png>
+   protected method showPorts() {
+      in_1.showPort(node.in_1);
+      in_2.showPort(node.in_2);
+      in_3.showPort(node.in_3);
+      in_4.showPort(node.in_4);
+
+      out_1.showPort(node.out_1);
+      out_2.showPort(node.out_2);
+      out_3.showPort(node.out_3);
+      out_4.showPort(node.out_4);
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      if(!NodeEditor.b_lock_kbdfocus)
+      {
+         switch(ts_groups.getActiveTabIndex())
+         {
+            case TAB_PATTERN:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+
+            case TAB_IO:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+
+            case TAB_PARAM:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+
+            case TAB_SCRIPT:
+               UI.SetKeyboardFocus(tx_script);
+               tx_script.onTabFocus();
+               break;
+
+            case TAB_XFM:
+               UI.SetKeyboardFocus(tx_xfm);
+               tx_xfm.onTabFocus();
+               break;
+
+            case TAB_PLAY:
+               UI.SetKeyboardFocus(ts_groups);
+               break;
+         }
+
+      }
+   }
+
+   // <method.png>
+   public method selectTabPattern() {
+      ts_groups.setActiveTabIndex(TAB_PATTERN);
+      handleActiveTabChanged();
+      refocusDefault();
+   }
+
+   // <method.png>
+   public method selectTabIO() {
+      ts_groups.setActiveTabIndex(TAB_IO);
+      handleActiveTabChanged();
+      refocusDefault();
+   }
+
+   // <method.png>
+   public method selectTabParam() {
+      ts_groups.setActiveTabIndex(TAB_PARAM);
+      handleActiveTabChanged();
+      refocusDefault();
+   }
+
+   // <method.png>
+   public method selectTabScript() {
+      ts_groups.setActiveTabIndex(TAB_SCRIPT);
+      handleActiveTabChanged();
+      refocusDefault();
+      tx_script.onTabFocus();
+   }
+
+   // <method.png>
+   public method selectTabXFM() {
+      ts_groups.setActiveTabIndex(TAB_XFM);
+      handleActiveTabChanged();
+      refocusDefault();
+      tx_xfm.onTabFocus();
+   }
+
+   // <method.png>
+   public method selectTabPlay() {
+      ts_groups.setActiveTabIndex(TAB_PLAY);
+      handleActiveTabChanged();
+      refocusDefault();
+   }
+
+   // <ui_update.png>
+   protected method updatePatternNrComboBox() {
+      local StringArray patNrOptionsShort;
+      local StringArray patNrOptionsLong;
+      local IntArray patNrColors;
+      Node.CalcPatNrOptions(node, patNrOptionsShort, patNrOptionsLong, patNrColors);
+      cm_pattern_nr.setOptions(patNrOptionsShort);
+      cm_pattern_nr.setOptionsLong(patNrOptionsLong);
+      cm_pattern_nr.setOptionBGColors(patNrColors);
+   }
+
+   // <method_get.png>
+   protected method getEditPattern() : NodeScriptPattern {
+      NodeScriptPattern pat <= node.nodeGetCurrentEditPattern();
+      return pat;
+   }
+
+   // <method.png>
+   protected method stopAllMIDILearnExcept(DeviceIOForm _cur) {
+      if(@(_cur) != @(in_1))
+         in_1.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+      if(@(_cur) != @(in_2))
+         in_2.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+      if(@(_cur) != @(in_3))
+         in_3.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+      if(@(_cur) != @(in_4))
+         in_4.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+
+      if(@(_cur) != @(out_1))
+         out_1.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+      if(@(_cur) != @(out_2))
+         out_2.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+      if(@(_cur) != @(out_3))
+         out_3.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+      if(@(_cur) != @(out_4))
+         out_4.setLearnMode(DeviceIOForm.LEARN_NONE, true/*bQuiet*/);
+   }
+
+   // <ui_hide.png>
+   public virtual isNodeEditorLocked() : boolean {
+      return false;
+   }
+
+   // <ui_hide.png>
+   public virtual leaveNode() {
+
+      // Save script+xfm sources
+      node.script_source = tx_script.getText();
+      node.xfm_source    = tx_xfm.getText();
+
+      // Save cursor positions
+      node.script_cursor_x = tx_script.getCursorX();
+      node.script_cursor_y = tx_script.getCursorY();
+
+      node.xfm_cursor_x = tx_xfm.getCursorX();
+      node.xfm_cursor_y = tx_xfm.getCursorY();
+
+      MIDI.RemoveMIDIMapEventListener(this);
+      stopAllMIDILearnExcept(null);
+
+      ta_watchfile.cancel();
+      ta_refresh_uiparams.cancel();
+   }
+
+   // <ui_hide.png>
+   public virtual unsetNode() {
+      node <= null;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      return false;
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) : boolean {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      return false;
+   }
+
+   // <midi_mml.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      if(_ev.isReservedEvent())
+         return false;
+
+      MIDIMapEvent evXForm = _ev;
+      MIDIMorphScene.TransformEvent(evXForm);
+      evXForm.echoTransformForced();
+
+      if(in_1.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(in_2.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(in_3.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(in_4.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(out_1.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(out_2.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(out_3.mmlHandleEventUI(evXForm))
+         return true;
+
+      if(out_4.mmlHandleEventUI(evXForm))
+         return true;
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   public virtual nodeHandleEditPatternChanged() {
+      handlePatternChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternChanged() {
+      NodeScriptPattern pat <= getEditPattern();
+
+      updatePatNrLabel();
+
+      if(null != pat)
+      {
+         tf_pat_name.setText(pat.pat_name);
+         tf_pat_name.setEditable(true);
+
+         bt_pat_free.setEditable(true);
+      }
+      else
+      {
+         tf_pat_name     .setEditable(false);
+
+         bt_pat_free.setEditable(true);
+      }
+
+      // Update generated UI from pattern params
+      if(null != pat)
+      {
+         updateUIFromPatternParams(pat, false/*bOnlyWhenChanged*/);
+      }
+
+      redraw();
+
+      root_form.pg_node.handleEditPatternChanged();
+   }
+
+   // <ui_update.png>
+   protected method updatePatNrLabel() {
+      Integer io = node.nodeGetCurrentEditPatternNr();
+      lb_pat_nr.setCaption("Pattern:\n  ("+io.printf("0x%02x")+")");
+      lb_pat_nr.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternAlloc(boolean _bSub) : NodeScriptPattern {
+      local NodeScriptPattern p;
+
+      p.patInit(node, 0/*patNr placeholder*/);
+
+      int patIdx;
+
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         if(true == _bSub)
+         {
+            // Find unused A..D sub pattern
+            patIdx = node.nodeFindFirstUnusedPatternSub(node.nodeGetCurrentEditPatternNr());
+         }
+         else
+         {
+            // Find unused 1..32 pattern group
+            patIdx = node.nodeFindFirstUnusedPatternGroup(node.nodeGetCurrentEditPatternNr());
+         }
+
+         if(-1 == patIdx)
+         {
+            patIdx = node.findFirstUnusedPattern(0);
+         }
+      }
+      else
+      {
+         patIdx = node.nodeGetCurrentEditPatternNr();
+      }
+
+      if(-1 != patIdx)
+      {
+         p.pat_nr = patIdx;
+         node.nodeSetPattern(patIdx, deref p);
+
+         node.nodeSetCurrentEditPatternNr(patIdx);
+         node.nodeSetCurrentPlayPatternNr(patIdx);
+
+         cm_pattern_nr.setSelectedOption(patIdx);
+
+         selectPatternByIdx(patIdx);
+
+         handlePatternChanged();
+
+         updatePatternNrComboBox();
+
+         Global.SuccessShort("New: Allocated pattern "+cm_pattern_nr.getSelectedOptionName()+" ("+(patIdx+1)+").");
+         return p;
+      }
+      else
+      {
+         Global.Error("New: All patterns in use.");
+         return null;
+      }
+   }
+
+   // <ui_show.png>
+   protected method showPatternToolsMenu(boolean _bFocusFirst) {
+
+      pm_pat_tools <= PopupMenu.New(this);
+      PopupMenu pm <= pm_pat_tools;
+      PopupMenuButton *pmb;
+
+      NodeScriptPattern pat <= node.nodeGetCurrentEditPattern();
+      boolean bHavePat = (null != pat);
+
+      pmb <= pm.addDefaultButton("Copy pattern", "copy");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-c", "");
+
+      pmb <= pm.addDefaultButton("Paste pattern", "paste");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lctrl-v", "");
+
+      if(bHavePat)
+      {
+         pmb.setActive(null != pat.patGetClipboard());
+      }
+      else
+      {
+         pmb.setActive(false);
+      }
+
+      pmb <= pm.addDefaultButton("Clone pattern", "clone");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("Clone pattern (sub)", "clone_sub");
+      pmb.setFontByName("big6");
+      pmb.setActive(bHavePat);
+      pmb.setAccelerators("lshift-lctrl-r", "");
+
+      pmb <= pm.addDefaultButton("New pattern (sub)", "new_sub");
+      pmb.setFontByName("big6");
+      pmb.setAccelerators("lshift-lctrl-n", "");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_pat_tools);
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show pattern tools menu.");
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternCopy() {
+
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.patCopyToClipboard();
+
+         Global.Print("Pattern copied to clipboard.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternPaste() {
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null == pat)
+      {
+         handlePatternNew(false/*bSub*/);
+         pat <= getEditPattern();
+      }
+
+      if(null != pat)
+      {
+         if(pat.patCopyFromClipboard())
+         {
+            handlePatternChanged();
+
+            updatePatternNrComboBox();
+
+            Global.SuccessShort("Clipboard pasted to pattern.");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatternNew(boolean _bSub) {
+
+      NodeScriptPattern pat <= handlePatternAlloc(_bSub);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatternClone(boolean _bSub) {
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         local NodeScriptPattern tmp;
+
+         tmp.patInit(node, 0);
+
+         tmp.patCopyFrom(pat, false/*bClear*/);
+
+         if(null != handlePatternAlloc(_bSub))
+         {
+            pat <= getEditPattern();
+
+            pat.patCopyFrom(tmp, false/*bClear*/);
+            pat.patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+
+            handlePatternChanged();
+
+            Global.SuccessShort("Pattern cloned to "+cm_pattern_nr.getSelectedOptionName()+".");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternFree() {
+
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         node.nodeSetPattern(node.edit_pattern_nr, null);
+
+         pat <= null;
+
+         handlePatternChanged();
+
+         updatePatternNrComboBox();
+
+         Global.Print("Delete pattern");
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateUIFromPatternParams(NodeScriptPattern pat, boolean _bOnlyWhenChanged) {
+      // bOnlyWhenChanged: true when periodically refreshing widgets (in case script changed associated params)
+      //                    (also query current param/variable values)
+      // if(!_bOnlyWhenChanged)
+      //    trace "xxx updateUIFromPatternParams: bOnlyWhenChanged="+_bOnlyWhenChanged;
+      if(null != xf_param)
+      {
+         NodeScriptParam *param;
+         Script script <= node.script;
+         Variable sv <= null;
+
+         int numUpdated = 0;
+         local String *updateId;
+
+         foreach param in pat.params
+         {
+            Layer l <= xf_param.findLayerById(param.name);
+            Value v;
+            v.initVoid();
+
+            if(_bOnlyWhenChanged)
+            {
+               sv <= script.findVariable(param.name);
+               if(null != sv) // should not be null
+               {
+                  param.updateValue(sv);
+                  // trace "xxx query: param \""+param.name+"\" intVal="+param.getIntValue();
+               }
+            }
+
+            // Global.Debug("NodeScriptEditor::updateUIFromPatternParams: param.name="+param.name+" l="+#(l));
+
+            if(null != l)
+            {
+               int intVal;
+               float floatVal;
+
+               if(l instanceof Button)
+               {
+                  Button bt <= l;
+                  if(bt.isToggle())
+                  {
+                     intVal = param.getIntValue();
+                     if(!_bOnlyWhenChanged || (_bOnlyWhenChanged && (intVal != bt.getToggleState())))
+                     {
+                        bt.setToggleState(intVal ? true : false);
+                        v.intValue = intVal;
+                        numUpdated++;
+                        if(1 == numUpdated)
+                           updateId <= bt.layer_id;
+                     }
+                  }
+                  else
+                  {
+                     v.intValue = 0;
+                  }
+               }
+               else if(l instanceof CheckBox)
+               {
+                  CheckBox cb <= l;
+                  intVal = param.getIntValue();
+                  // trace "xxx updateUIFromPatternParams: checkbox param.name=\""+param.name+"\" intVal="+intVal;
+                  if(!_bOnlyWhenChanged || (_bOnlyWhenChanged && (intVal != cb.isSelected())))
+                  {
+                     cb.setSelected(intVal);
+                     v.intValue = intVal;
+                     numUpdated++;
+                     if(1 == numUpdated)
+                        updateId <= cb.layer_id;
+                  }
+               }
+               else if(l instanceof FloatParam)
+               {
+                  FloatParam fp <= l;
+                  floatVal = param.getFloatValue();
+                  if(!_bOnlyWhenChanged || (_bOnlyWhenChanged && (floatVal != fp.getFloatValue()) && !fp.isEditing()) )
+                  {
+                     fp.setValue(floatVal);
+                     v.floatValue = floatVal;
+                     // trace "xxx updateUIFromPatternParams: FloatParam v.floatValue="+v.floatValue;
+                     numUpdated++;
+                     if(1 == numUpdated)
+                        updateId <= fp.layer_id;
+                  }
+               }
+               else if(l instanceof ComboBox)
+               {
+                  ComboBox cm <= l;
+                  intVal = param.getIntValue();
+                  if(!_bOnlyWhenChanged || (_bOnlyWhenChanged && (intVal != cm.getSelectedOption())))
+                  {
+                     // trace "xxx cm changed: intVal="+intVal+" old="+cm.getSelectedOption();
+                     cm.setSelectedOption(intVal);
+                     v.intValue = intVal;
+                     numUpdated++;
+                     if(1 == numUpdated)
+                        updateId <= cm.layer_id;
+                  }
+               }
+            }
+
+            if(!_bOnlyWhenChanged && (YAC_TYPE_VOID != v.type))
+            {
+               // Update script variable
+               node.tryUpdateParamValue(param.name/*varname*/, v, false/*bUpdateEditPattern*/);
+            }
+         }
+
+         callOnUIUpdate(!_bOnlyWhenChanged/*bForce*/);
+
+         if(_bOnlyWhenChanged && (numUpdated > 0))
+            Global.Debug2("NodeScriptEditor::updateUIFromPatternParams: "+numUpdated+" widget(s) updated "+((1 == numUpdated)?("("+updateId+")"):"")+".");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPattern() {
+
+      int patNr = cm_pattern_nr.getSelectedOption();
+
+      node.nodeSetCurrentEditPatternNr(patNr);
+      node.nodeSetCurrentPlayPatternNr(patNr);
+
+      node.nodeQueuePrgChgOut(patNr);
+      // // replay.handleNodeStateChangedUI(node, -1/*active*/, patNr/*pat*/);
+
+      handlePatternChanged();
+
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" \""+pat.pat_name+"\".");
+      }
+      else
+      {
+         Global.Print("Select pattern "+cm_pattern_nr.getSelectedOptionName()+" <empty>.");
+      }
+   }
+
+   // <method.png>
+   public virtual selectPatternByIdx(int _idx) {
+
+      cm_pattern_nr.setSelectedOption(_idx);
+
+      handleSelectPattern();
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPreviousUsedPattern() {
+      int patIdx = node.nodeGetCurrentEditPatternNr();
+      patIdx = node.nodeFindPreviousPatternNrByUsedIdxWithOffset(patIdx-1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNextUsedPattern() {
+      int patIdx = node.nodeGetCurrentEditPatternNr();
+      patIdx = node.nodeFindNextPatternNrByUsedIdxWithOffset(patIdx+1, 0);
+
+      if(patIdx >= 0)
+      {
+         selectPatternByIdx(patIdx);
+      }
+   }
+
+   // <method.png>
+   public virtual selectPatternByUsedIdx(int _idx) {
+      if(_idx >= 0)
+      {
+         int patNr = node.nodeGetPatternNrByUsedIdx(_idx);
+
+         if(-1 != patNr)
+         {
+            selectPatternByIdx(patNr);
+         }
+      }
+      else
+      {
+         selectPatternByIdx(127); // --/
+      }
+   }
+
+   // <method.png>
+   protected method playPatternByIdx(int _idx) {
+
+      selectPatternByIdx(_idx);
+
+      NodeScriptPattern pat <= getEditPattern();
+
+      node.nodeSetCurrentPlayPatternNr(_idx);
+
+      Global.Print("Play pattern "+cm_pattern_nr.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handlePatternNameChanged() {
+      NodeScriptPattern pat <= getEditPattern();
+
+      if(null != pat)
+      {
+         pat.pat_name = tf_pat_name.getText();
+
+         Global.Print("Pattern name is \""+pat.pat_name+"\".");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleScriptWatchfileNameChanged() {
+      node.script_watchfile_name = tf_script_watchfile.getText();
+
+      Global.Print("Script watchfile name is \""+node.script_watchfile_name+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleScriptWatchfileEnableChanged() {
+      node.b_script_watchfile = cb_script_watchfile.isSelected();
+
+      Global.Print("Script watchfile is "+Utils.GetEnableString(node.b_script_watchfile));
+   }
+
+   // <ui_handle.png>
+   public =replay= method tryHandleParamWidget(Object _ap, String _acName) {
+      if(null != xf_param)
+      {
+         if(_ap instanceof Layer)
+         {
+            Layer apl <= _ap;
+            Layer l <= xf_param.findLayerById(apl.layer_id);
+
+            if(@(l) == @(apl))
+            {
+               boolean bUpdateEditPattern = true;
+
+               Value v; v.initVoid();
+
+               if(apl instanceof Button)
+               {
+                  if(Button.ACTION_CLICK == _acName)
+                  {
+                     Button bt <= apl;
+                     v.intValue =  1;
+                     bUpdateEditPattern = false;
+                  }
+               }
+               else if(apl instanceof CheckBox)
+               {
+                  CheckBox cb <= apl;
+                  v.intValue =  cb.isSelected();
+               }
+               else if(apl instanceof FloatParam)
+               {
+                  FloatParam fp <= apl;
+                  v.floatValue =  fp.getFloatValue();
+               }
+               else if(apl instanceof ComboBox)
+               {
+                  ComboBox cm <= apl;
+                  v.intValue =  cm.getSelectedOption();
+               }
+
+               if(YAC_TYPE_VOID != v.type)
+               {
+                  node.tryUpdateParamValue(apl.layer_id/*varname*/, v, bUpdateEditPattern);
+               }
+
+               if(null != node.fxn_onaction)
+               {
+                  MIDIPipeFrame frOut;
+                  frOut.empty();
+
+                  if(STConfig.b_node_script_exec)
+                  {
+                     try
+                     {
+                        node.fxn_onaction.eval([apl, apl.layer_id, _acName, frOut]);
+
+                        if(frOut.hasEvents())
+                        {
+                           node.queueUIFrameOut(frOut);
+                        }
+                     }
+                     catch(Error e)
+                     {
+                        trace "[---] NodeScript::tryHandleParamWidget<onAction>: caught exception name="+e.name+", message=\""+e.message+"\"";
+                     }
+                  }
+               }
+
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method callOnUIInit() {
+      if(null != node.fxn_onuiinit)
+      {
+         try
+         {
+            node.fxn_onuiinit.eval([xf_param]);
+         }
+         catch(Error e)
+         {
+            trace "[---] NodeScript::callOnUIInit: caught exception name="+e.name+", message=\""+e.message+"\"";
+         }
+      }
+   }
+
+   // <method.png>
+   protected method callOnUIUpdate(boolean _bForce) {
+      if(null != node.fxn_onuiupdate)
+      {
+         MIDIPipeFrame frOut;
+         frOut.empty();
+         try
+         {
+            node.fxn_onuiupdate.eval([xf_param, _bForce, frOut]);
+
+            if(frOut.hasEvents())
+            {
+               node.queueUIFrameOut(frOut);
+            }
+         }
+         catch(Error e)
+         {
+            trace "[---] NodeScript::callOnUIUpdate: caught exception name="+e.name+", message=\""+e.message+"\"";
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method recompileXFM() {
+      node.xfm_source = tx_xfm.getText();
+
+      UI.LoseKeyboardFocusIfWithin(pn_param, true/*bQuiet*/);
+      pn_param.removeChildHierarchy();
+
+      xf_param <= new XMLForm;
+      String srcXFM = "<xfm>\n";
+      srcXFM.append(node.xfm_source);
+      srcXFM.append("</xfm>\n");
+
+      if(xf_param.parseXMLForm(srcXFM))
+      {
+         pn_param.addLayer(xf_param, Layout.CENTER);
+         callOnUIInit();
+
+         relayout();
+         recursiveBuildTabCycleLists();
+      }
+      else
+      {
+         Global.Error("Failed to parse XFM");
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method recompileScriptAndXFM() {
+
+      node.script_source = tx_script.getText();
+
+      recompileXFM();
+
+      node.recompileScript(false/*bQuiet*/);
+
+      tx_script.setHighlightLineIdx(node.script_last_error_line_idx, #20dd4444);
+
+      callOnUIInit();
+
+      NodeScriptPattern pat <= getEditPattern();
+      if(null != pat)
+      {
+         updateUIFromPatternParams(pat, false/*bOnlyWhenChanged*/);
+      }
+   }
+
+   // <ui_handle.png>
+   public method xfmAddButton() {
+      String src <= node.xfm_source;
+
+      src.append("\n<!-- Button -->\n<Panel dir=BOTTOM padTop=4>\n  <Button id=bt_edit_me dir=LEFT caption=\"My Button\"/>\n  <Label caption=\"My Button Label:\" dir=LEFT sizeGroup=sgx_lb textPlacement=RIGHT align=centerY/>\n</Panel>\n");
+
+      tx_xfm.setText(node.xfm_source);
+      tx_xfm.validateCursorPosition();
+   }
+
+   // <ui_handle.png>
+   public method xfmAddCheckBox() {
+      String src <= node.xfm_source;
+
+      src.append("\n<!-- CheckBox -->\n<Panel dir=BOTTOM padTop=4>\n  <CheckBox id=cb_edit_me dir=LEFT selected=0 mixed=0 caption=\"My CheckBox\" align=centerY/>\n  <Spacer sizeGroup=sgx_lb dir=LEFT />\n</Panel>\n");
+
+      tx_xfm.setText(node.xfm_source);
+      tx_xfm.validateCursorPosition();
+   }
+
+   // <ui_handle.png>
+   public method xfmAddFloatParam() {
+      String src <= node.xfm_source;
+
+      src.append("\n<!-- FloatParam -->\n<Panel dir=BOTTOM padTop=4>\n  <FloatParam id=fp_edit_me dir=LEFT cols=3\n              min=0 max=127 step=0.5\n              precision=3 display=float\n              align=centerY\n              />\n  <Label caption=\"My FloatParam Label:\" dir=LEFT sizeGroup=sgx_lb textPlacement=RIGHT align=centerY/>\n</Panel>\n");
+
+      tx_xfm.setText(node.xfm_source);
+      tx_xfm.validateCursorPosition();
+   }
+
+   // <ui_handle.png>
+   public method xfmAddComboBox() {
+      String src <= node.xfm_source;
+
+      src.append("\n<!-- ComboBox -->\n<Panel dir=BOTTOM padTop=4>\n  <ComboBox id=cm_edit_me dir=LEFT options=\"A;B;C\"/>\n  <Label caption=\"My ComboBox Label:\" dir=LEFT sizeGroup=sgx_lb textPlacement=RIGHT align=centerY/>\n</Panel>\n");
+
+      tx_xfm.setText(node.xfm_source);
+      tx_xfm.validateCursorPosition();
+   }
+
+   // <ui_handle.png>
+   protected method handleXFMWatchfileNameChanged() {
+      node.xfm_watchfile_name = tf_xfm_watchfile.getText();
+
+      Global.Print("XFM watchfile name is \""+node.xfm_watchfile_name+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleXFMWatchfileEnableChanged() {
+      node.b_xfm_watchfile = cb_xfm_watchfile.isSelected();
+
+      Global.Print("XFM watchfile is "+Utils.GetEnableString(node.b_xfm_watchfile));
+   }
+
+   // <ui_update.png>
+   protected method updateNodeClass() {
+      cm_node_class.setSelectedOption(node.getNodeClassId());
+      cb_node_class_show.setSelected(node.getEnableNodeClassShow());
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassChanged() {
+      node.setNodeClassId(cm_node_class.getSelectedOption());
+
+      f_autodev.handleNodeClassChanged();
+
+      Global.Print("Node class is \""+node.getNodeClassString()+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleNodeClassShowChanged() {
+      node.setEnableNodeClassShow(cb_node_class_show.isSelected());
+
+      f_autodev.handleNodeClassShowChanged();
+
+      Global.Print("Node class show is "+Utils.GetEnableString(node.getEnableNodeClassShow()));
+   }
+
+   // <method_handle.png>
+   public virtual handleStartPlaying() {
+
+      Global.Debug3("NodeScriptEditor::handleStartPlaying");
+   }
+
+   // <method_handle.png>
+   public virtual handleStopPlaying(boolean _bAllowBookmark) {
+
+      Global.Debug3("NodeScriptEditor::handleStopPlaying");
+   }
+
+   // <method_handle.png>
+   public virtual handleSongPosSelected() {
+
+      Global.Debug3("NodeScriptEditor::handleSongPosSelected");
+
+      // called from UI thread while =replay= is locked
+      node.nodeSetLastPatternStartEditorSongOffset(current_song.song_offset);
+   }
+
+   // <method_handle.png>
+   public virtual handlePlayPatChanged() {
+      Global.Debug3("NodeScriptEditor::handlePlayPatChanged");
+   }
+
+   // <ui_timer.png>
+   public virtual handleReplayTimer() {
+
+      if(replay.b_playing)
+      {
+         if(node.checkResetNodePatternChanged())
+         {
+            cm_pattern_nr.setSelectedOption(node.nodeGetCurrentEditPatternNr());
+            handlePatternChanged();
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleActiveTabChanged() {
+
+      if(TAB_IO == ts_groups.getActiveTabIndex())
+      {
+         showPorts();  // e.g. revert invalid varnames
+      }
+      else if(TAB_SCRIPT == ts_groups.getActiveTabIndex())
+      {
+         relayout();
+         tx_script.onResize();
+         relayout();
+         tx_script.onResize();
+      }
+      else if(TAB_XFM == ts_groups.getActiveTabIndex())
+      {
+         relayout();
+         tx_xfm.onResize();
+         relayout();
+         tx_xfm.onResize();
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual onDropFiles(StringArray _fileNames) : boolean {
+      if(_fileNames.numElements > 0)
+      {
+         String pathName = _fileNames.get(0);
+
+         if(TAB_SCRIPT == ts_groups.getActiveTabIndex())
+         {
+            if(pathName.endsWith(".tks"))
+            {
+               node.script_watchfile_name = pathName;
+               tf_script_watchfile.setText(node.script_watchfile_name);
+               tf_script_watchfile.redraw();
+               Global.Print("Script watchfile is \""+node.script_watchfile_name+"\"");
+            }
+            else
+            {
+               Global.Error("Script watchfile does not have .tks suffix");
+            }
+         }
+         else if(TAB_XFM == ts_groups.getActiveTabIndex())
+         {
+            if(pathName.endsWith(".xfm"))
+            {
+               node.xfm_watchfile_name = pathName;
+               tf_xfm_watchfile.setText(node.xfm_watchfile_name);
+               tf_xfm_watchfile.redraw();
+               Global.Print("XFM watchfile is \""+node.xfm_watchfile_name+"\"");
+            }
+            else
+            {
+               Global.Error("XFM watchfile does not have .xfm suffix");
+            }
+         }
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      //trace "xxx onMouse: _ev.changed_state="+_ev.changed_state+" _ev.current_state="+_ev.current_state;
+
+      return NodeEditor::onMouse(_ev);
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyHome(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectNextUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            MMTListener.MMTHandleLayerInc(cm_pattern_nr);
+            MMTListener.MMTHandleLayerInc(cm_pattern_nr);
+            MMTListener.MMTHandleLayerInc(cm_pattern_nr);
+         }
+         MMTListener.MMTHandleLayerInc(cm_pattern_nr); //selectNextPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   protected method handlePatternKeyEnd(int _kMod) {
+      if((VMOD_LSHIFT|VMOD_LCTRL) == _kMod)
+      {
+         handleSelectPreviousUsedPattern();
+      }
+      else
+      {
+         if(VMOD_LCTRL == _kMod)
+         {
+            MMTListener.MMTHandleLayerDec(cm_pattern_nr);
+            MMTListener.MMTHandleLayerDec(cm_pattern_nr);
+            MMTListener.MMTHandleLayerDec(cm_pattern_nr);
+         }
+         MMTListener.MMTHandleLayerDec(cm_pattern_nr); //selectPrevPattern();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          d         :   Toggle pattern manager
+          z         :   Switch between pipenodes A/B
+          F3        :   Delete current pattern
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case VKEY_F3:
+               handlePatternFree();
+               return true;
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         // case 'q':
+         // case VKEY_ESCAPE:
+         //    break;
+
+         case VKEY_ESCAPE:
+            if(TAB_SCRIPT != ts_groups.getActiveTabIndex())
+            {
+               ts_groups.setActiveTabIndex(TAB_SCRIPT);
+               return true;
+            }
+            // let PageNode handle it
+            break;
+
+         case VKEY_HOME:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyEnd(_k.mod);
+            else
+               handlePatternKeyHome(_k.mod);
+            return true;
+
+         case VKEY_END:
+            if(STConfig.b_key_swap_pattern_home_end)
+               handlePatternKeyHome(_k.mod);
+            else
+               handlePatternKeyEnd(_k.mod);
+            return true;
+
+         case 'a':
+            if( _k.modNone() && TAB_PATTERN == ts_groups.getActiveTabIndex() )
+            {
+               showPatternToolsMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if( _k.modCtrl() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               handlePatternPaste();
+               return true;
+            }
+            break;
+
+         case 'n':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternAlloc(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternAlloc(false/*bSub*/);
+               }
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               ts_groups.setActiveTabIndex(TAB_PATTERN);
+               tf_pat_name.onTabFocus();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handlePatternClone(true/*bSub*/);
+               }
+               else
+               {
+                  handlePatternClone(false/*bSub*/);
+               }
+               return true;
+            }
+            break;
+
+         case 'w':
+            if(_k.modCtrl())
+            {
+               recompileScriptAndXFM();
+               return true;
+            }
+            break;
+
+         case '1':
+            if(_k.modCtrlOnly())
+            {
+               selectTabPattern();
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modCtrlOnly())
+            {
+               selectTabIO();
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modCtrlOnly())
+            {
+               selectTabParam();
+               return true;
+            }
+            break;
+
+         case '4':
+            if(_k.modCtrlOnly())
+            {
+               selectTabScript();
+               return true;
+            }
+            break;
+
+         case '5':
+            if(_k.modCtrlOnly())
+            {
+               selectTabXFM();
+               return true;
+            }
+            break;
+
+         case '6':
+            if(_k.modCtrlOnly())
+            {
+               selectTabPlay();
+               return true;
+            }
+            break;
+
+      }
+
+      switch(ts_groups.getActiveTabIndex())
+      {
+         case TAB_PATTERN:
+            switch(_k.pressed)
+            {
+            }
+            break;
+
+         case TAB_IO:
+            break;
+
+         case TAB_PARAM:
+            break;
+
+         case TAB_SCRIPT:
+            break;
+
+         case TAB_XFM:
+            break;
+
+         case TAB_PLAY:
+            break;
+      }
+
+      if(trySelectPatternByUsedIdx(_k))
+         return true;
+
+      if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method handleWatchfileTimer() {
+
+      // trace "xxx handleWatchfileTimer";
+      String buf;
+      String *src;
+
+      if(node.b_script_watchfile)
+      {
+         src <= node.script_source;
+
+         local String scriptWatchfileName <= Utils.ToNativePathName(node.script_watchfile_name);
+
+         if(buf.loadLocal(scriptWatchfileName, true))
+         {
+            if(buf != src)
+            {
+               src = buf;
+
+               tx_script.setText(node.script_source);
+               tx_script.validateCursorPosition();
+               tx_script.setHighlightLineIdx(-2, #20dd4444);
+
+               Global.Print("Reload external script source");
+            }
+         }
+      }
+
+      if(node.b_xfm_watchfile)
+      {
+         src <= node.xfm_source;
+
+         local String xfmWatchfileName <= Utils.ToNativePathName(node.xfm_watchfile_name);
+
+         if(buf.loadLocal(xfmWatchfileName, true))
+         {
+            if(buf != src)
+            {
+               src = buf;
+
+               tx_xfm.setText(node.xfm_source);
+               tx_xfm.validateCursorPosition();
+
+               Global.Print("Reload external XFM source");
+            }
+         }
+      }
+
+      ta_watchfile.reschedule();
+   }
+
+   // <ui_timer.png>
+   protected method handleRefreshUIParamsTimer() {
+      NodeScriptPattern pat <= node.nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         updateUIFromPatternParams(pat, true/*bOnlyWhenChanged*/);
+      }
+      ta_refresh_uiparams.reschedule();
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+      IntAction iac <= _action;
+      StringAction *sac;
+
+      if(DeviceIOForm.ACTION_MIDI_LEARN_START == acName)
+      {
+         // New MIDI learn started, stop all others
+         stopAllMIDILearnExcept(ap);
+         return true;
+      }
+      else if(DeviceIOForm.ACTION_PORT_CHANGED == acName)
+      {
+         recompileScriptAndXFM();
+         return true;
+      }
+
+      if(TA_WATCHFILE == acName)
+      {
+         handleWatchfileTimer();
+         return true;
+      }
+      else if(TA_REFRESH_UIPARAMS == acName)
+      {
+         handleRefreshUIParamsTimer();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            if(tryHandleParamWidget(ap, acName))
+               return true;
+            break;
+
+         case @(ts_groups):
+            Global.Print("Active tab is \""+ts_groups.getActiveViewCaption()+"\".");
+            handleActiveTabChanged();
+            return true;
+
+         case @(bt_pat_alloc):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handlePatternClone(false/*bSub*/);
+            }
+            else
+            {
+               handlePatternAlloc(false/*bSub*/);
+            }
+            return true;
+
+         case @(bt_pat_tools):
+            showPatternToolsMenu(false/*bFocusFirst*/);
+            return true;
+
+         case @(pm_pat_tools):
+            Global.Debug2("script: pm_pat_tools acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close pattern tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handlePatternCopy();
+                  return true;
+
+               case "paste":
+                  handlePatternPaste();
+                  return true;
+
+               case "clone":
+                  handlePatternClone(false/*bSub*/);
+                  return true;
+
+               case "clone_sub":
+                  handlePatternClone(true/*bSub*/);
+                  return true;
+
+               case "new_sub":
+                  handlePatternAlloc(true/*bSub*/);
+                  return true;
+            }
+            return true;
+
+         case @(bt_pat_free):
+            handlePatternFree();
+            return true;
+
+            // Pattern:
+         case @(cm_pattern_nr):
+            handleSelectPattern();
+            return true;
+
+         case @(tf_pat_name):
+            handlePatternNameChanged();
+            updatePatternNrComboBox();
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+
+            // Script:
+         case @(tf_script_watchfile):
+            handleScriptWatchfileNameChanged();
+            return true;
+
+         case @(cb_script_watchfile):
+            handleScriptWatchfileEnableChanged();
+            return true;
+
+         case @(bt_script_recompile):
+            recompileScriptAndXFM();
+            return true;
+
+         case @(tx_script):
+         case @(tx_xfm):
+            if(TextEdit.ACTION_SHORTCUT == acName)
+            {
+               // lctrl-?
+               switch(iac.getIntValue())
+               {
+                  case 'w':
+                     recompileScriptAndXFM();
+                     return true;
+
+                  case '1':
+                     selectTabPattern();
+                     return true;
+
+                  case '2':
+                     selectTabIO();
+                     return true;
+
+                  case '3':
+                     selectTabParam();
+                     return true;
+
+                  case '4':
+                     selectTabScript();
+                     return true;
+
+                  case '5':
+                     selectTabXFM();
+                     return true;
+
+                  case '6':
+                     selectTabPlay();
+                     return true;
+               }
+            }
+            break;
+
+
+            // XFM:
+         case @(bt_xfm_add_button):
+            xfmAddButton();
+            return true;
+
+         case @(bt_xfm_add_checkbox):
+            xfmAddCheckBox();
+            return true;
+
+         case @(bt_xfm_add_floatparam):
+            xfmAddFloatParam();
+            return true;
+
+         case @(bt_xfm_add_combobox):
+            xfmAddComboBox();
+            return true;
+
+         case @(tf_xfm_watchfile):
+            handleXFMWatchfileNameChanged();
+            return true;
+
+         case @(cb_xfm_watchfile):
+            handleXFMWatchfileEnableChanged();
+            return true;
+
+         case @(bt_xfm_recompile):
+            recompileScriptAndXFM();
+            return true;
+
+
+            // Play:
+         case @(cm_node_class):
+            handleNodeClassChanged();
+            return true;
+
+         case @(cb_node_class_show):
+            handleNodeClassShowChanged();
+            return true;
+
+         case @(cm_node_class_show_in):
+            handleNodeClassShowInChanged(node);
+            f_autodev.handleNodeClassShowChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

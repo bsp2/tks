@@ -1,0 +1,59 @@
+//
+// Serialize note-ons
+//
+//  originally written to work around Novation Peak USB MIDI lost-chord-notes issue
+//
+
+int NUM_FRAMES = 16;
+MIDIPipeFrame *[] frames;
+int current_frame_idx;
+
+function OnReset() {
+   if(frames.isEmpty())
+   {
+      loop(NUM_FRAMES)
+      {
+         frames.add(#(new MIDIPipeFrame));
+      }
+   }
+   current_frame_idx = 0;
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+
+   if(!bMuted)
+   {
+      MIDIPipeFrame *frFuture;
+
+      // Spread note-ons to future frames
+      //  (note) assumes that there are no manual note-offs (pev.duration > 0)
+      int numEvNoteOn = framePlay.getNumEventsNoteOnByFlt(io_dev, io_ch);
+      if(numEvNoteOn > 0)
+      {
+         int futureFrameIdx = (current_frame_idx + 1) % NUM_FRAMES;
+         int evIdx = 0;
+         loop(numEvNoteOn)
+         {
+            MIDIPipeEvent pev;
+            framePlay.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, io_dev, io_ch);
+            frFuture <= frames.get(futureFrameIdx);
+            frFuture.noteOn(true/*bSet*/, pev.devIdx, pev.midiCh, pev.note, pev.velocity, pev.duration);
+
+            // Next note on
+            futureFrameIdx = (futureFrameIdx + 1) % NUM_FRAMES;
+            evIdx++;
+         }
+      }
+
+      framePlay.deleteNoteOnsByFlt(io_dev, io_ch);
+   }
+
+   frFuture <= frames.get(current_frame_idx);
+   framePlay.mergeFrame(frFuture);
+   frFuture.empty();
+   current_frame_idx = (current_frame_idx + 1) % NUM_FRAMES;
+}

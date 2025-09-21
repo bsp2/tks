@@ -1,0 +1,1310 @@
+// ----
+// ---- file   : NT_AudioDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 20Jul2021
+// ---- changed: 21Jul2021, 22Jul2021, 11Dec2021, 04Feb2022, 06Feb2022, 11Feb2022, 13Feb2022
+// ----          08Apr2022, 06May2022, 18Dec2022, 04Oct2023, 30Oct2023, 18Nov2023, 19Nov2023
+// ----          07Jul2024, 10Oct2024, 15Nov2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_AudioDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_AudioDialog extends Dialog, RemoteEventListener {
+
+   NT_PatternView *pattern_view;
+   NodeTracker *parent_node;
+
+   define String ACTION_CLOSE  = "onCloseDialog";
+
+   protected XMLForm *xfm;
+
+   protected Button     *bt_create;
+   protected FloatParam *fp_create_repeats;
+   protected FloatParam *fp_create_extra_16ths;
+   protected ComboBox   *cm_create_nsp;
+   protected CheckBox   *cb_create_stereo;
+   protected CheckBox   *cb_create_pattern;
+
+   protected Button     *bt_rec;
+   protected Label      *lb_rec_instance_id;
+   protected CheckBox   *cb_rec_monitor;
+   protected CheckBox   *cb_rec_mutex;
+   protected CheckBox   *cb_rec_midimute;
+   protected CheckBox   *cb_rec_pass2;
+
+   protected Button     *bt_peaks;
+   protected Label      *lb_peaks_smp_uid;
+   protected Button     *bt_editsample;
+
+   protected Button     *bt_goto_audio;
+   protected FloatParam *fp_audio_patnr;
+
+   protected Button     *bt_goto_midi;
+   protected FloatParam *fp_midi_patnr;
+
+   protected Button     *bt_create_audio_node;
+   protected ComboBox   *cm_create_audio_node_dev;
+   protected ComboBox   *cm_create_audio_node_ch;
+   protected CheckBox   *cb_create_audio_node_edit;
+
+   protected Button     *bt_zones_to_midi;
+   protected ComboBox   *cm_zones_to_midi_mode;
+   protected CheckBox   *cb_zones_to_midi_vel;
+   protected CheckBox   *cb_zones_to_midi_spread;
+
+
+   protected short       last_smp_uid;
+   protected SysExSample last_smp_info;
+   protected int         last_instance_id;
+   protected String      last_instance_track_name;
+   protected int         last_zone_idx;  // first liverec zone of last_smp_uid or -1
+
+   protected StringArray sample_namespace_names;  // see querySampleNamespaces()
+
+   protected byte preferred_sample_namespace_idx;  // 0=global. see (Eureka) Sample.NUM_NAMESPACES
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NT_AudioDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      local StringArray optPat; optPat.add("-");
+      optPat.join(optPat, Node.patnr_options);
+
+      local FloatArray optPatNr;
+      optPatNr.add(0);
+      int patNr = 1;
+      loop(127)
+         optPatNr.add(patNr++);
+
+      fp_audio_patnr.setDisplayType(FloatParam.DISPLAY_USER);
+      fp_audio_patnr.setUserTable(optPat);
+      fp_audio_patnr.setPresetOptions(optPatNr, optPat);
+      fp_audio_patnr.setEnableShowPresetValues(false);
+
+      fp_midi_patnr.setDisplayType(FloatParam.DISPLAY_USER);
+      fp_midi_patnr.setUserTable(optPat);
+      fp_midi_patnr.setPresetOptions(deref optPatNr, deref optPat);
+      fp_midi_patnr.setEnableShowPresetValues(false);
+
+      local StringArray optDev = STConfig.localmidi_out_devicenames;
+      optDev.insert(0, "-");
+      cm_create_audio_node_dev.setOptions(optDev); // -,vst_a..vst_z
+
+      initWindow(xfm,
+                 "Audio Dialog",
+                 100, 100,
+                 640, 240
+                 );
+
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showAudioDialog(NT_PatternView _patternView,
+                                 NodeTracker    _parentNode
+                                 ) {
+      pattern_view <= _patternView;
+      parent_node <= _parentNode;
+
+      Global.Print("Show AudioDialog");
+
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      if(null != mpat)
+      {
+         if(SysEx.IsAudioConnected())
+         {
+            last_smp_uid = pattern_view.findSmpUID(null/*retDevIdxOrNull*/, null/*retMidiChOrNull*/);
+
+            Global.Debug2("NT_AudioDialog::showAudioDialog: last_smp_uid<pat>="+last_smp_uid);
+
+            Node audioNode <= current_song.findNodeByGID(parent_node.audio_node_gid);
+            Node midiNode <= current_song.findNodeByGID(parent_node.midi_node_gid);
+
+            // Lazy-fix deleted audio node/pat refs
+            if(null == audioNode)
+            {
+               parent_node.audio_node_gid = -1;
+               mpat.audio_pat_nr = -1;
+            }
+            else if(audioNode.nodeIsPatternEmpty(mpat.audio_pat_nr))
+            {
+               mpat.audio_pat_nr = -1;
+            }
+
+            // Lazy-fix deleted midi node/pat refs
+            if(null == midiNode)
+            {
+               parent_node.midi_node_gid = -1;
+               mpat.midi_pat_nr = -1;
+            }
+            else if(midiNode.nodeIsPatternEmpty(mpat.midi_pat_nr))
+            {
+               mpat.midi_pat_nr = -1;
+            }
+
+            querySampleNamespaces();
+            queryAudioPortAndPreferredSampleNamespace();
+            querySamples();  // update last_smp_info
+            queryLiveRecInstances();  // updates last_instance_id and last_zone_idx (if smp_uid match was found)
+
+            updateLastSmpInfoWidgets();
+
+            cb_create_pattern.setEditable(parent_node.audio_node_gid >= 0);
+            bt_rec.setEditable(last_instance_id >= 0);
+            cb_rec_monitor.setSelected(last_smp_info.liverec_monitor);
+            cb_rec_monitor.setEditable( (last_smp_uid >= 0) && (last_zone_idx >= 0) );
+            cb_rec_mutex.setEditable(parent_node.midi_node_gid >= 0);
+            cb_rec_mutex.setSelected(parent_node.b_audiomidi_mutex);
+            cb_rec_midimute.setEditable(parent_node.midi_node_gid >= 0);
+            cb_rec_midimute.setSelected(parent_node.b_audionode_midimute);
+
+            fp_audio_patnr.setValue(1 + mpat.audio_pat_nr);
+            fp_midi_patnr.setValue(1 + mpat.midi_pat_nr);
+
+            bt_goto_audio.setEditable(parent_node.audio_node_gid >= 0);
+            bt_goto_midi.setEditable(parent_node.midi_node_gid >= 0);
+
+            cm_create_audio_node_dev.setSelectedOption(parent_node.last_vst_dev + 1);
+            cm_create_audio_node_ch .setSelectedOption(parent_node.last_vst_ch  + 1);
+
+            StringArray midiNotes <= MIDI.midi_notes;
+            cm_zones_to_midi_mode.setOptionsLong(("Fixed Note;Zone Idx to Note ("+midiNotes.get(4*12/*C-4*/)+"..);Zone RMS to note ("+midiNotes.get(4*12/*C-4*/)+", "+midiNotes.get(4*12+2/*D-4*/)+") (split 2 levels);Zone RMS to note ("+midiNotes.get(4*12/*C-4*/)+", "+midiNotes.get(4*12+2/*D-4*/)+", "+midiNotes.get(4*12+4/*E-4*/)+") (split 3 levels);Zone RMS to note ("+midiNotes.get(4*12/*C-4*/)+", "+midiNotes.get(4*12+2/*D-4*/)+", "+midiNotes.get(4*12+4/*E-4*/)+", "+midiNotes.get(4*12+5/*F-4*/)+") (split 4 levels)").splitChar(';'));
+
+            showCenteredFirst();
+         }
+         else
+         {
+            Global.Error("Eureka audio process is not connected");
+         }
+      }
+
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      // if(!b_layer_postinit_done)
+      // {
+         resizeToMinimum();
+      // }
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+
+      restoreGeometryIfValid(UI.IsHiDPI()
+                             ? STConfig.nt_audio_dialog_geo_hidpi
+                             : STConfig.nt_audio_dialog_geo_lodpi
+                             );
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+
+      if(UI.IsHiDPI())
+         STConfig.nt_audio_dialog_geo_hidpi = getGeometry4f();
+      else
+         STConfig.nt_audio_dialog_geo_lodpi = getGeometry4f();
+
+      Dialog::hide();
+
+      local Action acClose <= Action.New(ACTION_CLOSE, this);
+      pattern_view.consumeAction(acClose);
+   }
+
+   // <ui_kbd.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_create);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.joinRR(layers,
+                    [
+                       bt_create,
+                       fp_create_repeats,
+                       fp_create_extra_16ths,
+                       cb_create_stereo,
+                       cb_create_pattern,
+
+                       bt_rec,
+                       cb_rec_monitor,
+                       cb_rec_mutex,
+                       cb_rec_midimute,
+
+                       bt_peaks,
+                       bt_editsample,
+
+                       bt_goto_audio,
+                       fp_audio_patnr,
+
+                       bt_goto_midi,
+                       fp_midi_patnr,
+
+                       bt_create_audio_node,
+                       cm_create_audio_node_dev,
+                       cm_create_audio_node_ch,
+
+                       bt_zones_to_midi,
+                       cm_zones_to_midi_mode,
+                       cb_zones_to_midi_vel,
+                       cb_zones_to_midi_spread,
+                     ]
+                    );
+
+      return layers;
+   }
+
+   // <ui_update.png>
+   protected method updateLastSmpInfoWidgets() {
+      Global.Debug2("NT_AudioDialog::updateLastSmpInfoWidgets: last_instance_id="+last_instance_id+" last_instance_track_name=\""+last_instance_track_name+"\" last_smp_uid="+last_smp_uid+" last_smp_info.name=\""+last_smp_info.name+"\" last_smp_info.b_stereo="+last_smp_info.b_stereo);
+      lb_rec_instance_id.setCaption( ((last_instance_id >=0 ) ? last_instance_id : "-") + "("+last_instance_track_name+")");
+      local Integer ioId = last_smp_uid;
+      lb_peaks_smp_uid.setCaption( ((last_smp_uid >= 0) ? (last_smp_uid + " / "+ioId.printf("$%x")) : "-") + " ("+last_smp_info.name+")");
+
+      cb_create_stereo.setSelected(last_smp_info.b_stereo);
+      bt_peaks.setEditable(last_smp_uid >= 0);
+      bt_editsample.setEditable(last_smp_uid >= 0);
+
+      redraw();
+   }
+
+   // <method.png>
+   protected method calcMillisec() : float {
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      float millisec =
+         (current_song.ticksToMilliSeconds(mpat.num_ticks) * fp_create_repeats.getFloatValue()) +
+         current_song.sixteenthToMilliSeconds(fp_create_extra_16ths.getFloatValue())
+         ;
+      return millisec;
+   }
+
+   // <ui_handle.png>
+   protected method handleCreateSample() {
+      Global.Debug("NT_AudioDialog::handleCreateSample");
+
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      local String patNameStr = mpat.pat_name;
+      if(!patNameStr.isBlank())
+         patNameStr = " "+Utils.ConvertToFileName(patNameStr);
+      local String name = "a_"+parent_node.nodeGetName()+" "+(Node.patnr_options_short.get(mpat.pat_nr))+patNameStr;
+
+      float millisec = calcMillisec();
+      boolean bStereo = cb_create_stereo.isSelected();
+      byte namespaceIdx = cm_create_nsp.getSelectedOption();
+
+      Global.Debug("NT_AudioDialog::handleCreateSample: ticks="+mpat.num_ticks+" millisec="+millisec+" bStereo="+bStereo+" dB="+STConfig.node_arranger_audio_clip_level+" name=\""+name+"\"");
+
+      SysEx.QueueSendSmpLiveRecCreate(millisec,
+                                      bStereo ? 2 : 1,
+                                      STConfig.node_arranger_audio_clip_level/*levelDB*/,
+                                      namespaceIdx,
+                                      name
+                                      );
+
+      loop(100)
+      {
+         if(SysEx.b_queued_recv_liverec_sample_create_reply)
+         {
+            Global.Success("Create sample smpUID="+SysEx.queued_recv_liverec_sample_create_reply_smp_uid+" \""+name+"\" milliSec="+millisec+" stereo="+bStereo+" parent_node.audio_node_gid="+parent_node.audio_node_gid);
+            if(parent_node.audio_node_gid > 0)
+            {
+               NodeTracker audioNode <= current_song.findNodeByGID(parent_node.audio_node_gid);
+               if(audioNode instanceof NodeTracker)
+               {
+                  int numTicks =
+                     (mpat.num_ticks * fp_create_repeats.getFloatValue()) +
+                     (current_song.ppq * fp_create_extra_16ths.getFloatValue())/4/*to 16th*/
+                     ;
+                  return handleCreatePattern(audioNode, SysEx.queued_recv_liverec_sample_create_reply_smp_uid, numTicks);
+               }
+               hide();
+            }
+            else
+            {
+               // No linked audio/midi nodes.
+               //  - select sample in Eureka
+               //  - update first pattern CTL_PC event with id of newly created sample
+               //     - program change nr OR RPN unique_id
+               //  - clear sample peaks envelope
+               last_smp_uid = SysEx.queued_recv_liverec_sample_create_reply_smp_uid;
+               parent_node.trySelectSampleInEurekaOnCurrentTrack(last_smp_uid);
+               querySamples();  // update last_smp_info
+               queryLiveRecInstances();  // updates last_instance_id and last_zone_idx (if smp_uid match was found)
+               updateLastSmpInfoWidgets();
+
+               // Insert / update CTL_PC event (first step)
+               NT_Instrument ins <= parent_node.getCurrentTrackInstrument();
+               if(null != ins)
+               {
+                  if(true == ins.b_audio)
+                  {
+                     // MIDI program change mode
+                     parent_node.insertReplaceTrackEventAt(NT_TrackPattern.CTL_PC, last_smp_info.prg_id, 0/*time*/);
+                  }
+                  else
+                  {
+                     // RPN smp_uid mode
+                     parent_node.insertReplaceTrackEventAt(NT_TrackPattern.CTL_PC, last_smp_uid, 0/*time*/);
+                  }
+
+                  // Clear sample peaks envelope
+                  Envelope env <= parent_node.getFirstTrackRPNSmpPeakEnvelope(parent_node.nodeGetCurrentEditPatternNr());
+                  if(null != env)
+                     env.empty();
+
+                  pattern_view.renderAndRedrawAll();
+               }
+
+            }
+
+            return;
+         }
+         TKS.sleep(20);
+      }
+      Global.Error("Timeout while waiting for SMP_LIVEREC_CREATE reply");
+
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCreatePattern(NodeTracker _audioNode, short _smpUID, int _numTicks) {
+      hide();
+
+      NT_MetaPattern mpatMIDI <= parent_node.getCurrentEditMetaPattern();
+
+      PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+      if(pgPipeRoot.selectPipeAndNodeByIdx(_audioNode.nodeGetPipeIdx(), _audioNode.nodeGetPipeNodeIdx()))
+      {
+         root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+         PagePipe pgPipe <= root_form.pg_pipe;
+         pgPipe.editSelectedNode();
+         NodeTrackerEditor editor <= pattern_view.parent_editor;
+         editor.cmd_pattern_alloc(false/*bSub*/);
+         NT_MetaPattern mpat <= _audioNode.getCurrentEditMetaPattern();
+         mpat.num_ticks = _numTicks;
+         mpat.midi_pat_nr = mpatMIDI.pat_nr;
+         mpatMIDI.audio_pat_nr = mpat.pat_nr;
+         mpat.patSetName("M"+(Node.patnr_options_short.get(mpatMIDI.pat_nr))+" "+mpatMIDI.pat_name);
+         NT_Track track <= pattern_view.getCurrentTrack();
+         if(null != track)
+         {
+            NT_TrackPattern pat <= track.getCurrentEditPattern();
+            if(null != pat)
+            {
+               Envelope env <= pat.getCreateEnvelope(NT_TrackPattern.CTL_PC);
+               if(null != env)
+               {
+                  env[0] = 0;
+                  env[1] = _smpUID;
+               }
+            }
+            NT_Instrument kjIns <= _audioNode.getInstrument(track.keyjazz_instr_nr);
+            if(null != kjIns)
+            {
+               STX_MIDIOutDevice dev <= kjIns.out_device;
+               if(null != dev)
+               {
+                  // Select new sample for replay
+                  dev.rpn(kjIns.midi_channel, Node.RPN_SMP_UID, _smpUID);
+               }
+            }
+            editor.nodeHandleEditPatternChanged();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method queryLiveRecInstances() {
+      SysEx.QueueSendQuerySamplerInstances(true/*bLiveRecOnly*/);
+
+      last_instance_id = -1;
+      last_instance_track_name = "n/a";
+      last_zone_idx = -1;
+
+      if(last_smp_uid >= 0)
+      {
+         loop(100)
+         {
+            if(SysEx.b_queued_recv_sampler_instances)
+            {
+               SysExSamplerInstance *lri;
+               foreach lri in SysEx.queued_recv_sampler_instances
+               {
+                  if(lri.unique_id == last_smp_uid)
+                  {
+                     last_instance_id         = lri.instance_id;
+                     last_instance_track_name = lri.track_name;
+                     last_zone_idx            = lri.first_liverec_zone_idx;
+                     break;
+                  }
+               }
+
+               return;
+            }
+            TKS.sleep(20);
+         }
+         Global.Error("Timeout while waiting for QUERY_SAMPLER_INSTANCES reply");
+      }
+   }
+
+   // <method.png>
+   protected method querySampleNamespaces() {
+
+      SysEx.QueueSendQuerySmpNamespaces();
+      loop(100)
+      {
+         if(SysEx.b_queued_recv_smp_namespaces)
+         {
+            sample_namespace_names = SysEx.queued_recv_smp_namespaces;
+            Global.Debug("NT_AudioDialog::querySampleNamespaces: recvd "+#(sample_namespace_names));
+            local StringArray optNSP;
+            String *nspName;
+            int nspIdx = 0;
+            foreach nspName in sample_namespace_names
+            {
+               optNSP.add(nspIdx+++": "+nspName);
+            }
+            cm_create_nsp.setOptions(optNSP);
+            return;
+         }
+         TKS.sleep(20);
+      }
+
+      Global.Error("Timeout while waiting for QUERY_SMP_NAMESPACES reply");
+   }
+
+   // <method.png>
+   protected method queryAudioPortAndPreferredSampleNamespace() {
+      NT_Track track <= pattern_view.getCurrentTrack();
+      if(null != track)
+      {
+         NT_Instrument instr <= parent_node.getInstrument(track.keyjazz_instr_nr);
+         if(null != instr)
+         {
+            STX_MIDIOutDevice outDev <= instr.out_device;
+            if(null != outDev)
+            {
+               byte vstDevIdx = outDev.getVSTDevIdx();
+               if(vstDevIdx >= 0)
+               {
+                  byte vstMidiCh = instr.midi_channel;
+                  Global.Debug("NT_AudioDialog::queryAudioPortAndPreferredSampleNamespace: send vstDevIdx="+vstDevIdx+" vstMidiCh="+vstMidiCh);
+                  SysEx.QueueSendQueryAudioPort(vstDevIdx, vstMidiCh, (false != instr.b_audio)/*bAudioPort*/);
+                  loop(100)
+                  {
+                     if(SysEx.b_queued_recv_audioport)
+                     {
+                        if(SysEx.queued_recv_audioport_vst_dev_idx >= 0)
+                        {
+                           parent_node.last_vst_dev       = SysEx.queued_recv_audioport_vst_dev_idx;
+                           parent_node.last_vst_ch        = SysEx.queued_recv_audioport_vst_midi_ch;
+                           preferred_sample_namespace_idx = SysEx.queued_recv_audioport_smp_nsp;
+                           cm_create_nsp.setSelectedOption(preferred_sample_namespace_idx);
+
+                           cm_create_audio_node_dev.setSelectedOption(parent_node.last_vst_dev+1);
+                           cm_create_audio_node_ch .setSelectedOption(parent_node.last_vst_ch +1);
+
+                           Global.Debug("NT_AudioDialog::queryAudioPortAndPreferredSampleNamespace: recvd vstDevIdx="+parent_node.last_vst_dev+" vstCh="+parent_node.last_vst_ch+" smpNsp="+preferred_sample_namespace_idx);
+                        }
+                        else
+                        {
+                           Global.Warning("AudioDialog: vst dev/ch/smpNsp **NOT FOUND**");
+                        }
+                        return;
+                     }
+                     TKS.sleep(20);
+                  }
+                  Global.Error("Timeout while waiting for QUERY_AUDIO_PORT_AND_NAMESPACE reply");
+               }
+               else
+               {
+                  Global.Warning("AudioDialog: instrument does not output to Eureka port");
+               }
+            }
+            else
+            {
+               Global.Warning("AudioDialog: instrument has no valid output device");
+            }
+         }
+         else
+         {
+            Global.Warning("AudioDialog: no valid instrument");
+         }
+      }
+      else
+      {
+         Global.Debug("NT_AudioDialog::queryAudioPortAndPreferredSampleNamespace: no valid track");
+      }
+   }
+
+   // <method.png>
+   protected method querySamples() {
+      last_smp_info.name = "";
+      Global.Debug("NT_AudioDialog::querySamples: last_smp_uid="+last_smp_uid);
+
+      SysEx.QueueSendQuerySamples(null/*namePattern*/, 5*12/*targetNote=C-5*/);
+      loop(100)
+      {
+         if(SysEx.b_queued_recv_samples)
+         {
+            SysExSample *sysSmp;
+            foreach sysSmp in SysEx.queued_recv_samples
+            {
+               if(sysSmp.unique_id == last_smp_uid)
+               {
+                  last_smp_info = sysSmp;
+                  return;
+               }
+            }
+            return;
+         }
+         TKS.sleep(20);
+      }
+
+      Global.Error("Timeout while waiting for QUERY_SAMPLESINSTANCES reply");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleLiveRec(boolean _bOverdub) {
+      Global.Debug("NT_AudioDialog::handleLiveRec: last_smp_uid="+last_smp_uid+" last_instance_id="+last_instance_id+" last_zone_idx="+last_zone_idx);
+      if(last_smp_uid >= 0)
+      {
+         if(last_instance_id > 0)
+         {
+            if(last_zone_idx >= 0)
+            {
+               if(!_bOverdub)
+                  SysEx.QueueSendSmpClear(last_smp_uid);
+
+               // (todo) auto-stop replay (but continue live-recording)
+               NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+
+               NodeTracker midiNode <= current_song.findNodeByGID(parent_node.midi_node_gid);
+               NT_MetaPattern mpatMIDI <= null;
+               if(midiNode instanceof NodeTracker)
+               {
+                  if(!midiNode.nodeIsPatternEmpty(mpat.midi_pat_nr))
+                  {
+                     mpatMIDI <= midiNode.nodeGetPatternByIdx(mpat.midi_pat_nr);
+                  }
+
+                  if(maybe == parent_node.b_audiomidi_mutex)
+                  {
+                     parent_node.nodeSetEnableMute(true);
+                     // // if(midiNode instanceof NodeTracker)
+                        midiNode.nodeSetEnableMute(false);
+                     PageNode pgNode <= root_form.pg_node;
+                     pgNode.updateTextFieldNodeState();
+                  }
+               }
+
+               // int ticksAlign = current_song.getNumTicksPerBar();
+               int ticksAlign = mpat.num_ticks;
+               int startTickNr = replay.b_playing ? current_song.tick_nr : 0;
+               if(startTickNr > 0)
+                  startTickNr = ((startTickNr + ticksAlign -1) / ticksAlign) * ticksAlign;
+               float msPer16th = current_song.sixteenthToMilliSeconds(1.0);
+               int smp16th = int((last_smp_info.millisecs / msPer16th)+0.5);
+               int ticksPer16th = current_song.getNumTicksPer16th();
+               int endTickNr = (ticksPer16th * smp16th);
+               if(endTickNr > 1)
+               {
+                  int patDurTicks;
+                  if(null != mpatMIDI)
+                     patDurTicks = mpatMIDI.num_ticks;
+                  else
+                     patDurTicks = mpat.num_ticks;
+
+                  if(cb_rec_pass2.isSelected())
+                  {
+                     startTickNr += patDurTicks;
+                     endTickNr   += patDurTicks;
+                     Global.Debug("NT_AudioDialog::handleLiveRec: pass2 patDurTicks="+patDurTicks+" ("+(patDurTicks / ticksPer16th)+" 16th)");
+                  }
+
+                  endTickNr = (endTickNr - 0) + startTickNr;
+                  replay.queued_liverec_start_ticks = startTickNr;
+                  replay.queued_liverec_end_ticks   = endTickNr;
+                  replay.queued_liverec_instance_id = last_instance_id;
+                  replay.queued_liverec_zone_idx    = last_zone_idx;
+                  Global.Debug("NT_AudioDialog::handleLiveRec: queue liverec start="+startTickNr+" end="+endTickNr+" ("+smp16th+" 16ths) instanceID="+last_instance_id+" zoneIdx="+last_zone_idx);
+                  Global.Print("Queue liverec start ("+smp16th+" 16ths)");
+
+                  if(!replay.b_playing)
+                  {
+                     // Record pattern
+                     pattern_view.loopCurrentPattern(false/*bFromCurOffset*/, true/*bStop*/);
+
+                     if(STConfig.b_node_tracker_precount)
+                        replay.startPreCount(STConfig.node_tracker_precount_num_bars);
+                  }
+
+                  if(parent_node.b_audionode_midimute)
+                  {
+                     if(null != mpatMIDI)
+                     {
+                        midiNode.audiorec_tick_nr = 0;
+                        midiNode.audiorec_automute_tick_nr = mpatMIDI.num_ticks;
+                        if(cb_rec_pass2.isSelected())
+                           midiNode.audiorec_automute_tick_nr *= 2;
+                        Global.Debug("NT_AudioDialog::handleLiveRec: queue MIDI auto-mute after "+midiNode.audiorec_automute_tick_nr+" ticks");
+                     }
+                  }
+               }
+
+            }
+            else
+               Global.Error("liverec: invalid zone_idx");
+         }
+         else
+            Global.Error("liverec: invalid instance");
+      }
+      else
+         Global.Error("liverec: invalid smp_uid");
+   }
+
+   // <ui_handle.png>
+   protected method handleRecMonitorChanged() {
+      if(last_smp_uid >= 0)
+      {
+         if(last_zone_idx >= 0)
+         {
+            boolean bMon = cb_rec_monitor.isSelected();
+            SysEx.QueueSendSmpLiveRecMonitor(last_smp_uid, last_zone_idx, bMon);
+            Global.Print("Live-Rec Monitor Mode is "+((false == bMon) ? "OFF" : (true == bMon) ? "REPLACE" : "MIX"));
+         }
+         else
+            Global.Error("liverec: invalid zone_idx");
+      }
+      else
+         Global.Error("liverec: invalid smp_uid");
+   }
+
+   // <ui_handle.png>
+   protected method handleRecMutexChanged() {
+      parent_node.b_audiomidi_mutex = cb_rec_mutex.isSelected();
+      Global.Print("Audio/MIDI auto-mute mode is "+Utils.GetEnableString(parent_node.b_audiomidi_mutex));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleRecMIDIMuteChanged() {
+      parent_node.b_audionode_midimute = cb_rec_midimute.isSelected();
+      Global.Print("Auto-mute MIDI node is "+Utils.GetEnableString(parent_node.b_audionode_midimute));
+   }
+
+   // <ui_handle.png>
+   protected method handleQueryPeaks() {
+      Global.Debug("NT_AudioDialog::handleQueryPeaks: last_smp_uid="+last_smp_uid);
+      if(last_smp_uid >= 0)
+      {
+         NT_Track track <= pattern_view.getCurrentTrack();
+         if(null != track)
+         {
+            NT_Instrument instr <= parent_node.getInstrument(track.keyjazz_instr_nr);
+            if(null != instr)
+            {
+               NT_MIDIParam mp <= instr.findParamByRPN(Node.RPN_SMP_PEAK);
+               if(null != mp)
+               {
+                  NT_TrackPattern pat <= track.getCurrentEditPattern();
+                  if(null != pat)
+                  {
+                     // int tickDelta = current_song.ppq / 16;  // 1/64th
+                     int tickDelta = current_song.ppq / 64;  // 1/256th
+                     float intervalMs = current_song.ticksToMilliSeconds(tickDelta);
+                     Global.Debug2("NT_AudioDialog::handleQueryPeaks: last_smp_uid="+last_smp_uid+" tickDelta="+tickDelta+" intervalMs="+intervalMs);
+                     SysEx.QueueSendSmpPeaks(last_smp_uid, intervalMs);
+
+                     loop(100)
+                     {
+                        if(SysEx.b_queued_recv_smp_peaks)
+                        {
+                           Envelope env <= pat.getCreateEnvelope(NT_TrackPattern.CTL_USR + mp.id);
+                           if(null != env)
+                           {
+                              IntArray peaks <= SysEx.queued_recv_smp_peaks;
+                              int peakIdx = 0;
+                              env.alloc(2* peaks.numElements);
+                              env.empty();
+                              loop(peaks.numElements)
+                              {
+                                 if(0 == peakIdx)
+                                    env.add(0);
+                                 else
+                                    env.add(tickDelta);
+                                 env.add(peaks.get(peakIdx++));
+                              }
+
+                              pattern_view.renderAndRedrawAll();
+
+                              Global.Print("updated "+(SysEx.queued_recv_smp_peaks.numElements)+" peaks");
+                           }
+
+                           hide();
+                           return;
+                        }
+                        TKS.sleep(20);
+                     }
+                     Global.Error("Timeout while waiting for SMP_PEAKS reply");
+                  }
+                  else
+                     Global.Error("query peaks: invalid pat");
+               }
+               else
+                  Global.Error("query peaks: kj instr has no param for RPN 87 (smp_peak)");
+            }
+            else
+               Global.Error("query peaks: invalid kj instr");
+         }
+         else
+            Global.Error("query peaks: invalid track");
+      }
+      else
+         Global.Error("query peaks: invalid smp_uid");
+   }
+
+   // <ui_handle.png>
+   protected method handleShowOrEditSample(boolean _bEdit) {
+      Global.Debug("NT_AudioDialog::handleShowOrEditSample: last_smp_uid="+last_smp_uid);
+      if(last_smp_uid >= 0)
+      {
+         parent_node.tryEditCurrentTrackSampleInEureka(last_smp_uid, _bEdit/*bShowEurekaWindow*/);
+      }
+   }
+
+   // <method.png>
+   public =replay= method gotoNodeAndPatNr(int _nodeGID, byte _patNr) {
+      Global.Debug("NT_AudioDialog::gotoNodeAndPatNr: nodeGID="+_nodeGID+" patNr="+_patNr);
+      // (todo) move to RootForm ?
+      hide();
+
+      Node node <= current_song.findNodeByGID(_nodeGID);
+      if(null != node)
+      {
+         node.nodeSetCurrentPlayPatternNr(_patNr);
+         node.nodeSetCurrentEditPatternNr(_patNr);
+
+         PagePipeRoot pgPipeRoot <= root_form.pg_piperoot;
+
+         if(pgPipeRoot.selectPipeAndNodeByIdx(node.nodeGetPipeIdx(), node.nodeGetPipeNodeIdx()))
+         {
+            root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+            PagePipe pgPipe <= root_form.pg_pipe;
+            pgPipe.editSelectedNode();
+         }
+      }
+      else
+         Global.Warning("invalid node GID="+_nodeGID);  // should not be reachable
+   }
+
+   // <ui_handle.png>
+   protected method handleGotoAudio() {
+      Global.Debug("NT_AudioDialog::handleGotoAudio");
+      if(parent_node.audio_node_gid >= 0)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+         if(mpat.audio_pat_nr >= 0)
+         {
+            gotoNodeAndPatNr(parent_node.audio_node_gid, mpat.audio_pat_nr);
+         }
+         else
+            Global.Warning("invalid audio_pat_nr");
+      }
+      else
+         Global.Warning("invalid audio_node_gid");
+   }
+
+   // <ui_handle.png>
+   protected method handleAudioPatNrChanged() {
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      mpat.audio_pat_nr = fp_audio_patnr.getFloatValue() - 1;
+      Global.Print("Audio pattern nr is "+mpat.audio_pat_nr);
+   }
+
+   // <ui_handle.png>
+   protected method handleGotoMIDI() {
+      Global.Debug("NT_AudioDialog::handleGotoMIDI");
+      if(parent_node.midi_node_gid >= 0)
+      {
+         NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+         if(mpat.midi_pat_nr >= 0)
+         {
+            gotoNodeAndPatNr(parent_node.midi_node_gid, mpat.midi_pat_nr);
+         }
+         else
+            Global.Warning("invalid midi_pat_nr");
+      }
+      else
+         Global.Warning("invalid midi_node_gid");
+   }
+
+   // <ui_handle.png>
+   protected method handleMIDIPatNrChanged() {
+      NT_MetaPattern mpat <= parent_node.getCurrentEditMetaPattern();
+      mpat.midi_pat_nr = fp_midi_patnr.getFloatValue() - 1;
+      Global.Print("MIDI pattern nr is "+mpat.midi_pat_nr);
+   }
+
+   // <ui_handle.png>
+   protected method handleCreateAudioNode() {
+      if(handleCreateAudioNode1())
+      {
+         if(!cb_create_audio_node_edit.isSelected())
+         {
+            // Return to MIDI node and reshow AudioDialog
+            //  (note) must be called while =replay= is NOT locked
+            Global.Debug("NT_AudioDialog: return to MIDI tracker node");
+            PageNode pgNode <= root_form.pg_node;
+            pgNode.selectNodePrev();
+            Global.Debug("NT_AudioDialog: re-show AudioDialog 1");
+            showAudioDialog(pattern_view, parent_node);
+            Global.Debug("NT_AudioDialog: re-show AudioDialog 2");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleCreateAudioNode1() : boolean {
+      Global.Debug("NT_AudioDialog::handleCreateAudioNode");
+      NT_MetaPattern mpatMIDI <= parent_node.getCurrentEditMetaPattern();
+      hide();
+      root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+      PagePipe pgPipe <= root_form.pg_pipe;
+      MIDIPipeNodeScriptProxy nsp <= pgPipe.handleAdd3(NodeTracker, "a_"+parent_node.nodeGetName(), false/*bEdit*/);
+      if(null != nsp)
+      {
+         NodeTracker tn <= nsp.sci;
+         tn.midi_node_gid = parent_node.getNodeGID();
+         parent_node.audio_node_gid = tn.getNodeGID();
+         pgPipe.editSelectedNode();
+         NodeTrackerEditor editor <= pattern_view.parent_editor;
+         NT_InstrumentView instrView <= editor.instrument_view;
+         instrView.createNewInstrument(-1);
+         NT_Instrument ins <= instrView.getSelectedInstrument();
+         if(null != ins)
+         {
+            NT_MIDIParam *mp;
+
+            ins.b_audio = maybe;  // RPN_SMP_UID program change mode
+
+            NT_TEL tel <= pattern_view.getCurrentTrackLayout();
+
+            // Create "smp_uid" CTL_PC cel
+            NT_CEL cel <= tel.getVisibleCelByIdx(0);  // CTL_INSTR
+            cel.ctl_id = NT_TrackPattern.CTL_PC;
+            cel.style = NT_CEL.STYLE_HEX;
+            cel.range = NT_CEL.RANGE_0_255;
+            // // mp <= instrView.createNewParam(0, true/*bQuiet*/);
+            // // if(null != mp)
+            // // {
+            // //    mp.type = NT_MIDIParam.TYPE_RPN;
+            // //    mp.rpn_id = Node.RPN_SMP_UID/*90*/;
+            // //    mp.ui_style = NT_CEL.STYLE_HEX;
+            // //    mp.ui_range = NT_CEL.RANGE_0_255;
+            // //    mp.b_scale14bit = false;
+            // //    mp.name = "smp_uid";
+            // //    instrView.autogenMIDIParamName();
+            // //    instrView.updateParamVisibility(true/*bUpdateLayout*/);
+            // // }
+
+            // Volume
+            mp <= instrView.createNewParam(-1, false/*bQuiet*/);
+            if(null != mp)
+            {
+               mp.type = NT_MIDIParam.TYPE_CC;
+               mp.cc_msb_id = 7;
+               mp.cc_lsb_id = 7+32;
+               mp.ui_style = NT_CEL.STYLE_HEX;
+               mp.ui_range = NT_CEL.RANGE_0_127;
+               instrView.autogenMIDIParamName();
+               instrView.updateParamVisibility(true/*bUpdateLayout*/);
+               instrView.editSelectedParameter();
+            }
+
+            // Balance
+            mp <= instrView.createNewParam(-1, false/*bQuiet*/);
+            if(null != mp)
+            {
+               mp.type = NT_MIDIParam.TYPE_CC;
+               mp.cc_msb_id = 8;
+               mp.cc_lsb_id = 8+32;
+               mp.ui_style = NT_CEL.STYLE_HEX;
+               mp.ui_range = NT_CEL.RANGE_M64_P63;
+               instrView.autogenMIDIParamName();
+               instrView.updateParamVisibility(true/*bUpdateLayout*/);
+               instrView.editSelectedParameter();
+            }
+
+            // (MW,Ex,Pitchbend)
+            instrView.handleImportPerfCtlParams(1);
+
+            // Output device+channel
+            int vstIdx = cm_create_audio_node_dev.getSelectedOption();
+            if(vstIdx >= 1)
+            {
+               vstIdx--; // skip "-"
+               STX_MIDIOutDevice dev <= MIDI.GetVSTOutDeviceByIdx(vstIdx);
+               if(null != dev)
+               {
+                  ins.out_device <= dev;
+
+                  int midiCh = cm_create_audio_node_ch.getSelectedOption();
+                  if(midiCh >= 1)
+                  {
+                     ins.midi_channel = midiCh - 1;  // skip "-"
+                  }
+               }
+            }
+
+            // Create "gp1".."gp4" param/cel
+            int gpIdx = 0;
+            loop(4)
+            {
+               mp <= instrView.createNewParam(-1, false/*bQuiet*/);
+               if(null != mp)
+               {
+                  mp.type = NT_MIDIParam.TYPE_CC;
+                  mp.cc_msb_id = 16+gpIdx/*gp1*/;
+                  mp.cc_lsb_id = 16+gpIdx+32/*gp1*/;
+                  mp.ui_style = NT_CEL.STYLE_HEX;
+                  mp.ui_range = NT_CEL.RANGE_0_127;
+                  instrView.autogenMIDIParamName();
+                  instrView.updateParamVisibility(true/*bUpdateLayout*/);
+                  instrView.editSelectedParameter();
+                  // instrView.handleParamTypeChanged(true/*bUpdateOnly*/);
+               }
+               gpIdx++;
+            }
+
+            // Create "smp_peak" param/cel
+            mp <= instrView.createNewParam(15, true/*bQuiet*/);
+            if(null != mp)
+            {
+               mp.type = NT_MIDIParam.TYPE_RPN;
+               mp.rpn_id = Node.RPN_SMP_PEAK/*87*/;
+               mp.ui_style = NT_CEL.STYLE_BAR8;
+               mp.ui_range = NT_CEL.RANGE_0_255;
+               mp.name = "smp_peak";
+               mp.b_scale14bit = false;
+               STX_MIDIOutDevice devScratch <= MIDI.GetMIDIOutDeviceByAliasOrName("<Scratch>");
+               mp.forced_dev <= devScratch;
+               mp.forced_ch = 1;
+               instrView.autogenMIDIParamName();
+               instrView.updateParamVisibility(true/*bUpdateLayout*/);
+            }
+
+            pattern_view.moveCursorToStart();
+
+            pattern_view.setCursorX(0);
+            editor.cmd_track_autocolorizecels();
+            editor.cmd_track_autocolorizecels();
+
+            pattern_view.setPatternLength(mpatMIDI.num_ticks);   // (todo) remove
+            editor.updatePatLen();   // (todo) remove
+
+            // Mark pattern as empty so first created sample is assigned to pat 01A
+            editor.cmd_pattern_free(true/*bFreeMeta*/, true/*bUndoBegin*/);
+
+            return true;
+         } // if ins
+      } // if nsp
+      return false;
+   }
+
+   // <method.png>
+   protected method setVSTDevPreset(int _ch) {
+      parent_node.last_vst_dev = 7;    // vst_h
+      parent_node.last_vst_ch  = _ch;  // 0..15
+
+      cm_create_audio_node_dev.setSelectedOption(7+1);
+      cm_create_audio_node_ch .setSelectedOption(_ch + 1);
+      redraw();
+   }
+
+   // <method.png>
+   protected method handleAudioToMIDI() {
+      int mode = 0;
+
+      if(cb_zones_to_midi_vel.isSelected())
+         mode |= 128;
+
+      mode |= cm_zones_to_midi_mode.getSelectedOption();
+
+      SysEx.QueueSendSmpZonesToMIDI(mode);
+
+      loop(100)
+      {
+         if(SysEx.b_queued_recv_smp_zones_to_midi)
+         {
+            FloatArray retMillisecs  <= SysEx.queued_recv_smp_zones_to_midi_millisecs;
+            FloatArray retNotes      <= SysEx.queued_recv_smp_zones_to_midi_notes;
+            FloatArray retVelocities <= SysEx.queued_recv_smp_zones_to_midi_velocities;
+
+            int zoneIdx = 0;
+            int numZones = retMillisecs.numElements;
+            if(numZones > 0)
+            {
+               parent_node.undoBeginNested("zones_to_midi");
+
+               loop(numZones)
+               {
+                  int evAbsTime = current_song.milliSecondsToTicks(retMillisecs.get(zoneIdx));
+
+                  parent_node.insertReplaceTrackEventAt(NT_TrackPattern.CTL_NOTE1, int(retNotes.get(zoneIdx)+0.5), evAbsTime);
+                  parent_node.insertReplaceTrackEventAt(NT_TrackPattern.CTL_VEL1, retVelocities.get(zoneIdx), evAbsTime);
+
+                  // Next zone
+                  zoneIdx++;
+               }
+
+               if(cb_zones_to_midi_spread.isSelected())
+               {
+                  NodeTrackerEditor editor <= pattern_view.parent_editor;
+                  editor.handlePageCmdSpreadUniqueNotesToTracks(false/*bUndoBeginEnd*/);
+               }
+
+               parent_node.undoEndNested("zones_to_midi");
+               pattern_view.renderAndRedrawAll();
+
+               Global.Success("Zones to MIDI: numZones="+retMillisecs.numElements);
+            }
+            else
+            {
+               Global.Warning("Zones to MIDI: no zones");
+            }
+
+            hide();
+            return;
+         }
+         TKS.sleep(20);
+      }
+      Global.Error("Timeout while waiting for SMP_ZONES_TO_MIDI reply");
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      // trace "xxxx AudioRecordDialog::onKey: pressed="+_k.pressed+" name="+_k.name;
+      switch(_k.pressed)
+      {
+         default:
+            break;
+
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case 'c':
+            handleCreateSample();
+            return true;
+
+         case 'r':
+            handleLiveRec(_k.modShift()/*bOverdub*/);
+            return true;
+
+         case 'q':
+            handleQueryPeaks();
+            return true;
+
+         case 'a':
+            if(_k.modCtrlOnly())
+            {
+               hide();
+               root_form.showAudioLiveRecDialog(false/*bForce/bModal*/, null/*recipient*/);
+            }
+            else
+            {
+               handleGotoAudio();
+            }
+            return true;
+
+         case 'e':
+            if(_k.modNone())
+               handleShowOrEditSample(false/*bEdit*/);
+            else
+               handleShowOrEditSample(true/*bEdit*/);
+            return true;
+
+         case 's':
+            handleGotoMIDI();
+            return true;
+
+         case 'n':
+            handleCreateAudioNode();
+            return true;
+
+         case 'f':
+            handleAudioToMIDI();
+            return true;
+
+         case 'p':
+            cb_rec_pass2.toggleSelectionAction();
+            return true;
+
+         case 'w':
+            cb_rec_monitor.toggleSelectionAction();
+            return true;
+
+         case 'x':
+            cb_rec_mutex.toggleSelectionAction();
+            return true;
+
+         case 'y':
+         case 'z':
+            cb_rec_midimute.toggleSelectionAction();
+            return true;
+
+         case '1':
+         case '2':
+         case '3':
+         case '4':
+         case '5':
+         case '6':
+         case '7':
+         case '8':
+         case '9':
+            setVSTDevPreset(_k.pressed - '1');
+            return true;
+
+         case '0':
+            setVSTDevPreset(9);
+            return true;
+
+
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(bt_create):
+            handleCreateSample();
+            return true;
+
+         case @(fp_create_repeats):
+            Global.Print("Num Repeats is "+fp_create_repeats.getFloatValue()+" => total millisec="+calcMillisec());
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_create_extra_16ths):
+            Global.Print("Extra 16ths is "+fp_create_extra_16ths.getFloatValue()+" => total millisec="+calcMillisec());
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cb_create_stereo):
+            Global.Print("Stereo is "+Utils.GetEnableString(cb_create_stereo.isSelected()));
+            return true;
+
+         case @(bt_rec):
+            handleLiveRec( (Button.ACTION_HOLD_CLICK != acName)/*bOverdub*/);
+            return true;
+
+         case @(cb_rec_monitor):
+            handleRecMonitorChanged();
+            return true;
+
+         case @(cb_rec_mutex):
+            handleRecMutexChanged();
+            return true;
+
+         case @(cb_rec_midimute):
+            handleRecMIDIMuteChanged();
+            return true;
+
+         case @(bt_peaks):
+            handleQueryPeaks();
+            return true;
+
+         case @(bt_editsample):
+            handleShowOrEditSample((Button.ACTION_HOLD_CLICK == acName)/*bEdit*/);
+            return true;
+
+         case @(bt_goto_audio):
+            handleGotoAudio();
+            return true;
+
+         case @(fp_audio_patnr):
+            handleAudioPatNrChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_goto_midi):
+            handleGotoMIDI();
+            return true;
+
+         case @(fp_midi_patnr):
+            handleMIDIPatNrChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_create_audio_node):
+            handleCreateAudioNode();
+            return true;
+
+         case @(cm_create_audio_node_dev):
+            parent_node.last_vst_dev = cm_create_audio_node_dev.getSelectedOption() - 1;
+            Global.Print("Audio node dev is "+cm_create_audio_node_dev.getSelectedOptionName());
+            return true;
+
+         case @(cm_create_audio_node_ch):
+            parent_node.last_vst_ch = cm_create_audio_node_ch.getSelectedOption() - 1;
+            Global.Print("Audio node ch is "+cm_create_audio_node_ch.getSelectedOptionName());
+            return true;
+
+         case @(bt_zones_to_midi):
+            handleAudioToMIDI();
+            return true;
+      }
+
+      return true;
+   }
+
+}

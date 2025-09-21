@@ -1,0 +1,282 @@
+// ----
+// ---- file   : Montage_ElementForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 27Oct2022
+// ---- changed: 28Oct2022, 28Jul2023
+// ----
+// ----
+// ----
+
+module MMontage_ElementForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Montage_ElementForm extends XMLForm, ActionProvider, MIDIMapDefs, MontageDefs, Montage_EGPresetListener {
+   // MontagePartFMOperator, MontagePartNormalElement
+
+   EditMIDISynthFormMontage *parent_synth_form;
+   int element_idx;
+
+   protected LayerSwitch *ls_type;
+
+   protected Montage_OpForm *f_op;
+
+   protected TabSwitch                 *ts_normal;
+   protected Montage_ElementZoneForm   *f_zone;
+   protected Montage_ElementOscForm    *f_osc;
+   protected Montage_ElementFilterForm *f_filter;
+
+
+   // <init.png>
+   public method initElementForm(EditMIDISynthFormMontage _parentSynthForm, int _elementIdx) : boolean {
+
+      parent_synth_form <= _parentSynthForm;
+      element_idx = _elementIdx;
+
+      if(!initPakFile("Montage_ElementForm.xfm"))
+      {
+         trace "[---] failed to parse \"Montage_ElementForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      f_op.initOpForm(_parentSynthForm, element_idx);
+
+      f_zone  .initElementZoneForm  (_parentSynthForm, element_idx);
+      f_osc   .initElementOscForm   (_parentSynthForm, element_idx);
+      f_filter.initElementFilterForm(_parentSynthForm, element_idx);
+
+      recursiveBuildTabCycleLists();
+
+      return true;
+   }
+
+   // <method.png>
+   public method enter() {
+   }
+
+   // <method.png>
+   public method leave() {
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _layers) {
+      // layers.joinRR(layers, param_widgets);
+      if(isFM())
+         f_op.addTabCycleOverrides(_layers);
+      else if(isNormal())
+      {
+         switch(ts_normal.getActiveTabIndex())
+         {
+            default:
+            case 0:
+               f_zone.addTabCycleOverrides(_layers);
+               break;
+
+            case 1:
+               f_osc.addTabCycleOverrides(_layers);
+               break;
+
+            case 2:
+               f_filter.addTabCycleOverrides(_layers);
+               break;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public method isFM() : boolean {
+      MontagePartFM pFM <= parent_synth_form.getEditPartFM();
+      return (null != pFM);
+   }
+
+   // <method_get.png>
+   public method isNormal() : boolean {
+      MontagePartNormal pNormal <= parent_synth_form.getEditPartNormal();
+      return (null != pNormal);
+   }
+
+   // <ui_show.png>
+   public method showElement() {
+      if(isFM())
+      {
+         // op <= pFM.getOpByIdx(element_idx);
+         ls_type.switchToLayerNr(1);
+      }
+      else if(isNormal())
+      {
+         // el <= pNormal.getElementByIdx(element_idx);
+         ls_type.switchToLayerNr(2);
+      }
+      else
+      {
+         // unused (or DRUM)
+         ls_type.switchToLayerNr(0);
+      }
+
+      f_op.showOp();
+
+      f_zone  .showElementZone();
+      f_osc   .showElementOsc();
+      f_filter.showElementFilter();
+   }
+
+   // <ui_kbd.png>
+   public virtual getDefaultKeyboardFocusLayer() : Layer {
+      // trace "xxx ElementForm: getDefaultKeyboardFocusLayer: isFM()="+isFM()+" isNormal="+isNormal();
+      if(isFM())
+         return f_op;
+      else if(isNormal())
+         return ts_normal;
+      else
+         return null;
+   }
+
+   // <method.png>
+   public method refocusDefault() {
+      Layer l <= getDefaultKeyboardFocusLayer();
+      if(null != l)
+         UI.SetKeyboardFocus(l);
+      else
+         parent_synth_form.refocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method handleTabChanged() {
+      Montage_ElementForm *f;
+      int ti = ts_normal.getActiveTabIndex();
+      foreach f in parent_synth_form.element_forms
+      {
+         if(@(f) != @(this))
+         {
+            TabSwitch ts <= f.ts_normal;
+            ts.setActiveTabIndex(ti);
+         }
+      }
+   }
+
+   // <method.png>
+   public method dumpEGSettings(PointerArray _currentEGSettings) {
+      MontagePartFM pFM <= parent_synth_form.getEditPartFM();
+      MontagePartNormal pNormal <= parent_synth_form.getEditPartNormal();
+
+      if(null != pFM)
+      {
+         // "FM op <n> peg"
+         // "FM op <n> aeg"
+         pFM.dumpEGSettings(_currentEGSettings, element_idx/*opFilter*/);
+      }
+      else if(null != pNormal)
+      {
+         // "AWM2 element <n> peg"
+         // "AWM2 element <n> aeg"
+         // "AWM2 element <n> feg"
+         pNormal.dumpEGSettings(_currentEGSettings, element_idx/*elementFilter*/);
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual =replay= loadEGPreset(Montage_EGPreset _preset, String _typeName) {
+      Global.Debug("Montage_ElementForm::loadEGPreset: typeName="+_typeName+" preset.name="+_preset.name);
+      MontagePartFM pFM <= parent_synth_form.getEditPartFM();
+      MontagePartNormal pNormal <= parent_synth_form.getEditPartNormal();
+      if(null != pFM)
+      {
+         MontagePartFMOperator op <= pFM.getOpByIdx(element_idx);
+         switch(_typeName)
+         {
+            case "FM op "+(element_idx+1)+" peg":
+               op.loadPEGPreset(_preset);
+               break;
+
+            case "FM op "+(element_idx+1)+" aeg":
+               op.loadAEGPreset(_preset);
+               break;
+
+            // // case "feg":
+            // //    pFM.loadFEGPreset(_preset);
+            // //    break;
+         }
+
+         showElement();
+         parent_synth_form.handleParamEdited();
+         Global.Print("Load EG Preset \""+_typeName+"\"");
+      }
+      else if(null != pNormal)
+      {
+         MontagePartNormalElement el <= pNormal.getElementByIdx(element_idx);
+         MontagePartNormalElementOscAmpPitch elOsc    <= el.osc_amp_pitch;
+         MontagePartNormalElementFilterEQLFO elFilter <= el.filter_eq_lfo;
+         switch(_typeName)
+         {
+            case "AWM2 element "+(element_idx+1)+" peg":
+               elOsc.loadPEGPreset(_preset);
+               break;
+
+            case "AWM2 element "+(element_idx+1)+" aeg":
+               elOsc.loadAEGPreset(_preset);
+               break;
+
+            case "AWM2 element "+(element_idx+1)+" feg":
+               elFilter.loadFEGPreset(_preset);
+               break;
+         }
+
+         showElement();
+         parent_synth_form.handleParamEdited();
+         Global.Print("Load EG Preset \""+_typeName+"\"");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         local PointerArray currentEGPresets;
+         dumpEGSettings(currentEGPresets);
+         if(isFM())
+         {
+            Montage_EGPresetDialog.ShowEGPresetDialog(this, deref currentEGPresets);
+         }
+         else if(isNormal())
+         {
+            Montage_EGPresetDialog.ShowEGPresetDialog(this, deref currentEGPresets);
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      Layer ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(ts_normal):
+            UI.RedrawAll();
+            handleTabChanged();
+            return true;
+      }
+   }
+
+}

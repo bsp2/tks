@@ -1,0 +1,1586 @@
+// ----
+// ---- file   : NodeMonitor.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 20Jan2017
+// ---- changed: 21Jan2017, 22Jan2017, 23Jan2017, 27Jan2017, 31Jan2017, 04Feb2017, 05Feb2017
+// ----          06Feb2017, 10Feb2017, 12Feb2017, 02Jul2017, 03Sep2017, 21Dec2017, 22Dec2017
+// ----          23Dec2017, 24Dec2017, 04Jan2018, 27May2018, 16Jun2018, 17Jun2018, 12Jan2019
+// ----          30May2019, 25Jun2019, 14Sep2019, 15Sep2019, 20Sep2019, 18Oct2019, 19Oct2019
+// ----          20Oct2019, 07Nov2019, 08Nov2019, 20Feb2020, 25Apr2020, 24Oct2020, 30Oct2020
+// ----          06Nov2020, 07Nov2020, 08Nov2020, 10Nov2020, 11Nov2020, 27Jan2021, 21Jun2021
+// ----          03Apr2023, 29Jul2023, 03Feb2024, 07Oct2024, 23Jan2025, 28Feb2025, 28May2025
+// ----
+// ----
+// ----
+module MNodeMonitor;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeMonitor : Node {
+
+   define int RPN_MONITOR_SELECT_FRAME_IDX      = RPN_MONITOR_BASE + 0;
+   define int RPN_MONITOR_SELECT_FRAME_REL_PRE  = RPN_MONITOR_BASE + 1;
+   define int RPN_MONITOR_PLAY_CURRENT_FRAME    = RPN_MONITOR_BASE + 2;
+   define int RPN_MONITOR_SELECT_FRAME_REL_POST = RPN_MONITOR_BASE + 3;
+
+   define float INVALID_VALUE = -999999.0f;
+
+   static NodeMonitorEditor *editor;
+
+   float tick_nr;
+
+   NM_Pattern *[] patterns;
+
+   define int MODE_REPLAY                  = 0;
+   define int MODE_MONITOR_FRAMEREC        = 1;
+   define int MODE_MONITOR_FRAMEPLAY       = 2;
+   define int MODE_MONITOR_FRAMERECANDPLAY = 3;
+   // (todo) MODE_MONITOR_FRAMEPLAY_GLOBAL  // global play output (all nodes/pipes)
+   // (todo) MODE_MONITOR_GLOBAL_OUT   // actual MIDI buffers after filtering out cached events + echoed input events
+   int monitor_mode;
+
+   int last_selected_record_mode;  // MODE_FRAME*
+
+   public boolean b_replay;             // true=replaying recorded frames  (read by NM_Pattern)
+
+   // true=start pattern replay when global replay starts / start global replay when pattern recording or replay starts
+   // maybe=auto-disable replay sync when node is armed for recording ("lost note paranoia"), auto-enable when playback mode is selected
+   boolean b_replay_sync;
+   boolean b_force_record_first_frame;  // used in replay_sync mode to align pattern with global replay (insert empty frame)
+   boolean b_queued_clear_and_record_first_frame;  // during precount
+
+   public boolean b_ui_auto_convert_note_offs_to_duration;  // when replay mode is selected
+   public boolean b_ui_auto_merge_and_set_fixed_duration;   // when play-mode is selected, useful for editing chords
+
+   public int ui_last_merge_millisec;
+   public int ui_last_merge_millisec_marker;
+   public int ui_last_fixed_duration;
+   public int ui_last_fixed_velocity;
+
+   boolean b_redraw_queued;
+   boolean b_redraw_queued_after_rec;
+
+   public boolean b_ui_freeze;
+
+   MIDIPipeFrame ui_extra_events;  // e.g. click on Note button
+
+   protected int rpn_com_offset_base;
+   protected int rpn_com_offset_add;
+   protected int rpn_com_length;   // clamped to current pat.length
+
+   boolean b_run;
+
+   boolean b_queue_autostop_replay;  // when starting replay by dbl-clicking in PatchView table
+
+   PointerArray active_trigger_notes;  // MIDIPipeFrame instances (or null)
+   boolean b_dynamic_trigger_note_duration;
+
+   boolean b_restart_pattern;  // true=restart when pattern in selected, maybe=restart when selected via prg.chg
+
+   define int TRIG_VEL_KEEP    = 0;
+   define int TRIG_VEL_REPLACE = 1;
+   define int TRIG_VEL_MUL     = 2;
+   define int TRIG_VEL_ADD     = 3;
+   int trigger_velocity_mode;
+
+   boolean b_lock_current_frame;  // e.g. for overdub recording
+
+   public int     last_recorded_ev_ms;
+   public int     automarker_threshold_ms;
+   public boolean b_automarker;
+   public boolean b_trim_marker_calc_replay_shift_ms;
+
+   public boolean b_set_record_marker_queued;
+   public boolean b_set_play_marker_queued;
+
+   public int ui_seek_mode;
+
+   public boolean b_ui_patchview;    // true=show pattern table instead of events
+   public boolean b_ui_click_autoplay;
+   public boolean b_ui_chorddetect;  // true=auto-detect chords and update pattern name while recording
+
+   // true=clear pattern when first note is received after last note timeout
+   public boolean b_chord_autoclear;
+
+   public int last_rec_note_ms;  // for (chord) autoclear mode
+
+   public IntArray ui_last_note_state;  // for PianoWidget (flags last recorded or played notes)
+   public boolean b_ui_last_note_state_changed;
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(128);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      monitor_mode = MODE_MONITOR_FRAMEPLAY;
+      last_selected_record_mode = NodeMonitor.MODE_MONITOR_FRAMEREC;
+
+      b_replay_sync = false;
+
+      b_ui_auto_convert_note_offs_to_duration = true;
+      b_ui_auto_merge_and_set_fixed_duration = false;
+
+      ui_last_merge_millisec        = STConfig.node_monitor_merge_threshold;
+      ui_last_merge_millisec_marker = STConfig.node_monitor_merge_marker_threshold;
+      ui_last_fixed_duration        = STConfig.node_monitor_fixed_duration;
+      ui_last_fixed_velocity        = STConfig.node_monitor_fixed_velocity;
+
+      active_trigger_notes.alloc(128);
+      active_trigger_notes.useAll();
+
+      b_dynamic_trigger_note_duration = false;
+      trigger_velocity_mode = TRIG_VEL_KEEP;
+
+      b_automarker = STConfig.b_node_monitor_automarker_enable;
+      automarker_threshold_ms = STConfig.node_monitor_automarker_threshold_ms;
+
+      b_trim_marker_calc_replay_shift_ms = STConfig.b_node_monitor_trim_marker_calc_replay_shift_ms;
+
+      b_ui_click_autoplay = true;
+
+      ui_last_note_state.allocAndFill(128, 0);
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+
+      Node::nodeUIInit();
+
+      // Allocate first pattern
+      NM_Pattern pat <= new NM_Pattern;
+      pat.patInit(this, 0);
+      nodeSetPattern(0, deref pat);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeMonitorEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_monitor_mono");
+      else
+         return UI.GetIcon("node_monitor");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NM_Pattern";
+   }
+
+   // <method_get.png>
+   public virtual nodeIsMaster() : boolean {
+      // allow nodeSetLastPatternStartSongOffset() != 0  (in replay sync mode)
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= queueRedraw() {
+      b_redraw_queued = true;
+   }
+
+   // <method_get.png>
+   public =replay= getQueuedRedrawAndReset() : boolean {
+      boolean ret = b_redraw_queued;
+      b_redraw_queued = false;
+      return ret;
+   }
+
+   // <method_set.png>
+   public =replay= queueRedrawAfterRec() {
+      b_redraw_queued_after_rec = true;
+   }
+
+   // <method_get.png>
+   public =replay= getQueuedRebuildAfterRecAndReset() : boolean {
+      // rebuild pattern table (#frames changed)
+      boolean ret = b_redraw_queued_after_rec;
+      b_redraw_queued_after_rec = false;
+      return ret;
+   }
+
+   // <method_get.png>
+   public =replay= getUILastNoteStateAndReset(IntArray _ret) : boolean {
+      boolean r = b_ui_last_note_state_changed;
+      if(r)
+      {
+         _ret = ui_last_note_state;
+         ui_last_note_state.fill(0);
+         b_ui_last_note_state_changed = false;
+      }
+      return r;
+   }
+
+   // <method_set.png>
+   public =replay= queueScrubFrame(boolean _bForce) {
+
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         pat.queueScrubFrame(_bForce);
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setMonitorMode(int _mode) {
+
+      if(NodeMonitor.MODE_REPLAY != _mode)
+      {
+         last_selected_record_mode = _mode;
+      }
+
+      monitor_mode = _mode;
+
+      b_set_record_marker_queued = false;
+      b_set_play_marker_queued = false;
+
+      if(MODE_REPLAY == _mode)
+      {
+         // // replay_mode_millisec = milliSeconds();
+         // // replay_mode_song_offset = current_song.getSongOffset();
+      }
+      else
+      {
+         setEnableReplay(false/*bEnabled*/, !b_lock_current_frame/*bReturnToStart*/, false/*bAutoStopReplay*/);
+      }
+   }
+
+   // <method_get.png>
+   public method getMonitorMode() : int {
+      return monitor_mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableReplaySync(boolean _bEnable) {
+      b_replay_sync = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableChordAutoClear(boolean _bEnabled) {
+      b_chord_autoclear = _bEnabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableLockCurrentFrame(boolean _bEnabled) {
+      b_lock_current_frame = _bEnabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableDynamicTriggerNoteDuration(boolean _bEnabled) {
+      b_dynamic_trigger_note_duration = _bEnabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setTriggerVelocityMode(int _mode) {
+      trigger_velocity_mode = _mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRestartPattern(boolean _bEnabled) {
+      b_restart_pattern = _bEnabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableAutoMarker(boolean _bEnable) {
+      b_automarker = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setAutoMarkerThresholdMS(int _ms) {
+      automarker_threshold_ms = _ms;
+   }
+
+   // <method_set.png>
+   public =replay= method queueSetRecordMarker(boolean _bQuiet) : boolean {
+      b_set_record_marker_queued = true;
+      if(!_bQuiet)
+         Global.Print("Queue set record marker");
+   }
+
+   // <method_set.png>
+   public =replay= method queueSetPlayMarker() : boolean {
+      b_set_play_marker_queued = true;
+      Global.Print("Queue set play marker");
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableCalcReplayShiftMS(boolean _bEnable) {
+      b_trim_marker_calc_replay_shift_ms = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableReplay(boolean _bEnabled, boolean _bReturnToStart, boolean _bAutoStopReplay) {
+      // trace "xxx setEnableReplay: ENTER  bEnabled="+_bEnabled+" bReturnToStart="+_bReturnToStart;
+      // Utils.Backtrace();
+
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      b_queue_autostop_replay = false;
+
+      if(null != pat)
+      {
+         if(_bEnabled)
+         {
+            // trace "xxx NodeMonitor::setEnableReplay: replay_start_frame_idx="+pat.replay_start_frame_idx+", current_replay_frame_idx="+pat.current_replay_frame_idx;
+            pat.replay_start_frame_idx = pat.current_replay_frame_idx;
+            tick_nr = 0;
+            b_replay = true;
+            b_queue_autostop_replay = _bAutoStopReplay;
+            Global.Debug("NodeMonitor::setEnableReplay: start at frame_idx="+pat.replay_start_frame_idx);
+         }
+         else
+         {
+            b_replay = false;
+
+            if(MODE_REPLAY != monitor_mode)
+            {
+               if(pat.getNumFrames() > 0)
+               {
+                  // Appending to existing sequence (continue record)
+                  MIDIPipeFrame frNewest <= pat.getReplayFrameByIdx(pat.getNumFrames() - 1);
+                  pat.record_timestamp_offset = frNewest.timeStamp + STConfig.node_monitor_record_continue_time_offset;
+               }
+               else
+               {
+                  // Recording from scratch
+                  pat.record_timestamp_offset = 0;
+               }
+            }
+
+            if(_bReturnToStart)
+            {
+               // trace "xxx NodeMonitor::setEnableReplay: set current_replay_frame_idx to replay_start_frame_idx="+pat.replay_start_frame_idx;
+               pat.current_replay_frame_idx = pat.replay_start_frame_idx;
+            }
+            // // else
+            // // {
+            // //    if(-1 != pat.last_played_frame_idx)
+            // //    {
+            // //       trace "xxx set current_replay_frame_idx to last_played_frame_idx="+pat.last_played_frame_idx;
+            // //       pat.current_replay_frame_idx = pat.last_played_frame_idx;
+            // //    }
+            // // }
+
+            // (note) do _not_ reset last_played_frame_idx
+
+            Global.Debug3("NodeMonitor::setEnableReplay: stop at frame_idx="+pat.current_replay_frame_idx);
+         }
+      }
+   }
+
+   // <method_get.png>
+   public =replay= method isPlaying() : boolean {
+      return b_replay;
+   }
+
+   // <method.png>
+   public virtual nodeHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         pat.reset();
+      }
+
+      tick_nr = 0;
+
+      rpn_com_offset_base = 0;
+      rpn_com_offset_add  = 0;
+      rpn_com_length      = 16383;
+
+      active_trigger_notes.alloc(128);
+      active_trigger_notes.useAll();
+
+      b_run = true;
+
+      b_queued_clear_and_record_first_frame = false;
+   }
+
+   // <method.png>
+   protected method clearAndRecordFirstFrame() {
+
+      // Clear pattern
+      NM_Pattern pat <= nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         int numRemoved = pat.deleteAllFrames();
+         Global.Debug("NodeMonitor::clearAndRecordFirstFrame: record/sync: removed "+numRemoved+" event(s)");
+      }
+
+      b_force_record_first_frame = true;
+   }
+
+   // <method_handle.png>
+   public virtual nodeHandleStartPlaying() {
+      Node::nodeHandleStartPlaying();
+
+      if(doReplaySync())
+      {
+         b_replay = true;
+
+         if(MODE_REPLAY != monitor_mode)
+         {
+            b_queued_clear_and_record_first_frame = true;
+         }
+      }
+
+      if(MODE_REPLAY != monitor_mode)
+      {
+         if(b_automarker)
+         {
+            queueSetRecordMarker(true/*bQuiet*/);
+            b_force_record_first_frame = true;  // force new frame
+         }
+      }
+
+   }
+
+   // <method_handle.png>
+   public virtual nodeHandleStopPlaying() {
+      Node::nodeHandleStopPlaying();
+
+      if(doReplaySync())
+         b_replay = false;
+      b_queued_clear_and_record_first_frame = false;
+   }
+
+   // <replay.png>
+   public virtual nodeRestart() {
+      // // nodeSetLastPatternStartSongOffset(current_song.song_offset);
+
+      nodeSeek(nodeGetLastPatternStartSongOffset() + 0);
+
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         pat.setCurrentReplayFrameIdx(mathWrapi(rpn_com_offset_base,
+                                                rpn_com_offset_base,
+                                                mathMini(rpn_com_offset_base + rpn_com_length, pat.getNumFrames())
+                                                ),
+                                      false/*bUpdateStart*/
+                                      );
+      }
+
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+
+      tick_nr = _ticks - nodeGetLastPatternStartSongOffset();
+      if(tick_nr < 0)
+         tick_nr = 0;
+
+      if(doReplaySync())
+      {
+         NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+         if(null != pat)
+         {
+            pat.setCurrentReplayFrameIdx(pat.replay_start_frame_idx, false/*bUpdateStart*/);
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method.png>
+   protected method handleRestartPattern(boolean _bFromPrgChg) {
+      if(!b_lock_current_frame && ((true == b_restart_pattern) || (_bFromPrgChg && (maybe == b_restart_pattern))))
+      {
+         setEnableReplay(false/*bEnable*/, true/*bReturnToStart*/, false/*bAutoStopReplay*/); // rewind
+         setEnableReplay(true/*bEnable*/, false/*bReturnToStart*/, true/*bAutoStopReplay*/);
+         queueRedraw();
+      }
+   }
+
+   // <method.png>
+   protected method rewindPlayPattern() {
+      // trace "xxx NodeMonitor::rewindPlayPattern";
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         pat.current_replay_frame_idx = pat.replay_start_frame_idx;
+         tick_nr = 0;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      handleRestartPattern(false/*bFromPrgChg*/);
+   }
+
+   // <method.png>
+   protected method syncEditWithReplayPatternNr(boolean _bAllowClear) {
+      // Called by handlePrgChg() when STConfig.b_node_monitor_edit_pattern_follows_replay_pattern is enabled
+      nodeSetCurrentEditPatternNr(nodeGetCurrentPlayPatternNr());
+
+      if(_bAllowClear && doReplaySync() && (NodeMonitor.MODE_REPLAY != monitor_mode))
+      {
+         clearAndRecordFirstFrame();
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTotalNumPatternEvents(int _patNr) : int {
+      int r = 0;
+      NM_Pattern pat <= patterns.get(_patNr);
+      if(null != pat)
+      {
+         r += pat.getTotalNumEvents();
+      }
+      return r;
+   }
+
+   // // <method_get.png>
+   // public =replay= method getOrCreateCurrentEditPattern() : NM_Pattern {
+   //    NM_Pattern pat <= patterns.get(edit_pattern_nr);
+
+   //    if(null == pat)
+   //    {
+   //       pat <= new NM_Pattern;
+   //       pat.patInit(this, edit_pattern_nr);
+   //       patterns[edit_pattern_nr] = deref pat;
+   //    }
+
+   //    return pat;
+   // }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NM_Pattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NM_Pattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NM_Pattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <method_get.png>
+   public method getCurrentEditPatternFilter() : NM_Filter {
+      NM_Pattern pat <= nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         return pat.getCurrentFilter();
+      }
+      return null;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NM_Pattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPattern(int _startOff) : int {
+      int patIdx = patterns.indexOfPointer(null, _startOff);
+
+      return patIdx;
+   }
+
+   // <method_init.png>
+   public method captureInit() {
+      // Prepare node for output-capture use (NodeTracker lctrl-x c)
+      nodeInit(null/*pipe*/, null/*node*/);
+      nodeUIInit();
+      // // b_replay_sync = true;
+   }
+
+   // <method.png>
+   public =replay= method captureBegin() {
+      // (Re-)start recording
+      tick_nr = 0;
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+      pat.reset();  // clear redundant ctl state filter state
+      pat.record_timestamp_offset = 0;
+      pat.b_tick_timebase = STConfig.b_node_monitor_capture_tick_timebase;  // true=use ticks instead of milliseconds
+      clearAndRecordFirstFrame();  // deletes all frames and sets b_force_record_first_frame=1
+      pat.num_ticks_hint = 0;
+
+      if(replay.b_playing)
+      {
+         // Replay already started
+         //  - insert marker at tick 0
+         MIDIPipeFrame frEmpty;
+         int numTicksPerBar = current_song.getNumTicksPerBar();
+         int curTickNr = current_song.song_offset % numTicksPerBar;
+         pat.record_timestamp_offset = -current_song.ticksToMilliSeconds(curTickNr);
+         captureAdd(frEmpty, false/*bAdvance*/);
+         pat.record_timestamp_offset = 0;
+         //  - align capture start to start of last bar (set recording pos to bar modulo)
+         tick_nr = curTickNr;
+      }
+   }
+
+   // <method.png>
+   public =replay= method captureAdd(MIDIPipeFrame _fr, boolean _bAdvance) {
+      // Record next frame
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(pat.b_tick_timebase)
+         pat.fr_current_timestamp = tick_nr;
+      else
+         pat.fr_current_timestamp = pat.record_timestamp_offset + milliSeconds();
+
+      // if(_fr.numEvents)
+      //    trace "xxx NodeMon::captureAdd: tick_nr="+tick_nr+" numEv="+_fr.numEvents+" pat.current_rec_frame_idx="+pat.current_rec_frame_idx+" b_force_record_first_frame="+b_force_record_first_frame+" pat.num_frames="+pat.getNumFrames();
+
+      pat.next_rec_frame_idx = pat.current_rec_frame_idx;
+      b_set_record_marker_queued |= b_force_record_first_frame;  // prevent first frame from being deleted in ticks mode
+      pat.recordFrame(_fr, b_force_record_first_frame);
+      b_force_record_first_frame = false;
+      pat.current_rec_frame_idx = pat.next_rec_frame_idx;
+
+      if(_bAdvance)
+         tick_nr++;
+   }
+
+   // <method_set.png>
+   public method captureSeek(int _tickNr) {
+      // used by NodeTracker cmd_pattern_exportmon()
+      tick_nr = _tickNr;
+   }
+
+   // <method.png>
+   public =replay= method captureEnd() {
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 13; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // Patterns
+      NM_Pattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+
+      // Monitor mode
+      ofs.i8 = monitor_mode;
+
+      // Last selected record mode (v12+)
+      ofs.i8 = last_selected_record_mode;
+
+      // Replay sync (v13+)
+      ofs.i8 = b_replay_sync;
+
+      // Auto-convert note-offs to duration
+      ofs.i8 = b_ui_auto_convert_note_offs_to_duration;
+
+      // Auto-merge and set set fixed duration (v2+)
+      ofs.i8 = b_ui_auto_merge_and_set_fixed_duration;
+
+      // Last merge+fixed duration/velocity settings (v2+)
+      ofs.i32 = ui_last_merge_millisec;
+      ofs.i32 = ui_last_merge_millisec_marker;
+      ofs.i32 = ui_last_fixed_duration;
+      ofs.i32 = ui_last_fixed_velocity;
+
+      // Dynamic trigger note duration (v3+)
+      ofs.i8 = b_dynamic_trigger_note_duration;
+
+      // Trigger velocity mode (v4+)
+      ofs.i8 = trigger_velocity_mode;
+
+      // Auto-marker threshold (v5+)
+      ofs.f32 =  automarker_threshold_ms;
+
+      // Auto-marker enable (v5+)
+      ofs.i8 = b_automarker;
+
+      // Seek mode (v6+)
+      ofs.i8 = ui_seek_mode;
+
+      // b_trim_marker_calc_replay_shift_ms (v7+)
+      ofs.i8 = b_trim_marker_calc_replay_shift_ms;
+
+      // b_restart_pattern (v8+)
+      ofs.i8 = b_restart_pattern;
+
+      // Auto-Play seq when clicked (v9+)
+      ofs.i8 = b_ui_click_autoplay;
+
+      // Chord auto-detect (v10+)
+      ofs.i8 = b_ui_chorddetect;
+
+      // Chord auto-clear (v10+)
+      ofs.i8 = b_chord_autoclear;
+
+      // Show patchview (v11+)
+      ofs.i8 = b_ui_patchview;
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         int patIdx;
+         NM_Pattern *pat;
+         boolean bPatUsed;
+
+         // Patterns
+         patIdx = 0;
+         loop(128)
+         {
+            bPatUsed = ifs.i8;
+            if(bPatUsed)
+            {
+               pat <= new NM_Pattern;
+               pat.patInit(this, patIdx);
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeMonitor::loadState: patLoadState failed (patIdx="+patIdx+")";
+                  return false;
+               }
+            }
+
+            // Next pattern
+            patIdx++;
+         }
+
+         // (note) [21Jun2021] moved to Node base class
+         edit_pattern_nr = ifs.u8;
+         play_pattern_nr = ifs.u8;
+
+         // Monitor mode
+         monitor_mode = ifs.u8;
+
+         if(ver >= 12)
+         {
+            // Last selected record mode (v12+)
+            last_selected_record_mode = ifs.u8;
+         }
+
+         if(ver >= 13)
+         {
+            // Replay sync (v13+)
+            b_replay_sync = ifs.s8;  // (note) mixed mode
+         }
+
+         // Auto-convert note-offs to duration
+         b_ui_auto_convert_note_offs_to_duration = ifs.b8;
+
+         if(ver >= 2)
+         {
+            b_ui_auto_merge_and_set_fixed_duration = ifs.b8;
+
+            // Last merge+fixed duration/velocity settings (v2+)
+            ui_last_merge_millisec        = ifs.i32;
+            ui_last_merge_millisec_marker = ifs.i32;
+            ui_last_fixed_duration        = ifs.i32;
+            ui_last_fixed_velocity        = ifs.i32;
+         }
+
+         if(ver >= 3)
+         {
+            // Dynamic trigger note duration
+            b_dynamic_trigger_note_duration = ifs.b8;
+         }
+
+         if(ver >= 4)
+         {
+            // Trigger velocity mode (v4+)
+            trigger_velocity_mode = ifs.u8;
+         }
+
+         if(ver >= 5)
+         {
+            // Auto-marker threshold (v5+)
+            automarker_threshold_ms = ifs.f32;
+
+            // Auto-marker enable (v5+)
+            b_automarker = ifs.b8;
+         }
+
+         if(ver >= 6)
+         {
+            // UI seek mode (v6+)
+            ui_seek_mode = ifs.u8;
+         }
+
+         if(ver >= 7)
+         {
+            // b_trim_marker_calc_replay_shift_ms (v7+)
+            b_trim_marker_calc_replay_shift_ms = ifs.b8;
+         }
+
+         if(ver >= 8)
+         {
+            // Auto-Restart pattern when it's selected (v8+)
+            b_restart_pattern = ifs.s8;
+         }
+
+         if(ver >= 9)
+         {
+            // Auto-Play seq when clicked (v9+)
+            b_ui_click_autoplay = ifs.b8;
+         }
+
+         if(ver >= 10)
+         {
+            // Chord auto-detect (v10+)
+            b_ui_chorddetect = ifs.b8;
+
+            // Chord auto-clear (v10+)
+            b_chord_autoclear = ifs.b8;
+         }
+
+         if(ver >= 11)
+         {
+            // Show patchview (v11+)
+            b_ui_patchview = ifs.b8;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame, boolean _bAllowClear) {
+      int numPC = _frame.getNumEventsPrgChg();
+      boolean bPC = false;
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     if(doReplaySync())
+                        rewindPlayPattern();
+                     if(STConfig.b_node_monitor_edit_pattern_follows_replay_pattern)
+                        syncEditWithReplayPatternNr(_bAllowClear);
+                     Events.SendPlayPat();
+                     bPC = true;
+
+                     Global.Debug3("NodeMonitor: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     if(doReplaySync())
+                        rewindPlayPattern();
+                     if(STConfig.b_node_monitor_edit_pattern_follows_replay_pattern)
+                        syncEditWithReplayPatternNr(_bAllowClear);
+                     Events.SendPlayPat();
+                     bPC = true;
+
+                     Global.Debug3("NodeMonitor: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         if(doReplaySync())
+            rewindPlayPattern();
+         if(STConfig.b_node_monitor_edit_pattern_follows_replay_pattern)
+            syncEditWithReplayPatternNr(_bAllowClear);
+         Events.SendPlayPat();
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+         bPC = true;
+      }
+
+      if(bPC && (maybe == b_restart_pattern))
+         handleRestartPattern(true/*bFromPrgChg*/);
+   }
+
+   // <method.png>
+   static CopyNoteOnsToOff(MIDIPipeFrame _frDst, MIDIPipeFrame _frSrc) {
+      MIDIPipeEvent pev;
+      int evIdx;
+      int noteIdx;
+
+      int numNoteOn = _frSrc.getNumEventsNoteOn();
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(_frSrc.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, -1/*fltDevIdx*/, -1/*fltCh*/))
+         {
+            _frDst.noteOff(true/*bSet*/, pev.devIdx, pev.midiCh, pev.note, 0/*velocity*/);
+         }
+         evIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method parseTriggerNote(MIDIPipeFrame _frameOut,
+                                     MIDIPipeFrame _frame,
+                                     int _fltDevIdx, int _fltCh,
+                                     NM_Pattern _pat
+                                     ) {
+      MIDIPipeEvent pev;
+      int evIdx;
+      int noteIdx;
+      MIDIPipeFrame *fr;
+      MIDIPipeFrame *frReplay;
+
+      if(b_dynamic_trigger_note_duration)
+      {
+         // Parse note off
+         int numNoteOff = _frame.getNumEventsNoteOffByFlt(_fltDevIdx, _fltCh);
+         evIdx = 0;
+         loop(numNoteOff)
+         {
+            if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, _fltDevIdx, _fltCh))
+            {
+               if(pev.note >= STConfig.node_monitor_trigger_base_note)
+               {
+                  fr <= active_trigger_notes.get(pev.note);
+
+                  if(null != fr)
+                  {
+                     if(fr.hasEvents())
+                     {
+                        MIDIPipeFrame frTmp; frTmp.empty();
+                        CopyNoteOnsToOff(frTmp, fr);
+                        _frameOut.mergeFrame(frTmp);
+                        fr.empty();
+                     }
+                  }
+               }
+            }
+
+            // Next event
+            evIdx++;
+         }
+      }
+
+      // Parse note on
+      if(null != _pat)
+      {
+         int numNoteOn = _frame.getNumEventsNoteOnByFlt(_fltDevIdx, _fltCh);
+         evIdx = 0;
+         loop(numNoteOn)
+         {
+            if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDevIdx, _fltCh))
+            {
+               //trace "xxx pev.note="+pev.note+" STConfig.node_monitor_trigger_base_note="+STConfig.node_monitor_trigger_base_note;
+               if(pev.note >= STConfig.node_monitor_trigger_base_note)
+               {
+                  noteIdx = pev.note - STConfig.node_monitor_trigger_base_note;
+                  frReplay <= _pat.getReplayFrameByIdx(noteIdx);
+                  // trace "xxx noteIdx="+noteIdx+" frReplay="+#(frReplay);
+
+                  if(null != frReplay)
+                  {
+                     // trace "xxx noteIdx="+noteIdx+" fr numNoteOn="+frReplay.numEventsNoteOn+" numCC="+frReplay.numEventsCC;
+
+                     fr <= active_trigger_notes.get(pev.note);
+
+                     if(null == fr)
+                     {
+                        fr <= new MIDIPipeFrame;
+                        active_trigger_notes[pev.note] = deref fr;
+                     }
+
+                     fr = frReplay;
+                     // trace "xxx fr.numEvents="+fr.numEvents;
+
+                     if(b_dynamic_trigger_note_duration)
+                     {
+                        fr.setNoteDurations(0);
+                     }
+
+                     switch(trigger_velocity_mode)
+                     {
+                        default:
+                        case TRIG_VEL_KEEP:
+                           break;
+
+                        case TRIG_VEL_REPLACE:
+                           fr.noteOnVelReplace(-1/*fltDev*/, -1/*fltCh*/, pev.velocity);
+                           break;
+
+                        case TRIG_VEL_MUL:
+                           fr.noteOnVelMul(-1/*fltDev*/, -1/*fltCh*/, pev.velocity/127.0f);
+                           break;
+
+                        case TRIG_VEL_ADD:
+                           fr.noteOnVelAdd(-1/*fltDev*/, -1/*fltCh*/, pev.velocity);
+                           break;
+                     }
+
+                     // trace "xxx mon: trigger note fr.numEventsCC="+fr.numEventsCC;
+                     _frameOut.mergeFrame(fr);
+                  }
+               }
+            }
+
+            // Next event
+            evIdx++;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeIsArmedForRecording() : boolean {
+      return (MODE_REPLAY != monitor_mode);
+   }
+
+   // <method_get.png>
+   public =replay= method nodeArmForRecording(boolean _bEnable) : boolean {
+      // called from PagePipeMap (RCTRL)
+      if(_bEnable)
+      {
+         monitor_mode = last_selected_record_mode;
+      }
+      else
+      {
+         monitor_mode = MODE_REPLAY;
+      }
+      return true;
+   }
+
+   // <method.png>
+   public method doReplaySync() : boolean {
+      if(maybe == b_replay_sync) // auto?
+         return (MODE_REPLAY == monitor_mode);
+      else
+         return b_replay_sync;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [
+         // RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+         // RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+         RPN_COMMON_UI_PRGCHG,
+         RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+         RPN_COMMON_MUTE_TEMP_TOGGLE,
+         // RPN_COMMON_MUTE_TEMP_1_8,
+         // RPN_COMMON_MUTE_TEMP_9_16,
+         // RPN_COMMON_SOLO_TEMP_1_8,
+         // RPN_COMMON_SOLO_TEMP_9_16,
+         RPN_COMMON_UI_NODE_MUTE,
+         RPN_COMMON_UI_NODE_SOLO,
+         RPN_COMMON_UI_PIPE_MUTE,
+         RPN_COMMON_UI_PIPE_SOLO,
+
+         RPN_COMMON_TRANSPOSE,  // nodeParseRPN_Transpose
+
+         RPN_COMMON_VELOCITY_OFF,  // nodeParseRPN_Vel_Dur_Speed
+         RPN_COMMON_VELOCITY_SCL,
+         RPN_COMMON_DURATION_OFF,
+         RPN_COMMON_DURATION_SCL,
+         RPN_COMMON_SPEED,
+         RPN_COMMON_POSITION,
+         // RPN_COMMON_SPEEDSYNCRATE,
+
+         // RPN_COMMON_PROB_ALL_REL,  // nodeParseRPN_Probability
+         // RPN_COMMON_PROB_TRACK_1,
+         // RPN_COMMON_PROB_TRACK_2,
+         // RPN_COMMON_PROB_TRACK_3,
+         // RPN_COMMON_PROB_TRACK_4,
+         // RPN_COMMON_PROB_TRACK_5,
+         // RPN_COMMON_PROB_TRACK_6,
+         // RPN_COMMON_PROB_TRACK_7,
+         // RPN_COMMON_PROB_TRACK_8,
+         // RPN_COMMON_PROB_TRACK_9,
+         // RPN_COMMON_PROB_TRACK_10,
+         // RPN_COMMON_PROB_TRACK_11,
+         // RPN_COMMON_PROB_TRACK_12,
+         // RPN_COMMON_PROB_TRACK_13,
+         // RPN_COMMON_PROB_TRACK_14,
+         // RPN_COMMON_PROB_TRACK_15,
+         // RPN_COMMON_PROB_TRACK_16,
+
+         RPN_COMMON_RESET,
+         RPN_COMMON_RUN,
+         RPN_COMMON_LENGTH,
+         RPN_COMMON_OFFSET,
+         RPN_COMMON_RESTART,
+         RPN_COMMON_OFFSET_ADD,
+         RPN_COMMON_SEEK_OFFSET,
+         RPN_COMMON_SEEK_REL_PRE,
+         RPN_COMMON_GATE,
+         RPN_COMMON_SEEK_REL_POST,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      if(nodeIsEditorVisible())
+         nodeHandleContextSensitiveAutoDevEvents(_frameRec, _framePlay);
+
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      boolean bAllowClear = (_bPlaySeq && !_bMuted);
+
+      if(bAllowSeekPrgChgAndMute)
+      {
+         handlePrgChg(_framePlay, bAllowClear);
+         handlePrgChg(_frameRec, bAllowClear);
+      }
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      if(bAllowClear && doReplaySync() && b_queued_clear_and_record_first_frame)
+      {
+         // After precount ends
+         b_queued_clear_and_record_first_frame = false;
+         if(NodeMonitor.MODE_REPLAY != monitor_mode)
+            clearAndRecordFirstFrame();
+      }
+
+      boolean bCapture = b_capture && replay.b_playing;
+      MIDIPipeFrame frOutCapture;
+      MIDIPipeFrame *frOutReplay;
+      if(bCapture)
+      {
+         frOutCapture.empty();
+         frOutReplay <= frOutCapture;
+      }
+      else
+      {
+         frOutReplay <= _framePlay;
+      }
+
+      NM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      // if(_frameRec.numEvents > 0)
+      //    trace "xxx NodeMonitor: frameRec="+#(_frameRec)+" has "+_frameRec.numEvents+" event(s)";
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         short t;
+         MIDIPipeFrame *frCur;
+
+         t = getRPN(_framePlay, _frameRec, RPN_COMMON_RESET);
+         if(t >= 1)
+         {
+            nodeReset(true/*bSoft*/);
+
+            if(null != pat)
+            {
+               pat.setCurrentReplayFrameIdx(0, false/*bUpdateStart*/);
+            }
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_COMMON_RUN);
+         if(-1 != t)
+         {
+            b_run = (t > 0);
+         }
+
+         // Handle MUTE, MUTE_TOGGLE, MUTE_TEMP, MUTE_TEMP_TOGGLE
+         nodeParseRPN_Mute(_framePlay, _frameRec);
+
+         if(MODE_REPLAY == monitor_mode)
+         {
+            nodeParseRPN_Transpose(_framePlay, _frameRec);
+
+            nodeParseRPN_Vel_Dur_Speed(_framePlay, _frameRec);
+
+            t = getRPN(_framePlay, _frameRec, RPN_COMMON_LENGTH);
+            if(t >= 0)
+            {
+               rpn_com_length = t;
+            }
+
+            if(bAllowSeekPrgChgAndMute)
+            {
+               t = getRPN(_framePlay, _frameRec, RPN_COMMON_OFFSET);
+               if(t >= 0)
+               {
+                  rpn_com_offset_base = t;
+
+                  if(null != pat)
+                  {
+                     pat.setCurrentReplayFrameIdx(mathWrapi(rpn_com_offset_base + rpn_com_offset_add,
+                                                            rpn_com_offset_base,
+                                                            mathMini(rpn_com_offset_base + rpn_com_length, pat.getNumFrames())
+                                                            ),
+                                                  false/*bUpdateStart*/
+                                                  );
+                  }
+               }
+            }
+
+            t = getRPN(_framePlay, _frameRec, RPN_COMMON_RESTART);
+            if(t >= 1)
+            {
+               nodeRestart();
+
+               if(null != pat)
+               {
+                  pat.setCurrentReplayFrameIdx(0, false/*bUpdateStart*/);
+               }
+            }
+
+            t = getRPN(_framePlay, _frameRec, RPN_COMMON_OFFSET_ADD);
+            if(t >= 0)
+            {
+               rpn_com_offset_add = t;
+
+               if(null != pat)
+               {
+                  pat.setCurrentReplayFrameIdx(mathWrapi(rpn_com_offset_base + rpn_com_offset_add,
+                                                         rpn_com_offset_base,
+                                                         mathMini(rpn_com_offset_base + rpn_com_length, pat.getNumFrames())
+                                                         ),
+                                               false/*bUpdateStart*/
+                                               );
+               }
+            }
+
+            if(bAllowSeekPrgChgAndMute)
+            {
+               t = getRPN(_framePlay, _frameRec, RPN_COMMON_SEEK_OFFSET);
+               if(t >= 0)
+               {
+                  if(null != pat)
+                  {
+                     // trace "xxx seek offset t="+t;
+                     pat.setCurrentReplayFrameIdx(t, false/*bUpdateStart*/);
+                  }
+               }
+
+               int relNewFrameIdx;
+
+               t = getRPN(_framePlay, _frameRec, RPN_COMMON_SEEK_REL_PRE);
+               if(t >= 0)
+               {
+                  if(null != pat)
+                  {
+                     if(0 == t)
+                     {
+                        t = -1;
+                     }
+                     else if(1 == t)
+                     {
+                        t = 1;
+                     }
+                     else if(t >= 0x80)
+                     {
+                        t = 0x80 - t;
+                     }
+
+                     // trace "xxx seek SEEK_REL_PRE t="+t;
+
+                     relNewFrameIdx = mathWrapi(pat.current_replay_frame_idx + t,
+                                                rpn_com_offset_base,
+                                                mathMini(rpn_com_offset_base + rpn_com_length, pat.getNumFrames())
+                                                );
+
+                     pat.setCurrentReplayFrameIdx(relNewFrameIdx, false/*bUpdateStart*/);
+                  }
+               }
+            }
+
+            t = getRPN(_framePlay, _frameRec, RPN_COMMON_GATE);
+            if(t >= 1)
+            {
+               // trace "xxx NodeMonitor: play "+t+" frames";
+               if(null != pat)
+               {
+                  if(t >= 64)
+                     t = 64;
+
+                  int frameIdxOff = 0;
+
+                  loop(t)
+                  {
+                     frCur <= pat.getReplayFrameByIdx(pat.current_replay_frame_idx + frameIdxOff);
+
+                     if(null != frCur)
+                     {
+                        pat.invalidateLastPlayedFrameIdx();
+                        pat.playFrame(frOutReplay, frCur);
+                     }
+
+                     frameIdxOff++;
+                  }
+               }
+            }
+
+            if(bAllowSeekPrgChgAndMute)
+            {
+               t = getRPN(_framePlay, _frameRec, RPN_COMMON_SEEK_REL_POST);
+               if(t >= 0)
+               {
+                  if(null != pat)
+                  {
+                     if(0 == t)
+                     {
+                        t = -1;
+                     }
+                     else if(1 == t)
+                     {
+                        t = 1;
+                     }
+                     else if(t >= 0x80)
+                     {
+                        t = 0x80 - t;
+                     }
+
+                     // trace "xxx seek SEEK_REL_POST t="+t;
+
+                     relNewFrameIdx = mathWrapi(pat.current_replay_frame_idx + t,
+                                                rpn_com_offset_base,
+                                                mathMini(rpn_com_offset_base + rpn_com_length, pat.getNumFrames())
+                                                );
+
+                     // trace "xxx relNewFrameIdx="+relNewFrameIdx;
+
+                     pat.setCurrentReplayFrameIdx(relNewFrameIdx, false/*bUpdateStart*/);
+                  }
+               }
+            }
+
+         }
+
+      } // if numEventsRPN
+
+      if(bAllowSeekPrgChgAndMute)
+         _bMuted |= nodeHandleQueuedMuteTemp();
+
+      // if(_frameRec.numEvents > 0)
+      //    trace "xxx NodeMonitor: bMuted="+_bMuted+" pat="+#(pat)+" #ev="+_frameRec.numEvents;
+
+      if(!_bMuted)
+      {
+         if(MODE_REPLAY == monitor_mode)
+         {
+            // Parse frame trigger notes
+            MIDIPipeFrame frameOut;
+            frameOut.empty();
+
+            if(b_auto_filter_a)
+            {
+               parseTriggerNote(frameOut, _frameRec, auto_dev_filter_a, auto_ch_filter_a, pat);
+               // if(frameOut.numEventsNoteOn > 0)
+               //    trace "xxx mon: trigger note frameOut.numEventsCC="+frameOut.numEventsCC;
+            }
+            if(b_auto_filter_b)
+            {
+               parseTriggerNote(frameOut, _frameRec, auto_dev_filter_b, auto_ch_filter_b, pat);
+            }
+
+            if(b_auto_filter_a)
+            {
+               parseTriggerNote(frameOut, _framePlay, auto_dev_filter_a, auto_ch_filter_a, pat);
+            }
+            if(b_auto_filter_b)
+            {
+               parseTriggerNote(frameOut, _framePlay, auto_dev_filter_b, auto_ch_filter_b, pat);
+            }
+
+            frOutReplay.mergeFrame(frameOut);
+         }
+
+         // if(_frameRec.numEvents > 0)
+         //    trace "xxx pat="+#(pat);
+
+         if(null != pat)
+         {
+            pat.fr_current_timestamp = pat.record_timestamp_offset + milliSeconds();
+
+            if(MODE_MONITOR_FRAMEREC == monitor_mode)
+            {
+               // if(_frameRec.numEvents > 0)
+               //    trace "xxx NodeMonitor: 2 frameRec has "+_frameRec.numEvents+" event(s)";
+               pat.next_rec_frame_idx = pat.current_rec_frame_idx;
+               pat.recordFrame(_frameRec, b_force_record_first_frame);
+               b_force_record_first_frame = false;
+               pat.current_rec_frame_idx = pat.next_rec_frame_idx;
+            }
+            else if(MODE_MONITOR_FRAMEPLAY == monitor_mode)
+            {
+               pat.next_rec_frame_idx = pat.current_rec_frame_idx;
+               pat.recordFrame(_framePlay, b_force_record_first_frame);
+               b_force_record_first_frame = false;
+               pat.current_rec_frame_idx = pat.next_rec_frame_idx;
+            }
+            else if(MODE_MONITOR_FRAMERECANDPLAY == monitor_mode)
+            {
+               pat.next_rec_frame_idx = pat.current_rec_frame_idx;
+               pat.recordFrame(_frameRec, b_force_record_first_frame);
+               b_force_record_first_frame = false;
+               pat.recordFrame(_framePlay, false/*bForce*/);
+               pat.current_rec_frame_idx = pat.next_rec_frame_idx;
+            }
+            else if(MODE_REPLAY == monitor_mode)
+            {
+               if(!b_lock_current_frame)
+               {
+                  if(b_replay && b_run)
+                  {
+                     if(pat.playFrames(_framePlay))
+                     {
+                        queueRedraw();
+
+                        if(b_queue_autostop_replay)
+                        {
+                           if(pat.last_played_frame_idx == (pat.getNumFrames()-1))
+                           {
+                              Global.Debug("NodeMonitor: auto-stop replay at frame "+pat.last_played_frame_idx);
+                              b_queue_autostop_replay = false;
+                              b_replay = false;
+                              pat.current_replay_frame_idx = pat.replay_start_frame_idx;  // return to start
+                              queueRedraw();
+                           }
+                        }
+                     }
+                  }
+               }
+               else
+               {
+                  pat.recordFrame(_frameRec, false/*bForce*/);
+               }
+
+               pat.handleScrubPlay(frOutReplay);
+            }
+         } // if pat
+      }
+
+      frOutReplay.mergeFrame(ui_extra_events);
+      ui_extra_events.empty();
+
+      if(bCapture)
+      {
+         mon_capture.captureAdd(frOutReplay, true/*bAdvance*/);
+         _framePlay.mergeFrame(frOutReplay);
+      }
+
+      if(_bPlaySeq || b_replay)
+      {
+         tick_nr += rpn_com_speed_scl;
+      }
+
+      // // if(_bPlaySeq)
+      // // {
+      // //    if(0 == (current_song.song_offset % current_song.getNumTicksPerBar()))
+      // //    {
+      // //       last_bar_start_ms = milliSeconds();
+      // //    }
+      // // }
+
+      // if(_frameRec.numEvents > 0)
+      //    trace "xxx NodeMonitor: -------------------------";
+   }
+
+}

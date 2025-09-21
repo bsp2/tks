@@ -1,0 +1,262 @@
+// ----
+// ---- file   : MIDIMapEventSynProc.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2020 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 14Aug2014
+// ---- changed: 15Aug2014, 21Sep2014, 29Sep2014, 21Jan2016, 22Dec2017, 20Feb2020
+// ----
+// ----
+// ----
+
+module MMIDIMapEventSynProc;
+
+use namespace st2;
+
+
+class MIDIMapEventSynProc {
+   define int MAX_TRACKED_EVENTS = 8;
+   define int MAX_NUM_REPEATS    = 200;
+
+   // in milliseconds.
+   // generate HOLD event after timeout
+   // generate CLICK event if button is released before timeout
+   define int CLICK_TIMEOUT = 200;
+
+   // in milliseconds
+   define int REPEAT_INTERVAL = 100;
+
+   ClassArray tracked_events; // MIDIMapEvent instances
+
+
+   public method init() {
+      tracked_events.template = MIDIMapEvent;
+      tracked_events.alloc(MAX_TRACKED_EVENTS);
+      tracked_events.useAll();
+   }
+
+   protected method findUnusedTrackedEvent() : MIDIMapEvent {
+      MIDIMapEvent *tev;
+
+      foreach tev in tracked_events
+      {
+         if(MIDIMapEventType.CLASS_UNKNOWN == tev.class_type)
+         {
+            // Found unused event
+            return tev;
+         }
+      }
+
+      return null;
+   }
+
+   protected method findMatchingTrackedEvent(MIDIMapEvent _ev) : MIDIMapEvent {
+      MIDIMapEvent *tev;
+
+      foreach tev in tracked_events
+      {
+         if(MIDIMapEventType.CLASS_UNKNOWN != tev.class_type)
+         {
+            if(tev.matchTypeOf(_ev))
+               return tev;
+         }
+      }
+
+      return null;
+   }
+
+   public method removeTrackedEvent(MIDIMapEvent _ev) {
+      MIDIMapEvent tev <= findMatchingTrackedEvent(_ev);
+      if(null != tev)
+         tev.class_type = MIDIMapEventType.CLASS_UNKNOWN;
+   }
+
+   public method processMIDIMapEvent(MIDIMapEvent _ev) {
+
+      _ev.classify();
+
+      MIDIMapEvent *tev;
+      MIDIMapEvent *synEv;
+
+      if(MIDIMapEventType.CLASS_BUTTON == _ev.class_type)
+      {
+         if(_ev.class_type_ext)  // 0=up, 1=down
+         {
+            // Button down
+            if(!_ev.b_norelease)
+            {
+               tev <= findMatchingTrackedEvent(_ev);  // two note ons without note off ? (e.g. boppad)
+
+               if(null == tev)
+                  tev <= findUnusedTrackedEvent();
+
+               if(null != tev)
+               {
+                  // Copy event
+                  tev = _ev;
+
+                  // Button MOD
+                  synEv <= replay.prepNextUIEvent();
+
+                  synEv = _ev;
+                  synEv.syn_type = MIDIMapEvent.SYN_BUTTON_MOD;
+
+                  replay.sendNextUIEvent();
+               }
+               else
+               {
+                  trace "[~~~] MIDIMapEventSynProc: max number of tracked events ("+MAX_TRACKED_EVENTS+") exceeded.";
+               }
+            }
+            else
+            {
+               // Button up/release event will never be received, immediately generate up+click
+
+               // Mod
+               synEv <= replay.prepNextUIEvent();
+
+               synEv = _ev;
+               synEv.syn_type = MIDIMapEvent.SYN_BUTTON_MOD;
+
+               replay.sendNextUIEvent();
+
+
+               // Up
+               synEv <= replay.prepNextUIEvent();
+
+               synEv = _ev;
+               synEv.class_type_ext = 0; // up
+               synEv.arg1           = 0;
+               synEv.syn_type       = MIDIMapEvent.SYN_NONE;
+
+               replay.sendNextUIEvent();
+
+
+               // Click
+               synEv <= replay.prepNextUIEvent();
+
+               synEv = _ev;
+               synEv.class_type_ext = 0; // up
+               synEv.arg1           = 0;
+               synEv.syn_type       = MIDIMapEvent.SYN_BUTTON_CLICK;
+
+               replay.sendNextUIEvent();
+            }
+         }
+         else
+         {
+            // Button up
+            tev <= findMatchingTrackedEvent(_ev);
+
+            // (note) tev.syn_type of end of SYN_BUTTON_KEYREPEAT is HOLD_BEGIN
+
+            // // trace "xxx findMatchingTrackedEvent: tev="+#(tev)+" synType="+tev.syn_type;
+
+            if(null != tev)
+            {
+               int ctime = milliSeconds();
+               int dtime = (ctime - tev.time_stamp);
+
+               if(dtime < CLICK_TIMEOUT)
+               {
+                  if(0 == tev.num_repeats)
+                  {
+                     // Button click
+                     synEv <= replay.prepNextUIEvent();
+
+                     synEv = _ev;
+                     synEv.syn_type = MIDIMapEvent.SYN_BUTTON_CLICK;
+
+                     replay.sendNextUIEvent();
+                  }
+               }
+               else
+               {
+                  // Hold release
+                  synEv <= replay.prepNextUIEvent();
+
+                  synEv = _ev;
+                  synEv.syn_type = MIDIMapEvent.SYN_BUTTON_HOLD_END;
+
+                  replay.sendNextUIEvent();
+               }
+
+               // Mark tracked event as unused
+               tev.class_type = MIDIMapEventType.CLASS_UNKNOWN;
+            }
+         }
+      }
+   }
+
+   public method tickTrackedEvents() {
+      MIDIMapEvent *tev;
+
+      int ctime = milliSeconds();
+
+      foreach tev in tracked_events
+      {
+         if(MIDIMapEventType.CLASS_BUTTON == tev.class_type)
+         {
+            int dtime = (ctime - tev.time_stamp);
+
+            MIDIMapEvent *synEv;
+
+            if(MIDIMapEvent.SYN_BUTTON_HOLD_BEGIN == tev.syn_type)
+            {
+               if(tev.b_repeat)
+               {
+                  dtime = (ctime - tev.time_stamp_repeat);
+
+                  if(dtime >= REPEAT_INTERVAL)
+                  {
+                     tev.time_stamp_repeat = ctime;
+                     tev.num_repeats++;
+
+                     // // trace "xxx repeat click num="+(1 + (tev.num_repeats/4));
+
+                     // Repeat click
+                     loop(1 + (tev.num_repeats/4))
+                     {
+                        synEv <= replay.prepNextUIEvent();
+                        synEv = tev;
+                        synEv.syn_type = MIDIMapEvent.SYN_BUTTON_REPEAT;
+
+                        replay.sendNextUIEvent();
+                     }
+
+                     if(tev.num_repeats > MAX_NUM_REPEATS)
+                     {
+                        // Avoid endless repeat
+                        //  (can happen due to wrong .msp configuration, might lock up event engine
+                        //   because millions of events are sent b/c key release never occurs)
+                        //  (i.e. this happens when a CC is configured as a button but the controller
+                        //   only sends the keydown event)
+                        tev.class_type = MIDIMapEventType.CLASS_UNKNOWN;
+                     }
+
+                  }
+               }
+            }
+            else if(dtime >= CLICK_TIMEOUT)
+            {
+               if(MIDIMapEvent.SYN_BUTTON_HOLD_BEGIN != tev.syn_type) // not already sent?
+               {
+                  // Hold begin
+                  tev.syn_type = MIDIMapEvent.SYN_BUTTON_HOLD_BEGIN;
+
+                  synEv <= replay.prepNextUIEvent();
+                  synEv = tev;
+
+                  replay.sendNextUIEvent();
+               }
+            }
+
+         }
+      }
+   }
+
+}

@@ -1,0 +1,443 @@
+// ----
+// ---- file   : NT_EditCelColorDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 19Feb2012
+// ---- changed: 20Feb2012, 24Feb2012, 07May2013, 05Jun2013, 23Jan2015, 24Jan2015, 04Oct2023
+// ----          30Oct2023, 22Mar2024, 16Jan2025, 09Feb2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_EditCelColorDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+class NT_EditCelColorDialog extends Dialog {
+
+   protected NT_TEL *tel;
+   protected NT_CEL *cel;
+
+   protected NT_EditTrackLayoutDialog *parent_dialog; // or null
+   protected NodeTracker *parent_node;
+   protected NodeTrackerEditor *parent_editor;
+
+   protected XMLForm *xfm;
+
+   protected int c32_orig;
+   protected int c32_saved;
+
+   protected TextField      *tf_color;
+   protected Button         *bt_clear;
+   protected ColorButton    *color_button;
+   protected HSVColorPicker *hsv_color_picker;
+
+   protected FloatParam *fp_rgb_r;
+   protected FloatParam *fp_rgb_g;
+   protected FloatParam *fp_rgb_b;
+   protected FloatParam *fp_rgb_a;
+
+   protected FloatParam *fp_hsv_h;
+   protected FloatParam *fp_hsv_s;
+   protected FloatParam *fp_hsv_v;
+   protected FloatParam *fp_hsv_a;
+
+   protected Button    *bt_ok;
+   protected Button    *bt_revert;
+
+
+   protected PopupMenu *pm_context;
+
+
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NT_EditCelColorDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Edit cel color",
+                 140, 140,
+                 120, 410
+                 );
+
+      return true;
+   }
+
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public method showCel(NT_TEL _tel, NT_CEL _cel, NT_EditTrackLayoutDialog _editTrackLayoutDialog) {
+
+      tel <= _tel;
+      cel <= _cel;
+
+      parent_dialog <= _editTrackLayoutDialog;
+      parent_node   <= parent_dialog.parent_node;
+      parent_editor <= parent_dialog.parent_editor;
+
+      c32_orig  = cel.bg_tint;
+      c32_saved = cel.bg_tint;
+      
+      resizeAtLeastToMinimum();
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+
+      showNearMouse(-85*UI.font_scaling, -68*UI.font_scaling);
+   }
+
+   public method revertColor() {
+      if(cel.bg_tint != c32_orig)
+      {
+         c32_saved = cel.bg_tint;
+         cel.bg_tint = c32_orig;
+      }
+      else
+      {
+         cel.bg_tint = c32_saved;
+      }
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+
+      handleColorChanged();
+   }
+
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(tf_color);
+   }
+
+   protected method updateARGB32() {
+      Integer io = cel.bg_tint;
+      tf_color.setText(io.printf("#%08x"));
+   }
+
+   protected method updateRGBA() {
+      // RGB
+      fp_rgb_r.setValue( (cel.bg_tint>>16) & 255 );
+      fp_rgb_g.setValue( (cel.bg_tint>> 8) & 255 );
+      fp_rgb_b.setValue( (cel.bg_tint    ) & 255 );
+      fp_rgb_a.setValue( (cel.bg_tint>>24) & 255 );
+   }
+
+   protected method updateHSVA() {
+      // HSV
+      Float h, s, v;
+      UI.RGB32TOHSV(cel.bg_tint, h, s, v);
+      float a = ((cel.bg_tint>>24)&255) * (1.0f / 255);
+      fp_hsv_h.setValue(h);
+      fp_hsv_s.setValue(s);
+      fp_hsv_v.setValue(v);
+      fp_hsv_a.setValue(a);
+   }
+
+   protected method updateColorButton() {
+      color_button.setBackgroundTint(cel.bg_tint);
+      color_button.redraw();
+      byte a8 = (cel.bg_tint>>24) & 255;
+      if(0 == cel.bg_tint)
+         a8 = 255;
+      hsv_color_picker.setAlpha8(a8);
+   }
+
+   protected method handleColorChanged() {
+
+      Integer io = cel.bg_tint;
+      Global.Debug2("NT_EditCelColorDialog:handleColorChanged: color is now #"+io.printf("%08x"));
+
+      if(null != parent_dialog)
+      {
+         parent_dialog.queueRedraw();
+         parent_dialog.pattern_view.queueRedraw();
+      }
+   }
+
+   protected method handleColorEntered() {
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      int c32 = tf_color.getText();
+      cel.bg_tint = c32;
+
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleClear() {
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      cel.bg_tint = 0;
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleRGBAChanged() {
+
+      int r = fp_rgb_r.getFloatValue();
+      int g = fp_rgb_g.getFloatValue();
+      int b = fp_rgb_b.getFloatValue();
+      int a = fp_rgb_a.getFloatValue();
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      cel.bg_tint = argb(a, r, g, b);
+
+      updateARGB32();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleHSVAChanged() {
+
+      int c32 = UI.HSVTOARGB32(fp_hsv_h.getFloatValue(),
+                               fp_hsv_s.getFloatValue(),
+                               fp_hsv_v.getFloatValue(),
+                               (fp_hsv_a.getFloatValue() * 255)
+                               );
+
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      cel.bg_tint = c32;
+
+      updateARGB32();
+      updateRGBA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      local String s <= tf_color.getText();
+      UI.SetClipboard(s);
+      Global.Print("Copy \""+s+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handlePaste() {
+      Object o <= UI.GetClipboard();
+      if(o instanceof String)
+      {
+         tf_color.setText(o);
+         Global.Print("Paste \""+o+"\"");
+         handleColorEntered();
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenu pm <= pm_context;
+      PopupMenuButton *pmb;
+
+      pmb <= pm.addDefaultButton("Copy",
+                                 "copy"
+                                 );
+      pmb.setAccelerators("lctrl-c", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Paste",
+                                 "paste"
+                                 );
+      pmb.setAccelerators("lctrl-v", "");
+
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-20, -10);
+
+      if(_bFocusFirst)
+         pm_context.focusNextMenuItem();
+
+      Global.Print("Show ColorPicker context menu.");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return false;
+   }
+
+   protected method handleColorButtonClicked() {
+      trace "xxx handleColorButtonClicked";
+   }
+
+   protected method handleHSVColorPicked(IntAction _ia) {
+      parent_editor.undoTouchTrackLayoutIfCurrent(tel);
+
+      cel.bg_tint = _ia.getIntValue();
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            if(_k.modNone())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               handleCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               handlePaste();
+            }
+            else
+            {
+               // when called via execDefaultAction() ('v')
+               hide();
+            }
+            return true;
+
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close ColorPicker context menu.");
+                  // refocusDefault();
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  // refocusDefault();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+            }
+            return true;
+
+         case @(bt_ok):
+            hide();
+            return true;
+
+         case @(bt_revert):
+            revertColor();
+            return true;
+
+         case @(tf_color):
+            if(TextField.ACTION_TEXTENTERED == acName)
+               UI.SetKeyboardFocus(bt_ok);
+            handleColorEntered();
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            // hide();
+            return true;
+
+         case @(fp_rgb_r):
+         case @(fp_rgb_g):
+         case @(fp_rgb_b):
+         case @(fp_rgb_a):
+            handleRGBAChanged();
+            return true;
+
+         case @(fp_hsv_h):
+         case @(fp_hsv_s):
+         case @(fp_hsv_v):
+         case @(fp_hsv_a):
+            handleHSVAChanged();
+            return true;
+
+         case @(color_button):
+            handleColorButtonClicked();
+            return true;
+
+         case @(hsv_color_picker):
+            handleHSVColorPicked(_action);
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

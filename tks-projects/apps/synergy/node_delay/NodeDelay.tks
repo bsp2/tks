@@ -1,0 +1,510 @@
+// ----
+// ---- file   : NodeDelay.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 03Mar2017
+// ---- changed: 04Mar2017, 17Mar2017, 27May2018, 25Jun2019, 07Nov2019, 20Feb2020, 30Oct2020
+// ----          19Jun2021, 21Jun2021, 28Jul2021, 01Jan2022
+// ----
+// ----
+// ----
+
+module MNodeDelay;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeDelay : Node {
+
+   define int RPN_DELAY_TICKS = RPN_DELAY_BASE + 0;
+   define int RPN_DELAY_256TH = RPN_DELAY_BASE + 1;
+   define int RPN_DELAY_SWING = RPN_DELAY_BASE + 2;
+
+   define int MAX_FRAMES = (192 * 16);
+
+   int base_delay_ticks;
+   float base_delay_16ths;
+   boolean b_base_delay_16ths;  // true=show delay time as 16th notes
+
+   define int HOLD_NONE  = 0;
+   define int HOLD_INF   = 1;
+   define int HOLD_TICKS = 2;
+   int hold_mode;
+   int hold_ticks;      // 1..n
+   int hold_countdown;  // when hold mode is TICKS
+
+   boolean b_flt;
+   int flt_dev;  // -1= delay devs
+   int flt_ch;   // -1= delay all channels
+
+   static NodeDelayEditor *editor;
+
+   PointerArray frames;  // MIDIPipeFrame instances (lazy alloc)
+   int cur_frame_idx;
+   IntArray ui_frame_history_numevents;
+   IntArray ui_frame_history_numevents_noteon;
+
+   int rpn_delay_ticks;  // current frame delay
+
+   float swing_amt;  // 0..1 => 50%..100%
+   float swing_amt_rpn;  // RPN modulation, added to swing_amt
+   float swing_note_dur;  // 1.0=16th, 0.5=32th, 0.25=64th, 2.0=8th, 4.0=4th, ..
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      b_flt = false;
+      flt_dev = -1;
+      flt_ch = -1;
+
+      frames.alloc(MAX_FRAMES);
+      frames.useAll();
+
+      ui_frame_history_numevents.allocAndFill(MAX_FRAMES, 0);
+      ui_frame_history_numevents_noteon.allocAndFill(MAX_FRAMES, 0);
+
+      swing_amt = 0.0;
+      swing_note_dur = 1.0;
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+
+      Node::nodeUIInit();
+
+      hold_ticks = current_song.ppq / 4;  // 1/16th
+
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName("<global>");
+      if(null != outDev)
+      {
+         auto_dev_filter_a = outDev.dev_idx;
+         auto_ch_filter_a  = 0;
+         b_ui_auto_filter_a_edited = true;
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTypeNameShort() : String {
+      return "Dly";
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeDelayEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_delay_mono");
+      else
+         return UI.GetIcon("node_delay");
+   }
+
+   // <method_set.png>
+   public =replay= method setBaseDelayTicks(int _baseDelayTicks) {
+      base_delay_ticks = _baseDelayTicks;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBaseDelay16ths(boolean _bEnabled) {
+      b_base_delay_16ths = _bEnabled;
+   }
+
+   // <method_set.png>
+   public =replay= method setBaseDelay16ths(float _baseDelay16ths) {
+      base_delay_16ths = _baseDelay16ths;
+   }
+
+   // <method_set.png>
+   public =replay= method setHoldMode(int _mode) {
+      hold_mode = _mode;
+   }
+
+   // <method_set.png>
+   public =replay= method setHoldTicks(int _ticks) {
+      hold_ticks = _ticks;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableInputFilter(boolean _bEnable) {
+      b_flt = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getEnableInputFilter() : boolean {
+      return b_flt;
+   }
+
+   // <method_set.png>
+   public =replay= method setInputFilterDev(int _devIdx) {
+      flt_dev = _devIdx;
+   }
+
+   // <method_get.png>
+   public method getInputFilterDev() : int {
+      return flt_dev;
+   }
+
+   // <method_set.png>
+   public =replay= method setInputFilterCh(int _ch) {
+      flt_ch = _ch;
+   }
+
+   // <method_get.png>
+   public method getInputFilterCh() : int {
+      return flt_ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setSwingAmount(float _amt) {
+      swing_amt = _amt;
+   }
+
+   // <method_set.png>
+   public =replay= method setSwingNoteDuration(float _dur) {
+      swing_note_dur = _dur;
+   }
+
+   // <method.png>
+   public virtual nodeHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      MIDIPipeFrame *fr;
+      foreach fr in frames
+      {
+         if(null != fr)
+            fr.empty();
+      }
+
+      cur_frame_idx = 0;
+      rpn_delay_ticks = 0;
+      hold_countdown = 0;
+      swing_amt_rpn = 0;
+
+      ui_frame_history_numevents.fill(0);
+      ui_frame_history_numevents_noteon.fill(0);
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPatternNr() : int {
+      return Node.EMPTY_PAT_NR/*127*/; // --/
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPatternNr() : int {
+      return Node.EMPTY_PAT_NR/*127*/; // --/
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) {
+      return null;
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() {
+      return null;
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() {
+      return null;
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 5; // Version
+
+      Node::nodeSaveState(ofs);
+
+      ofs.i32 = base_delay_ticks;
+      ofs.f32 = base_delay_16ths;    // v3+
+      ofs.i8  = b_base_delay_16ths;  // v3+
+
+      ofs.i32 = hold_mode;
+      ofs.i32 = hold_ticks;
+
+      ofs.i8 = b_flt;    // v2+
+      ofs.i8 = flt_dev;  // v2+
+      ofs.i8 = flt_ch;   // v2+
+
+      ofs.f32 = swing_amt;  // v4+
+      ofs.f32 = swing_note_dur;  // v5+
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // Read base delay ticks
+         base_delay_ticks = ifs.i32;
+
+         if(ver >= 3)
+         {
+            base_delay_16ths   = ifs.f32;  // v3+
+            b_base_delay_16ths = ifs.b8;   // v3+
+         }
+
+         // Read hold mode
+         hold_mode = ifs.i32;
+         hold_ticks = ifs.i32;
+
+         // Read input filter
+         if(ver >= 2)
+         {
+            b_flt = ifs.b8;
+            flt_dev = ifs.s8;
+            flt_ch  = ifs.s8;
+
+            // trace "xxx read auto_dev_filter="+auto_dev_filter;
+            // trace "xxx _outDevIdxMap="+#(_outDevIdxMap);
+
+            if(-1 != flt_dev)
+            {
+               _outDevUseCount.inc(flt_dev);
+
+               flt_dev = _outDevIdxMap.get(flt_dev);
+            }
+         }
+
+         if(ver >= 4)
+         {
+            swing_amt = ifs.f32;  // v4+
+         }
+
+         if(ver >= 5)
+         {
+            swing_note_dur = ifs.f32;  // v5+
+         }
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <replay.png>
+   protected method processInput(MIDIPipeFrame _frame, int curDelay, boolean _bMuted) {
+      MIDIPipeFrame *fr;
+
+      // Queue new delayed frame
+      int frIdx = (cur_frame_idx + curDelay) % MAX_FRAMES;
+      fr <= frames.get(frIdx);
+
+      int fltDev = b_flt ? flt_dev : -1;
+      int fltCh  = b_flt ? flt_ch  : -1;
+
+      if(0 != curDelay)
+      {
+         if(!_bMuted)
+         {
+            int numEv = _frame.getNumEvents();
+
+            if(numEv > 0)
+            {
+               // trace "xxx rpn_delay_ticks="+rpn_delay_ticks;
+
+               if(null == fr)
+               {
+                  fr <= new MIDIPipeFrame;
+                  frames[frIdx] = deref fr;
+               }
+
+               if(null != fr)
+               {
+                  fr.mergeFrameFlt(_frame, fltDev, fltCh);
+                  // fr.mergeFrameFlt(_frameRec, fltDev, fltCh);
+
+                  _frame.deleteEventsByFlt(fltDev, fltCh);
+                  // _frameRec.deleteEventsByFlt(fltDev, fltCh);
+
+                  ui_frame_history_numevents[frIdx] = ui_frame_history_numevents[frIdx] + fr.getNumEvents();
+                  ui_frame_history_numevents_noteon[frIdx] = ui_frame_history_numevents_noteon[frIdx] + fr.getNumEventsNoteOn();
+               }
+            }
+         }
+      }
+      else
+      {
+         ui_frame_history_numevents[frIdx] = ui_frame_history_numevents[frIdx] + _frame.getNumEventsByFlt(fltDev, fltCh);
+         ui_frame_history_numevents_noteon[frIdx] = ui_frame_history_numevents_noteon[frIdx] + _frame.getNumEventsNoteOnByFlt(fltDev, fltCh);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [RPN_COMMON_UI_PRGCHG,
+              RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+              RPN_COMMON_MUTE_TEMP_TOGGLE,
+              // RPN_COMMON_MUTE_TEMP_1_8,
+              // RPN_COMMON_MUTE_TEMP_9_16,
+              // RPN_COMMON_SOLO_TEMP_1_8,
+              // RPN_COMMON_SOLO_TEMP_9_16,
+              RPN_COMMON_UI_NODE_MUTE,
+              RPN_COMMON_UI_NODE_SOLO,
+              RPN_COMMON_UI_PIPE_MUTE,
+              RPN_COMMON_UI_PIPE_SOLO,
+
+              RPN_DELAY_TICKS,
+              RPN_DELAY_256TH,
+              RPN_DELAY_SWING,
+              // RPN_COMMON_SEEK_OFFSET,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         float t;
+
+         t = getRPN(_framePlay, _frameRec, RPN_DELAY_TICKS);
+         if(t >= 0)
+         {
+            rpn_delay_ticks = mathClampi(t, 0, MAX_FRAMES-1);
+
+            hold_countdown = hold_ticks;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_DELAY_256TH);
+         if(t >= 0)
+         {
+            rpn_delay_ticks = mathClampi(t * float(current_song.ppq / 64.0), 0, MAX_FRAMES-1);
+
+            hold_countdown = hold_ticks;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_DELAY_SWING);
+         if(t >= 0)
+         {
+            swing_amt_rpn = Utils.Bipolar8ToFloat(t);  // 0..255 => -1..1,  128 => 0.0
+         }
+
+         // Handle MUTE, MUTE_TOGGLE, MUTE_TEMP, MUTE_TEMP_TOGGLE
+         nodeParseRPN_Mute(_framePlay, _frameRec);
+      }
+
+      int curDelay = rpn_delay_ticks;
+
+      if(b_base_delay_16ths)
+      {
+         curDelay += base_delay_16ths * (current_song.ppq / 4.0f);
+      }
+      else
+      {
+         curDelay += base_delay_ticks;
+      }
+
+      // Swing
+      float swingAmt = mathClampf(swing_amt + swing_amt_rpn, 0.0f, 1.0f);
+      if(swingAmt > 0.0f)
+      {
+         int numTicks16 = current_song.getNumTicksPer16th() * swing_note_dur;
+         float off16 = float(current_song.song_offset) / numTicks16;
+         if(int(off16) & 1)
+         {
+            float frac16 = 1.0 - frac(off16);
+            curDelay += numTicks16 * swingAmt * frac16;
+         }
+      }
+
+
+      _bMuted |= nodeHandleQueuedMuteTemp();
+
+      // Record new events into delay buffer
+      processInput(_framePlay, curDelay, _bMuted);
+      // // processInput(_frameRec, curDelay, _bMuted);  // [11Dec2021] do not process frameRec !!
+
+      // Play delayed frame
+      MIDIPipeFrame fr <= frames.get(cur_frame_idx);
+
+      if(null != fr)
+      {
+         if(!_bMuted)
+         {
+            _framePlay.mergeFrame(fr);
+         }
+
+         fr.empty();
+      }
+
+      if(HOLD_TICKS == hold_mode)
+      {
+         if(hold_countdown > 0)
+         {
+            hold_countdown--;
+
+            if(0 == hold_countdown)
+            {
+               rpn_delay_ticks = 0;
+            }
+         }
+      }
+      else if(HOLD_NONE == hold_mode)
+      {
+         rpn_delay_ticks = 0;
+      }
+
+      int frIdx = (cur_frame_idx + (MAX_FRAMES/2)) % MAX_FRAMES;
+      ui_frame_history_numevents[frIdx] = 0;
+      ui_frame_history_numevents_noteon[frIdx] = 0;
+
+      // Cycle through ringbuffer
+      cur_frame_idx = (cur_frame_idx + 1) % MAX_FRAMES;
+   }
+
+}

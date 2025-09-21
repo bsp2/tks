@@ -1,0 +1,976 @@
+//
+// Mod Exporter Script
+//    created: 18Jun2019
+//    changed: 15Apr2024, 16Apr2024, 18Apr2024, 19Apr2024, 26Apr2024
+//
+//  (note) https://www.eblong.com/zarf/blorb/mod-spec.txt
+//  (note) https://16-bits.org/ptfreq.php
+//  (note) https://www.exotica.org.uk/wiki/Protracker
+//  (note) http://www.inspiredacoustics.com/en/MIDI_note_numbers_and_center_frequencies
+//  (note) http://coppershade.org/articles/More!/Topics/Creating_Samples_For_Amiga/
+//  (note) http://www.pouet.net/topic.php?which=11710 ("nerd talk prepping samples")
+//  (note) https://en.wikipedia.org/wiki/Audio_bit_depth
+//  (note) http://sox.sourceforge.net/sox.html
+//  (note) http%3A%2F%2Fwww.pouet.net%2Ftopic.php%3Fwhich%3D8628&usg=AOvVaw0-aPFSgAe-AqNijXFT13b4
+//  (note) http://eab.abime.net/showthread.php?t=66065 ("Tutorial: Converting samples to Amiga.")
+//  (note) http://amigadev.elowar.com/read/ADCD_2.1/Hardware_Manual_guide/node00F2.html
+//
+//  (note) C-3..B-5 => PT C-1..B-3
+//  (note) pitchbend range is +-1 octave
+//
+//  (note) PTFX:                                      RPN #91=reset-value trigger (instrument select)
+//                cmd1=pitch  (slide, vibrato)        RPN #92=cmd1 select  #93=cmd1 arg
+//                cmd2=volume (slide, tremolo, CC#7)  RPN #94=cmd2 select  #95=cmd2 arg
+//
+
+// ---------------------------------------------------------------------------- config
+
+boolean b_debug = 0;
+
+// // String projectDir = "~/mProjects/eureka_data/projects/t_meeting/samples";
+String projectDir = "$(EUREKA_PROJECT_DIR)/$(PROJECT_NAME)/samples/";
+
+// Name of the exported Protracker module file
+String mod_filename = "export.mod";  // (note) PT2.3 (16-bits.org) for macOS/Windows does not use the classic mod file name format (mod.export)
+// // String mod_filename = "mod.export";
+
+// Song name (up to 19 characters)
+String song_name = "modexport";
+
+
+// ---------------------------------------------------------------------------- internal config
+
+int instr_shift = 1;  // 1: CTL_PC 0 => PT instrument $01
+
+// Name of the directory which stores the .wav files that will be imported as samples
+//
+// The name of each file must start with the samplenr, e.g.
+//   01_bd.wav
+//   02_rs.wav
+//   03_sd.wav
+//   04_cp.wav
+//   05_lt.wav
+//   06_mt.wav
+//   07_ht.wav
+//   08_ch.wav
+//   09_oh.wav
+//   0A_bass.wav
+//   0B_strings.wav
+//
+// If the file name ends with a note name (c1..b3), this will be used to
+//  determine the target sample rate and note transpose (all wavs are assumed to have a root key of c-5):
+//   0C_chord_maj_c3.wav
+//   0D_chord_min_gs2.wav
+//
+//   (list of notenames: "c1,cs1,d1,ds1,e1,f1,fs1,g1,gs1,a1,as1,b,c2,..,b3"
+//   (the default note is C-2, i.e. 8287 Hz sample rate)
+//   (note) sampleRateInHzPAL  = 7093789.2 / (dma_period * 2)
+//   (note) sampleRateInHzNTSC = 7159090.5 / (dma_period * 2)
+//
+// If the samplenr is followed by a sub index, the wav files will be concatenated and the start
+//  offsets will be aligned to multiples of $100, i.e. suitable for the 9xx sample offset command:
+//   0E_01_reso_bass.wav
+//   0E_02_reso_bass.wav
+//   0E_03_reso_bass.wav
+//   0E_04_reso_bass.wav
+//   0E_05_reso_bass.wav
+//   0E_06_reso_bass.wav
+//   0E_07_reso_bass.wav
+//   0E_08_reso_bass.wav
+//
+// String wav_source_dir = projectDir+"/modexport_test_source_dir";
+String wav_source_dir = projectDir+"/";
+
+// Name of temporary batch file (on Windows)
+String tmp_bat_filename = projectDir+"/modexport_sample.bat";
+
+// Name of temporary SOX generated signed 8bit sample
+// String tmp_sample_filename = "$(PROJECT_DIR)/modexport_sample.dat";
+String tmp_sample_filename = projectDir+"/modexport_sample.wav";
+
+String mod_pathname = projectDir+"/"+mod_filename;
+
+
+// ---------------------------------------------------------------------------- persistent state (edited in UI)
+tag boolean b_rec;
+tag boolean b_keep_smp;  // 1=don't load samples 01_..31_.. from <wav_source_dir> but load the dest module and keep its samples
+
+// ----------------------------------------------------------------------------
+int tick_nr;
+
+PointerArray ans_all;  // 4x ActiveNoteState
+ActiveNoteState *ans;  // temporary ref to current note state
+int cur_ch;  // 0..3 (temporary during process())
+PointerArray pattern_data;  // 4*4 IntArrays (note/instr/fx1/fx2, 4 channels), note is stored as FloatArray
+FloatArray *pat_note;
+IntArray *pat_instr;
+IntArray *pat_fx1;
+IntArray *pat_fx2;
+
+boolean b_clear_pat;
+int cur_step;  // 0..(64*128)
+int num_steps;  // last seen cur_step before replay stop
+
+FloatArray pat_pb;
+IntArray cur_instr;   // 4*instr nr (1..31)
+IntArray cur_vol;  // 4 channels
+PointerArray sample_data;  // 31 Buffer instances
+PointerArray sample_chain_offsets;  // 31 IntArray instances
+FloatArray pitch_bend;
+IntArray tmp_sample_buf;
+
+Buffer keep_smp_hdr;   // when b_keep_smp==true
+Buffer keep_smp_dat;   // ^^
+
+// Volume slide (e.g. A0A) on notes F-1, A#1, F-2, C-3 sounds ok, loud crackles on all other notes 
+FloatArray amiga_note_periods = [
+   856/*C-1=4143Hz*/,  808, 762, 720, 678, 640/*F-1=5542Hz*/,  604/*F#1=5872Hz*/,  570, 538, 508/*A-1=6982Hz*/,  480/*A#1=7389Hz*/, 453,
+   428/*C-2=8287Hz*/,  404, 381, 360, 339, 320/*F-2=11084Hz*/, 302/*F#2=11745Hz*/, 285, 269, 254/*A-2=13964Hz*/, 240, 226,
+   214/*C-3=16574Hz*/, 202, 190, 180, 170, 160/*F-3=22168Hz*/, 151/*F#3=23489Hz*/, 143, 135, 127/*A-3=27928Hz*/, 120, 113/*31388Hz*/
+                               ];
+
+StringArray note_names_short = [
+   "c1", "cs1", "d1", "ds1", "e1", "f1", "fs1", "g1", "gs1", "a1", "as1", "b1",
+   "c2", "cs2", "d2", "ds2", "e2", "f2", "fs2", "g2", "gs2", "a2", "as2", "b2",
+   "c3", "cs3", "d3", "ds3", "e3", "f3", "fs3", "g3", "gs3", "a3", "as3", "b3"
+                                ];
+
+/*
+float period;
+foreach period in amiga_note_periods
+{
+   float hzNTSC = 7159090.5 / (period*2);
+   float hzPAL  = 7093789.2 / (period*2);
+   note_sample_rates_ntsc.add(int(hzNTSC+0.5));
+   note_sample_rates_pal.add(int(hzPAL+0.5));
+}
+trace "IntArray note_sample_rates_ntsc = "+note_sample_rates_ntsc.string+";";
+trace "IntArray note_sample_rates_pal = "+note_sample_rates_pal.string+";";
+*/
+
+IntArray note_sample_rates_ntsc = [
+    4182,  4430,  4698,  4972,  5280,  5593,  5926,  6280,  6653,  7046,  7457,  7902,
+    8363,  8860,  9395,  9943, 10559, 11186, 11853, 12560, 13307, 14093, 14915, 15839,
+   16727, 17721, 18840, 19886, 21056, 22372, 23706, 25032, 26515, 28185, 29830, 31677
+                                   ];
+
+IntArray note_sample_rates_pal = [
+    4144/*c-1*/,  4390,  4655,  4926/*D#1*/,  5231,  5542,  5872/*F#1*/,  6223,  6593,  6982/*A-1*/,  7389,  7830,
+    8287/*c-2*/,  8779,  9309,  9852/*D#2*/, 10463, 11084, 11745/*F#2*/, 12445, 13185, 13964/*A-2*/, 14779, 15694,
+   16574/*c-3*/, 17559, 18668, 19705/*D#3*/, 20864, 22168, 23489/*F#3*/, 24803, 26273, 27928/*A-3*/, 29557, 31388
+                                  ];
+
+IntArray note_sample_rates <= note_sample_rates_pal;
+
+IntArray sample_root_notes;  // 0..35
+
+IntArray b_noteoff_pending;  // 4 elements (4 ch)
+
+function InsertNoteOff() {
+   // pat_fx1[cur_step] = 0xA;
+   // pat_fx2[cur_step] = 0x0F;
+   // (todo) append note-off steps
+}
+
+delegate ActiveNoteState:ProcessNoteOff(int _activeNoteIdx, byte _note, byte _vel) {
+   if(b_debug) trace "[trc] modexport: note off, note="+_note;
+   if(0 == pat_note[cur_step])
+   {
+      InsertNoteOff();
+      b_noteoff_pending[cur_ch] = false;
+   }
+   else
+   {
+      b_noteoff_pending[cur_ch] = true;
+   }
+}
+
+delegate ActiveNoteState:ProcessNoteOn(int _activeNoteIdx, byte _note, int _duration, byte _vel) {
+   if(b_debug) trace "[trc] modexport: note on, note="+_note+" tick_nr="+tick_nr+" cur_step="+cur_step;
+   if(b_rec)
+   {
+      pat_note[cur_step] = _note;// + pitch_bend[cur_ch];
+      pat_instr[cur_step] = cur_instr[cur_ch];
+      // (todo) append note-on steps
+      b_noteoff_pending[cur_ch] = false;
+   }
+}
+
+function OnReset() {
+   // Called when replay starts
+   if(b_debug) trace "[trc] modexport: OnReset";
+   ActiveNoteState *ans;
+   if(ans_all.numElements != 4)
+   {
+      // Init
+      ans_all.free();
+      loop(4)
+      {
+         ans <= new ActiveNoteState;
+         delegate ans:"note_on"  = ProcessNoteOn;
+         delegate ans:"note_off" = ProcessNoteOff;
+         ans_all.add(#(deref ans));
+      }
+
+      pat_pb.allocAndFill(64*4*128, 0.0f);
+
+      pattern_data.free();
+      int colIdx = 0;
+      loop(4*4)
+      {
+         if(0 == colIdx)
+         {
+            FloatArray fa <= new FloatArray;
+            fa.alloc(64 * 128);
+            fa.useAll();
+            fa.fill(0.0f);
+            pattern_data.add(#(deref fa));
+         }
+         else
+         {
+            IntArray ia <= new IntArray;
+            ia.alloc(64 * 128);
+            ia.useAll();
+            ia.fill(0);
+            pattern_data.add(#(deref ia));
+         }
+         // trace "xxx pattern_data="+#(pattern_data);
+         colIdx = (colIdx + 1) & 3;
+      }
+
+      cur_instr.allocAndFill(4, 0);
+
+      cur_vol.allocAndFill(4, 64);
+
+      b_noteoff_pending.allocAndFill(4, 0);
+
+      pitch_bend.allocAndFill(4, 0);
+   }
+
+   foreach ans in ans_all
+   {
+      ans.reset();
+   }
+
+   b_clear_pat = b_rec;
+
+   b_noteoff_pending.fill(false);
+
+   pitch_bend.fill(0);
+}
+
+function OnSeek(int ticks) {
+   // Called when replay starts or stops, preceded by OnReset()
+   if(b_debug) trace "[trc] modexport: OnSeek("+ticks+")";
+   tick_nr = ticks;
+
+   if(b_clear_pat)
+   {
+      // Replay started
+      b_clear_pat = false;
+
+      // Clear patterns
+      trace "[dbg] modexport: START: clear pat";
+      int i = 0;
+      loop(4*4)
+      {
+         if(0 == (i & 3))
+         {
+            FloatArray fa <= pattern_data.get(i++);
+            fa.fill(0);
+         }
+         else
+         {
+            IntArray ia <= pattern_data.get(i++);
+            ia.fill(0);
+         }
+      }
+
+      cur_step = 0;
+   }
+   else
+   {
+      // Replay stopped
+      trace "[dbg] modexport: STOP";
+   }
+}
+
+function WriteString(Stream ofs, String s, int num) {
+   int i = 0;
+   loop(num)
+   {
+      ofs.i8 = s.getc(i++);
+   }
+}
+
+function Exec(String exe, String args) {
+   // // String cmdLine = Utils.FixPathname_psystem_exe(exe)+" "+args;
+   String cmdLine = "\""+exe+"\" "+args;
+   local String tmpBatFileName;
+
+   if(Utils.IsWindows())
+   {
+      // popen() cannot handle arguments with spaces (oh. my.)
+      // the workaround is to write the cmdline to a .bat file, then exec that
+      tmpBatFileName = Utils.ToNativePathName(tmp_bat_filename);
+      cmdLine.saveLocal(tmpBatFileName);
+      cmdLine = tmpBatFileName;
+      cmdLine = Utils.FixPathname_psystem_exe(cmdLine);
+   }
+
+   Global.Debug("execBinary: cmdLine=>>"+cmdLine+"<<");
+
+   String log; log.alloc(65535);
+   psystem(cmdLine, 'r', log);
+   Global.Debug("exec SOX: cmdLine=>>"+cmdLine+"<< log=\n"+log+"\n");
+   log.free();
+}
+
+function LoadTempSample(String _filename) {
+   FloatArray sam;
+   boolean b;
+   Integer sampleRate, numCh;
+
+   // Load
+   try {
+
+      String retFileInfo;
+
+      b = WavIO.LoadLocal(_filename, sam, sampleRate, numCh, retFileInfo, null/*sampleHint*/, null/*bwfHint*/);
+
+      if(b)
+      {
+         trace "[...] loaded sample len="+(sam.numElements / numCh)+" #ch="+numCh+" rate="+sampleRate;
+
+         // Truncate bits
+         tmp_sample_buf.alloc(sam.numElements);
+         int i =0;
+         loop(sam.numElements)
+         {
+            short sam16 = sam[i++] * 32767;  // -32767..32767
+            float samf;
+            byte sam8;
+            if(sam16 >= 0)
+            {
+               sam16 &= 0x7F00;
+               samf = (sam16 / 258.0) + 0.5;
+               sam8 = samf;
+            }
+            else
+            {
+               sam16 = -sam16;
+               sam16 &= 0x7F00;
+               sam16 = -sam16;
+               samf = (sam16 / 258.0) - 0.5;
+               sam8 = samf;
+            }
+            // trace "xxx sam16="+sam16+" sam8="+sam8;
+            tmp_sample_buf.add(sam8 & 255);
+         }
+      }
+      else
+      {
+         tmp_sample_buf.free();
+      }
+      // trace "b="+b;
+   }
+   catch(Error e) {
+      trace "[---] caught "+e.fullName+": \""+e.message+"\".";
+   }
+}
+
+function ConvertSamples() {
+
+   sample_data.alloc(31);
+   sample_data.useAll();
+
+   sample_chain_offsets.alloc(31);
+   IntArray *sc;
+   loop(31)
+   {
+      sc <= new IntArray;
+      sample_chain_offsets.add(#(deref sc));
+   }
+
+   local String soxExe = Utils.SubstitutePathVars(STConfig.audiotool_sox_pathname);
+
+   // // if(Utils.IsWindows())
+   // //    soxExe.append("\\sox.exe");
+   // // else
+   // //    soxExe.append("/sox");
+
+   sample_root_notes.alloc(31);
+   sample_root_notes.useAll();
+   sample_root_notes.fill(12*2);  // C-2
+
+   String wavSourceDir = Utils.ToNativePathName(wav_source_dir);
+   String tmpSampleFileName = Utils.ToNativePathName(tmp_sample_filename);
+
+   local StringArray a <= tkfileutils_read_directory(wavSourceDir);
+   if(null != a)
+   {
+      local String *fileEntry;
+      foreach fileEntry in a
+      {
+         local StringArray attribs <= fileEntry.splitSpace(true);
+         if('d' != fileEntry.getc(0))
+         {
+            local String fileName <= attribs.get(1);
+
+            if(fileName.getc(2) == '_')
+            {
+               int sampleNr = "$"+fileName.substring(0, 2);  // "01", "02", .., "1F"
+               if(1 <= sampleNr <= 31)
+               {
+                  int sampleIdx = sampleNr - 1;
+                  if((fileName >= ".wav") || (fileName >= ".WAV"))
+                  {
+                     local String baseName;
+                     fileName.replace(".wav", "") => baseName;
+                     baseName.replace(".WAV", "");
+                     int rateIdx = baseName.lastIndexOf("_");
+                     if(-1 != rateIdx)
+                     {
+                        local String noteName;
+                        baseName.substring(rateIdx+1, 99) => noteName;
+                        int noteIdx = note_names_short.indexOfObject(noteName, 0);
+                        if(-1 != noteIdx)
+                        {
+                           if(b_debug) trace "[trc] modexport: sample["+sampleNr+"] noteIdx="+noteIdx+" => dest rate = "+note_sample_rates.get(noteIdx)+" Hz";
+                           sample_root_notes[sampleIdx] = noteIdx;
+                        }
+                     }
+
+                     fileName = wavSourceDir+"/"+fileName;
+
+                     int destSampleRate = note_sample_rates[sample_root_notes[sampleIdx]];
+                     // local String soxArgs = "\""+fileName+"\" -t s8 -r "+destSampleRate+" -c 1 -e signed-integer --norm=0.0 \""+tmpSampleFileName+"\"";  // noisy
+                     local String soxArgs = "\""+fileName+"\" -c 1 -r "+destSampleRate+" --norm=0.0 \""+tmpSampleFileName+"\"";
+
+                     Exec(soxExe, soxArgs);
+
+                     LoadTempSample(tmpSampleFileName);
+
+                     // (todo) use one buffer per sample ?
+                     int readOff = 0;
+                     Buffer *b;
+                     int sampleNumFrames;
+                     int sampleNumFramesAligned;
+                     if(false)
+                     {
+                        local File f;
+                        if(f.openLocal(tmpSampleFileName, IOS_IN))
+                        {
+                           b <= sample_data.get(sampleIdx);
+                           if(null == b)
+                           {
+                              b <= new Buffer;
+                              sample_data[sampleIdx] = deref b;
+                           }
+                           readOff = b.size;
+                           if(readOff > 0)
+                           {
+                              // Align to $100 frame boundary (for 9xx effect)
+                              readOff = ((readOff+255)>>8)<<8;
+                              b.resize(readOff);
+                           }
+                           sc <= sample_chain_offsets[sampleIdx];
+                           sc.add(readOff);
+                           sampleNumFrames = f.size;
+                           trace "[dbg] modexport: sample["+sampleNr+"] #frames="+sampleNumFrames;
+                           sampleNumFramesAligned = ((sampleNumFrames+1)>>1)<<1;  // word-align
+                           b.resize(b.size + sampleNumFramesAligned);
+                           f.readBuffer(b, readOff, sampleNumFrames, false/*bResize*/);
+                           readOff += sampleNumFrames;
+                           if(sampleNumFramesAligned > sampleNumFrames)
+                              b.pokeI8(readOff++, 128);  // zero-pad
+                           f.close();
+                        }
+                        else
+                        {
+                           trace "[!!!] modexport: failed to load converted sample nr "+sampleNr+" (src filename=\""+fileName+"\")";
+                           b.size = 2;
+                           b.pokeI8(0, 128);
+                           b.pokeI8(1, 128);
+                        }
+                     }
+                     else
+                     {
+                        if(tmp_sample_buf.numElements > 0)
+                        {
+                           b <= sample_data.get(sampleIdx);
+                           if(null == b)
+                           {
+                              b <= new Buffer;
+                              sample_data[sampleIdx] = deref b;
+                           }
+                           readOff = b.size;
+                           if(readOff > 0)
+                           {
+                              // Align to $100 frame boundary (for 9xx effect)
+                              readOff = ((readOff+255)>>8)<<8;
+                              b.resize(readOff);
+                           }
+                           sc <= sample_chain_offsets[sampleIdx];
+                           sc.add(readOff);
+                           sampleNumFrames = tmp_sample_buf.numElements;
+                           trace "[dbg] modexport: sample["+sampleNr+"] #frames="+sampleNumFrames;
+                           sampleNumFramesAligned = ((sampleNumFrames+1)>>1)<<1;  // word-align
+                           b.resize(b.size + sampleNumFramesAligned);
+
+                           int frameIdx = 0;
+                           loop(sampleNumFrames)
+                           {
+                              b.pokeI8(readOff++, tmp_sample_buf[frameIdx++]);
+                           }
+                           readOff += sampleNumFrames;
+                           if(sampleNumFramesAligned > sampleNumFrames)
+                              b.pokeI8(readOff++, 128);  // zero-pad
+                        }
+                        else
+                        {
+                           trace "[!!!] modexport: failed to load converted sample nr "+sampleNr+" (src filename=\""+fileName+"\")";
+                           b.size = 2;
+                           b.pokeI8(0, 128);
+                           b.pokeI8(1, 128);
+                        }
+                     }
+                  }
+               }
+               else
+               {
+                  trace "[~~~] modexport: invalid samplenr="+sampleNr+" in wav file name \""+fileName+"\" (skipping)";
+               }
+            }
+         }
+      }
+   }
+   else
+   {
+      trace "[---] modexport: failed to read directory \""+wavSourceDir+"\"";
+   }
+}
+
+function SaveModFile() {
+   String pathname = Utils.ToNativePathName(mod_pathname);
+   if((pathname & "mod.") || (pathname >= ".mod"))
+   {
+      trace "[...] modexport: writing mod to \""+pathname+"\"";
+      local File f;
+      if(f.openLocal(pathname, IOS_OUT))
+      {
+         f.byteOrder = YAC_BIG_ENDIAN;
+         Buffer *b;
+
+         int numPat = mathClampi((num_steps + 63) / 64, 1, 100);
+
+         //    0: Song name (20 chars, NULL terminated)
+         WriteString(f, song_name, 20);
+
+         //   20: Instruments (31)
+         if(b_keep_smp)
+         {
+            // Write previously read mod sample headers (31*30 bytes)
+            f.writeBuffer(keep_smp_hdr, 0, 31*30);
+         }
+         else
+         {
+            // Write new sample headers (based on .wav files)
+            int sampleIdx = 0;
+            int slen;
+            loop(31)
+            {
+               b <= sample_data[sampleIdx];
+
+               //   0: Name
+               WriteString(f, "sample"+(sampleIdx+1), 22);
+
+               //  22: Sample length in words
+               slen = (null != b) ? b.size : 0;
+               if(slen > 131070)
+                  trace "[~~~] modexport: truncating sample["+(sampleIdx+1)+"] dword length to 0xFFFF";
+               slen = mathClampi(slen, 0, 131070);
+               f.i16 = (0 == slen) ? 1 : (slen / 2);
+
+               //  24: Finetune (LSB)
+               f.i8 = 0;
+
+               //  25: Volume
+               f.i8 = 64;
+
+               //  26: Repeat start in words
+               f.i16 = 0;
+
+               //  28: Repeat length in words (1= no loop / loop first two bytes)
+               f.i16 = 1;
+
+               sampleIdx++;
+            }
+         }
+
+         //  950: Song length (num positions)
+         f.i8 = numPat;//127;
+
+         //  951: Max position (ignored by PT)
+         //  (note) ProTracker v2.3D for Windows only supports 100 patterns (0..99)
+         f.i8 = 127;///numPat;///99;
+
+         //  952: Song position list
+         int patIdx = 0;
+         loop(128)
+         {
+            if(patIdx >= numPat)
+               f.i8 = 0;  // unused orderlist entry
+            else
+               f.i8 = patIdx++;
+         }
+
+         // 1080: "M!K!" (Michael Kleps, 31 instr. "M.K."=std <64 pat module, "M!K!"=PT >64 pat)
+         // WriteString(f, (numPat >= 64)?"M!K!":"M.K.", 4);
+         WriteString(f, "M!K!", 4);
+
+         trace "xxx write mod: pattern f.offset="+f.offset;
+
+         // 1084: Pattern data
+         int stepIdx = 0;
+         boolean bFirstStep = true;
+         loop(64 * numPat)  // *100
+         {
+            int chIdx = 0;
+            loop(4)
+            {
+               // trace "xxx pattern_data="+#(pattern_data);
+               FloatArray patNote  <= pattern_data.get(chIdx *4 + 0);
+               IntArray   patInstr <= pattern_data.get(chIdx *4 + 1);
+               IntArray   patFx1   <= pattern_data.get(chIdx *4 + 2);
+               IntArray   patFx2   <= pattern_data.get(chIdx *4 + 3);
+
+               // trace "xxx cur_ch="+cur_ch+" pat_note.numElements="+pat_note.numElements;
+               // trace "xxx cur_ch="+cur_ch+" pat_instr.numElements="+pat_instr.numElements;
+               // trace "xxx cur_ch="+cur_ch+" pat_fx1.numElements="+pat_fx1.numElements;
+               // trace "xxx cur_ch="+cur_ch+" pat_fx2.numElements="+pat_fx2.numElements;
+
+               int amigaDMAPeriod;
+
+               if(0 != patNote[stepIdx])
+               {
+                  float ptNote = patNote[stepIdx] - (3*12);  // C-3..B-5 => pt C-1..B-3
+                  if(0 <= ptNote <= 35)  // C-1..B-3
+                  {
+                     // // amigaDMAPeriod = amiga_note_periods.winLinear(ptNote);
+                     amigaDMAPeriod = amiga_note_periods.get(ptNote);
+
+                     float pb = pat_pb[stepIdx * 4 + chIdx];
+                     if(0.0f != pb)
+                     {
+                        // period to Hz (PAL)
+                        //    hz = 7093789.2 / (dma_period * 2)
+                        //    dma_period = 7093789.2 / (2*hz)
+                        float hzBase = 7093789.2 / (amigaDMAPeriod * 2);
+                        float pbNote = mathClampf(ptNote + pb * 12.0, 0, 35);
+                        amigaDMAPeriod = amiga_note_periods.winLinear(pbNote);
+                     }
+
+                     if(b_debug) trace "[trc] modexport: stepIdx="+stepIdx+" patNote="+patNote[stepIdx]+" pb="+pb+" hzBase="+hzBase+" period="+amigaDMAPeriod+" instr="+patInstr[stepIdx];
+                  }
+                  else
+                  {
+                     trace "[~~~] modexport: pat "+(stepIdx/64)+" step "+(stepIdx&63)+" note "+ptNote+" is out of range";
+                  }
+               }
+               else
+                  amigaDMAPeriod = 0;
+
+               if(bFirstStep)
+               {
+                  if(0 == patFx1[stepIdx] && 0 == patFx2[stepIdx])
+                  {
+                     // set BPM
+                     patFx1[stepIdx] = $F;
+                     patFx2[stepIdx] = mathClampi(st2::current_song.bpm, 32, 255);
+                     bFirstStep = false;
+                  }
+               }
+
+               f.i8 = ((patInstr[stepIdx] >> 4) << 4) | (amigaDMAPeriod >> 8);
+               f.i8 = (amigaDMAPeriod & 255);
+               // if(0 != amigaDMAPeriod)
+               //    trace "xxx stepIdx="+stepIdx+" note period="+amigaDMAPeriod+" instr="+patInstr[stepIdx];
+               f.i8 = ((patInstr[stepIdx] & 15) << 4) | patFx1[stepIdx];
+               f.i8 = patFx2[stepIdx];
+
+               // Next channel
+               chIdx++;
+            }
+
+            // Next step
+            stepIdx++;
+         }
+
+         // Sample Data
+         trace "xxx write mod: smpdat f.offset="+f.offset;
+         if(b_keep_smp)
+         {
+            // Write previously read mod sample data
+            trace "xxx write mod: keep_smp_dat.size="+keep_smp_dat.size;
+            f.writeBuffer(keep_smp_dat, 0, keep_smp_dat.size);
+         }
+         else
+         {
+            sampleIdx = 0;
+            loop(31)
+            {
+               b <= sample_data[sampleIdx];
+               slen = (null != b) ? b.size : 0;
+               slen = mathClampi(slen, 0, 131070);
+               IntArray sc <= sample_chain_offsets[sampleIdx];
+               if(slen > 0)
+               {
+                  trace "[dbg] modexport: sample["+(sampleIdx+1)+"] slen="+slen+" sc="+#(sc);
+                  f.writeBuffer(b, 0, slen);
+               }
+               else
+               {
+                  // Empty sample (two signed 8bit zeros)
+                  trace "[dbg] modexport: sample["+(sampleIdx+1)+"] slen=2 (EMPTY)";
+                  f.i8 = 128;
+                  f.i8 = 128;
+               }
+
+               // Next sample
+               sampleIdx++;
+            }
+         }
+
+         trace "[...] modexport: wrote "+f.offset+" bytes";
+
+         Global.Print("modexport: wrote \""+mod_filename+"\" ("+numPat+" patterns, "+(f.offset/1024)+"kb)");
+
+         f.close();
+      }
+   }
+}
+
+function LoadSamplesFromMod() {
+   String pathname = Utils.ToNativePathName(mod_pathname);
+   if((pathname & "mod.") || (pathname >= ".mod"))
+   {
+      File f;
+      if(f.openLocal(pathname, IOS_IN))
+      {
+         int modSz = f.size;
+
+         f.seek(20/*skip song name*/, SEEK_SET);
+         f.readBuffer(keep_smp_hdr, 0, 31*30, true/*resize*/);
+
+         f.seek(950, SEEK_SET);  // seek to 950: Song length (num positions)
+         int numPos = f.u8;
+
+         f.getI8();  // dummy-read 951: Max position (ignored by PT)
+         
+         // Scan orderlist and find max pat
+         int maxPatIdx = 0;
+         loop(128)
+            maxPatIdx = mathMaxi(maxPatIdx, f.u8);
+         int numPat = maxPatIdx + 1;
+
+         // now at off=1084. skip patterns (64*4*4=1024 bytes per pattern)
+         f.seek(1084 + numPat*64*4*4, SEEK_SET);
+         int offSmpDat = f.offset;
+
+         trace "xxx modexport: read keep_smp_dat @offset="+f.offset+" sz="+(modSz-offSmpDat)+" modSz="+modSz;
+         f.readBuffer(keep_smp_dat, 0, modSz - offSmpDat, true/*resize*/);
+
+         f.close();
+         return true;
+      }
+      else
+      {
+         trace "[---] modexport: \"Keep Samples\" option enabled but failed to load dest mod \""+pathname+"\"";
+      }
+   }
+   // Failed
+   return false;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   if(id == "bt_save")
+   {
+      trace "[dbg] modexport: save ";
+      boolean bOk = true;
+      if(b_keep_smp)
+         bOk = LoadSamplesFromMod();
+      else
+         ConvertSamples();
+
+      if(bOk)
+         SaveModFile();
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(!bMuted)
+   {
+      if(b_rec)
+      {
+         for(cur_ch = 0; cur_ch < 4; cur_ch++)
+         {
+            pat_note  <= pattern_data.get(cur_ch *4 + 0);
+            pat_instr <= pattern_data.get(cur_ch *4 + 1);
+            pat_fx1   <= pattern_data.get(cur_ch *4 + 2);
+            pat_fx2   <= pattern_data.get(cur_ch *4 + 3);
+
+            ans <= ans_all.get(cur_ch);
+            ans.process(framePlay, in_note_dev, cur_ch);
+
+            if(b_noteoff_pending[cur_ch])
+            {
+               if(0 == pat_note[cur_step])
+               {
+                  InsertNoteOff();
+                  b_noteoff_pending[cur_ch] = false;
+               }
+            }
+
+            short pb = framePlay.getFilteredPitchbend(in_note_dev, cur_ch);
+            if(-1 != pb)
+               pitch_bend[cur_ch] = Utils.SignedInt14ToFloat(pb);
+
+            pat_pb[cur_step*4 + cur_ch] = pitch_bend[cur_ch];
+
+            byte prgChg = framePlay.getFilteredPrgChg(in_note_dev, cur_ch);
+            if(-1 != prgChg)
+            {
+               pat_instr[cur_step] = prgChg + instr_shift;
+               cur_instr[cur_ch]   = prgChg + instr_shift;
+            }
+            else if(framePlay.getFilteredRPN(in_ptfx_dev, in_ptfx_ch + cur_ch, 91/*instr select*/) >= 0)
+            {
+               // reselect instrument (reset volume)
+               pat_instr[cur_step] = cur_instr[cur_ch];
+            }
+
+            if(framePlay.getNumEventsRPNByFlt(in_ptfx_dev, in_ptfx_ch + cur_ch) > 0)
+            {
+               short rpnCmd, rpnArg;
+
+               // Pitch FX
+               rpnCmd = framePlay.getFilteredRPN(in_ptfx_dev, in_ptfx_ch + cur_ch, 92/*freq cmd1Sel*/);
+               rpnArg = framePlay.getFilteredRPN(in_ptfx_dev, in_ptfx_ch + cur_ch, 93/*freq cmd1Arg*/);
+
+               if(rpnCmd >= 0 && rpnArg >= 0)
+               {
+                  if(b_debug) trace "xxx modexport: pitch FX cur_step="+cur_step+" rpnCmd="+rpnCmd+" rpnArg="+rpnArg;
+                  switch(rpnCmd)
+                  {
+                     case 1:  // slide up
+                        pat_fx1[cur_step] = $1;
+                        pat_fx2[cur_step] = mathClampi(rpnArg, 0, 255);
+                        break;
+
+                     case 2:  // slide down
+                        pat_fx1[cur_step] = $2;
+                        pat_fx2[cur_step] = mathClampi(rpnArg, 0, 255);
+                        break;
+
+                     case 3:  // lag process (slide)
+                        pat_fx1[cur_step] = $3;
+                        pat_fx2[cur_step] = mathClampi(rpnArg, 0, 255);
+                        break;
+
+                     case 4:  // vibrato
+                        pat_fx1[cur_step] = $4;
+                        pat_fx2[cur_step] = mathClampi(rpnArg, 0, 255);
+                        break;
+
+                     case 6:  // vibrato + slide up/down  (n/a in PT)
+                        break;
+
+                     case $A:  // slide up or down (n/a in PT)
+                        if(rpnArg & 15)
+                        {
+                           // down
+                           pat_fx1[cur_step] = $2;
+                           pat_fx2[cur_step] = mathClampi(rpnArg & 15, 0, 15);
+                        }
+                        else
+                        {
+                           // up
+                           pat_fx1[cur_step] = $1;
+                           pat_fx2[cur_step] = mathClampi(rpnArg >> 4, 0, 15);
+                        }
+                        break;
+
+                     case $C:  // set pitchbend (n/a in PT)
+                        break;
+                  }
+               }
+
+               // Volume FX
+               rpnCmd = framePlay.getFilteredRPN(in_ptfx_dev, in_ptfx_ch + cur_ch, 94/*vol cmd1Sel*/);
+               rpnArg = framePlay.getFilteredRPN(in_ptfx_dev, in_ptfx_ch + cur_ch, 95/*vol cmd1Arg*/);
+
+               if(rpnCmd >= 0 && rpnArg >= 0)
+               {
+                  if(b_debug) trace "xxx modexport: vol FX cur_step="+cur_step+" rpnCmd="+rpnCmd+" rpnArg="+rpnArg;
+                  switch(rpnCmd)
+                  {
+                     case 1:  // slide up
+                        pat_fx1[cur_step] = $A;
+                        pat_fx2[cur_step] = mathClampi(rpnArg >> 4, 0, 15) << 4;
+                        break;
+
+                     case 2:  // slide down
+                        pat_fx1[cur_step] = $A;
+                        pat_fx2[cur_step] = mathClampi(rpnArg >> 4, 0, 15);
+                        break;
+
+                     case 3:  // lag process (slide)  (n/a in PT)
+                        break;
+
+                     case 4:  // tremolo
+                        pat_fx1[cur_step] = $7;
+                        pat_fx2[cur_step] = mathClampi(rpnArg, 0, 255);
+                        break;
+
+                     case 6:  // vibrato + slide up/down  (n/a in PT)
+                        break;
+
+                     case $A:  // slide up or down
+                        pat_fx1[cur_step] = $A;
+                        pat_fx2[cur_step] = mathClampi(rpnArg, 0, 255);
+                        break;
+
+                     case $C:  // set volume
+                        pat_fx1[cur_step] = $C;
+                        pat_fx2[cur_step] = mathClampi(rpnArg >> 1, 0, 64);  // 0..$80 => 0..$40
+                        break;
+                  }
+               }
+
+            }
+
+            // pat_fx1[cur_step] = 0xA; // xxxxx
+            // pat_fx2[cur_step] = 0x03;
+         }
+
+      }
+
+      if(bPlaySeq)
+      {
+         tick_nr++;
+         if(0 == (tick_nr % (6/*spd*/ * 8)))
+         {
+            if(b_rec)
+            {
+               cur_step++;
+               num_steps = cur_step;
+            }
+         }
+      }
+   }
+}

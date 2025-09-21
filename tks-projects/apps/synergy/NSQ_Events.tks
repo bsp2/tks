@@ -1,0 +1,1485 @@
+// ----
+// ---- file   : NSQ_Events.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 08Apr2020
+// ---- changed: 16Apr2020, 17Apr2020, 18Apr2020, 19Apr2020, 20Apr2020, 21Apr2020, 23Apr2020
+// ----          24Apr2020, 06May2020, 07May2020, 15Nov2020, 16Nov2020, 17Jul2021, 28Jul2023
+// ----          03Sep2023, 03Feb2024, 16Jan2025, 28Feb2025, 11Sep2025, 16Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MNSQ_Events;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug_drag = 0;
+
+
+// <class.png>
+class NSQ_Events extends Control, ActionProvider {
+
+   protected NodeSeqEditor *parent_editor;
+   protected NodeSeq *seq;
+
+   define int DRAG_NONE      = 0;
+   define int DRAG_SEL       = 1;
+   define int DRAG_VEL       = 2;  // RMB drag
+   define int DRAG_DUR       = 3;  // LMB drag near end
+   define int DRAG_TRANSPOSE = 4;  // lctrl-RMB drag
+   define int DRAG_SCROLL    = 5;  // yoff + scroll
+   define int DRAG_YSCL      = 6;
+   define int DRAG_NOTES     = 7;
+   int drag_mode;
+   float drag_start_mx;
+   float drag_start_my;
+   int drag_num_sel;
+   IntArray drag_start_sel_notes;  // for timeshift
+   int drag_tick_delta;  // for timeshift
+   int drag_start_ui_evt_note_off;
+   int drag_start_ui_evt_num_visible_notes;
+   int drag_start_view_x;        // DRAG_SCROLL
+   int drag_start_cursor_x;      // DRAG_SCROLL
+   float drag_start_scroll_x;    // DRAG_SCROLL
+   int drag_start_ticks;         // DRAG_SCROLL
+   boolean b_drag_force_scroll;  // DRAG_SCROLL
+   int drag_start_sel_start_y;         // DRAG_TRANSPOSE
+   int drag_start_sel_end_y;           // DRAG_TRANSPOSE
+   int drag_start_sorted_sel_start_y;  // DRAG_TRANSPOSE
+   int drag_start_sorted_sel_end_y;    // DRAG_TRANSPOSE
+   int drag_start_note_idx;            // DRAG_TRANSPOSE
+
+   FloatArray vel_colors_r;
+   FloatArray vel_colors_g;
+   FloatArray vel_colors_b;
+   FloatArray vel_colors_a;
+
+   protected PopupMenu *ctxmenu;
+
+
+   // <ui_init.png>
+   public method init(NodeSeqEditor _editor) {
+      initControl();
+      parent_editor <= _editor;
+
+      initVelocityColors();
+   }
+
+   // <method_add.png>
+   protected static AddVelocityColor(int _c32,
+                                     FloatArray _ar,
+                                     FloatArray _ag,
+                                     FloatArray _ab,
+                                     FloatArray _aa
+                                     ) {
+      _ar.add( ((_c32 >> 16) & 255) );
+      _ag.add( ((_c32 >>  8) & 255) );
+      _ab.add( ((_c32      ) & 255) );
+      _aa.add( ((_c32 >> 24) & 255) );
+   }
+
+   // <ui_init.png>
+   protected method initVelocityColors() {
+      vel_colors_r.empty();
+      vel_colors_g.empty();
+      vel_colors_b.empty();
+      vel_colors_a.empty();
+      int c32Vel0 = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_VEL_0);
+      int c32Vel1 = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_VEL_1);
+      int c32Vel2 = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_VEL_2);
+      int c32Vel3 = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_VEL_3);
+      AddVelocityColor(c32Vel0, vel_colors_r, vel_colors_g, vel_colors_b, vel_colors_a);
+      AddVelocityColor(c32Vel1, vel_colors_r, vel_colors_g, vel_colors_b, vel_colors_a);
+      AddVelocityColor(c32Vel2, vel_colors_r, vel_colors_g, vel_colors_b, vel_colors_a);
+      AddVelocityColor(c32Vel3, vel_colors_r, vel_colors_g, vel_colors_b, vel_colors_a);
+   }
+
+   // <method_get.png>
+   protected method getVelocityColor(float _vel) : int {
+      _vel = mathClampf(_vel, 0.0f, 127.0);
+      float velIdx = (_vel * 3.0) / 127.0;
+      return argb(vel_colors_a.winLinear(velIdx),
+                  vel_colors_r.winLinear(velIdx),
+                  vel_colors_g.winLinear(velIdx),
+                  vel_colors_b.winLinear(velIdx)
+                  );
+   }
+
+   // <method_get.png>
+   public virtual isEditable() : boolean {
+      // So that UI does not skip tab focus
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyboardFocus() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeSeq _seq) {
+      seq <= _seq;
+   }
+
+   // <ui.png>
+   protected virtual calcSizeX() : float {
+      return 0;
+   }
+
+   // <ui.png>
+   protected virtual calcSizeY() : float {
+      return 32;
+   }
+
+   // <method.png>
+   public method haveSelection() : boolean {
+      return (-1 != seq.evt_sel_start_x);
+   }
+
+   // <method.png>
+   public method haveFinishedSelection() : boolean {
+      return (-1 != seq.evt_sel_start_x) && (DRAG_NONE == drag_mode);
+   }
+
+   // <method_get.png>
+   protected method getTicksAtX(float _x) : float {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         float noteX = 2;
+         float sx = getSizeX();
+         int ticksPerBar = pat.getNumTicksPerBar();
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+         float ticks = (seq.cursor_x * ticksPerBar) + (((_x - ctrX - noteX) * ticksPerBar) / pixPerBar);
+         return ticks;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getNoteIdxAtY(float _y) : int {
+      NSQ_Track track <= parent_editor.getEditTrack();
+      if(null != track)
+      {
+         float sy = getSizeY();
+         // float noteY = 2;
+         int noteSy = (sy - 2*2) / track.ui_evt_num_visible_notes;
+         float noteBaseY = (sy - 2);
+         _y = noteBaseY - _y;
+         _y /= noteSy;
+         _y += track.ui_evt_note_off;
+         return _y;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   protected method findFrameIdxAndNoteIdxNearXY(NSQ_Pattern _pat, float _x, float _y, Integer _retFrameIdx, Integer _retNoteIdx) {
+      float noteX = 2;
+      float sx = getSizeX();
+      float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+
+      // Select note near mouse
+      NSQ_Track track <= _pat.getCursorTrack();
+      int thresholdTicks = current_song.ppq / 16;  // 1/64
+      int ticks = getTicksAtX(_x);
+      int idx = 0;
+      local IntArray notes;
+      local IntArray frameIndices;
+      int noteIdx = getNoteIdxAtY(_y) -1;
+      loop(3)
+      {
+         int noteIdxClip = mathClampi(noteIdx, 0, 127);
+         int frameIdx = track.findFirstNoteFrameIdxNearAbsTime(noteIdx, ticks, thresholdTicks);
+         // // trace "xxx noteIdxClip="+noteIdxClip+" frameIdx="+frameIdx;
+         frameIndices.add(frameIdx);
+         notes.add(noteIdxClip);
+         noteIdx++;
+      }
+
+      frameIdx = frameIndices[1];
+      noteIdx  = notes[1];
+
+      if((-1 == frameIdx) || (-1 == noteIdx))
+      {
+         frameIdx = frameIndices[0];
+         noteIdx  = notes[0];
+
+         if((-1 == frameIdx) || (-1 == noteIdx))
+         {
+            frameIdx = frameIndices[2];
+            noteIdx  = notes[2];
+         }
+      }
+
+      _retFrameIdx = frameIdx;
+      _retNoteIdx  = noteIdx;
+   }
+
+   // <method_get.png>
+   protected method isXYNearEndOfNote(NSQ_Pattern _pat, float _x, float _y, Integer _frameIdx, Integer _noteIdx) : boolean {
+      findFrameIdxAndNoteIdxNearXY(_pat, _x, _y, _frameIdx, _noteIdx);
+      if(-1 != _frameIdx)
+      {
+         NSQ_Track track <= _pat.getCursorTrack();
+         int mouseTicks = getTicksAtX(_x);
+         MIDIPipeFrame fr <= track.frames.get(_frameIdx);
+         int thresholdTicks = current_song.ppq / 8;  // 1/32
+         int tAbs = fr.timeStamp;
+         int numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            local MIDIPipeEvent pev;
+            int evIdx = 0;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  if(pev.note == _noteIdx)
+                  {
+                     if((mouseTicks-thresholdTicks) <= (tAbs + pev.duration) <= (mouseTicks+thresholdTicks))
+                     {
+                        return true;
+                     }
+                  }
+               }
+               evIdx++;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method deleteSelectedNotes() {
+      NSQ_Track track <= parent_editor.getEditTrack();
+      if(null != track)
+      {
+         parent_editor.undoBegin();
+         int numDeleted = track.deleteSelectedNotes();
+         parent_editor.undoEnd();
+         Global.Print("Delete "+numDeleted+" note"+Utils.GetPluralString(numDeleted));
+         if(numDeleted > 0)
+            parent_editor.redrawSeq();
+      }
+   }
+
+   // <method.png>
+   public method resetNoteOffsetAndScaling() {
+      NSQ_Track track <= parent_editor.getEditTrack();
+      if(null != track)
+      {
+         parent_editor.undoBegin();
+         track.resetNoteOffsetAndScaling();
+         parent_editor.undoEnd();
+         Global.Print("Reset note offset + scaling");
+      }
+   }
+
+   // <method.png>
+   public method fitNoteOffsetAndScaling(boolean _bAllowRaySelect, float _x) {
+      NSQ_Track track <= parent_editor.getEditTrack();
+      if(null != track)
+      {
+         Integer minNoteIdx;
+         Integer maxNoteIdx;
+         track.findMinMaxNotes(minNoteIdx, maxNoteIdx);
+         if(-1 != minNoteIdx)
+         {
+            parent_editor.undoBegin();
+
+            int oldEvtNoteOff = track.ui_evt_note_off;
+            int oldEvtNumVis  = track.ui_evt_num_visible_notes;
+
+            if(minNoteIdx > 0)
+               track.ui_evt_note_off = minNoteIdx - 1;
+            else
+               track.ui_evt_note_off = minNoteIdx;
+
+            int noteRange = (maxNoteIdx - minNoteIdx + 1) + 1;
+            noteRange = mathMini(noteRange, (127 - track.ui_evt_note_off));
+            if(noteRange < 12)
+            {
+               track.ui_evt_note_off -= (12 - noteRange)/2;
+               if(track.ui_evt_note_off < 0)
+                  track.ui_evt_note_off = 0;
+               noteRange = 12;
+               noteRange = mathMini(noteRange, (127 - track.ui_evt_note_off));
+            }
+            if((minNoteIdx + noteRange) > 128)
+               minNoteIdx = (128 - noteRange);
+            track.ui_evt_num_visible_notes = noteRange;
+
+            if((oldEvtNoteOff == track.ui_evt_note_off) &&
+               (oldEvtNumVis == track.ui_evt_num_visible_notes)
+               )
+            {
+               // Ray-select all notes at x
+               int ticks = getTicksAtX(_x);
+               seq.setEvtSelection(ticks, 0, ticks+1, 127, true/*bFromEvent*/);
+               int numSel = track.getNumEvtSelectedNotes();
+               local String msg <= "Ray-select "+numSel+" note"+Utils.GetPluralString(numSel);
+               if(numSel > 0)
+               {
+                  local Integer chordBaseNote;
+                  local Integer chordIndex;
+                  if(track.chordDetect(true/*bEvent*/, chordBaseNote, chordIndex))
+                  {
+                     msg.append(". Chord: ");
+                     msg.append(MIDI.base_note_names.get(chordBaseNote % 12));
+                     msg.append(Chord.chord_names_short.get(chordIndex));
+                  }
+               }
+               Global.Print(msg);
+            }
+            else
+            {
+               // Reset scroll offset
+               seq.scroll_x = 0;
+
+               Global.Print("Auto-fit note offset + scaling (min="+(MIDI.midi_notes.get(minNoteIdx))+" max="+(MIDI.midi_notes.get(maxNoteIdx))+")");
+            }
+
+            parent_editor.undoEnd();
+
+            redraw();
+         }
+         else
+         {
+            Global.Warning("Auto-fit note offset + scaling: track contains no notes");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   public method showContextMenu() {
+      // Create context-sensitive popupmenu
+      ctxmenu <= PopupMenu.New(this);
+
+      boolean bHavePattern = (null != parent_editor.getEditPattern());
+      boolean bHaveSelection = haveSelection();
+      PopupMenu *spm;
+      PopupMenuButton *pmb;
+      NSQ_Track track <= parent_editor.getEditTrack();
+
+      pmb <= ctxmenu.addDefaultButton("Auto-fit note offset + scaling", "view_auto");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("LMB-dblclick", "");
+
+      pmb <= ctxmenu.addDefaultButton("Reset note offset + scaling", "view_reset");
+      pmb.setActive(bHavePattern);
+
+      ctxmenu.addSeparator();
+
+      pmb <= ctxmenu.addDefaultButton("Delete selected note(s)", "sel_delete");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("RMB-hold click", "DELETE");
+
+      ctxmenu.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      if(_ev.middleButtonDown())
+      {
+         parent_editor.stepRecBegin();
+      }
+      else if(_ev.middleButtonUp())
+      {
+         parent_editor.stepRecEnd();
+      }
+
+      String cursor <= UIConstants.CURSOR_NORMAL;
+
+      if(!replay.b_playing && seq.b_step_rec)
+      {
+         // Adjust step recording position
+         int ticks = mathMaxi(0, getTicksAtX(_ev.mouse_rel_x));
+         if( (UI.GetKeyMod() & VMOD_LCTRL) || _ev.isLeftButtonDown() )
+         {
+            int ticks16 = current_song.getNumTicksPer16th();
+            ticks = ((ticks + ticks16/2) / ticks16) * ticks16;
+         }
+         current_song.seek(seq.nodeGetLastPatternStartSongOffset() + ticks);
+         UI.CompositeAll();
+      }
+
+      boolean bNearNote = false;
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         local Integer frameIdx = -1;
+         local Integer noteIdx;
+         if(isXYNearEndOfNote(pat, _ev.mouse_rel_x, _ev.mouse_rel_y, frameIdx, noteIdx))
+         {
+            cursor <= UIConstants.CURSOR_MOVEX;
+         }
+         else if(-1 != frameIdx)
+         {
+            cursor <= UIConstants.CURSOR_MOVE;
+         }
+         else
+         {
+            // Over/near note ?
+            findFrameIdxAndNoteIdxNearXY(pat, _ev.mouse_rel_x, _ev.mouse_rel_y, frameIdx, noteIdx);
+         }
+         bNearNote = (-1 != frameIdx);
+      }
+
+      UI.ShowCursor(cursor);
+
+      if(_ev.wheelDown() || _ev.wheelUp())
+      {
+         NSQ_Track track <= parent_editor.getEditTrack();
+         boolean bCtrl  = (UI.GetKeyMod() & VMOD_LCTRL);
+         boolean bShift = (UI.GetKeyMod() & VMOD_LSHIFT);
+         boolean bAlt   = (UI.GetKeyMod() & VMOD_LALT);
+
+         if(haveSelection() && (bCtrl || bShift || bAlt || bNearNote))
+         {
+            // LALT or LCTRL or near note
+            if(null != track)
+            {
+               int numSelNotes = track.getNumEvtSelectedNotes();
+               if(numSelNotes > 0)
+               {
+                  parent_editor.undoBeginMini();
+                  track.backupSelectedNoteFrames();
+                  int tickDelta = track.timeshiftSelectedNotesFromBackup(_ev.wheelDown() ? 1 : -1, bCtrl);
+                  seq.ui_wheel_tick_move_count += tickDelta;
+                  Global.PrintFast((bCtrl?"Q-":"")+"Move "+numSelNotes+" note"+Utils.GetPluralString(numSelNotes)+" by "+seq.ui_wheel_tick_move_count+" tick"+Utils.GetPluralString(seq.ui_wheel_tick_move_count)+" ("+((tickDelta>0)?"+":"")+tickDelta+")");
+                  seq.moveEvtSelectionX(tickDelta, true/*bFromEvent*/);
+                  parent_editor.redrawSeq();
+               }
+            }
+            return true;
+         }
+
+         if(VMOD_LCTRL == UI.GetKeyMod())
+         {
+            if(_ev.wheelUp())
+            {
+               if(null != track)
+               {
+                  track.ui_evt_note_off =  mathClampi(track.ui_evt_note_off + 6, 0, 128-track.ui_evt_num_visible_notes);
+                  redraw();
+               }
+               return true;
+            }
+            else if(_ev.wheelDown())
+            {
+               if(null != track)
+               {
+                  track.ui_evt_note_off =  mathClampi(track.ui_evt_note_off - 6, 0, 128-track.ui_evt_num_visible_notes);
+                  redraw();
+               }
+               return true;
+            }
+         }
+         else if((VMOD_LCTRL | VMOD_LSHIFT) == UI.GetKeyMod())
+         {
+            if(_ev.wheelUp())
+            {
+               if(null != track)
+               {
+                  track.ui_evt_num_visible_notes =  mathClampi(track.ui_evt_num_visible_notes - 6, 12, 5*12);
+                  redraw();
+               }
+               return true;
+            }
+            else if(_ev.wheelDown())
+            {
+               if(null != track)
+               {
+                  track.ui_evt_num_visible_notes =  mathClampi(track.ui_evt_num_visible_notes + 6, 12, 5*12);
+                  redraw();
+               }
+               return true;
+            }
+         }
+         return parent_editor.arr.handleMouseWheel(_ev);
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+
+      if(_ev.isLeftButtonDown() && _ev.isRightButton())
+      {
+         parent_editor.undo();
+         return true;
+      }
+      else if(_ev.isRightButtonDown() && _ev.isLeftButton())
+      {
+         parent_editor.redo();
+         return true;
+      }
+
+      if(_ev.isLeftButton())
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         // // trace "xxx NSQ_Events::onMouseClick: lmbUp="+_ev.leftButtonUp()+" pat="+#(pat);
+         if(null != pat)
+         {
+            local Integer frameIdx;
+            local Integer noteIdx;
+            findFrameIdxAndNoteIdxNearXY(pat, _ev.mouse_rel_x, _ev.mouse_rel_y, frameIdx, noteIdx);
+            if(-1 != frameIdx)
+            {
+               NSQ_Track track <= pat.getCursorTrack();
+               MIDIPipeFrame fr <= track.frames.get(frameIdx);
+               int tAbs = fr.timeStamp;
+               seq.toggleEvtSelection(tAbs, noteIdx, tAbs+1, noteIdx, true/*bFromEvent*/);
+               seq.ui_wheel_tick_move_count = 0;
+               redraw();
+               Global.Print("Select note "+(MIDI.midi_notes.get(noteIdx))+" (ticks="+tAbs+", noteNr="+noteIdx+")");
+               return true;
+            }
+
+            if(haveSelection())
+            {
+               seq.evtSelectNone(true/*bFromEvent*/);
+               seq.ui_wheel_tick_move_count = 0;
+               redraw();
+            }
+
+            UI.SetKeyboardFocus(parent_editor.arr);
+            return true;
+         }
+         else if(_ev.leftButtonUp())
+         {
+            UI.SetKeyboardFocus(parent_editor.arr);
+            return true;
+         }
+      }
+      else if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      else if(_ev.isMiddleButton())
+      {
+         parent_editor.toggleTempoAndEventViews(false/*bFromButton*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+      if(_ev.isLeftButton())
+      {
+         fitNoteOffsetAndScaling(true/*bAllowRaySelect*/, _ev.mouse_rel_x);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         if(0 == UI.GetKeyMod())
+         {
+            deleteSelectedNotes();
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         MIDIPipeFrame *fr;
+         int tAbs;
+         boolean bHaveSelection = haveSelection();
+         NSQ_Track track <= pat.getCursorTrack();
+         boolean bRMB = _ev.isRightButtonDown();
+
+         // trace "xxx beginDrag: sel_start_x="+seq.evt_sel_start_x;
+
+         // Auto-Select
+         local Integer frameIdx = -1;
+         local Integer noteIdx;
+         boolean bNearEnd = isXYNearEndOfNote(pat, _dragStart.mouse_rel_x, _dragStart.mouse_rel_y, frameIdx, noteIdx);
+         // Near end of note => Drag note durations
+         if(-1 != frameIdx)
+         {
+            if(b_debug_drag) trace "xxx lazy-select note: frameIdx="+frameIdx+" noteIdx="+noteIdx+" bHaveSelection="+bHaveSelection+" bNearEnd="+bNearEnd;
+            if(!bHaveSelection || !track.isFrameIdxAndNoteIdxSelected(frameIdx, noteIdx))
+            {
+               // lazy-select note
+               // if(b_debug_drag) trace "xxx lazy-select note frameIdx="+frameIdx+" noteIdx="+noteIdx;
+               fr <= track.frames.get(frameIdx);
+               tAbs = fr.timeStamp;
+               seq.setEvtSelection(tAbs, noteIdx, tAbs+1, noteIdx, true/*bFromEvent*/);
+            }
+
+            bHaveSelection = haveSelection();
+         }
+
+         if(bHaveSelection)
+         {
+            track.getEvtSelectedNotes(drag_start_sel_notes);
+            drag_num_sel = drag_start_sel_notes.numElements;
+            if(b_debug_drag) trace "xxx begin drag: drag_num_sel="+drag_num_sel;
+
+            if(bRMB)
+            {
+               if(drag_num_sel > 0)
+               {
+                  if(VMOD_LCTRL == UI.GetKeyMod())
+                  {
+                     // Transpose notes
+                     parent_editor.undoBegin();
+                     drag_mode = DRAG_TRANSPOSE;
+                     track.backupSelectedNoteFrames();
+                     drag_start_my = _dragStart.mouse_rel_y;
+                     drag_start_sel_start_y        = seq.evt_sel_start_y;
+                     drag_start_sel_end_y          = seq.evt_sel_end_y;
+                     drag_start_sorted_sel_start_y = seq.sorted_evt_sel_start_y;
+                     drag_start_sorted_sel_end_y   = seq.sorted_evt_sel_end_y;
+                     drag_start_note_idx           = getNoteIdxAtY(_dragStart.mouse_rel_y);
+                     drag_start_ui_evt_note_off    = track.ui_evt_note_off;
+                     UI.ShowCursor(UIConstants.CURSOR_PENCIL);
+                  }
+                  else
+                  {
+                     // Drag note velocities
+                     parent_editor.undoBegin();
+                     drag_mode = DRAG_VEL;
+                     track.backupSelectedNoteFrames();
+                     drag_start_my = _dragStart.mouse_rel_y;
+                     UI.ShowCursor(UIConstants.CURSOR_PENCIL);
+                  }
+                  return true;
+               }
+               return false;
+            }
+
+            if( (VMOD_LALT == UI.GetKeyMod()) || (!(UI.GetKeyMod() & VMOD_LSHIFT) && !bNearEnd) )
+            {
+               // Drag notes
+               if(drag_num_sel > 0)
+               {
+                  parent_editor.undoBegin();
+                  drag_mode = DRAG_NOTES;
+                  track.backupSelectedNoteFrames();
+                  drag_start_mx = _dragStart.mouse_rel_x;
+                  drag_tick_delta = 0;
+                  UI.ShowCursor(UIConstants.CURSOR_PENCIL);
+                  return true;
+               }
+               return false;
+            }
+
+            if(!bRMB && ((VMOD_LSHIFT == UI.GetKeyMod() || bNearEnd)))
+            {
+               // Drag note durations
+               if(drag_num_sel > 0)
+               {
+                  parent_editor.undoBegin();
+                  drag_mode = DRAG_DUR;
+                  track.backupSelectedNoteFrames();
+                  drag_start_mx = _dragStart.mouse_rel_x;
+                  UI.ShowCursor(UIConstants.CURSOR_PENCIL);
+                  return true;
+               }
+               return false;
+            }
+
+         } // if haveSelection
+
+         if(bRMB)
+         {
+            if(null != track)
+            {
+               if(VMOD_LCTRL == UI.GetKeyMod())
+               {
+                  drag_mode = DRAG_YSCL;
+                  drag_start_ui_evt_num_visible_notes = track.ui_evt_num_visible_notes;
+               }
+               else
+               {
+                  drag_mode = DRAG_SCROLL;
+                  drag_start_ui_evt_note_off = track.ui_evt_note_off;
+                  drag_start_mx = _dragStart.mouse_rel_x;
+                  drag_start_view_x = seq.view_x;
+                  drag_start_cursor_x = seq.cursor_x;
+                  drag_start_scroll_x = seq.scroll_x;
+                  drag_start_ticks = getTicksAtX(drag_start_mx);
+                  b_drag_force_scroll = maybe;
+                  // // trace "xxx grabmouse";
+                  // // UI.GrabMouse();
+               }
+               drag_start_my = _dragStart.mouse_rel_y;
+               UI.ShowCursor(UIConstants.CURSOR_MOVE);
+               return true;
+            }
+            return false;
+         }
+
+         // Start new selection
+         drag_mode = DRAG_SEL;
+         seq.evt_sel_start_x = getTicksAtX(_dragStart.mouse_rel_x);
+         seq.evt_sel_start_y = getNoteIdxAtY(_dragStart.mouse_rel_y);
+         seq.evt_sel_end_x   = getTicksAtX(_ev.mouse_rel_x);
+         seq.evt_sel_end_y   = getNoteIdxAtY(_ev.mouse_rel_y);
+         seq.sortEvtSelection();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual wantMouseDragButtonOnlyEvents() : boolean {
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+
+      // trace "xxx onMouseDrag mode="+drag_mode+" mx="+_currentEv.mouse_rel_x+" mouse_layer="+#(UI.mouse_layer);
+
+      NSQ_Track track <= parent_editor.getEditTrack();
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      int ticks;
+      seq.ui_wheel_tick_move_count = 0;
+
+      if(DRAG_YSCL == drag_mode)
+      {
+         int ysclRel = (_currentEv.mouse_rel_y - drag_start_my) * 0.25;
+         track.ui_evt_num_visible_notes = mathClampi(drag_start_ui_evt_num_visible_notes + ysclRel, 12, 5*12);
+         redraw();
+         return true;
+      }
+      else if(DRAG_SCROLL == drag_mode)
+      {
+         if(true != b_drag_force_scroll)
+         {
+            int yoffRel = (_currentEv.mouse_rel_y - drag_start_my) * 0.5;
+            track.ui_evt_note_off = mathClampi(drag_start_ui_evt_note_off + yoffRel, 0, 128-track.ui_evt_num_visible_notes);
+            if(track.ui_evt_note_off != drag_start_ui_evt_note_off)
+               b_drag_force_scroll = false;
+         }
+
+         if(false != b_drag_force_scroll)
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+            float sx = getSizeX();
+            float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+
+            int deltaTicks = ((drag_start_mx - _currentEv.mouse_rel_x) * 6 * ticksPerBar) / pixPerBar;
+            float barDelta = (float(deltaTicks) / ticksPerBar) - drag_start_scroll_x;
+
+            parent_editor.arr.setCursorX(drag_start_cursor_x + int(barDelta));
+            if((drag_start_cursor_x + barDelta) < 0)
+            {
+               seq.scroll_x = 0;
+            }
+            else
+            {
+               float barMod = frac((float(deltaTicks) / ticksPerBar) - drag_start_scroll_x);
+               seq.scroll_x = -barMod;
+            }
+            if((maybe == b_drag_force_scroll) && (0 != barDelta))
+               b_drag_force_scroll = true;
+         }
+
+         redraw();
+         return true;
+      }
+
+      if(null != pat)
+      {
+         int ticksStart;
+
+         if(DRAG_SEL == drag_mode)
+         {
+            seq.setEvtSelection(seq.evt_sel_start_x,
+                                seq.evt_sel_start_y,
+                                getTicksAtX(_currentEv.mouse_rel_x),
+                                getNoteIdxAtY(_currentEv.mouse_rel_y),
+                                true/*bFromEvt*/
+                                );
+            if(b_debug_drag) trace "xxx evt_sel start="+seq.sorted_evt_sel_start_x+";"+seq.sorted_evt_sel_start_y+") end=("+seq.sorted_evt_sel_end_x+";"+seq.sorted_evt_sel_end_y+")";
+            UI.CompositeAll();
+            return true;
+         }
+         else if(DRAG_VEL == drag_mode)
+         {
+            float velDelta;
+            float velMul;
+            if(UI.GetKeyMod() & VMOD_LALT)
+            {
+               velDelta = (drag_start_my - _currentEv.mouse_rel_y) * 0.75;
+               velMul = 1.0;
+            }
+            else
+            {
+               velDelta = 0;
+               if(_currentEv.mouse_rel_y < drag_start_my)
+               {
+                  velMul = 1.0 + ((drag_start_my - _currentEv.mouse_rel_y) / 60.0f);
+               }
+               else
+               {
+                  velMul = ((_currentEv.mouse_rel_y - drag_start_my) / 60.0f);
+                  velMul = 1.0 / (1.0 + velMul);
+               }
+            }
+            if(b_debug_drag) trace "xxx DRAG_VEL mul="+(velMul*100)+"% delta="+velDelta;
+            track.modulateSelectedNotesFrames(velMul,
+                                              velDelta,
+                                              0/*durDelta*/,
+                                              0/*noteDelta*/,
+                                              false/*bSnap*/
+                                              );
+            redraw();
+            return true;
+         }
+         else if(DRAG_DUR == drag_mode)
+         {
+            ticksStart = getTicksAtX(drag_start_mx);
+            ticks = (getTicksAtX(_currentEv.mouse_rel_x) - ticksStart);
+            if(b_debug_drag) trace "xxx DRAG_DUR delta="+ticks;
+            track.modulateSelectedNotesFrames(1.0/*velMul*/,
+                                              0.0/*velDelta*/,
+                                              ticks/*durDelta*/,
+                                              0/*noteDelta*/,
+                                              (UI.GetKeyMod() & VMOD_LCTRL)/*snap*/
+                                              );
+            redraw();
+            return true;
+         }
+         else if(DRAG_TRANSPOSE == drag_mode)
+         {
+            int noteDelta = getNoteIdxAtY(_currentEv.mouse_rel_y) - drag_start_note_idx;
+            if(b_debug_drag) trace "xxx DRAG_TRANSPOSE delta="+noteDelta;
+            // restore original selection (used for filtering backed-up frames)
+            seq.evt_sel_start_y        = drag_start_sel_start_y;
+            seq.evt_sel_end_y          = drag_start_sel_end_y;
+            seq.sorted_evt_sel_start_y = drag_start_sorted_sel_start_y;
+            seq.sorted_evt_sel_end_y   = drag_start_sorted_sel_end_y;
+            track.transposeSelectedNotesFrames(noteDelta);
+            int selRange = (seq.sorted_evt_sel_end_y - seq.sorted_evt_sel_start_y);
+            seq.sorted_evt_sel_start_y = mathClampi(drag_start_sorted_sel_start_y + noteDelta, 0, 127);
+            seq.sorted_evt_sel_end_y   = seq.sorted_evt_sel_start_y + selRange;
+            seq.evt_sel_start_y        = seq.sorted_evt_sel_start_y;
+            seq.evt_sel_end_y          = seq.sorted_evt_sel_end_y;
+            local IntArray selNotes;
+            track.getEvtSelectedNotes(selNotes);
+            // auto-scroll
+            // trace "xxx drag noteDelta="+noteDelta+" sel_start_y="+seq.sorted_evt_sel_start_y+" sel_end_y="+seq.sorted_evt_sel_end_y+" note_off="+track.ui_evt_note_off+" num_vis="+track.ui_evt_num_visible_notes+" drag_start_note_idx="+drag_start_note_idx;
+            int origNoteOff = track.ui_evt_note_off;
+            int minNote = selNotes.min;
+            int maxNote = selNotes.max;
+            if(maxNote >= (track.ui_evt_note_off + track.ui_evt_num_visible_notes))
+            {
+               track.ui_evt_note_off = mathMaxi(0, maxNote - track.ui_evt_num_visible_notes + 1);
+            }
+            else
+            {
+               // trace "xxx minNote="+minNote+" note_off="+track.ui_evt_note_off;
+               if(minNote < (track.ui_evt_note_off + 1))
+                  track.ui_evt_note_off = minNote - 1;
+            }
+            drag_start_note_idx += track.ui_evt_note_off - origNoteOff;
+            // trace "xxx   ==> new drag_start_note_idx="+drag_start_note_idx;
+            Global.PrintFast("Transpose: min="+(MIDI.midi_notes.get(minNote))+"("+minNote+") max="+(MIDI.midi_notes.get(maxNote))+"("+maxNote+")");
+            redraw();
+            return true;
+         }
+         else if(DRAG_NOTES == drag_mode)
+         {
+            ticksStart = getTicksAtX(drag_start_mx);
+            drag_tick_delta = (getTicksAtX(_currentEv.mouse_rel_x) - ticksStart);
+            if(VMOD_LSHIFT == UI.GetKeyMod())
+               drag_tick_delta *= 0.25;
+            if(b_debug_drag) trace "xxx DRAG_NOTES delta="+drag_tick_delta;
+            boolean bCtrl = (UI.GetKeyMod() & VMOD_LCTRL);
+            drag_tick_delta = track.timeshiftSelectedNotesFromBackup(drag_tick_delta, bCtrl?maybe:false);
+            Global.PrintFast((bCtrl?"Q-":"")+"Move "+drag_num_sel+" note"+Utils.GetPluralString(drag_num_sel)+" by "+drag_tick_delta+" tick"+Utils.GetPluralString(drag_tick_delta));
+            redraw();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+
+      if(b_debug_drag) trace "xxx onMouseEndDrag: drag_mode="+drag_mode;
+
+      if(DRAG_YSCL == drag_mode)
+      {
+         drag_mode = DRAG_NONE;
+         UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+         return;
+      }
+      else if(DRAG_SCROLL == drag_mode)
+      {
+         // // trace "xxx ungrabmouse";
+         // // UI.UngrabMouse();
+         drag_mode = DRAG_NONE;
+         UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+         return;
+      }
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)  // should not be null at this point
+      {
+         NSQ_Track track <= pat.getCursorTrack();
+
+         if(DRAG_SEL == drag_mode)
+         {
+            int numSel = track.getNumEvtSelectedNotes();
+            local String msg <= "Select "+numSel+" note"+Utils.GetPluralString(numSel);
+            if(numSel > 0)
+            {
+               local Integer chordBaseNote;
+               local Integer chordIndex;
+               if(track.chordDetect(true/*bEvent*/, chordBaseNote, chordIndex))
+               {
+                  msg.append(". Chord: ");
+                  msg.append(MIDI.base_note_names.get(chordBaseNote % 12));
+                  msg.append(Chord.chord_names_short.get(chordIndex));
+               }
+            }
+            Global.Print(msg);
+            redraw();  // highlight
+         }
+         else if(DRAG_VEL == drag_mode)
+         {
+            parent_editor.undoEnd();
+            track.freeDeltaNoteFrames();
+            Global.Print("Velocity-Modulate "+drag_num_sel+" note"+Utils.GetPluralString(drag_num_sel));
+         }
+         else if(DRAG_DUR == drag_mode)
+         {
+            parent_editor.undoEnd();
+            track.freeDeltaNoteFrames();
+            Global.Print("Duration-Scale "+drag_num_sel+" note"+Utils.GetPluralString(drag_num_sel));
+         }
+         else if(DRAG_TRANSPOSE == drag_mode)
+         {
+            parent_editor.undoEnd();
+            track.freeDeltaNoteFrames();
+            Global.Print("Transpose "+drag_num_sel+" note"+Utils.GetPluralString(drag_num_sel));
+         }
+         else if(DRAG_NOTES == drag_mode)
+         {
+            parent_editor.undoEnd();
+            track.freeDeltaNoteFrames();
+            Global.Print("Time-shift "+drag_num_sel+" note"+Utils.GetPluralString(drag_num_sel));
+            // Move selection
+            seq.setEvtSelection(seq.evt_sel_start_x + drag_tick_delta,
+                                seq.evt_sel_start_y,
+                                seq.evt_sel_end_x + drag_tick_delta,
+                                seq.evt_sel_end_y,
+                                true/*bFromEvent*/
+                                );
+         }
+      }
+
+      drag_mode = DRAG_NONE;
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+
+      NSQ_Track track <= parent_editor.getEditTrack();
+
+      if(DRAG_YSCL == drag_mode)
+      {
+         track.ui_evt_num_visible_notes = drag_start_ui_evt_num_visible_notes;
+         drag_mode = DRAG_NONE;
+         UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+         redraw();
+         return;
+      }
+      else if(DRAG_SCROLL == drag_mode)
+      {
+         track.ui_evt_note_off = drag_start_ui_evt_note_off;
+         drag_mode = DRAG_NONE;
+         seq.view_x = drag_start_view_x;
+         seq.cursor_x = drag_start_cursor_x;
+         seq.scroll_x = drag_start_scroll_x;
+         parent_editor.redrawSeq();
+         UI.UngrabMouse();
+         UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+         redraw();
+         return;
+      }
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)  // should not be null at this point
+      {
+         if(DRAG_VEL == drag_mode)
+         {
+            track.restoreSelectedNoteFrames();
+            track.freeDeltaNoteFrames();
+            parent_editor.undoEnd();
+            redraw();
+         }
+         else if(DRAG_DUR == drag_mode)
+         {
+            track.restoreSelectedNoteFrames();
+            track.freeDeltaNoteFrames();
+            parent_editor.undoEnd();
+            redraw();
+         }
+         else if(DRAG_TRANSPOSE == drag_mode)
+         {
+            track.restoreSelectedNoteFrames();
+            track.freeDeltaNoteFrames();
+            seq.evt_sel_start_y        = drag_start_sel_start_y;
+            seq.evt_sel_end_y          = drag_start_sel_end_y;
+            seq.sorted_evt_sel_start_y = drag_start_sorted_sel_start_y;
+            seq.sorted_evt_sel_end_y   = drag_start_sorted_sel_end_y;
+            track.ui_evt_note_off      = drag_start_ui_evt_note_off;
+            parent_editor.undoEnd();
+            redraw();
+         }
+         else if(DRAG_NOTES == drag_mode)
+         {
+            track.restoreSelectedNoteFramesForTimeshift(true/*bRebuildLUT*/);
+            track.freeDeltaNoteFrames();
+            parent_editor.undoEnd();
+            redraw();
+         }
+         else
+         {
+            seq.evtSelectNone(true/*bFromEvent*/);
+         }
+      }
+      drag_mode = DRAG_NONE;
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      UI.CompositeAll();
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      return (null == pat) || (_ev.isMiddleButtonDown());
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      if((maybe == seq.b_autoscroll) && replay.b_playing)
+      {
+         // Smooth scroll mode
+         parent_editor.arr.doAutoScroll(false/*bForce*/);
+         redraw();
+      }
+
+      float sx = getSizeX();
+      float sy = getSizeY();
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.DrawFilledRectangle(0, 0, sx, sy, app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_BG));
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)
+      {
+         NSQ_Track track <= pat.getCursorTrack();
+
+         float noteX = 2;
+         float noteY = 2;
+         int noteSy = (sy - 2*2) / track.ui_evt_num_visible_notes;
+         float noteBaseY = (sy - 2) - noteSy + (track.ui_evt_note_off * noteSy);
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         float pixPerBeat = pixPerBar / pat.sig_beats;
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+         float cx;
+         float ex;
+         float px;
+         float cy;
+         int barIdx = seq.cursor_x;
+         int frameIdx;
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int noteIdx;
+
+         int c32BgCur          = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BG_CUR);
+         int c32BeatIdeal      = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BEAT_IDEAL);
+         int c32BarIdeal       = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BAR_IDEAL);
+         int c32NoteShadow     = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_NOTE_SHADOW);
+         int c32NoteShadowSel  = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_NOTE_SHADOW_SEL);
+         int c32NoteShadowSel2 = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_NOTE_SHADOW_SEL2);
+
+         boolean bHaveSelection = haveSelection();
+
+         UIRenderer.EnableBlending();
+
+         // Highlight current bar (bg)
+         UIRenderer.DrawFilledRectangle(ctrX + noteX, noteY, pixPerBar, sy-(2*2), c32BgCur);
+
+         // Black notes (bg)
+         int c32BlackNote = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_BLACK_NOTE_BG);
+         int c32CNote     = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_EVT_C_NOTE_BG);
+         cx = noteX + ctrX;
+         cx -= pixPerBar * mathMini(barIdx, 2);
+         noteIdx = track.ui_evt_note_off;
+         noteY = (sy - 2) - noteSy;
+         IntArray blackFlagsTbl <= Scale.black_flags_tbl;
+         while( (noteY + noteSy) >= 2 )
+         {
+            int noteIdxMod = noteIdx % 12;
+            if(blackFlagsTbl[noteIdxMod])
+            {
+               UIRenderer.DrawFilledRectangle(cx, noteY, sx-2 - cx, noteSy, c32BlackNote);
+            }
+            else if(0 == noteIdxMod)
+            {
+               UIRenderer.DrawLine(cx, noteY+noteSy-1, sx-2, noteY+noteSy-1, c32CNote);
+            }
+            noteIdx++;
+            noteY -= noteSy;
+         }
+
+         // Draw ideal bar positions
+         int numVisBars;
+         if(barIdx > 0)
+         {
+            numVisBars = seq.ui_num_visible_bars;
+            cx = noteX + ctrX - pixPerBar;
+            barIdx--;
+         }
+         else
+         {
+            numVisBars = (seq.ui_num_visible_bars-1);
+            cx = noteX + ctrX;
+         }
+
+         if(0.0 != seq.scroll_x)
+         {
+            numVisBars += 2;
+            cx -= pixPerBar;
+            barIdx--;
+         }
+
+         noteY = 2;
+         if(seq.ui_num_visible_bars <= 128)
+         {
+            loop(numVisBars)
+            {
+               if(0 <= barIdx < NSQ_Track.MAX_BARS)
+               {
+                  UIRenderer.DrawLine(cx, 2, cx, (sy-2), c32BarIdeal);
+                  int beatIdx = 0;
+                  float beatCx = cx + pixPerBeat*0.5;
+                  loop(mathMaxi(0, pat.sig_beats))
+                  {
+                     UIRenderer.DrawStippledRectangle2(beatCx, noteY, 0, (sy-2*2), 1.0/*b*/, c32BeatIdeal);
+                     beatCx += pixPerBeat*0.5;
+
+                     if(++beatIdx != pat.sig_beats)
+                     {
+                        UIRenderer.DrawStippledRectangle(beatCx, noteY, 0, (sy-2*2), 1.0/*b*/, c32BeatIdeal);
+                        beatCx += pixPerBeat*0.5;
+                     }
+                  }
+               }
+               barIdx++;
+               cx += pixPerBar;
+            }
+         }
+
+         // Draw track note-on events
+         cy = noteY;
+         IntArray barLUT <= track.bar_lut;
+         PointerArray framesDraw <= track.frames;
+         PointerArray framesComp <= ((track.delta_base_frames.isEmpty()) || (DRAG_NOTES == drag_mode) || (DRAG_TRANSPOSE == drag_mode) || (DRAG_NONE == drag_mode)) ? track.frames : track.delta_base_frames;
+         int compDelta = (DRAG_NOTES == drag_mode) ? drag_tick_delta : 0;
+         cx = noteX + ctrX - 6 * pixPerBar;  // -6 so we don't lose very long notes started much earlier
+         barIdx = seq.cursor_x - 6;
+         MIDIPipeFrame *frDraw;
+         MIDIPipeFrame *frComp;
+         MIDIPipeEvent pevComp;  // (note) differs from pevDraw during vel/dur mouse-drag
+         MIDIPipeEvent pevDraw;
+
+         loop(seq.ui_num_visible_bars + 6)
+         {
+            if(0 <= barIdx < NSQ_Track.MAX_BARS)
+            {
+               frameIdx = barLUT.get(barIdx);
+               if(-1 != frameIdx)
+               {
+                  for(;;)
+                  {
+                     frComp <= framesComp.get(frameIdx);
+                     if(null != frComp)
+                     {
+                        frDraw <= framesDraw.get(frameIdx);
+                        int tAbs = frComp.timeStamp - compDelta;
+                        if(frDraw.timeStamp >= ((barIdx +1)*ticksPerBar))
+                           break;
+                        int numEv = frComp.numEventsNoteOn;
+                        if(numEv > 0)
+                        {
+                           px = frDraw.timeStamp - (barIdx * ticksPerBar);
+                           px = (px * pixPerBar) / ticksPerBar;
+                           px += cx;
+
+                           int evIdx = 0;
+                           loop(numEv)
+                           {
+                              if(frComp.getEventByIdxAndFlt(evIdx,
+                                                            pevComp,
+                                                            MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                                            -1/*fltDevIdx*/, -1/*fltCh*/
+                                                            )
+                                 )
+                              {
+                                 frDraw.getEventByIdxAndFlt(evIdx,
+                                                            pevDraw,
+                                                            MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                                            -1/*fltDevIdx*/, -1/*fltCh*/
+                                                            );
+
+                                 noteIdx = pevComp.note;
+                                 cy = noteBaseY - (pevDraw.note * noteSy);
+
+                                 ex = (pevDraw.duration * pixPerBar) / ticksPerBar;
+                                 ex += px;
+
+                                 int tAbsEnd = tAbs + pevComp.duration;
+
+                                 int c32Note = getVelocityColor(pevDraw.velocity);
+                                 int c32Shadow = c32NoteShadow;
+
+                                 if(bHaveSelection)
+                                 {
+                                    boolean bSel;
+                                    if(DRAG_NOTES == drag_mode)
+                                       bSel = drag_start_sel_notes.contains(noteIdx);
+                                    else
+                                       bSel = (seq.sorted_evt_sel_start_y <= noteIdx <= seq.sorted_evt_sel_end_y);
+                                    if(bSel)
+                                    {
+                                       // trace "xxx noteIdx="+noteIdx+" sel=("+seq.sorted_evt_sel_start_y+";"+seq.sorted_evt_sel_end_y+")";
+                                       if( (tAbs <= seq.sorted_evt_sel_start_x < tAbsEnd) ||
+                                           (tAbs <= seq.sorted_evt_sel_end_x < tAbsEnd) ||
+                                           ((seq.sorted_evt_sel_start_x < tAbs) && (seq.sorted_evt_sel_end_x > tAbsEnd))
+                                           )
+                                       {
+                                          c32Shadow = c32NoteShadowSel;
+                                       }
+                                    }
+                                 }
+
+                                 if(c32Shadow == c32NoteShadowSel)
+                                 {
+                                    UIRenderer.DrawFilledRectangle(px+(ex-px), cy+1, 1, noteSy, c32Shadow);
+                                    UIRenderer.DrawFilledRectangle(px+1, cy+noteSy, (ex-px), 1, c32Shadow);
+
+                                    UIRenderer.DrawFilledRectangle(px+(ex-px)+1, cy+1, 1, noteSy, c32NoteShadowSel2);
+                                    UIRenderer.DrawFilledRectangle(px+1, cy+noteSy+1, (ex-px), 1, c32NoteShadowSel2);
+                                 }
+                                 else
+                                 {
+                                    UIRenderer.DrawFilledRectangle(px+(ex-px), cy+1, 1, noteSy, c32Shadow);
+                                    UIRenderer.DrawFilledRectangle(px+1, cy+noteSy, (ex-px), 1, c32Shadow);
+                                 }
+                                 UIRenderer.DisableBlending();  // [20Apr2020] workaround for weird NVidia blending bug
+                                 UIRenderer.EnableBlending();
+                                 UIRenderer.DrawFilledRectangle(px, cy, (ex-px), noteSy, c32Note);
+                              }
+
+                              // Next note-on event
+                              evIdx++;
+                           }
+                        }
+
+                        frameIdx++;
+                     }
+                     else
+                        break;
+                  }
+               }
+            }
+            barIdx++;
+            cx += pixPerBar;
+         }
+
+         UIRenderer.DisableBlending();
+      } // if pat
+
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, sx, sy);
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      // // glPopAttrib();
+   }
+
+   // <ui_render.png>
+   public virtual onDrawOverlays() {
+      int c32;
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         NSQ_Track track <= pat.getCursorTrack();
+
+         float sx = getSizeX();
+         float sy = getSizeY();
+
+         Point2f abspos;
+         calcAbsolutePositionFBO(abspos);
+
+         // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+         sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+         sdvg_EnableScissor();
+
+         float noteX = 2;
+         float noteY = 2;
+         int noteSy = (sy - 2*2) / track.ui_evt_num_visible_notes;
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         float pixPerBeat = pixPerBar / pat.sig_beats;
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+         float cx;
+         float px;
+         float cy;
+         float noteBaseY = (sy - 2) - noteSy + (track.ui_evt_note_off * noteSy);
+         int barIdx = seq.cursor_x;
+         int ticksPerBar = pat.getNumTicksPerBar();
+
+         UIRenderer.EnableBlending();
+
+         // Draw replay marker
+         if(1 || replay.b_playing)
+         {
+            cx = float(seq.tick_nr * pixPerBar) / ticksPerBar;
+            cx -= (seq.cursor_x) * pixPerBar;
+            cx += noteX + ctrX;
+            int c32Marker = NSQ_Arranger.GetReplayMarkerC32(seq, pat);
+            UIRenderer.DrawLine(cx, noteY, cx, sy-1, c32Marker);
+         }
+
+         // Draw selection
+         if(haveSelection() && (DRAG_SEL == drag_mode))
+         {
+            int c32SelBG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_BG);
+            int c32SelFG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_FG);
+            float cxL;
+            cxL = (seq.sorted_evt_sel_start_x * pixPerBar) / ticksPerBar;
+            cxL -= (seq.cursor_x) * pixPerBar;
+            cxL += noteX + ctrX;
+            float cxR;
+            cxR = (seq.sorted_evt_sel_end_x * pixPerBar) / ticksPerBar;
+            cxR -= (seq.cursor_x) * pixPerBar;
+            cxR += noteX + ctrX;
+            float cyB;
+            cyB = noteBaseY - (seq.sorted_evt_sel_start_y * noteSy) + noteSy;
+            float cyT;
+            cyT = noteBaseY - (seq.sorted_evt_sel_end_y * noteSy);
+            if(b_debug_drag) trace "xxx draw evt sel cxL="+cxL+" cxR="+cxR+" cyT="+cyT+" cyB="+cyB;
+            UIRenderer.DrawFilledRectangle(cxL, cyT, (cxR - cxL), (cyB - cyT), c32SelBG);
+            UIRenderer.DrawRectangle(cxL, cyT, (cxR - cxL), (cyB - cyT), 1, c32SelFG);
+         }
+
+         UIRenderer.DisableBlending();
+
+         sdvg_PopScissor();
+         sdvg_DisableScissor();
+
+         // // glPopAttrib();
+
+         if(replay.b_playing)
+            UI.CompositeAll();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // switch(_k.pressed)
+      // {
+      // }
+
+      return Control::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName <= _ac.getActionName();
+
+      boolean bShift = (UI.GetKeyMod() & VMOD_LSHIFT);
+      boolean bCtrl  = (UI.GetKeyMod() & VMOD_LCTRL);
+
+      switch(@(ap))
+      {
+         case @(ctxmenu):
+            parent_editor.refocusDefault();
+            switch(acName)
+            {
+               default:
+                  // Cancel
+                  return true;
+
+               case "sel_delete":
+                  deleteSelectedNotes();
+                  return true;
+
+               case "view_reset":
+                  resetNoteOffsetAndScaling();
+                  return true;
+
+               case "view_auto":
+                  fitNoteOffsetAndScaling(false/*bAllowRaySelect*/, 0);
+                  return true;
+            }
+            return true;
+      }
+
+      return false;
+   }
+
+}

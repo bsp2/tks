@@ -1,0 +1,1458 @@
+// ----
+// ---- file   : faderport.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 16Dec2021
+// ---- changed: 17Dec2021, 18Dec2021, 19Dec2021, 23Dec2021, 27Dec2021, 28Dec2021, 26Nov2022
+// ----          29Jul2023, 13Apr2024, 17Mar2025
+// ----
+// ----
+// ----
+/*
+
+                   Select: Switch to Bank 1..16 (A...P)
+     touch fader + Select: Toggle label marker (invert second line)
+           Shift + Select: Toggle fader lock
+                        m: Hold for fader detail-edit mode (14bit)
+                        s: Reset fader to center, max, or min position (0x2000 / 8192, 0x3FFF / 16383, 0)
+                      Arm: Save temporary bank fader states
+                Shift+Arm: Swap current / temporary bank fader states
+                SoloClear: Undo last fader change
+                MuteClear: Query labels from Eureka ModMatrix parameter names
+                   Bypass: Update current bank faders from output state (all scene groups)
+                    Macro: Resend all current bank faders via MIDIMorphScene
+                     Link: Toggle locked state (all current bank faders)
+                    Shift: Temporarily display bank names (A..P)
+
+ */
+
+module MFaderPort;
+
+use namespace st2;
+use namespace ui;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class FPLabel {
+   define int RESET_TIMEOUT = 192 * 4;  // must be a multiple of NUM_UPDATE_PARTITIONS
+
+   boolean b_queued;
+
+   String  label;      // base label (may be overrided by tmp output, e.g. a value display)
+   boolean b_label_inv;
+
+   String  dev_label;  // last label sent to device
+   boolean b_dev_label_inv;
+
+   String  out_label;  // current send label
+   boolean b_out_label_inv;
+
+   int reset_timeout;
+
+   // <method.png>
+   public method resetToBaseLabel() {
+      b_queued = true;
+      out_label = label;
+      b_out_label_inv = b_label_inv;
+   }
+
+   // <method.png>
+   public method forceUpdate() {
+      dev_label = "³³³§";
+      resetToBaseLabel();
+   }
+}
+
+
+// <class.png>
+class FPFader {
+   // (note) touch fader+press select => invert 2nd label line
+   FaderPort *parent_faderport;
+   int fader_idx;
+
+   short value;       // current value
+   short dev_value;   // last value sent to device
+   short out_value;   // current send value
+
+   short saved_value;
+   short locked_value;
+
+   boolean b_touch;   // true=fader is currently touched
+   boolean b_detail;  // true='m' is pressed => detail edit mode active
+   short detail_base_value;  // value at start of detail edit mode
+
+   boolean b_last_touched;  // true=highlight mute and solo buttons
+
+   boolean b_highlight_select;  // 1=highlight 'Select' button above fader (current bank), 2=highlight in alternative color (fader lock)
+   boolean b_highlight_select_dev;
+   short select_rgb;
+   short select_rgb_dev;
+
+   boolean b_highlight_m;  // true=highlight 'm' button above fader
+   boolean b_highlight_m_dev;
+
+   boolean b_highlight_s;  // true=highlight 's' button above fader
+   boolean b_highlight_s_dev;
+
+   int display_mode;  // 0x00: 3 lines (2x7 + 1x4), 0x03: 2 lines (2x4)
+   int display_mode_dev;
+   FPLabel *[] labels;  // 0: label line 1,  1: label line 2,  2: tmp msg/value display
+
+
+   // <method_init.png>
+   public method init() {
+      labels.alloc(3);
+      loop(labels.maxElements)
+      {
+         FPLabel label <= new FPLabel;
+         labels.add(#(deref label));
+      }
+
+      dev_value = -1;
+      b_highlight_select_dev = -1;
+      b_highlight_m_dev = -1;
+      b_highlight_s_dev = -1;
+      select_rgb     = #7F7F7F;
+      select_rgb_dev = 0;
+
+      saved_value = -1;
+      locked_value = -1;
+
+      display_mode = 3;
+      display_mode_dev = -1;
+   }
+
+   // <method.png>
+   public method forceUpdate() {
+      dev_value = -1;
+      out_value = value;
+      b_highlight_select_dev = -1;
+      b_highlight_m_dev = -1;
+      b_highlight_s_dev = -1;
+      select_rgb_dev = 0;
+      display_mode_dev = -1;
+
+      resendAllLabels();
+   }
+
+   // <method.png>
+   public method resendAllLabels() {
+      FPLabel *lb;
+      foreach lb in labels
+      {
+         lb.forceUpdate();
+      }
+   }
+
+   // <method.png>
+   public method updateSelectRGBAndHighlight() {
+      boolean bCurrentBank = ((fader_idx & 15) == parent_faderport.bank_idx);
+
+      if(bCurrentBank)
+      {
+         if(locked_value >= 0)
+         {
+            select_rgb = #117F5f;
+         }
+         else
+         {
+            select_rgb = #7f7f7f;
+         }
+         b_highlight_select = true;
+      }
+      else
+      {
+         if(locked_value >= 0)
+         {
+            // select_rgb = #064F1f;
+            select_rgb = #032F0f;
+            b_highlight_select = true;
+         }
+         else
+         {
+            select_rgb = #7f7f7f;
+            b_highlight_select = false;
+         }
+      }
+   }
+
+   // <method.png>
+   public method updateMSHighlight() {
+      if(b_last_touched)
+      {
+         b_highlight_m = true;
+         b_highlight_s = true;
+      }
+      else
+      {
+         b_highlight_m = false;
+         b_highlight_s = false;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setBaseLabelLine(byte _lineIdx, boolean _bInvert, String _text) {
+      FPLabel lb <= labels.get(_lineIdx);
+      if(null != lb)
+      {
+         lb.label = _text;
+         lb.b_label_inv = _bInvert;
+
+         lb.out_label = _text;
+         lb.b_out_label_inv = _bInvert;
+
+         lb.b_queued = true;
+      }
+   }
+
+   // <method_update.png>
+   public =replay= method updateLabel(String s) {
+      // trace "xxx nrpn="+mev.ext_type+" morph_label=\""+s+"\"";
+      boolean bMark = false;
+      boolean bPB = false;
+      if(null != s)
+      {
+         // trace "xxx s=\""+s+"\" bPB="+bPB;
+         bPB = (s & "_PB");
+         if(bPB)
+            s <= s.replace("_PB", "");
+         if(s <= "*")
+         {
+            s <= s.substring(1, 14);
+            bMark = true;
+         }
+
+         // if(s.numChars > 4)
+         // {
+         //    if(s.numChars > 14)
+         //       s <= s.substring(0, 14);
+         // }
+      }
+      else
+         s <= "-";
+
+      if(s & ",")
+      {
+         display_mode = 0x00;  // 2 lines a 7 chars + 1 line a 4 chars
+         local StringArray lines <= s.splitCharset(",;");
+
+         local String labelLine = lines.get(0);
+         labelLine.substring(0, 7);
+         labelLine.trim();
+         setBaseLabelLine(0/*lineIdx*/, false/*bInvert*/, labelLine);
+
+         labelLine = lines.get(1);
+         labelLine.substring(0, 7);
+         labelLine.trim();
+         setBaseLabelLine(1/*lineIdx*/, false/*bInvert*/, labelLine);
+      }
+      else
+      {
+         // trace "xxx FaderPort::handleSelectOrEdit: s=\""+s+"\" numChars="+s.numChars;
+         if(s.numChars > 4)
+         {
+            display_mode = 0x00;  // 2 lines a 7 chars + 1 line a 4 chars
+
+            if(s.numChars > 7)
+            {
+               local String line1;
+               local String line2;
+               FaderPort.SplitLabelToLines(s, line1, line2);
+
+               // trace "xxx FaderPort::handleSelectOrEdit: line1=\""+line1+"\" line2=\""+line2+"\"";
+
+               setBaseLabelLine(0/*lineIdx*/, false/*bInvert*/, line1);
+               setBaseLabelLine(1/*lineIdx*/, false/*bInvert*/, line2);
+            }
+            else
+            {
+               setBaseLabelLine(0/*lineIdx*/, false/*bInvert*/, s.trim());
+               setBaseLabelLine(1/*lineIdx*/, false/*bInvert*/, "");
+            }
+         }
+         else
+         {
+            display_mode = 0x03;  // 2 lines, 4 chars each
+            setBaseLabelLine(0/*lineIdx*/, false/*bInvert*/, s.trim());
+         }
+      }
+
+      FPLabel lb <= labels.get(2);
+      lb.b_label_inv = bMark;
+      lb.b_out_label_inv = bMark;
+      lb.b_queued = true;
+
+      if(bPB)
+      {
+         locked_value = 0x2000;
+         updateSelectRGBAndHighlight();
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // Value
+      ofs.i16 = value;
+
+      // Saved value
+      ofs.i16 = saved_value;
+
+      // Locked value
+      ofs.i16 = locked_value;
+
+      // Last touched flag
+      ofs.i8 = b_last_touched;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Value
+         value = ifs.u16;
+
+         // Saved value
+         saved_value = ifs.s16;
+
+         // Locked value
+         locked_value = ifs.s16;
+
+         // Last touched flag
+         b_last_touched = ifs.b8;
+
+         return true;
+      }
+      else
+      {
+         trace "[---] FPFader: fader_idx="+fader_idx+" invalid ver="+ver;
+      }
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class FaderPort : BidiCtl {
+   define String DEVICE_ALIAS = "FaderPort";
+
+   define int NUM_BANKS           = 16;
+   define int NUM_FADERS_PER_BANK = 16;
+
+   define int NUM_UPDATE_PARTITIONS = 4;  // must be POT
+
+   // sysex header:
+   //   FaderPort 8: F0 00 01 06 02
+   //  FaderPort 16: F0 00 01 06 16
+   //
+   // configure label 1: F0 00 01 06 16 13 00 03 F7
+   //                                ^^ FP8:02, FP16:16
+   //                                         ^^ mode 0..9 (lower 3 bits)
+   //                                      ^^ label id 0..15
+   //                                ^^ faderport8: 02, FP16: 16
+   // set label1 text to 'ABCD': F0 00 01 06 16 12 00 00 00 41 42 43 44 F7
+   //                                                       ^^ text
+   //                                                    ^^ alignment/inverted flag xxxxiaa: aa=ctr=0,l=1,r=2, i=inv
+   //                                                 ^^ line number 0..n
+   //                                              ^^ label id 0..15
+
+   boolean b_connected;
+   boolean b_faderport16;
+   int num_faders;
+
+   FPFader *[] faders;
+
+   // boolean b_post_init_done;
+
+   Buffer buf;
+
+   int bank_idx;  // 0..15 => 'A'..'P'
+
+   boolean b_lshift;
+
+   int   undo_fader_idx;  // 0..255
+   short undo_value;      // 0..16383
+
+
+   static IntArray mute_button_ids  = [ 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+                                         0x78, 0x79, 0x7A, 0x7B, 0x7C, 0x7D, 0x7E, 0x7F
+                                         ];
+
+   static IntArray solo_button_ids  = [ 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+                                         0x50, 0x51, 0x52, 0x58, 0x54, 0x55, 0x59, 0x57
+                                         ];
+
+   static IntArray select_button_ids  = [ 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+                                           0x07, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27
+                                           ];
+
+   boolean b_queued_query_label;
+
+   int tick_nr;
+
+
+   // <method_init.png>
+   public virtual init() : boolean {
+      // BidiCtl::init();
+
+      if(b_debug)
+         trace "[trc] faderport: STConfig.b_faderport="+STConfig.b_faderport;
+
+      faders.alloc(NUM_BANKS * NUM_FADERS_PER_BANK);
+      int faderIdx = 0;
+      loop(faders.maxElements)
+      {
+         FPFader fader <= new FPFader;
+         fader.fader_idx = faderIdx++;
+         fader.parent_faderport <= this;
+         fader.init();
+         faders.add(#(deref fader));
+      }
+
+      undo_fader_idx = -1;
+
+      if(STConfig.b_faderport)
+      {
+         b_faderport16 = (8 != STConfig.faderport_model);
+         num_faders = b_faderport16 ? 16 : 8;
+
+         in_dev  <= MIDI.GetMIDIInDeviceByAliasOrName(DEVICE_ALIAS);
+         out_dev <= MIDI.GetMIDIOutDeviceByAliasOrName(DEVICE_ALIAS);
+
+         if(b_debug)
+            trace "[trc] faderport: in_dev="+#(in_dev)+" out_dev="+#(out_dev);
+
+         b_connected = ((null != in_dev) && (null != out_dev));
+
+         if(b_connected)
+            b_connected = in_dev.isOpen() && out_dev.isOpen();
+
+         if(b_connected)
+         {
+            buf.size = 4096;
+
+            selectBank(0);
+         }
+
+         // Configure initial display labels
+         faderIdx = 0;
+         loop(faders.numElements)
+         {
+            // Test Text
+            setBaseLabelLine(faderIdx, 0/*lineIdx*/, false/*bInvert*/,  "-");  // MTRK
+            setBaseLabelLine(faderIdx, 1/*lineIdx*/, false/*bInvert*/,  "");
+            setBaseLabelLine(faderIdx, 2/*lineIdx*/, false/*bInvert*/, tcchar('A' + (faderIdx / NUM_FADERS_PER_BANK)) + String( (faderIdx&15)+1));
+
+            // Next fader / display
+            faderIdx++;
+         }
+      }
+
+      return b_connected;
+   }
+
+   protected method emitSysExHeader() {
+      buf.i8 = 0xF0;
+      buf.i8 = 0x00;
+      buf.i8 = 0x01;
+      buf.i8 = 0x06;
+      buf.i8 = b_faderport16 ? 0x16 : 0x02;
+   }
+
+   protected method emitDisplayMode(byte _faderIdx, byte _mode) {
+      emitSysExHeader();
+
+      buf.i8 = 0x13;  // cmd
+      buf.i8 = _faderIdx;  // label_id
+      buf.i8 = _mode;
+      buf.i8 = 0xF7;
+   }
+
+   protected method emitLabelLine(byte _faderIdx, byte _lineIdx, boolean _bInvert, String _text) {
+      emitSysExHeader();
+
+      // 12 00 00 00 41 42 43 44 F7
+      buf.i8 = 0x12;  // cmd
+      buf.i8 = _faderIdx;  // label_id
+      buf.i8 = _lineIdx;
+      buf.i8 = _bInvert ? 4 : 0;
+      int charIdx = 0;
+      loop(mathMini(7, _text.numChars))
+      {
+         buf.i8 = _text.getc(charIdx++) & 127;
+      }
+      buf.i8 = 0xF7;
+   }
+
+   protected method setBaseLabelLine(byte _faderIdx, byte _lineIdx, boolean _bInvert, String _text) {
+      FPFader fader <= faders.get(_faderIdx);
+      fader.setBaseLabelLine(_lineIdx, _bInvert, _text);
+   }
+
+   protected method setTmpLabelLine(byte _faderIdx, byte _lineIdx, boolean _bInvert, String _text) {
+      FPFader fader <= faders.get(_faderIdx);
+      FPLabel lb <= fader.labels.get(_lineIdx);
+      if(null != lb)
+      {
+         lb.out_label = _text;
+         lb.b_out_label_inv = _bInvert;
+
+         lb.reset_timeout = FPLabel.RESET_TIMEOUT;
+
+         lb.b_queued = true;
+      }
+   }
+
+   // protected method initDisplayModes() {
+
+   //    buf.offset = 0;
+
+   //    // Configure display modes
+   //    int faderIdx = 0;
+   //    loop(faders.numElements)
+   //    {
+   //       // Configure display mode
+   //       if(faderIdx < num_faders)
+   //          emitDisplayMode(faderIdx, 3);  // 3="Large Text Mode" (2 lines of text and value bar)
+
+   //       // Next fader / display
+   //       faderIdx++;
+   //    }
+
+   //    out_dev.sysExRaw(buf);
+   // }
+
+   protected method showTmpBankNames() {
+      int faderIdx = bank_idx * NUM_FADERS_PER_BANK;
+      loop(num_faders)
+      {
+         FPFader fader <= faders[faderIdx];
+         setTmpLabelLine(faderIdx, 2/*lineIdx*/, false/*bInvert*/, tcchar('A'+(faderIdx&15)));
+         faderIdx++;
+      }
+   }
+
+   protected method anyFaderTouched() : boolean {
+      int faderIdx = bank_idx * NUM_FADERS_PER_BANK;
+      boolean bTouched = false;
+      FPFader *fader;
+      loop(num_faders)
+      {
+         fader <= faders[faderIdx++];
+         bTouched |= (fader.b_touch || fader.b_detail);
+         if(bTouched)
+            break;
+      }
+      return bTouched;
+   }
+
+   protected method selectBank(int _bankIdx) {
+
+      // Allow bank select only when no fader is touched and detail-edit mode is inactive
+
+      if(b_debug)
+         trace "[trc] faderport::selectBank: bankIdx="+_bankIdx;
+
+      bank_idx = _bankIdx;
+
+      // Force label+fader update
+      int faderIdx = bank_idx * NUM_FADERS_PER_BANK;
+      loop(num_faders)
+      {
+         FPFader fader <= faders[faderIdx++];
+         fader.forceUpdate();
+         fader.updateSelectRGBAndHighlight();
+      }
+
+      if(!Global.b_initializing)
+         root_form.queueUpdateBidirectionalControls();
+   }
+
+   public virtual handleMIDIEvent(RecordedMIDIEvent _recEv, ClassArray _midiMapRTEventQueue) : boolean {
+      // called from replay thread
+      MIDIMapEvent ev;
+      ev.initFromRecordedMIDIEvent(in_dev, _recEv);
+
+      FPFader *fader;
+      FPFader *faderO;
+      FPLabel *lb;
+      int faderIdx;
+      Integer io;
+      short t;
+
+      switch(ev.type)
+      {
+         case TYPE_PITCHBEND:
+            faderIdx = ev.dev_ch + (bank_idx * NUM_FADERS_PER_BANK);
+            fader <= faders[faderIdx];
+
+            if(fader.b_detail)
+            {
+               fader.value = mathClampi(fader.detail_base_value + ((ev.arg1-8192) / STConfig.faderport_detailedit_div), 0, 16383);
+               fader.dev_value = ev.arg1;
+               if(b_debug)
+                  trace "[>>>] faderport: fader["+faderIdx+"] microedit value="+fader.value;
+               io = fader.value;
+               setTmpLabelLine(faderIdx, 2/*lineIdx*/, true/*bInvert*/, io.printf("%04x"));
+               handleFaderEdited(fader, _midiMapRTEventQueue);
+               return true;
+            }
+            else
+            {
+               fader.value = ev.arg1;
+               fader.dev_value = fader.value;
+               fader.out_value = fader.value;
+               if(b_debug)
+                  trace "[>>>] faderport: fader["+faderIdx+"] value="+fader.value;
+               io = fader.value;
+               setTmpLabelLine(faderIdx, 2/*lineIdx*/, true/*bInvert*/, io.printf("%04x"));
+               handleFaderEdited(fader, _midiMapRTEventQueue);
+               return true;
+            }
+            break;
+
+         case TYPE_NOTE_ON:
+            if(b_debug)
+               trace "[trc] faderport: note on "+ev.arg1;
+            if(0x68 <= ev.arg1 <= 0x77)
+            {
+               // Fader touch
+               faderIdx = ev.arg1 - 0x68 + (bank_idx * NUM_FADERS_PER_BANK);
+               fader <= faders[faderIdx];
+               fader.b_touch = true;
+
+               foreach faderO in faders
+               {
+                  faderO.b_last_touched = false;
+                  faderO.updateMSHighlight();
+               }
+
+               fader.b_last_touched = true;
+               fader.updateMSHighlight();
+
+               undo_fader_idx = faderIdx;
+               undo_value     = fader.value;
+
+               return true;
+            }
+            else if(0x00 == ev.arg1)
+            {
+               // Arm (=> save fader state)
+               faderIdx = (bank_idx * NUM_FADERS_PER_BANK);
+               loop(num_faders)
+               {
+                  fader <= faders[faderIdx++];
+                  if(b_lshift)
+                  {
+                     if(fader.saved_value >= 0)
+                     {
+                        t = fader.value;
+                        fader.value = fader.saved_value;
+                        fader.out_value = fader.value;
+                        fader.saved_value = t;
+                        handleFaderEdited(fader, _midiMapRTEventQueue);
+                     }
+                  }
+                  else
+                  {
+                     fader.saved_value = fader.value;
+                  }
+               }
+            }
+            else if(0x01 == ev.arg1)
+            {
+               // SoloClear (=> undo)
+               if( (bank_idx * NUM_FADERS_PER_BANK) <= undo_fader_idx < ((bank_idx+1) * NUM_FADERS_PER_BANK) )
+               {
+                  fader <= faders[undo_fader_idx];
+                  t = fader.value;
+                  fader.value     = undo_value;
+                  fader.out_value = undo_value;
+                  undo_value = t;
+                  handleFaderEdited(fader, _midiMapRTEventQueue);
+                  return true;
+               }
+            }
+            else if(0x02 == ev.arg1)
+            {
+               // MuteClear
+               b_queued_query_label = true;
+               return true;
+            }
+            else if(0x03 == ev.arg1)
+            {
+               updateFadersFromOutputState();
+               return true;
+            }
+            else if(0x04 == ev.arg1)
+            {
+               // Macro (=> resend all current bank faders via MIDIMorphScene)
+               faderIdx = (bank_idx * NUM_FADERS_PER_BANK);
+               loop(num_faders)
+               {
+                  fader <= faders[faderIdx++];
+                  handleFaderEdited(fader, _midiMapRTEventQueue);
+               }
+               return true;
+            }
+            else if(0x05 == ev.arg1)
+            {
+               // Link (=> toggle locked state of all current bank faders)
+               boolean bAllLocked = true;
+               faderIdx = (bank_idx * NUM_FADERS_PER_BANK);
+               loop(num_faders)
+               {
+                  fader <= faders[faderIdx++];
+                  bAllLocked = bAllLocked && (fader.locked_value >= 0);
+               }
+
+               faderIdx = (bank_idx * NUM_FADERS_PER_BANK);
+               loop(num_faders)
+               {
+                  fader <= faders[faderIdx++];
+                  if(bAllLocked)
+                     fader.locked_value = -1;
+                  else
+                     fader.locked_value = fader.value;
+                  fader.updateSelectRGBAndHighlight();
+               }
+
+               if(bAllLocked)
+                  handleSelectOrEditScene(); // restore default locks
+            }
+            else if(mute_button_ids.contains(ev.arg1))
+            {
+               // 'm' 1..8
+               faderIdx = mute_button_ids.indexOf(ev.arg1, 0) + (bank_idx * NUM_FADERS_PER_BANK);
+               fader <= faders[faderIdx];
+               fader.b_detail = true;
+               fader.detail_base_value = fader.value;
+               fader.out_value = 8192;  // center
+               // trace "xxx begin detail edit mode";
+               return true;
+            }
+            else if(solo_button_ids.contains(ev.arg1))
+            {
+               // 's' 1..16
+               faderIdx = solo_button_ids.indexOf(ev.arg1, 0) + (bank_idx * NUM_FADERS_PER_BANK);
+               fader <= faders[faderIdx];
+               if(8192 == fader.value)
+                  fader.value = 16383;  // top
+               else if(16383 == fader.value)
+                  fader.value = 0;      // min
+               else
+                  fader.value = 8192;   // center
+               fader.out_value = fader.value;
+               setTmpLabelLine(faderIdx, 2/*lineIdx*/, true/*bInvert*/, "2000");
+               handleFaderEdited(fader, _midiMapRTEventQueue);
+               return true;
+            }
+            else if(select_button_ids.contains(ev.arg1))
+            {
+               // 'Select' 1..8
+               int selectIdx = select_button_ids.indexOf(ev.arg1, 0);
+               if(anyFaderTouched())
+               {
+                  faderIdx = selectIdx + (bank_idx * NUM_FADERS_PER_BANK);
+                  fader <= faders[faderIdx];
+                  lb <= fader.labels.get(2);
+                  lb.b_label_inv = !lb.b_label_inv;
+                  lb.b_out_label_inv = lb.b_label_inv;
+                  lb.b_queued = true;
+               }
+               else if(b_lshift)
+               {
+                  // Toggle fader value lock
+                  faderIdx = selectIdx + (bank_idx * NUM_FADERS_PER_BANK);
+                  fader <= faders[faderIdx];
+                  if(fader.locked_value >= 0)
+                  {
+                     // Unlock
+                     fader.locked_value = -1;
+                     fader.updateSelectRGBAndHighlight();
+                  }
+                  else
+                  {
+                     fader.locked_value = fader.value;
+                     fader.updateSelectRGBAndHighlight();
+                  }
+               }
+               else
+               {
+                  selectBank(selectIdx);
+               }
+               return true;
+            }
+            else if(0x07 == ev.arg1)
+            {
+               // 'Select' 9
+               selectBank(8);
+               return true;
+            }
+            else if(0x21 <= ev.arg1 <= 0x27)
+            {
+               // 'Select' 10..16
+               selectBank(ev.arg1 - 0x21 + 8 + 1);
+               return true;
+            }
+            else if(0x46 == ev.arg1)
+            {
+               // Left shift
+               b_lshift = true;
+               showTmpBankNames();
+               return true;
+            }
+
+            break;
+
+         case TYPE_NOTE_OFF:
+            if(b_debug)
+               trace "[trc] faderport: note off "+ev.arg1;
+            if(0x68 <= ev.arg1 <= 0x77)
+            {
+               // fader 1..16
+               faderIdx = ev.arg1 - 0x68 + (bank_idx * NUM_FADERS_PER_BANK);
+               fader <= faders[faderIdx];
+               fader.b_touch = false;
+               if(fader.locked_value >= 0)
+               {
+                  fader.value = fader.locked_value;
+                  fader.out_value = fader.value;
+                  handleFaderEdited(fader, _midiMapRTEventQueue);
+               }
+               return true;
+            }
+            else if(mute_button_ids.contains(ev.arg1))
+            {
+               // 'm' 1..8
+               faderIdx = mute_button_ids.indexOf(ev.arg1, 0) + (bank_idx * NUM_FADERS_PER_BANK);
+               fader <= faders[faderIdx];
+               fader.b_detail = false;
+
+               if(fader.locked_value >= 0)
+               {
+                  // trace "xxx release mute, restore locked_value="+fader.locked_value;
+                  fader.value = fader.locked_value;
+                  fader.out_value = fader.value;
+                  handleFaderEdited(fader, _midiMapRTEventQueue);
+               }
+               else
+               {
+                  fader.out_value = fader.value;
+               }
+
+               return true;
+            }
+            else if(0x46 == ev.arg1)
+            {
+               // Left shift
+               b_lshift = false;
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   public method tick() {
+      // called from replay thread
+      // if(!b_post_init_done)
+      // {
+      //    b_post_init_done = true;
+
+      //    initDisplayModes();
+      // }
+
+      // workaround: some faders won't get update when sending too many simultaneous updates => spread over multiple ticks
+      int partition = (tick_nr++ & (NUM_UPDATE_PARTITIONS - 1));
+
+      buf.offset = 0;
+
+      FPFader *fader;
+      int faderIdx = (bank_idx * NUM_FADERS_PER_BANK);
+      int numFaders = num_faders / NUM_UPDATE_PARTITIONS;
+      faderIdx += partition * numFaders;
+      // trace "xxx partition="+partition+" faderIdx="+faderIdx+" numFaders="+numFaders;
+
+      loop(numFaders)
+      {
+         fader <= faders[faderIdx];
+         int rawFaderIdx = faderIdx & 15;
+
+         // if(14 == rawFaderIdx)
+         {
+            // Display mode
+            if(fader.display_mode != fader.display_mode_dev)
+            {
+               emitDisplayMode(rawFaderIdx, fader.display_mode);
+               fader.display_mode_dev = fader.display_mode;
+               fader.resendAllLabels();
+            }
+
+            // Fader automation
+            if(!fader.b_touch)////// && !fader.b_detail)
+            {
+               if(fader.dev_value != fader.out_value)
+               {
+                  if(b_debug)
+                     trace "[trc] send fader["+faderIdx+"] out_value="+fader.out_value+" (was "+fader.dev_value+")";
+                  fader.dev_value = fader.out_value;
+                  buf.i8 = 0xE0 | rawFaderIdx;
+                  buf.i8 = fader.dev_value & 127; // LSB
+                  buf.i8 = fader.dev_value >> 7;  // MSB
+               }
+            }
+
+            // 'Select' color
+            if(fader.select_rgb != fader.select_rgb_dev)
+            {
+               if( (fader.select_rgb&0x7F0000) != (fader.select_rgb_dev&0x7F0000) )
+               {
+                  // Red
+                  buf.i8 = 0x91;
+                  buf.i8 = select_button_ids[rawFaderIdx];
+                  buf.i8 = (fader.select_rgb >> 16) & 127;
+               }
+
+               if( (fader.select_rgb&0x007F00) != (fader.select_rgb_dev&0x007F00) )
+               {
+                  // Green
+                  buf.i8 = 0x92;
+                  buf.i8 = select_button_ids[rawFaderIdx];
+                  buf.i8 = (fader.select_rgb >> 8) & 127;
+               }
+
+               if( (fader.select_rgb&0x00007F) != (fader.select_rgb_dev&0x00007F) )
+               {
+                  // Blue
+                  buf.i8 = 0x93;
+                  buf.i8 = select_button_ids[rawFaderIdx];
+                  buf.i8 = fader.select_rgb & 127;
+               }
+
+               fader.select_rgb_dev = fader.select_rgb;
+            }
+
+            // 'Select' highlight
+            if(fader.b_highlight_select != fader.b_highlight_select_dev)
+            {
+               buf.i8 = 0x90;
+               buf.i8 = select_button_ids[rawFaderIdx];
+               buf.i8 = fader.b_highlight_select ? 0x7F : 0x00;
+
+               fader.b_highlight_select_dev = fader.b_highlight_select;
+            }
+
+            // 'm' highlight
+            if(fader.b_highlight_m != fader.b_highlight_m_dev)
+            {
+               buf.i8 = 0x90;
+               buf.i8 = mute_button_ids[rawFaderIdx];
+               buf.i8 = fader.b_highlight_m ? 0x7F : 0x00;
+               fader.b_highlight_m_dev = fader.b_highlight_m;
+            }
+
+            // 's' highlight
+            if(fader.b_highlight_s != fader.b_highlight_s_dev)
+            {
+               buf.i8 = 0x90;
+               buf.i8 = solo_button_ids[rawFaderIdx];
+               buf.i8 = fader.b_highlight_s ? 0x7F : 0x00;
+               fader.b_highlight_s_dev = fader.b_highlight_s;
+            }
+
+            // Labels
+            FPLabel *lb;
+            int labelIdx = 0;
+            int lineIdx = 0;
+            loop(3)
+            {
+               lb <= fader.labels.get(labelIdx);
+
+               if(lb.reset_timeout > 0)
+               {
+                  lb.reset_timeout -= NUM_UPDATE_PARTITIONS;
+                  if(lb.reset_timeout <= 0)
+                  {
+                     lb.reset_timeout = 0;
+                     lb.resetToBaseLabel();
+                  }
+               }
+
+               boolean bDrawLabel = (0 == lineIdx) || ( (1 == lineIdx) && (0 == fader.display_mode) ) || (2 == labelIdx);
+
+               if(bDrawLabel)
+               {
+                  if(lb.b_queued)
+                  {
+                     lb.b_queued = false;
+                     if((lb.out_label != lb.dev_label) || (lb.b_out_label_inv != lb.b_dev_label_inv))
+                     {
+                        emitLabelLine(rawFaderIdx, lineIdx, lb.b_out_label_inv/*bInvert*/, lb.out_label);
+                        lb.dev_label = lb.out_label;
+                        lb.b_dev_label_inv = lb.b_out_label_inv;
+                     }
+                  }
+                  lineIdx++;
+               }
+
+               // Next label line
+               labelIdx++;
+            }
+
+         } // debug: single fader
+
+         // Next fader
+         faderIdx++;
+      }
+
+      if(buf.offset > 0)
+      {
+         // Utils.HexDump(buf, 0, buf.offset);
+
+         out_dev.sysExRaw(buf);
+      }
+
+   }
+
+   // <method.png>
+   protected method handleFaderEdited(FPFader _fader, ClassArray _midiMapRTEventQueue) {
+      // called from handleMIDIEvent()
+      if(b_debug)
+         trace "[trc] FaderPort::handleFaderEdited: fader["+_fader.fader_idx+"] = "+_fader.value;
+
+      MIDIMapEvent midiMapEvent <= _midiMapRTEventQueue.nextFree;
+      if(null != midiMapEvent)
+      {
+         midiMapEvent.initUntransformedFromNRPN(in_dev, 0/*dev_ch*/, _fader.fader_idx/*nrpn*/, _fader.value);
+         replay.sendUIEvent(midiMapEvent);
+      }
+   }
+
+   // <method.png>
+   public static SplitLabelToLines(String s, String line1, String line2) {
+      // (todo) move to Utils class ?
+
+      // trace "\nxxx SplitLabelToLines: s=\""+s+"\"";
+      line1.empty();
+      line2.empty();
+      int numSpaces = s.numIndicesOf(" ");
+      boolean bSplitDone = false;
+      if(s.numChars <= (14 + numSpaces))
+      {
+         local StringArray words <= s.splitSpace(true/*bQuotes*/);
+         if(words.numElements > 1)
+         {
+            String *w;
+            int wIdx = 0;
+            foreach w in words
+            {
+               // trace "xxx line1=\""+line1+"\" w=\""+w+"\"";
+               if(line1.isBlank())
+               {
+                  if( (line1.numChars + w.numChars) <= 7 )
+                     line1.append(w);
+                  else
+                     break;
+               }
+               else
+               {
+                  if( (line1.numChars + 1 + w.numChars) <= 7 )
+                     line1.append(" "+w);
+                  else
+                     break;
+               }
+               wIdx++;
+            }
+
+            if(!line1.isBlank())
+            {
+               loop(words.numElements - wIdx)
+               {
+                  w <= words[wIdx];
+                  // trace "xxx line2=\""+line2+"\" w=\""+w+"\"";
+                  if(line2.isBlank())
+                  {
+                     if( (line2.numChars + w.numChars) <= 7 )
+                        line2.append(w);
+                     else
+                        break;
+                  }
+                  else
+                  {
+                     if( (line2.numChars + 1 + w.numChars) <= 7 )
+                        line2.append(" "+w);
+                     else
+                        break;
+                  }
+                  wIdx++;
+               }
+
+                // trace "xxx => line1=\""+line1+"\"";
+                // trace "xxx => line2=\""+line2+"\"";
+
+               if(!line2.isBlank() && (wIdx == words.numElements))
+               {
+                  bSplitDone = true;
+               }
+            }
+         }
+      }
+
+      if(!bSplitDone)
+      {
+         line1 = s.substring(0, 7).trim();
+         line2 = s.substring(7, 7).trim();
+
+         // trace "xxx FALLBACK => line1=\""+line1+"\"";
+         // trace "xxx FALLBACK => line2=\""+line2+"\"";
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= virtual handleSelectOrEditScene() {
+      // called from UI thread
+      //  - update labels
+
+      // trace "xxx FaderPort::handleSelectOrEditScene -----------------";
+
+      FPFader *fader;
+      foreach fader in faders
+      {
+         fader.display_mode = 0x03;
+         setBaseLabelLine(fader.fader_idx/*faderIdx*/, 0/*lineIdx*/, false/*bInvert*/, "-");
+         setBaseLabelLine(fader.fader_idx/*faderIdx*/, 1/*lineIdx*/, false/*bInvert*/, "");
+      }
+
+      int groupIdx = MIDIMorphScene.NUM_GROUPS - 1;  // iterate backwards (first group has priority over last)
+      loop(MIDIMorphScene.NUM_GROUPS)  // A..H
+      {
+         // trace "xxx FaderPort::handleSelectOrEditScene:  groupIdx="+groupIdx+" sceneIdx="+MIDIMorphScene.GetCurrentSceneIdx(groupIdx);
+         MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+         MIDIMapEvent *mev;
+         foreach mev in mms.mms_entries
+         {
+            if(@(mev.dev) == @(in_dev))
+            {
+               if(0 == mev.dev_ch)
+               {
+                  if(TYPE_NRPN == mev.type)
+                  {
+                     if(0 <= mev.ext_type < (NUM_FADERS_PER_BANK * NUM_BANKS))
+                     {
+                        fader <= faders[mev.ext_type];
+
+                        fader.updateLabel(mev.getMorphLabel());
+
+                        if(fader.locked_value >= 0)
+                        {
+                           fader.value = fader.locked_value;
+                        }
+                        else
+                        {
+                           fader.value = mev.last_morph_src_arg1;
+                        }
+
+                        fader.out_value = fader.value;
+                     }
+                  }
+               }
+            }
+         }
+
+         // Next group
+         groupIdx--;
+      }
+   }
+
+   // <save.png>
+   public virtual saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // num faders
+      ofs.i16 = faders.numElements;
+
+      FPFader *fader;
+      foreach fader in faders
+         fader.saveState(ofs);
+
+      // Current Bank
+      ofs.i8 = bank_idx;
+
+      // Fader Undo
+      ofs.i16 = undo_fader_idx;
+      ofs.i16 = undo_value;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // num faders
+         int numFaders = ifs.u16;
+
+         if(numFaders != faders.numElements)
+            trace "[!!!] FaderPort::loadState: numFaders="+numFaders+" != faders.numElements="+faders.numElements;
+
+         FPFader *fader;
+         foreach fader in faders
+         {
+            if(!fader.loadState(ifs))
+            {
+               return false;
+            }
+         }
+
+         // Current Bank
+         byte bankIdx = ifs.u8;
+
+         // Fader Undo
+         undo_fader_idx = ifs.s16;
+         undo_value = ifs.s16;
+
+         selectBank(bankIdx);
+
+         return true;
+      }
+      else
+      {
+         trace "[---] FaderPort: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected =replay= method checkResetQueuedQueryLabel() : boolean {
+      boolean r = b_queued_query_label;
+      b_queued_query_label = false;
+      return r;
+   }
+
+   // <method.png>
+   public method queryLabels1() {
+
+      if(SysEx.IsAudioConnected())
+      {
+         SysEx.QueueSendRemoteQueryCtlTargets(this);
+      }
+      else
+      {
+         handleQueryLabelsFromMSPAliases();
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleRemoteQueryCtlTargets(PointerArray _ctlTargets) {
+      PointerArray vstDevs <= MIDI.FindVSTDevices();
+      local IntArray selRows;
+
+      int numUpdated = 0;
+
+      // Update all morph scenes
+      int groupIdx = 0;
+      loop(MIDIMorphScene.NUM_GROUPS)
+      {
+         MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+         selRows.identity(mms.mms_entries.getNumElements());
+         numUpdated += mms.updateLabelsFromRemoteCtlTargetsOrMSPAliases(vstDevs, selRows, _ctlTargets);
+
+         // Next group
+         groupIdx++;
+      }
+
+      Global.Print("Eureka ModMatrix Query: Update "+numUpdated+" label"+Utils.GetPluralString(numUpdated));
+
+      updateLabelsPost();
+   }
+
+   // <method.png>
+   protected method updateLabelsPost() {
+      // Update entry table when EditMidiMorph page is visible
+      // // if(numUpdated > 0)
+      {
+         if(RootForm.PAGE_EDITMIDIMORPH == root_form.getCurrentPageNr())
+         {
+            PageEditMidiMorph pgMidiMorph <= root_form.pg_editmidimorph;
+            pgMidiMorph.handleLabelUpdatePost();  // calls handleSelectOrEditScene()
+         }
+         else
+         {
+            // Page not visible, just update the HW labels
+            handleSelectOrEditScene();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handleQueryLabelsFromMSPAliases() {
+      local IntArray selRows;
+
+      int numUpdated = 0;
+
+      // Update all morph scenes
+      int groupIdx = 0;
+      loop(MIDIMorphScene.NUM_GROUPS)
+      {
+         MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+         selRows.identity(mms.mms_entries.getNumElements());
+         numUpdated += mms.updateLabelsFromMSPAliases(selRows);
+
+         // Next group
+         groupIdx++;
+      }
+
+      Global.Print("Query labels from MSP aliases: Update "+numUpdated+" label"+Utils.GetPluralString(numUpdated));
+
+      updateLabelsPost();
+   }
+
+   // <method.png>
+   public virtual handleReplayTimer() {
+      // called from UI thread
+      if(checkResetQueuedQueryLabel())
+      {
+         queryLabels1();
+      }
+   }
+
+   // <method.png>
+   protected method updateFadersFromOutputState() {
+      Global.Debug("FaderPort::updateFadersFromOutputState");
+
+      int faderIdx = bank_idx * NUM_FADERS_PER_BANK;
+      loop(num_faders)
+      {
+         FPFader fader <= faders[faderIdx];
+
+         int groupIdx = 0;
+         loop(MIDIMorphScene.NUM_GROUPS)
+         {
+            MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+
+            MIDIMapEvent *srcEv;
+            foreach srcEv in mms.mms_entries
+            {
+               if(@(srcEv.dev) == @(in_dev))
+               {
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                  {
+                     if(faderIdx == srcEv.ext_type)
+                     {
+                        MIDIMapEvent dstEv <= srcEv.morph_target;
+                        short outVal = dstEv.getOutputState();
+
+                        if(outVal >= 0)
+                        {
+                           short val = srcEv.unmapMorphedValue(outVal, true/*b14bit*/);
+                           if(val >= 0)
+                           {
+                              trace "[>>>] FaderPort::updateFadersFromOutputState: faderIdx="+faderIdx+" outVal="+outVal+" => inVal="+val;
+                              srcEv.last_morph_src_arg1 = val;
+                              fader.value = val;
+                              fader.out_value = val;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next group
+            groupIdx++;
+         }
+
+         // Next fader
+         faderIdx++;
+      }
+   }
+
+   // <method.png>
+   public =replay= virtual queueBidirectionalRPNUpdate(int _devIdx, byte _ch,
+                                                       STX_MIDIOutDevice _autoDev,
+                                                       short _rpn, short _rpnVal,
+                                                       String _labelOrNull
+                                                       ) {
+      int faderIdx = bank_idx * NUM_FADERS_PER_BANK;
+
+      loop(num_faders)
+      {
+         FPFader fader <= faders[faderIdx];
+
+         int groupIdx = 0;
+         loop(MIDIMorphScene.NUM_GROUPS)
+         {
+            MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+
+            MIDIMapEvent *srcEv;
+            foreach srcEv in mms.mms_entries
+            {
+               if(@(srcEv.dev) == @(in_dev))
+               {
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                  {
+                     if(faderIdx == srcEv.ext_type)
+                     {
+                        MIDIMapEvent dstEv <= srcEv.morph_target;
+                        if(MIDIMapDefs.TYPE_RPN == dstEv.type)
+                        {
+                           if(dstEv.ext_type == _rpn)
+                           {
+                              STX_MIDIOutDevice dstDev <= dstEv.dev;
+                              if(null != dstDev)
+                              {
+                                 boolean bMatch = @(dstDev) == @(_autoDev);
+
+                                 if(!bMatch)
+                                 {
+                                    bMatch =
+                                       (dstDev.dev_idx == _devIdx) &&
+                                       (dstEv.dev_ch == _ch);
+                                 }
+
+                                 if(bMatch)
+                                 {
+                                    fader.value     = _rpnVal;
+                                    fader.out_value = _rpnVal;
+
+                                    srcEv.last_morph_src_arg1 = _rpnVal;
+                                    srcEv.setMorphAutoLabelKeepFlags(_labelOrNull);
+
+                                    fader.updateLabel(srcEv.getMorphLabel());
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next group
+            groupIdx++;
+         }
+
+         // Next fader
+         faderIdx++;
+      }
+   }
+
+}

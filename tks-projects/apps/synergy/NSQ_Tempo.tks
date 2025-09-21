@@ -1,0 +1,1597 @@
+// ----
+// ---- file   : NSQ_Tempo.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 12Apr2020
+// ---- changed: 13Apr2020, 14Apr2020, 15Apr2020, 16Apr2020, 17Apr2020, 18Apr2020, 19Apr2020
+// ----          20Apr2020, 21Apr2020, 24Apr2020, 06May2020, 07May2020, 10May2020, 13May2020
+// ----          29Oct2020, 14Nov2020, 16Nov2020, 28Jul2023, 03Sep2023, 05Oct2023, 03Feb2024
+// ----          24Mar2024, 28Feb2025, 11Sep2025, 12Sep2025, 16Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MNSQ_Tempo;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug_drag = 0;
+
+
+// <class.png>
+class NSQ_TempoFloatParamDialog : FloatingLayer {
+
+   NodeSeqEditor *parent_editor;
+   FloatParam *fp;
+
+   public method showFP(NodeSeqEditor _editor, float _value, int _posX, int _posY) {
+      initFloatingLayer();
+      fp <= new FloatParam;
+      fp.initFloatParam();
+      fp.setStepFine(0.01);
+      fp.setStepCoarse(0.1);
+      fp.setMinMaxValues(5, 500);
+      fp.setPrecision(4);
+      fp.setMousePrecision(2);
+      fp.setInnerPadTop(0.0f);
+      fp.setInnerPadLeft(0.0f);
+      fp.setPositionX(0.0f);
+      fp.setEnableBorders(false);
+      fp.setValue(_value);
+
+      parent_editor <= _editor;
+      removeChildHierarchy();
+      addLayer(fp, Layout.CENTER);
+      int w = 100;
+      int h = TextField.GetMinSizeY();
+      fp.setRequiredSize2f(w, h);
+      setRequiredSize2f(w, h);
+      showAtXY(_posX, _posY);
+      UI.SetMouseFocus(fp);
+      UI.SetKeyboardFocus(fp);
+      fp.onTabFocus();
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public virtual hide() {
+      FloatingLayer::hide();
+      parent_editor.tempo.handleBPMFloatParamClosed();
+   }
+
+   public method handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer):boolean {
+      if(0 == _ev.current_state)
+      {
+         hide();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+
+      return FloatingLayer::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName <= _ac.getActionName();
+
+      if(@(ap) == @(fp))
+      {
+         parent_editor.tempo.handleBPMFloatParamEdited(fp.getFloatValue());
+
+         if(FloatParam.ACTION_VALUECHANGED == acName)
+            hide();
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class NSQ_Tempo extends Control, ActionProvider {
+
+   define float DOT_SIZE = 5.0f;
+   define float DOT_SIZE_SEL = 7.0f;
+   define int MAX_ROUND_DOTS = 300;
+
+   protected NodeSeqEditor *parent_editor;
+   protected NodeSeq *seq;
+
+   define int DRAG_NONE   = 0;
+   define int DRAG_BAR    = 1;
+   define int DRAG_SEL    = 2;
+   define int DRAG_FRAMES = 3;
+   define int DRAG_SCROLL = 4;
+   int drag_mode;
+   int drag_start_mx;
+
+   int drag_bar_idx;    // DRAG_BAR
+   int drag_bar_ticks;  // DRAG_BAR
+
+   int drag_frames_cur_delta;
+
+   int   drag_start_view_x;    // DRAG_SCROLL
+   int   drag_start_cursor_x;  // DRAG_SCROLL
+   float drag_start_scroll_x;  // DRAG_SCROLL
+   int   drag_start_ticks;     // DRAG_SCROLL
+
+   define int TEMPO_LABEL_H = 13;
+
+   NSQ_TempoFloatParamDialog *dlg_bpm;
+   protected boolean b_dlg_bpm_undo;
+
+   protected PopupMenu *ctxmenu;
+
+
+   // <ui_init.png>
+   public method init(NodeSeqEditor _editor) {
+      initControl();
+      parent_editor <= _editor;
+   }
+
+   // <method_get.png>
+   public virtual isEditable() : boolean {
+      // So that UI does not skip tab focus
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeSeq _seq) {
+      seq <= _seq;
+
+      drag_mode = DRAG_NONE;
+   }
+
+   // <method_get.png>
+   static GetTempoLabelH() : int {
+      return TEMPO_LABEL_H * UI.font_scaling;
+   }
+
+   // <ui.png>
+   protected virtual calcSizeX() : float {
+      return 0;
+   }
+
+   // <ui.png>
+   protected virtual calcSizeY() : float {
+      return 32;
+   }
+
+   // <method_get.png>
+   protected method getTicksAtX(float _x) : float {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         float trackX = 2;
+         float sx = getSizeX();
+         int ticksPerBar = pat.getNumTicksPerBar();
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+         float ticks = (seq.cursor_x * ticksPerBar) + (((_x - ctrX - trackX) * ticksPerBar) / pixPerBar);
+         return ticks;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   protected method getXAtTicks(int _ticks) : float {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         float trackX = 2;
+         float sx = getSizeX();
+         int ticksPerBar = pat.getNumTicksPerBar();
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+         float x = (_ticks - (seq.cursor_x * ticksPerBar));
+         x *= pixPerBar;
+         x /= ticksPerBar;
+         x += ctrX + trackX;
+         return x;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   protected method getTrackIdxAtY(float _y) : int {
+      float sy = getSizeY();
+      float trackY = 2 + GetTempoLabelH();
+      float trackSy = (sy - 2*2 - GetTempoLabelH()) / NodeSeq.NUM_TRACKS;
+      _y -= trackY;
+      if(_y < 0)
+         return 0;
+      else
+         return _y / trackSy;
+   }
+
+   // <method_get.png>
+   protected method getBarIdxNearX(float _x) : int {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticks16 = current_song.getNumTicksPer16th();
+         int ticks = getTicksAtX(_x);
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int barStartTicks = int((ticks + ticksPerBar/2) / ticksPerBar) * ticksPerBar;
+         if( (barStartTicks-ticks16) < ticks < (barStartTicks+ticks16) )
+            return (barStartTicks/ticksPerBar);
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public =replay= method findFrameIdxAndTrackIdxNearXY(int _x, int _y, Integer _retTrackIdx, Integer _retFrameIdx) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int trackIdxMouse = getTrackIdxAtY(_y);
+         local IntArray frameIndices;
+         int trackIdx = trackIdxMouse - 1;
+         int ticks = getTicksAtX(_x);
+         int thresholdTicks = current_song.ppq / 4;  // 1/16
+         NSQ_Track *track;
+         int frameIdx;
+         loop(3)
+         {
+            track <= pat.getTrackByIdx(trackIdx);
+            if(null != track)
+            {
+               frameIdx = track.findFrameIdxNearRadius(ticks, thresholdTicks, true/*bNoteOn*/);
+               frameIndices.add(frameIdx);
+            }
+            else
+               frameIndices.add(-1);
+            trackIdx++;
+         }
+         frameIdx = frameIndices[1];
+         trackIdx = trackIdxMouse;
+         if(-1 == frameIdx)
+         {
+            frameIdx = frameIndices[0];
+            trackIdx = trackIdxMouse - 1;
+            if(-1 == frameIdx)
+            {
+               frameIdx = frameIndices[2];
+               trackIdx = trackIdxMouse + 1;
+            }
+         }
+
+         _retTrackIdx = trackIdx;
+         _retFrameIdx = frameIdx;
+      }
+      else
+      {
+         _retTrackIdx = -1;
+         _retFrameIdx = -1;
+      }
+   }
+
+   // <method.png>
+   protected =replay= method snapTicksToNearestNoteOnFrame(int _ticks) : int {
+      int ticks = _ticks;
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+
+         if(seq.ui_b_tempo_snap_to_frame)
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+
+            local IntArray trackFrameIndices;
+            NSQ_Track *track;
+            int ticks16 = current_song.getNumTicksPer16th();
+
+            // Find nearest frame indices near mouse
+            foreach track in pat.tracks
+            {
+               trackFrameIndices.add(track.findFrameIdxNearRadius(ticks, ticks16/2/*tRadius*/, true/*bNoteOn*/));
+            }
+
+            // Find nearest frame time per mouse (all tracks)
+            int bestMatchDist = 9999999;
+            int bestMatchT = -1;
+            int trackIdx = 0;
+            foreach track in pat.tracks
+            {
+               int frameIdx = trackFrameIndices.get(trackIdx);
+               if(-1 != frameIdx)
+               {
+                  MIDIPipeFrame fr <= track.frames.get(frameIdx);
+                  int tAbs = fr.timeStamp;
+                  int tDist = abs(ticks - tAbs);
+                  if(tDist < bestMatchDist)
+                  {
+                     bestMatchDist = tDist;
+                     bestMatchT = tAbs;
+                  }
+               }
+               trackIdx++;
+            }
+
+            if(-1 != bestMatchT)
+            {
+               ticks = bestMatchT;
+               if(b_debug_drag) trace "xxx DRAG_BAR snap to frame ticks="+ticks;
+            }
+         }
+      }
+
+      return ticks;
+   }
+
+   // <ui_handle.png>
+   public method handleBPMFloatParamEdited(float _bpm) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         b_dlg_bpm_undo = true;
+         parent_editor.undoBeginMini();
+         Float fo = _bpm;
+         Float bpmMul = _bpm / current_song.bpm;
+         pat.updateBarTempo(seq.cursor_x, bpmMul);
+         Global.Print("Bar "+(seq.cursor_x+1)+" tempo is "+_bpm.printf("%3.3f")+" (mul="+bpmMul.printf("%1.4f")+")");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleBPMFloatParamClosed() {
+      if(b_dlg_bpm_undo)
+      {
+         parent_editor.undoEnd();
+         redraw();
+      }
+      UI.SetKeyboardFocus(parent_editor.arr);
+   }
+
+   // <ui_show.png>
+   public method showBPMFloatParamDialog(int _x, int _y) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         if(-1 == _x)
+         {
+            // when called via keyboard shortcut
+            Point2f abspos;
+            calcAbsolutePositionFBO(abspos);
+
+            float trackX = 2;
+            float sx = getSizeX();
+            float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+            _x = abspos.x + trackX + pixPerBar*0.5;
+            _y = abspos.y;
+         }
+
+         b_dlg_bpm_undo = false;
+         dlg_bpm <= new NSQ_TempoFloatParamDialog;
+         dlg_bpm.showFP(parent_editor,
+                        (pat.bar_tempo.get(seq.cursor_x)) * current_song.bpm,
+                        _x, _y
+                        );
+      }
+   }
+
+   // <method.png>
+   public method haveSelection() : boolean {
+      return (-1 != seq.tempo_sel_start_x);
+   }
+
+   // <method.png>
+   public method haveFinishedSelection() : boolean {
+      return (-1 != seq.tempo_sel_start_x) && (DRAG_NONE == drag_mode);
+   }
+
+   // <method.png>
+   public method deleteSelectedFrames() {
+      if(haveSelection())
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            parent_editor.undoBegin();
+            int numDeleted = pat.deleteTempoSelectedFrames();
+            seq.tempoSelectNone(true/*bFromTempo*/);
+            seq.ui_wheel_tick_move_count = 0;
+            parent_editor.undoEnd();
+
+            Global.Print("Delete "+numDeleted+" frame"+Utils.GetPluralString(numDeleted));
+            parent_editor.redrawSeq();
+         }
+      }
+   }
+
+   // <method.png>
+   public method mergeSelectedFrames() {
+      if(haveSelection())
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            parent_editor.undoBegin();
+            int numMerged = pat.mergeTempoSelectedFrames();
+            parent_editor.undoEnd();
+
+            Global.Print("Merge "+numMerged+" frame"+Utils.GetPluralString(numMerged));
+            parent_editor.redrawSeq();
+         }
+      }
+   }
+
+   // <method.png>
+   public method moveSelectedFrames(int _tickDelta, boolean _bNoUndo, boolean _bQuiet) {
+      if(haveSelection())
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            if(!_bNoUndo)
+               parent_editor.undoBegin();
+
+            Integer retTickDelta = 0;
+            int numMoved = pat.moveTempoSelectedFrames(_tickDelta, retTickDelta);
+            seq.setTempoSelection(seq.tempo_sel_start_x + retTickDelta,
+                                  seq.tempo_sel_start_y,
+                                  seq.tempo_sel_end_x   + retTickDelta,
+                                  seq.tempo_sel_end_y,
+                                  true/*bFromTempo*/
+                                  );
+
+            seq.ui_wheel_tick_move_count += retTickDelta;
+
+            if(!_bNoUndo)
+               parent_editor.undoEnd();
+
+            if(!_bQuiet)
+               Global.Print("Move "+numMoved+" frame"+Utils.GetPluralString(numMoved)+" by "+seq.ui_wheel_tick_move_count+" tick"+Utils.GetPluralString(seq.ui_wheel_tick_move_count)+" ("+((retTickDelta>0)?"+":"")+retTickDelta+")");
+            parent_editor.redrawSeq();
+         }
+      }
+   }
+
+   // <method.png>
+   public method moveSelectedFramesSnap(int _dir, boolean _bNoUndo, boolean _bQuiet) : int {
+      int ret = 0;
+      if(haveSelection())
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            if(!_bNoUndo)
+               parent_editor.undoBegin();
+
+            Integer retTickDelta = 0;
+            int numMoved = pat.moveTempoSelectedFramesSnap(_dir, retTickDelta);
+            ret = retTickDelta;
+            seq.setTempoSelection(seq.tempo_sel_start_x + ret,
+                                  seq.tempo_sel_start_y,
+                                  seq.tempo_sel_end_x + ret,
+                                  seq.tempo_sel_end_y,
+                                  true/*bFromTempo*/
+                                  );
+
+            seq.ui_wheel_tick_move_count += retTickDelta;
+
+            if(!_bNoUndo)
+               parent_editor.undoEnd();
+
+            if(!_bQuiet)
+               Global.Print("Snap-Move "+numMoved+" frame"+Utils.GetPluralString(numMoved)+" by "+seq.ui_wheel_tick_move_count+" tick"+Utils.GetPluralString(seq.ui_wheel_tick_move_count)+" ("+((retTickDelta>0)?"+":"")+retTickDelta+")");
+            parent_editor.redrawSeq();
+         }
+      }
+      return ret;
+   }
+
+   // <method.png>
+   protected method tryMakeTickVisible(int _tick) {
+      if(!replay.b_playing || (false == seq.b_autoscroll))
+      {
+         float x = getXAtTicks(_tick);
+         if(x < 0)
+         {
+            parent_editor.arr.setCursorX(mathClampi(seq.cursor_x - 1, 0, NSQ_Track.MAX_BARS-1));
+         }
+         else if(x >= getSizeX())
+         {
+            parent_editor.arr.setCursorX(mathClampi(seq.cursor_x + 1, 0, NSQ_Track.MAX_BARS-1));
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= method auditionFrame(int _moveDir) {
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         pat.lazyMergeAndRemoveEmptyFrames();
+
+         // lazy-reduce selection to first selected frame (or simply query first frame idx)
+         int frameIdx = pat.reduceTempoSelectionToFirstFrame();
+         if(-1 != frameIdx)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(seq.tempo_sel_start_y);
+
+            // trace "xxx auditionFrame: new tempo_sel y="+seq.tempo_sel_start_y+" x="+seq.tempo_sel_start_x;
+            MIDIPipeFrame *fr;
+            if(_moveDir < 0)
+            {
+               // Select previous frame
+               if(frameIdx > 0)
+                  frameIdx--;
+               fr <= track.frames.get(frameIdx);
+               seq.setTempoSelection(fr.timeStamp,
+                                     seq.tempo_sel_start_y,
+                                     fr.timeStamp + 1,
+                                     seq.tempo_sel_start_y,
+                                     true/*bFromTempo*/
+                                     );
+               tryMakeTickVisible(fr.timeStamp);
+            }
+            else if(_moveDir > 0)
+            {
+               // Select next frame
+               if((frameIdx + 1) < track.frames.numElements)
+                  frameIdx++;
+               fr <= track.frames.get(frameIdx);
+               seq.setTempoSelection(fr.timeStamp,
+                                     seq.tempo_sel_start_y,
+                                     fr.timeStamp + 1,
+                                     seq.tempo_sel_start_y,
+                                     true/*bFromTempo*/
+                                     );
+               tryMakeTickVisible(fr.timeStamp);
+            }
+            else
+            {
+               fr <= track.frames.get(frameIdx);
+            }
+
+            Global.Debug2("NSQ_Tempo::auditionFrame: play frameIdx="+frameIdx+" frame.numEvents="+fr.numEvents);
+
+            seq.uiQueueFrame(fr);
+         }
+
+         parent_editor.redrawSeq();
+      }
+   }
+
+   // <ui_show.png>
+   public method showContextMenu() {
+      // Create context-sensitive popupmenu
+      ctxmenu <= PopupMenu.New(this);
+
+      boolean bHavePattern = (null != parent_editor.getEditPattern());
+      boolean bHaveSelection = haveSelection();
+      PopupMenu *spm;
+      PopupMenuButton *pmb;
+      NSQ_Track track <= parent_editor.getEditTrack();
+
+      pmb <= ctxmenu.addDefaultButton("Delete selected frame(s)", "sel_delete");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("", "DELETE");
+      // pmb.setToolTipCaption("");
+
+      pmb <= ctxmenu.addDefaultButton("Merge selected frame(s)", "sel_merge");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("", "m");
+      // pmb.setToolTipCaption("");
+
+      ctxmenu.addSeparator();
+
+      // Cursor submenu (bar)
+      spm <= PopupMenu.New(ctxmenu);
+      pmb <= ctxmenu.addMenu("Move..", deref spm);
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Left 1 Tick", "sel_moveframes_left_fine");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("WHEELUP", ".");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Left by 64th note", "sel_moveframes_left_coarse");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("lshift-WHEELUP", "lshift-.");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Left (Snap 64th)", "sel_moveframes_left_snap");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("lctrl-WHEELUP", "lctrl-.");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Right 1 Tick", "sel_moveframes_right_fine");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("WHEELDOWN", "/");
+      pmb.setToolTipCaption("(note) '-' on german keyboard");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Right by 64th note", "sel_moveframes_right_coarse");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("lshift-WHEELDOWN", "lshift-/");
+      pmb.setToolTipCaption("(note) lshift-'-' on german keyboard");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Right (Snap 64th)", "sel_moveframes_right_snap");
+      pmb.setActive(bHavePattern && bHaveSelection);
+      pmb.setAccelerators("lctrl-WHEELDOWN", "lctrl-/");
+      pmb.setToolTipCaption("(note) lctrl-'-' on german keyboard");
+
+      ctxmenu.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseLeave(MouseEvent _ev) : boolean {
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      String cursor <= UIConstants.CURSOR_NORMAL;
+
+      if(_ev.middleButtonDown())
+      {
+         parent_editor.stepRecBegin();
+      }
+      else if(_ev.middleButtonUp())
+      {
+         parent_editor.stepRecEnd();
+      }
+
+      if(!replay.b_playing && seq.b_step_rec)
+      {
+         // Adjust step recording position
+         int ticks = mathMaxi(0, getTicksAtX(_ev.mouse_rel_x));
+         if( (UI.GetKeyMod() & VMOD_LCTRL) || _ev.isLeftButtonDown() )
+         {
+            int ticks16 = current_song.getNumTicksPer16th();
+            ticks = ((ticks + ticks16/2) / ticks16) * ticks16;
+         }
+         current_song.seek(seq.nodeGetLastPatternStartSongOffset() + ticks);
+         UI.CompositeAll();
+      }
+
+      // Show move cursor when mouse is near bar
+      if(seq.b_master)
+      {
+         if(_ev.mouse_rel_y < (2+GetTempoLabelH()))
+         {
+            int barIdx = getBarIdxNearX(_ev.mouse_rel_x);
+            if(barIdx > 0)
+               cursor <= UIConstants.CURSOR_MOVEX;
+         }
+      }
+
+      local Integer frameIdx = -1;
+      local Integer trackIdx;
+
+      if(_ev.mouse_rel_y >= (2+GetTempoLabelH()))
+      {
+         findFrameIdxAndTrackIdxNearXY(_ev.mouse_rel_x, _ev.mouse_rel_y, trackIdx, frameIdx);
+         if(-1 != frameIdx)
+            cursor <= UIConstants.CURSOR_MOVEX;
+      }
+
+      UI.ShowCursor(cursor);
+
+      if(_ev.isWheel())
+      {
+         boolean bAlt   = (UI.GetKeyMod() & VMOD_LALT);
+         boolean bShift = (UI.GetKeyMod() & VMOD_LSHIFT);
+         boolean bCtrl  = (UI.GetKeyMod() & VMOD_LCTRL);
+
+         int moveDir;
+         if(STConfig.b_node_seq_swap_mousewheel_dir)
+            moveDir = _ev.wheelUp() ? 1 : _ev.wheelDown() ? -1 : 0;
+         else
+            moveDir = _ev.wheelDown() ? 1 : _ev.wheelUp() ? -1 : 0;
+
+         if(haveSelection() && (DRAG_NONE == drag_mode) && (bCtrl || bShift || bAlt || (-1 != frameIdx)))
+         {
+
+            if(0 != moveDir)
+            {
+               parent_editor.undoBeginMini();
+               if(bShift)
+               {
+                  moveSelectedFrames(moveDir * current_song.ppq / 16, true/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+               }
+               else if(bCtrl)
+               {
+                  moveSelectedFramesSnap(moveDir, true/*bNoUndo*/, false/*bQuiet*/);
+               }
+               else
+               {
+                  moveSelectedFrames(moveDir, true/*bNoUndo*/, false/*bQuiet*/);
+               }
+            }
+            return true;
+         }
+         else if(haveSelection() && (DRAG_NONE == drag_mode) && (-1 == frameIdx))
+         {
+            auditionFrame(moveDir);
+            return true;
+         }
+         else
+         {
+            return parent_editor.arr.handleMouseWheel(_ev);
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public =replay= virtual onMouseClick(MouseEvent _ev) : boolean {
+      int ticks;
+
+      if(_ev.isLeftButtonDown() && _ev.isRightButton())
+      {
+         parent_editor.undo();
+         return true;
+      }
+      else if(_ev.isRightButtonDown() && _ev.isLeftButton())
+      {
+         parent_editor.redo();
+         return true;
+      }
+
+      if(_ev.isLeftButton())
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            float trackX = 2;
+            float sx = getSizeX();
+            float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+
+            if(_ev.mouse_rel_y < (2+GetTempoLabelH()))
+            {
+               if( (trackX+pixPerBar*0.5) <= _ev.mouse_rel_x < (trackX+pixPerBar*1.5) )
+               {
+                  showBPMFloatParamDialog(_ev.mouse_abs_x, _ev.mouse_abs_y);
+                  return true;
+               }
+            }
+            else
+            {
+               // Select frame near mouse
+               local Integer frameIdx;
+               local Integer trackIdx;
+               findFrameIdxAndTrackIdxNearXY(_ev.mouse_rel_x, _ev.mouse_rel_y, trackIdx, frameIdx);
+
+               if(-1 != frameIdx)
+               {
+                  NSQ_Track *track;
+
+                  if(VMOD_LCTRL == UI.GetKeyMod())
+                  {
+                     // Select exactly one frame
+                     track <= pat.getTrackByIdx(trackIdx);
+                     // trace "xxx trackIdx="+trackIdx+" frameIdx="+frameIdx+" track="+#(track);
+                     int tAbs = track.frames.get(frameIdx).timeStamp;
+                     seq.toggleTempoSelection(tAbs, trackIdx, tAbs+1, trackIdx, true/*bFromTempo*/);
+                     seq.ui_wheel_tick_move_count = 0;
+                     Global.Print("Select 1 frame (ticks="+tAbs+")");
+                  }
+                  else
+                  {
+                     // Select frames in area around mouse
+                     ticks = getTicksAtX(_ev.mouse_rel_x);
+                     int thresholdTicks = current_song.ppq / 4;  // 1/16
+                     seq.setTempoSelection(mathMaxi(0, ticks-thresholdTicks/2),
+                                           trackIdx,
+                                           ticks+thresholdTicks/2,
+                                           trackIdx,
+                                           true/*bFromTempo*/
+                                           );
+                     seq.ui_wheel_tick_move_count = 0;
+
+                     redraw();
+                     if(haveSelection())
+                     {
+                        int numSel = pat.getNumTempoSelectedFrames();
+                        local String msg <= "Select "+numSel+" frame"+Utils.GetPluralString(numSel);
+                        if(numSel > 0)
+                        {
+                           if(pat.getUniqueTempoSelectedTrackIdx() == seq.cursor_y)
+                           {
+                              track <= parent_editor.getEditTrack();
+                              local Integer chordBaseNote;
+                              local Integer chordIndex;
+                              if(track.chordDetect(false/*bEvent*/, chordBaseNote, chordIndex))
+                              {
+                                 msg.append(". Chord: ");
+                                 msg.append(MIDI.base_note_names.get(chordBaseNote % 12));
+                                 msg.append(Chord.chord_names_short.get(chordIndex));
+                              }
+                           }
+                        }
+                        Global.Print(msg);
+                     }
+                  }
+               }
+               else
+               {
+                  if(haveSelection())
+                  {
+                     seq.tempoSelectNone(true/*bFromTempo*/);
+                     seq.ui_wheel_tick_move_count = 0;
+                     redraw();
+                  }
+               }
+
+               if(_ev.leftButtonUp())
+               {
+                  UI.SetKeyboardFocus(parent_editor.arr);
+               }
+
+               return true;
+            }
+         } // if pat
+
+         if(_ev.leftButtonUp())
+         {
+            UI.SetKeyboardFocus(parent_editor.arr);
+            return true;
+         }
+
+      }
+      else if(_ev.isRightButton())
+      {
+         showContextMenu();
+         return true;
+      }
+      else if(_ev.isMiddleButton())
+      {
+         parent_editor.toggleTempoAndEventViews(false/*bFromButton*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseHold(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         deleteSelectedFrames();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      float trackY = 2 + GetTempoLabelH();
+      int ticks;
+
+      if(seq.b_master)
+      {
+         if(_dragStart.mouse_rel_y < trackY)
+         {
+            int barIdx = getBarIdxNearX(_dragStart.mouse_rel_x);
+            if(barIdx > 0)
+            {
+               drag_mode = DRAG_BAR;
+               ticks = getTicksAtX(_ev.mouse_rel_x);
+               drag_bar_idx = barIdx;
+               drag_bar_ticks = snapTicksToNearestNoteOnFrame(ticks);
+               if(b_debug_drag) trace "xxx DRAG_BAR start ticks="+drag_bar_ticks;
+               UI.CompositeAll();
+               seq.dragSaveTempoSelection();
+               return true;
+            }
+         }
+      }
+
+      if(_dragStart.mouse_rel_y >= trackY)
+      {
+         if(_ev.isRightButtonDown())
+         {
+            drag_mode = DRAG_SCROLL;
+            drag_start_mx = _dragStart.mouse_rel_x;
+            drag_start_view_x = seq.view_x;
+            drag_start_cursor_x = seq.cursor_x;
+            drag_start_scroll_x = seq.scroll_x;
+            drag_start_ticks = getTicksAtX(drag_start_mx);
+            seq.dragSaveTempoSelection();
+            return true;
+         }
+
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            local Integer frameIdx;
+            local Integer trackIdx;
+            findFrameIdxAndTrackIdxNearXY(_dragStart.mouse_rel_x, _dragStart.mouse_rel_y, trackIdx, frameIdx);
+            if(-1 != frameIdx)
+            {
+               NSQ_Track *track;
+               int tAbs;
+               track <= pat.getTrackByIdx(trackIdx);
+               // trace "xxx trackIdx="+trackIdx+" frameIdx="+frameIdx+" track="+#(track);
+               tAbs = track.frames.get(frameIdx).timeStamp;
+               boolean bNewSel = false;
+
+               if(haveSelection())
+               {
+                  // Start new selection if frame under mouse is not part of current selection
+                  if(!(seq.sorted_tempo_sel_start_y <= trackIdx <= seq.sorted_tempo_sel_end_y) ||
+                     !(seq.sorted_tempo_sel_start_x <= tAbs < seq.sorted_tempo_sel_end_x)
+                     )
+                  {
+                     bNewSel = true;
+                  }
+               }
+
+               if(!haveSelection() || bNewSel)
+               {
+                  ticks = getTicksAtX(_dragStart.mouse_rel_x);
+                  int thresholdTicks = current_song.ppq / 4;  // 1/16
+                  seq.setTempoSelection(mathMaxi(0, ticks-thresholdTicks/2),
+                                        trackIdx,
+                                        ticks+thresholdTicks/2,
+                                        trackIdx,
+                                        true/*bFromTempo*/
+                                        );
+               }
+
+               if(haveSelection())
+               {
+                  drag_mode = DRAG_FRAMES;
+                  drag_start_mx = _dragStart.mouse_rel_x;
+                  drag_frames_cur_delta = 0;
+                  UI.ShowCursor(UIConstants.CURSOR_PENCIL);
+                  parent_editor.undoBegin();
+                  seq.dragSaveTempoSelection();
+                  return true;
+               }
+            }
+         }
+
+         // Start new selection
+         drag_mode = DRAG_SEL;
+         seq.setTempoSelection(getTicksAtX(_dragStart.mouse_rel_x),
+                               getTrackIdxAtY(_dragStart.mouse_rel_y),
+                               getTicksAtX(_ev.mouse_rel_x),
+                               getTrackIdxAtY(_ev.mouse_rel_y),
+                               true/*bFromTempo*/
+                               );
+         seq.dragSaveTempoSelection();
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual wantMouseDragButtonOnlyEvents() : boolean {
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         float ticks;
+         int ticksPerBar;
+         int dragStartTicks;
+
+         if(DRAG_BAR == drag_mode)
+         {
+            ticks = getTicksAtX(_currentEv.mouse_rel_x);
+            ticksPerBar = pat.getNumTicksPerBar();
+            dragStartTicks = drag_bar_idx * ticksPerBar;
+            ticks = snapTicksToNearestNoteOnFrame(ticks);
+            ticks = mathClampf(ticks, (dragStartTicks - ticksPerBar/2), (dragStartTicks + ticksPerBar/2));
+
+            drag_bar_ticks = ticks;
+            if(b_debug_drag) trace "xxx DRAG_BAR ticks="+ticks;
+            UI.CompositeAll();
+            return true;
+         }
+         else if(DRAG_SEL == drag_mode)
+         {
+            seq.setTempoSelection(seq.tempo_sel_start_x,
+                                  seq.tempo_sel_start_y,
+                                  getTicksAtX(_currentEv.mouse_rel_x),
+                                  getTrackIdxAtY(_currentEv.mouse_rel_y),
+                                  true/*bFromTempo*/
+                                  );
+            if(b_debug_drag) trace "xxx tempo_sel_end=("+seq.tempo_sel_end_x+";"+seq.tempo_sel_end_y+")";
+            UI.CompositeAll();
+            return true;
+         }
+         else if(DRAG_FRAMES == drag_mode)
+         {
+            int frStartTicks    = getTicksAtX(drag_start_mx);
+            int frCurDeltaTicks = getTicksAtX(_currentEv.mouse_rel_x);
+            int frMoveDelta;
+            if(VMOD_LCTRL == UI.GetKeyMod())
+            {
+               int snapTicks = current_song.ppq / 8;  // 1/32
+               frCurDeltaTicks = ((frCurDeltaTicks + snapTicks-1) / snapTicks) * snapTicks;
+               int frLastTicksSnap = (frStartTicks+drag_frames_cur_delta);
+               if(frCurDeltaTicks != frLastTicksSnap)
+               {
+                  frMoveDelta = 0;
+                  loop(abs(frCurDeltaTicks - frLastTicksSnap) / snapTicks)
+                  {
+                     frMoveDelta += moveSelectedFramesSnap((frCurDeltaTicks > frLastTicksSnap)?1:-1/*dir*/,
+                                                           true/*bNoUndo*/, true/*bQuiet*/
+                                                           );
+                  }
+                  drag_frames_cur_delta += frMoveDelta;
+                  if(b_debug_drag) trace "xxx snap (start+delta)="+(frStartTicks+drag_frames_cur_delta)+" delta="+drag_frames_cur_delta+" frMoveDelta="+frMoveDelta;
+               }
+            }
+            else
+            {
+               frCurDeltaTicks -= frStartTicks;
+               if(frCurDeltaTicks != drag_frames_cur_delta)
+               {
+                  frMoveDelta = frCurDeltaTicks - drag_frames_cur_delta;
+                  drag_frames_cur_delta = frCurDeltaTicks;
+                  moveSelectedFrames(frMoveDelta,
+                                     true/*bNoUndo*/, true/*bQuiet*/
+                                     );
+                  if(b_debug_drag) trace "xxx free (start+delta)="+(frStartTicks+drag_frames_cur_delta)+" delta="+drag_frames_cur_delta+" frMoveDelta="+frMoveDelta;
+               }
+            }
+
+            return true;
+         }
+         else if(DRAG_SCROLL == drag_mode)
+         {
+            ticksPerBar = pat.getNumTicksPerBar();
+            float sx = getSizeX();
+            float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+
+            int deltaTicks = ((drag_start_mx - _currentEv.mouse_rel_x) * 6 * ticksPerBar) / pixPerBar;
+            float barDelta = (float(deltaTicks) / ticksPerBar) - drag_start_scroll_x;
+
+            parent_editor.arr.setCursorX(drag_start_cursor_x + int(barDelta));
+            if((drag_start_cursor_x + barDelta) < 0)
+            {
+               seq.scroll_x = 0;
+            }
+            else
+            {
+               float barMod = frac((float(deltaTicks) / ticksPerBar) - drag_start_scroll_x);
+               seq.scroll_x = -barMod;
+            }
+            redraw();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         if(DRAG_BAR == drag_mode)
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+            int barIdx = drag_bar_idx - 1;
+            int dragStartTicks = barIdx * ticksPerBar;
+            float ratio = ticksPerBar / float(drag_bar_ticks - dragStartTicks);
+            if(b_debug_drag) trace "xxx DRAG_BAR end barIdx="+barIdx+" dragStartTicks="+dragStartTicks+" ticksPerBar="+ticksPerBar+" ticks="+drag_bar_ticks+" newTicksPerBar="+(drag_bar_ticks - dragStartTicks)+" ratio="+ratio;
+
+            parent_editor.undoBegin();
+
+            boolean bBPMOnly = false;
+            boolean bCurrentTrackOnly = false;
+
+            int kmod = UI.GetKeyMod();
+
+            if(VMOD_LSHIFT == kmod)
+            {
+               bCurrentTrackOnly = true;
+            }
+            else if(VMOD_LCTRL == kmod)
+            {
+               bBPMOnly = true;
+            }
+
+            int numUpdated = pat.multiplyBarFrameTimes(barIdx, ratio, bCurrentTrackOnly, bBPMOnly);
+
+            parent_editor.undoEnd();
+
+            Float fo;
+            if(ratio < 1.0)
+            {
+               fo = 100.0 * (1.0 / ratio) - 100.0;
+               Global.Print("Tempo-Map: slow down "+numUpdated+" frame"+Utils.GetPluralString(numUpdated)+" by "+fo.printf("%3.3f")+"%");
+            }
+            else
+            {
+               fo = 100.0 * ratio - 100.0;
+               Global.Print("Tempo-Map: speed up "+numUpdated+" frame"+Utils.GetPluralString(numUpdated)+" by "+fo.printf("%3.3f")+"%");
+            }
+
+            parent_editor.redrawSeq();
+         }
+         else if(DRAG_SEL == drag_mode)
+         {
+            int numSel = pat.getNumTempoSelectedFrames();
+
+            local String msg <= "Select "+numSel+" frame"+Utils.GetPluralString(numSel);
+            if(numSel > 0)
+            {
+               if(pat.getUniqueTempoSelectedTrackIdx() == seq.cursor_y)
+               {
+                  NSQ_Track track <= parent_editor.getEditTrack();
+                  local Integer chordBaseNote;
+                  local Integer chordIndex;
+                  if(track.chordDetect(false/*bEvent*/, chordBaseNote, chordIndex))
+                  {
+                     msg.append(". Chord: ");
+                     msg.append(MIDI.base_note_names.get(chordBaseNote % 12));
+                     msg.append(Chord.chord_names_short.get(chordIndex));
+                  }
+               }
+            }
+            Global.Print(msg);
+            redraw();  // highlight dots
+         }
+         else if(DRAG_FRAMES == drag_mode)
+         {
+            parent_editor.undoEnd();
+         }
+         else if(DRAG_SCROLL == drag_mode)
+         {
+            // nothing to do here
+         }
+      }
+
+      drag_mode = DRAG_NONE;
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      if(DRAG_FRAMES == drag_mode)
+      {
+         if(parent_editor.undoEnd())
+            parent_editor.undo();
+      }
+      else if(DRAG_SCROLL == drag_mode)
+      {
+         seq.view_x = drag_start_view_x;
+         seq.cursor_x = drag_start_cursor_x;
+         seq.scroll_x = drag_start_scroll_x;
+      }
+
+      parent_editor.redrawSeq();
+      drag_mode = DRAG_NONE;
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      // // seq.tempoSelectNone(true/*bFromTempo*/);
+      seq.dragRestoreTempoSelection();
+      seq.ui_wheel_tick_move_count = 0;
+      UI.CompositeAll();
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      return (null == pat) || (_ev.isMiddleButtonDown());
+   }
+
+   // <ui_render.png>
+   public =replay= virtual onDraw() {
+      // (todo) optimize thread sync
+      // (note) frames may be deleted in replay thread (scrub, replace)
+
+      if((maybe == seq.b_autoscroll) && replay.b_playing)
+      {
+         // Smooth scroll mode
+         parent_editor.arr.doAutoScroll(false/*bForce*/);
+         redraw();
+      }
+
+      float sx = getSizeX();
+      float sy = getSizeY();
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.DrawFilledRectangle(0, 0, sx, sy, app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BG));
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)
+      {
+         float trackX = 2;
+         float trackY = 2 + GetTempoLabelH();
+         float trackSy = (sy - 2*2 - GetTempoLabelH()) / NodeSeq.NUM_TRACKS;
+         float trackSyAll = trackSy * NodeSeq.NUM_TRACKS;
+         int trackIdx = 0;
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         float pixPerBeat = pixPerBar / pat.sig_beats;
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+         float cx;
+         float px;
+         float cy;
+         int barIdx = seq.cursor_x;
+         int frameIdx;
+         MIDIPipeFrame *fr;
+         int ticksPerBar = pat.getNumTicksPerBar();
+
+         int c32BgCur     = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BG_CUR);
+         int c32BeatIdeal = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BEAT_IDEAL);
+         int c32BarIdeal  = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_BAR_IDEAL);
+         int c32DotCur    = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_DOT_CUR);
+         int c32DotOther  = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_DOT_OTHER);
+         int c32DotSel    = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_DOT_SEL);
+         int c32CurTrack  = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_CUR_TRACK);
+
+         boolean bHaveSelection = haveSelection();
+
+         UIRenderer.EnableBlending();
+
+         // Highlight current bar (bg)
+         UIRenderer.DrawFilledRectangle(ctrX + trackX, trackY, pixPerBar, trackSyAll, c32BgCur);
+
+         // Draw tempo labels
+         Font font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         int c32BarLabel = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_LABEL);
+         String barLabel;
+         Float fo;
+         cy = 2 - 1;
+         float labelOffX = 2;
+
+         int lbBarIdx = barIdx - 2;
+         cx = trackX + labelOffX + ctrX - pixPerBar*2;
+         if(seq.ui_num_visible_bars <= 18)
+         {
+            loop(seq.ui_num_visible_bars + 2)
+            {
+               if(lbBarIdx >= 0)
+               {
+                  fo = current_song.bpm * pat.bar_tempo.get(lbBarIdx);
+                  barLabel = fo.printf("%3.3f");
+                  UIRenderer.DrawText(barLabel, font, c32BarLabel, c32BarLabel, cx, cy, 0/*availW*/, 0/*align*/);
+               }
+
+               cx += pixPerBar;
+               lbBarIdx++;
+            }
+         }
+
+         UIRenderer.EnableBlending();
+
+         // Draw label / track separator
+         UIRenderer.DrawLine(2, trackY-1, sx-2, trackY-1, c32BarIdeal);
+
+         // Draw ideal bar positions
+         int numVisBars;
+         if(barIdx > 0)
+         {
+            numVisBars = seq.ui_num_visible_bars + 1;
+            cx = trackX + ctrX - pixPerBar*mathMini(barIdx, 2);
+            barIdx--;
+         }
+         else
+         {
+            numVisBars = (seq.ui_num_visible_bars-1+1);
+            cx = trackX + ctrX;
+         }
+
+         if(0.0 != seq.scroll_x)
+            numVisBars++;
+
+         if(seq.ui_num_visible_bars <= 128)
+         {
+            loop(numVisBars)
+            {
+               if(0 <= barIdx < NSQ_Track.MAX_BARS)
+               {
+                  UIRenderer.DrawLine(cx, 2, cx, (sy-2), c32BarIdeal);
+                  int beatIdx = 0;
+                  float beatCx = cx + pixPerBeat*0.5;
+                  loop(mathMaxi(0, pat.sig_beats))
+                  {
+                     UIRenderer.DrawStippledRectangle2(beatCx, trackY, 0, trackSyAll, 1.0/*b*/, c32BeatIdeal);
+                     beatCx += pixPerBeat*0.5;
+
+                     if(++beatIdx != pat.sig_beats)
+                     {
+                        UIRenderer.DrawStippledRectangle(beatCx, trackY, 0, trackSyAll, 1.0/*b*/, c32BeatIdeal);
+                        beatCx += pixPerBeat*0.5;
+                     }
+                  }
+               }
+               barIdx++;
+               cx += pixPerBar;
+            }
+         }
+
+         float dotScl = sqrt(sx*sy) / 300.0;
+
+         // Draw track note-on events
+         cy = trackY;
+         float ctrOffY = trackSy * 0.5;
+         loop(NodeSeq.NUM_TRACKS)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(trackIdx);
+            IntArray barLUT <= track.bar_lut;
+            PointerArray frames <= track.frames;
+            cx = trackX + ctrX - pixPerBar*mathMini(seq.cursor_x, 2);
+            barIdx = seq.cursor_x - mathMini(seq.cursor_x, 2);
+            loop(numVisBars)
+            {
+               if(0 <= barIdx < NSQ_Track.MAX_BARS)
+               {
+                  frameIdx = barLUT.get(barIdx);
+                  if(-1 != frameIdx)
+                  {
+                     UIRenderer.BeginRoundDots(MAX_ROUND_DOTS, DOT_SIZE*dotScl, (barIdx == seq.cursor_x) ? c32DotCur : c32DotOther);
+                     boolean bInSelection = false;
+                     for(;;)
+                     {
+                        fr <= frames.get(frameIdx);
+                        if(null != fr)
+                        {
+                           int tAbs = fr.timeStamp;
+                           if(tAbs >= ((barIdx +1)*ticksPerBar))
+                              break;
+                           if(fr.numEventsNoteOn > 0)
+                           {
+                              px = tAbs - (barIdx * ticksPerBar);
+                              px = (px * pixPerBar) / ticksPerBar;
+                              px += cx;
+                              if(bHaveSelection)
+                              {
+                                 if(seq.sorted_tempo_sel_start_y <= trackIdx <= seq.sorted_tempo_sel_end_y)
+                                 {
+                                    if(seq.sorted_tempo_sel_start_x <= tAbs < seq.sorted_tempo_sel_end_x)
+                                    {
+                                       if(!bInSelection)
+                                       {
+                                          UIRenderer.EndRoundDots();
+                                          UIRenderer.BeginRoundDots(MAX_ROUND_DOTS, DOT_SIZE_SEL*dotScl, c32DotSel);
+                                          bInSelection = true;
+                                       }
+                                    }
+                                    else
+                                    {
+                                       if(bInSelection)
+                                       {
+                                          UIRenderer.EndRoundDots();
+                                          UIRenderer.BeginRoundDots(MAX_ROUND_DOTS, DOT_SIZE*dotScl, (barIdx == seq.cursor_x) ? c32DotCur : c32DotOther);
+                                          bInSelection = false;
+                                       }
+                                    }
+                                 }
+                              }
+                              UIRenderer.DrawNextRoundDot(px, cy + ctrOffY);
+                           }
+
+                           frameIdx++;
+                        }
+                        else
+                           break;
+                     }
+                     UIRenderer.EndRoundDots();
+                  }
+               }
+               barIdx++;
+               cx += pixPerBar;
+            }
+
+            // Next track
+            trackIdx++;
+            cy += trackSy;
+         }
+      } // if pat
+
+      UIRenderer.DisableBlending();
+
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, sx, sy);
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      // // glPopAttrib();
+   }
+
+   // <ui_render.png>
+   public virtual onDrawOverlays() {
+      int c32;
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)
+      {
+         float sx = getSizeX();
+         float sy = getSizeY();
+
+         float trackX = 2;
+         float trackY = 2 + GetTempoLabelH();
+         float trackSy = (sy - 2*2 - GetTempoLabelH()) / NodeSeq.NUM_TRACKS;
+         float pixPerBar = (sx - 2*2) / (seq.ui_num_visible_bars-1);
+         int ticksPerBar = pat.getNumTicksPerBar();
+         float ctrX = pixPerBar * (0.5 + seq.scroll_x);
+
+         Point2f abspos;
+         calcAbsolutePositionFBO(abspos);
+
+         // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+         sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+         sdvg_EnableScissor();
+
+         float cx;
+
+         UIRenderer.EnableBlending();
+
+         // Highlight current track
+         int c32CurTrack  = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_CUR_TRACK);
+         cx = trackX + ctrX;
+         float w = sx-2;
+         // if(0 != seq.cursor_x)
+         cx -= pixPerBar * mathMini(seq.cursor_x, 2);
+         if((NSQ_Track.MAX_BARS - 1) == seq.cursor_x)
+            w -= pixPerBar*0.5;
+         UIRenderer.DrawFilledRectangle(cx, trackY + (seq.cursor_y * trackSy), w - cx, trackSy, c32CurTrack);
+
+         // Draw replay marker
+         if(1 || replay.b_playing)
+         {
+            cx = float(seq.tick_nr * pixPerBar) / ticksPerBar;
+            cx -= (seq.cursor_x) * pixPerBar;
+            cx += trackX + ctrX;
+            int c32Marker = NSQ_Arranger.GetReplayMarkerC32(seq, pat);
+            UIRenderer.DrawLine(cx, trackY, cx, sy-1, c32Marker);
+         }
+
+         // Draw bar-drag handle
+         if(DRAG_BAR == drag_mode)
+         {
+            int c32DragBar = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_TEMPO_DRAG_BAR);
+            cx = (drag_bar_ticks * pixPerBar) / ticksPerBar;
+            cx -= (seq.cursor_x) * pixPerBar;
+            cx += trackX + ctrX;
+            UIRenderer.DrawLine(cx, trackY, cx, sy-1, c32DragBar);
+         }
+
+         // Draw selection
+         if(haveSelection() && (DRAG_SEL == drag_mode))
+         {
+            int c32SelBG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_BG);
+            int c32SelFG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_FG);
+            float cxL;
+            cxL = (seq.sorted_tempo_sel_start_x * pixPerBar) / ticksPerBar;
+            cxL -= (seq.cursor_x) * pixPerBar;
+            cxL += trackX + ctrX;
+            float cxR;
+            cxR = (seq.sorted_tempo_sel_end_x * pixPerBar) / ticksPerBar;
+            cxR -= (seq.cursor_x) * pixPerBar;
+            cxR += trackX + ctrX;
+            float cyT;
+            cyT = trackY + (seq.sorted_tempo_sel_start_y * trackSy);
+            float cyB;
+            cyB = trackY + (seq.sorted_tempo_sel_end_y * trackSy + trackSy-1);
+            UIRenderer.DrawFilledRectangle(cxL, cyT, (cxR - cxL), (cyB - cyT), c32SelBG);
+            UIRenderer.DrawRectangle(cxL, cyT, (cxR - cxL), (cyB - cyT), 1, c32SelFG);
+         }
+
+         UIRenderer.DisableBlending();
+
+         sdvg_PopScissor();
+         sdvg_DisableScissor();
+
+         // // glPopAttrib();
+
+         if(replay.b_playing)
+            UI.CompositeAll();
+      } // if pat
+
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+      }
+
+      return Control::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      ActionProvider ap <= _ac.getActionProvider();
+      String acName <= _ac.getActionName();
+
+      boolean bShift = (UI.GetKeyMod() & VMOD_LSHIFT);
+      boolean bCtrl  = (UI.GetKeyMod() & VMOD_LCTRL);
+
+      switch(@(ap))
+      {
+         case @(ctxmenu):
+            parent_editor.refocusDefault();
+            switch(acName)
+            {
+               default:
+                  // Cancel
+                  return true;
+
+               case "sel_delete":
+                  deleteSelectedFrames();
+                  return true;
+
+               case "sel_merge":
+                  mergeSelectedFrames();
+                  return true;
+
+               case "sel_moveframes_left_fine":
+                  moveSelectedFrames(-1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_moveframes_left_coarse":
+                  moveSelectedFrames(-current_song.ppq / 16, false/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+                  return true;
+
+               case "sel_moveframes_left_snap":
+                  moveSelectedFramesSnap(-1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_moveframes_right_fine":
+                  moveSelectedFrames(1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_moveframes_right_coarse":
+                  moveSelectedFrames(current_song.ppq / 16, false/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+                  return true;
+
+               case "sel_moveframes_right_snap":
+                  moveSelectedFramesSnap(1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+            }
+            return true;
+      }
+
+      return false;
+   }
+
+}

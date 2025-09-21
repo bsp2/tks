@@ -1,0 +1,181 @@
+// ----
+// ---- file   : ManageColumnsEntry.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 06Feb2012
+// ---- changed: 07Feb2012, 08Feb2012, 13Feb2012, 14Feb2012, 13Apr2013, 25Jul2016, 28Jul2023
+// ----          28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_ManageColumnsEntry;
+
+use namespace ui;
+
+
+class NT_ManageColumnsEntry {
+
+   boolean b_filtered;
+
+   int id; // for debugging purposes..
+
+   define int TYPE_STDCTL       = 0; // note/freq/pan/..
+   define int TYPE_USRCTL       = 1; // possibly mapped to a param (1:1 mapping)
+   define int TYPE_MIDI_CC      = 2; // CC/RPN/NRPN/SYSEX, possibly mapped to a usrctl
+   define int TYPE_MIDI_RPN     = 3; //
+   define int TYPE_MIDI_NRPN    = 4; //
+
+   int type;
+
+   static StringArray type_names = [ "STDCTL", "USRCTL", "MIDI_CC", "MIDI_RPN", "MIDI_NRPN" ];
+
+   NT_CEL *cel;  // track layout cel or null if not available
+
+   int ctl_id;
+
+   int mapped_to_usrctl_param; // userctl#/param# (0..15) or -1 if not mapped
+
+   NT_MIDIParam *midi_param;
+
+   String param_string;
+   boolean b_param_link;  // true=show icon when usrctl is mapped to a midictl
+   boolean b_ctl_link;    // true=show icon when midictl is mapped to usrctl
+
+   String midi_string;
+
+   // non-UI related (if midi_param does not yet exist)
+   int midi_cc_nr;
+   int midi_nrpn_nr;
+   int midi_rpn_nr;
+
+
+   public method init(int _id) {
+      id               = _id;
+      b_filtered       = false;
+      ctl_id           = -1;
+      mapped_to_usrctl_param = -1;
+      midi_cc_nr       = -1;
+      midi_nrpn_nr     = -1;
+      midi_rpn_nr      = -1;
+   }
+
+   public method getCelUsrCtlId() : int {
+      if(TYPE_USRCTL == type)
+      {
+         return ctl_id - NT_TrackPattern.CTL_USR;
+      }
+      else
+      {
+         return mapped_to_usrctl_param;
+      }
+   }
+
+   public method createMIDIParam(NT_Instrument _ins) {
+
+      midi_param <= _ins.createNewParam(-1);
+
+      if(null != midi_param)
+      {
+         midi_param.type        = (-1 != midi_cc_nr) ? NT_MIDIParam.TYPE_CC : (-1 != midi_rpn_nr) ? NT_MIDIParam.TYPE_RPN : NT_MIDIParam.TYPE_NRPN;
+
+         midi_param.ui_style    = NT_CEL.STYLE_HEX;
+         midi_param.ui_range    = NT_CEL.RANGE_0_127;
+
+         Integer io;
+
+         switch(midi_param.type)
+         {
+            default:
+            case NT_MIDIParam.TYPE_CC:
+               midi_param.cc_msb_id   = midi_cc_nr;
+               midi_param.name = midi_param.uiGetMIDIParamString(false, _ins);  // already prefixed by CC#
+               break;
+
+            case NT_MIDIParam.TYPE_RPN:
+               midi_param.rpn_id      = midi_rpn_nr;
+               midi_param.name = midi_param.uiGetMIDIParamString(false, _ins); // no RPN# prefix
+               midi_param.b_scale14bit = false;
+               break;
+
+            case NT_MIDIParam.TYPE_NRPN:
+               midi_param.nrpn_id     = midi_nrpn_nr;
+               midi_param.name = midi_param.uiGetMIDIParamString(false, _ins); // no NRPN# prefix
+               midi_param.b_scale14bit = false;
+               break;
+         }
+
+
+         // Determine default layout style/range from MSP
+         MIDISynthProfile msp <= _ins.getMIDISynthProfile();
+         if(null != msp)
+         {
+            MIDISynthProfileCtlAlias *alias;
+
+            switch(midi_param.type)
+            {
+               default:
+               case NT_MIDIParam.TYPE_CC:
+                  alias <= msp.getCCAliasByCtl(midi_cc_nr);
+                  break;
+
+               case NT_MIDIParam.TYPE_RPN:
+                  alias <= msp.getRPNAliasByNr(midi_rpn_nr);
+                  break;
+
+               case NT_MIDIParam.TYPE_NRPN:
+                  alias <= msp.getNRPNAliasByNr(midi_nrpn_nr);
+                  break;
+            }
+
+            if(null != alias)
+            {
+               midi_param.ui_style = alias.cel_style;
+               midi_param.ui_range = alias.cel_range;
+            }
+         }
+
+         mapped_to_usrctl_param = midi_param.id;
+      }
+
+   }
+
+   public method lazyAddParam(NT_Instrument _ins) {
+      // Called when adding cel. Lazy-add param
+
+      if(TYPE_USRCTL == type)
+      {
+         return;
+      }
+
+      // TYPE_MIDI_*:
+      if(-1 == mapped_to_usrctl_param)
+      {
+         createMIDIParam(_ins);
+
+         if(null == midi_param)
+         {
+            Global.Error("cannot add param/ctl cel, all user ctls are in use");
+         }
+      }
+   }
+
+   public method tryRemoveInsParam(NT_Instrument _insParam) {
+      if(null != midi_param)
+      {
+         int paramIdx = _insParam.usrctl_params.indexOfPointer(midi_param, 0);
+         if(-1 != paramIdx)
+         {
+            Global.Debug("ManageColumnsEntry: removing ins.param#"+paramIdx);
+            _insParam.deleteParamByIdx(paramIdx);
+            mapped_to_usrctl_param = -1;
+         }
+      }
+   }
+
+}

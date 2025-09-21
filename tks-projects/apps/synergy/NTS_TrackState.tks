@@ -1,0 +1,423 @@
+// ----
+// ---- file   : NTS_TrackState.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 09Jul2016, 10Jul2016, 11Jul2016, 12Jul2016, 13Jul2016, 17Jul2016, 08Oct2016
+// ----          09Oct2016, 16Oct2016, 11Dec2016, 12Dec2016, 19Dec2016, 30Jan2017, 31Jan2017
+// ----          02Feb2017, 03Feb2017, 04Feb2017, 10Feb2017, 12Feb2017, 26Feb2017, 18Mar2017
+// ----          01Jun2017, 05Jun2017, 12Aug2017, 18Aug2017, 03Sep2017, 09Oct2017, 14Oct2017
+// ----          10Nov2017, 11Nov2017, 25Nov2017, 29Nov2017, 30Nov2017, 04Jan2018, 07Mar2018
+// ----          12May2018, 21May2018, 27May2018, 28May2018, 01Jun2018, 17Jun2018, 24Jun2018
+// ----          20Jul2019, 02Oct2019, 03Oct2019, 04Oct2019, 05Oct2019, 06Oct2019, 07Oct2019
+// ----          08Oct2019, 09Oct2019, 14Oct2019, 16Oct2019, 17Oct2019, 18Oct2019, 19Oct2019
+// ----          25Oct2019, 31Oct2019, 01Nov2019, 02Nov2019, 07Nov2019, 06Mar2020, 18Mar2020
+// ----          05May2020, 26Oct2020, 27Oct2020, 30Oct2020, 02Nov2020, 03Nov2020, 10Nov2020
+// ----          12Nov2020, 13Nov2020, 23Nov2020, 27Jan2021, 20Jun2021, 01Jan2022, 04Jan2022
+// ----          21Feb2022, 07May2022, 21Jun2023, 14Oct2023, 27Nov2023, 01Dec2023, 02Dec2023
+// ----          06Oct2024
+// ----
+// ----
+// ----
+module MNTS_TrackState;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NTS_TrackState {
+   // Mute/Repeat replay state (used for all patterns)
+   define int MAX_COUNTDOWN = 8;
+   define int MAX_COUNTDOWN_REPLAY = 4;
+   define int FADE_THRESHOLD = 6;
+   define int FADE_THRESHOLD_MUTE = 3;
+
+   int temp_play_state;  // STATE_MUTE/SOLO/PLAY
+   int temp_play_state_presolo;
+
+   boolean b_flip_mute;  // used by mute notes (not RPNs) to temporarily flip a track's mute state
+
+   int global_mute_auto_off_ticks;
+   int flip_mute_auto_off_ticks;      // used only for notes, not RPNs
+   int repeat_auto_off_ticks;
+
+   int temp_repeat_note_length;  // -1=use track or node default. used for finding diffs.
+   int temp_num_repeats;         // -1=use track or node default. used for finding diffs.
+
+   int current_repeat_ticks;    // -1=not repeating, >=0 repeat tick count (retrig step every current_repeat_note_length ticks)
+   int repeat_tick_shift;       // may be >0 when IMMEDIATE mode is selected and repeat is enabled after step was played
+   int current_repeat_count;
+   // // int current_repeat_tick_shift;  // ticks (relative shift)
+   boolean b_queued_repeat;     // true=start repeat when repeat_start_mode condition is met
+   boolean b_repeat_mute;       // true=repeat if triggered was used and the current step was not triggered
+
+   float repeat_start_last_arg1;
+   float repeat_start_last_arg2;
+
+   float repeat_last_arg1;
+   float repeat_last_arg2;
+
+   float repeat_start_last_mod1;
+   float repeat_start_last_mod2;
+
+   float repeat_last_mod1;
+   float repeat_last_mod2;
+
+   boolean b_quantized_repeat_start_queued;
+
+   boolean b_repeat_auto_off; // true after step triggered repeat. repeat is turned of when next step is triggered.
+
+   // trig/repeat/mute highlighting (track label):
+   int     ui_trig_countdown;
+   boolean b_ui_trig_decay;
+   int     ui_replay_trig_countdown;
+   // // boolean b_ui_replay_trig_decay;
+   int     ui_repeat_countdown;
+   boolean b_ui_repeat_decay;
+   boolean b_ui_global_repeat_decay;
+   int     ui_global_mute_countdown;
+   boolean b_ui_global_mute_decay;
+   int     ui_flip_mute_countdown;
+   boolean b_ui_flip_mute_decay;
+   int     ui_c32;
+   int     ui_last_c32;
+
+   boolean b_trig_state;  // for repeat. 1=current step was triggered
+   byte last_note;  // -1=unknown
+
+   float rpn_vel_scl;  // additional per-track velocity scaling via RPN_TRIGSEQ_TRACKn_VELOCITY_SCALING  (**Deprecated**)
+   float rpn_dur_scl;  // additional per-track duration scaling via RPN_TRIGSEQ_TRACKn_DURATION_SCALING  (**Deprecated**)
+
+
+   // <method_init.png>
+   public method init() {
+      ui_last_c32 = 0;
+   }
+
+   // <replay.png>
+   public method reset() {
+      temp_play_state         = NTS_Track.STATE_PLAY;
+      temp_play_state_presolo = NTS_Track.STATE_PLAY;
+      b_flip_mute             = false;
+      current_repeat_ticks    = -1;
+      b_queued_repeat         = false;
+      temp_repeat_note_length = -1;
+      temp_num_repeats        = -1;
+      repeat_start_last_arg1  = -1;
+      repeat_start_last_arg2  = -1;
+      repeat_last_arg1        = -1;
+      repeat_last_arg2        = -1;
+      repeat_start_last_mod1  = -1;
+      repeat_start_last_mod2  = -1;
+      repeat_last_mod1        = -1;
+      repeat_last_mod2        = -1;
+      b_repeat_mute           = false;
+      b_quantized_repeat_start_queued = false;
+      b_repeat_auto_off       = false;
+
+      global_mute_auto_off_ticks = 0;
+      flip_mute_auto_off_ticks   = 0;
+      repeat_auto_off_ticks      = 0;
+
+      ui_trig_countdown        = 0;
+      b_ui_trig_decay          = true;
+
+      ui_replay_trig_countdown = 0;
+      // // b_ui_replay_trig_decay   = true;
+      ui_repeat_countdown      = 0;
+
+      b_ui_repeat_decay        = true;
+      b_ui_global_repeat_decay = true;
+
+      ui_global_mute_countdown  = 0;
+      b_ui_global_mute_decay   = true;
+
+      ui_flip_mute_countdown   = 0;
+      b_ui_flip_mute_decay     = true;
+
+      ui_c32                   = 0;
+
+      b_trig_state = false;
+      last_note    = -1;
+
+      rpn_vel_scl = 1.0;
+      rpn_dur_scl = 1.0;
+   }
+
+   // <method_set.png>
+   public method queueRepeat(NodeTrigSeq _parentNode,
+                             boolean     _bEnable,
+                             boolean     _bMayQueue
+                             ) {
+      // via RPN or record note on/off (C-5..D#6)
+
+      // trace "xxx NTS_TrackState::queueRepeat: track idx="+track_nr+" bEnable="+_bEnable+" b_trig_state="+b_trig_state+" bMayQueue="+_bMayQueue;
+
+      if(_bMayQueue)
+      {
+         if(_bEnable &&
+            (-1 != _parentNode.repeat_start_quantization_ticks) &&
+            (NodeTrigSeq.REPEAT_START_IMMEDIATELY == _parentNode.repeat_start_mode)
+            // && (0 != (parent_node.tick_nr % parent_node.repeat_start_quantization_ticks))
+            )
+         {
+            if( (int(_parentNode.tick_nr) % _parentNode.repeat_start_quantization_ticks) >= (int(_parentNode.repeat_start_quantization_ticks)/2) )
+            {
+               b_quantized_repeat_start_queued = _bEnable;
+               // trace "xxx NTS_TrackState::queueRepeat: b_quantized_repeat_start_queued="+_bEnable;
+            }
+            else
+            {
+               // Step was already played, adjust initial repeat_ticks count via repeat_tick_shift
+               if((true == _bEnable) || ((maybe == _bEnable) && b_trig_state))
+               {
+                  b_queued_repeat = _bEnable;
+
+                  repeat_last_arg1 = repeat_start_last_arg1;
+                  repeat_last_arg2 = repeat_start_last_arg2;
+
+                  repeat_last_mod1 = repeat_start_last_mod1;
+                  repeat_last_mod2 = repeat_start_last_mod2;
+
+                  repeat_tick_shift = (int(_parentNode.tick_nr) % _parentNode.repeat_start_quantization_ticks);
+
+                  b_repeat_mute = false;
+                  b_repeat_auto_off = false;
+
+                  // trace "xxx NTS_TrackState::queueRepeat: b_queued_repeat="+_bEnable;
+               }
+               else
+               {
+                  current_repeat_ticks = -1;
+                  b_queued_repeat = false;
+                  b_repeat_mute = (maybe == _bEnable);
+                  b_quantized_repeat_start_queued = false;
+                  // trace "xxx NTS_TrackState::queueRepeat: disable repeat";
+               }
+            }
+            return;
+         }
+      }
+
+      // if((true == _bEnable) || ((maybe == _bEnable) && b_trig_state))
+      if(false != _bEnable)  // [21May2018] fix global repeat if-trig shift by one tick
+      {
+         // Queue repeat. Repeat starts at next grid step.
+         b_queued_repeat = _bEnable;
+
+         repeat_last_arg1 = repeat_start_last_arg1;
+         repeat_last_arg2 = repeat_start_last_arg2;
+
+         repeat_last_mod1 = repeat_start_last_mod1;
+         repeat_last_mod2 = repeat_start_last_mod2;
+
+         repeat_tick_shift = 0;
+
+         b_repeat_mute = false;
+         b_repeat_auto_off = false;
+         // trace "xxx NTS_TrackState: queue repeat start at next grid step, arg1="+repeat_last_arg1+" arg2="+repeat_last_arg2;
+      }
+      else
+      {
+         // Immediately turn off repeat
+         current_repeat_ticks = -1;
+         b_queued_repeat = false;
+
+         b_repeat_mute = (maybe == _bEnable);
+
+         b_quantized_repeat_start_queued = false;
+         // trace "xxx NTS_TrackState: immediately turn off repeat";
+      }
+
+      if(_bMayQueue)
+      {
+         if( !b_queued_repeat &&
+             (false != _bEnable) &&
+             (-1 != _parentNode.repeat_start_quantization_ticks)
+             // // && (0 != (parent_node.tick_nr % parent_node.repeat_start_quantization_ticks))
+             &&
+             ////( (parent_node.tick_nr % current_step_num_ticks) >= (current_step_num_ticks/2) )
+             ( (int(_parentNode.tick_nr) % _parentNode.repeat_start_quantization_ticks) >= (_parentNode.repeat_start_quantization_ticks/2) )
+             )
+         {
+            // Try again when quantized tick is reached
+            b_quantized_repeat_start_queued = _bEnable;
+            // trace "xxx NTS_TrackState: queue quantized repeat start";
+         }
+      }
+   }
+
+   // <method.png>
+   public method isMuted() : boolean {
+      return (NTS_Track.STATE_MUTE == temp_play_state) ^ b_flip_mute;
+   }
+
+   // <ui.png>
+   public method handleTrig(boolean _bEnable) {
+      if(_bEnable)
+         ui_trig_countdown = MAX_COUNTDOWN;
+      b_ui_trig_decay = !_bEnable;
+   }
+
+   // <ui.png>
+   public method handleTrigReplay() {
+      ui_replay_trig_countdown = MAX_COUNTDOWN_REPLAY;
+   }
+
+   // <ui.png>
+   public method handleRepeat(boolean _bEnable, int _autoOffTicks) {
+      if(_bEnable)
+         ui_repeat_countdown = MAX_COUNTDOWN;
+      b_ui_repeat_decay = !_bEnable;
+      repeat_auto_off_ticks = _autoOffTicks;
+   }
+
+   // <ui.png>
+   public method handleGlobalRepeat(boolean _bEnable, int _autoOffTicks) {
+      if(_bEnable)
+         ui_repeat_countdown = MAX_COUNTDOWN;
+      b_ui_global_repeat_decay = !_bEnable;
+      repeat_auto_off_ticks = _autoOffTicks;
+   }
+
+   // <ui.png>
+   public method handleFlipMute(boolean _bEnable, int _autoOffTicks) {
+      b_flip_mute = _bEnable;
+      if(_bEnable)
+         ui_flip_mute_countdown = MAX_COUNTDOWN;
+      b_ui_flip_mute_decay = !_bEnable;
+      flip_mute_auto_off_ticks = _autoOffTicks;
+   }
+
+   // <ui.png>
+   public method handleGlobalMute(boolean _bEnable, int _autoOffTicks) {
+      if(_bEnable)
+         ui_global_mute_countdown = MAX_COUNTDOWN;
+      b_ui_global_mute_decay = !_bEnable;
+      global_mute_auto_off_ticks = _autoOffTicks;
+   }
+
+   // <ui.png>
+   public =replay= method uiTickCountdown(Layer _lnfLayer) : boolean {
+      // Returns true when gfx update is needed
+      int c32 = 0;
+      float r = 0;
+      float g = 0;
+      float b = 0;
+      float a = 0;
+      float s;
+
+      if(ui_trig_countdown > 0)
+      {
+         ui_trig_countdown -= b_ui_trig_decay;
+
+         if(ui_trig_countdown > 0)
+         {
+            s = (ui_trig_countdown <= FADE_THRESHOLD) ? 0.7 : 1.0;
+            r += 1.0*s;
+            g += 1.0*s;
+            b += 0.1*s;
+            a += 0.7;
+         }
+      }
+
+      if(ui_replay_trig_countdown > 0)
+      {
+         ui_replay_trig_countdown -= 1;/////b_ui_replay_trig_decay;
+
+         // if(ui_replay_trig_countdown > 0)
+         // {
+         // }
+      }
+
+      if(ui_repeat_countdown > 0)
+      {
+         ui_repeat_countdown -= b_ui_repeat_decay && b_ui_global_repeat_decay;
+
+         if(ui_repeat_countdown > 0)
+         {
+            s = (ui_repeat_countdown <= FADE_THRESHOLD) ? 0.6 : 1.0;
+            g += 1.0*s;
+            b += 0.4*s;
+            r += 0.1*s;
+            a += 0.5*s;
+         }
+      }
+
+      if(ui_global_mute_countdown > 0)
+      {
+         ui_global_mute_countdown -= b_ui_global_mute_decay;
+
+         if(ui_global_mute_countdown > 0)
+         {
+            s = (ui_global_mute_countdown <= FADE_THRESHOLD_MUTE) ? 0.6 : 1.0;
+            r += 1.0*s;
+            a += 0.8*s;
+         }
+      }
+
+      if(ui_flip_mute_countdown > 0)
+      {
+         ui_flip_mute_countdown -= b_ui_flip_mute_decay;
+
+         if(ui_flip_mute_countdown > 0)
+         {
+            s = (ui_flip_mute_countdown <= FADE_THRESHOLD_MUTE) ? 0.6 : 1.0;
+            if(NTS_Track.STATE_MUTE != temp_play_state)
+            {
+               // note key mutes track
+               r += 1.0*s;
+               g += 0.2*s;
+               b += 0.1*s;
+               a += 0.8*s;
+            }
+            else
+            {
+               // note key unmutes track
+               r += 0.2*s;
+               g += 1.0*s;
+               b += 0.1*s;
+               a += 0.8*s;
+            }
+         }
+      }
+
+      if(NTS_Track.STATE_MUTE == temp_play_state)
+      {
+         r += 0.4;
+         a += 0.3;
+      }
+      else if(NTS_Track.STATE_SOLO == temp_play_state)
+      {
+         r += 0.6;
+         g += 0.6;
+         a += 0.3;
+      }
+
+      if(r > 1.0)
+         r = 1.0;
+      if(g > 1.0)
+         g = 1.0;
+      if(b > 1.0)
+         b = 1.0;
+      if(a > 1.0)
+         a = 1.0;
+
+      ui_c32 = argb(0, r*255, g*255, b*255);
+      if(ui_c32 > 0)
+      {
+         ui_c32 |= int(a*255) << 24;
+      }
+      ui_c32 = _lnfLayer.lnfGetTintedColor(LookAndFeel.COLOR_WINDOW_BG, ui_c32);
+
+      boolean bChanged = (ui_c32 != ui_last_c32);
+      ui_last_c32 = ui_c32;
+
+      return bChanged;
+   }
+}

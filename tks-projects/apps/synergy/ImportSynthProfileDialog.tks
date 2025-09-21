@@ -1,0 +1,309 @@
+// ----
+// ---- file   : ImportSynthProfileDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : MIDI synth profile import dialog
+// ----
+// ---- created: 18Jan2019
+// ---- changed: 01Jun2021, 23Dec2021, 04Oct2023, 14Oct2023, 30Oct2023, 02Nov2023
+// ----
+// ----
+// ----
+
+module ImportSynthProfileDialog;
+
+use namespace ui;
+
+// (note) used by NodeTrackerInstrumentView, NodeCtlMorphEditor, PageEditMidiMorph
+
+
+// <class.png>
+class ImportSynthProfileDialog extends Dialog, ActionProvider {
+
+   define String ACTION_IMPORT = "onImportSynthProfile";
+   define String ACTION_CANCEL = "onImportSynthProfileCancel";
+
+   protected XMLForm   *xfm;
+
+   protected TableView            *tv_params;
+   protected ImportSynthProfileTM *tm_params;
+
+   protected TextField *tf_filter;
+
+   protected TextView *tx_info;
+
+   protected Button *bt_cancel;
+   protected Button *bt_import;
+
+   protected MIDISynthProfile  *msp;
+   protected STX_MIDIOutDevice *dev;
+   protected byte               dev_ch;
+   protected ActionConsumer    *recipient;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ImportSynthProfileDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      tm_params <= new ImportSynthProfileTM;
+      tm_params.initTableModel();
+      tv_params.setTableModel(tm_params);
+
+      initWindow(xfm,
+                 "Import Params from MIDI Synth Profile",
+                 100, 100,
+                 940*UI.font_scaling, 540*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_IMPORT, ACTION_CANCEL];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showMSP(MIDISynthProfile _msp, STX_MIDIOutDevice _dev, byte _devCh, ActionConsumer _recipient) {
+      msp <= _msp;
+      dev <= _dev;
+      dev_ch = _devCh;
+      recipient <= _recipient;
+
+      tf_filter.setText("");
+      rebuildEntries();
+
+      showCentered();
+
+      setWindowTitle("Import Params from MIDI Synth Profile \""+_msp.profile_caption+"\"");
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(tv_params);
+      layers.add(tf_filter);
+      // // layers.add(bt_import);
+      // // layers.add(bt_cancel);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      // // if(!b_layer_postinit_done)
+      // // {
+      // //    resizeToMinimum();
+      // // }
+
+      relayout();
+
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      UI.SetKeyboardFocus(tv_params);
+      resizeAtLeastToMinimum();
+   }
+
+   // <method.png>
+   protected method rebuildEntries() {
+      tm_params.rebuildEntries(msp, tf_filter.getText(), dev, dev_ch);
+      tv_params.tableModelChanged();
+      tv_params.moveCursorToFirstRow();
+      tm_params.selectNone();
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterChanged() {
+      local String flt <= tf_filter.getText();
+      rebuildEntries();
+      Global.Print("Filter is \""+flt+"\" ("+(tm_params.entries.numElements)+" result"+Utils.GetPluralString(tm_params.entries.numElements)+")");
+   }
+
+   // <method_get.png>
+   public method getSelectedAliases() : PointerArray {
+      local PointerArray ret;
+      local IntArray rows = tm_params.getSelectedRows();
+      if(0 == rows.numElements)
+         rows.add(tm_params.getCursorIndex());
+
+      int rowIdx;
+      foreach rowIdx in rows
+      {
+         ImportSynthProfileDO en <= tm_params.entries.get(rowIdx);
+         if(null != en)
+            ret.add(en.ctl_alias);
+      }
+
+      return deref ret;
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_CANCEL), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleImport() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_IMPORT), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdateInfoText() {
+      int idx = tm_params.getCursorIndex();
+      if(-1 != idx)
+      {
+         ImportSynthProfileDO en <= tm_params.entries.get(idx);
+         if(null != en)
+         {
+            tx_info.setText(en.ctl_alias.info);
+            return;
+         }
+      }
+      tx_info.setText("");
+   }
+
+   // <method.png>
+   public method autoFocusFilterWidget(Key _k) {
+      if(@(UI.GetKeyboardFocus()) != @(tf_filter))
+      {
+         UI.SetKeyboardFocus(tf_filter);
+         tf_filter.selectAll();
+      }
+      tf_filter.onKey(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleImport();
+            return true;
+
+         default:
+            // trace "xxx autofocus: key.pressed="+_key.pressed;
+            if(0 != _key.unicode)
+            {
+               autoFocusFilterWidget(_key);
+               return true;
+            }
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      // trace "xxx ImportSynthProfileDialog: got action name="+name;
+
+      switch(acName)
+      {
+         case "ok":
+            handleImport();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(tf_filter):
+            if(TextField.ACTION_CURSORUP == acName)
+            {
+               UI.SetKeyboardFocus(tv_params);
+            }
+            else if(TextField.ACTION_CURSORDOWN == acName)
+            {
+               UI.SetKeyboardFocus(bt_import);
+            }
+            else
+            {
+               handleFilterChanged();
+            }
+            if(TextField.ACTION_TEXTENTERED/*return*/ == acName)
+               UI.SetKeyboardFocus(tv_params);
+            return true;
+
+         case @(tv_params):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               // // UI.SetKeyboardFocus(bt_import);
+               handleImport();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               handleUpdateInfoText();
+            }
+            return true;
+
+         case @(bt_import):
+            handleImport();
+            return true;
+
+         case @(bt_cancel):
+            handleCancel();
+            return true;
+      }
+
+      return true;
+   }
+
+}

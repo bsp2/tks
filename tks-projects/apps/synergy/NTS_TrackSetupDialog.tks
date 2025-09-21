@@ -1,0 +1,2130 @@
+// ----
+// ---- file   : NTS_TrackSetupDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 09Oct2016, 16Oct2016, 11Dec2016, 01Jun2017, 14Oct2017, 10Nov2017, 29Nov2017
+// ----          01Dec2017, 12May2018, 28May2018, 01Jun2018, 20Sep2019, 02Oct2019, 03Oct2019
+// ----          06Oct2019, 07Oct2019, 12Oct2019, 19Feb2023, 04Oct2023, 06Oct2023, 13Oct2023
+// ----          15Oct2023, 30Oct2023, 03Nov2023, 05Nov2023, 22Mar2024, 07Oct2024, 07Mar2025
+// ----
+// ----
+// ----
+
+module MNTS_TrackSetupDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NTS_TrackSetupForm extends Control {
+
+   NTS_TrackSetupDialog *parent_dialog;
+   NodeTrigSeqEditor *parent_editor;
+
+   XMLForm xfm;
+
+   Button   *bt_track;
+   ComboBox *cm_repeat_len;
+   ComboBox *cm_num_repeats;
+
+   NTS_Track *track;
+
+
+   // <ui_init.png>
+   public method init(NTS_TrackSetupDialog _parent, int _trackIdx) : boolean {
+
+      parent_dialog <= _parent;
+
+      if(xfm.initPakFile("NTS_TrackSetupForm.xfm"))
+      {
+         xfm.autoResolveIds(this);
+
+         setLayout(SuperBorderLayout);
+         addLayer(xfm, Layout.CENTER);
+
+         StringArray options = ["<note>"];
+         options.join(options, NTS_Track.notelen_names);
+         options.join(options, NTS_Track.notelen_names_fit);
+         cm_repeat_len.setOptions(options);
+
+         options = ["inf"];
+         int i = 1;
+         loop(63)
+         {
+            options.add(String(i++));
+         }
+         cm_num_repeats.setOptions(options);
+
+         bt_track.setCaption("Track "+(_trackIdx+1)+":");
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           // bt_track,
+                           cm_repeat_len,
+                           cm_num_repeats
+                         ]
+                        );
+   }
+
+   // <ui_show.png>
+   public method showTrack(NTS_Track _track, boolean _bSelected) {
+      track <= _track;
+
+      parent_editor <= parent_dialog.editor;
+
+      updateTrackSelection(_bSelected);
+
+      cm_repeat_len.setSelectedOption(track.repeat_note_length + 1);
+      cm_num_repeats.setSelectedOption(track.num_repeats);
+
+      bt_track.setCaption(track.name+" / Track "+(track.track_nr+1)+":");
+   }
+
+   // <ui_update.png>
+   public method updateTrackSelection(boolean _bSelected) {
+      if(_bSelected)
+      {
+         // Invert color
+         if(UI.IsDarkOrMono())
+         {
+            bt_track.setBackgroundTint(#cfcfcfcf);
+            bt_track.setCaptionTint(#cf000000);
+         }
+         else
+         {
+            bt_track.setBackgroundTint(#cf000000);
+            bt_track.setCaptionTint(#cfffffff);
+         }
+      }
+      else
+      {
+         bt_track.setBackgroundTint(0);
+         bt_track.setCaptionTint(0);
+      }
+
+      bt_track.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleRepeatLenChanged() {
+      track.setRepeatNoteLength(cm_repeat_len.getSelectedOption() - 1);
+
+      Global.Print("Track "+(track.track_nr+1)+" repeat note length is "+cm_repeat_len.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleNumRepeatsChanged() {
+      track.setNumRepeats(cm_num_repeats.getSelectedOption());
+
+      Global.Print("Track "+(track.track_nr+1)+" num repeats is "+cm_num_repeats.getSelectedOptionName());
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+
+      String acName <= _action.getActionName();
+
+      switch(@(_action.getActionProvider()))
+      {
+         case @(cm_repeat_len):
+            handleRepeatLenChanged();
+            return true;
+
+         case @(cm_num_repeats):
+            handleNumRepeatsChanged();
+            return true;
+
+         case @(bt_track):
+            // // if(Button.ACTION_WHEEL_UP == acName)
+            // // {
+            // //    parent_dialog.selectPreviousTrack();
+            // // }
+            // // else if(Button.ACTION_WHEEL_DOWN == acName)
+            // // {
+            // //    parent_dialog.selectNextTrack();
+            // // }
+            // // else
+            // // {
+               parent_editor.selectTrack(track.track_nr);
+               parent_dialog.updateTrackSelection();
+               parent_dialog.updateWidgetsAfterTrackChanged();
+            // // }
+            return true;
+      }
+
+      return Control::consumeAction(_action);
+   }
+}
+
+
+// <class.png>
+class NTS_TrackSetupDialog extends Dialog {
+
+   namespace NodeTrigSeqEditor *editor;
+   protected NTS_Track *cursor_track;
+
+   protected XMLForm *xfm;
+
+   protected NTS_TrackSetupForm *[] forms;  // NTS_TrackSetupForm instances
+
+   protected Button *bt_close;
+
+   protected Button *bt_bgtint;
+   protected static ColorPickerDialog dlg_color;
+
+   protected ComboBox *cm_pat_microtime_track;
+   protected ComboBox *cm_pat_preset;
+   protected CheckBox *cb_pat_preset_autoload;
+   protected Button   *bt_pat_preset_load;
+   protected Button   *bt_pat_preset_save;
+
+   protected Label      *lb_vel_0;
+   protected FloatParam *fp_vel_0;
+   protected Label      *lb_vel_1;
+   protected FloatParam *fp_vel_1;
+   protected Label      *lb_vel_2;
+   protected FloatParam *fp_vel_2;
+   protected Label      *lb_vel_3;
+   protected FloatParam *fp_vel_3;
+   protected FloatParam *fp_velocity_jitter;
+
+   protected FloatParam *fp_dur;
+   protected FloatParam *fp_microtime_shift;
+   protected FloatParam *fp_microtime_jitter;
+
+   protected ComboBox   *cm_notenames;
+   protected FloatParam *fp_arg3;
+
+   // Forced output
+   protected ComboBox *cm_forced_out_dev;
+   protected CheckBox *cb_forced_out;
+   protected ComboBox *cm_forced_out_ch;
+   protected ComboBox *cm_forced_out_mode;
+
+   // Forced mod output
+   protected ComboBox   *cm_forced_mod_out_dev;
+   protected CheckBox   *cb_forced_mod_out;
+   protected ComboBox   *cm_forced_mod_out_ch;
+   protected FloatParam *fp_mod_tickshift;
+
+   // Mod 1
+   protected PopupMenu  *pm_mod;
+   protected boolean     b_pm_mod_2;
+   protected Panel      *pn_mod1;
+   protected ComboBox   *cm_mod1_type;
+   protected ComboBox   *cm_mod1_nr;
+   protected Button     *bt_mod1_learn;
+   protected FloatParam *fp_mod1_min;
+   protected FloatParam *fp_mod1_max;
+   protected FloatParam *fp_mod1_reset;
+   protected FloatParam *fp_mod1_jitter;
+
+   // Mod 2
+   protected Panel      *pn_mod2;
+   protected ComboBox   *cm_mod2_type;
+   protected ComboBox   *cm_mod2_nr;
+   protected Button     *bt_mod2_learn;
+   protected FloatParam *fp_mod2_min;
+   protected FloatParam *fp_mod2_max;
+   protected FloatParam *fp_mod2_reset;
+   protected FloatParam *fp_mod2_jitter;
+
+   // MIDI Learn
+   protected ComboBox *cm_learn_xform_dev;
+   protected ComboBox *cm_learn_xform_ch;
+   protected CheckBox *cb_learn_xform;
+
+   protected Button   *bt_learn_note;
+   protected CheckBox *cb_learn_advance;
+
+   define String TA_MIDI_LEARN;
+   define String TA_RESIZE;
+   protected TimerAction ta_midi_learn;
+   protected TimerAction ta_resize;
+
+   define int LEARN_NONE = 0;
+   define int LEARN_NOTE = 1;
+   define int LEARN_MOD1 = 2;
+   define int LEARN_MOD2 = 3;
+   protected int learn_mode;
+
+   define int LEARN_TIMEOUT = 49;  // number of ta_midi_learn timeouts (=> 50*200 = 10 sec)
+   define int TINT32_LEARN = #58ef6467;
+   protected int learn_timeout;
+
+   protected NTS_SavePresetDialog *dlg_preset_save;
+   public String last_preset_name;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NTS_TrackSetupDialog.xfm");
+      if(null == xfm)
+      {
+         return false;
+      }
+
+      xfm.autoResolveIds(this);
+
+      int trackIdx = 0;
+      loop(16)
+      {
+         NTS_TrackSetupForm f <= xfm.findLayerById("f_"+(trackIdx+1));
+
+         if(!f.init(this, trackIdx))
+            return false;
+
+         forms.add(f);
+
+         // Next track
+         trackIdx++;
+      }
+
+      lb_vel_0.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_TRIGSEQ_STEP_BG_ACTIVE0));
+      lb_vel_1.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_TRIGSEQ_STEP_BG_ACTIVE1));
+      lb_vel_2.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_TRIGSEQ_STEP_BG_ACTIVE2));
+      lb_vel_3.setBackgroundColor(app_lnf.getColor(AppLookAndFeel.COLOR_TRIGSEQ_STEP_BG_ACTIVE3));
+
+
+      local StringArray noteNameProfileOptions;
+      local StringArray noteNameProfileIds;
+      MIDI.note_name_profiles.keysToArray(noteNameProfileIds);
+      Utils.SortStringArray(noteNameProfileIds, false/*bCaseSensitive*/);
+      noteNameProfileOptions.join(["<pattern>"],
+                                  noteNameProfileIds
+                                  );
+      cm_notenames.setOptions(noteNameProfileOptions);
+
+      local StringArray outModeShort;
+      outModeShort.join(["-"], NodeTrigSeq.output_mode_names_short);
+      cm_forced_out_mode.setOptions(outModeShort);
+
+      local StringArray outModeLong;
+      outModeLong.join(["-"], NodeTrigSeq.output_mode_names_long);
+      cm_forced_out_mode.setOptionsLong(outModeLong);
+
+      outModeLong.join(["-"], NodeTrigSeq.output_mode_tooltip_captions);
+      cm_forced_out_mode.setToolTipCaptions(outModeLong);
+
+      initWindow(xfm,
+                 "Track Setup",
+                 100, 100,
+                 640, 240
+                 );
+
+      // // resizeToMinimum();
+      // // resizeToMinimum();
+
+      learn_timeout = -1;
+
+      initTimers();
+
+      if(dlg_color.init())
+      {
+         scanGroovePresets(); // updates cm_pat_preset
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_midi_learn <= TimerAction.New(TA_MIDI_LEARN, this, 200);
+      ta_resize     <= TimerAction.New(TA_RESIZE,     this, 500);
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   public method run(NodeTrigSeqEditor _editor) {
+      editor <= _editor;
+
+      updateWidgetsAfterTrackChanged();
+
+      // Pattern
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+      local StringArray timingTrackNames;
+      timingTrackNames.add("-");
+      NTS_Track *track;
+      Integer trackNr = 1;
+      foreach track in pat.tracks
+      {
+         timingTrackNames.add(trackNr.printf("%2d")+": "+track.name);
+         trackNr++;
+      }
+      cm_pat_microtime_track.setOptionsLong(timingTrackNames);
+      cm_pat_microtime_track.setSelectedOption(pat.microtime_track_idx + 1);
+
+
+      // MIDI Learn
+      local StringArray devNames = MIDI.out_device_names_sorted;
+      devNames.insert(0, "<default>");
+      local IntArray devColors = MIDI.out_device_bgcolors_sorted;
+      devColors.insert(0, 0);
+
+      cm_learn_xform_dev.setOptions(devNames);
+      cm_learn_xform_dev.setOptionBGColors(devColors);
+      cm_learn_xform_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(editor.seq.learn_xform_dev_idx) + 1);
+      cm_learn_xform_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(editor.seq.getActualLearnXformDevIdx(), null/*firstOptionOrNull*/));
+      cm_learn_xform_ch.setSelectedOption(editor.seq.learn_xform_ch);
+      cb_learn_xform.setSelected(editor.seq.b_learn_xform);
+
+      cb_learn_advance.setSelected(editor.seq.b_learn_advance);
+
+      NodeTrigSeq.b_learn_xform_active = true;
+
+      // // showCentered();
+      showNearMouse(-50*UI.font_scaling, -70*UI.font_scaling);
+   }
+
+   // <ui_show.png>
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(bt_close);
+
+      setLearnMode(LEARN_NONE, true/*bQuiet*/);
+
+      resizeToMinimum();
+      validateClippedPosition();
+   }
+
+   // <ui_hide.png>
+   public virtual hide() {
+      Dialog::hide();
+
+      setLearnMode(LEARN_NONE, true/*bQuiet*/);
+      ta_resize.cancel();
+
+      NodeTrigSeq.b_learn_xform_active = false;
+
+      editor.refocusDefault();
+      editor.updateStepDetails();  // in case output mode changed
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           bt_bgtint,
+                           cm_pat_microtime_track,
+                           cm_pat_preset,
+                           cb_pat_preset_autoload,
+                           bt_pat_preset_load,
+                           bt_pat_preset_save
+                         ]
+                        );
+
+      if(1)
+      {
+         NTS_TrackSetupForm *f;
+         foreach f in forms
+         {
+            f.addTabCycleOverrides(_retLayers);
+         }
+      }
+
+      _retLayers.joinRR(_retLayers,
+                        [
+                           fp_vel_0,
+                           fp_vel_1,
+                           fp_vel_2,
+                           fp_vel_3,
+                           fp_velocity_jitter,
+
+                           fp_dur,
+                           fp_microtime_shift,
+                           fp_microtime_jitter,
+
+                           cm_notenames,
+                           fp_arg3,
+
+                           cm_forced_out_dev,
+                           cb_forced_out,
+                           cm_forced_out_ch,
+                           cm_forced_out_mode,
+
+                           cm_forced_mod_out_dev,
+                           cb_forced_mod_out,
+                           cm_forced_mod_out_ch,
+                           fp_mod_tickshift,
+
+                           cm_mod1_type,
+                           cm_mod1_nr,
+                           bt_mod1_learn,
+                           fp_mod1_min,
+                           fp_mod1_max,
+                           fp_mod1_reset,
+                           fp_mod1_jitter,
+
+                           cm_mod2_type,
+                           cm_mod2_nr,
+                           bt_mod2_learn,
+                           fp_mod2_min,
+                           fp_mod2_max,
+                           fp_mod2_reset,
+                           fp_mod2_jitter,
+
+                           cm_learn_xform_dev,
+                           cm_learn_xform_ch,
+                           cb_learn_xform,
+
+                           bt_learn_note,
+                           cb_learn_advance,
+
+                           bt_close
+                         ]
+                        );
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      return getTabCycleOverridesDef();
+   }
+
+   // <ui_update.png>
+   module method updateWidgetsAfterTrackChanged() {
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+      int trackIdx = 0;
+
+      cursor_track <= editor.grid.getCursorTrack();
+
+      loop(16)
+      {
+         NTS_TrackSetupForm f <= forms.get(trackIdx);
+         NTS_Track track <= pat.getTrackByIndex(trackIdx);
+
+         f.showTrack(track, @(track) == @(cursor_track));
+
+         // Next track
+         trackIdx++;
+      }
+
+      fp_vel_0.setValue(cursor_track.velocities.get(0));
+      fp_vel_1.setValue(cursor_track.velocities.get(1));
+      fp_vel_2.setValue(cursor_track.velocities.get(2));
+      fp_vel_3.setValue(cursor_track.velocities.get(3));
+      fp_velocity_jitter.setValue(cursor_track.velocity_jitter);
+
+      bt_bgtint.setBackgroundTint(cursor_track.bg_tint);
+
+      fp_dur.setValue(cursor_track.default_note_duration_ticks);
+      fp_dur.setNominalValues(0, current_song.ppq);
+
+      fp_microtime_shift.setValue(cursor_track.microtime_shift);
+      fp_microtime_jitter.setValue(cursor_track.microtime_jitter);
+
+      if(null != cursor_track.note_name_profile_id)
+      {
+         int noteNameProfileIdx = cm_notenames.options.indexOfObject(cursor_track.note_name_profile_id, 0);
+         cm_notenames.setSelectedOption(noteNameProfileIdx);
+      }
+      else
+      {
+         cm_notenames.setSelectedOption(0); // <pattern>
+      }
+
+      fp_arg3.setValue(cursor_track.arg3);
+
+      local StringArray devNames = MIDI.out_device_names_sorted;
+      devNames.insert(0, "<default>");
+      local IntArray devColors = MIDI.out_device_bgcolors_sorted;
+      devColors.insert(0, 0);
+
+      cm_forced_out_dev.setOptions(devNames);
+      cm_forced_out_dev.setOptionBGColors(devColors);
+      cm_forced_out_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(cursor_track.forced_out_dev) + 1);
+      cm_forced_out_ch.setSelectedOption(cursor_track.forced_out_ch);
+      cb_forced_out.setSelected(cursor_track.b_forced_out);
+
+      updateForcedOutTint();
+      updateForcedChOptions();
+
+      cm_forced_out_mode.setSelectedOption(cursor_track.forced_output_mode + 1);
+
+      // Forced mod output
+      cm_forced_mod_out_dev.setOptions(devNames);
+      cm_forced_mod_out_dev.setOptionBGColors(devColors);
+      cm_forced_mod_out_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(cursor_track.forced_mod_out_dev) + 1);
+      cm_forced_mod_out_ch.setSelectedOption(cursor_track.forced_mod_out_ch);
+      cb_forced_mod_out.setSelected(cursor_track.b_forced_mod_out);
+      updateForcedModOutTint();
+
+      updateForcedModChOptions();
+
+      fp_mod_tickshift.setValue(cursor_track.mod_tickshift);
+
+      updateMod1Options();
+      fp_mod1_min.setValue(cursor_track.mod1_min);
+      fp_mod1_max.setValue(cursor_track.mod1_max);
+      fp_mod1_reset.setValue(cursor_track.mod1_reset);
+      fp_mod1_jitter.setValue(cursor_track.mod1_jitter);
+
+      updateMod2Options();
+      fp_mod2_min.setValue(cursor_track.mod2_min);
+      fp_mod2_max.setValue(cursor_track.mod2_max);
+      fp_mod2_reset.setValue(cursor_track.mod2_reset);
+      fp_mod2_jitter.setValue(cursor_track.mod2_jitter);
+
+      // Update nominal ranges
+      handleModTypeChanged(cursor_track.mod1_type, cm_mod1_type, cm_mod1_nr,
+                           fp_mod1_min,
+                           fp_mod1_max,
+                           fp_mod1_reset,
+                           true/*bQuiet*/
+                           );
+
+      handleModTypeChanged(cursor_track.mod2_type, cm_mod2_type, cm_mod2_nr,
+                           fp_mod2_min,
+                           fp_mod2_max,
+                           fp_mod2_reset,
+                           true/*bQuiet*/
+                           );
+   }
+
+   // <ui_update.png>
+   public method updateTrackSelection() {
+      // Called after track has been selected via "bt_track"
+
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+
+      cursor_track <= editor.grid.getCursorTrack();
+
+      int trackIdx = 0;
+
+      loop(16)
+      {
+         NTS_TrackSetupForm f <= forms.get(trackIdx);
+         NTS_Track track <= pat.getTrackByIndex(trackIdx);
+
+         f.updateTrackSelection(@(track) == @(cursor_track));
+
+         // Next track
+         trackIdx++;
+      }
+   }
+
+   // <ui_update.png>
+   public method updateForcedOutTint() {
+      int c32 = cursor_track.b_forced_out ? 0 : #28200000;
+
+      cm_forced_out_dev.setBackgroundTint(c32);
+      cm_forced_out_dev.redraw();
+      cm_forced_out_ch .setBackgroundTint(c32);
+      cm_forced_out_ch .redraw();
+
+      if(0 == cm_forced_out_mode.getSelectedOption())
+         cm_forced_out_mode.setBackgroundTint(#28200000);
+      else
+         cm_forced_out_mode.setBackgroundTint(0);
+
+      cm_forced_out_mode.redraw();
+   }
+
+   // <ui_update.png>
+   public method updateForcedModOutTint() {
+      int c32 = cursor_track.b_forced_mod_out ? 0 : #28200000;
+
+      cm_forced_mod_out_dev.setBackgroundTint(c32);
+      cm_forced_mod_out_dev.redraw();
+      cm_forced_mod_out_ch .setBackgroundTint(c32);
+      cm_forced_mod_out_ch .redraw();
+   }
+
+   // <ui_handle.png>
+   public method selectPreviousTrack() {
+      if(cursor_track.track_nr > 0)
+      {
+         editor.selectTrack(cursor_track.track_nr - 1);
+         updateTrackSelection();
+         updateWidgetsAfterTrackChanged();
+      }
+   }
+
+   // <ui_handle.png>
+   public method selectNextTrack() {
+      if(cursor_track.track_nr < 15)
+      {
+         editor.selectTrack(cursor_track.track_nr + 1);
+         updateTrackSelection();
+         updateWidgetsAfterTrackChanged();
+      }
+   }
+
+   // <ui_handle.png>
+   public method copyColorToAllTracks() {
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+
+      cursor_track <= editor.grid.getCursorTrack();
+
+      int trackIdx = 0;
+
+      int c32 = cursor_track.bg_tint;
+
+      loop(16)
+      {
+         NTS_Track track <= pat.getTrackByIndex(trackIdx++);
+         track.bg_tint = c32;
+      }
+
+      editor.updateTrackForms();
+      Global.Print("Copy color to all tracks");
+   }
+
+   // <ui_show.png>
+   public method showColorDialog() {
+      dlg_color.showColor(cursor_track.bg_tint, this);
+   }
+
+   // <method.png>
+   protected method scanGroovePresets() {
+      StringArray presetNames; presetNames.free();
+
+      StringArray filenames <= Utils.ReadDirectory(STConfig.groove_rootpath);
+
+      if(null != filenames)
+      {
+         String *filenameEn;
+
+         foreach filenameEn in filenames
+         {
+            if(filenameEn.startsWith("f"))
+            {
+               StringArray attr <= filenameEn.splitSpace(true);
+               String fileName <= attr.get(1);
+
+               if(fileName.endsWith(".grv"))
+               {
+                  fileName.replace(".grv", "");
+                  presetNames.add(String(fileName));
+               }
+            }
+         }
+      }
+
+      IntArray ia;
+      presetNames.sortByValue(ia, false/*bCS*/);
+      presetNames.rearrange(ia);
+
+      cm_pat_preset.setOptions(presetNames);
+   }
+
+   // <load.png>
+   protected method loadGroovePreset() : boolean {
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.microtime_track_idx >= 0)
+         {
+            NTS_Track track <= pat.getTrackByIndex(pat.microtime_track_idx);
+
+            if(null != track)
+            {
+               String fileName = cm_pat_preset.getSelectedOptionName();
+               fileName = STConfig.groove_rootpath+"/"+fileName+".grv";
+
+               Global.Debug("NTS_TrackSetupDialog::loadGroovePreset: fileName=\""+fileName+"\"");
+
+               String buf;
+
+               if(buf.loadLocal(fileName, true/*bRemoveCR*/))
+               {
+                  StringArray lines <= buf.splitChar('\n');
+                  String *line;
+
+                  int noteLenIdx = -1;
+
+                  foreach line in lines
+                  {
+                     // trace "xxx line=\""+line+"\"";
+                     line.trim();
+
+                     if!(line <= "#")
+                     {
+                        if(-1 == noteLenIdx)
+                        {
+                           // Find notelen idx by name (e.g. "1/16" or "1/32t")
+                           int idx = 0;
+                           String *notelenName;
+
+                           foreach notelenName in NTS_Track.notelen_names
+                           {
+                              int nltIdx = notelenName.indexOf(":", 0);
+                              String nlt = notelenName.substring(nltIdx + 2, 99);
+                              nlt.replace("*", "");
+
+                              if(nlt == line)
+                              {
+                                 noteLenIdx = idx;
+                                 break;
+                              }
+
+                              idx++;
+                           }
+
+                           if(-1 != noteLenIdx)
+                           {
+                              Global.Debug("NTS_TrackSetupDialog::loadGroovePreset: notelen name=\""+line+"\" idx="+noteLenIdx);
+                           }
+                           else
+                           {
+                              Global.Error("Load preset: invalid notelen string \""+line+"\"");
+                              return false;
+                           }
+                        }
+                        else
+                        {
+                           // Parse timings
+                           StringArray timingStrings <= line.splitChar(' ');
+                           FloatArray timings; timings.free();
+                           String *timingString;
+
+                           foreach timingString in timingStrings
+                           {
+                              float t = float(timingString);
+                              t = mathClampf(t, -1.0, 1.0);
+                              timings.add(t);
+                           }
+
+                           Global.Debug("NTS_TrackSetupDialog::loadGroovePreset: found "+timings.numElements+" timing entries");
+
+                           int numSteps = mathMini(NTS_Track.MAX_STEPS, timings.numElements);
+                           int stepIdx = 0;
+
+                           editor.undoBeginTimer();
+
+                           loop(numSteps)
+                           {
+                              NTS_Step st <= track.getStepByIndex(stepIdx);
+                              st.setMicroTime(timings.get(stepIdx));
+                              stepIdx++;
+                           }
+
+                           last_preset_name = cm_pat_preset.getSelectedOptionName();
+
+                           Global.Success("Preset loaded ("+numSteps+" timings)");
+                           UI.RedrawAll();
+                           return true;
+                        }
+                     }
+                  }
+               }
+
+               Global.Warning("Failed to load groove preset");
+            }
+         }
+         else
+         {
+            Global.Warning("Load preset: Pattern has no microtiming track");
+         }
+      }
+      else
+      {
+         // Should not be reachable
+         Global.Warning("Failed to load groove preset");
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method saveGroovePreset1() {
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+
+      if(null != pat)
+      {
+         if(pat.microtime_track_idx >= 0)
+         {
+            dlg_preset_save <= new NTS_SavePresetDialog;
+            dlg_preset_save.run(this);
+         }
+         else
+         {
+            Global.Warning("Save preset: Pattern has no microtiming track");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method saveGroovePreset2(String _name) {
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+
+      _name.trim();
+      _name = Utils.ConvertToFileName(_name);
+
+      if(!_name.isBlank())
+      {
+         if(null != pat)
+         {
+            if(pat.microtime_track_idx >= 0)
+            {
+               NTS_Track track <= pat.getTrackByIndex(pat.microtime_track_idx);
+
+               if(null != track)
+               {
+                  String notelenName = NTS_Track.notelen_names.get(track.step_note_length);
+                  int nltIdx = notelenName.indexOf(":", 0);
+                  String nlt = notelenName.substring(nltIdx + 2, 99);
+                  // nlt.replace("*", "");
+
+                  String buf = "# preset name: \""+_name+"\"\n"+nlt+"\n";
+                  int numSteps = track.play_length;
+                  int stepIdx = 0;
+                  loop(numSteps)
+                  {
+                     NTS_Step st <= track.getStepByIndex(stepIdx++);
+                     buf.append(String(st.microtime));
+                     if(stepIdx != numSteps)
+                        buf.append(" ");
+                  }
+
+                  String fileName = STConfig.groove_rootpath+"/"+_name+".grv";
+                  buf.saveLocal(fileName);
+
+                  last_preset_name = _name;
+
+                  scanGroovePresets();
+                  cm_pat_preset.setSelectedOptionByName(_name);
+
+                  Global.Success("Save preset \""+_name+"\"");
+               }
+            }
+         }
+      }
+      else
+      {
+         Global.Error("Save preset: invalid name (only whitespace)");
+      }
+   }
+
+   // <method_set.png>
+   protected method setLearnMode(int _mode, boolean _bQuiet) {
+
+      NodeTrigSeq seq <= editor.seq;
+
+      if(LEARN_NONE == _mode)
+      {
+         // Switch off
+         learn_mode = LEARN_NONE;
+
+         if(!_bQuiet)
+         {
+            Global.Print("Stop MIDI learn");
+         }
+
+         learn_timeout = -1;
+         ta_midi_learn.cancel();
+      }
+      else
+      {
+         learn_mode = _mode;
+
+         if(!_bQuiet)
+         {
+            Global.Print("Start MIDI learn (mode="+_mode+")");
+         }
+
+         learn_timeout = LEARN_TIMEOUT;
+         ta_midi_learn.schedule();
+      }
+
+      if(LEARN_NOTE == _mode)
+      {
+         bt_learn_note.setCaption(" Stop ");
+         bt_learn_note.setBackgroundTint(TINT32_LEARN);
+
+         bt_mod1_learn.setCaption(" Learn ");
+         bt_mod1_learn.setBackgroundTint(0);
+
+         bt_mod2_learn.setCaption(" Learn ");
+         bt_mod2_learn.setBackgroundTint(0);
+      }
+      else if(LEARN_MOD1 == _mode)
+      {
+         bt_learn_note.setCaption(" Learn ");
+         bt_learn_note.setBackgroundTint(0);
+
+         bt_mod1_learn.setCaption(" Stop ");
+         bt_mod1_learn.setBackgroundTint(TINT32_LEARN);
+
+         bt_mod2_learn.setCaption(" Learn ");
+         bt_mod2_learn.setBackgroundTint(0);
+      }
+      else if(LEARN_MOD2 == _mode)
+      {
+         bt_learn_note.setCaption(" Learn ");
+         bt_learn_note.setBackgroundTint(0);
+
+         bt_mod1_learn.setCaption(" Learn ");
+         bt_mod1_learn.setBackgroundTint(0);
+
+         bt_mod2_learn.setCaption(" Stop ");
+         bt_mod2_learn.setBackgroundTint(TINT32_LEARN);
+      }
+      else
+      {
+         bt_learn_note.setCaption(" Learn ");
+         bt_learn_note.setBackgroundTint(0);
+
+         bt_mod1_learn.setCaption(" Learn ");
+         bt_mod1_learn.setBackgroundTint(0);
+
+         bt_mod2_learn.setCaption(" Learn ");
+         bt_mod2_learn.setBackgroundTint(0);
+      }
+
+      bt_learn_note.redraw();
+      bt_mod1_learn.redraw();
+      bt_mod2_learn.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method toggleLearnNote() {
+      setLearnMode( (LEARN_NOTE == learn_mode) ? LEARN_NONE : LEARN_NOTE, false/*bQuiet*/);
+   }
+
+   // <ui_handle.png>
+   protected method toggleLearnMod1() {
+      setLearnMode( (LEARN_MOD1 == learn_mode) ? LEARN_NONE : LEARN_MOD1, false/*bQuiet*/);
+   }
+
+   // <ui_handle.png>
+   protected method toggleLearnMod2() {
+      setLearnMode( (LEARN_MOD2 == learn_mode) ? LEARN_NONE : LEARN_MOD2, false/*bQuiet*/);
+   }
+
+   // <method.png>
+   protected =replay= method learnModFromEvent(int _learnMode/*LEARN_MOD1/2*/, MIDIMapEvent _ev, boolean _bDevCh) {
+      MIDIMapEventType modType <= (LEARN_MOD1 == _learnMode) ? cursor_track.mod1_type : cursor_track.mod2_type;
+
+      Global.Print("Learn "+_ev.getFullTypeName());
+      boolean bLearnMod = false;
+
+      switch(_ev.type)
+      {
+         case MIDIMapDefs.TYPE_POLY_PRESSURE:
+            modType.setType(_ev.type);
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPE_CC:
+            modType.setType(_ev.type);
+            modType.setExtType(_ev.ext_type);  // cc#
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            modType.setType(_ev.type);
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+            modType.setType(_ev.type);
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPE_PITCHBEND:
+            modType.setType(_ev.type);
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+            modType.setType(_ev.type);
+            modType.setExtType(_ev.ext_type);  // rpn#
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPE_NRPN:
+            modType.setType(_ev.type);
+            modType.setExtType(_ev.ext_type);  // nrpn#
+            bLearnMod = true;
+            break;
+
+         case MIDIMapDefs.TYPEX_NOTE_NUMBER:
+         case MIDIMapDefs.TYPEX_NOTE_VELOCITY_MUL:
+         case MIDIMapDefs.TYPEX_NOTE_VELOCITY_ADD:
+         case MIDIMapDefs.TYPEX_NOTE_DURATION:
+            // cannot be learnt
+            break;
+      }
+
+      if(bLearnMod)
+      {
+         if(_bDevCh)
+         {
+            cursor_track.b_forced_mod_out = true;
+            cursor_track.setForcedModOutDev(_ev.dev.dev_idx);
+            cursor_track.setForcedModOutCh(_ev.dev_ch);
+            cm_forced_mod_out_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(cursor_track.forced_mod_out_dev) + 1/*default*/);
+            cm_forced_mod_out_ch.setSelectedOption(cursor_track.forced_mod_out_ch);
+            cb_forced_mod_out.setSelected(cursor_track.b_forced_mod_out);
+            updateForcedModOutTint();
+            updateForcedModChOptions();
+            updateMod1Options();
+            updateMod2Options();
+         }
+
+         editor.queueRelayoutStepDetails();
+         editor.updateStepDetailsButton();
+
+         updateMod1Options();
+         updateMod2Options();
+
+         if(LEARN_MOD1 == learn_mode)
+         {
+            UI.SetKeyboardFocus(bt_mod1_learn);
+         }
+         else
+         {
+            UI.SetKeyboardFocus(bt_mod2_learn);
+         }
+
+         ta_resize.reschedule();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyCtlMod(boolean _bMod2, boolean _bClipboardB) {
+      NodeTrigSeq seq <= editor.seq;
+      int devIdx = cursor_track.getModOutDevIdx(seq);
+      if(devIdx >= 0)
+      {
+         local String msgPrefix = "copyctl<"+(_bClipboardB?"B":"A")+" from mod"+(_bMod2?"2":"1")+">: ";
+         NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+         NTS_Pattern pat <= seq.nodeGetCurrentEditPattern();
+         byte midiCh = cursor_track.getModOutCh(seq, pat);
+
+         cb.copyFromMIDIMapEventType(_bMod2 ? cursor_track.mod2_type : cursor_track.mod1_type);
+         cb.setDispType(cb.type);
+         cb.setDispDevIdx(devIdx + 4/*macrodev*/);
+         cb.setDevCh(midiCh);
+
+         Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+      }
+      else
+      {
+         Global.Warning(msgPrefix+"no device");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePasteCtlMod(boolean _bMod2, boolean _bClipboardB) {
+      local String msgPrefix = "pastectl<"+(_bClipboardB?"B":"A")+" to mod"+(_bMod2?"2":"1")+">: ";
+
+      NMM_Arg cb <= _bClipboardB ? mmarg_clipboard_b : mmarg_clipboard_a;
+      cb.copyToMIDIMapEventType(_bMod2 ? cursor_track.mod2_type : cursor_track.mod1_type);
+      int devIdx = cb.dev_idx;
+      byte midiCh = cb.dev_ch;
+      // trace "xxx handlePastCtlMod: devIdx="+devIdx+" midiCh="+midiCh;
+      if(midiCh < 0) // *?
+         midiCh = 0;
+      cursor_track.setForcedModOutDev(devIdx);
+      cursor_track.setForcedModOutCh(midiCh);
+      cursor_track.setEnableForcedModOut(true);
+      cm_forced_mod_out_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(cursor_track.forced_mod_out_dev) + 1/*default*/);
+      cm_forced_mod_out_ch.setSelectedOption(cursor_track.forced_mod_out_ch);
+      cb_forced_mod_out.setSelected(cursor_track.b_forced_mod_out);
+      updateForcedModOutTint();
+      updateForcedModChOptions();
+      updateMod1Options();
+      updateMod2Options();
+
+      editor.queueRelayoutStepDetails();
+      editor.updateStepDetailsButton();
+
+      updateMod1Options();
+      updateMod2Options();
+
+      resizeToMinimum();
+      validateClippedPosition();
+
+      Global.Print(msgPrefix+"type="+cb.getClipboardTypeString()+" dev="+cb.getClipboardPortString());
+   }
+
+   // <method.png>
+   protected method initModFromCtlTagEntry(boolean _bMod2, int _idx) {
+      CtlTagEntry en <= current_song.getCtlTagEntryByIdx(_idx);
+      MIDIMapEvent ev <= en.mm_event;
+      learnModFromEvent(_bMod2 ? LEARN_MOD2 : LEARN_MOD1, ev, true/*bDevCh*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleModTypeChanged(MIDIMapEventType _evType,
+                                         ComboBox         _cmType,
+                                         ComboBox         _cmNr,
+                                         FloatParam       _fpMin,
+                                         FloatParam       _fpMax,
+                                         FloatParam       _fpReset,
+                                         boolean          _bQuiet
+                                         ) {
+      boolean bMax14 = false;
+
+      switch(_cmType.getSelectedOption())
+      {
+         default:
+         case 0:
+            _evType.setType(-1);
+            break;
+
+         case 1: // PAT
+            _evType.setType(MIDIMapDefs.TYPE_POLY_PRESSURE);
+            break;
+
+         case 2: // CC
+            _evType.setType(MIDIMapDefs.TYPE_CC);
+            break;
+
+         case 3: // PC
+            _evType.setType(MIDIMapDefs.TYPE_PROGRAM_CHANGE);
+            break;
+
+         case 4: // CAT
+            _evType.setType(MIDIMapDefs.TYPE_CHANNEL_PRESSURE);
+            break;
+
+         case 5: // PB
+            _evType.setType(MIDIMapDefs.TYPE_PITCHBEND);
+            bMax14 = true;
+            break;
+
+         case 6: // RPN
+            _evType.setType(MIDIMapDefs.TYPE_RPN);
+            bMax14 = true;
+
+            if(!_bQuiet)
+            {
+               // Auto-select Ctl1..32 if current selection is invalid
+               if(-1 == _cmNr.getSelectedOption())
+               {
+                  if(@(_cmNr) == @(cm_mod1_nr))
+                     _evType.ext_type = 100 + cursor_track.track_nr; // Ctl1..16
+                  else
+                     _evType.ext_type = 116 + cursor_track.track_nr; // Ctl17..32
+               }
+            }
+            break;
+
+         case 7: // NRPN
+            _evType.setType(MIDIMapDefs.TYPE_NRPN);
+            bMax14 = true;
+            break;
+
+         case 8: // Note Number
+            _evType.setType(MIDIMapDefs.TYPEX_NOTE_NUMBER);
+            break;
+
+         case 9: // Note Velocity (*)
+            _evType.setType(MIDIMapDefs.TYPEX_NOTE_VELOCITY_MUL);
+            break;
+
+         case 10: // Note Velocity (+)
+            _evType.setType(MIDIMapDefs.TYPEX_NOTE_VELOCITY_ADD);
+            break;
+
+         case 11: // Note Duration
+            _evType.setType(MIDIMapDefs.TYPEX_NOTE_DURATION);
+            break;
+      }
+
+      if(bMax14)
+      {
+         _fpMin.setNominalMax(16383);
+         _fpMax.setNominalMax(16383);
+         _fpReset.setNominalMax(16383);
+         if(int(_fpMax.getFloatValue()) == 127)
+            if(_bQuiet)
+               _fpMax.setValue(16383);
+            else
+               _fpMax.setValueAction(16383);
+      }
+      else
+      {
+         _fpMin.setNominalMax(127);
+         _fpMax.setNominalMax(127);
+         _fpReset.setNominalMax(127);
+         if(int(_fpMax.getFloatValue()) == 16383)
+            if(_bQuiet)
+               _fpMax.setValue(127);
+            else
+               _fpMax.setValueAction(127);
+      }
+
+      if(!_bQuiet)
+      {
+         updateModOptions(_evType, _cmType, _cmNr);
+         Global.Print("Mod Type is \""+_cmType.getSelectedOptionNameLong()+"\"");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleModNrChanged(MIDIMapEventType _evType, ComboBox _cmNr) {
+      NodeTrigSeq seq <= editor.seq;
+      int outDevIdx = cursor_track.getModOutDevIdx(seq);
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+      int outMidiCh = cursor_track.getModOutCh(seq, pat);
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(outDevIdx);
+      if(null != outDev)
+      {
+         MIDISynthProfile profile <= outDev.getMIDISynthProfile(outMidiCh);
+
+         if(null == profile)
+            profile <= MIDI.GetDefaultSynthProfile();
+
+         switch(_evType.type)
+         {
+            case MIDIMapDefs.TYPE_CC:
+               _evType.setExtType(_cmNr.getSelectedOption());
+               Global.Print("Mod CC is \""+_cmNr.getSelectedOptionName()+"\"");
+               break;
+
+            case MIDIMapDefs.TYPE_RPN:
+               _evType.setExtType(profile.getRPNByCaptionIndex(_cmNr.getSelectedOption()));
+               Global.Print("Mod RPN is \""+_cmNr.getSelectedOptionName()+"\" ("+_evType.ext_type+")");
+               break;
+
+            case MIDIMapDefs.TYPE_NRPN:
+               _evType.setExtType(profile.getNRPNByCaptionIndex(_cmNr.getSelectedOption()));
+               Global.Print("Mod NRPN is \""+_cmNr.getSelectedOptionName()+"\" ("+_evType.ext_type+")");
+               break;
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateForcedChOptions() {
+      NodeTrigSeq seq <= editor.seq;
+      int outDevIdx = cursor_track.getOutDevIdx(seq);
+      cm_forced_out_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(outDevIdx, null/*firstOptionOrNull*/));
+   }
+
+   // <ui_update.png>
+   protected method updateForcedModChOptions() {
+      NodeTrigSeq seq <= editor.seq;
+      int outDevIdx = cursor_track.getModOutDevIdx(seq);
+      cm_forced_mod_out_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(outDevIdx, null/*firstOptionOrNull*/));
+   }
+
+   // <ui_update.png>
+   protected method updateModOptions(MIDIMapEventType _evType, ComboBox _cmType, ComboBox _cmNr) {
+      NodeTrigSeq seq <= editor.seq;
+      int outDevIdx = cursor_track.getModOutDevIdx(seq);
+      NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+      int outMidiCh = cursor_track.getModOutCh(seq, pat);
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(outDevIdx);
+      if(null != outDev)
+      {
+         MIDISynthProfile profile <= outDev.getMIDISynthProfile(outMidiCh);
+
+         if(null == profile)
+            profile <= MIDI.GetDefaultSynthProfile();
+
+         switch(_evType.type)
+         {
+            default:
+               _cmType.setSelectedOption(0);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPE_POLY_PRESSURE:
+               _cmType.setSelectedOption(1);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPE_CC:
+               _cmType.setSelectedOption(2);
+               _cmNr.setOptions(profile.cc_captions);
+               _cmNr.setSelectedOptionAndEnable(_evType.ext_type);
+               break;
+
+            case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+               _cmType.setSelectedOption(3);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+               _cmType.setSelectedOption(4);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPE_PITCHBEND:
+               _cmType.setSelectedOption(5);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPE_RPN:
+               _cmType.setSelectedOption(6);
+               _cmNr.setOptions(profile.rpn_captions);
+               _cmNr.setSelectedOptionAndEnable(profile.getRPNCaptionIndex(_evType.ext_type));
+               break;
+
+            case MIDIMapDefs.TYPE_NRPN:
+               _cmType.setSelectedOption(7);
+               _cmNr.setOptions(profile.nrpn_captions);
+               _cmNr.setSelectedOptionAndEnable(profile.getNRPNCaptionIndex(_evType.ext_type));
+               break;
+
+            case MIDIMapDefs.TYPEX_NOTE_NUMBER:
+               _cmType.setSelectedOption(8);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPEX_NOTE_VELOCITY_MUL:
+               _cmType.setSelectedOption(9);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPEX_NOTE_VELOCITY_ADD:
+               _cmType.setSelectedOption(10);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+
+            case MIDIMapDefs.TYPEX_NOTE_DURATION:
+               _cmType.setSelectedOption(11);
+               _cmNr.setSelectedOptionAndDisable(-1);
+               break;
+         }
+      }
+      else
+      {
+         Global.Debug("NTS_TrackSetupDialog::updateModOptions: failed to resolve outDevIdx="+outDevIdx+", evType="+_evType.type);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateMod1Options() {
+      updateModOptions(cursor_track.mod1_type, cm_mod1_type, cm_mod1_nr);
+   }
+
+   // <ui_update.png>
+   protected method updateMod2Options() {
+      updateModOptions(cursor_track.mod2_type, cm_mod2_type, cm_mod2_nr);
+   }
+
+   // <ui_handle.png>
+   protected method handleNoteNamesChanged() {
+
+      if(0 == cm_notenames.getSelectedOption())
+         cursor_track.note_name_profile_id <= null;  // <pattern>
+      else
+         cursor_track.note_name_profile_id <= Object(cm_notenames.getSelectedOptionName());
+
+      editor.handlePatternChanged(false/*bFromUI*/);
+
+      Global.Print("Note Names Profile is \""+cm_notenames.getSelectedOptionName()+"\"");
+   }
+
+   // <ui_show.png>
+   protected method showModMenu(boolean _bMod2, boolean _bFocusFirst) {
+
+      pm_mod <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_mod;
+      b_pm_mod_2 = _bMod2;
+
+      MIDI.AppendCtlClipboardMenuItems(pm, true/*bActiveCopy*/, true/*bActivePaste*/);
+
+      MIDI.AppendCtlTagSubMenu(pm, "CtlTag");
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-10, -10);
+
+      if(_bFocusFirst)
+         pm.focusNextMenuItem();
+
+      Global.Print("Show Mod context menu.");
+   }
+
+   // <midi_mml.png>
+   public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      // trace "xxx dlg:mmlHandleEventUI";
+      if(!_ev.isValid())
+         return false;
+
+      NodeTrigSeq seq <= editor.seq;
+      NTS_Pattern pat <= seq.nodeGetCurrentEditPattern();
+
+      int devIdx = _ev.getDevIdx();
+      int devCh = _ev.getDevCh();
+
+      int note = _ev.arg1;
+
+      if(seq.b_learn_xform)
+      {
+         devIdx = (seq.learn_xform_dev_idx >= 0) ? seq.learn_xform_dev_idx : seq.out_dev_idx;
+         devCh  = seq.learn_xform_ch;
+      }
+
+      if(LEARN_NOTE == learn_mode)
+      {
+         if(MIDIMapDefs.TYPE_NOTE_ON == _ev.type)
+         {
+            if(devIdx == seq.out_dev_idx)
+               cursor_track.setForcedOutDev(-1);
+            else
+               cursor_track.setForcedOutDev(devIdx);
+            cursor_track.setForcedOutCh(devCh);
+            cursor_track.setForcedOutputMode(NodeTrigSeq.OUT_SINGLECH_NOTE);
+            cursor_track.setEnableForcedOut(true);
+            cursor_track.setArg3(note - pat.arg3_offset);
+
+            if(seq.b_learn_advance)
+            {
+               selectNextTrack();
+            }
+            else
+            {
+               editor.selectTrack(cursor_track.track_nr);  // update arg3
+            }
+
+            updateWidgetsAfterTrackChanged();  // update outdev/ch+arg3
+            editor.handlePatternChanged(false/*bFromUI*/);
+
+            Global.Print("Learn "+(MIDI.midi_notes.get(note))+" ("+note+"), dev=\""+MIDI.GetMIDIOutAliasOrDeviceNameByIndex(devIdx)+"\" ch="+(devCh+1));
+         }
+      }
+      else if((LEARN_MOD1 == learn_mode) || (LEARN_MOD2 == learn_mode))
+      {
+         learnModFromEvent(learn_mode/*LEARN_MOD1/2*/, _ev, false/*bDevCh*/);
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+      if(_ev.wheelUp())
+      {
+         selectPreviousTrack();
+         return true;
+      }
+      else if(_ev.wheelDown())
+      {
+         selectNextTrack();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      UI.SetKeyboardFocus(this);
+      if(_ev.isRightButton())
+      {
+         if(pn_mod1.isMouseOverWithin())
+         {
+            showModMenu(false/*bMod2*/, false/*bFocusFirst*/);
+            return true;
+         }
+         else if(pn_mod2.isMouseOverWithin())
+         {
+            showModMenu(true/*bMod2*/, false/*bFocusFirst*/);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      Layer kbdFocus <= UI.GetKeyboardFocus();
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+
+         case 'a':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [fp_arg3
+                                               ]
+                                              );
+            return true;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               UI.SetKeyboardFocus(bt_bgtint);
+               if(_k.modShift())
+                  copyColorToAllTracks();
+               else
+                  showColorDialog();
+            }
+            else
+            {
+               Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                                 [bt_close
+                                                  ]
+                                                 );
+            }
+            return true;
+
+         case 'd':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [fp_dur
+                                               ]
+                                              );
+            return true;
+
+         case 'f':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [cm_forced_out_dev,
+                                               cb_forced_out,
+                                               cm_forced_out_ch,
+                                               cm_forced_out_mode
+                                               ]
+                                              );
+            return true;
+
+         case 'j':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [fp_velocity_jitter,
+                                               fp_microtime_jitter
+                                               ]
+                                              );
+            return true;
+
+         case 'r':
+            // NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+            NTS_TrackSetupForm f <= forms.get(cursor_track.track_nr);
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [f.cm_repeat_len,
+                                               f.cm_num_repeats
+                                               ]
+                                              );
+            return true;
+
+         case 's':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [fp_microtime_shift,
+                                               fp_mod_tickshift
+                                               ]
+                                              );
+            return true;
+
+         case 'm':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [cm_forced_mod_out_dev,
+                                               cb_forced_mod_out,
+                                               cm_forced_mod_out_ch,
+                                               fp_mod_tickshift
+                                               ]
+                                              );
+            return true;
+
+         case '1':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [cm_mod1_type,
+                                               cm_mod1_nr,
+                                               bt_mod1_learn,
+                                               fp_mod1_min,
+                                               fp_mod1_max,
+                                               fp_mod1_reset,
+                                               fp_mod1_jitter
+                                               ]
+                                              );
+            return true;
+
+         case '2':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [cm_mod2_type,
+                                               cm_mod2_nr,
+                                               bt_mod2_learn,
+                                               fp_mod2_min,
+                                               fp_mod2_max,
+                                               fp_mod2_reset,
+                                               fp_mod2_jitter
+                                               ]
+                                              );
+            return true;
+
+         case 't':
+            if(_k.modNone())
+            {
+               hide();
+            }
+            else
+            {
+               Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                                 [cm_learn_xform_dev,
+                                                  cm_learn_xform_ch,
+                                                  cb_learn_xform,
+                                                  bt_learn_note,
+                                                  cb_learn_advance
+                                                  ]
+                                                 );
+            }
+            return true;
+
+         case 'v':
+            Utils.KbdFocusNextInMiniCycleList(kbdFocus,
+                                              [fp_vel_0,
+                                               fp_vel_1,
+                                               fp_vel_2,
+                                               fp_vel_3
+                                               ]
+                                              );
+            return true;
+      }
+
+      return Dialog::onKey(_k);
+   }
+
+   // <ui_timer.png>
+   protected method handleMIDILearnTimer() {
+
+      NodeTrigSeq seq <= editor.seq;
+
+      // trace "xxx handleMIDILearnTimer: learn_timeout="+learn_timeout+" mode="+seq.getEnableLearn();
+
+      if(LEARN_NONE != learn_mode)
+      {
+         learn_timeout--;
+
+         if(learn_timeout <= 0)
+         {
+            setLearnMode(LEARN_NONE, false/*bQuiet*/);
+         }
+         else
+         {
+            Button *btLearn;
+            if(LEARN_NOTE == learn_mode)
+               btLearn <= bt_learn_note;
+            else if(LEARN_MOD1 == learn_mode)
+               btLearn <= bt_mod1_learn;
+            else if(LEARN_MOD2 == learn_mode)
+               btLearn <= bt_mod2_learn;
+
+            if(learn_timeout & 1)
+            {
+               btLearn.setBackgroundTint(TINT32_LEARN);
+            }
+            else
+            {
+               btLearn.setBackgroundTint(0);
+            }
+
+            if(0 == (learn_timeout & 1))
+            {
+               if(0 != (learn_timeout & 2))
+               {
+                  btLearn.setCaption(" "+(learn_timeout/2)+" ");
+               }
+               else
+               {
+                  btLearn.setCaption(" Stop ");
+               }
+            }
+
+            btLearn.redraw();
+
+            ta_midi_learn.schedule();
+         }
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+
+      String acName <= _action.getActionName();
+      int idx;
+
+      switch(acName)
+      {
+         case TA_MIDI_LEARN:
+            handleMIDILearnTimer();
+            return true;
+
+         case TA_RESIZE:
+            resizeToMinimum();
+            validateClippedPosition();
+            return true;
+      }
+
+      switch(@(_action.getActionProvider()))
+      {
+         case @(cm_pat_microtime_track):
+            NTS_Pattern pat <= editor.seq.nodeGetCurrentEditPattern();
+            pat.setMicrotimeTrackIdx(cm_pat_microtime_track.getSelectedOption() - 1);
+            Global.Print("Timing track is "+cm_pat_microtime_track.getSelectedOptionName());
+            return true;
+
+         case @(cm_pat_preset):
+            if(cb_pat_preset_autoload.isSelected())
+            {
+               loadGroovePreset();
+               Global.Print("Auto-load preset \""+cm_pat_preset.getSelectedOptionName()+"\"");
+            }
+            else
+            {
+               Global.Print("Select preset \""+cm_pat_preset.getSelectedOptionName()+"\"");
+            }
+            return true;
+
+         case @(bt_pat_preset_load):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               scanGroovePresets();
+               Global.Print("Rescan: found "+cm_pat_preset.getNumOptions()+" groove presets");
+            }
+            else
+            {
+               loadGroovePreset();
+               Global.Print("Load preset \""+cm_pat_preset.getSelectedOptionName()+"\"");
+            }
+            return true;
+
+         case @(cb_pat_preset_autoload):
+            Global.Print("Auto-load preset is "+Utils.GetEnableString(cb_pat_preset_autoload.isSelected()));
+            return true;
+
+         case @(bt_pat_preset_save):
+            saveGroovePreset1(); // show name dialog
+            return true;
+
+         case @(fp_vel_0):
+            cursor_track.setVelocity(0, fp_vel_0.getFloatValue());
+            Global.Print("Track velocity[0] is "+(cursor_track.velocities.get(0)));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_vel_1):
+            cursor_track.setVelocity(1, fp_vel_1.getFloatValue());
+            Global.Print("Track velocity[1] is "+(cursor_track.velocities.get(1)));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_vel_2):
+            cursor_track.setVelocity(2, fp_vel_2.getFloatValue());
+            Global.Print("Track velocity[2] is "+(cursor_track.velocities.get(2)));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_vel_3):
+            cursor_track.setVelocity(3, fp_vel_3.getFloatValue());
+            Global.Print("Track velocity[3] is "+(cursor_track.velocities.get(3)));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_velocity_jitter):
+            cursor_track.setVelocityJitter(fp_velocity_jitter.getFloatValue());
+            Global.Print("Velocity jitter is "+(100 * cursor_track.velocity_jitter)+"%");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(bt_bgtint):
+            if(VMOD_LCTRL == UI.GetKeyMod())
+               copyColorToAllTracks();
+            else
+               showColorDialog();
+            return true;
+
+         case @(dlg_color):
+            cursor_track.bg_tint = dlg_color.getColor();
+            bt_bgtint.setBackgroundTint(cursor_track.bg_tint);
+            editor.updateTrackForms();
+            return true;
+
+         case @(fp_dur):
+            cursor_track.setDefaultNoteDurationTicks(fp_dur.getFloatValue());
+            Global.Print("Track default note duration is "+cursor_track.default_note_duration_ticks+" ticks");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_microtime_shift):
+            cursor_track.setMicrotimeShift(fp_microtime_shift.getFloatValue());
+            Global.Print("Track microtime shift is "+cursor_track.getMicroTimeShiftTicks()+" ticks");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_microtime_jitter):
+            cursor_track.setMicrotimeJitter(fp_microtime_jitter.getFloatValue());
+            Global.Print("Track microtime jitter is +-"+cursor_track.getMicroTimeJitterTicks()+" ticks");
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(cm_notenames):
+            handleNoteNamesChanged();
+            return true;
+
+         case @(fp_arg3):
+            cursor_track.setArg3(fp_arg3.getFloatValue());
+            editor.handlePatternChanged(false/*bFromUI*/);
+            Global.Print("Track "+(cursor_track.track_nr+1)+" arg 3 is "+cursor_track.arg3);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(cb_forced_out):
+            cursor_track.setEnableForcedOut(cb_forced_out.isSelected());
+            updateForcedOutTint();
+            updateMod1Options();
+            updateMod2Options();
+            Global.Print("Track forced output is "+Utils.GetEnableString(cursor_track.b_forced_out));
+            return true;
+
+         case @(cm_forced_out_dev):
+            cursor_track.setForcedOutDev(MIDI.SortedToUnsortedDevIdx(cm_forced_out_dev.getSelectedOption() - 1));
+            updateForcedOutTint();
+            updateForcedChOptions();
+            updateMod1Options();
+            updateMod2Options();
+            Global.Print("Track forced output dev is \""+cm_forced_out_dev.getSelectedOptionName()+"\"");
+            resizeToMinimum();
+            validateClippedPosition();
+            return true;
+
+         case @(cm_forced_out_ch):
+            cursor_track.setForcedOutCh(cm_forced_out_ch.getSelectedOption());
+            Global.Print("Track forced output ch is "+cm_forced_out_ch.getSelectedOptionName());
+            updateMod1Options();
+            updateMod2Options();
+            return true;
+
+         case @(cm_forced_out_mode):
+            cursor_track.setForcedOutputMode(cm_forced_out_mode.getSelectedOption() - 1);
+            updateForcedOutTint();
+            Global.Print("Track forced output mode is "+cm_forced_out_mode.getSelectedOptionName());
+            updateMod1Options();
+            updateMod2Options();
+            return true;
+
+         case @(cb_forced_mod_out):
+            cursor_track.setEnableForcedModOut(cb_forced_mod_out.isSelected());
+            updateForcedModOutTint();
+            updateMod1Options();
+            updateMod2Options();
+            Global.Print("Track forced mod output is "+Utils.GetEnableString(cursor_track.b_forced_mod_out));
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(cm_forced_mod_out_dev):
+            cursor_track.setForcedModOutDev(MIDI.SortedToUnsortedDevIdx(cm_forced_mod_out_dev.getSelectedOption() - 1));
+            updateForcedModOutTint();
+            updateForcedModChOptions();
+            updateMod1Options();
+            updateMod2Options();
+            Global.Print("Track forced mod output dev is \""+cm_forced_mod_out_dev.getSelectedOptionName()+"\"");
+            resizeToMinimum();
+            validateClippedPosition();
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(cm_forced_mod_out_ch):
+            cursor_track.setForcedModOutCh(cm_forced_mod_out_ch.getSelectedOption());
+            updateMod1Options();
+            updateMod2Options();
+            Global.Print("Track forced mod output ch is "+cm_forced_mod_out_ch.getSelectedOptionName());
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(fp_mod_tickshift):
+            cursor_track.setModTickShift(fp_mod_tickshift.getFloatValue());
+            Global.Print("Mod Tick Shift is "+cursor_track.mod_tickshift+" tick"+Utils.GetPluralString(cursor_track.mod_tickshift)+" ("+(int(current_song.ticksToMilliSeconds(cursor_track.mod_tickshift)*100)/100.0f)+"ms)");
+            return true;
+
+         case @(pm_mod):
+            Global.Debug2("NTS_TrackSetupDialog::consumeAction: pm_mod b2="+b_pm_mod_2+" acName="+acName);
+            if(PopupMenu.IsFocusAction(_action))
+               return true;
+
+            if(acName <= "ctltagentry_")
+            {
+               initModFromCtlTagEntry(b_pm_mod_2, int(acName.replace("ctltagentry_", "")));
+               return true;
+            }
+
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close Mod menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copyctl_a":
+                  handleCopyCtlMod(b_pm_mod_2, false/*bClipboardB*/);
+                  return true;
+
+               case "copyctl_b":
+                  handleCopyCtlMod(b_pm_mod_2, true/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_a":
+                  handlePasteCtlMod(b_pm_mod_2, false/*bClipboardB*/);
+                  return true;
+
+               case "pastectl_b":
+                  handlePasteCtlMod(b_pm_mod_2, true/*bClipboardB*/);
+                  return true;
+            }
+            return true;
+
+         case @(cm_mod1_type):
+            handleModTypeChanged(cursor_track.mod1_type, cm_mod1_type, cm_mod1_nr,
+                                 fp_mod1_min,
+                                 fp_mod1_max,
+                                 fp_mod1_reset,
+                                 false/*bQuiet*/
+                                 );
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(cm_mod1_nr):
+            handleModNrChanged(cursor_track.mod1_type, cm_mod1_nr);
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(bt_mod1_learn):
+            toggleLearnMod1();
+            return true;
+
+         case @(fp_mod1_min):
+            cursor_track.setMod1Min(fp_mod1_min.getFloatValue());
+            Global.Print("Mod 1 Minimum Value is "+cursor_track.mod1_min);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_mod1_max):
+            cursor_track.setMod1Max(fp_mod1_max.getFloatValue());
+            Global.Print("Mod 1 Maximum Value is "+cursor_track.mod1_max);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_mod1_reset):
+            cursor_track.setMod1Reset(fp_mod1_reset.getFloatValue());
+            Global.Print("Mod 1 Reset Value is "+((cursor_track.mod1_reset >= 0) ? cursor_track.mod1_reset : "<not set>"));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_mod1_jitter):
+            cursor_track.setMod1Jitter(fp_mod1_jitter.getFloatValue());
+            Global.Print("Mod 1 Jitter Amount is "+(int(1000*cursor_track.mod1_jitter)/10.0));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(cm_mod2_type):
+            handleModTypeChanged(cursor_track.mod2_type, cm_mod2_type, cm_mod2_nr,
+                                 fp_mod2_min,
+                                 fp_mod2_max,
+                                 fp_mod2_reset,
+                                 false/*bQuiet*/
+                                 );
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(cm_mod2_nr):
+            handleModNrChanged(cursor_track.mod2_type, cm_mod2_nr);
+            editor.updateStepDetailsButton();
+            return true;
+
+         case @(bt_mod2_learn):
+            toggleLearnMod2();
+            return true;
+
+         case @(fp_mod2_min):
+            cursor_track.setMod2Min(fp_mod2_min.getFloatValue());
+            Global.Print("Mod 2 Minimum Value is "+cursor_track.mod2_min);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_mod2_max):
+            cursor_track.setMod2Max(fp_mod2_max.getFloatValue());
+            Global.Print("Mod 2 Maximum Value is "+cursor_track.mod2_max);
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_mod2_reset):
+            cursor_track.setMod2Reset(fp_mod2_reset.getFloatValue());
+            Global.Print("Mod 2 Reset Value is "+((cursor_track.mod2_reset >= 0) ? cursor_track.mod2_reset : "<not set>"));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(fp_mod2_jitter):
+            cursor_track.setMod2Jitter(fp_mod2_jitter.getFloatValue());
+            Global.Print("Mod 2 Jitter Amount is "+(int(1000*cursor_track.mod2_jitter)/10.0));
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               UI.SetKeyboardFocus(bt_close);
+            return true;
+
+         case @(cm_learn_xform_dev):
+            editor.seq.setLearnXformDevIdx(MIDI.SortedToUnsortedDevIdx(cm_learn_xform_dev.getSelectedOption() - 1));
+            cm_learn_xform_ch.setOptionsLong(MIDI.GetMIDISynthProfileCaptionOptionsByOutDevIdx(editor.seq.getActualLearnXformDevIdx(), null/*firstOptionOrNull*/));
+            Global.Print("MIDI Learn xform dev is \""+cm_learn_xform_dev.getSelectedOptionName()+"\"");
+            return true;
+
+         case @(cm_learn_xform_ch):
+            editor.seq.setLearnXformCh(cm_learn_xform_ch.getSelectedOption());
+            Global.Print("MIDI Learn xform ch is "+((editor.seq.getLearnXformCh())+1));
+            return true;
+
+         case @(cb_learn_xform):
+            editor.seq.setEnableLearnXform(cb_learn_xform.isSelected());
+            Global.Print("MIDI Learn xform is "+Utils.GetEnableString(editor.seq.getEnableLearnXform()));
+            return true;
+
+         case @(cb_learn_advance):
+            editor.seq.setEnableLearnAdvance(cb_learn_advance.isSelected());
+            Global.Print("MIDI Learn Auto-Advance is "+Utils.GetEnableString(editor.seq.getEnableLearnAdvance()));
+            return true;
+
+         case @(bt_learn_note):
+            toggleLearnNote();
+            return true;
+
+         case @(bt_close):
+            hide();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+}

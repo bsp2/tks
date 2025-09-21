@@ -1,0 +1,1081 @@
+// ----
+// ---- file   : STX_MIDIDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 13Aug2014, 14Aug2014, 19Aug2014, 31Aug2014, 04Sep2014, 14Feb2015, 17Feb2015
+// ----          18Feb2015, 21Feb2015, 23Feb2015, 14Apr2015, 29Apr2015, 17May2015, 25Jan2016
+// ----          29Mar2016, 10Apr2016, 16Feb2017, 10Mar2017, 11Mar2017, 12Jun2017, 29Jan2018
+// ----          09Dec2018, 17Jan2019, 18Jan2019, 27Jan2019, 08Jun2019, 03Sep2019, 03Oct2019
+// ----          22Oct2022, 14Oct2023, 09Oct2024
+// ----
+// ----
+// ----
+
+module MSTX_MIDIDevice;
+
+use tkmidi;
+use namespace st2;
+
+
+// <class.png>
+class STX_MIDIDevice {
+   public    int     dev_idx;          // enumerated during startup
+
+   protected String *unavail_name; // Set when device is not available
+   protected String *unavail_alias; // Set when device is not available
+
+   protected boolean     b_project;  // true=alias and channel profiles are project-specific.
+                                     // false=use global settings
+   protected String     *project_alias;
+   protected StringArray project_profile_ids;
+
+   // one StringArray for each midi channel:
+   protected PointerArray cc_names_single;  // Single line name arrays, overlayed by CtlTags and MSP (if any)
+   protected PointerArray cc_names_multi;   // Multi line name array, overlayed by CtlTags and MSP (if any)
+
+   boolean b_closed_temporarily;  // e.g. during SDS upload via external tool
+
+
+
+   // <init.png>
+   public method initUnavail(String _name, String _alias) {
+      if(STConfig.b_debug_mididev_unavail)
+         Global.Debug("STX_MIDIDevice::initUnavail: name=\""+_name+"\" alias=\""+_alias+"\".");
+      unavail_name <= Object(_name);
+      unavail_alias <= Object(_alias);
+   }
+
+   // <method_get.png>
+   public abstract isOpen() : boolean {
+   }
+
+   // <method_get.png>
+   public method isUnavail() : boolean {
+      return (null != unavail_name);
+   }
+
+   // <method_get.png>
+   public method isProjectSpecific() : boolean {
+      return b_project;
+   }
+
+   // <method_get.png>
+   public method isInternal() : boolean {
+      return false;
+   }
+
+   // <method_set.png>
+   public method setProjectSpecific(boolean _bProject) {
+      b_project = _bProject;
+   }
+
+   // <method.png>
+   public method reset() {
+      // Called when song is initialized or device is added
+      b_project = false;
+      project_alias <= null;
+      project_profile_ids.free();
+   }
+
+   // <method_get.png>
+   public abstract getDeviceName() : String {
+   }
+
+   // <method_get.png>
+   public method getParamMode(local int _ch) : int {
+      // overwritten by STX_MIDIOutDevice
+      return MIDI_DATAENTRYMODE_MSBLSB/*0*/;
+   }
+
+   // <method_get.png>
+   public abstract getAlias() : String {
+      // Get global, or project-specific alias
+      return null;
+   }
+
+   // <method_get.png>
+   public abstract getGlobalAlias() : String {
+   }
+
+   // <method_get.png>
+   public abstract getName() : String {
+      // <alias>(<devname>) or <devname>
+   }
+
+   // <method_update.png>
+   public abstract updateDeviceAlias(String _alias) {
+   }
+
+   // <method_get.png>
+   public method getAliasOrDeviceName() : String {
+      local String r <= getAlias();
+
+      if(null != r)
+      {
+         if(!r.isBlank())
+         {
+            return r;
+         }
+      }
+
+      return getDeviceName();
+   }
+
+   // <method_get.png>
+   public method getGlobalAliasOrDeviceName() : String {
+      local String r <= getGlobalAlias();
+
+      if(null != r)
+      {
+         if(!r.isBlank())
+         {
+            return r;
+         }
+      }
+
+      return getDeviceName();
+   }
+
+   // <method_get.png>
+   public method getProfileId(local byte _midiCh) : String {
+      if(b_project)
+      {
+         return project_profile_ids.get(_midiCh);
+      }
+      else
+      {
+         return MIDI.GetMIDIDeviceProfileId(getAliasOrDeviceName(), _midiCh);
+      }
+   }
+
+   // <method_get.png>
+   public method getProfileIdOrDefault(local byte _midiCh) : String {
+      String proId <= getProfileId(_midiCh);
+      if(null != proId)
+      {
+         return proId;
+      }
+      else
+      {
+         return "default";
+      }
+   }
+
+   // <method_set.png>
+   public method setProfileId(byte _midiCh, String _profileId) {
+      // trace "xxx STX_MIDIDevice::setProfileId: midiCh="+_midiCh+" profileId="+_profileId+" b_project="+b_project;
+      if(b_project)
+      {
+         // Set project-specific profile id
+         if(project_profile_ids.numElements <= _midiCh)
+         {
+            project_profile_ids.realloc(_midiCh + 1);
+         }
+         project_profile_ids[_midiCh] = _profileId;
+      }
+      else
+      {
+         // Set global profile id
+         MIDI.SetMIDIDeviceProfileId(getAliasOrDeviceName(), _midiCh, _profileId);
+      }
+   }
+
+   // <method.png>
+   public method rescanProfileIds() {
+      byte midiCh = 0;
+      loop(16)
+      {
+         String pid = MIDI.GetMIDIDeviceProfileId(getAliasOrDeviceName(), midiCh);
+         // trace "xxx rescanProfileIds: name="+getAliasOrDeviceName()+" update profile id  midiCh="+midiCh+" => profileId=\""+pid+"\"";
+         setProfileId(midiCh, pid);
+         midiCh++;
+      }
+   }
+
+   // <method.png>
+   public method copyFromVirtualProfileIds(STX_VirtualMIDIOutDevice _virtDev) {
+      byte midiCh = 0;
+      loop(16)
+      {
+         String pid = _virtDev.getProfileId(midiCh);
+         // trace "xxx copyFromVirtualProfileIds: name="+getAliasOrDeviceName()+" update profile id  midiCh="+midiCh+" => profileId=\""+pid+"\"";
+         setProfileId(midiCh, pid);
+         midiCh++;
+      }
+   }
+
+   // <method_get.png>
+   public method getUnavailName() : String {
+      return unavail_name;
+   }
+
+   // <method_get.png>
+   public method getUnavailAlias() : String {
+      return unavail_alias;
+   }
+
+   // <method_get.png>
+   public method getUnavailAliasOrDeviceName() : String {
+      if(null != unavail_alias)
+      {
+         if(!unavail_alias.isBlank())
+         {
+            return unavail_alias;
+         }
+      }
+      return unavail_name;
+   }
+
+   // <method_get.png>
+   public method getMIDISynthProfile(byte _midiCh) : MIDISynthProfile {
+      return MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+   }
+
+   // <method_get.png>
+   public method getPrgShortNameByNr(byte _midiCh, int _prg) : String {
+      // (todo) add program name map
+      return String(_prg);
+   }
+
+   // <method_get.png>
+   public method getMIDISynthProfileCaption(byte _midiCh) : String {
+      MIDISynthProfile msp <= getMIDISynthProfile(_midiCh);
+      if(null != msp)
+         return msp.profile_caption;
+      return "default";
+   }
+
+   // <method_get.png>
+   public method getMIDISynthProfileCaptionOptions(String _firstOptionOrNull) : StringArray {
+      // (note) suitable for ComboBox.setOptionsLong()
+      local StringArray ret;
+      Byte ch = 1;
+      if(null != _firstOptionOrNull)
+         ret.add(_firstOptionOrNull);
+      loop(16)
+      {
+         ret.add(ch.printf("%02d")+": "+getMIDISynthProfileCaption(int(ch)-1));
+         ch++;
+      }
+      return deref ret;
+   }
+
+   // <method_get.png>
+   public method getCCLongNameByCtlAndMSP(byte _midiCh, MIDISynthProfile _msp, int _ctlNr, boolean _bCtlTag) : String {
+      // called by FrameForm::getCCAliasString()
+
+      if(_bCtlTag && MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagCC(this, _midiCh, _ctlNr, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      if(null != _msp)
+      {
+         // // local String s = _msp.getCCCaption(_ctlNr);
+         // // return deref s;
+         return _msp.getCCCaption(_ctlNr);
+      }
+
+      return MIDI.cc_names.get(_ctlNr);
+   }
+
+   // <method_get.png>
+   public method getCCLongNameByCtl(byte _midiCh, int _ctlNr) : String {
+
+      if(MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagCC(this, _midiCh, _ctlNr, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+      if(null == msp)
+         msp <= MIDI.GetDefaultSynthProfile();
+
+      if(null != msp)
+      {
+         local String s = msp.getCCCaption(_ctlNr);
+         return deref s;
+      }
+
+      return MIDI.cc_names.get(_ctlNr);
+   }
+
+   // <method_get.png>
+   public method getCCShortNameByCtl(byte _midiCh, int _ctlNr) : String {
+      // called by MIDI.MIDIPipeEvent_GetArg1String()
+
+      if(MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagCC(this, _midiCh, _ctlNr, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getCCAliasByCtl(_ctlNr);
+
+         local String s;
+         Integer io = _ctlNr;
+
+         if(null != alias)
+         {
+            s = alias.id;
+            s.append(io.printf(" (CC#%3d)"));
+            return deref s;
+         }
+         else
+         {
+            s = "-";
+            s.append(io.printf(" (CC#%3d)"));
+            return deref s;
+         }
+      }
+
+      return MIDI.cc_names.get(_ctlNr);
+   }
+
+   // <method_get.png>
+   public method getCCInfoByCtlAndMSP(byte _midiCh, MIDISynthProfile _msp, int _ctlNr) : String {
+      if(null != _msp)
+      {
+         MIDISynthProfileCtlAlias alias <= _msp.getCCAliasByCtl(_ctlNr);
+         if(null != alias)
+            return alias.info;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getCCInfoByCtl(byte _midiCh, int _ctlNr) : String {
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getCCAliasByCtl(_ctlNr);
+         if(null != alias)
+            return alias.info;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getCCByNamePattern(byte _midiCh, String _pattern) : int {
+      // (note) called by ModMatrix script parser
+      // trace "xxx getCCByNamePattern: pattern=\""+_pattern+"\"";
+
+      if(MIDI.b_ctltag)
+      {
+         int nr = MIDI.GetCtlTagByTypeAndNamePattern(this, _midiCh, MIDIMapDefs.TYPE_CC, _pattern);
+         if(-1 != nr)
+            return nr;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+      if(null == msp)
+         msp <= MIDI.GetMIDISynthProfileById("internal");
+
+      // trace "xxx getCC: msp="+#(msp);
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getCCAliasByCaptionPattern(_pattern);
+         if(null != alias)
+            return alias.nr;
+
+         nr = msp.getInheritedCCNrByCaptionPattern(_pattern);
+         return nr; // or -1
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getRPNLongNameByNr(byte _midiCh, int _rpn) : String {
+
+      if(MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagRPN(this, _midiCh, _rpn, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      local String s;
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(_rpn);
+
+         if(null != alias)
+         {
+            s.append(alias.caption);
+            s.append(" ");
+         }
+      }
+
+      Integer io = _rpn;
+      // // s.append(io.printf("(RPN#%05d)"));
+      s.append(io.printf("RPN#%05d"));  // 08Jun2019
+
+      return deref s;
+   }
+
+   // <method_get.png>
+   public method getRPNShortNameByNr(byte _midiCh, int _rpn) : String {
+
+      if(MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagRPN(this, _midiCh, _rpn, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      local String s;
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(_rpn);
+
+         if(null != alias)
+         {
+            s.append(alias.id);
+            s.append(" ");
+         }
+      }
+
+      Integer io = _rpn;
+      // // s.append(io.printf("(RPN#%05d)"));
+      s.append(io.printf("RPN#%05d"));  // 08Jun2019
+
+      return deref s;
+   }
+
+   // <method_get.png>
+   public method getRPNInfoByNr(byte _midiCh, int _nr) : String {
+
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(_nr);
+
+         if(null != alias)
+         {
+            // trace "xxx getRPNInfoByNr: nr="+_nr+" info=\""+alias.info+"\".";
+            return alias.info;
+         }
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getRPNMax(byte _midiCh, int _nr) : int {
+      // used during Monitor pattern import (e.g. capture buffer) to determine whether a controller
+      //  needs 0..255=>14bit scaling (or if it should be stored as a raw, unscaled value)
+      int ret = 255;
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(_nr);
+         if(null != alias)
+         {
+            ret = alias.max;
+         }
+      }
+      return ret;
+   }
+
+   // <method_get.png>
+   public method getRPNByNamePattern(byte _midiCh, String _pattern) : int {
+
+      if(MIDI.b_ctltag)
+      {
+         int nr = MIDI.GetCtlTagByTypeAndNamePattern(this, _midiCh, MIDIMapDefs.TYPE_RPN, _pattern);
+         if(-1 != nr)
+            return nr;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null == msp)
+      {
+         msp <= MIDI.GetMIDISynthProfileById("internal");
+      }
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByCaptionPattern(_pattern);
+
+         if(null != alias)
+         {
+            return alias.nr;
+         }
+      }
+
+      if(_pattern.toLower() <= "*rpn#")
+      {
+         if(_pattern.length >= 10)  // *RPN#12345
+         {
+            return GetRPNFromCaption(_pattern.substring(1,999));
+         }
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method findRPNNamesWithCtlTag(StringArray ra, byte _ch, boolean _bMultiLine) {
+      // (note) 'ra' must be cleared by caller
+      MIDISynthProfile msp <= getMIDISynthProfile(_ch);
+
+      // trace "xxx iv:getRPNNames: dev="+#(dev)+" msp="+#(msp);
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias *alias;
+         local IntArray ctlsDone;
+         Integer io;
+         String t;
+         String *ctltag;
+
+         foreach alias in msp.rpn_aliases
+         {
+            io = alias.nr;
+            ctlsDone.add(alias.nr);
+
+            // (note) don't change the string format, it's parsed later on to find the RPN#
+            t = "RPN#"+io.printf("%05d")+" (";
+
+            ctltag <= MIDI.GetCtlTagRPN(this/*dev*/, _ch, alias.nr, true/*bNameOnly*/);
+            if(null != ctltag)
+            {
+               // Use CtlTag override
+               t.append(ctltag);
+            }
+            else
+            {
+               // Use original caption
+               t.append(alias.caption);
+            }
+            t.append(")");
+
+            if(_bMultiLine)
+            {
+               if(!(alias.info.isBlank()))
+               {
+                  t.append("\n\n");
+                  t.append(alias.info);
+               }
+            }
+
+            ra.add(t);
+         }
+
+         // Add options for all RPNs that do not occur in the profile but have a ctltag assigned to them
+         CtlTagEntry *entry;
+
+         foreach entry in current_song.ctltag_entries
+         {
+            MIDIMapEvent ev <= entry.mm_event;
+
+            if(MIDIMapEventType.TYPE_RPN == ev.type)
+            {
+               if(@(ev.dev) == @(this))
+               {
+                  if(ev.dev_ch == _ch)
+                  {
+                     if(!ctlsDone.contains(ev.ext_type/*rpn*/))
+                     {
+                        io = ev.ext_type;
+                        t = "RPN#"+io.printf("%05d")+" ("+entry.tag_name+")";
+
+                        // Insert sorted
+                        int insertIdx = 0;
+                        loop(ctlsDone.numElements)
+                        {
+                           if(ctlsDone[insertIdx] > ev.ext_type)
+                              break;
+                           insertIdx++;
+                        }
+
+                        ra.insert(insertIdx, t);
+                        ctlsDone.insert(insertIdx, ev.ext_type);
+                     }
+                  }
+               }
+            }
+         } // foreach ctltag entry
+      } // if msp
+   }
+
+   // <method_get.png>
+   public method getNRPNLongNameByNr(byte _midiCh, int _nrpn) : String {
+
+      if(MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagNRPN(this, _midiCh, _nrpn, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      local String s;
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNRPNAliasByNr(_nrpn);
+
+         if(null != alias)
+         {
+            s.append(alias.caption);
+            s.append(" ");
+         }
+      }
+
+      Integer io = _nrpn;
+      // // s.append(io.printf("(NRPN#%05d)"));
+      s.append(io.printf("NRPN#%05d"));  // 08Jun2019
+
+      return deref s;
+   }
+
+   // <method_get.png>
+   public method getNRPNShortNameByNr(byte _midiCh, int _nrpn) : String {
+
+      if(MIDI.b_ctltag)
+      {
+         String r <= MIDI.GetCtlTagNRPN(this, _midiCh, _nrpn, false/*bNameOnly*/);
+         if(null != r)
+            return r;
+      }
+
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      local String s;
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNRPNAliasByNr(_nrpn);
+
+         if(null != alias)
+         {
+            s.append(alias.id);
+            s.append(" ");
+         }
+      }
+
+      Integer io = _nrpn;
+      // // s.append(io.printf("(NRPN#%05d)"));
+      s.append(io.printf("NRPN#%05d"));  // 08Jun2019
+
+      return deref s;
+   }
+
+   // <method_get.png>
+   public method getNRPNInfoByNr(byte _midiCh, int _nr) : String {
+
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNRPNAliasByNr(_nr);
+
+         if(null != alias)
+         {
+            return alias.info;
+         }
+      }
+
+      return null;
+   }
+
+   // <method_get.png>
+   public method getNRPNMax(byte _midiCh, int _nr) : int {
+      // used during Monitor pattern import (e.g. capture buffer) to determine whether a controller
+      //  needs 0..255=>14bit scaling (or if it should be stored as a raw, unscaled value)
+      int ret = 255;
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNRPNAliasByNr(_nr);
+         if(null != alias)
+         {
+            ret = alias.max;
+         }
+      }
+      return ret;
+   }
+
+   // <method_get.png>
+   public method getNRPNByNamePattern(byte _midiCh, String _pattern) : int {
+
+      if(MIDI.b_ctltag)
+      {
+         int nr = MIDI.GetCtlTagByTypeAndNamePattern(this, _midiCh, MIDIMapDefs.TYPE_NRPN, _pattern);
+         if(-1 != nr)
+            return nr;
+      }
+
+      MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null == msp)
+      {
+         msp <= MIDI.GetMIDISynthProfileById("internal");
+      }
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNRPNAliasByCaptionPattern(_pattern);
+
+         if(null != alias)
+         {
+            return alias.nr;
+         }
+      }
+
+      if(_pattern.toLower() <= "*nrpn#")
+      {
+         if(_pattern.length >= 11)  // *NRPN#12345
+         {
+            return GetNRPNFromCaption(_pattern.substring(1,999));
+         }
+      }
+
+      return -1;
+   }
+
+   // <method_get.png>
+   public method findNRPNNamesWithCtlTag(StringArray ra, byte _ch, boolean _bMultiLine) {
+      // (note) 'ra' must be cleared by caller
+      MIDISynthProfile msp <= getMIDISynthProfile(_ch);
+
+      // trace "xxx iv:getNRPNNames: dev="+#(dev)+" msp="+#(msp);
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias *alias;
+         local IntArray ctlsDone;
+         Integer io;
+         String t;
+         String *ctltag;
+
+         foreach alias in msp.nrpn_aliases
+         {
+            io = alias.nr;
+            ctlsDone.add(alias.nr);
+
+            // (note) don't change the string format, it's parsed later on to find the RPN#
+            t = "NRPN#"+io.printf("%05d")+" (";
+
+            ctltag <= MIDI.GetCtlTagNRPN(this/*dev*/, _ch, alias.nr, true/*bNameOnly*/);
+            if(null != ctltag)
+            {
+               // Use CtlTag override
+               t.append(ctltag);
+            }
+            else
+            {
+               // Use original caption
+               t.append(alias.caption);
+            }
+            t.append(")");
+
+            if(_bMultiLine)
+            {
+               if(!(alias.info.isBlank()))
+               {
+                  t.append("\n\n");
+                  t.append(alias.info);
+               }
+            }
+
+            ra.add(t);
+         }
+
+         // Add options for all NRPNs that do not occur in the profile but have a ctltag assigned to them
+         CtlTagEntry *entry;
+
+         foreach entry in current_song.ctltag_entries
+         {
+            MIDIMapEvent ev <= entry.mm_event;
+
+            if(MIDIMapEventType.TYPE_NRPN == ev.type)
+            {
+               if(@(ev.dev) == @(this))
+               {
+                  if(ev.dev_ch == _ch)
+                  {
+                     if(!ctlsDone.contains(ev.ext_type/*nrpn*/))
+                     {
+                        io = ev.ext_type;
+                        t = "NRPN#"+io.printf("%05d")+" ("+entry.tag_name+")";
+
+                        // Insert sorted
+                        int insertIdx = 0;
+                        loop(ctlsDone.numElements)
+                        {
+                           if(ctlsDone[insertIdx] > ev.ext_type)
+                              break;
+                           insertIdx++;
+                        }
+
+                        ra.insert(insertIdx, t);
+                        ctlsDone.insert(insertIdx, ev.ext_type);
+                     }
+                  }
+               }
+            }
+         } // foreach ctltag entry
+      } // if msp
+   }
+
+   // <method_get.png>
+   static method GetRPNFromCaption(String _caption) : int {
+      int rpnNr = int(_caption.substring(4, 5)); // RPN#<vwxyz>
+      return rpnNr;
+   }
+
+   // <method_get.png>
+   static method GetNRPNFromCaption(String _caption) : int {
+      int nrpnNr = int(_caption.substring(5, 5)); // NRPN#<vwxyz>
+      return nrpnNr;
+   }
+
+   // <method_get.png>
+   public method getNoteLongNameByNr(byte _midiCh, int _noteNr) : String {
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      local String s;
+      boolean bHaveAlias = false;
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNoteAliasByNr(_noteNr);
+
+         // trace "xxx getNoteLongNameByNr: alias="+#(alias);
+
+         if(null != alias)
+         {
+            s.append(alias.caption);
+            bHaveAlias = true;
+         }
+      }
+
+      if(bHaveAlias)
+      {
+         s.append(" (");
+      }
+
+      // // Integer io = _noteNr;
+      s.append(MIDI.midi_notes.get(_noteNr));
+      // // s.append(" ");
+      // // s.append(io.printf("(%3d)"));
+
+      if(bHaveAlias)
+      {
+         s.append(")");
+      }
+
+      return deref s;
+   }
+
+   // <method_get.png>
+   public method getNoteShortNameByNr(byte _midiCh, int _noteNr) : String {
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      local String s;
+      boolean bHaveAlias = false;
+
+      if(null != msp)
+      {
+         MIDISynthProfileCtlAlias alias <= msp.getNoteAliasByNr(_noteNr);
+
+         if(null != alias)
+         {
+            s.append(alias.id);
+            bHaveAlias = true;
+         }
+      }
+
+      if(bHaveAlias)
+      {
+         s.append(" (");
+      }
+
+      Integer io = _noteNr;
+      s.append(MIDI.midi_notes[_noteNr]);
+      // s.append(" ");
+      // s.append(io.printf("(%3d)"));
+
+      if(bHaveAlias)
+      {
+         s.append(")");
+      }
+
+      return deref s;
+   }
+
+   // <method_get.png>
+   public method getPitchbendLongName(byte _midiCh) : String {
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null != msp)
+      {
+         return msp.pitchbend.caption;
+      }
+
+      return "Pitchbend";
+   }
+
+   // <method_get.png>
+   public method getPitchbendShortName(byte _midiCh) : String {
+      MIDISynthProfile *msp;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      if(null != msp)
+      {
+         return msp.pitchbend.id;
+      }
+
+      return "pitch";
+   }
+
+   // <method.png>
+   public method classifyMIDIMapEvent(local MIDIMapEvent _ev, local byte _midiCh) {
+      local MIDISynthProfile *msp;
+
+      _ev.class_type = MIDIMapEventType.CLASS_UNKNOWN;
+
+      msp <= MIDI.GetMIDISynthProfileById(getProfileId(_midiCh));
+
+      // trace "xxx MIDIDev::classifyMIDIMapEvent: msp="+#(msp)+" midiCh="+_midiCh;
+
+      if(null != msp)
+      {
+         msp.classifyMIDIMapEvent(_ev);
+      }
+      else
+      {
+         _ev.classifyFallback();
+      }
+   }
+
+   // <method_build.png>
+   protected method buildCCNames() {
+
+      // trace "xxx buildCCNames this="+#(this);
+
+      // MIDISynthProfile mspDef <= MIDI.GetDefaultSynthProfile();
+
+      local String *t;
+      local String  sMulti;
+      local String *sInfo;
+
+      cc_names_single.free();
+      cc_names_multi.free();
+
+      // (note) speed up name lookup by skipping current_song.ctltag_entries if no tags have been defined for this device
+      boolean bHaveCtlTagForDev = MIDI.HaveCtlTagForDevChType(this, -1/*fltCh=any*/, MIDIMapDefs.TYPE_CC/*fltType*/);
+
+      byte ch = 0;
+      loop(16)
+      {
+         StringArray as <= new StringArray;
+         StringArray am <= new StringArray;
+         as.alloc(128);
+         am.alloc(128);
+
+         int ccId = 0;
+
+         MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(getProfileId(ch));
+         if(null == msp)
+            msp <= MIDI.GetDefaultSynthProfile();
+
+         // (note) speed up name lookup by skipping current_song.ctltag_entries if no tags have been defined for this device+channel
+         boolean bHaveCtlTagForDevCh = bHaveCtlTagForDev && MIDI.HaveCtlTagForDevChType(this, ch, MIDIMapDefs.TYPE_CC/*fltType*/);
+
+         loop(128)
+         {
+            t <= getCCLongNameByCtlAndMSP(ch, msp, ccId, bHaveCtlTagForDevCh);
+
+            sInfo <= getCCInfoByCtlAndMSP(ch, msp, ccId);
+            if(null != sInfo && !sInfo.isBlank())
+            {
+               sMulti = t;
+               sMulti.append("\n\n");
+               sMulti.append(sInfo);
+
+               as.add(t);
+               am.add(sMulti);
+            }
+            else
+            {
+               as.add(t);
+               am.add(t);
+            }
+
+            // Next controller
+            ccId++;
+         }
+
+         cc_names_single.add(#(deref as));
+         cc_names_multi.add(#(deref am));
+
+         // Next midi channel
+         ch++;
+      }
+   }
+
+   // <method_build.png>
+   public method buildCtlNames() {
+      // trace "[trc] MIDIDevice::buildCtlNames this="+(this);
+      buildCCNames();
+   }
+
+   // <method_get.png>
+   public method getCCNamesSingle(byte _midiCh) : StringArray {
+      return cc_names_single.get(_midiCh);
+   }
+
+   // <method_get.png>
+   public method getCCNamesMulti(byte _midiCh) : StringArray {
+      return cc_names_multi.get(_midiCh);
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableClosedTemporarily(boolean _bEnable) {
+      b_closed_temporarily = _bEnable;
+   }
+
+}

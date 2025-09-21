@@ -1,0 +1,671 @@
+// ----
+// ---- file   : NMM_Pattern.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 30Oct2015, 31Oct2015, 01Nov2015, 02Nov2015, 03Nov2015, 04Nov2015, 06Nov2015
+// ----          07Nov2015, 08Nov2015, 09Nov2015, 21Dec2015, 26Jan2016, 31Jan2016, 09Apr2016
+// ----          02Jul2016, 08Jul2016, 09Jul2016, 31Jan2017, 11Feb2017, 06Mar2017, 09Mar2017
+// ----          10Mar2017, 11Mar2017, 12Mar2017, 14Mar2017, 12Aug2017, 25Aug2017, 03Sep2017
+// ----          22Sep2017, 04Jan2018, 07Mar2018, 28Apr2018, 21May2018, 27May2018, 17Jun2018
+// ----          22Feb2019, 19May2019, 08Jun2019, 09Jun2019, 25Jun2019, 29Aug2019, 19Oct2019
+// ----          07Nov2019, 30Oct2020, 10Nov2020, 26Jan2021, 27Jan2021, 29Jan2021, 30May2021
+// ----          01Jun2021, 20Jun2021, 21Jun2021, 01Jan2022, 18Mar2022, 21Nov2022, 07Apr2023
+// ----          23Jun2023, 15Oct2023, 20Oct2023, 07Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNMM_Pattern;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NMM_Pattern : NodePattern {
+
+   define int NUM_REGS   = 8;
+   define int NUM_CURVES = 4;
+
+   NodeModMatrix *parent_node;
+
+   NMM_Arg *arg_m1;
+   NMM_Arg *arg_m2;
+   NMM_Arg *arg_m3;
+   NMM_Arg *arg_m4;
+
+   String m1_name;
+   String m2_name;
+   String m3_name;
+   String m4_name;
+
+   NMM_Entry *[] entries;  // NMM_Entry instances
+
+   NMM_Reg *[] regs; // REG1..REG8
+
+   BezierEditState *[] curve_states;  // BezierEditState instances
+   Envelope *[] curve_envs;    // Envelope instances
+
+   boolean b_poly;  // true=process multiple note on/off polypressure events
+   boolean b_event;  // true=process entries only when new event is available
+
+   int tick_modulo;  // != 0: process matrix every "nth" tick
+
+   String last_script;
+
+   boolean b_reset_pending;  // true=force processing after node/pattern reset (so that reset values are read/written)
+
+
+   // <method_init.png>
+   public method patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+
+      parent_node <= _parent;
+
+      arg_m1 <= new NMM_Arg;
+      arg_m1.init(null, this, true/*bMacro*/, false/*bDst*/);
+      m1_name = "-";
+
+      arg_m2 <= new NMM_Arg;
+      arg_m2.init(null, this, true/*bMacro*/, false/*bDst*/);
+      m2_name = "-";
+
+      arg_m3 <= new NMM_Arg;
+      arg_m3.init(null, this, true/*bMacro*/, false/*bDst*/);
+      m3_name = "-";
+
+      arg_m4 <= new NMM_Arg;
+      arg_m4.init(null, this, true/*bMacro*/, false/*bDst*/);
+      m4_name = "-";
+
+      loop(NUM_REGS)
+      {
+         NMM_Reg reg <= new NMM_Reg;
+         reg.reset();
+         regs.add(#(deref reg));
+      }
+
+      loop(NUM_CURVES)
+      {
+         BezierEditState beState <= new BezierEditState;
+         Envelope beEnv <= new Envelope;
+         CurveForm.InitLinearEnv(beState, beEnv);
+         curve_states.add(#(deref beState));
+         curve_envs.add(#(deref beEnv));
+         // trace "xxx beEnv="+#(beEnv);
+      }
+
+      b_poly = false;
+      b_event = true;
+      tick_modulo = current_song.ppq / 16;  // 64th
+   }
+
+   // <ui_init.png>
+   public method uiInit() {
+      createNewEntry(-1);
+   }
+
+   // <method_update.png>
+   public method updateMacroEntryRefs() {
+      NMM_Entry *e;
+      foreach e in entries
+         e.updateMacroEntryRefs();
+   }
+
+   // <method_get.png>
+   public method getMacroArgByIdx(int _idx) : NMM_Arg {
+      switch(_idx)
+      {
+         case 0: return arg_m1;
+         case 1: return arg_m2;
+         case 2: return arg_m3;
+         case 3: return arg_m4;
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method setMacroCtlNameByIdx(int _idx, String _s) {
+      switch(_idx)
+      {
+         case 0:
+            m1_name = _s;
+            break;
+
+         case 1:
+            m2_name = _s;
+            break;
+
+         case 2:
+            m3_name = _s;
+            break;
+
+         case 3:
+            m4_name = _s;
+            break;
+      }
+   }
+
+   // <method_get.png>
+   public method getEntry(int _idx) : NMM_Entry {
+      return entries.get(_idx);
+   }
+
+   // <method_get.png>
+   public method getNumEntries() : int {
+      return entries.numElements;
+   }
+
+   // <method.png>
+   public =replay= method removeEntries() {
+      entries.free();
+   }
+
+   // <method.png>
+   public =replay= method createNewEntry(int _idx) : NMM_Entry {
+
+      NMM_Entry e <= new NMM_Entry;
+      e.init(this);
+
+      if(-1 == _idx)
+      {
+         entries.add(#(deref e));
+      }
+      else if(_idx <= entries.numElements)
+      {
+         entries.insert(_idx, #(deref e));
+      }
+      else
+      {
+         e <= null;
+      }
+
+      return e;
+   }
+
+   // <method.png>
+   public =replay= method deleteEntry(int _idx) : boolean {
+
+      if(0 <= _idx < entries.numElements)
+      {
+         entries.delete(_idx);
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method moveEntryUp(int _idx) : boolean {
+
+      if(_idx > 0)
+      {
+         if(_idx < entries.numElements)
+         {
+            entries.swap(_idx, _idx - 1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method moveEntryDown(int _idx) : boolean {
+
+      if(_idx < (entries.numElements - 1))
+      {
+         if(_idx >= 0)
+         {
+            entries.swap(_idx, _idx + 1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_set.png>
+   public =replay= setEnablePoly(boolean _bEnable) {
+      b_poly = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= setEnableEvent(boolean _bEnable) {
+      b_event = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= setTickModulo(int _mod) {
+      tick_modulo = _mod;
+   }
+
+   // <method.png>
+   public virtual patCopyFrom(NMM_Pattern _o, boolean _bClear) {
+      NodePattern::patCopyFrom(_o, _bClear);
+
+      // Copy entries
+      int enIdx = 0;
+
+      NMM_Entry *oe;
+
+      entries.free();
+
+      arg_m1.copyFrom(_o.arg_m1, false/*bMacroCtlOnly*/);
+      arg_m2.copyFrom(_o.arg_m2, false/*bMacroCtlOnly*/);
+      arg_m3.copyFrom(_o.arg_m3, false/*bMacroCtlOnly*/);
+      arg_m4.copyFrom(_o.arg_m4, false/*bMacroCtlOnly*/);
+
+      m1_name = _o.m1_name;
+      m2_name = _o.m2_name;
+      m3_name = _o.m3_name;
+      m4_name = _o.m4_name;
+
+      foreach oe in _o.entries
+      {
+         NMM_Entry e <= createNewEntry(-1);
+         e.copyFrom(oe);
+      }
+
+      b_poly      = _o.b_poly;
+      b_event     = _o.b_event;
+      tick_modulo = _o.tick_modulo;
+
+      int curveIdx = 0;
+      loop(NUM_CURVES)
+      {
+         BezierEditState beState <= curve_states.get(curveIdx);
+         BezierEditState beStateO <= _o.curve_states.get(curveIdx);
+         Envelope beEnv <= curve_envs.get(curveIdx);
+         Envelope beEnvO <= _o.curve_envs.get(curveIdx);
+         beState = beStateO;
+         beEnv = beEnvO;
+         curveIdx++;
+      }
+
+      // // updateMacroEntryRefs();  // 13Aug2017
+   }
+
+   // // // <method_set.png>
+   // // public method markCurveAsModified(int _curveIdx) {
+   // //    curve_edited_flags[curveIdx] = true;
+   // // }
+
+   // <method_set.png>
+   public method setRegValue(int _idx, float _val) {
+      // // trace "xxx setRegValue: idx="+_idx+" val="+_val;
+      NMM_Reg reg <= regs.get(_idx);
+      if(null != reg)
+         reg.val = _val;
+   }
+
+   // <method_get.png>
+   public method getRegValue(int _idx) : float {
+      NMM_Reg reg <= regs.get(_idx);
+      if(null != reg)
+         return reg.val;
+      return NMM_Arg.INVALID_VALUE;
+   }
+
+   // <method_get.png>
+   public method getReg(int _idx) : NMM_Reg {
+      NMM_Reg reg <= regs.get(_idx);
+      if(null != reg)
+         return reg;
+      return null;
+   }
+
+   // <method.png>
+   public method copyMultiArgToReg(int _idx, NMM_Arg _arg) {
+      // // trace "xxx copyMultiArgToReg: idx="+_idx+" arg.orig_note="+_arg.orig_note;
+      NMM_Reg reg <= regs.get(_idx);
+      if(null != reg)
+      {
+         if(NMM_Arg.INVALID_VALUE != _arg.orig_note)
+         {
+            // // trace "xxx copy orig* to reg  state="+_arg.b_orig_note_state+" vel="+_arg.orig_vel+" dur="+_arg.orig_dur;
+            reg.orig_note         = _arg.orig_note;
+            reg.b_orig_note_state = _arg.b_orig_note_state;
+            reg.orig_vel          = _arg.orig_vel;
+            reg.orig_dur          = _arg.orig_dur;
+         }
+      }
+   }
+
+   // <method.png>
+   public method copyRegToMultiArg(int _idx, NMM_Arg _arg) {
+      NMM_Reg reg <= regs.get(_idx);
+      if(null != reg)
+      {
+         // // trace "xxx copyRegToMultiArg: reg.orig_note="+reg.orig_note;
+         if(NMM_Arg.INVALID_VALUE != reg.orig_note)
+         {
+            _arg.orig_note         = reg.orig_note;
+            if(
+               (NMM_Arg.TYPE_NOTE_ON == _arg.type) ||
+               (NMM_Arg.TYPE_NOTE_ON_ADD == _arg.type)
+               )
+            {
+               _arg.b_orig_note_state = true;
+            }
+            else if(
+               (NMM_Arg.TYPE_NOTE_OFF == _arg.type) ||
+               (NMM_Arg.TYPE_NOTE_OFF_ADD == _arg.type)
+               )
+            {
+               _arg.b_orig_note_state = false;
+            }
+            else
+            {
+               _arg.b_orig_note_state = reg.b_orig_note_state;
+            }
+            _arg.orig_vel          = reg.orig_vel;
+            _arg.orig_dur          = reg.orig_dur;
+            // // trace "xxx copy orig* to arg  state="+_arg.b_orig_note_state+" vel="+_arg.orig_vel+" dur="+_arg.orig_dur;
+         }
+      }
+   }
+
+   // <method.png>
+   public method copyRegToReg(int _idx, int _idxSrc) {
+      NMM_Reg reg <= regs.get(_idx);
+      if(null != reg)
+      {
+         NMM_Reg regSrc <= regs.get(_idxSrc);
+         if(null != regSrc)
+         {
+            if(NMM_Arg.INVALID_VALUE != regSrc.orig_note)
+            {
+               reg.orig_note         = regSrc.orig_note;
+               reg.b_orig_note_state = regSrc.b_orig_note_state;
+               reg.orig_vel          = regSrc.orig_vel;
+               reg.orig_dur          = regSrc.orig_dur;
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   public virtual patSaveState(Stream ofs) {
+
+      NodePattern::patSaveState(ofs);
+
+      ofs.i16 = 7; // Version
+
+      Utils.WriteString(ofs, m1_name);
+      Utils.WriteString(ofs, m2_name);
+      Utils.WriteString(ofs, m3_name);
+      Utils.WriteString(ofs, m4_name);
+
+      arg_m1.saveState(ofs);
+      arg_m2.saveState(ofs);
+      arg_m3.saveState(ofs);
+      arg_m4.saveState(ofs);
+
+      // Save entries
+      NMM_Entry *e;
+      int enStartOff = ofs.offset;
+      ofs.i32 = 0;
+      foreach e in entries
+      {
+         e.saveState(ofs);
+      }
+      Utils.FixChunkSize(ofs, enStartOff);
+
+      // Save b_poly
+      ofs.i8 = b_poly;
+
+      // Save b_event (v5+)
+      ofs.i8 = b_event;
+
+      // Save tick modulo (v7+)
+      ofs.i16 = tick_modulo;
+
+      // Save last_script (v4+)
+      Utils.WriteString(ofs, last_script);
+
+      // Save curves (v6+)
+      ofs.i8 = NUM_CURVES;
+      int curveIdx = 0;
+      loop(NUM_CURVES)
+      {
+         BezierEditState beState <= curve_states.get(curveIdx);
+         ofs << beState;
+         curveIdx++;
+      }
+   }
+
+   // <load.png>
+   public method loadStateInt(Stream   ifs,
+                              short    _ver,
+                              IntArray _outDevIdxMap,
+                              IntArray _outDevUseCount,
+                              boolean  _bPreset
+                              ) : boolean {
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            if(ver >= 2)
+            {
+               Utils.ReadString(ifs, m1_name);
+               Utils.ReadString(ifs, m2_name);
+               Utils.ReadString(ifs, m3_name);
+               Utils.ReadString(ifs, m4_name);
+
+               if(!arg_m1.loadState(ifs, _outDevIdxMap, _outDevUseCount, _bPreset, true/*bMacro*/))
+                  return false;
+
+               if(!arg_m2.loadState(ifs, _outDevIdxMap, _outDevUseCount, _bPreset, true/*bMacro*/))
+                  return false;
+
+               if(!arg_m3.loadState(ifs, _outDevIdxMap, _outDevUseCount, _bPreset, true/*bMacro*/))
+                  return false;
+
+               if(!arg_m4.loadState(ifs, _outDevIdxMap, _outDevUseCount, _bPreset, true/*bMacro*/))
+                  return false;
+            }
+
+
+            // Load entries
+            int enSz = ifs.i32;
+            int enEndOff = ifs.offset + enSz - 4;
+            int enOff = ifs.offset;
+            int enIdx = 0;
+
+            while(enOff < enEndOff)
+            {
+               NMM_Entry e <= createNewEntry(-1);
+
+               if(!e.loadState(ifs, _outDevIdxMap, _outDevUseCount, _bPreset))
+               {
+                  trace "[---] NMM_Pattern::loadStateInt: failed to read entry "+enIdx+" (off="+enOff+" end="+enEndOff+")";
+                  return false;
+               }
+
+               // Next entry
+               enIdx++;
+               enOff = ifs.offset;
+            }
+
+            // Read b_poly
+            if(ver >= 3)
+            {
+               b_poly = ifs.b8;
+            }
+            else
+            {
+               b_poly = false;
+            }
+
+            // Read b_poly
+            if(ver >= 5)
+            {
+               b_event = ifs.b8;
+            }
+            else
+            {
+               b_event = false;
+            }
+
+            // Read tick modulo (v7+)
+            if(ver >= 7)
+            {
+               tick_modulo = ifs.u16;
+            }
+            else
+               tick_modulo = current_song.ppq / 16;  // 64th
+
+            if(ver >= 4)
+            {
+               Utils.ReadString(ifs, last_script);
+            }
+
+            // Read Curves (v6+)
+            if(ver >= 6)
+            {
+               int numCurves = ifs.u8;
+               int curveIdx = 0;
+               local BezierEditState beStateTmp;
+               loop(numCurves)
+               {
+                  BezierEditState beState <= curve_states.get(curveIdx);
+                  if(curveIdx < NUM_CURVES)
+                  {
+                     Envelope beEnv <= curve_envs.get(curveIdx);
+                     beState << ifs;
+                     CurveForm.CalcEnv(beState, beEnv);
+                  }
+                  else
+                  {
+                     trace "[~~~] NMM_Pattern: dummy read curve "+(curveIdx+1)+"/"+numCurves;
+                     beStateTmp << ifs;  // dummy read
+                  }
+                  curveIdx++;
+               }
+            }
+
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      return loadStateInt(ifs, _ver, _outDevIdxMap, _outDevUseCount, false/*bPreset*/);
+   }
+
+   // <replay.png>
+   public method reset() {
+      NMM_Entry *en;
+      foreach en in entries
+         en.reset();
+
+      NMM_Reg *reg;
+      foreach reg in regs
+         reg.reset();
+
+      b_reset_pending = true;
+   }
+
+   // <replay.png>
+   public method processFrame(MIDIPipeFrame _frame,
+                              boolean       _bMuted,
+                              boolean       _bPlaySeq
+                              ) {
+      // trace "xxx NMM: pat processframe";
+
+      // This is just for the UI so the current input is displayed correctly:
+      Boolean bReadMore;
+      arg_m1.readCurrentVal(_frame, 0/*evIdx*/, bReadMore);
+      arg_m2.readCurrentVal(_frame, 0/*evIdx*/, bReadMore);
+      arg_m3.readCurrentVal(_frame, 0/*evIdx*/, bReadMore);
+      arg_m4.readCurrentVal(_frame, 0/*evIdx*/, bReadMore);
+
+      // Process all entries:
+      int evIdx = 0;
+      NMM_Entry *en;
+
+      // boolean bDebug = (_frame.getNumEventsNoteOn() > 0) || (_frame.getNumEventsNoteOff() > 0);
+
+      // if(bDebug)
+      //    trace "xxx --------------------------------------- ";
+
+      MIDIPipeFrame framePlus;
+      framePlus.empty();  // for note+ type events, to avoid recursion
+
+      int numIter = 1;
+
+      boolean bProcess;
+
+      if(b_event)
+      {
+         bProcess = _frame.hasEvents() || b_reset_pending;
+      }
+      else if(tick_modulo > 1)
+      {
+         bProcess = (0 == (parent_node.tick_nr % tick_modulo));
+      }
+      else
+      {
+         bProcess = true;
+      }
+
+      if(bProcess)
+      {
+         if(b_poly)
+         {
+            int numEvNoteOn  = _frame.numEventsNoteOn;
+            int numEvNoteOff = _frame.numEventsNoteOff;
+            int numEvPoly    = _frame.numEventsPolyPressure;
+
+            // (note) evIdx is in range 0..(numEvNoteOn + numEvNoteOff)
+            numIter = mathMaxi(numIter, numEvNoteOn + numEvNoteOff);
+            numIter = mathMaxi(numIter, numEvPoly);
+         }
+
+         // // if(bDebug)
+         // //    trace "xxx numIter="+numIter;
+
+         // // if(b_event)
+         // //    trace "------------------------------------\nxxx process tick_nr="+parent_node.tick_nr;
+
+         loop(numIter)
+         {
+            bReadMore = false;
+
+            foreach en in entries
+            {
+               if(en.b_op)
+               {
+                  // trace "xxx NMM: process entry en="+#(en);
+                  en.processFrame(_frame, framePlus, _bMuted, _bPlaySeq, evIdx, bReadMore);
+               }
+            }
+
+            // // if(bDebug)
+            // //    trace "xxx evIdx="+evIdx+" bReadMore="+bReadMore;
+
+            // // if(!bReadMore)
+            // //    break;
+
+            evIdx++;
+         }
+
+         // // trace "xxx frame.numCC="+_frame.numEventsCC;
+         _frame.noteOnDeleteZeroVel();  // delete note-ons marked for removal
+         _frame.mergeFrame(framePlus);
+         // // trace "xxx   2 frame.numCC="+_frame.numEventsCC;
+
+      } // if bProcess
+
+      b_reset_pending = false;
+   }
+
+}

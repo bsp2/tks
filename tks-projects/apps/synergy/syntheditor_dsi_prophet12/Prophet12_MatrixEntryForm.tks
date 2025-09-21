@@ -1,0 +1,450 @@
+// ----
+// ---- file   : Prophet12_MatrixEntryForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 18Feb2017
+// ---- changed: 19Feb2017, 21Feb2017, 25Feb2017, 07May2017, 27May2017, 04Jan2018, 21Sep2023
+// ----          22Mar2024
+// ----
+// ----
+// ----
+
+module MProphet12_MatrixEntryForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Prophet12_MatrixEntryForm extends XMLForm, ActionProvider, MIDIMapDefs, Prophet12_Defs {
+
+   protected Prophet12_MatrixForm *parent_form;
+   protected EditMIDISynthFormProphet12 *parent_editor;
+
+   protected int mod_idx;
+
+   protected Prophet12_Program *layer;
+   protected Prophet12_ModEntry *mod;
+
+   protected Label      *lb_nr;
+   protected ComboBox   *cm_src;
+   protected FloatParam *fp_amount;
+   protected CheckBox   *cb_amountext;
+   protected ComboBox   *cm_dst;
+   protected CheckBox   *cb_enable;
+   protected Label      *lb_type;
+
+   protected PopupMenu *pm_context;
+
+   protected static Prophet12_ModEntry mod_clipboard;
+
+
+   // <init.png>
+   public method init(Prophet12_MatrixForm _parentForm, int _modIdx) : boolean {
+      parent_form <= _parentForm;
+      parent_editor <= parent_form.parent_editor;
+      mod_idx = _modIdx;
+
+      if(!initPakFile("Prophet12_MatrixEntryForm.xfm"))
+      {
+         trace "[---] failed to parse \"Prophet12_MatrixEntryForm.xfm\"";
+         return false;
+      }
+
+      if(!autoResolveIds(this))
+      {
+         return false;
+      }
+
+      lb_nr.setCaption((_modIdx + 1)+": ");
+
+      if(((3-1) == _modIdx) || ((10-1)==_modIdx))
+      {
+         lb_nr.setBackgroundTint(#08a00000);
+         lb_nr.setEnableFillBackground(true);
+      }
+
+      cm_src.setOptions(mod_source_names);
+      cm_dst.setOptions(mod_dest_names);
+
+      mod_clipboard.loadInit(_modIdx);
+
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.joinRR(layers,
+                    [
+                       cm_src,
+                       fp_amount,
+                       cb_amountext,
+                       cm_dst,
+                       cb_enable
+                     ]
+                    );
+   }
+
+   // <ui_show.png>
+   public method showLayer(Prophet12_Program _layer) {
+      layer <= _layer;
+
+      if(null != layer)
+      {
+         mod <= layer.mods.get(mod_idx);
+
+         cb_amountext .setSelectedAndEnable(mod.b_amount_ext);
+         handleAmountExtChanged(true/*bQuiet*/);
+         fp_amount    .setValueAndEnable(mod.amount - 127);
+         cm_src       .setSelectedOptionAndEnable(mod.src);
+         cm_dst       .setSelectedOptionAndEnable(mod.dst);
+         cb_enable    .setSelectedAndEnable(mod.b_enable);
+
+         updateType();
+      }
+      else
+      {
+         mod <= null;
+
+         fp_amount    .setValueAndDisable(0);
+         cb_amountext .setSelectedAndDisable(false);
+         cm_src       .setSelectedOptionAndDisable(0);
+         cm_dst       .setSelectedOptionAndDisable(0);
+         cb_enable    .setSelectedAndDisable(false);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateType() {
+      if(null != mod)
+      {
+         if(0 == mod.autogen_src)
+         {
+            if( (0 != mod.src) && (0 != mod.dst) )
+            {
+               lb_type.setCaption("USER");
+            }
+            else
+            {
+               lb_type.setCaption("-");
+            }
+         }
+         else
+         {
+            String autogenName = TKS.scriptClassConstantToString(#(mod.autogen_src), Prophet12_ModEntry, "AUTOGEN_");
+            autogenName.replace("AUTOGEN_", "");
+            autogenName.replace("EXT", "");
+            autogenName.replace("AMOUNT", "");  // MODx_AMOUNT
+            autogenName.replace("__", "_");
+            lb_type.setCaption(autogenName);
+         }
+      }
+      else
+      {
+         lb_type.setCaption("-");
+      }
+
+      lb_type.redraw();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSrcChanged() {
+      if(null != mod)
+      {
+         mod.src = cm_src.getSelectedOption();
+
+         mod.autogen_src = 0;
+
+         if((0 != mod.src) && (0 != mod.dst))
+         {
+            mod.b_enable = true;
+            cb_enable.setSelected(true);
+            mod.sendEnable(parent_editor, layer, false/*bProxy*/);
+         }
+
+         Global.Print("Mod "+(1+ mod_idx)+" Source is "+cm_src.getSelectedOptionName());
+
+         mod.sendSrc(parent_editor, layer, false/*bProxy*/);
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+
+         parent_form.showLayer(layer);  // Update all mod slots
+      }
+   }
+
+   // <method_update.png>
+   public method updateAutogenAmount() {
+      if(null != mod)
+      {
+         if(!mod.sendAmount(parent_editor, layer, false/*bProxy*/))
+         {
+            Global.Warning("Mod "+(1+mod_idx)+": all mod slots in use (Amount)");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountChanged() {
+      if(null != mod)
+      {
+         mod.amount = fp_amount.getFloatValue() + 127;
+
+         mod.autogen_src = 0;
+
+         // trace "\n\n\n\n handleAmountChanged: mod.amount="+mod.amount;
+
+         if((0 != mod.src) && (0 != mod.dst))
+         {
+            mod.b_enable = true;
+            cb_enable.setSelected(true);
+            mod.sendEnable(parent_editor, layer, false/*bProxy*/);
+         }
+
+         Global.Print("Mod "+(1+ mod_idx)+" Amount is "+(mod.amount - 127));
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+
+         parent_form.showLayer(layer);  // Update all mod slots
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleAmountExtChanged(boolean _bQuiet) {
+      if(null != mod)
+      {
+         mod.b_amount_ext = cb_amountext.isSelected();
+
+         if(!_bQuiet)
+            mod.autogen_src = 0;
+
+         if(mod.b_amount_ext)
+         {
+            fp_amount.setMinMaxValues(-127 -3*127, 127 + 3*127);
+         }
+         else
+         {
+            fp_amount.setMinMaxValues(-127, 127);
+         }
+
+         fp_amount.setValue(mod.amount - 127);
+         fp_amount.redraw();
+
+         if(!_bQuiet)
+            Global.Print("Mod "+(1+ mod_idx)+" Amount Ext is "+Utils.GetEnableString(mod.b_amount_ext));
+
+         if(!_bQuiet)
+            updateAutogenAmount();
+
+         if(!_bQuiet)
+            parent_form.showLayer(layer);  // Update all mod slots
+
+         parent_editor.handlePatchEdited();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleDstChanged() {
+      if(null != mod)
+      {
+         mod.dst = cm_dst.getSelectedOption();
+
+         mod.autogen_src = 0;
+
+         if((0 != mod.dst) && (0 != mod.src))
+         {
+            mod.b_enable = true;
+            cb_enable.setSelected(true);
+            mod.sendEnable(parent_editor, layer, false/*bProxy*/);
+         }
+
+         Global.Print("Mod "+(1+ mod_idx)+" Destination is "+cm_dst.getSelectedOptionName());
+
+         mod.sendDst(parent_editor, layer, false/*bProxy*/);
+
+         updateAutogenAmount();
+
+         parent_editor.handlePatchEdited();
+
+         parent_form.showLayer(layer);  // Update all mod slots
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleEnableChanged() {
+      if(null != mod)
+      {
+         mod.b_enable = cb_enable.isSelected();
+
+         Global.Print("Mod "+(1+ mod_idx)+" is "+Utils.GetEnableString(mod.b_enable));
+
+         updateAutogenAmount();
+
+         mod.sendEnable(parent_editor, layer, false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         parent_form.showLayer(layer);  // Update all mod slots
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      if(null != mod)
+      {
+         mod_clipboard.copyFrom(mod);
+
+         Global.Print("Copy Mod Entry to clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePaste() {
+      if(null != mod)
+      {
+         mod.copyFrom(mod_clipboard);
+
+         mod.send(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         showLayer(layer);
+
+         Global.Print("Paste Mod from clipboard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClear() {
+      if(null != mod)
+      {
+         mod.src = 0;
+         mod.amount = 127;
+         mod.b_amount_ext = false;
+         mod.dst = 0;
+
+         mod.send(parent_editor, parent_editor.getEditLayer(), false/*bProxy*/);
+
+         parent_editor.handlePatchEdited();
+
+         showLayer(layer);
+
+         Global.Print("Clear Mod");
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu() {
+
+      if(null != mod)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+
+         pmb <= pm.addDefaultButton("Copy", "copy");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Paste", "paste");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Clear", "clear");
+         pmb.setFontByName("big8");
+         // // pmb.setAccelerators("lshift-lctrl-n", "");
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-30, 0);
+
+         Global.Print("Show Mod Entry context menu.");
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu();
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(pm_context):
+            Global.Debug2("Prophet12_MatrixEntryForm: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close context menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+
+               case "clear":
+                  handleClear();
+                  return true;
+            }
+            return true;
+
+         case @(cm_src):
+            handleSrcChanged();
+            return true;
+
+         case @(fp_amount):
+            handleAmountChanged();
+            return true;
+
+         case @(cb_amountext):
+            handleAmountExtChanged(false/*bQuiet*/);
+            return true;
+
+         case @(cm_dst):
+            handleDstChanged();
+            return true;
+
+         case @(cb_enable):
+            handleEnableChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

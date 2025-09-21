@@ -1,0 +1,2390 @@
+// ----
+// ---- file   : NodeCtlMorph.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 09Apr2016, 10Apr2016, 11Apr2016, 13Apr2016, 09Jul2016, 12Jul2016, 07Sep2016
+// ----          08Sep2016, 21May2017, 27May2017, 12Aug2017, 01Sep2017, 04Jan2018, 07Mar2018
+// ----          17Jun2018, 08Dec2018, 09Dec2018, 07Nov2019, 20Feb2020, 17May2020, 18May2020
+// ----          30Oct2020, 10Nov2020, 12Nov2020, 27Jan2021, 02Jun2021, 03Jun2021, 16Jun2021
+// ----          18Jun2021, 21Jun2021, 26Jun2021, 01Jan2022, 03Feb2024
+// ----
+// ----
+// ----
+module MNodeCtlMorph;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NCM_Entry {
+
+   boolean b_input; // true=input controller, false=output controller
+
+   String name;
+
+   MIDIMapEvent mm_event;
+
+   float center_value;  // usually in the range 0..127 or 0..16383
+   float min_delta;     // delta for output entries, min threshold for input entries
+   float max_delta;
+
+   boolean b_edited; // false when entry was copied/cloned, true when it was edited manually
+
+   boolean b_asym;  // true=use asymmetric interpolation (0.5=center_value)
+
+
+   // <method_init.png>
+   public method init() {
+
+      name = "new entry "+Utils.GetCurrentDateTimeStringNumeric();
+
+      center_value =  64.0f;
+      min_delta    = -64.0f;
+      max_delta    =  64.0f;
+
+      b_edited = true;
+
+      b_asym = false;
+   }
+
+   // <method.png>
+   public =replay= method copyFrom(NCM_Entry _o) {
+      b_input      = _o.b_input;
+      name         = _o.name;
+      mm_event.copyFrom(_o.mm_event);
+      center_value = _o.center_value;
+      min_delta    = _o.min_delta;
+      max_delta    = _o.max_delta;
+      b_edited     = _o.b_edited;
+      b_asym       = _o.b_asym;
+   }
+
+   // <method_get.png>
+   public method getDevName() : String {
+      if(null != mm_event.dev)
+      {
+         return mm_event.dev.getAliasOrDeviceName();
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method getMidiChString() : String {
+      return (mm_event.dev_ch + 1);
+   }
+
+   // <method_get.png>
+   public method getTypeName() : String {
+      // For TM
+      return mm_event.getExtTypeName();
+   }
+
+   // <method_set.png>
+   public =replay= method setCenterValue(float _val) {
+      center_value = _val;
+      b_edited = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setMinDelta(float _val) {
+      min_delta = _val;
+      b_edited = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setMaxDelta(float _val) {
+      max_delta = _val;
+      b_edited = true;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableAsym(boolean _bEnable) {
+      if(_bEnable != b_asym)
+      {
+         b_asym = _bEnable;
+         b_edited = true;
+      }
+   }
+
+   // <method.png>
+   public method calcInterpolatedArg1(float _t) {
+      if(b_asym)
+      {
+         // Asymmetric interpolation (t=0.5 is always the center_value):
+         if(_t <= 0.5)
+         {
+            mm_event.arg1 = center_value + (min_delta * (1.0 - 2*_t));
+         }
+         else
+         {
+            mm_event.arg1 = center_value + (max_delta * ((_t-0.5)*2));
+         }
+      }
+      else
+      {
+         // Symmetric interpolation (more suitable for matching t=0/1 to different ctlset variations, i.e.
+         //  when 0 or 1 shall equal the "original" ctlset)
+         mm_event.arg1 = center_value + min_delta + (max_delta - min_delta) * _t;
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) {
+
+      // Version
+      _ofs.i16 = 5;
+
+      // Write type (input/output) (v2+)
+      _ofs.i8 = b_input;
+
+      // Write name
+      Utils.WriteString(_ofs, name);
+
+      // Write event (v2+)
+      mm_event.saveState(_ofs);
+
+      // Write min delta (v2+)
+      //  (note) was i16 in <=v4
+      _ofs.f32 = min_delta;
+
+      // Write center value (v2+)
+      //  (note) was i16 in <=v4
+      _ofs.f32 = center_value;
+
+      // Write max delta (v2+)
+      //  (note) was i16 in <=v4
+      _ofs.f32 = max_delta;
+
+      // Write edited flag (v3+)
+      _ofs.i8 = b_edited;
+
+      // Write asym flag (v4+)
+      _ofs.i8 = b_asym;
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         if(ver >= 2)
+         {
+            // Read type (input/output)
+            b_input = _ifs.b8;
+         }
+
+         // Read name
+         Utils.ReadString(_ifs, name);
+
+         if(ver >= 2)
+         {
+            // Read event (v2+)
+            if(!mm_event.loadState(_ifs, _outDevIdxMap, _outDevUseCount))
+               return false;
+
+            if(ver >= 5)
+            {
+               // Read min delta (v5+)
+               min_delta = _ifs.f32;
+
+               // Read center value (v5+)
+               center_value = _ifs.f32;
+
+               // Read max delta (v5+)
+               max_delta = _ifs.f32;
+            }
+            else
+            {
+               // Read min delta (v2+)
+               min_delta = _ifs.i16;
+
+               // Read center value (v2+)
+               center_value = _ifs.i16;
+
+               // Read max delta (v2+)
+               max_delta = _ifs.i16;
+            }
+         }
+
+         if(ver >= 3)
+         {
+            // Read edited flag (v3+)
+            b_edited = _ifs.b8;
+         }
+
+         if(ver >= 4)
+         {
+            // Read asym flag (v4+)
+            b_asym = _ifs.b8;
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] NCM_Entry::loadState: bad ver="+ver;
+      }
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class NCM_Group : MIDIMapDefs {
+
+   boolean b_enable;
+
+   String name;
+
+   int tick_mod;
+   int tick_shift;
+   int ctl_limit;
+
+   boolean b_patsel;  // true=send ctls when pattern is changed, maybe=reset group
+
+   PointerArray entries;  // NCM_Entry instances
+
+   boolean b_queue_reset;
+
+   float send_queue;  // 't' or -1=not queued
+   int send_queue_last_off;  // when limiting num ctls/tick
+   float send_queue_next;  // next 't' or -1=not queued
+
+   float last_queued_t;
+   float last_sent_t;
+   float ui_last_sent_t; // auto-resets to -1 after being read by the UI
+
+
+   // <method_init.png>
+   public method init() {
+      b_enable = true;
+
+      name = Utils.GetCurrentDateTimeStringNumeric();
+
+      tick_mod = 1;//8;
+      tick_shift = 0;//4;
+
+      send_queue = -1;
+      send_queue_next = -1;
+
+      last_queued_t = 0.5;
+      last_sent_t = 0.5;
+      ui_last_sent_t = -1;
+
+      b_patsel = false;
+
+      // Create default INPUT entry
+      NCM_Entry en <= new NCM_Entry;
+      en.init();
+      en.b_input = true;
+      MIDIMapEvent mev <= en.mm_event;
+      STX_MIDIOutDevice defDev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.node_ctlmorph_default_input_dev);
+      if(null != defDev)
+      {
+         mev.setDev(defDev);
+      }
+      mev.dev_ch = STConfig.node_ctlmorph_default_input_ch;
+      mev.type = STConfig.node_ctlmorph_default_input_type;
+      mev.ext_type = STConfig.node_ctlmorph_default_input_ext_type;
+      if(MIDIMapDefs.TYPE_CC == mev.type)
+      {
+         en.min_delta    = 0.0f;
+         en.center_value = 64.0f;
+         en.max_delta    = 127.0f;
+      }
+      else if((MIDIMapDefs.TYPE_RPN == mev.type) || (MIDIMapDefs.TYPE_NRPN == mev.type))
+      {
+         en.min_delta    = 0.0f;
+         en.center_value = 8192.0f;
+         en.max_delta    = 16383.0f;
+      }
+      entries.add(#(deref en));
+   }
+
+   // <method.png>
+   public =replay= method copyFrom(NCM_Group _o) {
+      b_enable          = _o.b_enable;
+      name              = _o.name;
+
+      tick_mod   = _o.tick_mod;
+      tick_shift = _o.tick_shift;
+      ctl_limit  = _o.ctl_limit;
+
+      b_patsel = _o.b_patsel;
+
+      last_queued_t = _o.last_queued_t;
+      last_sent_t = _o.last_sent_t;
+      ui_last_sent_t = last_sent_t;
+
+      entries.free();
+
+      NCM_Entry *en;
+      NCM_Entry *oen;
+      foreach oen in _o.entries
+      {
+         en <= new NCM_Entry;
+         en.init();
+         en.copyFrom(oen);
+         entries.add(#(deref en));
+      }
+
+   }
+
+   // <method.png>
+   public =replay= method merge(NCM_Group _o, boolean _bReplace, boolean _bIgnoreCh, Integer _retNumReplaced, Integer _retNumAdded) {
+
+      NCM_Entry *oen;
+      foreach oen in _o.entries
+      {
+         if(!oen.b_input)
+         {
+            boolean bAdd = true;
+
+            if(!oen.b_input)
+            {
+               NCM_Entry e <= findOutputEntry(oen, _bIgnoreCh);
+               if(null != e)
+               {
+                  bAdd = false;
+
+                  if(_bReplace)
+                  {
+                     MIDIMapEvent eEv <= e.mm_event;
+                     byte eOrigCh = eEv.dev_ch;
+                     e.copyFrom(oen);
+                     if(_bIgnoreCh)
+                        eEv.dev_ch = eOrigCh;
+                     e.b_edited = false;
+                     _retNumReplaced++;
+                  }
+               }
+            }
+
+            if(bAdd)
+            {
+               NCM_Entry en <= new NCM_Entry;
+               en.init();
+               en.copyFrom(oen);
+               en.b_edited = false;
+               entries.add(#(deref en));
+               _retNumAdded++;
+            }
+         }
+      }
+
+   }
+
+   // <method_set.png>
+   public =replay= method setEnable(boolean _bEnable) {
+      b_enable = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setTickMod(byte _val) {
+      if(_val < 1)
+         _val = 1;
+      else if(_val > 32)
+         _val = 32;
+      tick_mod = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setTickShift(byte _val) {
+      if(_val < 0)
+         _val = 0;
+      else if(_val > 32)
+         _val = 32;
+      tick_shift = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setCtlLimit(byte _val) {
+      if(_val < 0)
+         _val = 0;
+      else if(_val > 32)
+         _val = 32;
+      ctl_limit = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePatSel(boolean _bEnable) {
+      b_patsel = _bEnable;
+   }
+
+   // <method.png>
+   public =replay= method queueReset() {
+      b_queue_reset = true;
+   }
+
+   // <method.png>
+   public =replay= method queueT(float _t) {
+      last_queued_t = _t;
+
+      if(-1 == send_queue)
+      {
+         send_queue = _t;
+         // trace "xxx sendInterpolatedValues: queue t="+_t;
+      }
+      else
+      {
+         send_queue_next = _t;
+         // trace "xxx sendInterpolatedValues: queue next t="+_t;
+      }
+   }
+
+   // <method_add.png>
+   public =replay= method addEntry(int _rowHint) : NCM_Entry {
+      NCM_Entry en <= new NCM_Entry;
+      en.init();
+
+      if((-1 == _rowHint) || (_rowHint >= entries.numElements))
+      {
+         entries.add(#(deref en));
+      }
+      else
+      {
+         entries.insert(_rowHint + 1, #(deref en));
+      }
+
+      return en;
+   }
+
+   // <method_remove.png>
+   public =replay= method removeEntryByIdx(int _idx) {
+      if(_idx >= 0)
+      {
+         if(_idx < entries.numElements)
+         {
+            NCM_Entry en <= entries.get(_idx);
+
+            if(null != en)
+            {
+               entries.delete(_idx);
+            }
+         }
+      }
+   }
+
+   // <method_remove.png>
+   public =replay= method removeAllOutputEntries(boolean _bUneditedOnly) {
+      int idx = 0;
+      while(idx < entries.numElements)
+      {
+         NCM_Entry en <= entries.get(idx);
+
+         if(!en.b_input)
+         {
+            if(!_bUneditedOnly || (!en.b_edited && _bUneditedOnly))
+            {
+               entries.delete(idx);
+            }
+            else
+            {
+               idx++;
+            }
+         }
+         else
+         {
+            idx++;
+         }
+      }
+   }
+
+   // <method_find.png>
+   public method findOutputEntry(NCM_Entry _o, boolean _bIgnoreCh) : NCM_Entry {
+
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            MIDIMapEvent mev <= e.mm_event;
+
+            if(null != mev.dev)
+            {
+               if(!_o.b_input)
+               {
+                  MIDIMapEvent omev <= _o.mm_event;
+
+                  if(mev.type == omev.type)
+                  {
+                     if(mev.ext_type == omev.ext_type)
+                     {
+                        if(null != omev.dev)
+                        {
+                           if((mev.dev.dev_idx) == (omev.dev.dev_idx))
+                           {
+                              if(_bIgnoreCh || (mev.dev_ch == omev.dev_ch))
+                              {
+                                 return e;
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method.png>
+   public =replay= method currentToCenter() {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            e.center_value = e.mm_event.arg1;
+
+            switch(e.mm_event.type)
+            {
+               case TYPE_NOTE_OFF:
+               case TYPE_NOTE_ON:
+               case TYPE_POLY_PRESSURE:
+               case TYPE_CC:
+               case TYPE_PROGRAM_CHANGE:
+               case TYPE_CHANNEL_PRESSURE:
+                  e.min_delta = -e.center_value;
+                  e.max_delta =  127.0f - e.center_value;
+                  break;
+
+               case TYPE_PITCHBEND:
+               case TYPE_RPN:
+               case TYPE_NRPN:
+                  e.min_delta = -e.center_value;
+                  e.max_delta =  16383.0f - e.center_value;
+                  break;
+            }
+
+            e.b_asym = true;
+            e.b_edited = true;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method minToCenter() {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            e.center_value = e.center_value + e.min_delta;
+            e.max_delta    = -e.min_delta;
+            e.min_delta    = 0.0f;
+            e.b_edited = true;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method maxToCenter() {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            e.center_value = e.center_value + e.max_delta;
+            e.min_delta    = -e.max_delta;
+            e.max_delta    = 0.0f;
+            e.b_edited = true;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method centerToMinMax() {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            e.min_delta = 0;
+            e.max_delta = 0;
+            e.b_edited  = true;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method diffToMinMax(NCM_Group _o, boolean _bMax, boolean _bRev, boolean _bAsym) {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            MIDIMapEvent mev <= e.mm_event;
+
+            if(null != mev.dev)
+            {
+               NCM_Entry *oe;
+               foreach oe in _o.entries
+               {
+                  if(!oe.b_input)
+                  {
+                     MIDIMapEvent omev <= oe.mm_event;
+
+                     if(mev.type == omev.type)
+                     {
+                        if(mev.ext_type == omev.ext_type)
+                        {
+                           if(null != omev.dev)
+                           {
+                              if((mev.dev.dev_idx) == (omev.dev.dev_idx))
+                              {
+                                 if(mev.dev_ch == omev.dev_ch)
+                                 {
+                                    e.b_asym = _bAsym;
+                                    if(_bMax)
+                                    {
+                                       if(!_bAsym)
+                                       {
+                                          e.min_delta = 0.0f;
+                                       }
+
+                                       if(_bRev)
+                                       {
+                                          e.max_delta = e.center_value - oe.center_value;
+                                       }
+                                       else
+                                       {
+                                          e.max_delta = oe.center_value - e.center_value;
+                                       }
+                                    }
+                                    else
+                                    {
+                                       if(!_bAsym)
+                                       {
+                                          e.max_delta = 0.0f;
+                                       }
+
+                                       if(_bRev)
+                                       {
+                                          e.min_delta = e.center_value - oe.center_value;
+                                       }
+                                       else
+                                       {
+                                          e.min_delta = oe.center_value - e.center_value;
+                                       }
+                                    }
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method clearEditedFlags() {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            e.b_edited = false;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method clearMinMax(boolean _bMin, boolean _bMax) {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            if(_bMin)
+               e.min_delta = 0.0f;
+
+            if(_bMax)
+               e.max_delta = 0.0f;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method initAsym(boolean _bEnable) {
+      NCM_Entry *e;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            e.b_asym = _bEnable;
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method moveEntryUp(int _idx) : boolean {
+
+      if(_idx > 0)
+      {
+         if(_idx < entries.numElements)
+         {
+            entries.swap(_idx, _idx - 1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method moveEntryDown(int _idx) : boolean {
+
+      if(_idx < (entries.numElements - 1))
+      {
+         if(_idx >= 0)
+         {
+            entries.swap(_idx, _idx + 1);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method findEntryIdx(NCM_Entry _en) : int {
+      return entries.indexOfPointer(_en, 0);
+   }
+
+   // <method_get.png>
+   public method getEntryByIndex(int _index) : NCM_Entry {
+      return entries.get(_index);
+   }
+
+   // <method_get.png>
+   public method getOutputEntryByIndex(int _index) : NCM_Entry {
+      NCM_Entry *en;
+      int outIdx = 0;
+      foreach en in entries
+      {
+         if(!en.b_input)
+         {
+            if(outIdx == _index)
+               return en;
+
+            outIdx++;
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public static GetOutputIndexByEntry(PointerArray _entries, NCM_Entry _en) : int {
+      // Called by NCM_EntriesTM
+      NCM_Entry *en;
+      int outIdx = 0;
+      foreach en in _entries
+      {
+         if(!en.b_input)
+         {
+            if(@(_en) == @(en))
+               return outIdx;
+
+            outIdx++;
+         }
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getOutputIndexByEntry(NCM_Entry _en) : int {
+      return GetOutputIndexByEntry(entries, _en);
+   }
+
+   // <method_find.png>
+   public method findTemplateOutputEntry(int _prefIdx) : NCM_Entry {
+      // Called when creating new (output) entry via UI
+      NCM_Entry *en;
+      en <= getEntryByIndex(_prefIdx);
+      if(null != en)
+      {
+         if(!en.b_input)
+         {
+            return en;
+         }
+      }
+      foreach en in entries
+      {
+         if(!en.b_input)
+         {
+            if(-1 != (en.mm_event.getDevIdx()))
+            {
+               return en;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findTemplateNextUnusedRPNCtl() : int {
+      local IntArray usedFlags;
+      usedFlags.allocAndFill(Node.RPN_CTL_NUM, false);  // RPN 100..199
+
+      NCM_Entry *en;
+      foreach en in entries
+      {
+         if(!en.b_input)
+         {
+            if(MIDIMapDefs.TYPE_RPN == (en.mm_event.type))
+            {
+               if(Node.RPN_CTL_BASE <= (en.mm_event.ext_type) < (Node.RPN_CTL_BASE + Node.RPN_CTL_NUM))
+               {
+                  usedFlags[(en.mm_event.ext_type) - Node.RPN_CTL_BASE] = true;
+               }
+            }
+         }
+      }
+
+      int unusedRPN = 0;
+      loop(Node.RPN_CTL_NUM)
+      {
+         if(!usedFlags[unusedRPN])
+         {
+            unusedRPN += Node.RPN_CTL_BASE;
+            return unusedRPN;
+         }
+         unusedRPN++;
+      }
+
+      return -1;
+   }
+
+   // <replay.png>
+   public method resetToCenterValues(MIDIPipeFrame _frameOut) {
+      b_queue_reset = false;
+
+      int firstIdx;
+      int endIdx;
+
+      last_sent_t = 0.5;
+      ui_last_sent_t = 0.5;
+      last_queued_t = 0.5;
+
+      if(0 != ctl_limit)
+      {
+         firstIdx = send_queue_last_off;
+         endIdx = firstIdx + ctl_limit;
+         send_queue_last_off = endIdx;
+      }
+      else
+      {
+         firstIdx = 0;
+         endIdx = 999999;
+      }
+
+      // trace "xxx resetToCenterValues: first="+firstIdx+" end="+endIdx;
+
+      NCM_Entry *e;
+      int idx = 0;
+      foreach e in entries
+      {
+         if(!e.b_input)
+         {
+            if(idx >= firstIdx)
+            {
+               if(idx < endIdx)
+               {
+                  // trace "xxx reset ctr="+e.center_value;
+                  MIDIMapEvent mev <= e.mm_event;
+                  mev.arg1 = e.center_value;
+                  mev.addToFrame(_frameOut, 1/*noteDuration*/, false/*bDiscard*/);
+               }
+            }
+
+            idx++;
+         }
+      }
+
+      if(endIdx >= idx)
+      {
+         // trace "xxx resetToCenterValues: done.";
+         send_queue = send_queue_next;
+         send_queue_next = -1;
+         send_queue_last_off = 0;
+      }
+   }
+
+   // <replay.png>
+   public method sendInterpolatedValues(MIDIPipeFrame _frameOut, float _t) {
+
+      int firstIdx;
+      int endIdx;
+
+      last_sent_t = _t;
+      ui_last_sent_t = _t;
+      // trace "xxx sendInterpolatedValues: set t="+_t;
+
+      if(0 != ctl_limit)
+      {
+         firstIdx = send_queue_last_off;
+         endIdx = firstIdx + ctl_limit;
+         send_queue_last_off = endIdx;
+      }
+      else
+      {
+         firstIdx = 0;
+         endIdx = 999999;
+      }
+
+      // trace "xxx sendInterpolatedValues: first="+firstIdx+" end="+endIdx;
+
+      NCM_Entry *en;
+      int idx = 0;
+      foreach en in entries
+      {
+         if(!en.b_input)
+         {
+            MIDIMapEvent mev <= en.mm_event;
+            if(null != mev.dev)
+            {
+               if(idx >= firstIdx)
+               {
+                  if(idx < endIdx)
+                  {
+                     en.calcInterpolatedArg1(_t);
+
+                     // trace "xxx mev.arg1="+mev.arg1+" t="+_t;
+
+                     // (todo) blend when value already exists in frame ?
+                     mev.addToFrame(_frameOut, 1/*noteDuration*/, false/*bDiscard*/);
+                  }
+               }
+
+               idx++;
+            }
+
+         }
+      }
+
+      if(endIdx >= idx)
+      {
+         // trace "xxx sendInterpolatedValues: done.";
+         send_queue = send_queue_next;
+         send_queue_next = -1;
+         send_queue_last_off = 0;
+      }
+   }
+
+   // <method_get.png>
+   public =replay= uiGetResetLastSentT() : float {
+      float r = ui_last_sent_t;
+      ui_last_sent_t = -1;
+      return r;
+   }
+
+   // <method_get.png>
+   public method tickMatch(int _tickNr) : boolean {
+      if(tick_mod > 1)
+      {
+         return (0 == ((_tickNr - tick_shift) % tick_mod));
+      }
+      return true;
+   }
+
+   // <method_handle.png>
+   public method findEntryByEvent(MIDIMapEvent _ev, boolean _bInput) : NCM_Entry {
+      NCM_Entry *en;
+      foreach en in entries
+      {
+         if(en.b_input == _bInput)
+         {
+            if(_ev.matchTypeOfIgnoreClass(en.mm_event))
+            {
+               return en;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_handle.png>
+   public method handleInputEvent(int _devIdx, byte _midiCh, int _mevType,
+                                  short _extType, float _val,
+                                  MIDIPipeFrame _frameOut,
+                                  int _tickNr
+                                  ) {
+
+      NCM_Entry *en;
+      foreach en in entries
+      {
+         if(en.b_input)
+         {
+            MIDIMapEvent mev <= en.mm_event;
+            // trace "xxx mev.type="+mev.type+" _mevType="+_mevType;
+            if(mev.type == _mevType)
+            {
+               // trace "xxx mev.ext_type="+mev.ext_type+" _extType="+_extType;
+               if(mev.ext_type == _extType)
+               {
+                  if(null != mev.dev)
+                  {
+                     // trace "xxx mev.dev_idx="+(mev.dev.dev_idx)+" _devIdx="+_devIdx;
+                     if((mev.dev.dev_idx) == _devIdx)
+                     {
+                        // trace "xxx mev.dev_ch="+(mev.dev_ch)+" _midiCh="+_midiCh;
+                        if(mev.dev_ch == _midiCh)
+                        {
+                           // Found matching input event
+                           float t = (_val - en.min_delta) / (float(en.max_delta) - en.min_delta);
+
+                           // Interpolate and send
+                           if(tickMatch(_tickNr))
+                           {
+                              sendInterpolatedValues(_frameOut, t);
+                           }
+                           else
+                           {
+                              queueT(t);
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) {
+
+      // Version
+      _ofs.i16 = 5;
+
+      // Enabled
+      _ofs.i8 = b_enable;
+
+      // Write name
+      Utils.WriteString(_ofs, name);
+
+      // Tick mod (v2+)
+      _ofs.i8 = tick_mod;
+
+      // Tick shift (v2+)
+      _ofs.i8 = tick_shift;
+
+      // Ctl limit (v3+)
+      _ofs.i8 = ctl_limit;
+
+      // Send ctl on pattern change (v5+)
+      _ofs.i8 = b_patsel;
+
+      // Last queued 't' (v4+)
+      _ofs.f32 = last_queued_t;
+
+      // Last sent 't' (v5+)
+      _ofs.f32 = last_sent_t;
+
+      // Write entries
+      _ofs.i16 = entries.numElements;
+
+      NCM_Entry *en;
+      foreach en in entries
+      {
+         en.saveState(_ofs);
+      }
+
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Read enabled
+         b_enable = _ifs.b8;
+
+         // Read name
+         Utils.ReadString(_ifs, name);
+
+         if(ver >= 2)
+         {
+            // Tick mod (v2+)
+            tick_mod = _ifs.u8;
+
+            // Tick shift (v2+)
+            tick_shift = _ifs.u8;
+         }
+
+         if(ver >= 3)
+         {
+            // Ctl limit (v3+)
+            ctl_limit = _ifs.u8;
+         }
+
+         if(ver >= 5)
+         {
+            // Send ctl on pattern change (v5+)
+            b_patsel = _ifs.i8;
+         }
+
+         if(ver >= 4)
+         {
+            last_queued_t = _ifs.f32;
+         }
+
+         if(ver >= 5)
+         {
+            last_sent_t = _ifs.f32;
+         }
+         else
+         {
+            last_sent_t = last_queued_t;
+            ui_last_sent_t = last_sent_t;
+         }
+
+         // Read entries
+         int numEntries = _ifs.i16;
+
+         if(entries.alloc(numEntries))
+         {
+            int enIdx = 0;
+
+            loop(numEntries)
+            {
+               NCM_Entry en <= new NCM_Entry;
+               en.init();
+
+               if(!en.loadState(_ifs, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NCM_Group::loadState: failed to load entry idx="+enIdx+" (num="+numEntries+")";
+                  return false;
+               }
+
+               entries.add(#(deref en));
+
+               // Next entry
+               enIdx++;
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] NCM_Group::loadState: bad ver="+ver;
+      }
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class NCM_Pattern : NodePattern {
+
+   define int NUM_GROUPS = 8;
+
+   NodeCtlMorph *parent_node;
+
+   PointerArray groups;  // NCM_Group instances (8 slots)
+
+
+
+   // <method_init.png>
+   public virtual patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+
+      parent_node <= _parent;
+
+      groups.alloc(NUM_GROUPS);
+      loop(NUM_GROUPS)
+      {
+         NCM_Group grp <= new NCM_Group;
+         grp.init();
+         groups.add(#(deref grp));
+      }
+
+   }
+
+   // <method.png>
+   public virtual patCopyFrom(NodePattern _o, boolean _bClear) {
+
+      patCopyFromGeneric(_o);
+   }
+
+   // <method_get.png>
+   public method getGroupByIndex(int _groupIndex) : NCM_Group {
+      return groups.get(_groupIndex);
+   }
+
+   // <method_get.png>
+   public method getTotalNumEntries() : int {
+      int r = 0;
+      NCM_Group *grp;
+      foreach grp in groups
+      {
+         r += grp.entries.numElements;
+      }
+      return r;
+   }
+
+   // <method_handle.png>
+   public method handleInputEvent(int _devIdx, byte _midiCh, int _mevType,
+                                  short _extType, float _val,
+                                  MIDIPipeFrame _frameOut,
+                                  int _tickNr
+                                  ) {
+
+      NCM_Group *grp;
+      foreach grp in groups
+      {
+         grp.handleInputEvent(_devIdx, _midiCh, _mevType, _extType, _val, _frameOut, _tickNr);
+      }
+   }
+
+   // <save.png>
+   public virtual patSaveState(Stream ofs) {
+
+      // trace "[trc] NCM::patSaveState";
+
+      NodePattern::patSaveState(ofs);
+
+      // Write version
+      ofs.i16 = 3;
+
+      // Save groups
+      ofs.i32 = groups.numElements;
+
+      NCM_Group *grp;
+      foreach grp in groups
+      {
+         if(null != grp)
+         {
+            ofs.i8 = true;
+            grp.saveState(ofs);
+         }
+         else
+         {
+            // Unused grp slot
+            ofs.i8 = false;
+         }
+      }
+
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      // trace "[trc] NCM::patLoadState ver="+_ver;
+
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.i16;
+
+         if(ver >= 1)
+         {
+            boolean bUsed;
+
+            if(1)
+            {
+               // Read groups
+               int numGroups = ifs.i32;
+
+               // Global.Debug2("NCM::patLoadState: read numGroups="+numGroups);
+
+               if(numGroups > 0)
+               {
+                  if(groups.alloc(numGroups))
+                  {
+                     loop(numGroups)
+                     {
+                        bUsed = ifs.u8;
+
+                        if(bUsed)
+                        {
+                           NCM_Group grp <= new NCM_Group;
+                           grp.init();
+                           groups.add(#(deref grp));
+
+                           if(grp.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+                           {
+                           }
+                           else
+                           {
+                              trace "[---] NCM_Pattern::patLoadState: failed to read group (groupIdx="+(groups.numElements-1)+")";
+                              return false;
+                           }
+                        }
+                        else
+                        {
+                           groups.add(null);
+                        }
+                     }
+                  }
+                  else
+                  {
+                     trace "[---] NCM_Pattern::patLoadState: failed to allocate "+numGroups+" groups.";
+                     return false;
+                  }
+               }
+            }
+
+            if(ver <= ver < 3)
+            {
+               // Read last selected group (v2+)
+               //  (note) moved to node in v3+
+               ifs.getU8();
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] NCM_Pattern::patLoadState: invalid version ("+ver+").";
+         }
+      }
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class NodeCtlMorph : Node {
+
+   define int RPN_CTLMORPH_MULTI_OFFSET    = RPN_CTLMORPH_BASE + 0;
+   define int RPN_CTLMORPH_MULTI_RANGE     = RPN_CTLMORPH_BASE + 1;
+   define int RPN_CTLMORPH_MULTI_POS       = RPN_CTLMORPH_BASE + 2;    // all groups
+   define int RPN_CTLMORPH_GRP_1_RESET     = RPN_CTLMORPH_BASE + 100;
+   define int RPN_CTLMORPH_GRP_1_MULTI_POS = RPN_CTLMORPH_BASE + 101;
+   define int RPN_CTLMORPH_GRP_2_RESET     = RPN_CTLMORPH_BASE + 200;
+   define int RPN_CTLMORPH_GRP_2_MULTI_POS = RPN_CTLMORPH_BASE + 201;
+   define int RPN_CTLMORPH_GRP_3_RESET     = RPN_CTLMORPH_BASE + 300;
+   define int RPN_CTLMORPH_GRP_3_MULTI_POS = RPN_CTLMORPH_BASE + 301;
+   define int RPN_CTLMORPH_GRP_4_RESET     = RPN_CTLMORPH_BASE + 400;
+   define int RPN_CTLMORPH_GRP_4_MULTI_POS = RPN_CTLMORPH_BASE + 401;
+   define int RPN_CTLMORPH_GRP_5_RESET     = RPN_CTLMORPH_BASE + 500;
+   define int RPN_CTLMORPH_GRP_5_MULTI_POS = RPN_CTLMORPH_BASE + 501;
+   define int RPN_CTLMORPH_GRP_6_RESET     = RPN_CTLMORPH_BASE + 600;
+   define int RPN_CTLMORPH_GRP_6_MULTI_POS = RPN_CTLMORPH_BASE + 601;
+   define int RPN_CTLMORPH_GRP_7_RESET     = RPN_CTLMORPH_BASE + 700;
+   define int RPN_CTLMORPH_GRP_7_MULTI_POS = RPN_CTLMORPH_BASE + 701;
+   define int RPN_CTLMORPH_GRP_8_RESET     = RPN_CTLMORPH_BASE + 800;
+   define int RPN_CTLMORPH_GRP_8_MULTI_POS = RPN_CTLMORPH_BASE + 801;
+
+   static NodeCtlMorphEditor *editor;
+
+   PointerArray patterns; // NCM_Pattern instances
+
+   IntArray grp_play_pattern_nr;   // -1=use node play_pattern_nr
+
+   public int learn_mode; // see NodeCtlMorphEditor. If != 0, do not record midi events.
+
+   public boolean b_ui_update_queued;
+
+   int tick_nr;
+
+   protected MIDIPipeFrame ui_send_frame;  // used when editing entry min/max/center in the UI
+
+   public short multi_morph_offset_resetval;
+   public short multi_morph_offset;
+
+   public short multi_morph_range_resetval;
+   public short multi_morph_range;
+
+   public FloatArray multi_morph_pos_resetvals;  // per group
+   public FloatArray queued_multi_morph_pos;     // morph pos (per group), or -1
+   public boolean    b_multi_morph_pos_send;     // true=send position when node is reset
+
+   public NCM_Entry *ui_queued_tablerow_entry;  // used for pointer comparison (update selected table row when ctl is recvd)
+
+   int last_selected_group; // 0..7
+
+   boolean b_autosend_center_values;  // true=send center values (all groups) when pattern is selected
+   boolean b_ui_t_all_groups;
+
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(128);
+      patterns.useAll();
+
+      edit_pattern_nr = 0;
+      play_pattern_nr = 0;
+      grp_play_pattern_nr.allocAndFill(NCM_Pattern.NUM_GROUPS, -1);
+
+      multi_morph_offset_resetval = 0;
+      multi_morph_range_resetval  = 4;
+      multi_morph_pos_resetvals.allocAndFill(NCM_Pattern.NUM_GROUPS, 0.0f);
+      b_multi_morph_pos_send      = false;
+
+      queued_multi_morph_pos.allocAndFill(NCM_Pattern.NUM_GROUPS, -1.0f);
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+
+      Node::nodeUIInit();
+
+      NCM_Pattern pat <= new NCM_Pattern;
+      pat.patInit(this, 0/*patIdx*/);
+      patterns[0] = deref pat;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeCtlMorphEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_ctlmorph_mono");
+      else
+         return UI.GetIcon("node_ctlmorph");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NCM_Pattern";
+   }
+
+   // <method.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      tick_nr = 0;
+
+      multi_morph_offset = multi_morph_offset_resetval;
+      multi_morph_range  = multi_morph_range_resetval;
+      if(b_multi_morph_pos_send)
+         queued_multi_morph_pos = multi_morph_pos_resetvals;
+      else
+         queued_multi_morph_pos.fill(-1);
+      grp_play_pattern_nr.fill(-1);
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+   }
+
+   // <method.png>
+   public =replay= method sendAllCenterValues() {
+      NCM_Pattern *pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         NCM_Group *grp;
+         foreach grp in pat.groups
+         {
+            grp.queueT(0.5);
+            // // grp.queueReset();
+         }
+      }
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+      byte prevPlayPatternNr = play_pattern_nr;
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      grp_play_pattern_nr.fill(-1);
+
+      NCM_Pattern *pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         if(b_autosend_center_values && (play_pattern_nr != prevPlayPatternNr))
+         {
+            // Reset all groups
+            sendAllCenterValues();
+         }
+         else
+         {
+            // Send last seen T or reset
+            NCM_Group *grp;
+            foreach grp in pat.groups
+            {
+               if(true == grp.b_patsel)
+               {
+                  grp.queueT(grp.last_sent_t);
+               }
+               else if(maybe == grp.b_patsel)
+               {
+                  grp.queueReset();
+               }
+            }
+         }
+      }
+
+      Events.SendPlayPat();
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NCM_Pattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NCM_Pattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   protected method getCurrentGrpPlayPattern(int _grpIdx) {
+      int grpPatNr = grp_play_pattern_nr.get(_grpIdx);
+      if(grpPatNr > 0)
+         return patterns.get(grpPatNr);
+      else
+         return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NCM_Pattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NCM_Pattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphOffset(short _val) {
+      multi_morph_offset_resetval = _val;
+      multi_morph_offset = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphRange(short _val) {
+      multi_morph_range_resetval = _val;
+      multi_morph_range = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphPos(float _val) {
+      multi_morph_pos_resetvals.fill(_val);
+      queued_multi_morph_pos.fill(_val);
+   }
+
+   // <method_set.png>
+   public =replay= method setMultiMorphPosGrp(int _grpIdx, float _val) {
+      multi_morph_pos_resetvals[_grpIdx] = _val;
+      queued_multi_morph_pos[_grpIdx] = _val;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMultiMorphPosSend(boolean _bEnable) {
+      b_multi_morph_pos_send = _bEnable;
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 7; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // Write patterns
+      NCM_Pattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = true; // bUsed
+
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            // Unused
+            ofs.i8 = false; // bUsed
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      ofs.i8  = multi_morph_offset_resetval;  // v2+
+      ofs.i8  = multi_morph_range_resetval;   // v2+
+
+      // // ofs.f32 = multi_morph_pos_resetval;     // v2+, changed from i16 to float in v4+, removed in v5
+      int grpIdx = 0;
+      loop(NCM_Pattern.NUM_GROUPS)
+      {
+         ofs.f32 = multi_morph_pos_resetvals.get(grpIdx++);  // v5+
+      }
+
+      ofs.i8  = b_multi_morph_pos_send;       // v2+
+
+      // Write last selected group (v3+)
+      ofs.i8 = last_selected_group;
+
+      // Auto-send center values (v6+)
+      ofs.i8 = b_autosend_center_values;
+
+      // Update all groups when T widget is used (v7+)
+      ofs.i8 = b_ui_t_all_groups;
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // Read patterns
+         int patIdx = 0;
+         loop(128)
+         {
+            boolean bUsed = ifs.i8;
+
+            // trace "xxx try read patIdx="+patIdx+" bUsed="+bUsed;
+
+            if(bUsed)
+            {
+               NCM_Pattern pat <= new NCM_Pattern;
+
+               pat.patInit(this, patIdx);
+
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  return false;
+               }
+            }
+            else
+            {
+               // Unused pattern slot
+               patterns[patIdx] = null;
+            }
+
+            patIdx++;
+         }
+
+         if(ver >= 2)
+         {
+            multi_morph_offset_resetval = ifs.u8 & 127;
+            multi_morph_range_resetval  = ifs.u8 & 127;
+
+            // Morph position reset values
+            float mmPosResetVal;
+            if(ver >= 5)
+            {
+               int grpIdx = 0;
+               loop(NCM_Pattern.NUM_GROUPS)
+               {
+                  multi_morph_pos_resetvals[grpIdx++] = ifs.f32;  // v5+  (per group)
+               }
+            }
+            else if(ver >= 4)
+            {
+               mmPosResetVal = ifs.f32;
+               multi_morph_pos_resetvals.fill(mmPosResetVal);
+            }
+            else
+            {
+               mmPosResetVal = ifs.u16 & 127;
+               multi_morph_pos_resetvals.fill(mmPosResetVal);
+
+            }
+            b_multi_morph_pos_send      = ifs.b8;
+         }
+
+         if(ver >= 3)
+         {
+            // Read last selected group (v3+)
+            last_selected_group = ifs.u8 & 7;
+         }
+
+         if(ver >= 6)
+         {
+            // Auto-send center values (v6+)
+            b_autosend_center_values = ifs.b8;
+         }
+
+         if(ver >= 7)
+         {
+            // Update all groups when T widget is used (v7+)
+            b_ui_t_all_groups = ifs.b8;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method_find.png>
+   public method findUniqueGroupNames(StringArray _r) {
+      NCM_Pattern *pat;
+      foreach pat in patterns
+      {
+         if(null != pat)
+         {
+            NCM_Group *grp;
+            foreach grp in pat.groups
+            {
+               if(!_r.containsObject(grp.name))
+                  _r.add(grp.name);
+            }
+         }
+      }
+
+      // Sort
+      local IntArray iaSorted;
+      _r.sortByValue(iaSorted, false/*bCS*/);
+      _r.rearrange(iaSorted);
+   }
+
+   // <method_find.png>
+   public method findPresetsByCategory(String _grpName, StringArray _retNames, IntArray _retPatNrs, IntArray _retGrpIndices) {
+      NCM_Pattern *pat;
+      int patNr = 0;
+      boolean bAll = ("*" == _grpName);
+      foreach pat in patterns
+      {
+         if(null != pat)
+         {
+            NCM_Group *grp;
+            int groupIdx = 0;
+            foreach grp in pat.groups
+            {
+               if(bAll || (grp.name & _grpName))
+               {
+                  _retNames.add((Node.patnr_options.get(patNr))+": "+pat.pat_name+" "+grp.name+"("+(groupIdx+1)+")");
+                  _retPatNrs.add(patNr);
+                  _retGrpIndices.add(groupIdx);
+               }
+               groupIdx++;
+            }
+         }
+         patNr++;
+      }
+   }
+
+   // <replay.png>
+   public =replay= method queueEntryToUISendFrame(NCM_Entry _e, float _t) {
+
+      MIDIMapEvent mev <= _e.mm_event;
+      if(null != mev.dev)
+      {
+         if(_t >= 0)
+         {
+            _e.calcInterpolatedArg1(_t);
+         }
+         else
+         {
+            mev.arg1 = _e.center_value;
+         }
+
+         mev.addToFrame(ui_send_frame, 1/*noteDur*/, false/*bDiscard*/);
+      }
+   }
+
+   // <method_handle.png>
+   protected method handleMapEvents(NCM_Pattern _pat, MIDIPipeFrame _frame, MIDIPipeFrame _frameOut) {
+
+      MIDIPipeEvent pev;
+      int pevIdx;
+      int numEv;
+      NCM_Entry *en;
+
+      // CC
+      numEv = _frame.getNumEventsCCByFlt(-1/*dev*/, -1/*ch*/);
+
+      if(numEv > 0)
+      {
+         pevIdx = 0;
+
+         // trace "xxx numEv<CC>="+numEv;
+
+         loop(numEv)
+         {
+            if(_frame.getEventByIdxAndFlt(pevIdx,
+                                          pev,
+                                          MIDIPIPE_EVENT_TYPE_CC,
+                                          -1/*dev*/,
+                                          -1/*ch*/
+                                          )
+               )
+            {
+               // trace "xxx NCM: CC pev.devIdx="+pev.devIdx+" pev.midiCh="+pev.midiCh+" pev.ccId="+pev.ccId+" pev.ccValue="+pev.ccValue;
+
+               _pat.handleInputEvent(pev.devIdx, pev.midiCh, MIDIMapDefs.TYPE_CC,
+                                     pev.arg1/*ccNr*/, pev.arg2/*val*/,
+                                     _frameOut,
+                                     tick_nr
+                                     );
+            }
+
+            // Next CC
+            pevIdx++;
+         }
+      }
+
+
+      // RPN
+      numEv = _frame.getNumEventsRPNByFlt(-1/*dev*/, -1/*ch*/);
+
+      if(numEv > 0)
+      {
+         pevIdx = 0;
+
+         loop(numEv)
+         {
+            if(_frame.getEventByIdxAndFlt(pevIdx,
+                                          pev,
+                                          MIDIPIPE_EVENT_TYPE_RPN,
+                                          -1/*dev*/,
+                                          -1/*ch*/
+                                          )
+               )
+            {
+               _pat.handleInputEvent(pev.devIdx, pev.midiCh, MIDIMapDefs.TYPE_RPN,
+                                     pev.arg1/*rpn*/, pev.arg2/*val*/,
+                                     _frameOut,
+                                     tick_nr
+                                     );
+            }
+
+            // Next RPN
+            pevIdx++;
+         }
+      }
+
+
+      // NRPN
+      numEv = _frame.getNumEventsNRPNByFlt(-1/*dev*/, -1/*ch*/);
+
+      if(numEv > 0)
+      {
+         pevIdx = 0;
+
+         loop(numEv)
+         {
+            if(_frame.getEventByIdxAndFlt(pevIdx,
+                                          pev,
+                                          MIDIPIPE_EVENT_TYPE_NRPN,
+                                          -1/*dev*/,
+                                          -1/*ch*/
+                                          )
+               )
+            {
+               _pat.handleInputEvent(pev.devIdx, pev.midiCh, MIDIMapDefs.TYPE_NRPN,
+                                     pev.arg1/*nrpn*/, pev.arg2/*val*/,
+                                     _frameOut,
+                                     tick_nr
+                                     );
+            }
+
+            // Next NRPN
+            pevIdx++;
+         }
+      }
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      // // byte prevPlayPatternNr = play_pattern_nr;
+
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+                     // // if(b_autosend_center_values && (play_pattern_nr != prevPlayPatternNr))
+                     // //    sendAllCenterValues();
+
+                     Global.Debug3("ncm: queued pattern "+play_pattern_nr+" via PrgChg A");
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+                     // // if(b_autosend_center_values && (play_pattern_nr != prevPlayPatternNr))
+                     // //    sendAllCenterValues();
+
+                     Global.Debug3("ncm: queued pattern "+play_pattern_nr+" via PrgChg B");
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         Events.SendPlayPat();
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+         // // if(b_autosend_center_values && (play_pattern_nr != prevPlayPatternNr))
+         // //    sendAllCenterValues();
+      }
+   }
+
+   // <method_handle.png>
+   protected method handleGroupRPN(MIDIPipeFrame _framePlay, MIDIPipeFrame _frameRec) {
+
+      int rpnOff = RPN_CTLMORPH_BASE + 100;
+      int grpIdx = 0;
+      NCM_Group *grp;
+      NCM_Pattern *pat;
+
+      loop(NCM_Pattern.NUM_GROUPS)
+      {
+         float t;
+
+         t = getRPN(_framePlay, _frameRec, rpnOff/*RPN_CTLMORPH_GRP_x_RESET*/);
+         if(t >= 0.0f)
+         {
+            pat <= getCurrentGrpPlayPattern(grpIdx);
+
+            if(null != pat)
+            {
+               grp <= pat.getGroupByIndex(grpIdx);
+               grp.b_queue_reset = (0 != t) ? true : false;
+            }
+         }
+
+         rpnOff += 100;
+         grpIdx++;
+      }
+
+   }
+
+   // <method_handle.png>
+   protected method handleRPNCtlByFlt(MIDIPipeFrame _frame,
+                                      MIDIPipeFrame _frameOut,
+                                      int _fltDev, int _fltCh,
+                                      boolean _bSelectRow
+                                      ) {
+
+      MIDIPipeEvent ev;
+      int evIdx = 0;
+      float paramValue;
+      int enIdx;
+
+      loop(_frame.numEventsRPN)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_RPN, _fltDev, _fltCh))
+         {
+            if(RPN_CTL_0 <= ev.rpn <= RPN_CTL_99)
+            {
+               enIdx = ev.rpn - RPN_CTL_0;
+
+               // trace "xxx enIdx="+enIdx;
+
+               NCM_Pattern pat <= getCurrentGrpPlayPattern(last_selected_group);
+               if(null != pat)
+               {
+                  NCM_Group grp <= pat.getGroupByIndex(last_selected_group);
+                  if(null != grp)
+                  {
+                     NCM_Entry en <= grp.getOutputEntryByIndex(enIdx);
+                     if(null != en)
+                     {
+                        if(!en.b_input)
+                        {
+                           float t = ev.rpnValue / 16383.0;
+                           // trace "xxx enIdx="+enIdx+" t="+t;
+                           MIDIMapEvent enEv <= en.mm_event;
+                           en.calcInterpolatedArg1(t); // updates en.mm_event / enEv
+                           enEv.addToFrame(_frameOut, 1/*noteDuration*/, false/*bDiscard*/);
+                           ui_queued_tablerow_entry <= en;
+                        }
+                     }
+                  }
+               }
+            }
+         }
+         evIdx++;
+      }
+   }
+
+   // <method_handle.png>
+   protected method handleRPNCtl(MIDIPipeFrame _frame, MIDIPipeFrame _frameOut) {
+
+      MIDIPipeEvent ev;
+      int evIdx = 0;
+      float paramValue;
+      int rowIdx;
+
+      boolean bEditorVisible = nodeIsEditorVisible();
+
+      if(bEditorVisible)
+      {
+         handleRPNCtlByFlt(_frame, _frameOut, -1/*fltDev*/, -1/*fltCh*/, true/*bSelectRow*/);
+      }
+
+      // Filter A
+      if(b_auto_filter_a)
+      {
+         handleRPNCtlByFlt(_frame, _frameOut, auto_dev_filter_a, auto_ch_filter_a, false/*bSelectRow*/);
+      }
+
+      // Filter A
+      if(b_auto_filter_b)
+      {
+         handleRPNCtlByFlt(_frame, _frameOut, auto_dev_filter_b, auto_ch_filter_b, false/*bSelectRow*/);
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTotalNumPatternEvents(int _patNr) : int {
+      NCM_Pattern pat <= nodeGetPatternByIdx(_patNr);
+      if(null != pat)
+      {
+         return pat.getTotalNumEntries();
+      }
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+              RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+              RPN_COMMON_UI_PRGCHG,
+              RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+              RPN_COMMON_MUTE_TEMP_TOGGLE,
+              // RPN_COMMON_MUTE_TEMP_1_8,
+              // RPN_COMMON_MUTE_TEMP_9_16,
+              // RPN_COMMON_SOLO_TEMP_1_8,
+              // RPN_COMMON_SOLO_TEMP_9_16,
+              RPN_COMMON_UI_NODE_MUTE,
+              RPN_COMMON_UI_NODE_SOLO,
+              RPN_COMMON_UI_PIPE_MUTE,
+              RPN_COMMON_UI_PIPE_SOLO,
+
+              RPN_CTLMORPH_MULTI_OFFSET,
+              RPN_CTLMORPH_MULTI_RANGE,
+              RPN_CTLMORPH_MULTI_POS,
+              RPN_CTLMORPH_GRP_1_RESET,
+              RPN_CTLMORPH_GRP_1_MULTI_POS,
+              RPN_CTLMORPH_GRP_2_RESET,
+              RPN_CTLMORPH_GRP_2_MULTI_POS,
+              RPN_CTLMORPH_GRP_3_RESET,
+              RPN_CTLMORPH_GRP_3_MULTI_POS,
+              RPN_CTLMORPH_GRP_4_RESET,
+              RPN_CTLMORPH_GRP_4_MULTI_POS,
+              RPN_CTLMORPH_GRP_5_RESET,
+              RPN_CTLMORPH_GRP_5_MULTI_POS,
+              RPN_CTLMORPH_GRP_6_RESET,
+              RPN_CTLMORPH_GRP_6_MULTI_POS,
+              RPN_CTLMORPH_GRP_7_RESET,
+              RPN_CTLMORPH_GRP_7_MULTI_POS,
+              RPN_CTLMORPH_GRP_8_RESET,
+              RPN_CTLMORPH_GRP_8_MULTI_POS,
+
+              // RPN_COMMON_SEEK_OFFSET,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+      NCM_Pattern *pat;
+      NCM_Group *grp;
+      int grpIdx;
+      boolean bAllGroups = false;
+
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      if(bAllowSeekPrgChgAndMute)
+      {
+         handlePrgChg(_frameRec);
+         handlePrgChg(_framePlay);
+      }
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      MIDIPipeFrame frameOut;
+      frameOut.empty();
+
+      handleRPNCtl(_frameRec, frameOut);
+      handleRPNCtl(_framePlay, frameOut);
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         float t;
+
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // Handle MUTE, MUTE_TOGGLE, MUTE_TEMP, MUTE_TEMP_TOGGLE
+            nodeParseRPN_Mute(_framePlay, _frameRec);
+         }
+
+         handleGroupRPN(_framePlay, _frameRec);
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_MULTI_OFFSET);
+         if(t >= 0.0f)
+         {
+            multi_morph_offset = mathClampf(t, 0.0f, 127.0f);
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_MULTI_RANGE);
+         if(t >= 0.0f)
+         {
+            multi_morph_range = mathClampf(t, 0.0f, 127.0f);
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos.fill(t);
+            bAllGroups = true;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_1_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[0] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_2_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[1] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_3_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[2] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_4_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[3] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_5_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[4] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_6_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[5] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_7_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[6] = t;
+            bAllGroups = false;
+         }
+
+         t = getRPN(_framePlay, _frameRec, RPN_CTLMORPH_GRP_8_MULTI_POS);
+         if(t >= 0.0f)
+         {
+            queued_multi_morph_pos[7] = t;
+            bAllGroups = false;
+         }
+      }
+
+      grpIdx = 0;
+      loop(NCM_Pattern.NUM_GROUPS)
+      {
+         float morphPos = queued_multi_morph_pos.get(grpIdx);
+         if(morphPos >= 0.0f)
+         {
+            // trace "xxx grpIdx="+grpIdx+" morphPos="+morphPos;
+            queued_multi_morph_pos[grpIdx] = -1.0f;
+
+            byte queuedPatIdx  = floor(morphPos / (16384.0/multi_morph_range));
+            float queuedAmount = (((morphPos % (16384.0/multi_morph_range)) * multi_morph_range) / 16383.0) / 2.0 + 0.5;
+
+            queuedPatIdx = nodeFindNextPatternNrByUsedIdxWithOffset(multi_morph_offset, queuedPatIdx);
+
+            // trace "xxx CtlMorph: queuedPatIdx="+queuedPatIdx+" amount="+queuedAmount;
+            if(bAllGroups)
+            {
+               play_pattern_nr = queuedPatIdx;
+               Events.SendPlayPat();
+               bAllGroups = false;
+            }
+            else
+            {
+               grp_play_pattern_nr[grpIdx] = queuedPatIdx;
+            }
+
+            pat <= getCurrentGrpPlayPattern(grpIdx);
+
+            if(null != pat)
+            {
+               grp <= pat.groups.get(grpIdx);
+               grp.b_queue_reset = false;
+               grp.queueT(queuedAmount);
+            }
+         }
+
+         grpIdx++;
+      }
+
+      _bMuted |= nodeHandleQueuedMuteTemp();
+
+      // Exec group resets / interpol queue
+      if(!_bMuted)
+      {
+         grpIdx = 0;
+         loop(NCM_Pattern.NUM_GROUPS)
+         {
+            pat <= getCurrentGrpPlayPattern(grpIdx);
+
+            if(null != pat)
+            {
+               grp <= pat.groups.get(grpIdx);
+               if(grp.b_queue_reset)
+               {
+                  if(-1 == grp.send_queue)
+                  {
+                     grp.send_queue = 10;
+                  }
+                  else
+                  {
+                     grp.send_queue_next = 10;
+                  }
+               }
+
+               if(grp.send_queue >= 0)
+               {
+                  if(grp.tickMatch(tick_nr))/// || (grp.send_queue_last_off > 0))/*sound lags*/
+                  {
+                     if(grp.send_queue >= 10)
+                     {
+                        grp.resetToCenterValues(frameOut);
+                     }
+                     else
+                     {
+                        // trace "xxx send queued interpol tick_nr="+tick_nr+" mod="+grp.tick_mod;
+                        grp.sendInterpolatedValues(frameOut, grp.send_queue);
+                     }
+                  }
+               }
+            }
+
+            // Next group/pattern
+            grpIdx++;
+         }
+      }
+
+      pat <= nodeGetCurrentPlayPattern();
+
+      if(NodeCtlMorphEditor.LEARN_NONE == learn_mode)
+      {
+         if(null != pat)
+         {
+            handleMapEvents(pat, _framePlay, frameOut);
+            handleMapEvents(pat, _frameRec,  frameOut);
+         }
+      }
+
+      if(frameOut.hasEvents())
+      {
+         // trace "xxx frameOut has "+frameOut.numEvents+" events";
+         _framePlay.mergeFrame(frameOut);
+      }
+
+      if(ui_send_frame.hasEvents())
+      {
+         _framePlay.mergeFrame(ui_send_frame);
+         ui_send_frame.empty();
+      }
+
+      tick_nr++;
+
+   }
+
+}

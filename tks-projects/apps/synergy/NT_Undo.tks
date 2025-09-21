@@ -1,0 +1,657 @@
+// ----
+// ---- file   : NT_Undo.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 16Jan2012
+// ---- changed: 17Jan2012, 19Jan2012, 20Jan2012, 24Feb2012, 25Feb2012, 03Jan2013, 05Jan2013
+// ----          07Jan2013, 14May2013, 15May2013, 27May2013, 10Jan2015, 17Jan2015, 26Jan2015
+// ----          03May2015, 02Oct2015, 23Oct2015, 24Oct2015, 11Nov2015, 28Jan2017, 01Jul2017
+// ----          14Jul2017, 02Dec2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_Undo;
+
+use namespace ui;
+use namespace st2;
+
+function Debug(String msg) {
+   if(STConfig.b_node_tracker_undo_debug)
+      Global.Debug(msg);
+}
+
+
+class NT_UndoControllerLocation {
+   int track;
+   int pattern;
+   int ctl;
+}
+
+class NT_UndoEntry {
+   explain "describes a single pattern edit transaction that can be undone";
+
+   NodeTracker *parent_node; // ref to parent tracker
+
+   String name; // transaction name, for debugging purposes
+
+   // Cursor position
+   int pat_nr;                // pattern nr
+   int cursor_track;          // absolute track nr.
+   int cursor_track_shift;    // index of first visible track in pattern editor
+   int cursor_x;              // cel offset in track
+   int cursor_song_position;  // current tick  (todo) rename to edit offset
+
+   int pv_block_start_pat_offset;
+   int pv_block_start_cursor_track;
+   int pv_block_start_cursor_x;
+
+   int pv_block_end_pat_offset;
+   int pv_block_end_cursor_track;
+   int pv_block_end_cursor_x;
+
+   // Elements modified during transaction:
+   Envelope *[] controllers;     // Controller envelope instances (backups)
+   Envelope *[] controllers_cur; // Controller envelope references (to current versions) (used to prevent duplicate entries)
+
+   NT_TEL *[] track_layouts;  // NT_TEL instances, indexed by trackNr. entries can be null.
+
+   // Location of elements modified during transaction
+   //  (note) number of elements equals that of the controllers resp. orderlists array
+   NT_UndoControllerLocation *[] controller_locations; // NT_UndoControllerLocation instances
+   IntArray     orderlist_locations;  // channel ids
+
+   NT_UndoEntry *orig_undo_entry; // when this entry is undone, this (if not null) is pushed on the redo stack
+
+   NT_MetaPattern *mpat_data;  // for cmd_pattern_free / cmd_pattern_paste
+
+   Buffer *node_state;  // or null. Used for track add/delete
+
+
+   public method init(NodeTracker _parentNode) {
+
+      parent_node <= _parentNode;
+
+      pat_nr = -1;
+      cursor_track = -1;
+
+      controllers.empty();
+      controllers_cur.empty();
+      controller_locations.empty();
+
+      track_layouts.free();
+
+      orig_undo_entry <= null;
+
+      mpat_data <= null;
+
+      node_state <= null;
+
+      name.empty();
+   }
+
+   protected method saveCursorAndSelection() {
+      // Save cursor position
+
+      pat_nr               = parent_node.nodeGetCurrentEditPatternNr();
+      cursor_track         = parent_node.pv_cursor_track;
+      cursor_track_shift   = parent_node.pv_track_shift;
+      cursor_x             = parent_node.pv_cursor_x;
+      cursor_song_position = parent_node.getEditOffset();
+
+      // Save pattern block selection
+      pv_block_start_pat_offset   = parent_node.pv_block_start_pat_offset;
+      pv_block_start_cursor_track = parent_node.pv_block_start_cursor_track;
+      pv_block_start_cursor_x     = parent_node.pv_block_start_cursor_x;
+
+      pv_block_end_pat_offset   = parent_node.pv_block_end_pat_offset;
+      pv_block_end_cursor_track = parent_node.pv_block_end_cursor_track;
+      pv_block_end_cursor_x     = parent_node.pv_block_end_cursor_x;
+   }
+
+   public method begin(String _name) {
+      name = _name;
+
+      Debug("NT_UndoEntry::begin: starting transaction \""+name+"\".");
+
+      saveCursorAndSelection();
+   }
+
+   public method touchPattern(int _pattern) {
+      if(null == node_state)
+      {
+         if(null == mpat_data)
+         {
+            // Copy all meta + track pattern data to "mpat_data"
+            mpat_data <= new NT_MetaPattern;
+            mpat_data.patInit(parent_node, _pattern);
+            mpat_data.b_clipboard = true;
+
+            NT_MetaPattern mpatSrc <= parent_node.getMetaPattern(_pattern);
+            mpat_data.patCopyFrom(mpatSrc, false/*bClear*/);
+         }
+      }
+   }
+
+   public method touchController(int _track, int _pattern, int _ctl, Envelope _env) {
+      if(null == node_state)
+      {
+         if(-1 == controllers_cur.indexOfPointer(_env, 0))
+         {
+            // Since the envelope may have been deleted and recreated during one undo transaction, check if
+            //  an entry for the given location already exists
+            NT_UndoControllerLocation *eloc;
+            foreach eloc in controller_locations
+            {
+               if(eloc.track == _track)
+               {
+                  if(eloc.pattern == _pattern)
+                  {
+                     if(eloc.ctl == _ctl)
+                     {
+                        // already exists
+                        return;
+                     }
+                  }
+               }
+            }
+
+            // trace "xxx touch ctl t="+_track+" p="+_pattern+" ctl"+_ctl;
+
+            local Envelope env = _env;
+            controllers.add(#(deref env));
+            controllers_cur.add(_env);
+
+            local NT_UndoControllerLocation loc;
+            loc.track   = _track;
+            loc.pattern = _pattern;
+            loc.ctl     = _ctl;
+            controller_locations.add(#(deref loc));
+         }
+         // else: undo element already exists
+      }
+   }
+
+   public method touchTrackLayout(int _track, NT_TEL _tel) {
+      if(null == node_state)
+      {
+         NT_TEL tel <= track_layouts.get(_track);
+         if(null == tel)
+         {
+            if(_track >= track_layouts.numElements)
+               track_layouts.realloc(_track+1);
+
+            tel <= new NT_TEL;
+            tel.copyFrom(_tel);
+            track_layouts[_track] = deref tel;
+         }
+      }
+   }
+
+   public method touchNodeState(NodeTracker _node) {
+      if(null == node_state)
+      {
+         node_state <= new Buffer;
+         _node.nodeSaveStateToBuffer(node_state);
+      }
+   }
+
+   protected method getCtlEnvByLocIdx(int _idx, boolean _bCreate) : Envelope {
+      NT_UndoControllerLocation loc <= controller_locations.get(_idx);
+      NT_Track track <= parent_node.getTrack(loc.track);
+      NT_TrackPattern *pat;
+      Envelope *env;
+
+      // trace "xxx loc.ctl="+loc.ctl;
+
+      if(_bCreate)
+      {
+         pat   <= track.getOrCreatePattern ( loc.pattern );
+         env   <= pat.getCreateEnvelope    ( loc.ctl     );
+      }
+      else
+      {
+         pat   <= track.getPattern ( loc.pattern );
+         env   <= pat.controllers  [ loc.ctl     ];
+      }
+
+      return env;
+   }
+
+   module method countControllerModifications() : int {
+      // (todo) diff the envelope events
+      int r = 0;
+
+      Envelope *envOrig;
+      int i = 0;
+      foreach envOrig in controllers
+      {
+         Envelope env <= getCtlEnvByLocIdx(i, false);
+         r += !envOrig.isEqual(env);
+         i++;
+      }
+
+      return r;
+   }
+
+   module method countTrackLayoutModifications() : int {
+      // (todo) diff the track layouts
+      int num = 0;
+      NT_TEL *tel;
+      foreach tel in track_layouts
+      {
+         if(null != tel)
+            num++;
+      }
+      return num;
+   }
+
+   public method end() : boolean {
+      int i;
+      Envelope *env;
+      Envelope *envOrig;
+
+      boolean bModified = false;
+
+      if(null != node_state)
+      {
+         bModified = true;
+      }
+
+      bModified |= (0 != countTrackLayoutModifications());
+
+      if(null != mpat_data)
+      {
+         bModified = true;
+      }
+
+      if(!bModified)
+      {
+         i = 0;
+         foreach envOrig in controllers
+         {
+            env <= getCtlEnvByLocIdx(i, false);
+            bModified = ! envOrig.isEqual(env);
+            if(bModified)
+               break;
+            i++;
+         }
+      }
+
+      Debug("NT_UndoEntry::end: finishing transaction \""+name+"\""+(bModified?" *MOD*.":"."));
+
+      return bModified;
+   }
+
+   module method calcMemUsage() : int {
+      int r = 0;
+
+      // Controllers
+      Envelope *envOrig;
+      foreach envOrig in controllers
+      {
+         r += envOrig.numElements * 4;
+      }
+
+      if(null != node_state)
+      {
+         r += node_state.size;
+      }
+
+      return r;
+   }
+
+   module method prepareRedoFrom(NT_UndoEntry _e) {
+      NT_Track *track;
+
+      // trace "xxx prepareRedoFrom: _e="+_e.getDebugString();
+
+      saveCursorAndSelection();
+      name = "undo redo";
+      orig_undo_entry <= deref _e;
+
+      // Create backups of controllers modified by _e
+      Envelope *env;
+      Envelope *envCur;
+      int i = 0;
+      foreach env in _e.controllers
+      {
+         envCur <= _e.getCtlEnvByLocIdx(i, true);
+         env <= new Envelope;
+         env = envCur;
+         controllers.add(#(deref env));
+         NT_UndoControllerLocation loc <= Object(_e.controller_locations[i]); // create copy of envelope location
+         controller_locations.add(#(deref loc));
+
+         // Next controller envelope
+         i++;
+      }
+
+      // Create backup of track layout, if modified by _e
+      if(0 != (_e.track_layouts.numElements))
+      {
+         int telTrackIdx = 0;
+         track_layouts.free();
+         PointerArray eLayouts <= _e.track_layouts;
+         loop(eLayouts.numElements)
+         {
+            if(null != eLayouts.get(telTrackIdx))
+            {
+               // Create copy of track layout
+               track <= parent_node.getTrack(telTrackIdx);
+               NT_TEL tel <= new NT_TEL;
+               tel.copyFrom(track.getTrackLayout());
+               track_layouts.add(#(deref tel));
+            }
+            else
+            {
+               track_layouts.add(null);
+            }
+            telTrackIdx++;
+         }
+
+         // // // trace "xxx prepareRedoFrom: copy track_layout";
+         // // track <= parent_node.getTrack(cursor_track);
+         // // // Create copy of track layout
+         // // // track_layout <= Object(track.getTrackLayout());
+         // // track_layout <= new NT_TEL;
+         // // track_layout.copyFrom(track.getTrackLayout());
+      }
+
+      // Create backup of meta+track data, if modified by _e
+      if(null != _e.mpat_data)
+      {
+         mpat_data <= new NT_MetaPattern;
+         mpat_data.patInit(parent_node, (_e.mpat_data.pat_nr));
+         mpat_data.b_clipboard = true;
+         mpat_data.patCopyFrom(parent_node.nodeGetPatternByIdx(_e.mpat_data.pat_nr), false/*bClear*/);
+      }
+
+      if(null != _e.node_state)
+      {
+         node_state <= new Buffer;
+         parent_node.nodeSaveStateToBuffer(node_state);
+         // trace "xxx prepareRedoFrom: node_state.size="+node_state.size;
+      }
+   }
+
+   module method unlinkOrigUndoEntry() : NT_UndoEntry {
+      return deref orig_undo_entry;
+   }
+
+   module method undo(boolean _bRestoreCursor) {
+
+      NT_Track *track;
+
+      Debug("NT_UndoEntry: undo transaction \""+name+"\". this="+getDebugString()+" bRestoreCursor="+_bRestoreCursor);
+
+      int i;
+      Envelope *env;
+      Envelope *envOrig;
+
+      if(null != node_state)
+      {
+         Debug("NT_UndoEntry: undo node_state");
+         SongFileReader.InitIdentityOutDevIdxMap();
+         node_state.offset = 0;
+         parent_node.nodeLoadState(node_state,
+                                   MSongFileReader.piperoot_outdevidxmap,
+                                   MSongFileReader.piperoot_outdevusecount
+                                   );
+      }
+      else
+      {
+         if(null != mpat_data)
+         {
+            Debug("NT_UndoEntry: undo mpat+track data");
+            NT_MetaPattern mpatDst <= parent_node.getMetaPattern(mpat_data.pat_nr);
+            mpatDst.patCopyFrom(mpat_data, false/*bClear*/);
+         }
+
+         if(0 != track_layouts.numElements)
+         {
+            Debug("NT_UndoEntry: undo track_layout(s)");
+            int telTrackIdx = 0;
+            loop(track_layouts.numElements)
+            {
+               NT_TEL undoTEL <= track_layouts.get(telTrackIdx);
+               if(null != undoTEL)
+               {
+                  track <= parent_node.getTrack(telTrackIdx);
+                  if(null != track)
+                  {
+                     NT_TEL tel <= track.getTrackLayout();
+                     tel.copyFrom(undoTEL);
+                  }
+               }
+               telTrackIdx++;
+            }
+         }
+
+         i = 0;
+         foreach envOrig in controllers
+         {
+            // trace "xxx i="+i+" envOrig="+#(envOrig);
+
+            env <= getCtlEnvByLocIdx(i, true/*re-create env in case it has been deleted*/);
+            env = envOrig;
+
+            // Next modified pattern controller envelope
+            i++;
+         }
+
+         // Restore cursor position
+         if(_bRestoreCursor)
+         {
+            // // NT_PatternView pv <= parent_node.pattern_view;
+
+            parent_node.nodeSetCurrentEditPatternNr(pat_nr);
+
+            parent_node.pv_cursor_track = cursor_track;
+            parent_node.pv_track_shift  = cursor_track_shift;
+            // pv.cursor_x          = cursor_x;
+            parent_node.pv_cursor_x = cursor_x;
+            // trace "xxx undo::undo: restore cursor_x="+cursor_x;
+            parent_node.setEditOffset(cursor_song_position);
+
+            // Restore pattern block selection
+            parent_node.pv_block_start_pat_offset   = pv_block_start_pat_offset;
+            parent_node.pv_block_start_cursor_track = pv_block_start_cursor_track;
+            parent_node.pv_block_start_cursor_x     = pv_block_start_cursor_x;
+
+            parent_node.pv_block_end_pat_offset   = pv_block_end_pat_offset;
+            parent_node.pv_block_end_cursor_track = pv_block_end_cursor_track;
+            parent_node.pv_block_end_cursor_x     = pv_block_end_cursor_x;
+         }
+      }
+   }
+
+   public method getDebugString() : String {
+      return name+":p:"+((null != mpat_data)?1:0)+":c"+countControllerModifications()+":l"+countTrackLayoutModifications()+":n"+((null != node_state)?1:0);////+" "+#(this)+" orig_undo_entry="+#(orig_undo_entry);
+   }
+
+}
+
+
+class NT_UndoStack {
+
+   NodeTracker *parent_node;
+   PointerArray entries; // SubSongUndoEntry instances
+   PointerArray redo_entries; // SubSongUndoEntry instances
+   int total_mem_usage;
+
+
+   public method init(NodeTracker _parentNode) {
+      parent_node <= _parentNode;
+
+      entries.alloc(STConfig.node_tracker_undo_stack_size);
+   }
+
+   public method empty() {
+
+      Debug("NT_UndoStack::empty() called");
+
+      entries.empty();
+      redo_entries.empty();
+
+      total_mem_usage = 0;
+   }
+
+   public method isEmpty() : boolean {
+      return entries.isEmpty();
+   }
+
+   public method allocEntry() : NT_UndoEntry {
+      // trace "xxx NT_Undo::allocEntry";
+
+      // Discard oldest entry if stack is about to overflow
+      if(entries.numElements == entries.maxElements)
+      {
+         NT_UndoEntry e <= entries[0];
+         total_mem_usage -= e.calcMemUsage();
+         entries.delete(0);
+      }
+
+      local NT_UndoEntry r;
+      entries.add(#(deref r));
+      r.init(parent_node);
+
+      redo_entries.empty();
+
+      return r;
+   }
+
+   public method endEntry(NT_UndoEntry _e) : boolean {
+      boolean ret = true;
+      NT_UndoEntry e <= entries.get(entries.numElements - 1);
+      if(@(e) == @(_e))
+      {
+         if(!e.end())
+         {
+            // Discard last entry (e) if nothing was actually modified
+            entries.numElements = entries.numElements - 1;
+            ret = false;
+         }
+         else
+         {
+            total_mem_usage += e.calcMemUsage();
+         }
+
+         Float kb = (total_mem_usage / 1024.0f);
+
+         Debug("NT_UndoStack::endEntry: #entries="+entries.numElements+" ("+kb.printf("%.2f")+" KBytes)");
+      }
+      else
+      {
+         trace "[---] NT_UndoStack::endEntry: internal error: _e is not the current stack entry !!!";
+         _e.end();
+      }
+      return ret;
+   }
+
+   public method getDebugString() : String {
+      String r;
+      r.empty();
+
+      r.append("redo-stack:\n");
+      int i = 0;
+      NT_UndoEntry *e;
+      foreach e in redo_entries
+      {
+         r.append("["+i+"]:\""+e.getDebugString()+"\n");
+
+         // Next entry
+         i++;
+      }
+
+      r.append("\n\n--------------------------------\nundo-stack:\n");
+      i = 0;
+      foreach e in entries
+      {
+         r.append("["+i+"]:\""+e.getDebugString()+"\n");
+
+         // Next entry
+         i++;
+      }
+
+      Float kb = (total_mem_usage / 1024.0f);
+
+      r.append("\nmemory usage: "+kb.printf("%.2f")+" KBytes\n");
+
+      return r;
+   }
+
+   public =replay= method undo(boolean _bRestoreCursor) {
+
+      // trace "xxx -------------------------------------------- undo";
+      // trace "xxx stacks:\n"+getDebugString();
+
+      if(entries.numElements)
+      {
+         NT_UndoEntry e <= entries[entries.numElements - 1];
+
+         // Remove from undo stack
+         e <= entries.getDeref(entries.numElements - 1);
+
+         total_mem_usage -= e.calcMemUsage();
+
+         // Create redo-entry that restores the modifications done by undo entry
+         NT_UndoEntry re <= new NT_UndoEntry;
+         re.init(parent_node);
+         re.prepareRedoFrom(deref e); // 'e' becomes orig_undo_entry (for undo after redo)
+         redo_entries.add(#(deref re));
+
+         e.undo(_bRestoreCursor);
+
+         entries.delete(entries.numElements - 1);
+
+         Global.SuccessShort("cmd_edit_undo: undone !");
+      }
+      else
+      {
+         Global.Warning("cmd_edit_undo: nothing to undo.");
+      }
+   }
+
+   public =replay= method redo() {
+
+      // trace "xxx -------------------------------------------- redo";
+      // trace "xxx stacks:\n"+getDebugString();
+
+      if(redo_entries.numElements)
+      {
+         NT_UndoEntry *e;
+
+         int redoIdx = redo_entries.numElements - 1;
+
+         e <= redo_entries[redoIdx];
+
+         // Redo
+         e.undo(true/*_bRestoreCursor*/);
+         total_mem_usage += e.calcMemUsage();
+
+         // Remove from redo stack
+         e <= redo_entries.getDeref(redoIdx);
+         redo_entries.delete(redoIdx);
+
+         e <= e.unlinkOrigUndoEntry(); // get undo-entry for last redo entry
+
+         // Add undo entry
+         entries.add(#(deref e));
+
+         // Global.RedrawAll();
+
+         Global.SuccessShort("NT_UndoStack: redone !");
+      }
+      else
+      {
+         Global.Warning("NT_UndoStack: nothing to redo.");
+      }
+   }
+
+}

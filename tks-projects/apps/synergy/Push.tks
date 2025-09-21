@@ -1,0 +1,1961 @@
+// ----
+// ---- file   : Push.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2018 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 15Sep2014, 16Sep2014, 19Sep2014, 20Sep2014, 22Sep2014, 23Sep2014, 29Sep2014
+// ----          25Nov2014, 26Jul2015, 24Sep2015, 25Sep2015, 27Sep2015, 28Sep2015, 29Sep2015
+// ----          02Oct2015, 04Oct2015, 12Nov2015, 14Nov2015, 13Mar2016, 16Jun2017, 17Jun2017
+// ----          02Nov2017, 04Jan2018
+// ----
+// ----
+// ----
+module MPush;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug = false;
+
+
+// <class.png>
+class PushPadState {
+   byte color;      // current color
+   byte dev_color;  // last color sent to device
+
+   byte active_color;
+   byte inactive_color;
+
+   int timeout;
+
+   int  blink_interval_on; // -1=blinking off, 0=no blinking, restore orig color, >=1: blink
+   int  blink_interval_off;
+   int  blink_count;
+   byte blink_color;
+   byte blink_color_bak;
+   int  blink_group;
+
+   ///MIDIMapContext *owner;  // set by mergePadColors()
+   Object owner;
+
+
+   public method init() {
+      color = 0;
+      dev_color = 255;
+
+      active_color = 0;
+      inactive_color = 0;
+
+      timeout = 0;
+
+      blink_interval_on  = -1;
+      blink_interval_off = -1;
+      blink_group = -1;
+   }
+
+   public method blinkUpdate(boolean _bInc) {
+      if(0 == blink_interval_on)
+      {
+         color = blink_color_bak;
+         blink_interval_on = -1;
+         blink_group = -1;
+      }
+      else if(blink_interval_on >= 1)
+      {
+         if(_bInc)
+         {
+            blink_count++;
+
+            if(blink_count >= blink_interval_on)
+            {
+               if(blink_count >= (blink_interval_on + blink_interval_off))
+               {
+                  // On
+                  // // ps.blink_color_bak = ps.color;
+                  color = blink_color;
+                  blink_count = 0;
+               }
+               else if(blink_count == blink_interval_on)
+               {
+                  // Off
+                  color = blink_color_bak;
+               }
+            }
+         }
+         else
+         {
+            color = (blink_count < blink_interval_on) ? blink_color : blink_color_bak;
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class PushDefs {
+
+   define int MODE_MMC  = 0;  // regular MIDI Map Context mode
+   define int MODE_KBD  = 1;  // keyboard mode (play notes)
+   define int MODE_CTL  = 2;  // controller mode (see PageCtlTag)
+   define int MODE_USR  = 3;  // user defined mode
+   define int NUM_MODES = 4;
+
+   StringArray mode_names = ["MMC", "Kbd", "Ctl", "Usr"];
+
+   define int LCD_RESTORE_TIMEOUT = 90;
+
+   define int LED_OFF             = 0;
+   define int LED_DIM             = 1;
+   define int LED_DIM_BLINK_SLOW  = 2;
+   define int LED_DIM_BLINK_FAST  = 3;
+   define int LED_FULL            = 4;
+   define int LED_FULL_BLINK_SLOW = 5;
+   define int LED_FULL_BLINK_FAST = 6;
+
+   // (note) equals MIDIMapDefs.DPY_xxx
+   define int BT_DEFAULT = 0;  // Default button
+   define int BT_ADD     = 1;  // Button that adds sth
+   define int BT_REMOVE  = 2;  // Button that removes sth
+   define int BT_WARN    = 3;  // Button that removes sth
+
+   // Top row encoders
+   define int CC_ENC_1 = 71;
+   define int CC_ENC_2 = 72;
+   define int CC_ENC_3 = 73;
+   define int CC_ENC_4 = 74;
+   define int CC_ENC_5 = 75;
+   define int CC_ENC_6 = 76;
+   define int CC_ENC_7 = 77;
+   define int CC_ENC_8 = 78;
+   define int CC_ENC_9 = 79;
+
+   define int BT_ENC_1 = 0;
+   define int BT_ENC_2 = 1;
+   define int BT_ENC_3 = 2;
+   define int BT_ENC_4 = 3;
+   define int BT_ENC_5 = 4;
+   define int BT_ENC_6 = 5;
+   define int BT_ENC_7 = 6;
+   define int BT_ENC_8 = 7;
+   define int BT_ENC_9 = 8;
+
+   static StringArray color_names = [
+      // (todo) fill in color names
+      "0: Blank",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31",
+      "32",
+      "33",
+      "34",
+      "35",
+      "36",
+      "37",
+      "38",
+      "39",
+      "40",
+      "41",
+      "42",
+      "43",
+      "44",
+      "45",
+      "46",
+      "47",
+      "48",
+      "49",
+      "50",
+      "51",
+      "52",
+      "53",
+      "54",
+      "55",
+      "56",
+      "57",
+      "58",
+      "59",
+      "60",
+      "61",
+      "62",
+      "63",
+      "64",
+      "65",
+      "66",
+      "67",
+      "68",
+      "69",
+      "70",
+      "71",
+      "72",
+      "73",
+      "74",
+      "75",
+      "76",
+      "77",
+      "78",
+      "79",
+      "80",
+      "81",
+      "82",
+      "83",
+      "84",
+      "85",
+      "86",
+      "87",
+      "88",
+      "89",
+      "90",
+      "91",
+      "92",
+      "93",
+      "94",
+      "95",
+      "96",
+      "97",
+      "98",
+      "99",
+      "100",
+      "101",
+      "102",
+      "103",
+      "104",
+      "105",
+      "106",
+      "107",
+      "108",
+      "109",
+      "110",
+      "111",
+      "112",
+      "113",
+      "114",
+      "115",
+      "116",
+      "117",
+      "118",
+      "119",
+      "120",
+      "121",
+      "122",
+      "123",
+      "124",
+      "125",
+      "126",
+      "127"
+                                     ];
+
+
+
+}
+
+
+// <class.png>
+class Push extends PushDefs, MIDIMapDefs {
+
+   STX_MIDIInDevice *indev;
+   STX_MIDIOutDevice *outdev;
+
+   protected Buffer buf;
+
+   protected boolean b_pad_update; // true while pad update in progress. see padUpdateBegin(), padUpdateEnd()
+
+   public IntArray bt_a_pal = [
+      1,
+      2,
+      3,
+      4
+                                  ];
+
+   public IntArray bt_b_pal = [
+      5,
+     11, // add (green)
+      8,  // remove (red)
+     10
+
+                                  ];
+
+   protected PointerArray pad_states; // PushPadState instances
+
+   protected PointerArray enc_owners; // MIDIMapContext references. Set by lcdTextEncCellLabel()
+
+   define int COLOR_MODE_CONTEXT      = 0;  // colors according to map context
+   define int COLOR_MODE_EDIT_COLORS  = 1;  // edit 'active' or 'inactive' pad colors
+   //define int MODE_NOTES = 3;
+   //define int MODE_USER  = 4;
+
+   protected String lcd_state;
+   protected String lcd_state_dev;
+
+   protected int lcd_restore_timeout;
+   protected String last_status_message;
+
+   public int color_mode;
+
+   protected IntArray *edit_colors_active;
+   protected IntArray *edit_colors_inactive;
+   protected IntArray *edit_colors;           // ref to either active or inactive color set
+
+   protected byte current_fg_color;
+   protected byte current_bg_color;
+   protected byte color_scroll_offset;
+
+   protected boolean b_colorpicker;
+   protected boolean b_colorpicker_bg;
+
+   define int DRAW_MODE_PENCIL  = 0;
+   define int DRAW_MODE_RECT    = 1;
+   define int DRAW_MODE_REPLACE = 2;
+   protected int draw_mode;
+   protected int draw_rect_startcell;
+
+   protected boolean b_eraser;
+   protected boolean b_erase_transp; // fill with 255 instead of bgcolor
+   protected boolean b_copy_color;
+
+   protected int num_active_timers;
+
+   protected int pad_refresh_count;
+   protected int songpos_refresh_count;
+
+
+   // <midi.png>
+   protected method sendBuf() {
+      if(buf.offset > 0)
+      {
+         if(null != outdev.midiout)
+         {
+            outdev.begin();
+            outdev.addBuffer(buf);
+            outdev.send(milliSeconds());
+         }
+      }
+   }
+
+   // <api.png>
+   public method clearPads() {
+      // trace "xxx Push::clearPads";
+      byte padNoteNr = 0x24;
+      buf.offset = 0;
+      PushPadState *ps;
+      foreach ps in pad_states
+      {
+         buf.i8 = 0x90;
+         buf.i8 = padNoteNr++;
+         buf.i8 = 0;
+         ps.dev_color = 0;
+         ps.color = 0;
+         ps.timeout = 0;
+      }
+      sendBuf();
+   }
+
+   // <api.png>
+   public method clearPadStates() {
+      // trace "xxx Push::clearPadStates";
+      PushPadState *ps;
+      foreach ps in pad_states
+      {
+         ps.color = 0;
+         ps.timeout = 0;
+         ps.blink_interval_on  = -1;
+         ps.blink_interval_off = -1;
+      }
+   }
+
+   // <method.png>
+   protected method blinkPads() {
+      // Called in fixed intervals via handleReplayTimer()
+
+      PushPadState *ps;
+
+      foreach ps in pad_states
+      {
+         ps.blinkUpdate(true/*bInc*/);
+      }
+   }
+
+   // <api.png>
+   public method updatePads() {
+      // trace "xxx updatePads: b_pad_update="+b_pad_update;
+      if(STConfig.b_push && !b_pad_update)
+      {
+         byte padNoteNr = 0x24;
+         buf.offset = 0;
+
+         PushPadState *ps;
+
+         foreach ps in pad_states
+         {
+            //if(0 != ps.color)
+               // trace "xxx updatePads: padNoteNr="+padNoteNr+" ps.color="+ps.color+" ps.dev_color="+ps.dev_color;
+            if(ps.color != ps.dev_color)
+            {
+               ps.dev_color = ps.color;
+               buf.i8 = 0x90;
+               buf.i8 = padNoteNr;
+               buf.i8 = ps.color & 127;
+
+               // trace "xxx send pad="+padNoteNr+" color="+ps.color;
+            }
+
+            padNoteNr++;
+         }
+         sendBuf();
+      }
+   }
+
+   // <api.png>
+   public method padUpdateBegin() {
+      b_pad_update = true;
+
+      // trace "xxx Push::padUpdateBegin";
+   }
+
+   // <api.png>
+   public method padUpdateEnd() {
+      b_pad_update = false;
+
+      updatePads();
+
+      // trace "xxx Push::padUpdateEnd";
+   }
+
+   // public method restorePadColors() {
+   //    // According to current map context
+   //    updatePads();
+   // }
+
+   // <api.png>
+   public method mergePadColors(IntArray _colors, MIDIMapContext _owner) {
+      PushPadState *ps;
+
+      int matIdx = 0;
+
+      // trace "xxx mergePadColors: colors="+#(_colors);
+
+      if(_colors.numElements > 0)
+      {
+         foreach ps in pad_states
+         {
+            int col = _colors.get(matIdx);
+
+            if(255 != (col&255))
+            {
+               ps.color = col;
+               ps.owner <= _owner;
+            }
+
+            matIdx++;
+         }
+
+         updatePads();
+      }
+   }
+
+   // <api.png>
+   public method blinkPadEnable(byte _padIdx, byte _color, int _intervalOn, int _intervalOff, boolean _bForceRestart) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      if(null != ps)
+      {
+         ps.blink_color = _color;
+         if(_bForceRestart || (ps.blink_interval_on <= 0))
+         {
+            if(ps.blink_interval_on <= 0)
+            {
+               ps.blink_color_bak = ps.color;
+            }
+            ps.color = _color;
+            ps.blink_count = 0;
+         }
+         else
+         {
+            // Continue blinking
+            // trace "xxx continue blinking padIdx="+_padIdx+" ps.blink_count="+ps.blink_count+" col="+ps.color+" colBlink="+ps.blink_color+" colBak="+ps.blink_color_bak;
+            ps.blinkUpdate(false/*bInc*/);
+            // if(ps.blink_count < ps.blink_interval_on)
+            // {
+            //    ps.color = ps.blink_color;
+            // }
+         }
+         ps.blink_interval_on  = _intervalOn;
+         ps.blink_interval_off = _intervalOff;
+      }
+   }
+
+   // <api.png>
+   public method blinkPadSetGroup(byte _padIdx, int _group) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      if(null != ps)
+      {
+         ps.blink_group = _group;
+      }
+   }
+
+   // <api.png>
+   public method blinkPadSynchronizeGroup(int _group) {
+      PushPadState *ps;
+
+      int ival = -1;
+
+      foreach ps in pad_states
+      {
+         if(ps.blink_group == _group)
+         {
+            if(-1 == ival)
+            {
+               ival = ps.blink_count;
+            }
+            else
+            {
+               ps.blink_count = ival;
+            }
+         }
+      }
+   }
+
+   // <api.png>
+   public method blinkPadDisable(byte _padIdx) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      if(null != ps)
+      {
+         if(-1 != ps.blink_interval_on)
+         {
+            ps.blink_interval_on = 0;
+            ps.blink_interval_off = 0;
+         }
+      }
+   }
+
+   // <api.png>
+   public method blinkPadDisableRange(byte _padIdxStart, byte _padIdxEnd) {
+      int padIdx = _padIdxStart;
+      if(_padIdxEnd >= _padIdxStart)
+      {
+         while(padIdx <= _padIdxEnd)
+         {
+            blinkPadDisable(padIdx++);
+         }
+      }
+   }
+
+   // <api.png>
+   public method blinkPadDisableRangeExcept(byte _padIdxStart, byte _padIdxEnd, IntArray _except) {
+      int padIdx = _padIdxStart;
+      if(_padIdxEnd >= _padIdxStart)
+      {
+         while(padIdx <= _padIdxEnd)
+         {
+            if(!_except.contains(padIdx))
+               blinkPadDisable(padIdx);
+            padIdx++;
+         }
+      }
+   }
+
+   // <api.png>
+   public method setSinglePadColor(byte _padIdx, byte _color) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      if(null != ps)
+      {
+         ps.color = _color;
+         ps.blink_color_bak = _color;
+         ps.timeout = 0;
+      }
+   }
+
+   // <api.png>
+   public method setSinglePadColorAndOwner(byte _padIdx, byte _color, MIDIMapContext _owner) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      // trace "xxx setSinglePadColorAndOwner: padIdx="+_padIdx+" owner="+#(_owner);
+      if(null != ps)
+      {
+         ps.color = _color;
+         ps.blink_color_bak = _color;
+         ps.timeout = 0;
+         ps.owner <= _owner;
+      }
+   }
+
+   // <api.png>
+   public method setSinglePadColorIfOwnedBy(byte _padIdx, byte _color, MIDIMapContext _owner) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      if(null != ps)
+      {
+         // trace "xxx setSinglePadColorIfOwnedBy: padIdx="+_padIdx+" ps.owner="+#(ps.owner)+" _owner="+#(_owner);
+         if(@(ps.owner) == @(_owner))
+         {
+            ps.color = _color;
+            ps.blink_color_bak = _color;
+            ps.timeout = 0;
+         }
+      }
+   }
+
+   // <api.png>
+   public method updateSinglePadColor(byte _padIdx, byte _color) {
+      setSinglePadColor(_padIdx, _color);
+      updatePads();
+   }
+
+   // <api.png>
+   public method setSinglePadColorTimeout(byte _padIdx, byte _color, byte _colorTO) {
+
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      // trace "xxx Push::setSinglePadColorTimeout: padIdx="+_padIdx;
+
+      if(null != ps)
+      {
+         ps.color = _color;
+         ps.inactive_color = _colorTO;
+         ps.timeout = 2;
+         num_active_timers++;
+      }
+   }
+
+   // <api.png>
+   public method updateSinglePadColorTimeout(byte _padIdx, byte _color, byte _colorTO) {
+      // trace "xxx Push::updateSinglePadColorTimeout: padIdx="+_padIdx+" color="+_color+" colorTO="+_colorTO;
+      setSinglePadColorTimeout(_padIdx, _color, _colorTO);
+      updatePads();
+   }
+
+   // <api.png>
+   public method cancelSinglePadColorTimeout(byte _padIdx) {
+      PushPadState ps <= pad_states.get(_padIdx);
+
+      if(null != ps)
+      {
+         ps.timeout = 0;
+      }
+   }
+
+   // <ui_timer.png>
+   public method handleReplayTimer() {
+      if(num_active_timers > 0)
+      {
+         num_active_timers = 0;
+         PushPadState *ps;
+         int padIdx = 0;
+
+         foreach ps in pad_states
+         {
+            if(ps.timeout > 0)
+            {
+               ps.timeout--;
+
+               if(0 == ps.timeout)
+               {
+                  updateSinglePadColor(padIdx, ps.inactive_color);
+               }
+               else
+               {
+                  num_active_timers++;
+               }
+            }
+
+            padIdx++;
+         }
+      }
+
+      boolean bUpdateLCD = false;
+
+      if(0 == (++songpos_refresh_count & (1 * (current_song.ppq / 192))))
+      {
+         char c = lcd_state.getc(17*4*3 + 0);
+
+         if((' ' == c) || ('[' == c)) // xxx hack
+         {
+            lcdTextCell(3, 0,
+                        "["+RootForm.GetSongPosString(current_song.getSongOffset())+"]"
+                        );
+
+            bUpdateLCD = true;
+         }
+      }
+
+
+      if(lcd_restore_timeout > 0)
+      {
+         // trace "xxx lcd_restore_timeout="+lcd_restore_timeout;
+
+         if(0 == --lcd_restore_timeout)
+         {
+            int row = 0;
+            String sRow;
+
+            loop(4)
+            {
+               lcd_state.substring(row * (17 * 4), (17 * 4)) => sRow;
+
+               lcdTextSend(row, 0, sRow);
+
+               row++;
+            }
+         }
+      }
+
+      if(0 == (++pad_refresh_count & (1 * (current_song.ppq / 384.0))))
+      {
+         blinkPads();
+         updatePads();
+      }
+
+      if(bUpdateLCD)
+      {
+         updateLCD();
+      }
+   }
+
+   // <api.png>
+   public method btASet(int _btIdx, int _palIdx, int _state) : byte {
+
+      if(0 <= _btIdx <= 7)
+      {
+         buf.offset = 0;
+
+         buf.i8 = 0xB0;
+         buf.i8 = 20 + _btIdx;
+
+         if(LED_OFF == _state)
+         {
+            buf.i8 = 0;
+         }
+         else
+         {
+            buf.i8 = (bt_a_pal.get(_palIdx)*7) | _state;
+         }
+
+         sendBuf();
+      }
+   }
+
+   // <api.png>
+   public method btBSet(int _btIdx, int _palIdx, int _state) : byte {
+
+      if(0 <= _btIdx <= 7)
+      {
+         buf.offset = 0;
+
+         buf.i8 = 0xB0;
+         buf.i8 = 102 + _btIdx;
+
+         if(LED_OFF == _state)
+         {
+            buf.i8 = 0;
+         }
+         else
+         {
+            buf.i8 = (bt_b_pal.get(_palIdx)*7) | _state;
+         }
+
+         sendBuf();
+      }
+   }
+
+   // <method.png>
+   public method initButtonLEDs(int _otherLEDState) {
+
+      buf.offset = 0;
+
+      // Turn off pad LEDs
+      int noteNr = 0x24;
+
+      loop(64)
+      {
+         buf.i8 = 0x90;
+         buf.i8 = noteNr;
+         buf.i8 = 0;//(noteNr - 0x24);
+         // LEDColor(LED_COLOR_0,
+         //                   //LED_INTENSITY_DIM,
+         //                   LED_INTENSITY_FULL,
+         //                   //LED_BLINK_STEADY
+         //                   LED_BLINK_STEADY
+         //                   );
+         noteNr++;
+      }
+
+      // Turn on button LEDs
+      int ccNr = 0;
+
+      loop(128)
+      {
+         if( (20 <= ccNr <= 27) || (102 <= ccNr <= 109) )
+         {
+            // Buttons under display
+            //buf.i8 = LED_BUTTON_DIM | (3 << 3);
+            ////int color = 3;
+            ////int intensity = 1; // dim(0) or lit(1)
+            ////int blink = 1;     // 0(steady), 1(slow), 2(fast)
+            ////int enable = 1;
+            ////buf.i8 = ((ccNr-20) << 5) | ((intensity * 3) + blink + enable);
+         }
+         else
+         {
+            // Other buttons
+            buf.i8 = 0xB0;
+            buf.i8 = ccNr;
+            buf.i8 = _otherLEDState;
+         }
+
+         ccNr++;
+      }
+
+      sendBuf();
+
+      // Init buttons under display
+      int btIdx = 0;
+      loop(8)
+      {
+         btASet(btIdx, BT_DEFAULT, LED_OFF);
+         btBSet(btIdx, BT_DEFAULT, LED_OFF);
+
+         btIdx++;
+      }
+   }
+
+   // <method.png>
+   public method lcdFillRowSend(int _row, char _c) {
+      buf.offset = 0;
+
+      buf.i8 = 0xF0;
+      buf.i8 = 0x47;
+      buf.i8 = 0x7f;
+      buf.i8 = 0x15;
+      buf.i8 = 0x18 + _row;
+      buf.i8 = 0x00;
+      buf.i8 = 0x45;
+      buf.i8 = 0x00;
+
+      loop(68)
+      {
+         buf.i8 = _c;
+      }
+
+      buf.i8 = 0xF7;
+
+      sendBuf();
+
+      //" F0 47 7F 15 18 00 45 00 41 42 43 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 20 F7";
+   }
+
+   // <api.png>
+   public method lcdFillRow(int _row, char _c) {
+      int textOff = _row * (17 * 4);
+
+      loop(17 * 4)
+      {
+         lcd_state.putc(textOff++, _c);
+      }
+   }
+
+   // <method.png>
+   protected method lcdBlankRowSend(int _row) {
+
+      lcdFillRowSend(_row, ' ');
+   }
+
+   // <method.png>
+   protected method lcdBlankRowSendSmart(int _row, int _x) {
+
+      // Not very smart hack to not overwrite first column (song position)
+
+      if(_x >= 17)
+      {
+         buf.offset = 0;
+
+         buf.i8 = 0xF0;
+         buf.i8 = 0x47;
+         buf.i8 = 0x7f;
+         buf.i8 = 0x15;
+         buf.i8 = 0x18 + _row;
+         buf.i8 = 0x00;
+         buf.i8 = 0x45 - 17;
+         buf.i8 = 17;
+
+         loop(68-17)
+         {
+            buf.i8 = ' ';
+         }
+
+         buf.i8 = 0xF7;
+
+         sendBuf();
+      }
+      else
+      {
+         lcdFillRowSend(_row, ' ');
+      }
+   }
+
+   // <api.png>
+   public method lcdBlankRow(int _row) {
+
+      lcdFillRow(_row, ' ');
+   }
+
+   // <method.png>
+   protected method lcdTextSend(int _row, int _col, String _text) {
+
+      if(b_debug)
+         Global.Debug4("Push::LCDTextSend: ("+_row+";"+_col+") \""+_text+"\"");
+
+      if(null != _text)
+      {
+         if(_text.length > 1)
+         {
+            int l = _text.length > 68 ? 68 : _text.length - 1;
+
+            if(_col < 0)
+               _col = 0;
+
+            if( (_col + l) > 68 )
+            {
+               l = 68 - _col;
+            }
+
+            if(l > 0)
+            {
+               buf.offset = 0;
+
+               buf.i8 = 0xF0;
+               buf.i8 = 0x47;
+               buf.i8 = 0x7f;
+               buf.i8 = 0x15;
+               buf.i8 = 0x18 + _row;
+               buf.i8 = 0x00;
+               buf.i8 = l + 1;
+               buf.i8 = _col;
+
+               int i = 0;
+
+               loop(l)
+               {
+                  buf.i8 = _text.getc(i++);
+               }
+
+               buf.i8 = 0xF7;
+            }
+         }
+
+         sendBuf();
+      }
+   }
+
+   // <api.png>
+   public method lcdText(int _row, int _col, String _text) {
+      if(b_debug)
+         Global.Debug4("Push::LCDText: ("+_row+";"+_col+") \""+_text+"\"");
+
+      if(null != _text)
+      {
+         if(_text.length > 1)
+         {
+            int l = _text.length > 68 ? 68 : _text.length - 1;
+
+            if(_col < 0)
+               _col = 0;
+
+            if( (_col + l) > 68 )
+            {
+               l = 68 - _col;
+            }
+
+            if(l > 0)
+            {
+               int textOff = _row * (17 * 4) + _col;
+               int i = 0;
+
+               loop(l)
+               {
+                  lcd_state.putc(textOff++, _text.getc(i++));
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method lcdTextCellSend(int _y, int _x, String _text) {
+
+      if(_text.length > 17)
+      {
+         lcdTextSend(_y, _x*17, _text.substring(0, 17));
+      }
+      else
+      {
+         lcdTextSend(_y, _x*17, "                 ");
+         lcdTextSend(_y, _x*17, _text);
+      }
+   }
+
+   // <api.png>
+   public method lcdTextCell(int _y, int _x, String _text) {
+
+      // trace "xxx lcdTextCell("+_y+";"+_x+" text=\""+_text+"\")";
+
+      if(_text.length > 17)
+      {
+         lcdText(_y, _x*17, _text.substring(0, 17));
+      }
+      else
+      {
+         lcdText(_y, _x*17, "                 ");
+         lcdText(_y, _x*17, _text);
+      }
+   }
+
+   // <api.png>
+   public method lcdTextEncCell(int _y, int _x, String _text) {
+
+      _x  = (_x >> 1) * 17 + (_x & 1) * 9;
+
+      if(_text.length > 17)
+      {
+         lcdText(_y, _x, _text.substring(0, 8));
+      }
+      else
+      {
+         lcdText(_y, _x, "        ");
+         lcdText(_y, _x, _text);
+      }
+   }
+
+   // <api.png>
+   public method lcdTextEncCellLabel(int _encIdx, String _label, MIDIMapContext _owner) {
+      lcdTextEncCell(0, _encIdx, _label);
+
+      enc_owners[_encIdx] = _owner;
+   }
+
+   // <api.png>
+   public method lcdStatusMessage(String _text, boolean _bNew) {
+
+      // (note) status messages do NOT change LCD state (overlay!)
+
+      if(_bNew)
+      {
+         lcd_restore_timeout = LCD_RESTORE_TIMEOUT;
+
+         last_status_message = _text;
+
+         lcdFillRowSend(2, ' ');
+      }
+
+      int c = (68 - _text.length) / 2;
+
+      if(c < 0)
+      {
+         // Text doesn't fit into row
+         lcdTextSend(2, 0, _text);
+      }
+      else
+      {
+         // Try to place words into cells
+         StringArray words <= _text.splitChar(' ');
+         String nt;
+         nt.empty();
+         String *w;
+         int tci = 0;
+         foreach w in words
+         {
+            int ci = tci % 17;
+
+            w.trim();
+
+            int wl = w.length - (0 == ci);
+
+            // trace "xxx w="+w+" tci="+tci+" ci="+ci+" wl="+wl;
+
+            if(0 != ci)
+            {
+               if((ci + wl) > 17)
+               {
+                  // Crosses cell boundary
+                  loop(17 -ci)
+                  {
+                     nt.append(" ");
+                     tci++;
+                  }
+
+                  wl--; // no space needed
+                  nt.append(w);
+                  tci += wl;
+               }
+               else
+               {
+                  // Fits into current cell
+                  nt.append(" ");
+                  nt.append(w);
+                  tci += wl;
+               }
+            }
+            else
+            {
+               nt.append(w);
+               tci += wl;
+            }
+         }
+
+         if(nt.length > 69)
+         {
+            // Does not fit, print original text
+            lcdBlankRowSendSmart(2, c);
+            lcdTextSend(2, c, _text);
+         }
+         else
+         {
+
+            String c1;
+            String c2;
+
+            if(tci <= 17)
+            {
+               words <= nt.splitChar(' ');
+
+               c1 = words.get(0);
+               c1.trim();
+
+               lcdBlankRowSendSmart(2, 34-(c1.length-1));
+
+               lcdTextSend(2, 34-(c1.length-1), c1);
+
+               if(2 == words.numElements)
+               {
+                  c2 = words.get(1);
+                  c2.trim();
+
+                  lcdTextSend(2, 34, c2);
+               }
+               else
+               {
+                  tci = 34;
+                  words.delete(0);
+                  foreach w in words
+                  {
+                     if(tci > 34)
+                     {
+                        lcdTextSend(2, tci, " ");
+                        tci++;
+                     }
+
+                     lcdTextSend(2, tci, w);
+                     tci += w.length-1;
+                  }
+               }
+               return;
+            }
+
+            if(tci < 34)
+            {
+               c1 = nt.substring(0, 17);
+               c2 = nt.substring(17, 17);
+
+               c1.trim();
+               c2.trim();
+
+               lcdBlankRowSendSmart(2, 34-(c1.length-1));
+
+               lcdTextSend(2, 34-(c1.length-1), c1);
+               lcdTextSend(2, 34, c2);
+               return;
+            }
+
+            if(tci < 51)
+            {
+               c1 = nt.substring(0, 17);
+               c2 = nt.substring(17, 34);
+
+               c1.trim();
+               c2.trim();
+
+               lcdBlankRowSendSmart(2, 34-(c1.length-1));
+
+               lcdTextSend(2, 34-(c1.length-1), c1);
+               lcdTextSend(2, 34, c2);
+               return;
+            }
+
+            if(nt.length <= 51)
+            {
+               lcdBlankRowSendSmart(2, 17);
+               lcdTextSend(2, 17, nt);
+            }
+            else
+            {
+               lcdBlankRowSend(2);
+               lcdTextSend(2, 0, nt);
+            }
+         }
+      }
+
+   }
+
+   // <api.png>
+   public method lcdLastStatusMessageToFront() {
+      if(lcd_restore_timeout > 0)
+      {
+         lcdStatusMessage(last_status_message, false/*bNew*/);
+      }
+   }
+
+   // <api.png>
+   public method updateLCD() {
+      int row = 0;
+      int textOff = 0;
+
+      loop(4)
+      {
+         int col = 0;
+
+         loop(4)
+         {
+            String newCell;
+            lcd_state.substring(textOff, 17) => newCell;
+
+            String curCell;
+            lcd_state_dev.substring(textOff, 17) => curCell;
+
+            if(newCell != curCell)
+            {
+               lcdTextCellSend(row, col, newCell);
+            }
+
+            textOff += 17;
+            col++;
+         }
+
+         row++;
+      }
+
+      lcdLastStatusMessageToFront();
+
+      lcd_state_dev = lcd_state;
+   }
+
+   // <init.png>
+   public method connect() : boolean {
+      if(STConfig.b_push)
+      {
+         indev  <= MIDI.GetMIDIInDeviceByAliasOrName ("Push");
+         outdev <= MIDI.GetMIDIOutDeviceByAliasOrName("Push");
+
+         if((null != indev) && (null != outdev))
+         {
+            outdev.b_ui_only = true;
+
+            buf.size = 4096;
+
+            // OK, Push ctl present
+
+            initButtonLEDs(LED_DIM);
+
+            lcd_state.empty();
+            lcd_state_dev.empty();
+            loop(4*4)
+            {
+               lcd_state    .append("                 ");
+               lcd_state_dev.append("?????????????????");
+            }
+
+            lcdBlankRow(0);
+            lcdBlankRow(1);
+            lcdBlankRow(2);
+            lcdBlankRow(3);
+
+            // LCDText(1, 2, "hello, world.");
+
+            // lcdText(1, 30, "Kiwi Composer");
+            // lcdText(2, 23, "Please play live to start..."); // :P
+
+            lcdTextCell(3, 3, Global.VERSION_STRING_PUSH);
+
+            color_mode = COLOR_MODE_CONTEXT;
+
+            draw_mode = DRAW_MODE_PENCIL;
+            draw_rect_startcell = -1;
+            current_fg_color = 25; // green
+            current_bg_color = 0;
+
+            // Initialize pads
+            pad_states.alloc(8*8);
+            loop(8*8)
+            {
+               PushPadState ps <= new PushPadState;
+               ps.init();
+               pad_states.add(#(deref ps));
+            }
+
+            // Initialize encoders
+            enc_owners.alloc(8);
+            enc_owners.useAll();
+
+            push_kbd.init();
+
+            updatePads();
+
+            updateLCD();
+
+            return true;
+         }
+         else
+         {
+            STConfig.b_push = false;
+            indev  <= null;
+            outdev <= null;
+         }
+      }
+
+      trace "[~~~] Push controller support deactivated.";
+
+      return false;
+   }
+
+   // <exit.png>
+   public method disconnect() {
+      if(STConfig.b_push)
+      {
+         initButtonLEDs(LED_OFF);
+
+         lcdBlankRow(0);
+         lcdBlankRow(1);
+         lcdBlankRow(2);
+         lcdBlankRow(3);
+
+         updateLCD();
+
+         clearPads();
+      }
+   }
+
+   // <method.png>
+   protected method handleFgColorChanged() {
+      Integer io = current_fg_color;
+      lcdTextCell(0, 0, "FG-Color: "+io.printf("%3d"));
+   }
+
+   // <method.png>
+   protected method handleBgColorChanged() {
+      Integer io = current_bg_color;
+      lcdTextCell(0, 1, "BG-Color: "+io.printf("%3d"));
+   }
+
+   // <method.png>
+   protected method showColorPicker() {
+      byte padNoteNr = 0x24;
+      byte colNr = color_scroll_offset;
+      buf.offset = 0;
+      PushPadState *ps;
+      foreach ps in pad_states
+      {
+         if(colNr > 127)
+            colNr = 127;
+
+         buf.i8 = 0x90;
+         buf.i8 = padNoteNr++;
+         buf.i8 = colNr;
+         ps.dev_color = colNr;
+         ps.color = colNr;
+
+         colNr++;
+      }
+      sendBuf();
+
+      b_colorpicker = true;
+
+      draw_rect_startcell = -1;
+
+      Global.Print("Show colorpicker.");
+   }
+
+   // <method.png>
+   protected method hideColorPicker() {
+
+      b_colorpicker = false;
+
+      clearPads();
+
+      mergePadColors(edit_colors, null/*owner*/);
+
+      Global.Print("Hide colorpicker.");
+   }
+
+   // <method.png>
+   protected method handleDraw(int _cellNr) {
+
+      if(DRAW_MODE_PENCIL == draw_mode)
+      {
+         if(b_eraser)
+         {
+            if(b_erase_transp)
+            {
+               edit_colors[_cellNr] = 255;
+            }
+            else
+            {
+               edit_colors[_cellNr] = current_bg_color;
+            }
+         }
+         else
+         {
+            edit_colors[_cellNr] = current_fg_color;
+         }
+
+         mergePadColors(edit_colors, null/*owner*/);
+      }
+      else if(DRAW_MODE_RECT == draw_mode)
+      {
+         if(-1 == draw_rect_startcell)
+         {
+            draw_rect_startcell = _cellNr;
+
+            Global.Print("Rectangle start cell is ("+((7-(_cellNr>>3))+1)+";"+((_cellNr&7)+1)+").");
+         }
+         else
+         {
+            Global.Print("Draw rectangle from ("+((7 - (draw_rect_startcell>>3))+1)+";"+((draw_rect_startcell&7)+1)+") to ("+((7-(_cellNr>>3))+1)+";"+((_cellNr&7)+1)+").");
+
+            int px = draw_rect_startcell & 7;
+            int py = draw_rect_startcell >> 3;
+
+            int qx = _cellNr & 7;
+            int qy = _cellNr >> 3;
+
+            int t;
+
+            if(px > qx)
+            {
+               t = px;
+               px = qx;
+               qx = t;
+            }
+
+            if(py > qy)
+            {
+               t = py;
+               py = qy;
+               qy = t;
+            }
+
+            int w = (qx - px) + 1;
+            int h = (qy - py) + 1;
+
+            int cy = py;
+            loop(h)
+            {
+               int cx = px;
+               loop(w)
+               {
+                  edit_colors[cy*8 + cx] = b_eraser ? b_erase_transp ? 255 : current_bg_color : current_fg_color;
+                  cx++;
+               }
+               cy++;
+            }
+
+            mergePadColors(edit_colors, null/*owner*/);
+
+            draw_rect_startcell = -1;
+         }
+      }
+      else if(DRAW_MODE_REPLACE == draw_mode)
+      {
+         int oldCol = edit_colors[_cellNr];
+
+         int ri = 0;
+         loop(8*8)
+         {
+            if(edit_colors[ri] == oldCol)
+            {
+               edit_colors[ri] = b_eraser ? b_erase_transp ? 255 : current_bg_color : current_fg_color;
+            }
+
+            ri++;
+         }
+
+         mergePadColors(edit_colors, null/*owner*/);
+      }
+   }
+
+   // <method.png>
+   protected method handleEvColors(MIDIMapEvent _ev) {
+      if(TYPE_NOTE_ON == _ev.type)
+      {
+         if(b_colorpicker)
+         {
+            if(0x24 <= _ev.arg1 < (0x24 + 8*8))
+            {
+               if(b_colorpicker_bg)
+               {
+                  current_bg_color = (_ev.arg1 - 0x24) + color_scroll_offset;
+
+                  Global.Print("Selected background color "+current_bg_color+".");
+
+                  handleBgColorChanged();
+               }
+               else
+               {
+                  current_fg_color = (_ev.arg1 - 0x24) + color_scroll_offset;
+
+                  Global.Print("Selected foreground color "+current_fg_color+".");
+
+                  handleFgColorChanged();
+               }
+
+            }
+         }
+         else
+         {
+            if(0x24 <= _ev.arg1 < (0x24 + 8*8))
+            {
+               if(b_copy_color)
+               {
+                  if(b_eraser)
+                  {
+                     current_bg_color = edit_colors[_ev.arg1 - 0x24];
+
+                     Global.Print("Copied background color "+current_bg_color+".");
+                  }
+                  else
+                  {
+                     current_fg_color = edit_colors[_ev.arg1 - 0x24];
+
+                     Global.Print("Copied foreground color "+current_fg_color+".");
+                  }
+               }
+               else
+               {
+                  handleDraw(_ev.arg1 - 0x24);
+               }
+            }
+            else if((0x00 == _ev.arg1) || (0x09 == _ev.arg1)) // enc#1 or #10 touch
+            {
+               b_colorpicker_bg = false;
+               showColorPicker();
+            }
+            else if(0x02 == _ev.arg1) // enc#3 touch
+            {
+               b_colorpicker_bg = true;
+               showColorPicker();
+            }
+            else if(0x03 == _ev.arg1) // enc#4 touch
+            {
+               b_eraser = true;
+               b_erase_transp = true;
+               Global.Print("Transparent eraser active");
+            }
+            else if(0x0a == _ev.arg1)
+            {
+               b_eraser = true;
+
+               Global.Print("Eraser active.");
+            }
+            else if(0x06 == _ev.arg1)
+            {
+               b_copy_color = true;
+
+               Global.Print("Copy color mode active.");
+            }
+         }
+      }
+      else if(TYPE_NOTE_OFF == _ev.type)
+      {
+         if( (0x09 == _ev.arg1) || (0x00 == _ev.arg1) || (0x02 == _ev.arg1) ) // enc#1 or #10 touch
+         {
+            hideColorPicker();
+         }
+         else if(0x0a == _ev.arg1)
+         {
+            b_eraser = false;
+
+            Global.Print("Eraser off.");
+         }
+         else if(0x03 == _ev.arg1) // enc#4 touch
+         {
+            b_eraser = false;
+            b_erase_transp = false;
+            Global.Print("Transparent eraser off");
+         }
+         else if(0x06 == _ev.arg1)
+         {
+            b_copy_color = false;
+
+            Global.Print("Copy color mode inactive.");
+         }
+      }
+      else if(TYPE_CC == _ev.type)
+      {
+         // trace "xxx cc arg1="+_ev.arg1+" arg2="+_ev.arg2;
+
+         if(CC_ENC_1 == _ev.ext_type)  // enc#1
+         {
+            current_fg_color = mathClampi(current_fg_color + ( (_ev.arg1 == 1) ? 1 : -1),
+                                          0,
+                                          127
+                                          );
+
+            Global.Print("Selected foreground color "+current_fg_color+".");
+
+            handleFgColorChanged();
+         }
+         else if(CC_ENC_3 == _ev.ext_type)  // enc#3
+         {
+            current_bg_color = mathClampi(current_bg_color + ( (_ev.arg1 == 1) ? 1 : -1),
+                                          0,
+                                          127
+                                          );
+
+            Global.Print("Selected background color "+current_bg_color+".");
+
+            handleBgColorChanged();
+         }
+         else if(104 == _ev.ext_type)
+         {
+            if(_ev.arg1 > 0)
+            {
+               draw_mode = DRAW_MODE_PENCIL;
+               draw_rect_startcell = -1;
+
+               lcdTextCell(3, 1, "Pencil*");
+               lcdTextCell(3, 2, "Rectangle");
+               lcdTextCell(3, 3, "Replace");
+
+               Global.Print("Pencil tool selected.");
+            }
+         }
+         else if(106 == _ev.ext_type)
+         {
+            if(_ev.arg1 > 0)
+            {
+               draw_mode = DRAW_MODE_RECT;
+               draw_rect_startcell = -1;
+
+               lcdTextCell(3, 1, "Pencil");
+               lcdTextCell(3, 2, "Rectangle*");
+               lcdTextCell(3, 3, "Replace");
+
+               Global.Print("Rectangle tool selected.");
+            }
+         }
+         else if(108 == _ev.ext_type)
+         {
+            if(_ev.arg1 > 0)
+            {
+               draw_mode = DRAW_MODE_REPLACE;
+               draw_rect_startcell = -1;
+
+               lcdTextCell(3, 1, "Pencil");
+               lcdTextCell(3, 2, "Rectangle");
+               lcdTextCell(3, 3, "Replace*");
+
+               Global.Print("Replace tool selected.");
+            }
+         }
+         else if(20 == _ev.ext_type)
+         {
+            if(_ev.arg1 > 0)
+            {
+               edit_colors <= edit_colors_active;
+               clearPads();
+               mergePadColors(edit_colors, null/*owner*/);
+               lcdTextCell(2, 0, "Active*");
+               lcdTextCell(3, 0, "Inactive");
+               Global.Print("Selected ACTIVE colors.");
+            }
+         }
+         else if(102 == _ev.ext_type)
+         {
+            if(_ev.arg1 > 0)
+            {
+               edit_colors <= edit_colors_inactive;
+               clearPads();
+               mergePadColors(edit_colors, null/*owner*/);
+               lcdTextCell(2, 0, "Active");
+               lcdTextCell(3, 0, "Inactive*");
+               Global.Print("Selected INACTIVE colors.");
+            }
+         }
+      }
+      else if(TYPE_PITCHBEND == _ev.type)
+      {
+         if(b_colorpicker)
+         {
+            // trace "xxx _ev.arg1 = "+_ev.arg1;
+
+            if(8192 != _ev.arg1) // release
+            {
+               color_scroll_offset = ( (_ev.arg1+1) >> 8) & ~7;
+
+               showColorPicker();
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method colorEditBegin(IntArray _colorsActive, IntArray _colorsInactive) {
+      color_mode = COLOR_MODE_EDIT_COLORS;
+
+      edit_colors_active   <= _colorsActive;
+      edit_colors_inactive <= _colorsInactive;
+      edit_colors <= edit_colors_inactive;
+
+      edit_colors_active.replace(255, 0);
+      edit_colors_inactive.replace(255, 0);
+
+      clearPads();
+
+      mergePadColors(edit_colors, null/*owner*/);
+
+      lcdBlankRow(0);
+      lcdBlankRow(1);
+      lcdBlankRow(2);
+      lcdBlankRow(3);
+
+      b_eraser = false;
+      b_erase_transp = false;
+      b_copy_color = false;
+      b_colorpicker = false;
+      draw_rect_startcell = -1;
+
+      handleFgColorChanged();
+      handleBgColorChanged();
+
+      lcdTextCell(2, 0, "Active");
+      lcdTextCell(3, 0, "Inactive*");
+
+      lcdTextCell(3, 1, "Pencil" + ((DRAW_MODE_PENCIL==draw_mode) ? "*":"") );
+      lcdTextCell(3, 2, "Rectangle" + ((DRAW_MODE_RECT==draw_mode) ? "*":"") );
+      lcdTextCell(3, 3, "Replace" + ((DRAW_MODE_REPLACE==draw_mode) ? "*":""));
+
+      lcdTextCell(0, 3, "Copy color");
+
+      btASet(0, BT_DEFAULT, LED_FULL);
+      btBSet(0, BT_DEFAULT, LED_DIM);
+
+      btBSet(2, BT_ADD,     LED_FULL);
+      btBSet(4, BT_ADD,     LED_FULL);
+      btBSet(6, BT_DEFAULT, LED_FULL);
+      btBSet(8, BT_REMOVE,  LED_FULL);
+
+      Global.Print("Push color edit mode activated.");
+   }
+
+   // <method.png>
+   public method colorEditEnd() {
+
+      if(COLOR_MODE_EDIT_COLORS == color_mode)
+      {
+         color_mode = COLOR_MODE_CONTEXT;
+
+         edit_colors_active.replace(0, 255);
+         edit_colors_inactive.replace(0, 255);
+
+         edit_colors_active   <= null;
+         edit_colors_inactive <= null;
+         edit_colors          <= null;
+
+         b_colorpicker = false;
+
+         lcdBlankRow(0);
+         lcdBlankRow(1);
+         lcdBlankRow(2);
+         lcdBlankRow(3);
+
+         btASet(0, BT_DEFAULT, LED_OFF);
+         btBSet(0, BT_DEFAULT, LED_OFF);
+
+         btBSet(2, BT_DEFAULT, LED_OFF);
+         btBSet(4, BT_DEFAULT, LED_OFF);
+         btBSet(6, BT_DEFAULT, LED_OFF);
+         btBSet(8, BT_DEFAULT, LED_OFF);
+
+         // restorePadColors();
+         clearPads();
+
+         Global.Print("Push color edit mode deactivated.");
+      }
+   }
+
+   // <api.png>
+   public method toggleEditColors(IntArray _colorsActive,
+                                  IntArray _colorsInactive
+                                  ) {
+      if(COLOR_MODE_EDIT_COLORS != color_mode)
+      {
+         colorEditBegin(_colorsActive, _colorsInactive);
+      }
+      else
+      {
+         colorEditEnd();
+      }
+
+      updateLCD();
+   }
+
+   // <midi_push.png>
+   public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      // (note) non-virtual method but has same signature as MIDIMapEventListener::mmlHandleEvent()
+
+      if(@(_ev.dev) == @(indev))
+      {
+         switch(color_mode)
+         {
+            case COLOR_MODE_EDIT_COLORS:
+               if(SYN_NONE == _ev.syn_type)
+               {
+                  handleEvColors(_ev);
+
+                  updateLCD();
+               }
+               return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public method getOwnerByPadIdx(int _padIdx) : Object {
+      PushPadState ps <= pad_states.get(_padIdx);
+      if(null != ps)
+      {
+         // trace "xxx Push::getOwnerByPadIdx: padIdx="+_padIdx+" ps.owner="+#(ps.owner);
+         return ps.owner;
+      }
+      return null;
+   }
+
+   // <method.png>
+   public method getOwnerByEncIdx(int _encIdx) : MIDIMapContext {
+      MIDIMapContext mmc <= enc_owners.get(_encIdx);
+      return mmc;
+   }
+
+   // <method.png>
+   protected method handleMMCModeSelected() {
+      clearPads();
+
+      Page pg <= root_form.getCurrentPage();
+      pg.pagePushColorizePads();
+   }
+
+   // <method.png>
+   protected method handleKbdModeSelected() {
+      push_kbd.handleModeSelected();
+   }
+
+   // <method.png>
+   public method setMode(int _mode) {
+      STConfig.push_mode = _mode;
+
+      switch(_mode)
+      {
+         case MODE_MMC:
+            handleMMCModeSelected();
+            break;
+
+         case MODE_KBD:
+            handleKbdModeSelected();
+            break;
+
+         case MODE_CTL:
+            // (todo)
+            break;
+
+         case MODE_USR:
+            // (todo)
+            break;
+      }
+   }
+
+   // <method.png>
+   public method selectNextMode() {
+      setMode((STConfig.push_mode + 1) % NUM_MODES);
+      Global.Print("Select push mode "+mode_names.get(STConfig.push_mode));
+   }
+
+   // <method.png>
+   public method toggleKbdMode() {
+      setMode((MODE_MMC == STConfig.push_mode) ? MODE_KBD : MODE_MMC);
+      Global.Print("Select push mode "+mode_names.get(STConfig.push_mode));
+   }
+
+   // <method_get.png>
+   public method getMode() : int {
+      return STConfig.push_mode;
+   }
+
+   // <method.png>
+   public method resetMode() {
+      setMode(STConfig.push_mode);
+   }
+
+   // <method_get.png>
+   public method isModeMMC() : boolean {
+      return STConfig.b_push && (MODE_MMC == STConfig.push_mode);
+   }
+
+   // <method_get.png>
+   public method isModeKbd() : boolean {
+      return STConfig.b_push && (MODE_KBD == STConfig.push_mode);
+   }
+
+   // <method_get.png>
+   public method isModeCtl() : boolean {
+      return
+         STConfig.b_push &&
+         (
+            ((MODE_CTL == STConfig.push_mode) ||
+             ((MODE_MMC == STConfig.push_mode) && (RootForm.PAGE_CTLTAG == root_form.getCurrentPageNr()))
+             )
+          );
+   }
+
+   // <method_get.png>
+   public method isModeKbdOrCtl() : boolean {
+      return STConfig.b_push && (isModeKbd() || isModeCtl());
+   }
+
+   // <method_get.png>
+   public method isModeUsr() : boolean {
+      return STConfig.b_push && (MODE_USR == STConfig.push_mode);
+   }
+
+}

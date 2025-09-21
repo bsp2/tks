@@ -1,0 +1,457 @@
+// ----
+// ---- file   : ColorPickerDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 19Feb2012
+// ---- changed: 20Feb2012, 24Feb2012, 07May2013, 05Jun2013, 23Jan2015, 24Jan2015, 04Mar2017
+// ----          10Nov2017, 04Oct2023, 22Oct2023, 30Oct2023, 22Mar2024, 16Jan2025, 08Feb2025
+// ----          09Feb2025
+// ----
+// ----
+// ----
+
+module MColorPickerDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+class ColorPickerListener {
+   public method colorPickerHandleColorChanged(int _c32) {
+   }
+}
+
+
+class ColorPickerDialog extends Dialog, ActionProvider {
+
+   define String ACTION_COLOR_CHANGED;
+
+   protected XMLForm *xfm;
+
+   protected int c32_orig;
+   protected int c32_cur;
+   protected int c32_saved;
+
+   protected TextField      *tf_color;
+   protected Button         *bt_clear;
+   protected ColorButton    *color_button;
+   protected HSVColorPicker *hsv_color_picker;
+
+   protected FloatParam *fp_rgb_r;
+   protected FloatParam *fp_rgb_g;
+   protected FloatParam *fp_rgb_b;
+   protected FloatParam *fp_rgb_a;
+
+   protected FloatParam *fp_hsv_h;
+   protected FloatParam *fp_hsv_s;
+   protected FloatParam *fp_hsv_v;
+   protected FloatParam *fp_hsv_a;
+
+   protected Button    *bt_ok;
+   protected Button    *bt_revert;
+
+   protected Object *consumer_or_listener;  // ColorPickerListener or ActionConsumer
+
+   protected PopupMenu *pm_context;
+
+
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ColorPickerDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      tf_color.setCharFilter(UI.char_filter_hex_expr);
+
+      initWindow(xfm,
+                 "Edit color",
+                 140, 140,
+                 120*UI.font_scaling, 230*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_COLOR_CHANGED];
+   }
+
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public method showColor(int _c32, Object _colorPickerListenerOrActionConsumer) {
+
+      consumer_or_listener <= _colorPickerListenerOrActionConsumer;
+
+      c32_orig  = _c32;
+      c32_saved = _c32;
+      c32_cur   = _c32;
+
+      resizeAtLeastToMinimum();
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+
+      showNearMouse(-85*UI.font_scaling, -68*UI.font_scaling);
+   }
+
+   public method getColor() : int {
+      return c32_cur;
+   }
+
+   public method revertColor() {
+
+      if(c32_cur != c32_orig)
+      {
+         c32_saved = c32_cur;
+         c32_cur = c32_orig;
+      }
+      else
+      {
+         c32_cur = c32_saved;
+      }
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+
+      handleColorChanged();
+   }
+
+   public virtual postShow() {
+      Dialog::postShow();
+
+      UI.SetKeyboardFocus(tf_color);
+   }
+
+   protected method updateARGB32() {
+      Integer io = c32_cur;
+      tf_color.setText(io.printf("#%08x"));
+   }
+
+   protected method updateRGBA() {
+      // RGB
+      fp_rgb_r.setValue( (c32_cur>>16) & 255 );
+      fp_rgb_g.setValue( (c32_cur>> 8) & 255 );
+      fp_rgb_b.setValue( (c32_cur    ) & 255 );
+      fp_rgb_a.setValue( (c32_cur>>24) & 255 );
+   }
+
+   protected method updateHSVA() {
+      // HSV
+      Float h, s, v;
+      UI.RGB32TOHSV(c32_cur, h, s, v);
+      float a = ((c32_cur>>24)&255) * (1.0f / 255);
+      fp_hsv_h.setValue(h);
+      fp_hsv_s.setValue(s);
+      fp_hsv_v.setValue(v);
+      fp_hsv_a.setValue(a);
+   }
+
+   protected method updateColorButton() {
+      color_button.setBackgroundTint(c32_cur);
+      color_button.redraw();
+      byte a8 = (c32_cur>>24) & 255;
+      if(0 == c32_cur)
+         a8 = 255;
+      hsv_color_picker.setAlpha8(a8);
+   }
+
+   protected method handleColorChanged() {
+
+      Integer io = c32_cur;
+      Global.Debug2("ColorPickerDialog:handleColorChanged: color is now #"+io.printf("%08x"));
+
+      if(consumer_or_listener instanceof ActionConsumer)
+      {
+         ActionConsumer consumer <= consumer_or_listener;
+         consumer.consumeAction(IntAction.New(ACTION_COLOR_CHANGED, this, c32_cur));
+      }
+      else if(consumer_or_listener instanceof ColorPickerListener)
+      {
+         ColorPickerListener listener <= consumer_or_listener;
+         listener.colorPickerHandleColorChanged(c32_cur);
+      }
+   }
+
+   protected method handleColorEntered() {
+
+      String text = tf_color.getText();
+
+      if(!text.startsWith("#"))
+         text = "#" + text;
+
+      int c32 = text;
+
+      c32_cur = c32;
+
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleClear() {
+
+      c32_cur = 0;
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleRGBAChanged() {
+
+      int r = fp_rgb_r.getFloatValue();
+      int g = fp_rgb_g.getFloatValue();
+      int b = fp_rgb_b.getFloatValue();
+      int a = fp_rgb_a.getFloatValue();
+
+      c32_cur = argb(a, r, g, b);
+
+      updateARGB32();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleHSVAChanged() {
+
+      int c32 = UI.HSVTOARGB32(fp_hsv_h.getFloatValue(),
+                               fp_hsv_s.getFloatValue(),
+                               fp_hsv_v.getFloatValue(),
+                               (fp_hsv_a.getFloatValue() * 255)
+                               );
+
+      c32_cur = c32;
+
+      updateARGB32();
+      updateRGBA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   protected method handleColorButtonClicked() {
+      trace "xxx handleColorButtonClicked";
+   }
+
+   protected method handleHSVColorPicked(IntAction _ia) {
+
+      c32_cur = _ia.getIntValue();
+
+      updateARGB32();
+      updateRGBA();
+      updateHSVA();
+      updateColorButton();
+      handleColorChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleCopy() {
+      local String s <= tf_color.getText();
+      UI.SetClipboard(s);
+      Global.Print("Copy \""+s+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handlePaste() {
+      Object o <= UI.GetClipboard();
+      if(o instanceof String)
+      {
+         tf_color.setText(o);
+         Global.Print("Paste \""+o+"\"");
+         handleColorEntered();
+      }
+   }
+
+   // <ui_show.png>
+   protected method showContextMenu(boolean _bFocusFirst) {
+
+      pm_context <= PopupMenu.New(this);
+      PopupMenu pm <= pm_context;
+      PopupMenuButton *pmb;
+
+      pmb <= pm.addDefaultButton("Copy",
+                                 "copy"
+                                 );
+      pmb.setAccelerators("lctrl-c", "");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Paste",
+                                 "paste"
+                                 );
+      pmb.setAccelerators("lctrl-v", "");
+
+
+      pm.resizeToMinimum();
+      pm.showNearMouse(-20, -10);
+
+      if(_bFocusFirst)
+         pm_context.focusNextMenuItem();
+
+      Global.Print("Show ColorPicker context menu.");
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+      if(_ev.isRightButton())
+      {
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return false;
+   }
+
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+      }
+   }
+
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'a':
+            if(_k.modNone())
+            {
+               showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modCtrl())
+            {
+               handleCopy();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if(_k.modCtrl())
+            {
+               handlePaste();
+            }
+            else
+            {
+               // when called via execDefaultAction() ('v')
+               hide();
+            }
+            return true;
+
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return Dialog::onKey(_k);
+   }
+
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug("pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close ColorPicker context menu.");
+                  // refocusDefault();
+                  return true;
+
+               case "copy":
+                  handleCopy();
+                  // refocusDefault();
+                  return true;
+
+               case "paste":
+                  handlePaste();
+                  return true;
+            }
+            return true;
+
+         case @(bt_ok):
+            hide();
+            return true;
+
+         case @(bt_revert):
+            revertColor();
+            return true;
+
+         case @(tf_color):
+            if(TextField.ACTION_TEXTENTERED == acName)
+               UI.SetKeyboardFocus(bt_ok);
+            handleColorEntered();
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            // hide();
+            return true;
+
+         case @(fp_rgb_r):
+         case @(fp_rgb_g):
+         case @(fp_rgb_b):
+         case @(fp_rgb_a):
+            handleRGBAChanged();
+            return true;
+
+         case @(fp_hsv_h):
+         case @(fp_hsv_s):
+         case @(fp_hsv_v):
+         case @(fp_hsv_a):
+            handleHSVAChanged();
+            return true;
+
+         case @(color_button):
+            handleColorButtonClicked();
+            return true;
+
+         case @(hsv_color_picker):
+            handleHSVColorPicked(_action);
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

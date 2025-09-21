@@ -1,0 +1,2356 @@
+// ----
+// ---- file   : sysex.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2018-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 02Feb2018, 05Feb2018, 06Feb2018, 09Feb2018, 10Feb2018, 24Feb2018, 03Mar2018
+// ----          06Mar2018, 07Mar2018, 16Jun2018, 02Dec2018, 07Dec2018, 08Dec2018, 15Dec2018
+// ----          02Aug2019, 09Feb2020, 12Sep2020, 29Nov2020, 31Jan2021, 01Feb2021, 17Jul2021
+// ----          20Jul2021, 22Jul2021, 07Dec2021, 09Dec2021, 11Dec2021, 05Feb2022, 06Feb2022
+// ----          13Feb2022, 10Aug2022, 11Aug2022, 12Aug2022, 13Aug2022, 01Dec2022, 18Dec2022
+// ----          23Feb2023, 22Jul2023, 29Jul2023, 17Nov2023, 18Nov2023, 02Dec2023, 03Dec2023
+// ----          07Jul2024, 15Nov2024, 14Mar2025, 22May2025, 13Jun2025
+// ----
+// ----
+// ----
+
+module MSysEx;
+
+use namespace ui;
+
+use namespace st2;
+
+=sysexqueue=
+
+
+// <class.png>
+abstract class RemoteEventListener {
+
+   public method handleRemoteEvent(RemoteEvent _ev) : boolean { }
+   public method handleRemoteReplyInstanceIds (PointerArray _instances/*SysExInstance*/) { }
+   public method handleRemoteReplyParams (int _instanceId, StringArray _paramNames) { }
+}
+
+// <class.png>
+abstract class RemoteQueryCtlTargetsListener {
+
+   public method handleRemoteQueryCtlTargets(PointerArray _ctlTargets) { }
+}
+
+// <class.png>
+class RemoteEvent {
+   int    dev_idx;     // MIDI device. 0..25 => a..z
+   int    midi_ch;     // 0..15
+   int    instance_id;
+   int    param_idx;
+   float  param_value;
+   String param_name;
+}
+
+// <class.png>
+class SysExRemoteCtlTarget {
+   define int TYPE_CC   = 1;
+   define int TYPE_RPN  = 2;
+   define int TYPE_NRPN = 3;
+
+   tag int    dev_idx;       // MIDI device. 0..25 => a..z
+   tag int    midi_ch;       // 0..15, -1=*
+   tag int    type;          // 1=CC, 2=RPN, 3=NRPN
+   tag int    ext_type;      // CC# or (N)RPN#
+   tag int    param_idx;
+   tag String param_name;
+   tag float  unmap_ctlval;  // current param value unmapped to controller value
+}
+
+
+// <class.png>
+class SysExInstance {
+   tag byte    dev_idx;        // 0..25 => vst_[a..z]
+   tag byte    midi_ch;        // -1=all, 0..15
+   tag int     instance_id;    // see Eureka Mod.instance_id
+   tag String  instance_name;  // see Eureka Mod.getNameForInstanceTable()
+   tag boolean b_effect;       // true=Mod is an effect. false=Mod is an instrument/generator
+}
+
+
+// <class.png>
+class SysExSamplerInstance {
+   // (note) [15Nov2024] renamed from SysExLiveRecInstance
+   byte    dev_idx;                 // 0..25 => a..z
+   byte    midi_ch;                 // -1=*, 0..15
+   int     instance_id;             // ModSample instance id
+   short   unique_id;               // currently selected sample
+   byte    first_liverec_zone_idx;  // first LiveRec zone idx of currently playing sample. -1=liverec not enabled
+   String  track_name;              // instance parent track name
+
+   public =replay= method sendRPN_sync(short _rpn, short _value, boolean _bWait) : boolean {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.localmidi_out_devicenames.get(dev_idx));
+      if(null != dev)
+      {
+         dev.rpn(mathMaxi(0, midi_ch), _rpn, _value);
+         dev.send(milliSeconds());
+         if(_bWait)
+            TKS.sleep(50); // (todo) send via SysEx message and properly wait for reply
+         return true;
+      }
+      else
+      {
+         Global.Error("SysExSamplerInstance::sendRPN_sync: dev is NULL");
+         return false;
+      }
+   }
+}
+
+
+// <class.png>
+class SysExSample {
+   String  name;
+   byte    prg_id;       // MIDI program change nr
+   short   unique_id;    // RPN smp_uid
+   short   namespace_id;
+   float   millisecs;
+   byte    first_liverec_zone_idx;  // -1=none
+   byte    liverec_monitor;  // see StSample.liveRecMonitor (false=OFF true=REPLACE maybe=MIX)
+   boolean b_stereo;
+}
+
+
+// <class.png>
+class SysExTrack {
+   byte    dev_idx;  // 0..25 => a..z
+   byte    midi_ch;  // -1=all, 0..15
+   String  name;
+   int     modsample_instance_id;   // -1=none
+   short   modsample_namespace_id;  // 0=none
+   short   smp_uid;                 // -1=non
+   byte    first_liverec_zone_idx;  // sample first liverec zone idx. -1=none
+   boolean b_stereo_input;          // true=Eureka track uses stereo input
+   boolean b_audio_timeline;        // true=Eureka track is in 'timeline' mode
+
+   debugPrint(String _msgHdr) {
+      trace _msgHdr+"devIdx="+dev_idx+" midiCh="+midi_ch+" name=\""+name+"\" modsample_instance_id="+modsample_instance_id+" smp_uid="+smp_uid+" first_liverec_zone_idx="+first_liverec_zone_idx+" b_stereo_input="+b_stereo_input+" b_audio_timeline="+b_audio_timeline;
+   }
+}
+
+
+// <class.png>
+abstract class QuerySamplesListener {
+
+   // (todo) pass SysExSample*[] instead
+   public method handleRecvSamples(PointerArray/*SysExSample *[]*/_samples) { }
+
+   public method handleRecvSamplerInstances(PointerArray/*SysExSamplerInstance *[]*/_instances) { }
+}
+
+
+// <class.png>
+class SysEx {
+   define int WAIT_REPLY_NUM_RETRIES = 500;
+   define int WAIT_REPLY_SLEEP_MS = 10;
+
+   define int SYX_MSGID_EXT                       =  0;  // unused
+   define int SYX_MSGID_DETECT                    =  1;  // IN     detect presence
+   define int SYX_MSGID_DETECT_ACK                =  2;  // OUT    audio process is active
+   define int SYX_MSGID_SEQ_START                 =  3;  // INOUT  sequencer replay has begun / send replay start request
+   define int SYX_MSGID_SEQ_STOP                  =  4;  // INOUT  sequencer replay has stopped / send replay stop request
+   define int SYX_MSGID_SEQ_TEMPO_SET             =  5;  // IN     sequencer BPM and/or PPQ have changed
+   define int SYX_MSGID_PROJECT_NAME_SET          =  6;  // IN     sequencer project name has changed
+   define int SYX_MSGID_PROJECT_LOAD              =  7;  // OUT    load audio project
+   define int SYX_MSGID_PROJECT_LOAD_OK           =  8;  // IN     audio project has been loaded
+   define int SYX_MSGID_PROJECT_LOAD_FAIL         =  9;  // IN     audio project failed to load
+   define int SYX_MSGID_PROJECT_SAVE              = 10;  // OUT    save audio project
+   define int SYX_MSGID_PROJECT_SAVE_OK           = 11;  // IN     audio project has been saved (or failed to save)
+   define int SYX_MSGID_PROJECT_SAVE_FAIL         = 12;  // IN     audio project has been saved (or failed to save)
+   define int SYX_MSGID_PROJECT_AUTOLOAD          = 13;  // IN     query sequencer for current project name
+   define int SYX_MSGID_RECORD_ARM                = 14;  // OUT    start audio recording when next SEQ_START is received
+   define int SYX_MSGID_RECORD_STOP               = 15;  // OUT    cancel / stop audio recording
+   define int SYX_MSGID_REMOTE_PARAM_NOTIFY       = 16;  // IN     Remote parameter changed in DAW/VST UI
+   define int SYX_MSGID_REMOTE_PARAM_UPDATE       = 17;  // OUT    Remote parameter sent from sequencer
+   define int SYX_MSGID_REMOTE_PARAM_UPDATE_REL   = 18;  // OUT    Remote relative parameter sent from sequencer (-1..1)
+   define int SYX_MSGID_REMOTE_QUERY_INSTANCE_IDS = 19;  // OUT    Query instances that listen on given MIDI port from DAW
+   define int SYX_MSGID_REMOTE_REPLY_INSTANCE_IDS = 20;  // IN     Receive instance id(s) reply from DAW
+   define int SYX_MSGID_REMOTE_QUERY_PARAMS       = 21;  // OUT    Send instance id param list query to DAW
+   define int SYX_MSGID_REMOTE_REPLY_PARAMS       = 22;  // IN     Receive instance id param list from DAW
+   define int SYX_MSGID_REMOTE_QUERY_CTL_TARGETS  = 23;  // OUT    Send controller + destination parameter name query
+   define int SYX_MSGID_REMOTE_REPLY_CTL_TARGETS  = 24;  // IN     Receive controllers + destination parameter names
+   define int SYX_MSGID_QUERY_SAMPLES             = 25;  // OUT    Send sample names+prgchg ids query
+   define int SYX_MSGID_REPLY_SAMPLES             = 26;  // IN     Receive sample names+prgchg ids
+   define int SYX_MSGID_ATRK_REC_REPLACE                       = 27;  // OUT  (when Eureka AudioTracks page is active)
+   define int SYX_MSGID_ATRK_REC_APPEND                        = 28;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP_ADDSMP                   = 29;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP_TRIM                     = 30;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP              = 31;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP_TRIM_ADDSMP_RESTART      = 32;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP         = 33;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP_TRIM_ADDMULTISMP_RESTART = 34;  // OUT
+   define int SYX_MSGID_ATRK_LIVEREC_CAPTURE                   = 35;  // OUT
+   define int SYX_MSGID_ATRK_PREFIX                            = 36;  // IN/OUT
+   define int SYX_MSGID_ATRK_PREFIX_QUERY                      = 37;  // OUT
+   define int SYX_MSGID_ATRK_REC_STOP                          = 38;  // OUT  stop audio recording
+   define int SYX_MSGID_ATRK_REC_START                         = 39;  // OUT  enable audio recording and switch to Audio page
+   define int SYX_MSGID_ATRK_PAGE_SELECT                       = 40;  // OUT  switch to Audio page
+   define int SYX_MSGID_SMP_PREVIEW                            = 41;  // OUT  play temp sample
+   define int SYX_MSGID_QUERY_SAMPLER_INSTANCES        = 42;  // OUT    query ModSample instances (optionally filter liverec-enabled ones)
+   define int SYX_MSGID_REPLY_SAMPLER_INSTANCES        = 43;  // IN     receive ModSample instances
+   define int SYX_MSGID_SMP_NORMALIZE                  = 44;  // OUT    normalize sample
+   define int SYX_MSGID_SMP_CLEAR                      = 45;  // OUT    fill sample with 0
+   define int SYX_MSGID_SMP_LIVEREC_CREATE             = 46;  // OUT    create new live-recording sample
+   define int SYX_MSGID_SMP_LIVEREC_CREATE_REPLY       = 47;  // IN     return new live-recording sample uid
+   define int SYX_MSGID_QUERY_SMP_PEAKS                = 48;  // OUT    query sample peaks
+   define int SYX_MSGID_REPLY_SMP_PEAKS                = 49;  // IN     sample peaks reply
+   define int SYX_MSGID_SMP_LIVEREC_MONITOR            = 50;  // OUT    configure liverec monitoring
+   define int SYX_MSGID_QUERY_SMP_ZONES_TO_MIDI        = 51;  // OUT    convert sampleview cue points / zones to MIDI events
+   define int SYX_MSGID_REPLY_SMP_ZONES_TO_MIDI        = 52;  // IN     recv cue point millisecs/notes/velocities
+   define int SYX_MSGID_QUERY_SMP_NAMESPACES           = 53;  // OUT    query sample namespace names
+   define int SYX_MSGID_REPLY_SMP_NAMESPACES           = 54;  // IN     recv sample namespace names
+   define int SYX_MSGID_QUERY_AUDIO_PORT_AND_NAMESPACE = 55;  // OUT   query audio dev/ch and preferred sample namespace for midi dev/ch
+   define int SYX_MSGID_REPLY_AUDIO_PORT_AND_NAMESPACE = 56;  // IN    recv audio dev/ch and preferred sample namespace for midi dev/ch
+   define int SYX_MSGID_SMP_EDIT                       = 57;  // OUT    find first ModSample that plays the given smp_uid and show editor (PageSample)
+   define int SYX_MSGID_SMP_EDIT_REPLY                 = 58;  // IN     sample editor shown (ack)
+   define int SYX_MSGID_TRACK_SHOW_BY_MIDI_PORT        = 59;  // OUT    show track page + select first track that listens on the given MIDI port
+   define int SYX_MSGID_TRACK_SHOW_BY_MIDI_PORT_REPLY  = 60;  // IN     page shown (or at least Eureka UI has finished)
+   define int SYX_MSGID_QUERY_NEWER_SAMPLE_IDS         = 61;  // OUT    send sample unique_id query (all samples with waveforms newer than <utime>)
+   define int SYX_MSGID_REPLY_NEWER_SAMPLE_IDS         = 62;  // IN     recv sample unique_id array (all samples with waveforms newer than <utime>)
+   define int SYX_MSGID_SMP_CLONE                      = 63;  // OUT    clone sample identified by unique_id
+   define int SYX_MSGID_SMP_CLONE_REPLY                = 64;  // IN     recv cloned sample unique_id
+   define int SYX_MSGID_QUERY_TRACKS                   = 65;  // OUT    query track properties (name,midi port,numch,..)
+   define int SYX_MSGID_REPLY_TRACKS                   = 66;  // IN     recv track properties
+   define int SYX_MSGID_SMP_DELETE                     = 67;  // OUT    delete a list of samples
+   define int SYX_MSGID_SMP_DELETE_REPLY               = 68;  // IN     recv ack (number of deleted samples)
+   define int SYX_MSGID_UI_WINDOW_MOVED                = 69;  // INOUT  Sequencer/Sampler desktop window position/size changed
+   define int SYX_MSGID_UI_WINDOW_SHOW                 = 70;  // IN     Show application window (+gain kbd focus)
+   define int SYX_MSGID_SMP_UPLOAD_SEQ                 = 71;  // OUT    set proc.sample seq from 'proc_track_seq.dat' tmp file
+   define int SYX_MSGID_SMP_UPLOAD_SEQ_ACK             = 72;  // IN     
+   define int SYX_MSGID_SMP_DOWNLOAD_SEQ               = 73;  // OUT    set 'proc_track_seq.dat' tmp file to proc.sample seq
+   define int SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY         = 74;  // IN     
+
+
+   // (note) https://www.midi.org/specifications/item/manufacturer-id-numbers
+   define int EXT_MANUFACTURER_ID_1 = 0x7F;
+   define int EXT_MANUFACTURER_ID_2 = 0x7F;
+
+   define int SYX_HEADER_SIZE = 5;
+
+   define int MAX_PAYLOAD_SIZE_RAW = 65536;
+   define int MAX_PAYLOAD_SIZE_SYX = (MAX_PAYLOAD_SIZE_RAW/*lsbs*/ + ((MAX_PAYLOAD_SIZE_RAW+6)/7)/*msbs*/);
+
+   static STX_MIDIInDevice *in_dev;
+   static STX_MIDIOutDevice *out_dev;
+
+   static STX_MIDIInDevice  *audio2rpn_in_dev;   // see MIDI.InitMIDIInDevices()
+   static STX_MIDIOutDevice *audio2rpn_out_dev;  // see MIDI.InitMIDIOutDevices()
+
+   define int AUDIO_DETECT_INTERVAL_MS = 1500;
+   static boolean b_audio_connected;
+   static int last_audio_detect_ms;
+   static boolean b_audio_detect_ack;
+
+   static float queued_send_bpm;
+   static int   queued_send_ppq;
+   static String *queued_send_project_name;
+   static String *queued_send_project_load;
+   static String *queued_send_project_save;
+   static boolean b_queued_send_seq_start;
+   static boolean b_queued_send_seq_stop;
+   static int queued_send_remotequeryinstanceid_dev_idx_hint;
+   static int queued_send_remotequeryinstanceid_midi_ch_hint;
+   static int queued_send_remotequeryinstanceid_instance_id_hint;
+   static boolean b_queued_send_remotequeryinstanceid;
+   static int queued_send_remotequeryparams_instance_id;
+   static boolean b_queued_send_remotequeryparams;
+
+   static boolean b_queued_recv_seq_start;
+   static boolean b_queued_recv_seq_stop;
+
+   static SysExInstance *[] queued_recv_remotereplyinstanceids;
+   static boolean           b_queued_recv_remotereplyinstanceids;
+
+   static int         queued_recv_remotereplyparams_instance_id;
+   static StringArray queued_recv_remotereplyparams_params;
+   static boolean     b_queued_recv_remotereplyparams;
+
+   static String  queued_send_query_samples_namepattern;
+   static byte    queued_send_query_samples_note;
+   static boolean b_queued_send_query_samples;
+   static SysExSample *[] queued_recv_samples;
+   static boolean b_queued_recv_samples;
+
+   static boolean b_queued_send_single_remote_param;
+   static int     queued_send_single_remote_param_instance_id;
+   static int     queued_send_single_remote_param_idx;
+   static float   queued_send_single_remote_param_value;
+
+   static Buffer send_raw;
+
+   static RemoteEventListener *remote_event_listener;
+
+   static ClassArray remote_event_queue;
+
+   static int    audio_native_process_id;
+   static String audio_native_window_handle;  // used only on Windows (req. for Windows 11)
+
+   static boolean b_queued_record_arm;
+   static boolean b_queued_record_stop;
+
+   static boolean b_queued_send_remotequery_ctl_targets;
+   static boolean b_queued_recv_remotequery_ctl_targets;
+   static RemoteQueryCtlTargetsListener *remotequery_ctl_targets_listener;
+   static PointerArray queued_recv_remotequery_ctl_targets;  // SysExRemoteCtlTarget instances
+   static QuerySamplesListener *query_samples_listener;
+
+   static int queued_send_atrk_msgid;  // -1 or msgId
+
+   static boolean b_queued_send_atrk_prefix;
+   static String  queued_send_atrk_prefix;
+   static boolean b_queued_send_atrk_prefix_query;
+   static String *queued_recv_atrk_prefix;
+   static boolean b_queued_send_atrk_record_start;
+   static boolean b_queued_send_atrk_record_stop;
+   static boolean b_queued_send_atrk_page_select;
+
+   static short   queued_send_smp_preview_smp_uid;
+   static byte    queued_send_smp_preview_note;
+   static byte    queued_send_smp_preview_vel;
+   static boolean b_queued_send_smp_preview;
+
+   static boolean b_queued_send_query_sampler_instances;
+   static boolean b_queued_send_query_sampler_instances_liverec;  // 1=query live-rec enabled instances only
+   static SysExSamplerInstance *[] queued_recv_sampler_instances;
+   static boolean b_queued_recv_sampler_instances;
+
+   static short   queued_send_smp_normalize_uid;
+   static boolean b_queued_send_smp_normalize;
+
+   static short   queued_send_smp_clear_uid;
+   static boolean b_queued_send_smp_clear;
+
+   static float   queued_smp_liverec_create_millisec;
+   static int     queued_smp_liverec_create_numch;
+   static byte    queued_smp_liverec_create_namespace_idx;
+   static float   queued_smp_liverec_create_level_db;
+   static String  queued_smp_liverec_create_name;
+   static boolean b_queued_send_smp_liverec_create;
+
+   static short queued_recv_liverec_sample_create_reply_smp_uid;
+   static boolean b_queued_recv_liverec_sample_create_reply;
+
+   static short queued_send_smp_peaks_uid;
+   static float queued_send_smp_peaks_interval_ms;
+   static boolean b_queued_send_smp_peaks;
+
+   static IntArray queued_recv_smp_peaks;
+   static boolean b_queued_recv_smp_peaks;
+
+   static short   queued_send_smp_liverec_monitor_smp_uid;
+   static short   queued_send_smp_liverec_monitor_zone_idx;
+   static boolean queued_send_smp_liverec_monitor_enable;
+   static boolean b_queued_send_smp_liverec_monitor;
+
+   static byte    queued_send_smp_zones_to_midi_mode;
+   static boolean b_queued_send_smp_zones_to_midi;
+
+   static FloatArray queued_recv_smp_zones_to_midi_millisecs;
+   static FloatArray queued_recv_smp_zones_to_midi_notes;
+   static FloatArray queued_recv_smp_zones_to_midi_velocities;
+   static boolean    b_queued_recv_smp_zones_to_midi;
+
+   static boolean b_queued_send_query_smp_namespaces;
+   static boolean b_queued_recv_smp_namespaces;
+   static StringArray queued_recv_smp_namespaces;
+
+   static boolean b_queued_send_query_audioport;
+   static byte    queued_send_audioport_vst_dev_idx;  // 0..25 => vst_a..vst_z  (MIDI port)
+   static byte    queued_send_audioport_vst_midi_ch;  // 0..15
+   static boolean queued_send_audioport_b_audioport;
+
+   static boolean b_queued_recv_audioport;
+   static byte    queued_recv_audioport_vst_dev_idx;  // 0..25 => vst_a..vst_z  (Audio port), -1=not found
+   static byte    queued_recv_audioport_vst_midi_ch;  // 0..15, -1=all ch
+   static byte    queued_recv_audioport_smp_nsp;      // 0..31, 0=global namespace
+
+   static boolean b_queued_send_smpedit;
+   static short   queued_send_smpedit_smp_uid;
+   static short   queued_send_smpedit_smp_instance_id_hint;  // -1=any
+   static float   queued_send_smpedit_smp_sel_start_ms;
+   static float   queued_send_smpedit_smp_sel_len_ms;  // <0: keep current selection
+   static byte    queued_send_smpedit_note_idx_hint;
+
+   static boolean b_queued_recv_smpedit;
+
+   static byte    queued_send_track_show_dev;
+   static byte    queued_send_track_show_ch;
+   static boolean queued_send_track_show_trackpage;
+   static boolean queued_send_track_edit_first_mod;
+   static byte    queued_send_track_note_idx_hint;
+   static boolean b_queued_send_track_show;
+
+   static boolean b_queued_recv_track_show;
+
+   static int     queued_send_newer_sample_ids_utime;  // SYX_MSGID_QUERY_NEWER_SAMPLE_IDS
+   static boolean b_queued_send_newer_sample_ids;
+
+   static IntArray queued_recv_newer_sample_ids; // SYX_MSGID_REPLY_NEWER_SAMPLE_IDS
+   static boolean b_queued_recv_newer_sample_ids;
+
+   static int     queued_send_smp_clone_uid;
+   static boolean b_queued_send_smp_clone;
+
+   static int     queued_recv_smp_clone_uid;
+   static boolean b_queued_recv_smp_clone;
+
+   static boolean b_queued_send_query_tracks;
+   static SysExTrack *[] queued_recv_tracks;
+   static boolean b_queued_recv_tracks;
+
+   static boolean  b_queued_send_smp_delete;
+   static IntArray queued_send_smp_delete_uids;
+   static boolean  b_queued_recv_smp_delete;
+   static int      queued_recv_smp_delete_num;
+
+   static int     queued_send_ui_window_moved_x;
+   static int     queued_send_ui_window_moved_y;
+   static int     queued_send_ui_window_moved_w;
+   static String  queued_send_ui_window_moved_seq_hwnd;
+   static boolean b_queued_send_ui_window_moved;
+
+   static boolean b_queued_send_ui_window_show;
+   static boolean b_queued_recv_ui_window_show;
+
+   static int     queued_send_smp_upload_seq_smp_uid;
+   static boolean b_queued_send_smp_upload_seq;
+
+   static int     queued_recv_smp_upload_seq_ack_smp_uid;
+   static boolean b_queued_recv_smp_upload_seq_ack;
+
+   static int     queued_send_smp_download_seq_smp_uid;
+   static boolean b_queued_send_smp_download_seq;
+
+   static int     queued_recv_smp_download_seq_reply_smp_uid;
+   static boolean b_queued_recv_smp_download_seq_reply;
+
+
+   // <method_init.png>
+   public static Init() {
+
+      // Open input device
+      MIDIIn midiin <= new MIDIIn;
+      MIDIOut midiout <= new MIDIOut;
+      boolean bOpen;
+
+      if(STConfig.b_enable_localmidi)
+      {
+         in_dev <= new STX_LocalMIDIInDevice;
+         STX_LocalMIDIInDevice inDevLocal <= in_dev;
+         bOpen = inDevLocal.createLocalMIDI(STConfig.sysex_in_devicename);
+         if(bOpen)
+         {
+            in_dev.init(deref midiin);
+            trace "[...] SysEx::Init: ok, opened LocalMIDI input device \""+STConfig.sysex_in_devicename+"\"";
+         }
+         else
+         {
+            trace "[~~~] SysEx::Init: failed to open LocalMIDI input device \""+STConfig.sysex_in_devicename+"\".";
+         }
+
+         out_dev <= new STX_LocalMIDIOutDevice;
+         STX_LocalMIDIOutDevice outDevLocal <= out_dev;
+         bOpen = outDevLocal.createLocalMIDI(STConfig.sysex_out_devicename);
+         if(bOpen)
+         {
+            outDevLocal.init(deref midiout);
+            MIDI.AddSysExOutDevice(out_dev);  // add to out_devices list so other events can be routed to it
+         }
+         else
+         {
+            trace "[~~~] SysEx::Init: failed to open LocalMIDI output device \""+STConfig.sysex_out_devicename+"\".";
+         }
+      }
+      else
+      {
+         bOpen = midiin.openByName(STConfig.sysex_in_devicename);
+
+         if(bOpen)
+         {
+            in_dev <= new STX_MIDIInDevice;
+            in_dev.init(deref midiin);
+
+            trace "[...] SysEx::Init: ok, opened input device \""+STConfig.sysex_in_devicename+"\"";
+         }
+         else
+         {
+            trace "[~~~] SysEx::Init: failed to open MIDI input device \""+STConfig.sysex_in_devicename+"\".";
+         }
+
+         // Open output device
+         bOpen = midiout.openByName(STConfig.sysex_out_devicename);
+
+         if(bOpen)
+         {
+            out_dev <= new STX_MIDIOutDevice;
+            out_dev.init(deref midiout);
+            MIDI.AddSysExOutDevice(out_dev);  // add to out_devices list so other events can be routed to it
+
+            trace "[...] SysEx::Init: ok, opened output device \""+STConfig.sysex_out_devicename+"\"";
+         }
+         else
+         {
+            trace "[~~~] SysEx::Init: failed to open MIDI output device \""+STConfig.sysex_out_devicename+"\".";
+         }
+      }
+
+      queued_send_bpm = -1;
+      queued_send_project_name <= null;
+      queued_send_project_load <= null;
+      queued_send_project_save <= null;
+
+      send_raw.size = MAX_PAYLOAD_SIZE_RAW;
+
+      remote_event_queue.template = RemoteEvent;
+      remote_event_queue.alloc(100);
+
+      queued_send_atrk_msgid = -1;
+   }
+
+   // <method.png>
+   public static Start() {
+      if(null != in_dev)
+      {
+         Global.Debug2("Starting SysEx MIDI in device");
+         in_dev.start();
+      }
+   }
+
+   // <method_exit.png>
+   public static Exit() {
+      if(null != in_dev)
+      {
+         trace "[...] SysEx::Exit: closing MIDI input device";
+         in_dev.close();
+      }
+
+      if(null != out_dev)
+      {
+         trace "[...] SysEx::Exit: closing MIDI output device";
+         out_dev.exit();
+         if(null != out_dev.midiout)
+            out_dev.midiout.close();
+      }
+   }
+
+   // <method.png>
+   public static Encode(local Buffer _raw/*orNull*/,
+                        local Buffer _syx,
+                        local byte   _devId,
+                        local byte   _msgId
+                        ) {
+      // // _syx.size = MAX_PAYLOAD_SIZE_SYX;
+
+      local int bytesLeft;
+      if(null != _raw)
+      {
+         bytesLeft = _raw.offset;
+      }
+      else
+      {
+         bytesLeft = 0;
+      }
+
+      _syx.offset = 0;
+
+      _syx.i8 = 0; // 0 = extended manufacturer id
+      _syx.i8 = EXT_MANUFACTURER_ID_1;
+      _syx.i8 = EXT_MANUFACTURER_ID_2;
+      _syx.i8 = _devId;
+      _syx.i8 = _msgId;
+
+      if(bytesLeft > 0)
+      {
+         local int numPackets = (bytesLeft / 7);
+         local int off = 0;
+
+         loop(numPackets)
+         {
+            // Write msbs
+            _syx.i8 =
+               ((_raw.peekI8(off + 0) & 0x80) >> 7) |
+               ((_raw.peekI8(off + 1) & 0x80) >> 6) |
+               ((_raw.peekI8(off + 2) & 0x80) >> 5) |
+               ((_raw.peekI8(off + 3) & 0x80) >> 4) |
+               ((_raw.peekI8(off + 4) & 0x80) >> 3) |
+               ((_raw.peekI8(off + 5) & 0x80) >> 2) |
+               ((_raw.peekI8(off + 6) & 0x80) >> 1) ;
+
+            // Write lsbs
+            _syx.i8 = _raw.peekI8(off + 0) & 127;
+            _syx.i8 = _raw.peekI8(off + 1) & 127;
+            _syx.i8 = _raw.peekI8(off + 2) & 127;
+            _syx.i8 = _raw.peekI8(off + 3) & 127;
+            _syx.i8 = _raw.peekI8(off + 4) & 127;
+            _syx.i8 = _raw.peekI8(off + 5) & 127;
+            _syx.i8 = _raw.peekI8(off + 6) & 127;
+
+            off += 7;
+         }
+
+         if(off < bytesLeft)
+         {
+            // Write msbs for partial packet
+            bytesLeft = bytesLeft - off;
+
+            // Get msbs for partial packet
+            local byte msbs = 0;
+            local int byteSubIdx = 0;
+            loop(bytesLeft)
+            {
+               msbs |= ((_raw.peekI8(off + byteSubIdx) & 0x80) >> 7) << byteSubIdx;
+               byteSubIdx++;
+            }
+
+            // Write msbs and lsbs for partial packet
+            _syx.i8 = msbs;
+            byteSubIdx = 0;
+            loop(bytesLeft)
+            {
+               _syx.i8 = _raw.peekI8(off + byteSubIdx++) & 127;
+            }
+         }
+
+         // _syx.offset now equals encoded message size
+      }
+   }
+
+   // <method.png>
+   public static Decode(local Buffer _syx,
+                        local Buffer _raw,
+                        local byte   _retDevId,
+                        local Byte   _retMsgId
+                        ) : boolean {
+      local boolean r = false;
+
+      local int bytesLeft = _syx.offset;
+
+      _raw.offset = 0;
+
+      if(bytesLeft >= 5)
+      {
+         _syx.offset = 0;
+
+         if(0 == _syx.i8)  // 0 = extended manufacturer id
+         {
+            if(EXT_MANUFACTURER_ID_1 == _syx.i8)
+            {
+               if(EXT_MANUFACTURER_ID_2 == _syx.i8)
+               {
+                  _retDevId = _syx.i8;
+                  _retMsgId = _syx.i8;
+
+                  bytesLeft -= 5;
+
+                  if(bytesLeft > 0)
+                  {
+                     local byte msbs;
+                     local int byteSubIdx = 0;
+                     local IntArray packet;
+                     local int j;
+                     local byte b;
+                     packet.alloc(7);
+                     packet.useAll();
+
+                     while(bytesLeft > 0)
+                     {
+                        if(0 == byteSubIdx)
+                        {
+                           // Read MSBs for next packet (1..7 bytes)
+                           msbs = _syx.i8;
+                           byteSubIdx++;
+                           bytesLeft--;
+                        }
+                        else
+                        {
+                           b = _syx.i8; // 7bit packet data
+                           packet[byteSubIdx-1] = b | (((msbs >> (byteSubIdx-1)) & 1) << 7); // add msb
+                           byteSubIdx++;
+                           bytesLeft--;
+
+                           if(8 == byteSubIdx)
+                           {
+                              // Copy full packet
+                              j = 0;
+                              loop(7)
+                              {
+                                 _raw.i8 = packet[j++];
+                              }
+                              byteSubIdx = 0;
+                           }
+                        }
+                     }
+
+                     if(byteSubIdx > 0)
+                     {
+                        // Copy last (partial) packet
+                        j = 0;
+                        loop(byteSubIdx-1)
+                        {
+                           _raw.i8 = packet[j++];
+                           // bytesLeft--;
+                        }
+                     }
+
+                     // _raw.offset now equals payload size
+                     r = true;
+                  }
+                  else
+                  {
+                     // No additional payload
+                     r = true;
+                  }
+               }
+            }
+         }
+      }
+
+      return r;
+   }
+
+   // <method.png>
+   public static Handle(Buffer _syx) {
+      // trace "xxx SysEx.Handle(syx.offset="+_syx.offset+")";
+      // (note) msg w/o 0xF0 / 0xF7 bytes
+
+      local Buffer raw;
+      local Integer devId;
+      local Integer msgId;
+
+      raw.size = MAX_PAYLOAD_SIZE_RAW;
+      raw.offset = 0;
+      _syx.offset = _syx.size;
+
+      String s;
+      String paramName;
+
+      if(Decode(_syx, raw, devId, msgId))
+      {
+         if( (msgId > SYX_MSGID_DETECT_ACK) &&
+             (SYX_MSGID_REMOTE_PARAM_NOTIFY != msgId)
+             )
+         {
+            Global.Debug3("[dbg] SysEx::Handle: msgId="+TKS.scriptClassConstantToString(#(int(msgId)), SysEx, "SYX_MSGID_"));
+         }
+
+         switch(msgId)
+         {
+            case SYX_MSGID_DETECT:
+               raw.offset = 0;
+               audio_native_process_id    = raw.i32;
+               Utils.ReadString(raw, audio_native_window_handle);
+               Global.Debug3("SysEx::Handle<DETECT>: audio_native_window_handle="+audio_native_window_handle+" audio_native_process_id="+audio_native_process_id);
+               if(0 != audio_native_process_id)
+                  SDL.allowShowNativeWindow(audio_native_process_id);
+               SendDetectAck();
+               break;
+
+            case SYX_MSGID_DETECT_ACK:
+               raw.offset = 0;
+               audio_native_process_id    = raw.i32;
+               Utils.ReadString(raw, audio_native_window_handle);
+               Global.Debug3("SysEx::Handle<DETECT_ACK>: audio_native_window_handle="+audio_native_window_handle+" audio_native_process_id="+audio_native_process_id);
+               if(0 != audio_native_process_id)
+                  SDL.allowShowNativeWindow(audio_native_process_id);
+               b_audio_detect_ack = true;
+               // trace "[dbg] SysEx::Handle: set b_audio_detect_ack = true";
+               break;
+
+            case SYX_MSGID_SEQ_START:
+               b_queued_recv_seq_start = true;
+               break;
+
+            case SYX_MSGID_SEQ_STOP:
+               b_queued_recv_seq_stop = true;
+               break;
+
+            case SYX_MSGID_SEQ_TEMPO_SET:
+               raw.offset = 0;
+               float bpm = raw.f32;
+               short ppq = raw.i16;
+               Global.Debug2("SysEx::Handle: set BPM to "+bpm+", PPQ="+ppq);
+               // (note) don't: current_song.setBPM(bpm);
+               break;
+
+            case SYX_MSGID_PROJECT_NAME_SET:
+               raw.offset = 0;
+               Utils.ReadString(raw, s);
+               Global.Debug2("SysEx::Handle: set project name to \""+s+"\"");
+               break;
+
+            case SYX_MSGID_PROJECT_LOAD:
+               raw.offset = 0;
+               Utils.ReadString(raw, s);
+               Global.Debug2("SysEx::Handle: load project file \""+s+"\"");
+               break;
+
+            case SYX_MSGID_PROJECT_SAVE:
+               raw.offset = 0;
+               Utils.ReadString(raw, s);
+               Global.Debug2("SysEx::Handle: save project file \""+s+"\"");
+               break;
+
+            case SYX_MSGID_PROJECT_AUTOLOAD:
+               SendProjectLoad(current_song.song_name);
+               break;
+
+            case SYX_MSGID_REMOTE_PARAM_NOTIFY:
+               raw.offset = 0;
+               int    devIdx     = raw.i8;
+               int    midiCh     = raw.i8;
+               int    instanceId = raw.i32;
+               int    paramIdx   = raw.i32;
+               float  paramValue = raw.f32;
+               Utils.ReadString(raw, paramName);
+               // trace "[dbg] SysEx::Handle: param notify: instanceId="+instanceId+" paramIdx="+paramIdx+" paramValue="+paramValue+" name=\""+paramName+"\"";
+               queueRemoteEvent(devIdx, midiCh, instanceId, paramIdx, paramValue, paramName);
+               break;
+
+            case SYX_MSGID_REMOTE_REPLY_INSTANCE_IDS:
+               raw.offset = 0;
+               queued_recv_remotereplyinstanceids.free();
+               queued_recv_remotereplyinstanceids << raw;
+               b_queued_recv_remotereplyinstanceids = true;
+               Global.Debug2("SysEx::Handle: remote reply instance ids: received "+queued_recv_remotereplyinstanceids.numElements+" instance(s)");
+               break;
+
+            case SYX_MSGID_REMOTE_REPLY_PARAMS:
+               raw.offset = 0;
+               queued_recv_remotereplyparams_instance_id = raw.i32;
+               int numParams = raw.i32;
+               if(numParams < 5000)
+               {
+                  queued_recv_remotereplyparams_params.empty();
+                  loop(numParams)
+                  {
+                     Utils.ReadString(raw, paramName);
+                     queued_recv_remotereplyparams_params.add(paramName);
+                  }
+
+                  b_queued_recv_remotereplyparams = true;
+                  Global.Debug2("SysEx::Handle: remote reply params: instanceId="+queued_recv_remotereplyparams_instance_id+" params="+queued_recv_remotereplyparams_params);
+               }
+               else
+               {
+                  trace "[~~~] SysEx::Handle: remote reply params: TOO MANY PARAMS ("+numParams+"), instanceId="+queued_recv_remotereplyparams_instance_id+". discarding message.";
+               }
+               break;
+
+            case SYX_MSGID_REMOTE_REPLY_CTL_TARGETS:
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REMOTE_REPLY_CTL_TARGETS: raw sz="+raw.offset);
+               raw.offset = 0;
+               queued_recv_remotequery_ctl_targets.free();
+               queued_recv_remotequery_ctl_targets << raw;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REMOTE_REPLY_CTL_TARGETS: revd "+queued_recv_remotequery_ctl_targets.numElements+" ctl targets");
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REMOTE_REPLY_CTL_TARGETS: read "+raw.offset+" bytes");
+               b_queued_recv_remotequery_ctl_targets = true;
+               break;
+
+            case SYX_MSGID_REPLY_SAMPLES:
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SAMPLES: raw sz="+raw.offset);
+               raw.offset = 0;
+               queued_recv_samples.free();
+               int numSamples = raw.i32;
+               loop(numSamples)
+               {
+                  SysExSample sysSmp <= new SysExSample;
+                  Utils.ReadString(raw, sysSmp.name);
+                  sysSmp.prg_id                 = raw.s8;
+                  sysSmp.unique_id              = raw.s16;
+                  sysSmp.namespace_id           = raw.u16;
+                  sysSmp.millisecs              = raw.f32;
+                  sysSmp.first_liverec_zone_idx = raw.s8;
+                  sysSmp.liverec_monitor        = raw.s8;
+                  sysSmp.b_stereo               = raw.b8;
+                  queued_recv_samples.add(#(deref sysSmp));
+               }
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SAMPLES: revd "+queued_recv_samples.numElements+" samples");
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SAMPLES: read "+raw.offset+" bytes");
+               b_queued_recv_samples = true;
+               break;
+
+            case SYX_MSGID_ATRK_PREFIX:
+               raw.offset = 0;
+               queued_recv_atrk_prefix <= new String;
+               Utils.ReadString(raw, queued_recv_atrk_prefix);
+               Global.Debug2("SysEx::Handle: recv atrk prefix \""+queued_recv_atrk_prefix+"\"");
+               break;
+
+            case SYX_MSGID_REPLY_SAMPLER_INSTANCES:
+               raw.offset = 0;
+               int numInstances = raw.u16;
+               queued_recv_sampler_instances.free();
+               loop(numInstances)
+               {
+                  SysExSamplerInstance lri <= new SysExSamplerInstance;
+                  lri.dev_idx                = raw.i8;
+                  lri.midi_ch                = raw.s8;
+                  lri.instance_id            = raw.i32;
+                  lri.unique_id              = raw.s16;
+                  lri.first_liverec_zone_idx = raw.s8;
+                  String lriTrackName <= lri.track_name;
+                  lriTrackName << raw;
+                  queued_recv_sampler_instances.add(#(deref lri));
+               }
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SAMPLER_INSTANCES: revd "+queued_recv_sampler_instances.numElements+" instances");
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SAMPLER_INSTANCES: read "+raw.offset+" bytes");
+               b_queued_recv_sampler_instances = true;
+               break;
+
+            case SYX_MSGID_SMP_LIVEREC_CREATE_REPLY:
+               raw.offset = 0;
+               queued_recv_liverec_sample_create_reply_smp_uid = raw.s16;
+               b_queued_recv_liverec_sample_create_reply = true;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_SMP_LIVEREC_CREATE_REPLY: read "+raw.offset+" bytes. smpUID="+queued_recv_liverec_sample_create_reply_smp_uid);
+               break;
+
+            case SYX_MSGID_REPLY_SMP_PEAKS:
+               raw.offset = 0;
+               queued_recv_smp_peaks.empty();
+               int numPeaks = raw.i32;
+               queued_recv_smp_peaks.realloc(numPeaks);
+               loop(numPeaks)
+               {
+                  queued_recv_smp_peaks.add(raw.u8);  // 0..255
+               }
+               b_queued_recv_smp_peaks = true;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SMP_PEAKS: read "+raw.offset+" bytes. #peaks="+numPeaks);
+               // trace "xxx peaks="+#(queued_recv_smp_peaks);
+               break;
+
+            case SYX_MSGID_REPLY_SMP_ZONES_TO_MIDI:
+               raw.offset = 0;
+               queued_recv_smp_zones_to_midi_millisecs.empty();
+               queued_recv_smp_zones_to_midi_notes.empty();
+               queued_recv_smp_zones_to_midi_velocities.empty();
+               queued_recv_smp_zones_to_midi_millisecs  << raw;
+               queued_recv_smp_zones_to_midi_notes      << raw;
+               queued_recv_smp_zones_to_midi_velocities << raw;
+               b_queued_recv_smp_zones_to_midi = true;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SMP_ZONES_TO_MIDI: read "+raw.offset+" bytes. #zones="+queued_recv_smp_zones_to_midi_millisecs.numElements);
+               break;
+
+            case SYX_MSGID_REPLY_SMP_NAMESPACES:
+               raw.offset = 0;
+               queued_recv_smp_namespaces << raw;
+               b_queued_recv_smp_namespaces = true;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_SMP_NAMESPACES: read "+raw.offset+" bytes. #namespaces="+queued_recv_smp_namespaces.numElements);
+               break;
+
+            case SYX_MSGID_REPLY_AUDIO_PORT_AND_NAMESPACE:
+               raw.offset = 0;
+               queued_recv_audioport_vst_dev_idx = raw.s8;
+               queued_recv_audioport_vst_midi_ch = raw.s8;
+               queued_recv_audioport_smp_nsp     = raw.u8;
+               b_queued_recv_audioport = true;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_AUDIO_PORT_AND_NAMESPACE: read "+raw.offset+" bytes. devIdx="+queued_recv_audioport_vst_dev_idx+" ch="+queued_recv_audioport_vst_midi_ch+" nsp="+queued_recv_audioport_smp_nsp);
+               break;
+
+            case SYX_MSGID_SMP_EDIT_REPLY:
+               // trace "[dbg] SysEx::Handle: SYX_MSGID_SMP_EDIT_REPLY: ack";
+               b_queued_recv_smpedit = true;
+               break;
+
+            case SYX_MSGID_REPLY_NEWER_SAMPLE_IDS:
+               raw.offset = 0;
+               Utils.ReadShortArray(raw, queued_recv_newer_sample_ids);
+               // trace "[dbg] SysEx::Handle: SYX_MSGID_REPLY_NEWER_SAMPLE_IDS: read "+raw.offset+" bytes. #sample_ids="+queued_recv_newer_sample_ids.numElements;
+               b_queued_recv_newer_sample_ids = true;
+               break;
+
+            case SYX_MSGID_TRACK_SHOW_BY_MIDI_PORT_REPLY:
+               // trace "[dbg] SysEx::Handle: SYX_MSGID_TRACK_SHOW_BY_MIDI_PORT_REPLY: ack";
+               b_queued_recv_track_show = true;
+               break;
+
+            case SYX_MSGID_SMP_CLONE_REPLY:
+               raw.offset = 0;
+               queued_recv_smp_clone_uid = raw.s16;
+               b_queued_recv_smp_clone = true;
+               break;
+
+            case SYX_MSGID_REPLY_TRACKS:
+               raw.offset = 0;
+               int numTracks = raw.u8;
+               Global.Debug2("SysEx::Handle: SYX_MSGID_REPLY_TRACKS: numTracks="+numTracks);
+               queued_recv_tracks.free();
+               loop(numTracks)
+               {
+                  SysExTrack track <= new SysExTrack;
+                  track.dev_idx                = raw.u8;
+                  track.midi_ch                = raw.s8;
+                  Utils.ReadString(raw, track.name);
+                  track.modsample_instance_id  = raw.i32;
+                  track.modsample_namespace_id = raw.u16;  // ModSample.preferred_namespace_idx
+                  track.smp_uid                = raw.s16;
+                  track.first_liverec_zone_idx = raw.s8;
+                  track.b_stereo_input         = raw.b8;
+                  track.b_audio_timeline       = raw.b8;
+                  track.debugPrint("[dbg] SysEx::Handle: SYX_MSGID_REPLY_TRACKS: ");
+                  queued_recv_tracks.add(#(deref track));
+               }
+               b_queued_recv_tracks = true;
+               break;
+
+            case SYX_MSGID_SMP_DELETE_REPLY:
+               raw.offset = 0;
+               queued_recv_smp_delete_num = raw.i32;
+               b_queued_recv_smp_delete = true;
+               break;
+
+            case SYX_MSGID_UI_WINDOW_SHOW:
+               b_queued_recv_ui_window_show = true;
+               break;
+
+            case SYX_MSGID_SMP_UPLOAD_SEQ_ACK:
+               raw.offset = 0;
+               queued_recv_smp_upload_seq_ack_smp_uid = raw.i32;
+               trace "xxx SYX_MSGID_SMP_UPLOAD_SEQ_ACK smpUID="+queued_recv_smp_upload_seq_ack_smp_uid;
+               b_queued_recv_smp_upload_seq_ack = true;
+               break;
+
+            case SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY:
+               raw.offset = 0;
+               queued_recv_smp_download_seq_reply_smp_uid = raw.i32;
+               trace "xxx SYX_MSGID_SMP_DOWNLOAD_SEQ_REPLY smpUID="+queued_recv_smp_download_seq_reply_smp_uid;
+               b_queued_recv_smp_download_seq_reply = true;
+               break;
+         }
+      }
+
+   }
+
+   // <method.png>
+   public static Send(int _msgId, Buffer _payloadOrNull) {
+      // trace "xxx SysEx.Send(msgId="+_msgId+")";
+      // (note) payload.offset determines size
+      if(null != out_dev)
+      {
+         Buffer syx;
+         if(null != _payloadOrNull)
+         {
+            syx.size = SYX_HEADER_SIZE + _payloadOrNull.offset + ((_payloadOrNull.offset+6)/7);
+         }
+         else
+         {
+            syx.size = SYX_HEADER_SIZE;
+         }
+         Encode(_payloadOrNull, syx, 0/*devId*/, _msgId);
+         // trace "xxx SysEx::Send: syx.offset="+syx.offset;
+         // Utils.HexDump(syx, 0, syx.offset);
+         out_dev.sysExHidden(syx);
+
+         if(_msgId >= SYX_MSGID_SEQ_START)
+            Global.Debug3("SysEx::Send: msgId="+TKS.scriptClassConstantToString(#(int(_msgId)), SysEx, "SYX_MSGID_"));
+      }
+   }
+
+   // <method_get.png>
+   public static IsRemoteAudioDevAvailable() : boolean {
+      return (null != out_dev);
+   }
+
+   // <method_get.png>
+   public static IsAudioConnected() : boolean {
+      return b_audio_connected && b_audio_detect_ack;
+   }
+
+   // <method.png>
+   public static SendDetect() {
+      send_raw.offset = 0;
+      send_raw.i32 = SDL.nativeProcessId;
+      Utils.WriteString(send_raw, SDL.nativeWindowHandle);
+      Send(SYX_MSGID_DETECT, send_raw/*payload*/);
+      b_audio_connected = true; // xxxxx
+   }
+
+   // <method.png>
+   public static SendDetectAck() {
+      send_raw.offset = 0;
+      send_raw.i32 = SDL.nativeProcessId;
+      Utils.WriteString(send_raw, SDL.nativeWindowHandle);
+      Send(SYX_MSGID_DETECT_ACK, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public static SendSeqStart() {
+      if(b_audio_connected)
+      {
+         Send(SYX_MSGID_SEQ_START, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSeqStart() {
+      b_queued_send_seq_start = true;
+   }
+
+   // <method.png>
+   public static SendSeqStop() {
+      if(b_audio_connected)
+      {
+         Send(SYX_MSGID_SEQ_STOP, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSeqStop() {
+      b_queued_send_seq_stop = true;
+      b_queued_record_arm = false;
+   }
+
+   // <method.png>
+      public static SendSeqTempoSet(float _bpm, int _ppq) {
+      Global.Debug3("SysEx::SendSeqBPMSet: bpm="+_bpm+" ppq="+_ppq+" b_audio_connected="+b_audio_connected);
+      if(b_audio_connected)
+      {
+         send_raw.offset = 0;
+         send_raw.f32 = _bpm;
+         send_raw.i16 = _ppq;
+         Send(SYX_MSGID_SEQ_TEMPO_SET, send_raw/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSeqTempoSet(float _bpm, int _ppq) {
+      // trace "[dbg] SysEx::QueueSendSeqBPMSet: bpm="+_bpm+" ppq="+_ppq;
+      queued_send_bpm = _bpm;
+      queued_send_ppq = _ppq;
+   }
+
+   // <method.png>
+   public static SendProjectNameSet(String _name) {
+      if(b_audio_connected)
+      {
+         send_raw.offset = 0;
+         Utils.WriteString(send_raw, _name);
+         Send(SYX_MSGID_PROJECT_NAME_SET, send_raw/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendProjectNameSet(String _name) {
+      queued_send_project_name <= String(_name);
+   }
+
+   // <method.png>
+   public static SendProjectLoad(String _projectName) {
+      if(b_audio_connected)
+      {
+         send_raw.offset = 0;
+         Utils.WriteString(send_raw, _projectName);
+         Send(SYX_MSGID_PROJECT_LOAD, send_raw/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendProjectLoad(String _name) {
+      queued_send_project_load <= String(_name);
+   }
+
+   // <method.png>
+   public static SendProjectSave(String _projectName) {
+      if(b_audio_connected)
+      {
+         send_raw.offset = 0;
+         Utils.WriteString(send_raw, _projectName);
+         Send(SYX_MSGID_PROJECT_SAVE, send_raw/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendProjectSave(String _name) {
+      queued_send_project_save <= String(_name);
+   }
+
+   // <method.png>
+   public static SendProjectLoadReply(boolean _bOk) {
+      if(b_audio_connected)
+      {
+         Send(_bOk ? SYX_MSGID_PROJECT_LOAD_OK : SYX_MSGID_PROJECT_LOAD_FAIL, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public static SendProjectSaveReply(boolean _bOk) {
+      if(b_audio_connected)
+      {
+         Send(_bOk ? SYX_MSGID_PROJECT_SAVE_OK : SYX_MSGID_PROJECT_SAVE_FAIL, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public static QueueRecordStop() {
+      if(b_audio_connected)
+      {
+         b_queued_record_arm = false;
+         b_queued_record_stop = true;
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueRecordArm() {
+      if(b_audio_connected)
+      {
+         b_queued_record_arm = true;
+         b_queued_record_stop = false;
+      }
+   }
+
+   // <method.png>
+   public static SendRecordArm() {
+      if(b_audio_connected)
+      {
+         Send(SYX_MSGID_RECORD_ARM, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public static SendRecordStop() {
+      if(b_audio_connected)
+      {
+         Send(SYX_MSGID_RECORD_STOP, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public static QueueSendSingleRemoteParamUpdate(int _instanceId, int _paramIdx, float _paramValue) {
+      queued_send_single_remote_param_instance_id = _instanceId;
+      queued_send_single_remote_param_idx         = _paramIdx;
+      queued_send_single_remote_param_value       = _paramValue;
+      b_queued_send_single_remote_param = true;
+   }
+
+   // <method.png>
+   public static SendRemoteParamUpdate(int _instanceId, int _paramIdx, float _paramValue) {
+      send_raw.offset = 0;
+      send_raw.i32 = _instanceId;
+      send_raw.i32 = _paramIdx;
+      send_raw.f32 = _paramValue;
+      // trace "xxx SendRemoteParamUpdate("+_instanceId+","+_paramIdx+","+_paramValue+")";
+      Send(SYX_MSGID_REMOTE_PARAM_UPDATE, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public static SendRemoteParamUpdateRel(int _instanceId, int _paramIdx, float _paramValueRel) {
+      send_raw.offset = 0;
+      send_raw.i32 = _instanceId;
+      send_raw.i32 = _paramIdx;
+      send_raw.f32 = _paramValueRel;
+      // trace "xxx SendRemoteParamUpdateRel("+_instanceId+","+_paramIdx+","+_paramValue+")";
+      Send(SYX_MSGID_REMOTE_PARAM_UPDATE_REL, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public static SendRemoteQueryInstanceId(int _devIdxHint, int _midiChHint, int _instanceIdHint) {
+      send_raw.offset = 0;
+      send_raw.i8  = _devIdxHint;     // can be -1, if instanceIdHint is valid
+      send_raw.i8  = _midiChHint;     // can be -1, if instanceIdHint is valid
+      send_raw.i32 = _instanceIdHint; // can be <= 0, if devIdx/midiCh are valid
+      Global.Debug2("SysEx::SendRemoteQueryInstanceId("+_devIdxHint+","+_midiChHint+","+_instanceIdHint+")");
+      Send(SYX_MSGID_REMOTE_QUERY_INSTANCE_IDS, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendRemoteQueryInstanceId(int _devIdxHint, int _midiChHint, int _instanceIdHint) {
+      // (note) called by NodeTrackerInstrumentView::handleParamRemoteQueryInstanceId()
+      queued_send_remotequeryinstanceid_dev_idx_hint     = _devIdxHint;
+      queued_send_remotequeryinstanceid_midi_ch_hint     = _midiChHint;
+      queued_send_remotequeryinstanceid_instance_id_hint = _instanceIdHint;
+      b_queued_send_remotequeryinstanceid = true;
+   }
+
+   // <method.png>
+   public static SendRemoteQueryParams(int _instanceId) {
+      send_raw.offset = 0;
+      send_raw.i32 = _instanceId;
+      Global.Debug2("SysEx::SendRemoteQueryParams("+_instanceId+")");
+      Send(SYX_MSGID_REMOTE_QUERY_PARAMS, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendRemoteQueryParams(int _instanceId) {
+      queued_send_remotequeryparams_instance_id = _instanceId;
+      b_queued_send_remotequeryparams = true;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendRemoteQueryCtlTargets(RemoteQueryCtlTargetsListener _listener) {
+      remotequery_ctl_targets_listener <= _listener;
+      b_queued_send_remotequery_ctl_targets = true;
+   }
+
+   // <method.png>
+   public static SendRemoteQueryCtlTargets() {
+      send_raw.offset = 0;
+      Global.Debug2("SysEx::SendRemoteQueryCtlTargets");
+      Send(SYX_MSGID_REMOTE_QUERY_CTL_TARGETS, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public static SetQuerySamplesListener(QuerySamplesListener _listener) {
+      query_samples_listener <= _listener;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQuerySamples(String _namePattern, byte _targetNote) {
+      queued_send_query_samples_namepattern  = _namePattern;
+      queued_send_query_samples_note         = _targetNote;
+      b_queued_recv_samples = false;
+      b_queued_send_query_samples = true;
+   }
+
+   // <method.png>
+   public static SendQuerySamples(String _namePattern, byte _targetNote) {
+      send_raw.offset = 0;
+      Utils.WriteString(send_raw, _namePattern);
+      send_raw.i8 = _targetNote;
+      Send(SYX_MSGID_QUERY_SAMPLES, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public static SendAtrk() {
+      if(b_audio_connected)
+      {
+         Send(queued_send_atrk_msgid, null/*payload*/);
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueAtrk(int _msgId) {
+      queued_send_atrk_msgid = _msgId;
+   }
+
+   // <method.png>
+   public static SendAtrkPrefix() {
+      if(b_audio_connected)
+      {
+         send_raw.offset = 0;
+         Utils.WriteString(send_raw, queued_send_atrk_prefix);
+         Send(SYX_MSGID_ATRK_PREFIX, send_raw/*payload*/);
+         b_queued_send_atrk_prefix = false;
+      }
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueAtrkPrefix(String _prefix) {
+      b_queued_send_atrk_prefix = true;
+      queued_send_atrk_prefix = _prefix;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendAtrkPrefixQuery() {
+      b_queued_send_atrk_prefix_query = true;
+      queued_recv_atrk_prefix <= null;
+   }
+
+   // <method.png>
+   public static SendAtrkPrefixQuery() {
+      Send(SYX_MSGID_ATRK_PREFIX_QUERY, null/*payload*/);
+      b_queued_send_atrk_prefix_query = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueAtrkRecordStop() {
+      if(b_audio_connected)
+      {
+         b_queued_send_atrk_record_stop = true;
+      }
+   }
+
+   // <method.png>
+   public static SendAtrkRecordStop() {
+      Send(SYX_MSGID_ATRK_REC_STOP, null/*payload*/);
+      b_queued_send_atrk_record_stop = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueAtrkRecordStart() {
+      if(b_audio_connected)
+      {
+         b_queued_send_atrk_record_start = true;
+      }
+   }
+
+   // <method.png>
+   public static SendAtrkRecordStart() {
+      Send(SYX_MSGID_ATRK_REC_START, null/*payload*/);
+      b_queued_send_atrk_record_start = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueAtrkPageSelect() {
+      if(b_audio_connected)
+      {
+         b_queued_send_atrk_page_select = true;
+      }
+   }
+
+   // <method.png>
+   public static SendAtrkPageSelect() {
+      Send(SYX_MSGID_ATRK_PAGE_SELECT, null/*payload*/);
+      b_queued_send_atrk_page_select = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpPreview(int _smpUID, byte _note, byte _vel) {
+      queued_send_smp_preview_smp_uid = _smpUID;
+      queued_send_smp_preview_note    = _note;
+      queued_send_smp_preview_vel     = _vel;
+      b_queued_send_smp_preview = true;
+   }
+
+   // <method.png>
+   public static SendSmpPreview() {
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smp_preview_smp_uid;
+      send_raw.i8  = queued_send_smp_preview_note;
+      send_raw.i8  = queued_send_smp_preview_vel;
+      Send(SYX_MSGID_SMP_PREVIEW, send_raw/*payload*/);
+      b_queued_send_smp_preview = false;
+   }
+
+   // <method.png>
+   public static SendQuerySamplerInstances() {
+      send_raw.offset = 0;
+      send_raw.i8 = b_queued_send_query_sampler_instances_liverec;
+      Send(SYX_MSGID_QUERY_SAMPLER_INSTANCES, send_raw/*payload*/);
+      b_queued_send_query_sampler_instances = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQuerySamplerInstances(boolean _bLiveRec) {
+      b_queued_recv_sampler_instances = false;
+      b_queued_send_query_sampler_instances_liverec = _bLiveRec;
+      b_queued_send_query_sampler_instances = true;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpNormalize(int _smpUID) {
+      queued_send_smp_normalize_uid = _smpUID;
+      b_queued_send_smp_normalize = true;
+   }
+
+   // <method.png>
+   public static SendSmpNormalize() {
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smp_normalize_uid;
+      Send(SYX_MSGID_SMP_NORMALIZE, send_raw/*payload*/);
+      b_queued_send_smp_normalize = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpClear(int _smpUID) {
+      queued_send_smp_clear_uid = _smpUID;
+      b_queued_send_smp_clear = true;
+   }
+
+   // <method.png>
+   public static SendSmpClear() {
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smp_clear_uid;
+      Send(SYX_MSGID_SMP_CLEAR, send_raw/*payload*/);
+      b_queued_send_smp_clear = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpLiveRecCreate(float _millisec, int _numCh, float _levelDB, byte _namespaceIdx, String _name) {
+      queued_smp_liverec_create_millisec      = _millisec;
+      queued_smp_liverec_create_numch         = _numCh;
+      queued_smp_liverec_create_level_db      = _levelDB;
+      queued_smp_liverec_create_namespace_idx = _namespaceIdx;
+      queued_smp_liverec_create_name          = _name;
+      b_queued_send_smp_liverec_create = true;
+      queued_recv_liverec_sample_create_reply_smp_uid = -1;
+      b_queued_recv_liverec_sample_create_reply = false;
+   }
+
+   // <method.png>
+   public static SendSmpLiveRecCreate() {
+      send_raw.offset = 0;
+      send_raw.f32 = queued_smp_liverec_create_millisec;
+      send_raw.i8  = queued_smp_liverec_create_numch;
+      send_raw.f32 = queued_smp_liverec_create_level_db;
+      send_raw.i8  = queued_smp_liverec_create_namespace_idx;
+      send_raw << queued_smp_liverec_create_name;
+      Send(SYX_MSGID_SMP_LIVEREC_CREATE, send_raw/*payload*/);
+      b_queued_send_smp_liverec_create = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpPeaks(int _smpUID, float _intervalMs) {
+      queued_send_smp_peaks_uid         = _smpUID;
+      queued_send_smp_peaks_interval_ms = _intervalMs;
+      b_queued_recv_smp_peaks = false;
+      b_queued_send_smp_peaks = true;
+   }
+
+   // <method.png>
+   public static SendSmpPeaks() {
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smp_peaks_uid;
+      send_raw.f32 = queued_send_smp_peaks_interval_ms;
+      Send(SYX_MSGID_QUERY_SMP_PEAKS, send_raw/*payload*/);
+      b_queued_send_smp_peaks = false;
+      // trace "xxx SysEx::SendSmpPeaks: uid="+queued_send_smp_peaks_uid+" interval="+queued_send_smp_peaks_interval_ms+"ms";
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpLiveRecMonitor(short _smpUID, short _zoneIdx, boolean _bEnable) {
+      queued_send_smp_liverec_monitor_smp_uid  = _smpUID;
+      queued_send_smp_liverec_monitor_zone_idx = _zoneIdx;
+      queued_send_smp_liverec_monitor_enable   = _bEnable;
+      b_queued_send_smp_liverec_monitor = true;
+   }
+
+   // <method.png>
+   public static SendSmpLiveRecMonitor() {
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smp_liverec_monitor_smp_uid;
+      send_raw.i16 = queued_send_smp_liverec_monitor_zone_idx;
+      send_raw.i8  = queued_send_smp_liverec_monitor_enable;
+      Send(SYX_MSGID_SMP_LIVEREC_MONITOR, send_raw/*payload*/);
+      b_queued_send_smp_liverec_monitor = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpZonesToMIDI(byte _mode) {
+      b_queued_recv_smp_zones_to_midi = false;
+      queued_send_smp_zones_to_midi_mode = _mode;
+      b_queued_send_smp_zones_to_midi = true;
+   }
+
+   // <method.png>
+   public static SendSmpZonesToMIDI() {
+      send_raw.offset = 0;
+      send_raw.i8  = queued_send_smp_zones_to_midi_mode;
+      Send(SYX_MSGID_QUERY_SMP_ZONES_TO_MIDI, send_raw/*payload*/);
+      b_queued_send_smp_zones_to_midi = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQuerySmpNamespaces() {
+      b_queued_recv_smp_namespaces = false;
+      queued_recv_smp_namespaces.empty();
+      b_queued_send_query_smp_namespaces = true;
+   }
+
+   // <method.png>
+   public static SendQuerySmpNamespaces() {
+      send_raw.offset = 0;
+      Send(SYX_MSGID_QUERY_SMP_NAMESPACES, send_raw/*payload*/);
+      b_queued_send_query_smp_namespaces = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQueryAudioPort(byte _vstDevIdx, byte _midiCh, boolean _bIsAudioPort) {
+      b_queued_recv_audioport = false;
+      queued_send_audioport_vst_dev_idx = _vstDevIdx;
+      queued_send_audioport_vst_midi_ch = _midiCh;
+      queued_send_audioport_b_audioport = _bIsAudioPort;
+      b_queued_send_query_audioport = true;
+   }
+
+   // <method.png>
+   public static SendQueryAudioPort() {
+      send_raw.offset = 0;
+      send_raw.i8 = queued_send_audioport_vst_dev_idx;
+      send_raw.i8 = queued_send_audioport_vst_midi_ch;
+      send_raw.i8 = queued_send_audioport_b_audioport;
+      Send(SYX_MSGID_QUERY_AUDIO_PORT_AND_NAMESPACE, send_raw/*payload*/);
+      b_queued_send_query_audioport = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpEdit(short _smpUID, short _instanceIdHint, float _selStartMS, float _selLenMS, int _noteIdxHint) {
+      b_queued_recv_smpedit = false;
+      queued_send_smpedit_smp_uid              = _smpUID;
+      queued_send_smpedit_smp_instance_id_hint = _instanceIdHint;
+      queued_send_smpedit_smp_sel_start_ms     = _selStartMS;
+      queued_send_smpedit_smp_sel_len_ms       = _selLenMS;
+      queued_send_smpedit_note_idx_hint        = _noteIdxHint;
+      b_queued_send_smpedit = true;
+   }
+
+   // <method.png>
+   public static SendSmpEdit() {
+      trace "[trc] SysEx::SendSmpEdit: smp_uid="+queued_send_smpedit_smp_uid+" instance_id="+queued_send_smpedit_smp_instance_id_hint;
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smpedit_smp_uid;
+      send_raw.i16 = queued_send_smpedit_smp_instance_id_hint;
+      send_raw.f32 = queued_send_smpedit_smp_sel_start_ms;
+      send_raw.f32 = queued_send_smpedit_smp_sel_len_ms;
+      send_raw.i8  = queued_send_smpedit_note_idx_hint;
+      Send(SYX_MSGID_SMP_EDIT, send_raw/*payload*/);
+      b_queued_send_smpedit = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendTrackShowByMIDIPort(byte _midiDev/*0..25*/,
+                                                           byte _midiCh/*-1..15*/,
+                                                           boolean _bShowTrackPage,
+                                                           boolean _bEditFirstMod,
+                                                           byte    _noteIdxHint
+                                                           ) {
+      // (note) _bShowTrackPage may be false if next sample edit call will already switch to a different page
+      b_queued_recv_track_show = false;
+      queued_send_track_show_dev       = _midiDev;
+      queued_send_track_show_ch        = _midiCh;
+      queued_send_track_show_trackpage = _bShowTrackPage;
+      queued_send_track_edit_first_mod = _bEditFirstMod;
+      queued_send_track_note_idx_hint  = _noteIdxHint;
+      b_queued_send_track_show = true;
+   }
+
+   // <method.png>
+   public static SendTrackShowByMIDIPort() {
+      // // trace "xxx SysEx::SendTrackShowByMIDIPort";
+      send_raw.offset = 0;
+      send_raw.i8 = queued_send_track_show_dev;
+      send_raw.i8 = queued_send_track_show_ch;
+      send_raw.i8 = queued_send_track_show_trackpage;
+      send_raw.i8 = queued_send_track_edit_first_mod;
+      send_raw.i8 = queued_send_track_note_idx_hint;
+      Send(SYX_MSGID_TRACK_SHOW_BY_MIDI_PORT, send_raw/*payload*/);
+      b_queued_send_track_show = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQueryNewerSampleIds(int _utime) {
+      b_queued_recv_newer_sample_ids = false;
+      queued_send_newer_sample_ids_utime = _utime;
+      b_queued_send_newer_sample_ids = true;
+   }
+
+   // <method.png>
+   public static SendQueryNewerSampleIds() {
+      send_raw.offset = 0;
+      send_raw.i32 = queued_send_newer_sample_ids_utime;
+      Send(SYX_MSGID_QUERY_NEWER_SAMPLE_IDS, send_raw/*payload*/);
+      b_queued_send_newer_sample_ids = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpClone(int _sampleUID) {
+      b_queued_recv_smp_clone = false;
+      queued_send_smp_clone_uid = _sampleUID;
+      b_queued_send_smp_clone = true;
+   }
+
+   // <method.png>
+   public static SendSmpClone() {
+      send_raw.offset = 0;
+      send_raw.i16 = queued_send_smp_clone_uid;
+      Send(SYX_MSGID_SMP_CLONE, send_raw/*payload*/);
+      b_queued_send_smp_clone = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendQueryTracks() {
+      b_queued_recv_tracks = false;
+      b_queued_send_query_tracks = true;
+   }
+
+   // <method.png>
+   public static SendQueryTracks() {
+      b_queued_send_query_tracks = false;
+      send_raw.offset = 0;
+      Send(SYX_MSGID_QUERY_TRACKS, null/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpDelete(IntArray _uids) {
+      b_queued_recv_smp_delete = false;
+      queued_send_smp_delete_uids = _uids;
+      b_queued_send_smp_delete = true;
+   }
+
+   // <method.png>
+   public static SendSmpDelete() {
+      Global.Debug2("SysEx::SendSmpDelete: queued_send_smp_delete_uids="+#(queued_send_smp_delete_uids));
+      b_queued_send_smp_delete = false;
+      send_raw.offset = 0;
+      Utils.WriteShortArray(send_raw, queued_send_smp_delete_uids);
+      Send(SYX_MSGID_SMP_DELETE, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendUIWindowMoved(int _x, int _y, int _w, String _seqHWND) {
+      queued_send_ui_window_moved_x = _x;
+      queued_send_ui_window_moved_y = _y;
+      queued_send_ui_window_moved_w = _w;
+      queued_send_ui_window_moved_seq_hwnd = _seqHWND;
+      b_queued_send_ui_window_moved = true;
+   }
+
+   // <method.png>
+   public static SendUIWindowMoved() {
+      b_queued_send_ui_window_moved = false;
+      send_raw.offset = 0;
+      send_raw.i32 = queued_send_ui_window_moved_x;
+      send_raw.i32 = queued_send_ui_window_moved_y;
+      send_raw.i32 = queued_send_ui_window_moved_w;
+      Utils.WriteString(send_raw, queued_send_ui_window_moved_seq_hwnd);
+      Send(SYX_MSGID_UI_WINDOW_MOVED, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendUIWindowShow() {
+      b_queued_send_ui_window_show = true;
+   }
+
+   // <method.png>
+   public static SendUIWindowShow() {
+      b_queued_send_ui_window_show = false;
+      send_raw.offset = 0;
+      Send(SYX_MSGID_UI_WINDOW_SHOW, send_raw/*payload*/);
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpUploadSeq(int _smpUID) {
+      queued_send_smp_upload_seq_smp_uid = _smpUID;
+      b_queued_send_smp_upload_seq = true;
+   }
+
+   // <method.png>
+   public static SendSmpUploadSeq() {
+      trace "[trc] SysEx::SendSmpUploadSeq: smp_uid="+queued_send_smp_upload_seq_smp_uid;
+      send_raw.offset = 0;
+      send_raw.i32 = queued_send_smp_upload_seq_smp_uid;
+      Send(SYX_MSGID_SMP_UPLOAD_SEQ, send_raw/*payload*/);
+      b_queued_send_smp_upload_seq = false;
+   }
+
+   // <method.png>
+   public =sysexqueue= static QueueSendSmpDownloadSeq(int _smpUID) {
+      queued_send_smp_download_seq_smp_uid = _smpUID;
+      b_queued_send_smp_download_seq = true;
+   }
+
+   // <method.png>
+   public static SendSmpDownloadSeq() {
+      trace "[trc] SysEx::SendSmpDownloadSeq: smp_uid="+queued_send_smp_download_seq_smp_uid;
+      send_raw.offset = 0;
+      send_raw.i32 = queued_send_smp_download_seq_smp_uid;
+      Send(SYX_MSGID_SMP_DOWNLOAD_SEQ, send_raw/*payload*/);
+      b_queued_send_smp_download_seq = false;
+   }
+
+   // <method.png>
+   public static TestEncodeDecode() {
+      Buffer syx;
+      Buffer raw;
+      raw.size = MAX_PAYLOAD_SIZE_RAW;
+      syx.size = MAX_PAYLOAD_SIZE_SYX;
+
+      raw.offset = 0;
+      raw << "hello, world.";
+      Utils.HexDump(raw, 0, raw.offset);
+
+      Encode(raw, syx, 0/*devId*/, SYX_MSGID_PROJECT_NAME_SET);
+
+      Utils.HexDump(syx, 0, syx.offset);
+
+      raw.size = MAX_PAYLOAD_SIZE_RAW; // reallocate / discard previous data
+      Integer devId = -1;
+      Integer msgId = -1;
+
+      if(Decode(syx, raw, devId, msgId))
+      {
+         trace "SysEx::TestEncodeDecode: ok, decoded msg. raw.offset="+raw.offset;
+         Utils.HexDump(raw, 0, raw.offset);
+
+         if(SYX_MSGID_PROJECT_NAME_SET == msgId)
+         {
+            raw.offset = 0;
+            String t;
+            t << raw;
+            trace "SysEx::TestEncodeDecode: ok, decoded string=\""+t+"\"";
+         }
+         else
+         {
+            die "SysEx::TestEncodeDecode: wrong msg id :(";
+         }
+      }
+      else
+      {
+         die "SysEx::TestEncodeDecode: failed to decode msg :(";
+      }
+   }
+
+   // <method.png>
+   public static ParseMIDIInputEvents() {
+      if(null != in_dev)
+      {
+         MIDIIn midiIn <= in_dev.midiin;
+
+         in_dev.readLocalMIDIEvents();  // also calls checkForNewConnection()
+         int numEv = midiIn.numEvents;
+         // // MIDIPipeFrame frameMasterInject <= replay.frame_master_inject;
+
+         // if(numEv > 0)
+         //    trace "xxx sysex midiin numEvents="+numEv;
+
+         loop(numEv)
+         {
+            RecordedMIDIEvent recEv <= midiIn.nextEvent;
+
+            if(recEv.isLongMessage())
+            {
+               // (note) must copy long message buffer since event buffer ptr is only valid temporarily
+               // trace "xxx SysEx::ParseMIDIInputEvents: recEv.size="+recEv.size;
+               Buffer sysexBuffer <= new Buffer;
+               sysexBuffer.size = recEv.size;
+               recEv.copyToStream(sysexBuffer);  // copy w/o 0xF0 / 0xF7 bytes
+               // trace "xxx SysEx::ParseMIDIInputEvents: copy longmessage SYSEX event, size="+sysexBuffer.size;
+               Handle(sysexBuffer);
+            }
+            else
+            {
+               MIDIMapEvent midiMapEvent <= replay.midi_map_rt_event_queue.nextFree;
+               midiMapEvent.initFromRecordedMIDIEvent(audio2rpn_in_dev, recEv);
+               // trace "xxx add Audio2RPN event to rt_event_queue";
+
+               // // mev.addToFrame(frameMasterInject, 0/*noteDuration*/, false/*bDiscard*/);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public static SendMIDIOutputEvents() {
+      if(null != out_dev)
+      {
+         SendPeriodicAudioDetect();
+
+         if(b_audio_connected)
+         {
+            if(null != queued_send_project_name)
+            {
+               SendProjectNameSet(queued_send_project_name);
+               queued_send_project_name <= null;
+            }
+
+            if(null != queued_send_project_load)
+            {
+               SendProjectLoad(queued_send_project_load);
+               queued_send_project_load <= null;
+            }
+
+            if(null != queued_send_project_save)
+            {
+               SendProjectSave(queued_send_project_save);
+               queued_send_project_save <= null;
+            }
+
+            if(-1 != queued_send_bpm)
+            {
+               SendSeqTempoSet(queued_send_bpm, queued_send_ppq);
+               queued_send_bpm = -1;
+            }
+
+            if(b_queued_record_stop)
+            {
+               b_queued_record_stop = false;
+               SendRecordStop();
+            }
+
+            if(b_queued_record_arm)
+            {
+               b_queued_record_arm = false;
+               SendRecordArm();
+            }
+
+            if(b_queued_send_seq_stop)
+            {
+               SendSeqStop();
+               b_queued_send_seq_stop = false;
+            }
+
+            if(b_queued_send_seq_start)
+            {
+               SendSeqStart();
+               b_queued_send_seq_start = false;
+            }
+
+            if(b_queued_send_remotequeryinstanceid)
+            {
+               SendRemoteQueryInstanceId(queued_send_remotequeryinstanceid_dev_idx_hint,
+                                         queued_send_remotequeryinstanceid_midi_ch_hint,
+                                         queued_send_remotequeryinstanceid_instance_id_hint
+                                         );
+               b_queued_send_remotequeryinstanceid = false;
+            }
+
+            if(b_queued_send_remotequeryparams)
+            {
+               SendRemoteQueryParams(queued_send_remotequeryparams_instance_id);
+               b_queued_send_remotequeryparams = false;
+            }
+
+            if(b_queued_send_remotequery_ctl_targets)
+            {
+               SendRemoteQueryCtlTargets();
+               b_queued_send_remotequery_ctl_targets = false;
+            }
+
+            if(b_queued_send_single_remote_param)
+            {
+               // (note) used by AudioLiveRecForm (input pan)
+               SendRemoteParamUpdate(queued_send_single_remote_param_instance_id,
+                                     queued_send_single_remote_param_idx,
+                                     queued_send_single_remote_param_value
+                                     );
+               b_queued_send_single_remote_param = false;
+            }
+
+            if(b_queued_send_query_samples)
+            {
+               SendQuerySamples(queued_send_query_samples_namepattern,
+                                queued_send_query_samples_note
+                                );
+               b_queued_send_query_samples = false;
+            }
+
+            if(queued_send_atrk_msgid > 0)
+            {
+               SendAtrk();
+               queued_send_atrk_msgid = -1;
+            }
+
+            if(b_queued_send_atrk_prefix)
+            {
+               SendAtrkPrefix();
+            }
+
+            if(b_queued_send_atrk_prefix_query)
+            {
+               SendAtrkPrefixQuery();
+            }
+
+            if(b_queued_send_atrk_record_stop)
+            {
+               SendAtrkRecordStop();
+            }
+
+            if(b_queued_send_atrk_record_start)
+            {
+               SendAtrkRecordStart();
+            }
+
+            if(b_queued_send_atrk_page_select)
+            {
+               SendAtrkPageSelect();
+            }
+
+            if(b_queued_send_smp_preview)
+            {
+               SendSmpPreview();
+            }
+
+            if(b_queued_send_query_sampler_instances)
+               SendQuerySamplerInstances();
+
+            if(b_queued_send_smp_normalize)
+               SendSmpNormalize();
+
+            if(b_queued_send_smp_clear)
+               SendSmpClear();
+
+            if(b_queued_send_smp_liverec_create)
+               SendSmpLiveRecCreate();
+
+            if(b_queued_send_smp_peaks)
+               SendSmpPeaks();
+
+            if(b_queued_send_smp_liverec_monitor)
+               SendSmpLiveRecMonitor();
+
+            if(b_queued_send_smp_zones_to_midi)
+               SendSmpZonesToMIDI();
+
+            if(b_queued_send_query_smp_namespaces)
+               SendQuerySmpNamespaces();
+
+            if(b_queued_send_query_audioport)
+               SendQueryAudioPort();
+
+            if(b_queued_send_smpedit)
+               SendSmpEdit();
+
+            if(b_queued_send_track_show)
+               SendTrackShowByMIDIPort();
+
+            if(b_queued_send_newer_sample_ids)
+               SendQueryNewerSampleIds();
+
+            if(b_queued_send_smp_clone)
+               SendSmpClone();
+
+            if(b_queued_send_query_tracks)
+               SendQueryTracks();
+
+            if(b_queued_send_smp_delete)
+               SendSmpDelete();
+
+            if(b_queued_send_ui_window_moved)
+               SendUIWindowMoved();
+
+            if(b_queued_send_ui_window_show)
+               SendUIWindowShow();
+
+            if(b_queued_send_smp_upload_seq)
+               SendSmpUploadSeq();
+
+            if(b_queued_send_smp_download_seq)
+               SendSmpDownloadSeq();
+
+         } // if b_audio_connected
+         else if(STConfig.b_enable_localmidi)
+         {
+            out_dev.localMIDICheckForNewConnection();
+         }
+
+         // (note) buffer is sent in Replay::tick()
+         // // out_dev.send(milliSeconds());
+      }
+   }
+
+   // <method.png>
+   public static SendPeriodicAudioDetect() {
+      int t = milliSeconds();
+
+      if((t - last_audio_detect_ms) >= AUDIO_DETECT_INTERVAL_MS)
+      {
+         if(!b_audio_connected && b_audio_detect_ack)
+         {
+            // Audio process just connected
+            b_audio_connected = true;
+            trace "[...] SysEx: audio process connected at t="+t+", sending BPM/PPQ+project name";
+            SendSeqTempoSet(current_song.getBPM(), current_song.getPPQ());
+            SendProjectNameSet(current_song.song_name);
+         }
+         else
+         {
+            // Keep alive or disconnect
+            b_audio_connected = b_audio_detect_ack;
+         }
+         b_audio_detect_ack = false;
+         last_audio_detect_ms = t;
+         SendDetect();
+      }
+   }
+
+   // <method.png>
+   public static SetRemoteEventListener(RemoteEventListener _listener) {
+      remote_event_listener <= _listener;
+   }
+
+   // <method.png>
+   protected =sysexqueue= static queueRemoteEvent(int _devIdx, int _midiCh, int _instanceId, int _paramIdx, float _paramValue, String _paramName) {
+      RemoteEvent ev <= remote_event_queue.nextFree;
+      if(null != ev)
+      {
+         ev.dev_idx     = _devIdx;
+         ev.midi_ch     = _midiCh;
+         ev.instance_id = _instanceId;
+         ev.param_idx   = _paramIdx;
+         ev.param_value = _paramValue;
+         ev.param_name  = _paramName;
+         // trace "xxx queue remote event "+(remote_event_queue.numElements-1);
+      }
+      else
+      {
+         trace "[~~~] SysEx::queueRemoteEvent: failed to add event: queue length exceeded";
+      }
+   }
+
+   // <method.png>
+   public =replay= static HandleQueuedRecv() {
+      HandleQueuedRecv2();
+   }
+   private =sysexqueue= static HandleQueuedRecv2() {
+      // Called from UI thread
+
+      if(b_queued_recv_seq_start)
+      {
+         b_queued_recv_seq_start = false;
+
+         if(!replay.b_playing)
+         {
+            root_form.handleToggleReplay(false/*bShift*/);
+            // // replay.toggleReplay();
+         }
+      }
+
+      if(b_queued_recv_seq_stop)
+      {
+         b_queued_recv_seq_stop = false;
+         b_queued_record_arm = false;
+
+         if(replay.b_playing)
+         {
+            // // replay.toggleReplay();
+            root_form.handleToggleReplay(false/*bShift*/);
+         }
+      }
+
+      if(b_queued_recv_remotereplyinstanceids)
+      {
+         b_queued_recv_remotereplyinstanceids = false;
+         // trace "xxx b_queued_recv_remotereplyinstanceid: remote_event_listener="+#(remote_event_listener);
+
+         if(remote_event_listener instanceof RemoteEventListener)
+         {
+            remote_event_listener.handleRemoteReplyInstanceIds(queued_recv_remotereplyinstanceids);
+         }
+      }
+
+      if(remote_event_listener instanceof RemoteEventListener)
+      {
+         if(b_queued_recv_remotereplyparams)
+         {
+            b_queued_recv_remotereplyparams = false;
+
+            remote_event_listener.handleRemoteReplyParams(queued_recv_remotereplyparams_instance_id,
+                                                          queued_recv_remotereplyparams_params
+                                                          );
+         }
+      }
+
+      if(remote_event_listener instanceof RemoteEventListener)
+      {
+         RemoteEvent *remoteEvent;
+         foreach remoteEvent in remote_event_queue
+         {
+            remote_event_listener.handleRemoteEvent(remoteEvent);
+         }
+      }
+      remote_event_queue.empty();
+
+      if(b_queued_recv_remotequery_ctl_targets)
+      {
+         trace "[trc] SysEx: handle remotequery_ctl_targets. listener="+#(remotequery_ctl_targets_listener);
+         if(null != remotequery_ctl_targets_listener)
+         {
+            remotequery_ctl_targets_listener.handleRemoteQueryCtlTargets(queued_recv_remotequery_ctl_targets);
+            remotequery_ctl_targets_listener <= null;
+         }
+         b_queued_recv_remotequery_ctl_targets = false;
+      }
+
+      if(null != query_samples_listener)
+      {
+         // (note) NodeTrackerEditor polls 'b_queued_recv_samples' (and does not set 'query_samples_listener')
+         if(b_queued_recv_samples)
+         {
+            query_samples_listener.handleRecvSamples(queued_recv_samples);
+            b_queued_recv_samples = false;
+         }
+
+         if(b_queued_recv_sampler_instances)
+         {
+            query_samples_listener.handleRecvSamplerInstances(queued_recv_sampler_instances);
+            b_queued_recv_sampler_instances = false;
+         }
+      }
+
+      if(null != queued_recv_atrk_prefix)
+      {
+         AudioRecordDialog dlgAudioRecord <= root_form.dlg_audio_record;
+         dlgAudioRecord.handleReceiveAtrkPrefix(queued_recv_atrk_prefix);
+         queued_recv_atrk_prefix <= null;
+      }
+
+      if(b_queued_recv_ui_window_show)
+      {
+         b_queued_recv_ui_window_show = false;
+         Global.Debug2("SysEx<UI_WINDOW_SHOW>: window to front");
+         SDL.showNativeWindow(SDL.nativeWindowHandle, true/*bFocus*/);
+      }
+
+   }
+
+   // <method.png>
+   public static WaitForSmpPeaks() : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_smp_peaks)
+         {
+            b_queued_recv_smp_peaks = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for REPLY_SMP_PEAKS");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForNewerSampleIds() : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_newer_sample_ids)
+         {
+            b_queued_recv_newer_sample_ids = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for REPLY_NEWER_SAMPLE_IDS");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForSmpLiveRecCreate() : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_liverec_sample_create_reply)
+         {
+            b_queued_recv_liverec_sample_create_reply = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for SMP_LIVEREC_CREATE_REPLY");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForSmpEdit() : boolean {
+      // trace "xxx WaitForSmpEdit: b_queued_recv_smpedit="+b_queued_recv_smpedit;
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_smpedit)
+         {
+            b_queued_recv_smpedit = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for SMP_EDIT_REPLY");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForTrackShow() : boolean {
+      // trace "xxx WaitForTrackShow: b_queued_recv_track_show="+b_queued_recv_track_show;
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_track_show)
+         {
+            b_queued_recv_track_show = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for TRACK_SHOW_BY_MIDI_PORT_REPLY");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForQuerySamples() : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_samples)
+         {
+            b_queued_recv_samples = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for QUERY_SAMPLES");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForQueryTracks() : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_tracks)
+         {
+            b_queued_recv_tracks = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for QUERY_TRACKS");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForSmpDelete() : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_smp_delete)
+         {
+            b_queued_recv_smp_delete = false;
+            return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for SMP_DELETE_REPLY");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForSmpUploadSeqAck(int _smpUID) : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_smp_upload_seq_ack)
+         {
+            b_queued_recv_smp_upload_seq_ack = false;
+            if(queued_recv_smp_upload_seq_ack_smp_uid == _smpUID)
+               return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for SMP_UPLOAD_SEQ_ACK");
+      Utils.Backtrace();
+      return false;
+   }
+
+   // <method.png>
+   public static WaitForSmpDownloadSeqReply(int _smpUID) : boolean {
+      loop(WAIT_REPLY_NUM_RETRIES)
+      {
+         if(b_queued_recv_smp_download_seq_reply)
+         {
+            b_queued_recv_smp_download_seq_reply = false;
+            if(queued_recv_smp_download_seq_reply_smp_uid == _smpUID)
+               return true;
+         }
+
+         TKS.sleep(WAIT_REPLY_SLEEP_MS);
+      }
+      Global.Error("Timeout while waiting for SMP_DOWNLOAD_SEQ_REPLY");
+      Utils.Backtrace();
+      return false;
+   }
+
+}

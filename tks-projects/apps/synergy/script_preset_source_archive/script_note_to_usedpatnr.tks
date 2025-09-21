@@ -1,0 +1,66 @@
+//
+// Convert incoming note-on to (used) pattern selection
+//
+
+tag int p_base_note = 3*12;
+
+function OnUIInit(ui::XMLForm xfm) {
+   ui::ComboBox *cm;
+   cm <= xfm.findLayerById("p_base_note");
+   if(null != cm)
+   {
+      cm.setOptions(MIDI.midi_notes);
+      cm.setSelectedOption(p_base_note);
+   }
+}
+
+function ProcessNoteOn(MIDIPipeFrame _frame, MIDIPipeFrame _frameOut) {
+   int numEvents = _frame.getNumEventsNoteOnByFlt(note_in_dev, note_in_ch);
+   if(0 != numEvents)
+   {
+      // trace "xxx numEvents="+numEvents;
+      MIDIPipeEvent ev;
+      int evIdx = 0;
+
+      while(evIdx < numEvents)
+      {
+         _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, note_in_dev, note_in_ch);
+
+         int usedPatIdx = ev.note - p_base_note;
+         // trace "xxx usedPatIdx="+usedPatIdx;
+         if(usedPatIdx >= 0)
+         {
+            Node pcNode <= Node.FindFirstNodeThatListensTo(pc_out_dev, pc_out_ch);
+
+            if(null != pcNode)
+            {
+               byte absPatIdx = pcNode.nodeGetPatternNrByUsedIdx(usedPatIdx);
+               // trace "xxx absPatIdx="+absPatIdx;
+               
+               if(-1 == absPatIdx)
+                  absPatIdx = Node.EMPTY_PAT_NR;  // 127, "--/"
+
+               _frameOut.prgChg(true/*bSet*/, pc_out_dev, pc_out_ch, absPatIdx);
+
+               // Timeline recordable program change
+               st2::replay.addUIPrgChgEntry(pcNode.getNodeGID(), absPatIdx);
+            }
+         }
+
+         // Next Note-On event
+         evIdx++;
+      }
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(!bMuted)
+   {
+      ProcessNoteOn(frameRec, framePlay);
+      ProcessNoteOn(framePlay, framePlay);
+   }
+}

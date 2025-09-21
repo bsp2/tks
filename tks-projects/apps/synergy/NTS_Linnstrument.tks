@@ -1,0 +1,4295 @@
+// ----
+// ---- file   : NTS_Linnstrument.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 08Oct2019
+// ---- changed: 09Oct2019, 10Oct2019, 11Oct2019, 12Oct2019, 14Oct2019, 15Oct2019, 16Oct2019
+// ----          17Oct2019, 18Oct2019, 19Oct2019, 20Feb2020, 28Feb2020, 02Nov2020, 03Nov2020
+// ----          10Nov2020, 11Feb2022, 07May2022
+// ----
+// ----
+// ----
+
+module MNTS_Linnstrument;
+
+use namespace ui;
+use namespace st2;
+
+// boolean b_debug = true;
+boolean b_debug = false;
+
+boolean b_debug2 = false;
+
+
+// <class.png>
+class NTS_EditorPlugin_Linnstrument : NTS_EditorPlugin {
+
+   // (note) uses the Linnstrument User Firmware Mode
+
+   // (note) for realtime recording, Linnstrument events must be mapped to Linnstrument output device
+   //         (see "HW Interface Scene" setting on "Play" tab)
+   //         (the previous scene will be restored when the TrigSeq editor is quit)
+
+   // center menu pads (from top to bottom):
+   //              CYAN: toggle left-split mode
+   //              BLUE:       hold: copy step / slider-reset modifier.
+   //                         click: toggle right-split display mode (steps, pads4x4, pads4x2)
+   //                    hold-click: copy pattern to clipboard
+   //               RED: repeat edit mode
+   //      WHITE/ORANGE: trig toggle edit mode (white), trig toggle vel mode (yellow)
+   //      GREEN/YELLOW: select/play mode (green), select/drag mode and fixed-velocity (pad mode) (yellow)
+   //        ORANGE/RED: realtime recording toggle
+   //                    When BLUE modifier is active, paste pattern clipboard
+   //                    Hold-click is undo
+   //    MAGENTA/YELLOW: step page (magenta = first page)
+   //    MAGENTA/YELLOW: track page (1..8 or 9..16) (magenta = tracks 1..8)
+   //
+   // right-side navigation menu pads (from top to bottom):
+   //            YELLOW: toggle pattern menu
+   //             WHITE: toggle pipenode A/B (set via lctrl-x 1/2 in node editor or pipemap)
+   //            node 1: select first Linnstrument-enabled TrigSeq node (magenta=current node, red=muted, green=other node)
+   //            node 2: select 2nd ^
+   //            node 3: select 3rd ^
+   //            node 4: select 4th ^
+   //            node 5: select 5th ^
+   //       BLUE/YELLOW: toggle replay (yellow=active). hold-click to also send MMC start/stop to other sequencer(s).
+   //
+   // (note) in pattern menu mode, the right-split pads are used for pattern selection
+   //             GREEN: used "main" pattern (1A, 2A, ..)
+   //               RED: unused "main" pattern
+   //              LIME: used "sub" pattern (1B, 3C, 4D, ..)
+   //             BLACK: unused "sub" pattern (1B, 3C, 4D, ..)
+   // (note) hold copy modifier to copy/paste patterns
+   //
+   //
+   // left-split sliders (from top to bottom):
+   //             GREEN: cursor track play length (1..64)
+   //           MAGENTA: track arg3 (e.g. note offset)
+   //              BLUE: -unused-
+   //              PINK: cursor step microtime (+- 100%)
+   //               RED: arg2 (e.g. step note duration) (BLUE=unset)
+   //             WHITE: arg1 (e.g. step velocity)
+   //              LIME: mod2 (BLUE=unset)
+   //             GREEN: mod1 (BLUE=unset)
+   //
+   // (note) hold BLUE center menu pad and tap arg2/mod2/mod1 slider to unset value
+   //
+   // (note) in step selection mode (GREEN), hold and drag step to move it
+   //
+   // (note) in realtime record mode, move slider(s) to record mod1+2/arg1+2 values
+   //
+   // (note) in PAD display modes (4x4 or 4x2),
+   //         - x-position determines mod1 value
+   //         - y-position determines mod2 value
+   //
+   // (note) when track name is blank or "-", pad colors in PAD display modes will be black
+   //
+   // (note) hold left-split pattern select, then press copy-mod to activate 16 track PERFORMANCE MODE
+   //         !! IMPORTANT: a (valid) auto-device must be configured for this to work (see Play tab) !!
+   //         (pad meanings from left to right. left-hand side pads control tracks 1..8, rhs pads tracks 9..16):
+   //           [SOLO] [MUTE] [MUTE_TEMP] [REPEAT] [CTL] [TRIG]
+   //            - mute_temp pad color indicates replay triggers (pink when muted, magenta otherwise)
+   //            - copy-mod + mute_temp = mute permanently
+   //            - repeat x-pos controls repeat rate (see STConfig.node_trig_seq_plugin_repeat_notelen_tbl)
+   //            - hold copy-mod to skip repeat enable+rate
+   //            - repeat y-pos controls velocity modulation (see node_trig_seq_plugin_velscl_min/max)
+   //            - ctl x-pos sends mod1 RPN
+   //            - ctl y-pos sends mod2 RPN
+   //            - copy-mod + any track solo pad toggles temp/pattern mute/solo edit mode (def=temp)
+   // (note) all performance controllers (except for solo/mute) are also sent as RPNs on automation port A
+   //         (place a sequencer after the TrigSeq node to record them)
+   //         (for playback, move the sequencer node before the TrigSeq node)
+   //
+   // (note) hold copy-mod, then press left-split pattern select to reset temporary play state (repeat, mute, vel, ..)
+   //
+
+
+
+   byte linn_ch = 0;  // 0 (==MIDI channel 1)
+
+   define int PB_RANGE = 24;
+
+   define int NUM_COLS = 25;
+   define int NUM_ROWS = 8;
+
+   define int NUM_SLIDER_COLS = 7;   // left-hand side columns (arg/mod/.. sliders)
+   define int NUM_STEP_COLS   = 16;  // number of visible steps (16 on Linnstrument 25x8)
+
+   // define int LEFT_SPLIT_FIRST_NOTE = (4*12)/*C-4*/;
+   // define int RIGHT_SPLIT_FIRST_NOTE = (3*12+7)/*G-3*/;
+
+   define int LEFT_SPLIT_FIRST_NOTE = 1/*C#0*/;
+   define int RIGHT_SPLIT_FIRST_NOTE = 8/*G#0*/;
+
+   define int COLOR_OFF     = 0;
+   define int COLOR_RED     = 1;
+   define int COLOR_YELLOW  = 2;
+   define int COLOR_GREEN   = 3;
+   define int COLOR_CYAN    = 4;
+   define int COLOR_BLUE    = 5;
+   define int COLOR_MAGENTA = 6;
+   define int COLOR_BLACK   = 7;
+   define int COLOR_WHITE   = 8;
+   define int COLOR_ORANGE  = 9;  // flickers in low power mode
+   define int COLOR_LIME    = 10;
+   define int COLOR_PINK    = 11;
+
+   define int CC_COLUMN_COORD  = 20;
+   define int CC_ROW_COORD     = 21;
+   define int CC_COLOR         = 22;
+
+   protected IntArray pad_colors;  // NUM_COLS * NUM_ROWS
+   protected IntArray pad_colors_bak;  // for restoring color under cursor/playhead
+   protected IntArray pad_colors_remote;
+   protected boolean  b_update_pad_colors;
+
+   // (note) too many updates per tick interrupt replay timing => reduce rate + spread over multiple ticks
+   define int MAX_PADS_PER_UPDATE     = 16;
+   define int MAX_PADS_PER_UPDATE_ROW =  3;
+
+   protected boolean b_redraw;
+   protected boolean b_was_playing;
+
+   protected int globalsettings_grace_ms;  // after loading global settings, CC#74 is sometimes reset to 0 (fw issue)
+
+   protected int offset_x;  // step scroll/page offset
+   protected int offset_y;  // track scroll offset
+
+   define int DISPLAY_STEPS     = 0;
+   define int DISPLAY_PADS_4x4  = 1;
+   define int DISPLAY_PADS_4x2  = 2;
+   define int DISPLAY_PERF      = 3;
+   define int NUM_DISPLAY_MODES_CYCLE = 3;
+   static StringArray display_mode_names = [
+      "Steps",
+      "Trigger Pads (4x4)",
+      "Trigger Pads (4x2)",
+      "Performance Pads"
+                                            ];
+   int display_mode;
+   boolean b_pattern_select_left;   // true=select used patterns in left-split area
+   boolean b_pattern_select_left_pressed;   // true while pad is pressed
+   boolean b_pattern_select_left_allow_click;
+   boolean b_pattern_select_right;  // true=select from all patterns in right-split area
+   IntArray used_patterns_left;  // updated when left-split selection mode is started
+
+   define int EDIT_SELECT_MOVE    = 0;  // (multi-)select or move step (also: fixed velocity in pad mode)
+   define int EDIT_SELECT_SLIDER  = 1;  // (multi-)select / copy slider values when step is selected
+   define int EDIT_TRIG_AUTO      = 2;  // first select, then toggle arg1
+   define int EDIT_TRIG           = 3;  // toggle b_trig
+   define int EDIT_REPEAT_AND_MOD = 4;  // toggle b_repeat and/or b_mod
+   static StringArray edit_mode_names = [
+      "Select",
+      "Trig(Auto)",
+      "Trig",
+      "Repeat+Mod"
+                                         ];
+   protected int edit_mode;
+
+   static IntArray arg1_colors = [
+      COLOR_WHITE,   // Max vel
+      COLOR_YELLOW,  // High vel
+      COLOR_ORANGE,  // Medium vel
+      COLOR_LIME,    // Low vel
+                                  ];
+
+   define int CURSOR_BLINK_INTERVAL = 16;
+   define int CURSOR_BLINK_ON_TIME  = 6;
+   protected int cursor_blink_count = 0;
+   protected int cursor_off_lock_ms;
+
+   protected IntArray first_step_noteon_col_indices;    // 0=first step column
+   protected IntArray last_drag_step_col_indices;      // 0=first step column
+   protected IntArray move_src_col_indices;
+
+   define int HOLD_CLICK_TIMEOUT = UIConstants.MOUSE_HOLD_DELAY/*250*/;  // millisec
+   define int HOLD_CLICK_CANCEL_TIMEOUT = 2000;  // millisec
+
+   protected IntArray current_noteon_col_indices;  // changes during slide
+
+   protected IntArray replay_xpos;
+   protected IntArray replay_ypos;
+   protected IntArray replay_note_col_indices;
+   protected IntArray replay_note_vel;
+   protected IntArray replay_note_ms;
+   protected IntArray replay_trig;
+
+   protected IntArray last_xpos;
+   protected IntArray first_xpos;
+   protected IntArray last_ypos;
+   protected IntArray last_zpos;
+
+   protected IntArray slider_noteon_col_indices;  // -1 when slider is not pressed
+   define int SLIDER_LOCK_TIMEOUT = 250;
+   protected IntArray slider_lock_ms;
+   define int SLIDER_CHANGE_TIMEOUT = 500;
+   define int SLIDER_CHANGE_UNLOCK_TIMEOUT = 500;  // to prevent value glitches when lifting finger off pad (e.g playlen)
+   protected IntArray last_slider_change_ms;
+   protected IntArray next_slider_change_ms;
+   protected FloatArray last_slider_values;  // last mod1/mod2/arg1/arg2/microtime value
+
+   protected int menu_pressed_ms;
+   protected int nav_pressed_ms;
+   protected boolean b_copy_mod;
+   protected boolean b_copy_mod_allow_click;
+   protected boolean b_copy_mod_paste;
+   protected boolean b_copy_mod_clearpat; // after "copying" empty pattern
+   protected boolean b_rec_pad_handled;  // true after pattern-paste
+   protected boolean b_trackpage_allow_click;
+   protected boolean b_trackpage_pressed;
+
+   protected PointerArray rand_col_indices;
+   protected PointerArray rand_row_indices;
+   protected boolean b_progressive_x;
+
+   protected int first_step_col_idx;
+   protected int first_step_note_nr;
+   protected int menu_col_idx;
+   protected int nav_col_idx;
+
+   define int TRIGGER_PAD_TIMEOUT       = 11;
+   define int TRIGGER_PAD_FLASH_TIMEOUT = 9;
+   protected IntArray trigger_pad_timeouts;
+
+   protected float trigger_pad_xpos;
+   protected byte  trigger_pad_cc74;
+
+   protected IntArray replay_next_noteon_is_slide;
+   protected IntArray next_noteon_slide_from;
+
+   // (note) the reported x position (slightly) differs from row to row and cel to cel
+   // (note) these arrays contain the right-edge x positions for each pad
+   protected PointerArray xpos_calibration_tables;  // NUM_ROWS IntArray instances
+   protected int orig_xcal_pos;
+
+   protected boolean b_calibration;  // true=record calibration
+
+   protected PointerArray all_linnstrument_nodes;
+   protected int node_page_offset; // can be >0 when there are more than 5 linnstrument nodes
+
+   protected int last_idx32;
+
+   protected int replay_active_count;
+
+   // used to inject mute and repeat events in performance mode
+   //  the events will be forwarded to the first automation port so they can be recorded in another sequencer node
+   MIDIPipeFrame fr_inject;
+
+   //  true=edit temp mute/solo (recordable)
+   // false=edit pattern mute/solo (persistent)
+   //   (note) applies to performance mode
+   protected boolean b_edit_mute_temp;
+
+   protected int queued_node_restart_tick_nr;  // tick_nr or -1=not queued.
+
+
+   // <ui_show.png>
+   public virtual init(MIDISynthProfile _msp) : boolean {
+      int colIdx;
+      int rowIdx;
+
+      NTS_EditorPlugin::init(_msp);
+
+      boolean bMenuLeft = STConfig.b_node_trig_seq_linnstrument_menu_left;
+      first_step_col_idx = NUM_SLIDER_COLS + (bMenuLeft?1:0);
+      first_step_note_nr = RIGHT_SPLIT_FIRST_NOTE + (bMenuLeft?1:0);
+      menu_col_idx = bMenuLeft ? NUM_SLIDER_COLS : (NUM_COLS - 1);
+      nav_col_idx = bMenuLeft ? (NUM_COLS - 1) : NUM_SLIDER_COLS;
+
+      pad_colors.allocAndFill(NUM_COLS * NUM_ROWS, -1);
+
+      pad_colors_bak.allocAndFill(NUM_COLS * NUM_ROWS, -1);
+
+      pad_colors_remote.alloc(NUM_COLS * NUM_ROWS);
+      pad_colors_remote.useAll();
+
+      // (todo) use a better randomizer with non-repeating numbers (lfsr?)
+      //         (although: it does not really matter much)
+      loop(11)
+      {
+         IntArray rowIndices <= new IntArray;
+         rand_row_indices.add(#(deref rowIndices));
+         loop(NUM_ROWS)
+         {
+            for(;;)
+            {
+               rowIdx = rand(NUM_ROWS);
+               if(!rowIndices.contains(rowIdx))
+               {
+                  rowIndices.add(rowIdx);
+                  break;
+               }
+            }
+         }
+      }
+
+      loop(11)
+      {
+         IntArray colIndices <= new IntArray;
+         rand_col_indices.add(#(deref colIndices));
+         loop(NUM_COLS)
+         {
+            for(;;)
+            {
+               colIdx = rand(NUM_COLS);
+               if(!colIndices.contains(colIdx))
+               {
+                  colIndices.add(colIdx);
+                  break;
+               }
+            }
+         }
+      }
+
+      current_noteon_col_indices.alloc(NUM_ROWS);
+      current_noteon_col_indices.useAll();
+
+      first_step_noteon_col_indices.alloc(NUM_ROWS);
+      first_step_noteon_col_indices.useAll();
+
+      last_drag_step_col_indices.alloc(NUM_ROWS);
+      last_drag_step_col_indices.useAll();
+
+      move_src_col_indices.alloc(NUM_ROWS);
+      move_src_col_indices.useAll();
+
+      replay_xpos.alloc(NUM_ROWS);
+      replay_xpos.useAll();
+
+      replay_ypos.alloc(NUM_ROWS);
+      replay_ypos.useAll();
+
+      replay_note_col_indices.alloc(NUM_ROWS);
+      replay_note_col_indices.useAll();
+
+      replay_note_vel.alloc(NUM_ROWS);
+      replay_note_vel.useAll();
+
+      replay_note_ms.alloc(NUM_ROWS);
+      replay_note_ms.useAll();
+
+      replay_trig.alloc(NUM_ROWS);
+      replay_trig.useAll();
+
+      last_xpos.alloc(NUM_ROWS);
+      last_xpos.useAll();
+
+      first_xpos.alloc(NUM_ROWS);
+      first_xpos.useAll();
+
+      last_ypos.alloc(NUM_ROWS);
+      last_ypos.useAll();
+
+      last_zpos.alloc(NUM_ROWS);
+      last_zpos.useAll();
+
+      replay_next_noteon_is_slide.alloc(NUM_ROWS);
+      replay_next_noteon_is_slide.useAll();
+
+      next_noteon_slide_from.alloc(NUM_ROWS);
+      next_noteon_slide_from.useAll();
+
+      slider_noteon_col_indices.alloc(NUM_ROWS);
+      slider_noteon_col_indices.useAll();
+
+      slider_lock_ms.alloc(NUM_ROWS);
+      slider_lock_ms.useAll();
+
+      last_slider_change_ms.alloc(NUM_ROWS);
+      last_slider_change_ms.useAll();
+
+      next_slider_change_ms.alloc(NUM_ROWS);
+      next_slider_change_ms.useAll();
+
+      last_slider_values.alloc(NUM_ROWS);
+      last_slider_values.useAll();
+
+      display_mode = DISPLAY_STEPS;
+      b_pattern_select_left = false;
+      b_pattern_select_left_pressed = false;
+      b_pattern_select_right = false;
+      edit_mode = EDIT_SELECT_SLIDER;
+
+      trigger_pad_timeouts.alloc(NTS_Pattern.NUM_TRACKS);
+      trigger_pad_timeouts.useAll();
+
+      rowIdx = 0;
+      loop(NUM_ROWS)
+      {
+         IntArray xcal <= new IntArray;
+         xcal.alloc(25);
+         colIdx = 0;
+         loop(25)
+         {
+            colIdx++;
+            xcal.add( (colIdx + 0.9) * 170 * (1407.0/1432) * (3967.0 / 3912.0) );  // ~
+         }
+         xpos_calibration_tables.add(#(deref xcal));
+      }
+
+      // Try to load user defined calibration tables
+      local File xcalFile;
+      local String pathName <= STConfig.rootpath+"/linnstrument_cal.dat";
+      if(xcalFile.openLocal(pathName, IOS_IN))
+      {
+         xpos_calibration_tables << xcalFile;
+         xcalFile.close();
+         Global.Debug("NTS_Linnstrument: loaded calibration tables from \""+pathName+"\"");
+      }
+
+      b_calibration = false;
+
+      b_edit_mute_temp = true;
+
+      queued_node_restart_tick_nr = -1;
+
+      return true;
+   }
+
+   // <ui_show.png>
+   public virtual showNode(NodeTrigSeqEditor _editor,
+                           STX_MIDIInDevice  _inDev,
+                           STX_MIDIOutDevice _outDev
+                           ) {
+      NTS_EditorPlugin::showNode(_editor, _inDev, _outDev);
+
+      seq.setEditorPlugin(this);
+
+      selectUserFirmwareMode(true);
+
+      pad_colors_remote.fill(-1);
+
+      // Find initial offsets by cursor position
+      offset_x = (grid.getClippedCursorX() / NUM_STEP_COLS) * NUM_STEP_COLS;
+      offset_y = (grid.getCursorY() >= 8) ? 8 : 0;
+
+      current_noteon_col_indices.fill(-1);
+      first_step_noteon_col_indices.fill(-1);
+      last_drag_step_col_indices.fill(-1);
+      move_src_col_indices.fill(-1);
+
+      menu_pressed_ms = -1;
+      nav_pressed_ms = -1;
+      b_copy_mod = false;
+      b_copy_mod_allow_click = false;
+      b_copy_mod_paste = false;
+
+      replay_xpos.fill(0);
+      replay_ypos.fill(0);
+      replay_note_col_indices.fill(-1);
+      replay_note_vel.fill(-1);
+      replay_note_ms.fill(-1);
+      replay_trig.fill(false);
+      replay_next_noteon_is_slide.fill(false);
+
+      last_xpos.fill(-1);
+      first_xpos.fill(-1);
+      last_ypos.fill(-1);
+      last_zpos.fill(-1);
+      next_noteon_slide_from.fill(-1);
+      slider_noteon_col_indices.fill(-1);
+      slider_lock_ms.fill(0);
+      last_slider_change_ms.fill(0);
+      next_slider_change_ms.fill(0);
+      last_slider_values.fill(NodeTrigSeq.INVALID_VALUE);
+      trigger_pad_timeouts.fill(0);
+
+      findLinnstrumentNodes();
+
+      updateDisplayPads();
+
+      replay.includeMIDIMapInDev(in_dev.dev_idx);
+
+      last_idx32 = -1;
+   }
+
+   // <method_find.png>
+   protected method findLinnstrumentNodes() {
+      all_linnstrument_nodes.empty();
+      int thisIdx = 0;
+      if(null != out_dev)
+      {
+         int numPipes = st2::current_pipe_root.numPipes;
+         int pipeUsedIdx = 0;
+         loop(numPipes)
+         {
+            MIDIPipe pipe <= st2::current_pipe_root.getPipeByUsedIdx(pipeUsedIdx);
+            if(null != pipe)
+            {
+               int numNodes = pipe.numNodes;
+               int nodeIdx = 0;
+               loop(numNodes)
+               {
+                  MIDIPipeNodeScriptProxy n <= pipe.getNodeByIdx(nodeIdx);
+                  if(n instanceof MIDIPipeNodeScriptProxy)
+                  {
+                     Node sn <= n.sci;
+                     if(sn.nodeSupportsHWInterface(out_dev.dev_idx, linn_ch))
+                     {
+                        if(sn instanceof NodeTrigSeq)
+                        {
+                           if(@(sn) == @(seq))
+                              thisIdx = all_linnstrument_nodes.numElements;
+
+                           all_linnstrument_nodes.add(sn);
+                        }
+                     }
+                  }
+
+                  // Next node
+                  nodeIdx++;
+               }
+            }
+
+            // Next pipe
+            pipeUsedIdx++;
+         }
+      }
+
+      // Select initial page offset
+      if(all_linnstrument_nodes.numElements > 5)
+      {
+         // Paging active
+         node_page_offset = (thisIdx/4)*4;
+      }
+      else
+      {
+         // No paging
+         node_page_offset = 0;
+      }
+   }
+
+   // <ui_show.png>
+   public virtual handlePatternChanged() {
+      NTS_EditorPlugin::handlePatternChanged();
+      queueRedraw();
+      validateOffsetX(true/*bClipToCursor*/);
+      // trace "xxx NTS_Linnstrument::handlePatternChanged";
+   }
+
+   // <ui_handle.png>
+   public virtual handlePatternAllocChanged() {
+      findUsedPatternsLeft();
+   }
+
+   // <ui.png>
+   public virtual handleCursorPosChanged() {
+      queueRedraw();
+      validateOffsetX(true/*bClipToCursor*/);
+   }
+
+   // <ui_render.png>
+   public method redraw() {
+      NTS_EditorPlugin::redraw();
+      queueRedraw();
+   }
+
+   // <method.png>
+   protected method queueRedraw() {
+      if(!b_redraw)
+      {
+         if((milliSeconds() - cursor_off_lock_ms) >= 500)
+         {
+            // trace "xxx queueRedraw curson ON";
+            cursor_blink_count = CURSOR_BLINK_INTERVAL -1;
+         }
+         b_redraw = true;
+      }
+   }
+
+   // <method.png>
+   protected method queueRedrawCursorOff() {
+      if(!b_redraw)
+      {
+         // trace "xxx queueRedraw curson OFF";
+         cursor_blink_count = CURSOR_BLINK_ON_TIME;
+         cursor_off_lock_ms = milliSeconds();
+         b_redraw = true;
+      }
+   }
+
+   // <ui_hide.png>
+   public method leaveNode() {
+
+      if(b_calibration)
+      {
+         endCalibration();
+      }
+
+      selectUserFirmwareMode(false);
+
+      NTS_EditorPlugin::leaveNode();
+   }
+
+   // <method_set.png>
+   public method setEditMode(int _mode) {
+      Global.Debug("NTS_LinnStrument::setEditMode("+_mode+")");
+      edit_mode = _mode;
+      queueRedraw();
+      Global.Print("Linnstrument: Select edit mode "+edit_mode_names.get(edit_mode));
+   }
+
+   // <method.png>
+   public method validateOffsetX(boolean _bClipToCursor) {
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         int maxSteps = pat.getMaxSteps();
+         if(maxSteps > 0)
+         {
+            int numPages = ((maxSteps + NUM_STEP_COLS - 1) / NUM_STEP_COLS);
+            numPages = mathClampi(numPages, 0, ((NTS_Track.MAX_STEPS + NUM_STEP_COLS-1) / NUM_STEP_COLS));
+            if(_bClipToCursor)
+            {
+               int pageIdx = grid.getClippedCursorX() / NUM_STEP_COLS;
+               if(pageIdx != (offset_x / NUM_STEP_COLS))
+                  offset_x = pageIdx * NUM_STEP_COLS;
+            }
+            else
+            {
+               if(offset_x >= (numPages * NUM_STEP_COLS))
+                  offset_x = (numPages - 1) * NUM_STEP_COLS;
+            }
+            if(b_debug2) Global.Debug("NTS_Linnstrument: validate pageIdx="+pageIdx+" offset_x="+offset_x);
+            queueRedraw();
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectNextStepPage() {
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         int maxSteps = pat.getMaxSteps();
+         int numPages = ((maxSteps + NUM_STEP_COLS - 1) / NUM_STEP_COLS);
+         numPages = mathClampi(numPages, 0, ((NTS_Track.MAX_STEPS + NUM_STEP_COLS-1) / NUM_STEP_COLS));
+         int cursorX = grid.getClippedCursorX();
+         int pageIdx = offset_x / NUM_STEP_COLS;
+         pageIdx = (pageIdx + 1) % numPages;
+         offset_x = pageIdx * NUM_STEP_COLS;
+         grid.setCursorXYAndMakeVisible(pageIdx * NUM_STEP_COLS + (cursorX % NUM_STEP_COLS), grid.getCursorY());
+         if(b_debug) Global.Debug("NTS_Linnstrument: pageIdx="+pageIdx+" offset_x="+offset_x);
+         queueRedraw();
+         Global.Print("Select step page "+(pageIdx+1)+" / "+numPages);
+      }
+   }
+
+   // <method.png>
+   public method selectNextBarPage() {
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         // (note) assumes that step duration is 16th
+         int numBar16th = current_song.getNum16thPerBar();
+         int maxSteps = pat.getMaxSteps();
+         int newCursorX = grid.getClippedCursorX();
+         int oldOffsetX = offset_x;
+
+         if(0 == (offset_x % numBar16th))
+         {
+            // Currently at start of bar
+            if(numBar16th > NUM_STEP_COLS)
+            {
+               // Show remaining bar steps
+               if( (offset_x + NUM_STEP_COLS) == maxSteps )
+               {
+                  offset_x = 0;
+                  if!(offset_x <= newCursorX < (offset_x + NUM_STEP_COLS))
+                     newCursorX = 0;
+               }
+               else
+               {
+                  int incX = (numBar16th - NUM_STEP_COLS);
+                  if(incX > NUM_STEP_COLS)
+                     incX = NUM_STEP_COLS;
+                  offset_x += incX;
+                  if!(offset_x <= newCursorX < (offset_x + NUM_STEP_COLS))
+                     newCursorX = (offset_x/numBar16th)*numBar16th;
+               }
+            }
+            else
+            {
+               offset_x += numBar16th;
+               newCursorX = newCursorX + numBar16th;
+            }
+         }
+         else
+         {
+            // In the middle of a bar
+            if(numBar16th > NUM_STEP_COLS)
+            {
+               if( (offset_x + NUM_STEP_COLS) == maxSteps )
+               {
+                  offset_x = 0;
+                  if!(offset_x <= newCursorX < (offset_x + NUM_STEP_COLS))
+                     newCursorX = 0;
+               }
+               else
+               {
+                  int nextBarX = ((offset_x/numBar16th)+1)*numBar16th;
+                  nextBarX = mathMini(nextBarX, maxSteps);
+
+                  if( (offset_x + NUM_STEP_COLS) > nextBarX )
+                  {
+                     // Show rest of bar
+                     offset_x = nextBarX - NUM_STEP_COLS;
+                     newCursorX += (offset_x - oldOffsetX);
+                  }
+                  else
+                  {
+                     if(maxSteps > nextBarX)
+                     {
+                        // Bar too long, advance by visible number of steps
+                        offset_x += NUM_STEP_COLS;
+                        newCursorX += NUM_STEP_COLS;
+                     }
+                     else
+                     {
+                        offset_x = 0;
+                        if!(offset_x <= newCursorX < (offset_x + NUM_STEP_COLS))
+                           newCursorX = 0;
+                     }
+                  }
+               }
+            }
+            else
+            {
+               offset_x = 0;
+               newCursorX = 0;
+            }
+         }
+
+         if( (offset_x + NUM_STEP_COLS) >= maxSteps )
+         {
+            if( (oldOffsetX + NUM_STEP_COLS) >= maxSteps )
+            {
+               offset_x = 0;
+               if!(offset_x <= newCursorX < (offset_x + NUM_STEP_COLS))
+                  newCursorX = 0;
+            }
+            else
+            {
+               offset_x = maxSteps - NUM_STEP_COLS;
+               if!(offset_x <= newCursorX < (offset_x + NUM_STEP_COLS))
+                  newCursorX = offset_x;
+            }
+         }
+         if(newCursorX < offset_x)
+            newCursorX = offset_x;
+
+         grid.setCursorXYAndMakeVisible(newCursorX, grid.getCursorY());
+         Global.Print("Linnstrument: next bar cursorX="+grid.getClippedCursorX()+" offset_x="+offset_x);
+         queueRedraw();
+      }
+   }
+
+   // <ui_timer.png>
+   public method handleReplayTickUI() {
+      // trace "xxx NTS_Linnstrument: handleReplayTickUI";
+
+      // Called by NodeTrigEditor.handleReplayTick()
+      NTS_EditorPlugin::handleReplayTickUI();
+
+      if(b_was_playing ^ replay.b_playing)
+      {
+         b_redraw = true;
+         b_was_playing = replay.b_playing;
+      }
+
+      // if(b_debug) Global.Debug("NTS_Linnstrument::handleReplayTickUI");
+      if(b_redraw)
+      {
+         b_redraw = false;
+         b_progressive_x = rand(2);
+         updateDisplayPads();
+         if(isLeftPatternSelectionEnabled())
+            updatePatternPadsLeft();
+         else
+            drawCursorStepSliders();
+         drawMenu();
+         drawNav();
+      }
+
+      if(!b_pattern_select_right)
+      {
+         int idx32 = replay.midi_timing_ticks / (current_song.ppq/8);
+         if(idx32 != last_idx32)
+         {
+            last_idx32 = idx32;
+
+            if(replay.b_playing)
+               replay_active_count = mathMini(replay_active_count + 1, 4);
+            else
+               replay_active_count = mathMaxi(replay_active_count - 1, 0);
+
+            // trace "xxx replay_active_count="+replay_active_count;
+
+            if(DISPLAY_STEPS == display_mode)
+            {
+               drawCursor();
+
+               if(replay.b_playing)
+                  drawPlayHeads();
+            }
+            else if(DISPLAY_PERF == display_mode)
+            {
+               if(replay_active_count > 0)
+               {
+                  updatePerfPads();
+                  drawMenu();  // global mute/repeat/retrig
+               }
+            }
+         }
+      }
+
+      updatePadColors(true/*bProgressive*/);
+   }
+
+   // <midi.png>
+   public method sendNRPN(STX_MIDIOutDevice _dev, short _nrpn, short _value) {
+      _dev.ctlChange(linn_ch, 99, (_nrpn >> 7) & 16383); // NRPN MSB
+      _dev.ctlChange(linn_ch, 98, (_nrpn & 16383));      // NRPN LSB
+      _dev.ctlChange(linn_ch, 6,    0);                  // NRPN value MSB
+      _dev.ctlChange(linn_ch, 6+32, _value);             // NRPN value LSB
+      _dev.ctlChange(linn_ch, 101, 127);                 // RPN parameter number reset MSB
+      _dev.ctlChange(linn_ch, 100, 127);                 // RPN parameter number reset LSB
+   }
+
+   // <midi.png>
+   public method sendCC(STX_MIDIOutDevice _dev, byte _ch, byte _ccId, byte _value) {
+      _dev.ctlChange(_ch, _ccId, _value);
+   }
+
+   // <method.png>
+   protected method selectUserFirmwareMode(boolean _bEnable) {
+      byte ch;
+
+      local String linnId <= "<LINNSTRUMENT_"+(out_dev.dev_idx)+">";
+      Global.Debug("NTS_Linnstrument::seletUserFirmwareMode: linnId=\""+linnId+"\"");
+
+      if(_bEnable)
+      {
+         // Notify other Linnstrument-enabled nodes (e.g. script_linnstrument_arranger)
+         Node.SendGlobalNotification(seq, linnId, "USERMODE_ON");
+
+         // Enter User Firmware Mode
+         sendNRPN(out_dev, 245, 1);
+
+         int rowIdx = 0;
+         loop(NUM_ROWS)
+         {
+            // Select minimum data rate decimation (is this per row?)
+            sendCC(out_dev, rowIdx, 13, 0/*ms*/);
+
+            // Enable slide-mode (send CC 119 when transitioning to neighbour cell)
+            sendCC(out_dev, rowIdx/*ch*/, 9, 1);
+
+            // Enable 3D touch data
+            sendCC(out_dev, rowIdx/*ch*/, 10, 1);  // x-axis
+            sendCC(out_dev, rowIdx/*ch*/, 11, 1);  // y-axis
+            sendCC(out_dev, rowIdx/*ch*/, 12, 1);  // z-axis
+            rowIdx++;
+         }
+
+         // Turn off NRPN parser
+         ch = 0;
+         loop(16)
+         {
+            in_dev.setEnableParam(ch++, false);
+         }
+      }
+      else
+      {
+         // Exit User Firmware Mode
+         sendNRPN(out_dev, 245, 0);
+
+         // Turn on NRPN parser
+         ch = 0;
+         loop(16)
+         {
+            in_dev.setEnableParam(ch++, true);
+         }
+
+         // Notify other Linnstrument-enabled nodes (e.g. script_linnstrument_arranger)
+         Node.SendGlobalNotification(seq, linnId, "USERMODE_OFF");
+      }
+   }
+
+   // <method_set.png>
+   protected method setPadColor(int _colIdx, int _rowIdx, byte _color) {
+      pad_colors[_colIdx + _rowIdx*NUM_COLS] = _color;
+      b_update_pad_colors = true;
+   }
+
+   // <method_set.png>
+   protected method setPadColorBak(int _colIdx, int _rowIdx, byte _color) {
+      pad_colors[_colIdx + _rowIdx*NUM_COLS] = _color;
+      pad_colors_bak[_colIdx + _rowIdx*NUM_COLS] = _color;
+      b_update_pad_colors = true;
+   }
+
+   // <method_set.png>
+   protected method restorePadColor(int _colIdx, int _rowIdx) {
+      pad_colors[_colIdx + _rowIdx*NUM_COLS] = pad_colors_bak[_colIdx + _rowIdx*NUM_COLS];
+      b_update_pad_colors = true;
+   }
+
+   // <method_update.png>
+   protected method updatePadColors(boolean _bProgressive) {
+      // trace "xxx updatePadColors: out_dev="+#(out_dev);
+      if((null != out_dev) && b_update_pad_colors)
+      {
+         int rowIdxR = 0;
+         int numSent = 0;
+         IntArray rowIndices <= rand_row_indices.get(rand(rand_row_indices.numElements));
+         boolean bContinueSending = false;
+         boolean bProgressiveX = _bProgressive && b_progressive_x;
+         loop(NUM_ROWS)
+         {
+            int rowIdx = rowIndices.get(rowIdxR);
+            int colIdxR = 0;
+            int numSentPerRow = 0;
+            IntArray colIndices <= rand_col_indices.get(rand(rand_col_indices.numElements));
+            boolean bFirstRowMsg = true;
+            loop(NUM_COLS)
+            {
+               int colIdx = colIndices.get(colIdxR);
+               int k = rowIdx * NUM_COLS + colIdx;
+               int color = pad_colors[k];
+               if(-1 != color)
+               {
+                  if(color != pad_colors_remote[k])
+                  {
+                     pad_colors_remote[k] = color;
+
+                     // (note) column 0 are the preset/volume/transpose/.. buttons
+                     out_dev.ctlChange(linn_ch, CC_COLUMN_COORD, colIdx + 1);
+                     // trace "xxx ls: cc ch="+linn_ch+" cc="+CC_COLUMN_COORD+" col="+(colIdx+1);
+                     if(bFirstRowMsg)
+                     {
+                        bFirstRowMsg = false;
+                        out_dev.ctlChange(linn_ch, CC_ROW_COORD, rowIdx);
+                     }
+                     out_dev.ctlChange(linn_ch, CC_COLOR, color);
+                     // trace "xxx ls: cc ch="+linn_ch+" cc="+CC_COLOR+" val="+color;
+
+                     numSent++;
+                     numSentPerRow++;
+                     if(_bProgressive && (numSent > MAX_PADS_PER_UPDATE))
+                        return;
+                  }
+               }
+               colIdxR++;
+               if(bProgressiveX && (numSentPerRow >= MAX_PADS_PER_UPDATE_ROW))
+               {
+                  bContinueSending = true;
+                  break;
+               }
+            }
+            rowIdxR++;
+         }
+
+         b_update_pad_colors = bContinueSending;
+
+         // if(b_debug) trace "[dbg] NTS_Linnstrument: updated "+numSent+" pad(s)";
+      }
+   }
+
+   // <method_update.png>
+   protected method updateStepPads() {
+      // (note) track1 = top row (8)
+
+      // if(b_debug) Global.Debug("NTS_Linnstrument::updateStepPads");
+
+      int rowIdx;
+      int colIdx;
+
+      // Clear step area
+      rowIdx = 0;
+      loop(NUM_ROWS)
+      {
+         colIdx = first_step_col_idx;
+         loop(NUM_STEP_COLS)
+         {
+            setPadColorBak(colIdx, rowIdx, COLOR_BLUE);
+            colIdx++;
+         }
+         rowIdx++;
+      }
+
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         NTS_Track *track;
+         foreach track in pat.tracks
+         {
+            rowIdx = (NUM_ROWS - 1 - (track.track_nr - offset_y));
+            if(rowIdx >= 0)
+            {
+               colIdx = first_step_col_idx;
+               int stepIdx = offset_x;
+               loop(mathClampi(track.play_length - offset_x, 0, NUM_STEP_COLS))
+               {
+                  NTS_Step st <= track.getStepByIndex(stepIdx);
+                  if(null != st)
+                  {
+                     if(st.b_trig)
+                     {
+                        if(st.b_repeat)
+                        {
+                           setPadColorBak(colIdx, rowIdx, COLOR_MAGENTA);
+                        }
+                        else
+                        {
+                           setPadColorBak(colIdx, rowIdx, arg1_colors.get(int(st.arg1)));
+                        }
+                     }
+                     else if(st.b_repeat)
+                     {
+                        setPadColorBak(colIdx, rowIdx, COLOR_RED);
+                     }
+                     else if(st.b_mod)
+                     {
+                        setPadColorBak(colIdx, rowIdx, COLOR_PINK);
+                     }
+                     else
+                     {
+                        setPadColorBak(colIdx, rowIdx, COLOR_BLACK);
+                     }
+                  }
+
+                  // Next step
+                  stepIdx++;
+                  colIdx++;
+               }
+            }
+         }
+      }
+
+      b_update_pad_colors = true;
+   }
+
+   // <method.png>
+   protected method updateTriggerPads() {
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         int trackIdx = 0;
+         boolean bAnyChanged = false;
+         int numVisTracks = (DISPLAY_PADS_4x4 == display_mode) ? 8 : 16/*4x2*/;
+         int numRowsPerTrack = (DISPLAY_PADS_4x4 == display_mode) ? 4 : 2/*4x2*/;
+
+         loop(NTS_Pattern.NUM_TRACKS)
+         {
+            boolean bOdd;
+            if(DISPLAY_PADS_4x4 == display_mode)
+            {
+               // 4x4
+               bOdd = ( (0 != (trackIdx & 1)) ^ ((trackIdx&7) >= 4) );
+               bOdd ^= (offset_y > 0);
+            }
+            else
+            {
+               // 4x2
+               bOdd = ( (0 != (trackIdx & 1)) ^ (0 != (((trackIdx&15)/4)&1)) );
+            }
+            int color = bOdd ? COLOR_BLUE : COLOR_YELLOW;
+
+            if(trigger_pad_timeouts[trackIdx] > 0)
+            {
+               if(trigger_pad_timeouts[trackIdx] >= TRIGGER_PAD_FLASH_TIMEOUT)
+                  color = COLOR_WHITE;
+               // else
+               //    color = bOdd ? COLOR_MAGENTA : COLOR_PINK;
+
+               trigger_pad_timeouts[trackIdx] = trigger_pad_timeouts[trackIdx] - 1;
+               bAnyChanged |= true;
+            }
+
+            int rowIdx;
+            int colIdx;
+
+            boolean bVis;
+            if(DISPLAY_PADS_4x4 == display_mode)
+            {
+               // 4x4
+               rowIdx = ((trackIdx & 7) >= 4) ? 4 : 0;
+               bVis = (offset_y <= trackIdx < (offset_y+numVisTracks));
+            }
+            else
+            {
+               // 4x2
+               rowIdx = ((trackIdx & 15) / 4) * 2;
+               bVis = true;
+            }
+
+            if(bVis)
+            {
+               if(!pat.isTrackUsedByIndex(trackIdx))
+                  color = COLOR_BLACK;
+               loop(numRowsPerTrack)
+               {
+                  colIdx = 4 * (trackIdx & 3) + first_step_col_idx;
+                  loop(4)
+                  {
+                     setPadColor(colIdx, rowIdx, color);
+                     colIdx++;
+                  }
+                  rowIdx++;
+               }
+            }
+
+            trackIdx++;
+         }
+
+         if(bAnyChanged)
+            queueRedraw();
+      }
+   }
+
+   // <method.png>
+   protected method updatePatternPadsRight() {
+      int patIdx = 0;
+      int curPatIdx = seq.nodeGetCurrentEditPatternNr();
+      loop(8)
+      {
+         loop(16)
+         {
+            byte color;
+            if(patIdx == curPatIdx)
+            {
+               color = COLOR_MAGENTA;
+            }
+            else if(seq.nodeIsPatternEmpty(patIdx))
+            {
+               if(0 == (patIdx&3))
+               {
+                  color = COLOR_RED;
+               }
+               else
+               {
+                  color = COLOR_BLACK;
+               }
+            }
+            else
+            {
+               if(0 == (patIdx&3))
+               {
+                  color = COLOR_GREEN;
+               }
+               else
+               {
+                  color = COLOR_LIME;
+               }
+            }
+
+            setPadColor(first_step_col_idx + (patIdx&15), (7 - (patIdx/16)), color);
+
+            // Next pattern
+            patIdx++;
+         }
+      }
+   }
+
+   // <method.png>
+   protected method findUsedPatternsLeft() {
+      used_patterns_left.empty();
+      int patUsedIdx = 0;
+      int numUsedPatterns = mathMini(NUM_SLIDER_COLS*NUM_ROWS, seq.nodeGetNumUsedPatterns());
+      // trace "xxx findUsedPatternsLeft: numUsedPatterns="+numUsedPatterns;
+      loop(numUsedPatterns)
+      {
+         used_patterns_left.add(seq.nodeGetPatternNrByUsedIdx(patUsedIdx++));
+      }
+      // trace "xxx findUsedPatternsLeft: used_patterns_left="+#(used_patterns_left);
+      while(patUsedIdx++ < (NUM_SLIDER_COLS*NUM_ROWS))
+         used_patterns_left.add(Node.EMPTY_PAT_NR);
+   }
+
+   // <method.png>
+   protected method updatePatternPadsLeft() {
+      int patUsedIdx = 0;
+      int curPatIdx = seq.nodeGetCurrentEditPatternNr();
+      int numUsedPatterns = mathMini(7*NUM_ROWS, used_patterns_left.numElements);
+      int rowIdx = (NUM_ROWS - 1);
+      loop(NUM_ROWS)
+      {
+         int colIdx = 0;
+         loop(7)
+         {
+            int patIdx = used_patterns_left.get(patUsedIdx);
+            byte color;
+            if(patIdx == curPatIdx)
+            {
+               color = COLOR_MAGENTA;
+            }
+            else
+            {
+               if(Node.EMPTY_PAT_NR == patIdx)
+               {
+                  color = COLOR_BLACK;
+               }
+               else if(0 == (patIdx&3))
+               {
+                  color = COLOR_GREEN;
+               }
+               else
+               {
+                  color = COLOR_LIME;
+               }
+            }
+
+            setPadColor(colIdx, rowIdx, color);
+
+            // Next pattern
+            patUsedIdx++;
+            colIdx++;
+         }
+         rowIdx--;
+      }
+   }
+
+   // <method.png>
+   protected method updatePerfPads() {
+      // [solo] [mute] [mute_temp] [2xrepeat] [3xctlpads]
+      int rowIdx;
+      int colIdx;
+      rowIdx = NUM_ROWS - 1;
+      int trackIdx = 0;
+      colIdx = first_step_col_idx;
+      byte color;
+      // // int soloMask = seq.node_temp_solo_track_mask;
+      // // int muteMask = seq.node_temp_mute_track_mask;
+
+      NTS_Pattern pat <= editor.getEditPattern();
+
+      loop(NTS_Pattern.NUM_TRACKS)
+      {
+         NTS_TrackState trackState <= seq.getTrackStateByIndex(trackIdx);
+         boolean bParentTrackMuted;
+         boolean bParentTrackSolo;
+         boolean bDurScl;
+
+         if(null != pat)
+         {
+            NTS_Track track <= pat.getTrackByIndex(trackIdx);
+            bParentTrackMuted = (NTS_Track.STATE_MUTE == track.play_state);
+            bParentTrackSolo  = (NTS_Track.STATE_SOLO == track.play_state);
+            bDurScl = track.b_linnstrument_perf_trig_dur_scl;
+         }
+         else
+         {
+            bParentTrackMuted = false;
+            bParentTrackSolo  = false;
+            bDurScl = false;
+         }
+
+         if(b_edit_mute_temp)
+         {
+            // Col 1: solo play state (temp)
+            if(bParentTrackMuted)
+            {
+               switch(trackState.temp_play_state)
+               {
+                  case NTS_Track.STATE_PLAY:
+                  case NTS_Track.STATE_MUTE:
+                     setPadColor(colIdx + 0, rowIdx, COLOR_RED);
+                     break;
+
+                  case NTS_Track.STATE_SOLO:
+                     setPadColor(colIdx + 0, rowIdx, COLOR_ORANGE);
+                     break;
+               }
+            }
+            else
+            {
+               switch(trackState.temp_play_state)
+               {
+                  case NTS_Track.STATE_PLAY:
+                     setPadColor(colIdx + 0, rowIdx, COLOR_BLACK);
+                     break;
+
+                  case NTS_Track.STATE_MUTE:
+                     setPadColor(colIdx + 0, rowIdx, COLOR_BLACK);
+                     break;
+
+                  case NTS_Track.STATE_SOLO:
+                     setPadColor(colIdx + 0, rowIdx, COLOR_YELLOW);
+                     break;
+               }
+            }
+
+            // Col 2: mute play state (temp)
+            switch(trackState.temp_play_state)
+            {
+               case NTS_Track.STATE_PLAY:
+                  setPadColor(colIdx + 1, rowIdx, COLOR_GREEN);
+                  break;
+
+               case NTS_Track.STATE_MUTE:
+                  setPadColor(colIdx + 1, rowIdx, COLOR_RED);
+                  break;
+
+               case NTS_Track.STATE_SOLO:
+                  setPadColor(colIdx + 1, rowIdx, COLOR_YELLOW);
+                  break;
+            }
+         }
+         else
+         {
+            // Col 1: solo play state (pattern)
+            if(bParentTrackSolo)
+            {
+               setPadColor(colIdx + 0, rowIdx, COLOR_YELLOW);
+            }
+            else
+            {
+               setPadColor(colIdx + 0, rowIdx, COLOR_BLACK);
+            }
+
+            // Col 2: mute play state (pattern)
+            if(bParentTrackMuted)
+            {
+               setPadColor(colIdx + 1, rowIdx, COLOR_RED);
+            }
+            else if(bParentTrackSolo)
+            {
+               setPadColor(colIdx + 1, rowIdx, COLOR_YELLOW);
+            }
+            else
+            {
+               setPadColor(colIdx + 1, rowIdx, COLOR_GREEN);
+            }
+         }
+
+         boolean bTrackMuted = (NTS_Track.STATE_MUTE == trackState.temp_play_state);
+
+         // Col 3: flip mute state
+         if(trackState.ui_replay_trig_countdown > 0)
+         {
+            if(bTrackMuted ^ trackState.b_flip_mute)
+               setPadColor(colIdx + 2, rowIdx, COLOR_PINK);
+            else
+               setPadColor(colIdx + 2, rowIdx, COLOR_MAGENTA);
+         }
+         else
+         {
+            if(bTrackMuted ^ trackState.b_flip_mute)
+               setPadColor(colIdx + 2, rowIdx, COLOR_RED);
+            else
+               setPadColor(colIdx + 2, rowIdx, COLOR_LIME);
+         }
+
+         // Col 4..5: repeat+rate
+         setPadColor(colIdx + 3, rowIdx, COLOR_ORANGE);
+         setPadColor(colIdx + 4, rowIdx, COLOR_ORANGE);
+
+         // Col 6..7: ctl pads
+         color = (rowIdx < 4) ? COLOR_CYAN : COLOR_BLUE;
+         setPadColor(colIdx + 5, rowIdx, color);
+         setPadColor(colIdx + 6, rowIdx, color);
+
+         // Col 8: trigger pad
+         setPadColor(colIdx + 7, rowIdx, bDurScl ? COLOR_ORANGE : bTrackMuted ? COLOR_PINK : COLOR_WHITE);
+
+         // Next track
+         trackIdx++;
+         if(8 == trackIdx)
+         {
+            colIdx += 8;
+            rowIdx = NUM_ROWS -1;
+         }
+         else
+            rowIdx--;
+      }
+
+      // // }
+      // // else
+      // // {
+      // //    // Empty pattern
+      // //    rowIdx = 0;
+      // //    loop(NUM_ROWS);
+      // //    {
+      // //       colIdx = 0;
+      // //       loop(NUM_STEP_COLS)
+      // //       {
+      // //          colIdx++;
+      // //          setPadColor(colIdx, rowIdx, COLOR_BLACK);
+      // //       }
+      // //       rowIdx++;
+      // //    }
+      // // }
+   }
+
+   // <method.png>
+   protected =replay= method selectNextDisplayMode() {
+      display_mode = (display_mode + 1) % NUM_DISPLAY_MODES_CYCLE;
+      b_pattern_select_right = false;
+      findUsedPatternsLeft();
+      queueRedraw();
+      Global.Print("Linnstrument: Display mode is "+display_mode_names.get(display_mode));
+   }
+
+   // <method.png>
+   protected method updateDisplayPads() {
+      if(b_pattern_select_right)
+      {
+         updatePatternPadsRight();
+      }
+      else switch(display_mode)
+      {
+         default:
+         case DISPLAY_STEPS:
+            updateStepPads();
+            break;
+
+         case DISPLAY_PADS_4x4:
+         case DISPLAY_PADS_4x2:
+            updateTriggerPads();
+            break;
+
+         case DISPLAY_PERF:
+            updatePerfPads();
+            break;
+      }
+   }
+
+   // <method.png>
+   protected method drawMenu() {
+      int colIdx = menu_col_idx;
+
+      // 8: Pattern select
+      setPadColor(colIdx, 7, isLeftPatternSelectionEnabled() ? COLOR_MAGENTA : COLOR_YELLOW);
+
+      // 7: Copy Modifier
+      setPadColor(colIdx, 6, COLOR_BLUE);
+
+      // 6: Edit Mode #3 / Global Repeat If-Trig
+      if(DISPLAY_PERF == display_mode)
+      {
+         if(seq.b_global_repeat)
+            setPadColor(colIdx, 5, COLOR_ORANGE);
+         else
+            setPadColor(colIdx, 5, COLOR_BLACK);
+      }
+      else
+      {
+         switch(edit_mode)
+         {
+            default:
+               setPadColor(colIdx, 5, COLOR_BLACK);
+               break;
+
+            case EDIT_REPEAT_AND_MOD:
+               setPadColor(colIdx, 5, COLOR_RED);
+               break;
+         }
+      }
+
+      // 5: Edit Mode #2 / Node Mute Temp
+      if(DISPLAY_PERF == display_mode)
+      {
+         if(seq.nodeGetMuteTemp())
+            setPadColor(colIdx, 4, COLOR_RED);
+         else
+            setPadColor(colIdx, 4, COLOR_GREEN);
+      }
+      else
+      {
+         switch(edit_mode)
+         {
+            default:
+               setPadColor(colIdx, 4, COLOR_BLACK);
+               break;
+
+            case EDIT_TRIG_AUTO:
+               setPadColor(colIdx, 4, COLOR_ORANGE);
+               break;
+
+            case EDIT_TRIG:
+               setPadColor(colIdx, 4, COLOR_WHITE);
+               break;
+         }
+      }
+
+      // 4: Edit Mode #1 / Node Restart
+      if(DISPLAY_PERF == display_mode)
+      {
+         if(-1 != queued_node_restart_tick_nr)
+            setPadColor(colIdx, 3, COLOR_PINK);
+         else
+            setPadColor(colIdx, 3, COLOR_BLACK);
+      }
+      else
+      {
+         switch(edit_mode)
+         {
+            default:
+               setPadColor(colIdx, 3, COLOR_BLACK);
+               break;
+
+            case EDIT_SELECT_MOVE:
+               setPadColor(colIdx, 3, COLOR_YELLOW);
+               break;
+
+            case EDIT_SELECT_SLIDER:
+               setPadColor(colIdx, 3, COLOR_GREEN);
+               break;
+         }
+      }
+
+      // 3: Record / Undo
+      if(seq.b_recording)
+      {
+         setPadColor(colIdx, 2, COLOR_RED);
+      }
+      else
+      {
+         setPadColor(colIdx, 2, COLOR_ORANGE);
+      }
+
+      // 2: Step page
+      if(offset_x > 0)
+         setPadColor(colIdx, 1, COLOR_LIME);
+      else
+         setPadColor(colIdx, 1, COLOR_MAGENTA);
+
+      // 1: Track page
+      if(offset_y > 0)
+         setPadColor(colIdx, 0, COLOR_LIME);
+      else
+         setPadColor(colIdx, 0, COLOR_MAGENTA);
+
+   }
+
+   // <method.png>
+   protected method drawNav() {
+      int rowIdx = 0;
+      int colIdx = nav_col_idx;
+
+      // Bottom row (replay toggle)
+      if(replay.b_playing)
+      {
+         setPadColor(colIdx, rowIdx, COLOR_LIME);
+      }
+      else
+      {
+         setPadColor(colIdx, rowIdx, COLOR_BLUE);
+      }
+
+      rowIdx = 0;  // y-flipped
+      int numNodes;
+      int numNodeRows;
+      if(all_linnstrument_nodes.numElements > 5)
+         numNodeRows = 4;
+      else
+         numNodeRows = 5;
+      numNodes = mathMini(all_linnstrument_nodes.numElements, numNodeRows);
+      int nodeIdx = node_page_offset;
+      // trace "xxx drawNav: numNodes="+numNodes;
+      loop(numNodes)
+      {
+         Node n <= all_linnstrument_nodes.get(nodeIdx);
+         if(null != n)
+         {
+            if(@(n) == @(seq))
+            {
+               setPadColor(colIdx, (NUM_ROWS - 3 - rowIdx), COLOR_MAGENTA);
+            }
+            else
+            {
+               if(n.isNodeOrPipeMuted())
+                  setPadColor(colIdx, (NUM_ROWS - 3 - rowIdx), COLOR_RED);
+               else
+                  setPadColor(colIdx, (NUM_ROWS - 3 - rowIdx), COLOR_GREEN);
+            }
+         }
+         else
+         {
+            setPadColor(colIdx, (NUM_ROWS - 3 - rowIdx), COLOR_BLACK);
+         }
+         rowIdx++;
+         nodeIdx++;
+      }
+
+      while(rowIdx < numNodeRows)
+      {
+         setPadColor(colIdx, (NUM_ROWS -3 - rowIdx), COLOR_BLACK);
+         rowIdx++;
+      }
+
+      if(4 == numNodeRows)
+      {
+         // Last node row pad indicates paging offset
+         if(node_page_offset > 0)
+            setPadColor(colIdx, 1, COLOR_LIME);
+         else
+            setPadColor(colIdx, 1, COLOR_MAGENTA);
+      }
+
+      setPadColor(colIdx, 6, COLOR_WHITE);
+
+      if(b_pattern_select_right)
+         setPadColor(colIdx, 7, COLOR_MAGENTA);
+      else
+         setPadColor(colIdx, 7, COLOR_YELLOW);
+   }
+
+   // <method.png>
+   protected method drawCursor() {
+      int oldCursorBlinkCount = cursor_blink_count;
+      cursor_blink_count = (cursor_blink_count + 1) % CURSOR_BLINK_INTERVAL;
+      int cursorRowIdx = (NUM_ROWS - 1 - (grid.getCursorY() - offset_y));
+      if(cursorRowIdx >= 0)
+      {
+         int cursorColIdx = (grid.getClippedCursorX() - offset_x);
+         if(0 <= cursorColIdx < NUM_STEP_COLS)
+         {
+            cursorColIdx += first_step_col_idx;
+
+            if((cursor_blink_count < CURSOR_BLINK_ON_TIME) && (oldCursorBlinkCount >= CURSOR_BLINK_ON_TIME))
+            {
+               setPadColor(cursorColIdx, cursorRowIdx, COLOR_CYAN);
+            }
+            else if((cursor_blink_count >= CURSOR_BLINK_ON_TIME) && (oldCursorBlinkCount < CURSOR_BLINK_ON_TIME))
+            {
+               restorePadColor(cursorColIdx, cursorRowIdx);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method drawPlayHeads() {
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         NTS_Track *track;
+         foreach track in pat.tracks
+         {
+            int rowIdx = (NUM_ROWS - 1 - (track.track_nr - offset_y));
+            if(rowIdx >= 0)
+            {
+               int colIdx;
+
+               if(-1 != track.plugin_last_played_restore_step)
+               {
+                  colIdx = track.plugin_last_played_restore_step - offset_x;
+                  if(0 <= colIdx < NUM_STEP_COLS)
+                  {
+                     colIdx += first_step_col_idx;
+                     restorePadColor(colIdx, rowIdx);
+                  }
+                  track.plugin_last_played_restore_step = -1;
+               }
+
+               if(track.last_played_step >= 0)
+               {
+                  colIdx = track.last_played_step - offset_x;
+                  if(0 <= colIdx < NUM_STEP_COLS)
+                  {
+                     colIdx += first_step_col_idx;
+                     setPadColor(colIdx, rowIdx, COLOR_CYAN);
+                     track.plugin_last_played_restore_step = track.last_played_step;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method drawSlider(int _rowIdx, float _min, float _max, float _cur, int _color) {
+      int colIdx;
+      if(_cur < _min)
+      {
+         // INVALID_VALUE (<not set>)
+         colIdx = 0;
+         loop(NUM_SLIDER_COLS)
+            setPadColor(colIdx++, _rowIdx, COLOR_BLUE);
+      }
+      else
+      {
+         float rel = mathMinf((_cur - _min) / (_max - _min), 1.0f);
+         int numCols;
+         int ctrColIdx = NUM_SLIDER_COLS / 2;
+         if(_min < 0.0f)
+         {
+            // Bipolar
+            int valColIdx;
+            valColIdx = int(rel*NUM_SLIDER_COLS);
+            valColIdx = mathClampi(valColIdx, 0, NUM_SLIDER_COLS);
+            colIdx = 0;
+            if(valColIdx > ctrColIdx)
+            {
+               loop(ctrColIdx)
+                  setPadColor(colIdx++, _rowIdx, COLOR_BLACK);
+               while(colIdx <= valColIdx)
+                  setPadColor(colIdx++, _rowIdx, _color);
+               while(colIdx < NUM_SLIDER_COLS)
+                  setPadColor(colIdx++, _rowIdx, COLOR_BLACK);
+            }
+            else
+            {
+               loop(valColIdx)
+                  setPadColor(colIdx++, _rowIdx, COLOR_BLACK);
+               while(colIdx <= ctrColIdx)
+                  setPadColor(colIdx++, _rowIdx, _color);
+               while(colIdx < NUM_SLIDER_COLS)
+                  setPadColor(colIdx++, _rowIdx, COLOR_BLACK);
+            }
+         }
+         else
+         {
+            // Unipolar
+            if(0 == rel)
+               numCols = 0;
+            else
+               numCols = int(rel*(NUM_SLIDER_COLS)) + 1;
+            numCols = mathClampi(numCols, 0, NUM_SLIDER_COLS);
+            colIdx = 0;
+            loop(numCols)
+               setPadColor(colIdx++, _rowIdx, _color);
+            loop(NUM_SLIDER_COLS - numCols)
+               setPadColor(colIdx++, _rowIdx, COLOR_BLACK);
+         }
+      }
+   }
+
+   // <method.png>
+   protected method drawCursorStepSliders() {
+      NTS_Step st <= grid.getCursorStep();
+      if(null != st)
+      {
+         // Mod1
+         drawSlider(0, 0.0f, 127.0f, st.mod1, COLOR_GREEN);
+
+         // Mod2
+         drawSlider(1, 0.0f, 127.0f, st.mod2, COLOR_LIME);
+
+         // Arg1
+         drawSlider(2, 0.0f, 3.0f, st.arg1, COLOR_WHITE);
+
+         // Arg2
+         drawSlider(3, 0.0f, 127.0f, st.arg2, COLOR_RED);////YELLOW);
+
+         // Microtime
+         drawSlider(4, -1.0f, 1.0f, st.microtime, COLOR_PINK);
+      }
+      else
+      {
+         // Mod1
+         drawSlider(0, 0.0f, 127.0f, -1, COLOR_GREEN);
+
+         // Mod2
+         drawSlider(1, 0.0f, 127.0f, -1, COLOR_LIME);
+
+         // Arg1
+         drawSlider(2, 0.0f, 3.0f, -1, COLOR_WHITE);
+
+         // Arg2
+         drawSlider(3, 0.0f, 127.0f, -1, COLOR_RED);////YELLOW);
+
+         // Microtime
+         drawSlider(4, -1.0f, 1.0f, -99999, COLOR_PINK);
+      }
+
+      NTS_Track track <= grid.getCursorTrack();
+      if(null != track)
+      {
+         // -
+         drawSlider(5, 0.0f, 1.0f, -1, COLOR_BLACK);
+
+         // Arg3
+         drawSlider(6, -24.0f, 24.0f, track.arg3, COLOR_MAGENTA);
+
+         // Playlength
+         drawSlider(7, 1.0f, 64.0f, track.play_length, COLOR_GREEN);
+      }
+      else
+      {
+         // -
+         drawSlider(5, 0.0f, 1.0f, -1, COLOR_BLACK);
+
+         // Arg3
+         drawSlider(6, -24.0f, 24.0f, -99999, COLOR_MAGENTA);
+
+         // Playlength
+         drawSlider(7, 1.0f, 64.0f, -99999, COLOR_GREEN);
+      }
+   }
+
+   // <method.png>
+   protected method calcSliderValue(float _min, float _max, float _colIdx) : float {
+      float r;
+      if(b_copy_mod)
+      {
+         r = NodeTrigSeq.INVALID_VALUE;
+      }
+      else
+      {
+         float ctrX = NUM_SLIDER_COLS / 2.0;
+         if(_colIdx < ctrX)
+         {
+            r = 1.0 - (ctrX - _colIdx) / int(ctrX);
+            r *= 0.5;
+         }
+         else
+         {
+            r = (_colIdx - ctrX) / int(ctrX);
+            r *= 0.5;
+            r += 0.5;
+         }
+         // trace "xxx calcSliderValue: r="+r+" ctrX="+ctrX;
+
+         r = _min + r * (_max - _min);
+         r = mathClampf(r, _min, _max);
+      }
+      return r;
+   }
+
+   // <method.png>
+   protected method handleSliderChanged(int _rowIdx, float _colIdx,
+                                        boolean _bSnap, boolean _bTest, boolean _bUseLastVal
+                                        ) : boolean {
+
+      // trace "xxx handleSliderChanged: colIdx="+_colIdx;
+      float newVal;
+      if(_bUseLastVal)
+      {
+         if(-1 == slider_noteon_col_indices[_rowIdx])
+            return false; // slider not pressed
+         newVal = last_slider_values[_rowIdx];
+         // trace "xxx copy old slider value rowIdx="+_rowIdx+" f="+newVal;
+      }
+
+      boolean bRecording = seq.b_recording && replay.b_playing;
+
+      NTS_Step st <= grid.getCursorStep();
+      float f;
+      boolean bChanged = false;
+      float oldVal;
+      if(null != st)
+      {
+         switch(_rowIdx)
+         {
+            case 0: // mod1
+               oldVal = st.mod1;
+               if(b_copy_mod)
+                  newVal = NodeTrigSeq.INVALID_VALUE;
+               else if(!_bUseLastVal)
+               {
+                  f = calcSliderValue(0.0f, 127.0f, _colIdx);
+                  newVal = int(f+0.5);  // always snap
+               }
+               if(!bRecording)
+               {
+                  bChanged = (oldVal != newVal);
+                  if(bChanged && !_bTest)
+                     st.setMod1(newVal);
+               }
+               break;
+
+            case 1: // mod2
+               oldVal = st.mod2;
+               if(b_copy_mod)
+                  newVal = NodeTrigSeq.INVALID_VALUE;
+               else if(!_bUseLastVal)
+               {
+                  f = calcSliderValue(0.0f, 127.0f, _colIdx);
+                  newVal = int(f+0.5);  // always snap
+               }
+               if(!bRecording)
+               {
+                  bChanged = (oldVal != newVal);
+                  if(bChanged && !_bTest)
+                     st.setMod2(newVal);
+               }
+               break;
+
+            case 2: // arg1
+               oldVal = st.arg1;
+               if(b_copy_mod)
+                  newVal = 0.0f;
+               else if(!_bUseLastVal)
+               {
+                  f = calcSliderValue(0.0f, 3.0f, _colIdx);
+                  newVal = _bSnap ? int(f+0.5) : f;
+               }
+               if(!bRecording)
+               {
+                  bChanged = (oldVal != newVal);
+                  if(bChanged && !_bTest)
+                     st.setArg1(newVal);
+               }
+               break;
+
+            case 3: // arg2
+               oldVal = st.arg2;
+               if(b_copy_mod)
+                  newVal = NodeTrigSeq.INVALID_VALUE;
+               else if(!_bUseLastVal)
+               {
+                  f = calcSliderValue(0.0f, 127.0f, _colIdx);
+                  newVal = int(f+0.5);  // always snap
+               }
+               if(!bRecording)
+               {
+                  bChanged = (oldVal != newVal);
+                  if(bChanged && !_bTest)
+                     st.setArg2(newVal);
+               }
+               break;
+
+            case 4: // microtime
+               oldVal = st.microtime;
+               if(b_copy_mod)
+                  newVal = 0.0f;
+               else if(!_bUseLastVal)
+                  newVal = calcSliderValue(-1.0f, 1.0f, _colIdx);
+               if(!bRecording)
+               {
+                  bChanged = (oldVal != newVal);
+                  if(bChanged && !_bTest)
+                     st.setMicroTime(newVal);
+               }
+               break;
+         }
+      }
+
+      NTS_Track track <= grid.getCursorTrack();
+      if(null != track)
+      {
+         switch(_rowIdx)
+         {
+            case 5: // -
+               break;
+
+            case 6: // arg3
+               if(!b_copy_mod)
+               {
+                  oldVal = track.arg3;
+                  if(!_bUseLastVal)
+                     newVal = calcSliderValue(-24.0f, 24.0f, _colIdx);
+                  if(!bRecording)
+                  {
+                     bChanged = (oldVal != newVal);
+                     if(bChanged && !_bTest)
+                     {
+                        track.setArg3(newVal);
+                        editor.updateTrackForms();
+                     }
+                  }
+               }
+               break;
+
+            case 7: // play_length
+               if(!b_copy_mod)
+               {
+                  oldVal = track.play_length;
+                  if(!_bUseLastVal)
+                     newVal = calcSliderValue(1.0f, 64.0f, _colIdx);
+                  if(!bRecording)
+                  {
+                     NTS_Pattern pat <= editor.getEditPattern();
+                     bChanged = (oldVal != newVal);
+                     // trace "xxx play_length newVal="+newVal+" bChanged="+bChanged+" bTest="+_bTest;
+                     if(bChanged && !_bTest)
+                     {
+                        track.setPlayLength(newVal, pat);
+                        editor.updateTrackForms();
+                     }
+                  }
+               }
+               break;
+         }
+      }
+      if(!_bUseLastVal)
+      {
+         if(!_bTest)
+         {
+            if(bRecording)
+            {
+               // Slider recording
+               int lastPlayedStep = track.getLastPlayedStep();
+               if(-1 != lastPlayedStep)
+               {
+                  grid.setCursorXYAndMakeVisible(lastPlayedStep, grid.getCursorY());
+                  grid.redraw();
+                  queueRedraw();
+               }
+            }
+
+            if(bChanged)
+            {
+               queueRedraw();
+               editor.redraw();
+               editor.queueUpdateStepDetails();
+               last_slider_change_ms[_rowIdx] = milliSeconds();
+            }
+
+            last_slider_values[_rowIdx] = newVal;
+         }
+      }
+      return bChanged;
+   }
+
+   // <method.png>
+   protected method isLeftPatternSelectionEnabled() : boolean {
+      return b_pattern_select_left || b_pattern_select_right || (DISPLAY_STEPS != display_mode);
+   }
+
+   // <method.png>
+   protected method handleMenuPressed(int _rowIdx) {
+      menu_pressed_ms = milliSeconds();
+
+      switch(_rowIdx)
+      {
+         case 7:  // Pattern Select
+            // Toggle pattern selection mode
+            if(b_copy_mod)
+            {
+               resetTemporaryReplayState();
+               b_copy_mod_allow_click = false;
+            }
+            else
+            {
+               b_pattern_select_left_pressed = true;
+               b_pattern_select_left_allow_click = true;
+               if(!isLeftPatternSelectionEnabled())
+               {
+                  findUsedPatternsLeft();
+                  b_pattern_select_left = true;
+               }
+               else
+               {
+                  b_pattern_select_left = false;
+                  b_pattern_select_right = false;
+                  display_mode = DISPLAY_STEPS;
+               }
+               Global.Print("Linnstrument: Pattern Selection (left-split) is "+Utils.GetEnableString(b_pattern_select_left));
+            }
+            queueRedraw();
+            break;
+
+         case 6:  // Copy Modifier / Display Type
+            if(b_pattern_select_left_pressed)
+            {
+               // Shortcut for activating performance mode
+               b_pattern_select_left = false;
+               b_pattern_select_left_allow_click = false;
+               b_pattern_select_right = false;
+               display_mode = DISPLAY_PERF;
+               b_copy_mod_allow_click = false;
+               Global.Print("Linnstrument: Quick-Select Performance Mode");
+               queueRedraw();
+            }
+            else
+            {
+               b_copy_mod = true;
+               b_copy_mod_allow_click = true;
+               b_copy_mod_paste = false;
+               Global.Print("Linnstrument: Copy modifier is ACTIVE");
+            }
+            break;
+
+         case 5:  // Edit Mode #3 / Global Repeat If-Trig
+            if(DISPLAY_PERF == display_mode)
+            {
+               injectGlobalRepeatEnableRPN(2/*if-trig*/);
+               queueRedraw();
+            }
+            else
+            {
+               switch(edit_mode)
+               {
+                  default:
+                     setEditMode(EDIT_REPEAT_AND_MOD);
+                     break;
+               }
+            }
+            break;
+
+         case 4:  // Edit Mode #2 / Node Mute Temp
+            if(DISPLAY_PERF == display_mode)
+            {
+               injectNodeMuteTempRPN(true);
+               queueRedraw();
+            }
+            else
+            {
+               switch(edit_mode)
+               {
+                  default:
+                     setEditMode(EDIT_TRIG);
+                     break;
+
+                  case EDIT_TRIG:
+                     setEditMode(EDIT_TRIG_AUTO);
+                     break;
+               }
+            }
+            break;
+
+         case 3:  // Edit Mode #1 / Node Restart
+            if(DISPLAY_PERF == display_mode)
+            {
+               queueNodeRestart();
+               queueRedraw();
+            }
+            else
+            {
+               switch(edit_mode)
+               {
+                  default:
+                     setEditMode(EDIT_SELECT_MOVE);
+                     break;
+
+                  case EDIT_SELECT_MOVE:
+                     setEditMode(EDIT_SELECT_SLIDER);
+                     break;
+               }
+            }
+            break;
+
+         case 2:  // Record / Undo
+            // handled on release
+            if(b_copy_mod)
+            {
+               b_copy_mod_allow_click = false;
+               editor.handlePatternPaste();
+               b_rec_pad_handled = true;
+            }
+            else
+            {
+               b_rec_pad_handled = false;
+            }
+            break;
+
+         case 1:  // Step page
+            if(b_trackpage_pressed)
+            {
+               selectNextBarPage();
+               b_trackpage_allow_click = false;
+            }
+            else
+            {
+               selectNextStepPage();
+            }
+            break;
+
+         case 0:  // Track page
+            b_trackpage_allow_click = true;
+            b_trackpage_pressed = true;
+            // handled on release
+            break;
+      }
+   }
+
+   // <method.png>
+   protected method handleMenuReleased(int _rowIdx) {
+      int menuDeltaMs = (milliSeconds() - menu_pressed_ms);
+      boolean bHoldClick = (-1 != menu_pressed_ms) && (menuDeltaMs >= HOLD_CLICK_TIMEOUT);
+      boolean bHoldClickCancel = bHoldClick && (menuDeltaMs >= HOLD_CLICK_CANCEL_TIMEOUT);
+      int newCursorY;
+
+      switch(_rowIdx)
+      {
+         case 7:  // Pattern Select Left
+            b_pattern_select_left_pressed = false;
+            if(b_pattern_select_left_allow_click)
+            {
+               if(bHoldClick)
+               {
+                  b_pattern_select_left = false;
+                  b_pattern_select_right = false;
+                  display_mode = DISPLAY_STEPS;
+                  Global.Print("");
+               }
+               else
+               {
+                  // Stay in current selection mode (on or off)
+               }
+            }
+            queueRedraw();
+            break;
+
+         case 6:  // Copy Modifier
+            b_copy_mod = false;
+            if(b_copy_mod_allow_click)
+            {
+               Global.Print("Linnstrument: Copy modifier is inactive");
+               b_copy_mod_allow_click = false;
+               if(bHoldClick)
+               {
+                  if(!bHoldClickCancel)
+                     editor.handlePatternCopy();
+               }
+               else
+               {
+                  selectNextDisplayMode();
+               }
+            }
+            break;
+
+         case 5: // Global Repeat
+            if(DISPLAY_PERF == display_mode)
+            {
+               injectGlobalRepeatEnableRPN(0/*off*/);
+               queueRedraw();
+            }
+            break;
+
+         case 4:  // Node Mute Temp
+            if(DISPLAY_PERF == display_mode)
+            {
+               injectNodeMuteTempRPN(false);
+               queueRedraw();
+            }
+            break;
+
+         case 2:  // Record
+            if(!b_rec_pad_handled)
+            {
+               b_rec_pad_handled = true;
+
+               if(bHoldClick)
+               {
+                  if(!bHoldClickCancel)
+                     editor.handleUndoRedo( !(seq.b_recording && replay.b_playing)/*bSaveRedo*/ );
+               }
+               else
+               {
+                  editor.toggleRecording();
+               }
+            }
+            break;
+
+         case 0:  // Track page
+            b_trackpage_pressed = false;
+            if(b_trackpage_allow_click)
+            {
+               b_trackpage_allow_click = false;
+               if(0 == offset_y)
+               {
+                  offset_y = 8;
+                  newCursorY = grid.getCursorY() + 8;
+                  grid.setCursorYAndMakeVisible(NTS_Pattern.NUM_TRACKS - 1);  // align to bottom
+                  grid.setCursorYAndMakeVisible(newCursorY);
+                  Global.Print("Linnstrument: Show tracks 9..16");
+               }
+               else
+               {
+                  offset_y = 0;
+                  newCursorY = grid.getCursorY() - 8;
+                  grid.setCursorYAndMakeVisible(0);  // align to top
+                  grid.setCursorYAndMakeVisible(newCursorY);
+                  Global.Print("Linnstrument: Show tracks 1..8");
+               }
+               queueRedraw();
+            }
+            break;
+      }
+   }
+
+   // <method.png>
+   protected method handleNavPressed(int _rowIdx) {
+      nav_pressed_ms = milliSeconds();
+
+      if(7 == _rowIdx)
+      {
+         // Enable right-split pattern selection mode
+         if(!b_pattern_select_right)
+         {
+            b_pattern_select_right = true;
+         }
+         else
+         {
+            b_pattern_select_right = false;
+         }
+         Global.Print("Linnstrument: Pattern Selection is "+Utils.GetEnableString(b_pattern_select_right));
+         queueRedraw();
+      }
+   }
+
+   // <method.png>
+   protected method handleNavReleased(int _rowIdx) {
+      int navDeltaMs = (milliSeconds() - nav_pressed_ms);
+      boolean bHoldClick = (-1 != nav_pressed_ms) && (navDeltaMs >= HOLD_CLICK_TIMEOUT);
+
+      if(0 == _rowIdx)
+      {
+         // Toggle replay
+         st2::root_form.handleToggleReplay(bHoldClick/*bShift*/);
+         queueRedraw();
+      }
+      else if(7 == _rowIdx)
+      {
+         // pattern selection mode
+         if(bHoldClick)
+         {
+            b_pattern_select_right = false;
+            Global.Print("");
+         }
+         else
+         {
+            // Click, stay in current selection mode (on or off)
+         }
+         queueRedraw();
+      }
+      else if(6 == _rowIdx)
+      {
+         // Toggle A/B nodes
+         root_form.pg_node.handlePipeNodeABSwap();
+      }
+      else
+      {
+         if((1 == _rowIdx) && (all_linnstrument_nodes.numElements > 5))
+         {
+            // Cycle through node pages
+            node_page_offset = node_page_offset/4;
+            int numPages = (all_linnstrument_nodes.numElements + 3) / 4;
+            node_page_offset = (node_page_offset + 1) % numPages;
+            Global.Print("Select Node Page "+(node_page_offset+1)+" / "+numPages);
+            node_page_offset *= 4;
+            queueRedraw();
+         }
+         else
+         {
+            int nodeIdx = (NUM_ROWS - 3 - _rowIdx);
+            nodeIdx += node_page_offset;
+            if(nodeIdx < all_linnstrument_nodes.numElements)
+            {
+               // Select / Show node
+               Node n <= all_linnstrument_nodes[nodeIdx];
+               if(bHoldClick)
+               {
+                  Node.TogglePipeOrNodeMuteStateUI(n.parent_pipenode, false/*bQuiet*/);
+                  queueRedraw();
+               }
+               else if(@(n) != @(seq))
+               {
+                  root_form.showNodeEditorFor(n);
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handleStepPressed(int _colIdx, int _rowIdx, boolean _bNoteOn) {
+      if(b_debug)
+         trace "[trc] NTS_Linnstrument::handleStepPressed: colIdx="+_colIdx+" rowIdx="+_rowIdx+" bNoteOn="+_bNoteOn;
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         NTS_Track track <= pat.getTrackByIndex(offset_y + (NUM_ROWS - 1 - _rowIdx));
+         if(null != track)
+         {
+            boolean bRecording = replay.b_playing && seq.b_recording;
+
+            int stepIdx = _colIdx + offset_x;
+            if(stepIdx < track.play_length)
+            {
+               if(b_copy_mod && !isAnySliderPressed())
+               {
+                  b_copy_mod_allow_click = false;
+                  queueRedraw();
+                  grid.setCursorXYAndMakeVisible(stepIdx, track.track_nr);
+                  if(b_copy_mod_paste)
+                  {
+                     grid.pasteCursorStep();
+                  }
+                  else
+                  {
+                     grid.copyCursorStep();
+                     b_copy_mod_paste = true;
+                  }
+               }
+               else
+               {
+                  if(EDIT_TRIG_AUTO == edit_mode)
+                  {
+                     if( (grid.getClippedCursorX() != stepIdx) || (grid.getCursorY() != track.track_nr) )
+                     {
+                        queueRedraw();
+                        grid.setCursorXYAndMakeVisible(stepIdx, track.track_nr);
+                     }
+                     else
+                     {
+                        queueRedrawCursorOff();
+                        grid.cycleCursorStepArg1AndEnableOrDisableTrig();
+                        if(!bRecording)
+                           grid.queueTrackTrigger(maybe/*onandoff*/);
+                     }
+                  }
+                  else if(EDIT_TRIG == edit_mode)
+                  {
+                     queueRedrawCursorOff();
+                     grid.setCursorXYAndMakeVisible(stepIdx, track.track_nr);
+                     if(!bRecording)
+                     {
+                        if(grid.toggleCursorStepTrig())
+                           grid.queueTrackTrigger(maybe/*onandoff*/);
+                     }
+                  }
+                  else if(EDIT_REPEAT_AND_MOD == edit_mode)
+                  {
+                     queueRedrawCursorOff();
+                     grid.setCursorXYAndMakeVisible(stepIdx, track.track_nr);
+                     if(!bRecording)
+                     {
+                        grid.toggleCursorStepRepeat();
+                     }
+                  }
+                  else if([EDIT_SELECT_MOVE, EDIT_SELECT_SLIDER].contains(edit_mode))                  {
+                     queueRedraw();
+                     grid.setCursorXYAndMakeVisible(stepIdx, track.track_nr);
+                     if(!bRecording)
+                     {
+                        grid.queueTrackStep();
+                     }
+                  }
+
+                  if(_bNoteOn)
+                  {
+                     if(-1 == first_step_noteon_col_indices[_rowIdx])
+                     {
+                        first_step_noteon_col_indices[_rowIdx] = _colIdx;
+                        last_drag_step_col_indices[_rowIdx]    = _colIdx;
+                        move_src_col_indices[_rowIdx]          = _colIdx;
+                     }
+                  }
+
+                  // Copy mod1/mod2/arg1/arg2/microtime if slider is currently pressed
+                  if(!seq.b_recording && !replay.b_playing)
+                     copyPressedSlidersToCurrentStep();
+
+               } // if copy mod
+            } // if stepIdx < play_length
+         } // if track
+      } // if pat
+   }
+
+   // <method.png>
+   protected method copyPressedSlidersToCurrentStep() {
+      int sliderRowIdx = 0;
+      loop(5)
+      {
+         // trace "xxx try copy slider val row="+sliderRowIdx;
+         handleSliderChanged(sliderRowIdx, 0/*colIdx,unused*/,
+                             false/*bSnap*/, false/*bTest*/, true/*bUseLastVal*/
+                             );
+         sliderRowIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method isAnySliderPressed() : boolean {
+      int sliderRowIdx = 0;
+      loop(NUM_ROWS)
+      {
+         if(-1 != slider_noteon_col_indices[sliderRowIdx++])
+            return true;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method handleStepReleased(int _colIdx, int _rowIdx, boolean _bNoteOff) {
+      if(_bNoteOff)
+      {
+         if((_colIdx == (current_noteon_col_indices[_rowIdx] - first_step_note_nr))
+            )
+         {
+            first_step_noteon_col_indices[_rowIdx] = -1;
+            last_drag_step_col_indices[_rowIdx]    = -1;
+         }
+      }
+   }
+
+   // <method.png>
+   protected method moveStep(int _colIdxSrc, int _colIdxDst, int _rowIdx) {
+      if(_colIdxSrc != _colIdxDst)
+      {
+         int stepIdxSrc = _colIdxSrc + offset_x;
+         int stepIdxDst = _colIdxDst + offset_x;
+         grid.setCursorYAndMakeVisible((NUM_ROWS -1)-_rowIdx + offset_y); // when dragging multiple steps on different tracks
+         NTS_Track track <= grid.getCursorTrack();
+         if(null != track)
+         {
+            if(0 <= stepIdxSrc < track.play_length)
+            {
+               if(0 <= stepIdxDst < track.play_length)
+               {
+                  NTS_Step st <= track.getStepByIndex(stepIdxDst);
+                  if(!st.b_trig)
+                  {
+                     grid.copyCursorTrackStepToClipboardByIndex(stepIdxSrc);
+                     grid.clearCursorTrackStepByIndex(stepIdxSrc);
+                     grid.setCursorXYAndMakeVisible(stepIdxDst, grid.getCursorY());
+                     grid.pasteCursorStep();
+                     move_src_col_indices[_rowIdx] = _colIdxDst;
+                  }
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handleTriggerPadPressed(float _colIdx, float _rowIdx, boolean _bNoteOn) {
+      if(_bNoteOn)
+      {
+         if(_colIdx < (NUM_STEP_COLS-1))
+         {
+            int trackIdx;
+
+            trackIdx = (_colIdx / 4);
+
+            if(DISPLAY_PADS_4x4 == display_mode)
+            {
+               // 4x4
+               if(_rowIdx >= 4)
+                  trackIdx += 4;
+               trackIdx += (offset_y > 0) ? 8 : 0;
+            }
+            else
+            {
+               // 4x2
+               trackIdx += (int(_rowIdx) / 2) * 4;
+            }
+
+            trigger_pad_timeouts[trackIdx] = TRIGGER_PAD_TIMEOUT;
+            queueRedraw();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handleTriggerPadReleased(float _colIdx, float _rowIdx, boolean _bNoteOn) {
+   }
+
+   // <method.png>
+   protected method handlePatternPadPressedRight(int _colIdx, int _rowIdx, boolean _bNoteOn) {
+      int patIdx = (_colIdx + (7 - _rowIdx) * 16);
+      if(b_debug) Global.Debug("Linnstrument: select patIdx="+patIdx);
+      editor.selectPatternByIdx(patIdx);
+
+      if(b_copy_mod)
+      {
+         if(b_copy_mod_paste)
+         {
+            if(b_copy_mod_clearpat)
+            {
+               // Pasting empty pattern
+               editor.handlePatternFree2();
+            }
+            else
+            {
+               editor.handlePatternPaste();
+            }
+         }
+         else
+         {
+            b_copy_mod_paste = true;
+            b_copy_mod_clearpat = seq.nodeIsPatternEmpty(patIdx);
+            if(!b_copy_mod_clearpat)
+               editor.handlePatternCopy();
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handlePatternPadReleasedRight(int _colIdx, int _rowIdx, boolean _bNoteOn) {
+   }
+
+   // <method.png>
+   protected method handlePatternPadPressedLeft(int _colIdx, int _rowIdx) {
+      int patUsedIdx = (_colIdx + (NUM_ROWS - 1 - _rowIdx) * NUM_SLIDER_COLS);
+      if(b_debug) Global.Debug("Linnstrument: select used patIdx="+patUsedIdx);
+      int patIdx = used_patterns_left.get(patUsedIdx);
+      editor.selectPatternByIdx(patIdx);
+
+      if(b_copy_mod)
+      {
+         if(b_copy_mod_paste)
+         {
+            if(b_copy_mod_clearpat)
+            {
+               // Pasting empty pattern
+               editor.handlePatternFree2();
+            }
+            else
+            {
+               editor.handlePatternPaste();
+            }
+         }
+         else
+         {
+            b_copy_mod_paste = true;
+            b_copy_mod_clearpat = seq.nodeIsPatternEmpty(patIdx);
+            if(!b_copy_mod_clearpat)
+               editor.handlePatternCopy();
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= method injectNodeMuteTempRPN(boolean _bEnable) {
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    Node.RPN_COMMON_MUTE_TEMP,
+                    _bEnable
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectMuteTempRPN(int _trackIdx, boolean _bEnable) {
+
+      // trace "xxx injectMuteTempRPN: curMask="+seq.node_mute_temp_track_mask;
+
+      if(maybe == _bEnable)
+         _bEnable = (seq.node_mute_temp_track_mask & (1<<_trackIdx)) ? false : true;
+
+      int newMask;
+
+      if(true == _bEnable)
+         newMask = (seq.node_mute_temp_track_mask | (1<<_trackIdx));
+      else if(false == _bEnable)
+         newMask = (seq.node_mute_temp_track_mask & ~(1<<_trackIdx));
+
+      trace "xxx injectMuteTempRPN: trackIdx="+_trackIdx+" bEnable="+_bEnable+" newMask="+newMask;
+
+      if(_trackIdx >= 8)
+      {
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_MUTE_TEMP_9_16,
+                       newMask >> 8
+                       );
+      }
+      else
+      {
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_MUTE_TEMP_1_8,
+                       newMask & 255
+                       );
+      }
+   }
+
+   // <method.png>
+   protected =replay= method injectMuteTempRPNMask(int _mask) {
+
+      if( (seq.node_mute_temp_track_mask & 255) != (_mask & 255) )
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_MUTE_TEMP_1_8,
+                       _mask & 255
+                       );
+
+      if( (seq.node_mute_temp_track_mask & ~255) != (_mask << 8) )
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_MUTE_TEMP_9_16,
+                       _mask >> 8
+                       );
+   }
+
+   // <method.png>
+   protected =replay= method injectSoloTempRPN(int _trackIdx, boolean _bEnable) {
+
+      if(maybe == _bEnable)
+         _bEnable = (seq.node_solo_temp_track_mask & (1<<_trackIdx)) ? false : true;
+
+      int newMask;
+
+      if(true == _bEnable)
+         newMask = (seq.node_solo_temp_track_mask | (1<<_trackIdx));
+      else if(false == _bEnable)
+         newMask = (seq.node_solo_temp_track_mask & ~(1<<_trackIdx));
+
+      // trace "xxx injectSoloTempRPN: trackIdx="+_trackIdx+" bEnable="+_bEnable+" curMask="+seq.node_solo_temp_track_mask+" newMask="+newMask;
+      if(_trackIdx >= 8)
+      {
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_SOLO_TEMP_9_16,
+                       newMask >> 8
+                       );
+      }
+      else
+      {
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_SOLO_TEMP_1_8,
+                       newMask & 255
+                       );
+      }
+   }
+
+   // <method.png>
+   protected =replay= method injectSoloTempRPNMask(int _mask) {
+
+      if( (seq.node_solo_temp_track_mask & 255) != (_mask & 255) )
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_SOLO_TEMP_1_8,
+                       _mask & 255
+                       );
+
+      if( (seq.node_solo_temp_track_mask & ~255) != (_mask << 8) )
+         fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                       Node.RPN_COMMON_SOLO_TEMP_9_16,
+                       _mask >> 8
+                       );
+   }
+
+   // <method.png>
+   protected =replay= method injectMuteTempNote(int _trackIdx, boolean _bEnable) {
+      // (note) temporarily mutes or unmutes track
+      if(_bEnable)
+      {
+         fr_inject.noteOn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                          STConfig.node_trig_seq_rec_mute_base_note + _trackIdx,
+                          64/*vel*/, 0/*dur*/
+                          );
+      }
+      else
+      {
+         fr_inject.noteOff(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                           STConfig.node_trig_seq_rec_mute_base_note + _trackIdx,
+                           64/*vel*/
+                           );
+      }
+   }
+
+   // <method.png>
+   protected =replay= method injectGlobalNumRepeatsRPN(short _num) {
+      if(_num < 0)
+         _num = 16383;
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_GLOBAL_NUM_REPEATS,
+                    _num
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectGlobalRepeatNoteLengthRPN(short _len) {
+      if(_len < 0)
+         _len = 16383;
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_GLOBAL_REPEAT_NOTE_LENGTH,
+                    _len
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectGlobalRepeatEnableRPN(boolean _bEnable) {
+      if(maybe == _bEnable)
+         _bEnable = 2;
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_GLOBAL_REPEAT_ENABLE,
+                    _bEnable
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectRepeatNoteLenRPN(int _trackIdx, short _noteLen) {
+      if((_noteLen < 0) || (_noteLen > 64))
+         _noteLen = 16383; // reset to track or global default
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_TRACK1_REPEAT_NOTE_LENGTH + _trackIdx * 10,
+                    _noteLen
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectNumRepeatsRPN(int _trackIdx, short _num) {
+      if((_num < 0) || (_num > 64))
+         _num = 16383; // reset to track or global default
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_TRACK1_NUM_REPEATS + _trackIdx * 10,
+                    _num
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectRepeatEnableRPN(int _trackIdx, boolean _bEnable) {
+      // (note) use RPN_TRIGSEQ_TRACK1_REPEAT_ENABLE instead ?
+
+      if(_bEnable)
+      {
+         fr_inject.noteOn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                          STConfig.node_trig_seq_rec_roll_base_note + _trackIdx,
+                          64/*vel*/, 0/*dur*/
+                          );
+      }
+      else
+      {
+         fr_inject.noteOff(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                           STConfig.node_trig_seq_rec_roll_base_note + _trackIdx,
+                           64/*vel*/
+                           );
+      }
+   }
+
+   // <method.png>
+   protected =replay= method injectTrig(int _trackIdx, boolean _bEnable, float _vel) {
+      // (note) since UNMAP_CONFIG is used, the result is always an auto port trigger note
+      byte note = seq.mapTrackIdxToRecordNote(_trackIdx, NodeTrigSeq.REC_UNMAP_CONFIG);
+      // if(b_debug)
+         trace "[trc] NTS_Linnstrument::injectTrig: trackIdx="+_trackIdx+" note="+note+" vel="+_vel+" bEnable="+_bEnable;
+      if(note >= 0)
+      {
+         if(_bEnable)
+         {
+            fr_inject.noteOn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                             note,
+                             _vel/*vel*/, 0/*dur*/
+                             );
+         }
+         else
+         {
+            fr_inject.noteOff(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                              note,
+                              _vel/*vel*/
+                              );
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= method injectMod1(int _trackIdx, short _val14) {
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    Node.RPN_CTL_BASE + _trackIdx,
+                    _val14
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectMod2(int _trackIdx, short _val14) {
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    Node.RPN_CTL_BASE + _trackIdx + 16,
+                    _val14
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectGlobalVelSclRPN(byte _val) {
+      // trace "xxx injectGlobalVelScl: val="+_val;
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    Node.RPN_COMMON_VELOCITY_SCL,
+                    _val
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectVelSclRPN(int _trackIdx, short _scl) {
+      if(_scl > 255)
+         _scl = 255;
+      // trace "xxx injectVelScl: trackIdx="+_trackIdx+" _scl="+_scl;
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_TRACK1_VELOCITY_SCALING + _trackIdx * 10,
+                    _scl
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method injectDurSclRPN(int _trackIdx, short _scl) {
+      if(_scl > 255)
+         _scl = 255;
+      // trace "xxx injectDurScl: trackIdx="+_trackIdx+" _scl="+_scl;
+      fr_inject.rpn(true/*bSet*/, 0/*dev*/, 0/*ch*/,
+                    NodeTrigSeq.RPN_TRIGSEQ_TRACK1_DURATION_SCALING + _trackIdx * 10,
+                    _scl
+                    );
+   }
+
+   // <method.png>
+   protected =replay= method resetTemporaryReplayState() {
+      // Send deltas to minimize number of events per tick
+
+      // Mute temp
+      if(seq.nodeGetMuteTemp())
+         injectNodeMuteTempRPN(false);
+
+      // Velocity scaling
+      if(1.0 != seq.rpn_com_vel_scl)
+         injectGlobalVelSclRPN(128);   // (todo) remove ? was replaced by per-track velocity scaling
+
+      // Temporary track mute+solo
+      injectMuteTempRPNMask(0);
+      injectSoloTempRPNMask(0);
+
+      // Repeat
+      if(-1 != seq.current_repeat_note_length)
+         injectGlobalRepeatNoteLengthRPN(-1);
+
+      if(-1 != seq.current_num_repeats)
+         injectGlobalNumRepeatsRPN(-1);
+
+      // (note) resets all track repeat enable flags
+      if(false != seq.b_global_repeat)
+         injectGlobalRepeatEnableRPN(false);
+
+      // Repeat note lengths / #repeats / velocity scaling
+      int trackIdx = 0;
+      NTS_TrackState *trackState;
+      foreach trackState in seq.track_states
+      {
+         if(-1 != trackState.temp_repeat_note_length)
+            injectRepeatNoteLenRPN(trackIdx, 16383);
+
+         if(-1 != trackState.temp_num_repeats)
+            injectNumRepeatsRPN(trackIdx, 16383);
+
+         if(1.0 != trackState.rpn_vel_scl)
+            injectVelSclRPN(trackIdx, 128);
+
+         if(1.0 != trackState.rpn_dur_scl)
+            injectDurSclRPN(trackIdx, 128);
+
+         // Next track
+         trackIdx++;
+      }
+      Global.Print("Linnstrument: Reset temporary replay state ("+fr_inject.numEvents+" event(s))");
+   }
+
+   // <method.png>
+   protected method toggleTempMuteEditMode() {
+      b_edit_mute_temp = !b_edit_mute_temp;
+      queueRedraw();
+      Global.Print("Edit "+(b_edit_mute_temp ? "temp" : "pattern")+" mute / solo");
+   }
+
+
+   // <method.png>
+   protected method handlePerfPadPressed(float _colIdx, float _rowIdx, boolean _bNoteOn, float _vel) {
+      // trace "xxx handlePerfPadPressed: colIdx="+_colIdx+" rowIdx="+_rowIdx+" bNoteOn="+_bNoteOn;
+      if(_bNoteOn)
+      {
+         if(-1 == first_step_noteon_col_indices[_rowIdx])
+         {
+            first_step_noteon_col_indices[_rowIdx] = int(_colIdx);
+         }
+      }
+      float offX;
+      float offY;
+      offX      = _colIdx - first_step_noteon_col_indices[_rowIdx];
+      // trace "xxx handlePerfPadPressed: colIdx="+_colIdx+" offX="+offX+" rowIdx="+_rowIdx+" bNoteOn="+_bNoteOn;
+      int trackIdx = (NUM_ROWS - 1 - _rowIdx);
+      int onColIdx = first_step_noteon_col_indices[_rowIdx];
+      if(onColIdx >= 8)
+      {
+         trackIdx += 8;
+         onColIdx -= 8;
+      }
+      // trace "xxx handlePerfPadPressed:   trackIdx="+trackIdx+" onColIdx="+onColIdx+" offX="+offX;
+
+      if(-1 != last_ypos[_rowIdx])
+      {
+         offY = last_ypos[_rowIdx];
+         offY -= 4;
+         offY *= (127.0 / 119.0);
+         offY /= 127.0;
+      }
+      else
+         offY = -1;
+
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         NTS_Track track <= pat.getTrackByIndex(trackIdx);
+         NTS_TrackState trackState <= seq.getTrackStateByIndex(trackIdx);
+         if(null != track)
+         {
+            switch(onColIdx)
+            {
+               case 0:
+                  // Solo
+                  if(_bNoteOn)
+                  {
+                     if(b_copy_mod)
+                     {
+                        toggleTempMuteEditMode();
+                        b_copy_mod_allow_click = false;
+                     }
+                     else
+                     {
+                        if(b_edit_mute_temp)
+                        {
+                           injectSoloTempRPN(trackIdx, maybe/*toggle*/);
+                           replay_active_count = 10;  // force redraw
+                        }
+                        else
+                        {
+                           pat.toggleSoloState(trackIdx);
+                           editor.updateTrackForms();
+                           queueRedraw();
+                        }
+                     }
+                  }
+                  break;
+
+               case 1:
+                  // Mute
+                  if(_bNoteOn)
+                  {
+                     if(b_edit_mute_temp)
+                     {
+                        injectMuteTempRPN(trackIdx, maybe/*toggle*/);
+                        replay_active_count = 10;  // force redraw
+                     }
+                     else
+                     {
+                        pat.toggleMuteState(trackIdx);
+                        editor.updateTrackForms();
+                        queueRedraw();
+                     }
+                  }
+                  break;
+
+               case 2:
+                  // Mute temp
+                  if(_bNoteOn)
+                  {
+                     injectMuteTempNote(trackIdx, true);
+                     replay_active_count = 10;  // force redraw
+                  }
+                  break;
+
+               case 3:
+               case 4:
+                  // Repeat+rate+velocity scaling
+                  if(offY >= 0)
+                  {
+                     // // injectGlobalVelScl(mathLerpf(STConfig.node_trig_seq_plugin_velscl_min,
+                     // //                              STConfig.node_trig_seq_plugin_velscl_max,
+                     // //                              offY
+                     // //                              )
+                     // //                    );
+
+                     injectVelSclRPN(trackIdx, mathLerpf(STConfig.node_trig_seq_plugin_velscl_min,
+                                                         STConfig.node_trig_seq_plugin_velscl_max,
+                                                         offY
+                                                         )
+                                     );
+                  }
+                  if(!b_copy_mod)
+                  {
+                     if(_bNoteOn)
+                     {
+                        injectRepeatEnableRPN(trackIdx, true);
+                     }
+                     else
+                     {
+                        offX = _colIdx - ((trackIdx >= 8) ? 11 : 3);
+                        offX -= 0.1;
+                        offX *= (1.0 / 0.8);
+                        // (todo) make this configurable per node (or per pattern?)
+                        int noteLen = STConfig.node_trig_seq_plugin_repeat_notelen_tbl.get(offX * ((STConfig.node_trig_seq_plugin_repeat_notelen_tbl.numElements)/2.0));
+                        // trace "xxx noteLen="+noteLen;
+                        injectRepeatNoteLenRPN(trackIdx, noteLen);
+                     }
+                  }
+                  break;
+
+               case 5:
+               case 6:
+                  // Ctl
+                  // trace "xxx ctl last_ypos["+_rowIdx+"]="+last_ypos[_rowIdx];
+                  offX = _colIdx - ((trackIdx >= 8) ? 13 : 5);
+                  offX -= 0.1;
+                  offX *= (1.0 / 0.8);
+                  injectMod1(trackIdx, mathClampi(16383.0 * (offX / 3.0), 0, 16383));
+                  if(offY >= 0)
+                  {
+                     injectMod2(trackIdx, mathClampi(16383.0 * offY, 0, 16383));
+                  }
+                  if(seq.b_recording)
+                     grid.queueRedraw();
+                  break;
+
+               case 7:
+                  // Trigger
+                  boolean bDurScl = false;
+                  if(_bNoteOn)
+                  {
+                     if(b_copy_mod)
+                     {
+                        // Toggle trig<>duration scl mode
+                        track.b_linnstrument_perf_trig_dur_scl = !track.b_linnstrument_perf_trig_dur_scl;
+                        b_copy_mod_allow_click = false;
+                        Global.Print("Trig pad Duration Scaling is "+Utils.GetEnableString(track.b_linnstrument_perf_trig_dur_scl));
+                        replay_active_count = 10;  // force redraw
+                     }
+                     else if(track.b_linnstrument_perf_trig_dur_scl)
+                     {
+                        bDurScl = true;
+                     }
+                     else
+                     {
+                        // trace "xxx injectTrig seq.b_capture="+seq.b_capture;
+                        injectTrig(trackIdx, true, _vel);
+                        replay_active_count = 10;  // force redraw
+                        if(seq.b_recording)
+                           grid.queueRedraw();
+                     }
+                  }
+                  else if(track.b_linnstrument_perf_trig_dur_scl)
+                  {
+                     bDurScl = true;
+                  }
+                  if(bDurScl)
+                  {
+                     offX = _colIdx - ((trackIdx >= 8) ? 15 : 7);
+                     offX -= 0.1;
+                     offX *= (1.0 / 0.8);
+                     // trace "xxx durScl offX="+offX+" velScl offY="+offY;
+                     offX = mathClampf(offX, 0, 1);
+
+                     injectDurSclRPN(trackIdx, mathLerpf(STConfig.node_trig_seq_plugin_durscl_min,
+                                                         STConfig.node_trig_seq_plugin_durscl_max,
+                                                         offX
+                                                         )
+                                     );
+
+                     if(offY >= 0)
+                     {
+                        injectVelSclRPN(trackIdx, mathLerpf(STConfig.node_trig_seq_plugin_velscl_min,
+                                                            STConfig.node_trig_seq_plugin_velscl_max,
+                                                            offY
+                                                            )
+                                        );
+                     }
+
+                  }
+                  break;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method handlePerfPadReleased(int _colIdx, int _rowIdx, boolean _bNoteOff, float _vel) {
+      // trace "xxx handlePerfPadReleased: colIdx="+_colIdx+" rowIdx="+_rowIdx;
+
+      int trackIdx = (NUM_ROWS - 1 - _rowIdx);
+      int onColIdx = first_step_noteon_col_indices[_rowIdx];
+      if(onColIdx >= 8)
+      {
+         trackIdx += 8;
+         onColIdx -= 8;
+      }
+      // trace "xxx handlePerfPadReleased:   trackIdx="+trackIdx+" onColIdx="+onColIdx;
+
+      NTS_Pattern pat <= editor.getEditPattern();
+      if(null != pat)
+      {
+         NTS_Track track <= pat.getTrackByIndex(trackIdx);
+         NTS_TrackState trackState <= seq.getTrackStateByIndex(trackIdx);
+         if(null != track)
+         {
+            switch(onColIdx)
+            {
+               case 0:
+                  // Solo (already handled)
+                  break;
+
+               case 1:
+                  // Mute (already handled)
+                  break;
+
+               case 2:
+                  // Mute temp
+                  if(!b_copy_mod)
+                  {
+                     injectMuteTempNote(trackIdx, false);
+                     replay_active_count = 10;  // force redraw
+                  }
+                  break;
+
+               case 3:
+               case 4:
+                  // Repeat+rate
+                  if(!b_copy_mod)
+                  {
+                     injectRepeatEnableRPN(trackIdx, false);
+                     injectVelSclRPN(trackIdx, 128/*1.0*/); // reset velocity scaling
+                  }
+                  break;
+
+               case 5:
+               case 6:
+                  // Ctl (already handled)
+                  break;
+
+               case 7:
+                  // Trigger
+                  if(track.b_linnstrument_perf_trig_dur_scl)
+                  {
+                     // Reset velocity+duration scaling
+                     injectVelSclRPN(trackIdx, 128/*1.0*/);
+                     injectDurSclRPN(trackIdx, 128/*1.0*/);
+                  }
+                  else
+                  {
+                     injectTrig(trackIdx, false, _vel);
+                     replay_active_count = 10;  // force redraw
+                     if(seq.b_recording)
+                        grid.queueRedraw();
+                  }
+                  break;
+            }
+         }
+      }
+
+      if((_colIdx == (current_noteon_col_indices[_rowIdx] - first_step_note_nr))
+         )
+      {
+         first_step_noteon_col_indices[_rowIdx] = -1;
+      }
+   }
+
+   // <method.png>
+   protected method xposToPad(local int _rowIdx, local int _xpos) : float {
+      local IntArray xcal <= xpos_calibration_tables.get(_rowIdx);
+      local int x = 0;
+      local float r = 0.0f;
+      loop(25)
+      {
+         if(_xpos < xcal[x])
+         {
+            if(x > 0)
+            {
+               r = (_xpos - xcal[x-1] + 1) / float(xcal[x] - xcal[x-1] + 1);
+               // trace "xxx xposToPad: r_frac="+r+" left="+xcal[x-1]+" right="+xcal[x];
+            }
+            else
+            {
+               r = (_xpos / float(xcal[x]));
+            }
+            r = mathClampf(r, 0.0f, 1.0f);
+            r += x;
+            break;
+         }
+
+         x++;
+      }
+      if(b_debug2)
+         trace "[trc] NTS_Linnstrument::xposToPad: r="+r;
+      return r;
+   }
+
+   // <method.png>
+   protected method padToXPos(int _rowIdx, float _pad) : int {
+      IntArray xcal <= xpos_calibration_tables.get(_rowIdx);
+      int padIdx = _pad;
+      int r = 0;
+      if(padIdx > 0)
+      {
+         r = xcal[padIdx - 1] + frac(_pad) * (xcal[padIdx] - xcal[padIdx-1]);
+      }
+      else
+      {
+         r = frac(_pad) * xcal[padIdx];
+      }
+      return r;
+   }
+
+   // <method.png>
+   protected method endCalibration() {
+      b_calibration = false;
+      Global.Print("Calibration mode is "+Utils.GetEnableString(b_calibration));
+      // Save calibration tables
+      local File xcalFile;
+      local String pathName <= STConfig.rootpath+"/linnstrument_cal.dat";
+      if(xcalFile.openLocal(pathName, IOS_OUT))
+      {
+         xcalFile << xpos_calibration_tables;
+         xcalFile.close();
+         Global.Debug("NTS_Linnstrument: wrote calibration tables to \""+pathName+"\"");
+      }
+   }
+
+   // <midi_mml.png>
+   public method mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      // trace "xxx plugin ev.dev="+#(_ev.dev)+" in_dev="+#(in_dev);
+
+      if(NTS_EditorPlugin::mmlHandleEventUI(_ev))
+         return true;
+
+      if(null == in_dev)
+         return false;
+
+      boolean bHandleEv = (0 == globalsettings_grace_ms);
+
+      if(!bHandleEv)
+      {
+         // Workaround for CC#74 glitch in Linnstrument FW (sometimes resets to 0 after loading settings)
+         if(milliSeconds() >= (globalsettings_grace_ms + 500))
+         {
+            globalsettings_grace_ms = 0;
+            bHandleEv = true;
+         }
+      }
+
+      if(bHandleEv)
+      {
+         // trace "xxx ev="+#(_ev.dev);
+         bHandleEv = (@(_ev.dev) == @(in_dev));
+
+         if(bHandleEv)
+         {
+            // trace "xxx _ev.type="+_ev.type+" arg1="+_ev.arg1;
+            int rowIdx = _ev.dev_ch;
+            if(rowIdx >= 8)
+               return false;
+
+            int colIdx;
+            float dragOffX;
+            int dragColIdx;
+            float sliderColIdx;
+            float x;
+            float y;
+            IntArray *xcal;
+
+            boolean bFirstSliderNoteOn = (-1 == slider_noteon_col_indices[rowIdx]);
+            boolean bFirstStepNoteOn = (-1 == first_step_noteon_col_indices[rowIdx]);
+
+            if(b_calibration)
+            {
+               if(_ev.isNoteOn())
+               {
+                  if((7 == rowIdx) && (0 == _ev.arg1)) // Split button ?
+                  {
+                     endCalibration();
+                  }
+               }
+               else if(_ev.isCC())
+               {
+                  if(_ev.ext_type <= 57)
+                  {
+                     xcal <= xpos_calibration_tables[rowIdx];
+
+                     if(_ev.ext_type <= 25)
+                     {
+                        // X-pos MSB (0x00 .. 0x20)
+                        //  (note) recv'd last
+                        colIdx = _ev.ext_type - 1;
+                        xcal[colIdx] = (xcal[colIdx] & 0b00000001111111) | (_ev.arg1 << 7);
+                        xcal[colIdx] += (orig_xcal_pos - xcal[colIdx]) * 0.7;
+                        // // if(xcal[colIdx] > orig_xcal_pos)
+                        trace "xxx new xcal["+colIdx+"] is "+xcal[colIdx];
+                        Global.Print("Linnstrument: xcal[row="+(rowIdx+1)+" col="+(colIdx+1)+"] is "+xcal[colIdx]);
+                     }
+                     else if(_ev.ext_type >= 33)
+                     {
+                        // X-pos LSB
+                        //  (note) recv'd first
+                        colIdx = _ev.ext_type - 33;
+                        orig_xcal_pos = xcal[colIdx];
+                        xcal[colIdx] = (xcal[colIdx] & 0b11111110000000) | _ev.arg1;
+                     }
+                  }
+               }
+               return true;
+            }
+
+
+            if(_ev.isNoteOn())
+            {
+               if(b_debug)
+                  trace "[trc] NTS_Linnstrument: noteOn: arg1="+_ev.arg1+" ch="+_ev.dev_ch;
+
+               if((7 == rowIdx) && (0 == _ev.arg1)) // Split button ?
+               {
+                  b_calibration = true;
+                  Global.Print("Calibration mode is "+Utils.GetEnableString(b_calibration));
+                  return true;
+               }
+
+               if(-1 != next_noteon_slide_from[rowIdx])
+               {
+                  if(_ev.arg1 >= RIGHT_SPLIT_FIRST_NOTE)
+                  {
+                     if(current_noteon_col_indices[rowIdx] == next_noteon_slide_from[rowIdx])
+                     {
+                        current_noteon_col_indices[rowIdx] = _ev.arg1;
+                     }
+                  }
+                  else
+                  {
+                     // Left split
+                     if(slider_noteon_col_indices[rowIdx] == (next_noteon_slide_from[rowIdx] - LEFT_SPLIT_FIRST_NOTE))
+                     {
+                        slider_noteon_col_indices[rowIdx] =  _ev.arg1 - LEFT_SPLIT_FIRST_NOTE;
+                     }
+                  }
+               }
+               else
+               {
+                  if(_ev.arg1 >= RIGHT_SPLIT_FIRST_NOTE)
+                  {
+                     // Right split (step area + menu)
+                     colIdx = _ev.arg1 - RIGHT_SPLIT_FIRST_NOTE;
+
+                     if(colIdx == (menu_col_idx - NUM_SLIDER_COLS))
+                     {
+                        // trace "xxx menu pad rowIdx="+rowIdx;
+                        if(bFirstStepNoteOn)
+                        {
+                           current_noteon_col_indices[rowIdx] = -1;
+                           handleMenuPressed(rowIdx);
+                        }
+                     }
+                     else if(colIdx == (nav_col_idx - NUM_SLIDER_COLS))
+                     {
+                        handleNavPressed(rowIdx);
+                     }
+                     else
+                     {
+                        // trace "xxx step pad colIdx="+colIdx+" rowIdx="+rowIdx;
+                        colIdx -= first_step_col_idx - NUM_SLIDER_COLS;
+                        if(b_pattern_select_right)
+                        {
+                           if(bFirstStepNoteOn)
+                           {
+                              current_noteon_col_indices[rowIdx] = _ev.arg1;
+                              handlePatternPadPressedRight(colIdx, rowIdx, true/*bNoteOn*/);
+                              first_xpos[rowIdx] = -1;
+                           }
+                        }
+                        else if(DISPLAY_STEPS == display_mode)
+                        {
+                           if(bFirstStepNoteOn)
+                           {
+                              current_noteon_col_indices[rowIdx] = _ev.arg1;
+                              handleStepPressed(colIdx, rowIdx, true/*bNoteOn*/);
+                              first_xpos[rowIdx] = -1;
+                           }
+                        }
+                        else if((DISPLAY_PADS_4x4 == display_mode) || (DISPLAY_PADS_4x2 == display_mode))
+                        {
+                           handleTriggerPadPressed(colIdx, rowIdx, true/*bNoteOn*/);
+                        }
+                        else if(DISPLAY_PERF == display_mode)
+                        {
+                           if(bFirstStepNoteOn)
+                           {
+                              current_noteon_col_indices[rowIdx] = _ev.arg1;
+                              handlePerfPadPressed(colIdx, rowIdx, true/*bNoteOn*/, _ev.arg2/*vel*/);
+                              first_xpos[rowIdx] = -1;
+                           }
+                        }
+                     }
+                  }
+                  else
+                  {
+                     // Left-split (slider area)
+                     if(bFirstSliderNoteOn)
+                     {
+                        colIdx = _ev.arg1 - LEFT_SPLIT_FIRST_NOTE;
+
+                        if(isLeftPatternSelectionEnabled())
+                        {
+                           handlePatternPadPressedLeft(colIdx, rowIdx);
+                        }
+                        else
+                        {
+                           slider_noteon_col_indices[rowIdx] = colIdx;
+                           trace "xxx slider note on colIdx="+colIdx;
+                           int sliderCtrX = NUM_SLIDER_COLS/2;
+                           handleSliderChanged(rowIdx, colIdx + 0.5,
+                                               true/*bSnap*/, false/*bTest*/, false/*bUseLastVal*/
+                                               );
+                           slider_lock_ms[rowIdx] = milliSeconds();
+                           last_slider_change_ms[rowIdx] = milliSeconds();
+                           next_slider_change_ms[rowIdx] = 0;
+                           first_xpos[rowIdx] = -1;
+                        }
+                     }
+                  }
+               }
+            }
+            else if(_ev.isNoteOff())
+            {
+               if(-1 != next_noteon_slide_from[rowIdx])
+               {
+                  next_noteon_slide_from[rowIdx] = -1;
+               }
+               else
+               {
+                  if(_ev.arg1 >= RIGHT_SPLIT_FIRST_NOTE)
+                  {
+                     // Note Off: Right split (step area + menu)
+                     colIdx = _ev.arg1 - RIGHT_SPLIT_FIRST_NOTE;
+
+                     if(colIdx == (menu_col_idx - NUM_SLIDER_COLS))
+                     {
+                        handleMenuReleased(rowIdx);
+                     }
+                     else if(colIdx == (nav_col_idx - NUM_SLIDER_COLS))
+                     {
+                        handleNavReleased(rowIdx);
+                     }
+                     else
+                     {
+                        colIdx -= first_step_col_idx - NUM_SLIDER_COLS;
+                        if(b_pattern_select_right)
+                        {
+                           handlePatternPadReleasedRight(colIdx, rowIdx, true/*bNoteOff*/);
+                        }
+                        else if(DISPLAY_STEPS == display_mode)
+                        {
+                           handleStepReleased(colIdx, rowIdx, true/*bNoteOff*/);
+                        }
+                        else if((DISPLAY_PADS_4x4 == display_mode) || (DISPLAY_PADS_4x2 == display_mode))
+                        {
+                           handleTriggerPadReleased(colIdx, rowIdx, true/*bNoteOff*/);
+                        }
+                        else if(DISPLAY_PERF == display_mode)
+                        {
+                           handlePerfPadReleased(colIdx, rowIdx, true/*bNoteOff*/, _ev.arg2/*vel*/);
+                        }
+                     }
+                  }
+                  else
+                  {
+                     // Note Off: Left split (slider area)
+                     colIdx = _ev.arg1 - LEFT_SPLIT_FIRST_NOTE;
+                     trace "xxx left-split note off: colIdx="+colIdx+" rowIdx="+rowIdx+" slider_noteon_col_index="+slider_noteon_col_indices.get(rowIdx);
+
+                     if(colIdx == slider_noteon_col_indices[rowIdx])
+                     {
+                        if(b_debug)
+                           trace "[trc] NTS_Linnstrument: release slider rowIdx="+rowIdx;
+                        slider_noteon_col_indices[rowIdx] = -1;
+                        last_slider_values[rowIdx] = NodeTrigSeq.INVALID_VALUE;
+                     }
+                  }
+
+                  if(current_noteon_col_indices[rowIdx] == _ev.arg1)
+                  {
+                     current_noteon_col_indices[rowIdx] = -1;
+                  }
+               }
+            }
+            else if(_ev.isCC())
+            {
+               boolean bRight;
+               boolean bXPosValid = false;
+
+               if(_ev.ext_type <= 57)
+               {
+                  if(_ev.ext_type <= 25)
+                  {
+                     // (note) left=0, right=~4190, rightcell_first=~4100
+                     // (note) BUT: these values are not exactly linear and differ from row to row and cel to cel
+
+                     // X-pos MSB (0x00 .. 0x20)
+                     //  (note) recv'd last
+                     last_xpos[rowIdx] = (last_xpos[rowIdx] & 0b00000001111111) | (_ev.arg1 << 7);
+
+                     if(-1 == first_xpos[rowIdx])
+                     {
+                        first_xpos[rowIdx] = last_xpos[rowIdx];
+
+                        // Quantize to pad center
+                        dragOffX = padToXPos(rowIdx, (_ev.ext_type - 1) + 0.5);
+
+                        // trace "xxx dev xpos="+last_xpos[rowIdx]+" calc xpos="+int(dragOffX);
+                     }
+
+                     // trace "xxx MSB last_xpos["+rowIdx+"] = "+(last_xpos[rowIdx] >>7)+":"+(last_xpos[rowIdx]&127);
+
+                     bRight = (_ev.ext_type > NUM_SLIDER_COLS);
+                     bXPosValid = true;
+                  }
+                  else
+                  {
+                     // X-pos LSB
+                     //  (note) recv'd first
+                     last_xpos[rowIdx] = (last_xpos[rowIdx] & 0b11111110000000) | _ev.arg1;
+
+                     // trace "xxx LSB last_xpos["+rowIdx+"] = "+(last_xpos[rowIdx] >>7)+":"+(last_xpos[rowIdx]&127);
+
+                     bRight = ((_ev.ext_type-32) > NUM_SLIDER_COLS);
+                     bXPosValid = false;
+                  }
+
+                  if(bXPosValid)
+                  {
+                     if(-1 != first_xpos[rowIdx])
+                     {
+                        dragOffX = xposToPad(rowIdx, last_xpos[rowIdx]);
+                        // trace "xxx xpostopad="+dragOffX;
+
+                        if((DISPLAY_STEPS == display_mode) && !b_pattern_select_right)
+                        {
+                           if(bRight)
+                           {
+                              if(-1 != first_step_noteon_col_indices[rowIdx])
+                              {
+                                 // Right split (step area)
+                                 dragColIdx = int(dragOffX) - first_step_col_idx;
+                                 // trace "xxx firstStepIdx="+first_step_noteon_col_indices[rowIdx]+" dragColIdx="+dragColIdx+" dragOffX="+dragOffX+" last="+last_drag_step_col_indices[rowIdx];
+                                 if(EDIT_SELECT_MOVE == edit_mode)
+                                 {
+                                    moveStep(move_src_col_indices[rowIdx], dragColIdx, rowIdx);
+                                 }
+                                 else
+                                 {
+                                    int curDragColIdx = last_drag_step_col_indices[rowIdx];
+                                    if(dragColIdx > curDragColIdx)
+                                    {
+                                       // Drag right
+                                       while(curDragColIdx != dragColIdx)
+                                       {
+                                          curDragColIdx++;
+                                          handleStepPressed(curDragColIdx, rowIdx, false/*bNoteOn*/);
+                                       }
+                                    }
+                                    else if(dragColIdx < curDragColIdx)
+                                    {
+                                       // Drag left
+                                       while(curDragColIdx != dragColIdx)
+                                       {
+                                          curDragColIdx--;
+                                          handleStepPressed(curDragColIdx, rowIdx, false/*bNoteOn*/);
+                                       }
+                                    }
+                                 }
+                                 last_drag_step_col_indices[rowIdx] = dragColIdx;
+                              }
+                           }
+                           else
+                           {
+                              // Left split (slider area)
+                              if(!isLeftPatternSelectionEnabled())
+                              {
+                                 if(-1 != slider_noteon_col_indices[rowIdx])
+                                 {
+                                    if((milliSeconds() - slider_lock_ms[rowIdx]) >= SLIDER_LOCK_TIMEOUT)
+                                    {
+                                       int sliderChangeDeltaMS = (milliSeconds() - last_slider_change_ms[rowIdx]);
+                                       sliderColIdx = dragOffX;
+                                       if( (seq.b_recording && replay.b_playing) || (sliderChangeDeltaMS < SLIDER_CHANGE_TIMEOUT) )
+                                       {
+                                          handleSliderChanged(rowIdx, sliderColIdx,
+                                                              false/*bSnap*/, false/*bTest*/, false/*bUseLastVal*/
+                                                              );
+                                       }
+                                       else
+                                       {
+                                          if(0 == next_slider_change_ms[rowIdx])
+                                          {
+                                             if(handleSliderChanged(rowIdx, sliderColIdx,
+                                                                    false/*bSnap*/, true/*bTest*/, false/*bUseLastVal*/
+                                                                    )
+                                                )
+                                             {
+                                                next_slider_change_ms[rowIdx] = milliSeconds();
+                                             }
+                                          }
+                                          else
+                                          {
+                                             sliderChangeDeltaMS = (milliSeconds() - next_slider_change_ms[rowIdx]);
+                                             if( sliderChangeDeltaMS > SLIDER_CHANGE_UNLOCK_TIMEOUT )
+                                             {
+                                                last_slider_change_ms[rowIdx] = milliSeconds();
+                                                next_slider_change_ms[rowIdx] = 0;
+                                             }
+                                          }
+                                       }
+                                    }
+                                 } // if slider pressed
+                              }
+                           }
+                        } // switch display_mode
+                        else if(DISPLAY_PERF == display_mode)
+                        {
+                           if(bRight)
+                           {
+                              // Right split
+                              handlePerfPadPressed(dragOffX - first_step_col_idx, rowIdx, false/*bNoteOn*/, 0.0f/*vel*/);
+                           }
+                        }
+                     } // if have first_xpos
+                  } // if bXPosValid
+               }
+               else if(64 <= _ev.ext_type <= 89)
+               {
+                  bRight = ((_ev.ext_type - 64) > NUM_SLIDER_COLS);
+
+                  // Y-pos
+                  last_ypos[rowIdx] = _ev.arg1;
+
+                  // Note on with touch data is now complete
+               }
+               else if(119 == _ev.ext_type)
+               {
+                  // Sliding to neighbour cell
+                  if(b_debug)
+                     trace "[trc] NTS_Linnstrument: slide from cell="+_ev.arg1;
+                  next_noteon_slide_from[rowIdx] = _ev.arg1;
+               }
+            }
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method parseStepRecordNote(MIDIPipeFrame _framePlay,
+                                        MIDIPipeFrame _frame,
+                                        NTS_Pattern   _pat
+                                        ) {
+      int evIdx;
+      int colIdx;
+      int rowIdx;
+      int trackIdx;
+      float velIdx;
+      NTS_Track *track;
+      NTS_TrackState *trackState;
+      MIDIPipeEvent pev;
+      int devIdx = out_dev.dev_idx;
+
+      // Parse CCs
+      // Parse x/y pos
+      int numCC = _frame.getNumEventsCCByFlt(devIdx, -1/*fltCh*/);
+      evIdx = 0;
+      loop(numCC)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, devIdx, -1/*fltCh*/))
+         {
+            int ccId = pev.ccId;
+            rowIdx = pev.midiCh;
+
+            if(ccId == 119)
+            {
+               replay_next_noteon_is_slide[rowIdx] = true;
+            }
+         }
+
+         evIdx++;
+      }
+
+
+      // Parse note off
+      int numNoteOff = _frame.getNumEventsNoteOffByFlt(devIdx, -1/*fltCh*/);
+      evIdx = 0;
+      loop(numNoteOff)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, devIdx, -1/*fltCh*/))
+         {
+            rowIdx = pev.midiCh;
+
+            if(replay_next_noteon_is_slide[rowIdx])
+            {
+               replay_next_noteon_is_slide[rowIdx] = false;
+            }
+            else
+            {
+               colIdx = pev.note - first_step_note_nr;
+               if(0 <= colIdx < NUM_STEP_COLS)
+               {
+                  trackIdx = (NUM_ROWS - 1 - rowIdx) + offset_y;
+
+                  track <= _pat.getTrackByIndex(trackIdx);
+                  if(null != track)
+                  {
+                     track.recordOrPlayNoteOff(_framePlay, seq, _pat, true/*bAllowRec*/);
+
+                     trackState <= seq.getTrackStateByIndex(trackIdx);
+                     trackState.handleTrig(false);
+                  }
+               }
+            }
+         }
+
+         // Next event
+         evIdx++;
+      }
+
+      // Parse note on
+      int numNoteOn = _frame.getNumEventsNoteOnByFlt(devIdx, -1/*fltCh*/);
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, devIdx, -1/*fltCh*/))
+         {
+            rowIdx = pev.midiCh;
+
+            if(replay_next_noteon_is_slide[rowIdx])
+            {
+            }
+            else
+            {
+               colIdx = pev.note - first_step_note_nr;
+               if(0 <= colIdx < NUM_STEP_COLS)
+               {
+                  trackIdx = (NUM_ROWS - 1 - rowIdx) + offset_y;
+
+                  track <= _pat.getTrackByIndex(trackIdx);
+                  if(null != track)
+                  {
+                     velIdx = track.findVelocityIndexByVelocity((EDIT_SELECT_MOVE == edit_mode) ? 127 : pev.velocity);
+                     track.recordOrPlayNoteOn(_framePlay,
+                                              seq,
+                                              _pat,
+                                              velIdx/*arg1*/,
+                                              pev.duration/*arg2*/,
+                                              true/*bAllowRecNote*/,
+                                              false/*bAllowRecMod*/,
+                                              NodeTrigSeq.INVALID_VALUE/*mod1*/,
+                                              NodeTrigSeq.INVALID_VALUE/*mod2*/
+                                              );
+
+                     trackState <= seq.getTrackStateByIndex(trackIdx);
+                     trackState.handleTrig(true);
+                  }
+               }
+            }
+         }
+
+         // Next event
+         evIdx++;
+      }
+   }
+
+   // <method.png>
+   protected method parseTriggerPadRecord(MIDIPipeFrame _framePlay,
+                                          MIDIPipeFrame _frame,
+                                          NTS_Pattern   _pat,
+                                          boolean       _bAllowRec
+                                          ) {
+      int evIdx;
+      int colIdx;
+      int rowIdx;
+      int trackIdx;
+      float velIdx;
+      NTS_Track *track;
+      NTS_TrackState *trackState;
+      MIDIPipeEvent pev;
+      int devIdx = out_dev.dev_idx;
+      float f;
+      float x;
+      float y;
+      boolean bTrig = false;
+
+
+      // Parse x/y pos
+      int numCC = _frame.getNumEventsCCByFlt(devIdx, -1/*fltCh*/);
+      evIdx = 0;
+      loop(numCC)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, devIdx, -1/*fltCh*/))
+         {
+            int ccId = pev.ccId;
+            rowIdx = pev.midiCh;
+
+            if(rowIdx < 8)
+            {
+               if(ccId <= 57)
+               {
+                  if(ccId <= 25)
+                  {
+                     // X-pos MSB (0x00 .. 0x20)
+                     //  (note) recv'd last
+                     replay_xpos[rowIdx] = (replay_xpos[rowIdx] & 0b00000001111111) | (pev.ccValue << 7);
+                  }
+                  else if(ccId >= 33)
+                  {
+                     // X-pos LSB
+                     //  (note) recv'd first
+                     replay_xpos[rowIdx] = (replay_xpos[rowIdx] & 0b11111110000000) | pev.ccValue;
+                  }
+               }
+               else if(64 <= ccId <= 89)
+               {
+                  // (note) the Linnstrument does not send the y-pos when it hasn't changed :( => need a timeout
+                  if((ccId - 64) >= first_step_note_nr)
+                  {
+                     // trace "xxx y ccId="+ccId+" val="+pev.ccValue;
+                     replay_ypos[rowIdx] = pev.ccValue;
+                     if(!bTrig)
+                     {
+                        replay_trig.fill(false);
+                     }
+                     bTrig = true;
+                     replay_trig[rowIdx] = true;
+                  }
+               }
+               else if(ccId == 119)
+               {
+                  replay_next_noteon_is_slide[rowIdx] = true;
+               }
+            }
+         }
+
+         evIdx++;
+      }
+
+      // Parse note off
+      int numNoteOff = _frame.getNumEventsNoteOffByFlt(devIdx, -1/*fltCh*/);
+      evIdx = 0;
+      loop(numNoteOff)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, devIdx, -1/*fltCh*/))
+         {
+            rowIdx = pev.midiCh;
+
+            if(rowIdx < 8)
+            {
+               if(replay_next_noteon_is_slide[rowIdx])
+               {
+                  replay_next_noteon_is_slide[rowIdx] = false;
+               }
+               else
+               {
+                  colIdx = pev.note - first_step_note_nr;
+                  if(0 <= colIdx < NUM_STEP_COLS)
+                  {
+                     trackIdx = (colIdx / 4);
+
+                     if(DISPLAY_PADS_4x4 == display_mode)
+                     {
+                        // 4x4
+                        if(rowIdx >= 4)
+                           trackIdx += 4;
+
+                        trackIdx += (offset_y > 0) ? 8 : 0;
+                     }
+                     else
+                     {
+                        // 4x2
+                        trackIdx += (rowIdx / 2) * 4;
+                     }
+
+                     track <= _pat.getTrackByIndex(trackIdx);
+                     if(null != track)
+                     {
+                        track.recordOrPlayNoteOff(_framePlay, seq, _pat, _bAllowRec);
+
+                        trackState <= seq.getTrackStateByIndex(trackIdx);
+                        trackState.handleTrig(false);
+                     }
+
+                     replay_note_col_indices[rowIdx] = -1;
+                     replay_note_ms[rowIdx] = -1;
+                  }
+               }
+            }
+         }
+
+         // Next event
+         evIdx++;
+      }
+
+      // Parse note on
+      int numNoteOn = _frame.getNumEventsNoteOnByFlt(devIdx, -1/*fltCh*/);
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, devIdx, -1/*fltCh*/))
+         {
+            rowIdx = pev.midiCh;
+
+            if(rowIdx < 8)
+            {
+               if(replay_next_noteon_is_slide[rowIdx])
+               {
+               }
+               else
+               {
+                  // trace "xxx pev.note="+pev.note+" ch="+pev.midiCh;
+                  colIdx = pev.note - first_step_note_nr;
+                  if(0 <= colIdx < NUM_STEP_COLS)
+                  {
+                     rowIdx = pev.midiCh;
+
+                     replay_note_col_indices[rowIdx] = colIdx;
+                     replay_note_vel[rowIdx] = (EDIT_SELECT_MOVE == edit_mode) ? 127 : pev.velocity;
+                     replay_note_ms[rowIdx] = milliSeconds();
+                  }
+               }
+            }
+         }
+
+         // Next event
+         evIdx++;
+      }
+
+      // Handle note timeouts (workaround for y-pos CC bug)
+      rowIdx = 0;
+      int t = milliSeconds();
+      loop(NUM_ROWS)
+      {
+         if(-1 != replay_note_ms[rowIdx])
+         {
+            // (note) it usually takes ~5ms for all data to arrive
+            if( (t - replay_note_ms[rowIdx]) >= 9 )
+            {
+               if(!bTrig)
+               {
+                  replay_trig.fill(false);
+               }
+               bTrig = true;
+               replay_trig[rowIdx] = true;
+               if(b_debug)
+                  trace "[trc] NTS_Linnstrument: auto-trig note after timeout";
+            }
+         }
+         rowIdx++;
+      }
+
+      if(bTrig)
+      {
+         rowIdx = 0;
+         loop(NUM_ROWS)
+         {
+            if(replay_trig[rowIdx])
+            {
+               colIdx = replay_note_col_indices[rowIdx];
+               if(-1 != colIdx)  // not already triggered ?
+               {
+                  replay_note_col_indices[rowIdx] = -1;
+                  replay_note_ms[rowIdx] = -1;
+
+                  trackIdx = (colIdx / 4);
+
+                  y = replay_ypos[rowIdx];
+                  y /= 128.0;
+
+                  if(DISPLAY_PADS_4x4 == display_mode)
+                  {
+                     // 4x4
+                     if(rowIdx >= 4)
+                        trackIdx += 4;
+
+                     y += (rowIdx & 3);
+                     y *= (1.0 / 4.0) * 128;
+
+                     trackIdx += (offset_y > 0) ? 8 : 0;
+                  }
+                  else
+                  {
+                     // 4x2
+                     trackIdx += (rowIdx / 2) * 4;
+                     y += (rowIdx & 1);
+                     y *= (1.0 / 2.0) * 128;
+                  }
+
+                  x = frac(xposToPad(rowIdx, replay_xpos[rowIdx]));
+                  x += (colIdx & 3);
+                  x *= (1.0 / 4.0);
+                  x = mathClampf(x, 0.1, 0.9) - 0.1;
+                  x *= 1.25 * 127;
+
+                  if(b_debug)
+                     trace "[trc] NTS_Linnstrument: trig pad pos=("+x+";"+y+") trackIdx="+trackIdx;
+
+                  track <= _pat.getTrackByIndex(trackIdx);
+                  if(null != track)
+                  {
+                     velIdx = track.findVelocityIndexByVelocity(replay_note_vel[rowIdx]);
+                     // trace "xxx recordOrPlayNoteOn: trackIdx="+trackIdx;
+                     track.recordOrPlayNoteOn(_framePlay,
+                                              seq,
+                                              _pat,
+                                              velIdx/*arg1*/,
+                                              pev.duration/*arg2*/,
+                                              _bAllowRec/*note*/,
+                                              _bAllowRec/*mod*/,
+                                              x/*mod1*/,
+                                              y/*mod2*/
+                                              );
+
+                     trackState <= seq.getTrackStateByIndex(trackIdx);
+                     trackState.handleTrig(true);
+                  }
+               }
+            } // if replay_trig
+
+            // Next row
+            rowIdx++;
+         } // loop rows
+      } // if bTrig
+   }
+
+   // <replay.png>
+   public =replay= method queueNodeRestart() {
+      int tickMod = (current_song.ppq / 4.0) * STConfig.node_trig_seq_plugin_pattern_restart_quantization_16th;
+      queued_node_restart_tick_nr = int((seq.tick_nr + tickMod-1) / tickMod) * tickMod;
+      if(b_debug2)
+         trace "xxx NTS_Linnstrument: queued_node_restart_tick_nr="+queued_node_restart_tick_nr+" tickMod="+tickMod;
+   }
+
+   // <replay.png>
+   public virtual handleNodeReset() {
+      NTS_EditorPlugin::handleNodeReset();
+
+      queued_node_restart_tick_nr = -1;
+   }
+
+   // <replay.png>
+   public virtual processFrame(MIDIPipeFrame _framePlay,
+                               MIDIPipeFrame _frameRec,
+                               MIDIPipeFrame _frameCaptureOrNull,
+                               boolean       _bMuted,
+                               boolean       _bPlaySeq
+                               ) {
+      // Called from replay thread
+
+      // if(_frameRec.hasEvents())
+      //    trace "xxx frameRec.numEvents="+_frameRec.numEvents;
+
+      if(seq.b_auto_filter_a)
+      {
+         MIDIPipeFrame frPerf;
+         frPerf.empty();
+
+         if(fr_inject.hasEvents())
+         {
+            // mute/solo/repeat/velocityscl/mod*/trig/durationscl performance controllers
+            //  (generated in performance mode)
+            frPerf.mergeFrameFltDst(fr_inject,
+                                    -1/*fltDev*/, -1/*fltCh*/,
+                                    seq.auto_dev_filter_a, mathClampi(seq.auto_ch_filter_a, 0, 15),
+                                    true/*bMergeNotes*/,
+                                    true/*bMergeRPN*/
+                                    );
+            fr_inject.empty();
+         }
+
+         if(-1 != queued_node_restart_tick_nr)
+         {
+            if(seq.tick_nr >= queued_node_restart_tick_nr)
+            {
+               queued_node_restart_tick_nr = -1;
+
+               // trace "xxx NTS_Linnstrument: restart at tick_nr="+seq.tick_nr;
+
+               frPerf.rpn(true/*bSet*/,
+                          seq.auto_dev_filter_a, mathClampi(seq.auto_ch_filter_a, 0, 15),
+                          Node.RPN_COMMON_RESTART,
+                          1
+                          );
+            }
+         }
+
+         _framePlay.mergeFrame(frPerf);
+
+         if(null != _frameCaptureOrNull)
+            _frameCaptureOrNull.mergeFrame(frPerf);
+      }
+
+      // (note) the following events will not be recorded in output-capture mode
+      // (note) they will be written to the regular _framePlay output, though,
+      //          i.e. other nodes can record them
+
+      if(!b_pattern_select_right)
+      {
+         NTS_Pattern pat <= seq.nodeGetCurrentEditPattern();
+         if(null != pat)
+         {
+            if(seq.b_recording)
+            {
+               if(DISPLAY_STEPS == display_mode)
+               {
+                  parseStepRecordNote(_framePlay, _frameRec,  pat);
+
+                  if(_bPlaySeq)
+                  {
+                     NTS_Track *track;
+
+                     // mod1 slider
+                     if(-1 != slider_noteon_col_indices.get(0))  // pressed ?
+                     {
+                        if(NodeTrigSeq.INVALID_VALUE != last_slider_values.get(0))
+                        {
+                           track <= grid.getCursorTrack();
+                           if(null != track)
+                           {
+                              track.recordAndPlayModOrArgFromPlugin(_framePlay,
+                                                                    seq,
+                                                                    pat,
+                                                                    0/*Mod1*/,
+                                                                    last_slider_values.get(0)
+                                                                    );
+                           }
+                        }
+                     }
+
+                     // mod2 slider
+                     if(-1 != slider_noteon_col_indices.get(1))  // pressed ?
+                     {
+                        if(NodeTrigSeq.INVALID_VALUE != last_slider_values.get(1))
+                        {
+                           track <= grid.getCursorTrack();
+                           if(null != track)
+                           {
+                              track.recordAndPlayModOrArgFromPlugin(_framePlay,
+                                                                    seq,
+                                                                    pat,
+                                                                    1/*Mod2*/,
+                                                                    last_slider_values.get(1)
+                                                                    );
+                           }
+                        }
+                     }
+
+                     // arg1 slider
+                     if(-1 != slider_noteon_col_indices.get(2))  // pressed ?
+                     {
+                        if(NodeTrigSeq.INVALID_VALUE != last_slider_values.get(2))
+                        {
+                           track <= grid.getCursorTrack();
+                           if(null != track)
+                           {
+                              track.recordAndPlayModOrArgFromPlugin(_framePlay,
+                                                                    seq,
+                                                                    pat,
+                                                                    2/*Arg1*/,
+                                                                    last_slider_values.get(2)
+                                                                    );
+                           }
+                        }
+                     }
+
+                     // arg2 slider
+                     if(-1 != slider_noteon_col_indices.get(3))  // pressed ?
+                     {
+                        if(NodeTrigSeq.INVALID_VALUE != last_slider_values.get(3))
+                        {
+                           track <= grid.getCursorTrack();
+                           if(null != track)
+                           {
+                              track.recordAndPlayModOrArgFromPlugin(_framePlay,
+                                                                    seq,
+                                                                    pat,
+                                                                    3/*Arg2*/,
+                                                                    last_slider_values.get(3)
+                                                                    );
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            if((DISPLAY_PADS_4x4 == display_mode) || (DISPLAY_PADS_4x2 == display_mode))
+            {
+               parseTriggerPadRecord(_framePlay, _frameRec, pat, seq.b_recording/*bAllowRec*/);
+            }
+         } // if pat
+      } // if !b_pattern_select
+
+      _framePlay.deleteEventsByFlt(seq.plugin_dev_idx, -1/*fltCh*/);
+      _frameRec.deleteEventsByFlt(seq.plugin_dev_idx, -1/*fltCh*/);
+   }
+}

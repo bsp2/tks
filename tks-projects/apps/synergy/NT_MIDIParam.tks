@@ -1,0 +1,1717 @@
+// ----
+// ---- file   : NT_MIDIParam.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 26Sep2010
+// ----
+// ---- changed: 27Sep2010, 08Oct2010, 10Oct2010, 13Apr2013, 14Apr2013, 28Jul2014, 11Jan2015
+// ----          17Jan2015, 19Jan2015, 04Feb2015, 06Feb2015, 18Feb2015, 22Feb2015, 06Mar2015
+// ----          19Apr2015, 28Apr2015, 29Apr2015, 09Oct2015, 25Oct2015, 27Oct2015, 28Mar2016
+// ----          09Apr2016, 08Jul2016, 26Feb2017, 14Jul2017, 03Mar2018, 06Mar2018, 07Mar2018
+// ----          24Jun2018, 02Dec2018, 08Dec2018, 13Jan2019, 17Jan2019, 18Jan2019, 07Oct2019
+// ----          26Jan2021, 27Jan2021, 31May2021, 15Oct2023, 01Oct2024, 24Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_MIDIParam;
+
+
+// <class.png>
+class NT_MIDIParam {
+   explain "Represents a user defined MIDI parameter";
+
+   define int TYPE_CC         = 0;  // continuous controller (7bit or 14bit)
+   define int TYPE_RPN        = 1;  // registered parameter number (7bit or 14bit)
+                                    //   0x0000 - Pitch bend range
+                                    //   0x0001 - Fine tuning
+                                    //   0x0002 - Coarse tuning
+                                    //   0x0003 - Tuning program change
+                                    //   0x0004 - Tuning bank select
+                                    //   0x0005 - Modulation depth range
+   define int TYPE_NRPN       = 2;  // (non-)registered parameter number (7bit or 14bit)
+   define int TYPE_SYSEX      = 3;  // system-exclusive
+   define int TYPE_PRGCHG     = 4;  // program change
+   define int TYPE_REMOTE     = 5;  // Remote (VST) parameter change
+   // define int TYPE_CHPRESSURE = 6;  // would be needed for trigseq import when mod output does not match track output
+   // define int TYPE_PITCHBEND  = 7;  // ^^
+   define int NUM_TYPES       = 6;
+
+   define int MSBLSB_ONLYLSB = 0;
+   define int MSBLSB_ONLYMSB = 1;
+   define int MSBLSB_BOTH    = 2;
+
+   static StringArray midi_long_type_names = ["Continuous controller (CC)",
+                                              "Registered parameter number (RPN)",
+                                              "Non-registered parameter number (NRPN)",
+                                              "System exclusive (SysEx)",
+                                              "Program Change",
+                                              "Remote parameter"
+                                              ];
+
+   static StringArray midi_short_type_names = ["CC",
+                                               "RPN",
+                                               "NRPN",
+                                               "SysEx",
+                                               "PrgChg",
+                                               "Remote"
+                                               ];
+
+   static StringArray msblsb_mode_names = ["Send only LSB",
+                                           "Send only MSB",
+                                           "Send both MSB + LSB"
+                                           ];
+
+   static StringArray short_msblsb_mode_names = ["LSB",
+                                                 "MSB",
+                                                 "MSB+LSB"
+                                                 ];
+
+   byte    id;            // 0..15
+   String  name;          // parameter name
+   byte    type;          // parameter type, see TYPE_xxx
+   byte    ui_style;      // see NT_CEL.STYLE_xxx
+   byte    ui_range;      // see NT_CEL.RANGE_xxx
+   float   reset;         // Reset value
+   boolean b_reset_select;// 1=send reset value when instrument is selected
+   boolean b_reset_note  ;// 1=send reset value when note is played
+   byte    cc_msb_id;     // 7bit controller number (MSB) (used if type is TYPE_CC)
+   byte    cc_lsb_id;     // 7bit controller number (LSB) (used if type is TYPE_CC and b_lsb=true)
+   short   rpn_id;        // 14bit parameter number (MSB<<7 | LSB) (used if type is TYPE_NRPN) (todo)
+   short   nrpn_id;       // 14bit parameter number (MSB<<7 | LSB) (used if type is TYPE_NRPN)
+   byte    msblsb_mode;   // see MSBLSB_xxx
+   boolean b_scale14bit;  // 1=scale controller to 14bit range, 0=use as-is
+   float   recusr_rpn_min;
+   float   recusr_rpn_max;
+   float   recusr_rpn_ctr;
+   boolean b_recusr_asym; // 1=treat 8192 as center and interpolate towards min or max, 0=lerp between min/max
+   int     remote_instance_id;
+   int     remote_param_idx;
+   float   remote_out_min;
+   float   remote_out_max;
+   boolean b_remote_relative;  // true=relative param change, false=absolute (change editor patch)
+   boolean b_name_edited; // 1=user edited the name manually, 0=safe to generate a new name
+
+   STX_MIDIOutDevice *forced_dev;  // null=no forced device (use instr device)
+   byte               forced_ch;   // 0=no forced midi channel, 1..16 otherwise
+
+   // (todo) add sysex fields
+
+
+   // <init.png>
+   public method init(int _id) {
+      id             = _id;
+      name           = "ctl#"+(_id+1);
+      type           = TYPE_CC;
+      ui_style       = NT_CEL.STYLE_HEX;
+      ui_range       = NT_CEL.RANGE_0_127;
+      cc_msb_id      =  1; // modulation MSB
+      cc_lsb_id      = 33; // modulation LSB
+      msblsb_mode    = MSBLSB_ONLYMSB;
+      b_scale14bit   = true;
+      recusr_rpn_min = 0;
+      recusr_rpn_max = 16383;
+      recusr_rpn_ctr = 8192;
+      b_recusr_asym  = false;
+      forced_dev    <= null;
+      forced_ch      = 0;
+      reset          = 0.0f;
+      b_reset_select = false;
+      b_reset_note   = false;
+      remote_out_min = 0.0f;
+      remote_out_max = 1.0f;
+   }
+
+   // <method_get.png>
+   public method useLSB() : boolean {
+      return (-1 != [MSBLSB_ONLYLSB, MSBLSB_BOTH].indexOf(msblsb_mode, 0));
+   }
+
+   // <method_get.png>
+   public method useMSB() : boolean {
+      return (-1 != [MSBLSB_ONLYMSB, MSBLSB_BOTH].indexOf(msblsb_mode, 0));
+   }
+
+   // <method_get.png>
+   public method isPN() : boolean {
+      return (TYPE_RPN == type) || (TYPE_NRPN == type);
+   }
+
+   // <method_get.png>
+   public method getTypeString() : String {
+      return midi_short_type_names.get(type);
+   }
+
+   // <method_get.png>
+   public method isDefaultCC(byte _cc) : boolean {
+      if(TYPE_CC == type && null == forced_dev && 0 == forced_ch)
+      {
+         return (MSBLSB_ONLYMSB == msblsb_mode && cc_msb_id == _cc);
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method mapCtlVal(float _value) : float {
+      // trace "xxx mapCtlVal: value="+_value+" type="+type+" ui_range="+ui_range;
+      if(TYPE_PRGCHG == type)
+      {
+         // No scaling
+         return (int(_value) & 127);
+      }
+
+      if(TYPE_REMOTE == type)
+      {
+         float paramValue = 0.0f;
+         float paramOutMin = remote_out_min;
+         float paramOutMax = remote_out_max;
+         float t;
+         if(paramOutMin > paramOutMax)
+         {
+            t = paramOutMin;
+            paramOutMin = paramOutMax;
+            paramOutMax = t;
+         }
+
+         switch(ui_range)
+         {
+            default:
+            case NT_CEL.RANGE_0_127:
+               // 0..127 => 0..1  (64=~0.503, 127=1.0)
+               paramValue = mathClampf(_value / 127.0, 0.0f, 1.0f);
+               break;
+
+            case NT_CEL.RANGE_M64_P63:
+               // 0..127 => 0..1 (64=0.5, 127=1.0)
+               _value = mathClampf(_value, 0, 127.0) - 64;
+               if(_value < 0)
+                  paramValue = mathClampf(0.5*(1.0 + (_value / 64.0)), 0.0f, 1.0f);
+               else
+                  paramValue = mathClampf(0.5*(1.0 + (_value / 63.0)), 0.0f, 1.0f);
+               break;
+
+            case NT_CEL.RANGE_BINARY_127:
+            case NT_CEL.RANGE_BINARY_255:
+               paramValue = (_value > 0) ? 1.0 : 0.0f;
+               break;
+
+            case NT_CEL.RANGE_0_255:
+               // 0..255 => 0..1 (128=0.501, 255=1.0)
+               paramValue = mathClampf(_value / 255.0, 0.0f, 1.0f);
+               break;
+
+            case NT_CEL.RANGE_M128_P127:
+               // 0..255 => 0..1 (128=0.5, 255=1.0)
+               _value = mathClampf(_value, 0, 255.0) - 128;
+               if(_value < 0)
+                  paramValue = mathClampf(0.5*(1.0 + (_value / 128.0)), 0.0f, 1.0f);
+               else
+                  paramValue = mathClampf(0.5*(1.0 + (_value / 127.0)), 0.0f, 1.0f);
+               break;
+         }
+
+         paramValue = paramOutMin + (paramOutMax - paramOutMin) * paramValue;
+         return paramValue;
+      }
+
+      short intValue;
+
+      // Scale floating point value to 14bit range
+      switch(ui_range)
+      {
+         default:
+         case NT_CEL.RANGE_0_127:
+            if(b_scale14bit)
+            {
+               // scale to 14bit range (64=>8256, 127=>16383)
+               intValue = mathClampi((_value * 16383.0) / 127.0, 0, 16383);
+            }
+            else
+            {
+               //trace "xxx mapCtlVal: midiChannel="+midiChannel+" value="+_value;
+               if([TYPE_RPN, TYPE_NRPN].contains(type))
+               {
+                  // Special case: always use 0..16383 range
+                  intValue = mathClampi(_value, 0, 16383);
+               }
+               else
+               {
+                  // send 7bit value as-is
+                  intValue = mathClampi(_value, 0, 127);
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_M64_P63:
+            if(b_scale14bit)
+            {
+               // scale to 14bit range (64=>8192, 127=>16383)
+               _value -= 64;
+               if(_value < 0)
+                  intValue = mathClampi(8192 + (_value * (8192.0 / 64)), 0, 16383);
+               else
+                  intValue = mathClampi(8192 + (_value * (8191.0 / 63)), 0, 16383);
+            }
+            else
+            {
+               //trace "xxx mapCtlVal: midiChannel="+midiChannel+" value="+_value;
+               if([TYPE_RPN, TYPE_NRPN].contains(type))
+               {
+                  // Special case: always use 0..16383 range
+                  intValue = mathClampi(_value, 0, 16383);
+               }
+               else
+               {
+                  // send 7bit value as-is
+                  intValue = mathClampi(_value, 0, 127);
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_BINARY_127:
+            if(b_scale14bit)
+            {
+               intValue = (_value > 0) ? 16383 : 0; // scale to 14bit range
+            }
+            else
+            {
+               //trace "xxx mapCtlVal: midiChannel="+midiChannel+" value="+_value;
+               intValue = (_value > 0) ? 127 : 0;
+            }
+            break;
+
+         case NT_CEL.RANGE_0_255:
+            if(b_scale14bit)
+            {
+               // Scale to 14bit (128=>8223, 255=>16383)
+               intValue = mathClampi((_value * 16383.0)/255, 0, 16383);
+               // trace "xxx RANGE_0_255: value="+_value+" intValue="+intValue;
+
+               // // intValue = _value * 64; // scale to 14bit range
+            }
+            else
+            {
+               if(TYPE_CC == type)
+               {
+                  // scale from 8bit to 7bit range
+                  intValue = mathClampi(_value * 0.5, 0, 127); // 128=>64, 255=>127
+               }
+               else
+               {
+                  // use value as-is (RPN/NRPN)
+                  if([TYPE_RPN, TYPE_NRPN].contains(type))
+                  {
+                     // Special case: always use 0..16383 range
+                     intValue = mathClampi(_value, 0, 16383);
+                  }
+                  else
+                  {
+                     intValue = mathClampi(_value, 0, 127);
+                  }
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_M128_P127:
+            if(b_scale14bit)
+            {
+               // Scale to 14bit (128=>8192, 255=>16383)
+               _value -= 128.0;
+               if(_value < 0)
+                  intValue = mathClampi(8192 + ((_value * 8192.0) / 128.0), 0, 16383); // 128=>8192
+               else
+                  intValue = mathClampi(8192 + ((_value * 8191.0) / 127.0), 0, 16383);  // 127 => 16383 (+8191)
+
+               // trace "xxx RANGE_M128_P128: value="+_value+" intValue="+intValue;
+            }
+            else
+            {
+               if(TYPE_CC == type)
+               {
+                  // scale from 8bit to 7bit range
+                  intValue = mathClampi(_value * 0.5, 0, 127);
+               }
+               else
+               {
+                  // use value as-is (RPN/NRPN)
+                  if([TYPE_RPN, TYPE_NRPN].contains(type))
+                  {
+                     // Special case: always use 0..16383 range
+                     intValue = mathClampi(_value, 0, 16383);
+                  }
+                  else
+                  {
+                     intValue = mathClampi(_value, 0, 127);
+                  }
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_BINARY_255:
+            if(b_scale14bit)
+            {
+               intValue = (_value > 0) ? 16383 : 0; // scale to 14bit range
+            }
+            else
+            {
+               if(TYPE_CC == type)
+               {
+                  intValue = (_value > 0) ? 127 : 0;
+               }
+               else
+               {
+                  // use value as-is (RPN/NRPN)
+                  intValue = (_value > 0) ? 255 : 0;
+               }
+            }
+            break;
+      }
+      return intValue;
+   }
+
+   // <replay.png>
+   public method sendParamUpdate(MIDIPipeFrame _frame, int _devIdx, byte _midiCh, float _value) {
+      // called by NT_Instrument::emitUsrCtl() and NT_Instrument::findParamForPipeEvent()
+
+      if(null != forced_dev)
+      {
+         _devIdx = forced_dev.dev_idx;
+      }
+
+      if(0 != forced_ch)
+      {
+         // "hack" to send AR CCs to the performance channel
+         //   (instead of the track channel, which would change the patch!)
+         _midiCh = (forced_ch - 1);
+      }
+
+      if(-1 == _devIdx)
+         return;
+
+      _value = mapCtlVal(_value);
+
+      if(TYPE_PRGCHG == type)
+      {
+         // No scaling
+         _frame.prgChg(true/*set*/, _devIdx, _midiCh, int(_value) & 127);
+         return;
+      }
+
+      if(TYPE_REMOTE == type)
+      {
+         // trace "xxx NT_MIDIParam::sendParamUpdate<remote>: devIdx="+_devIdx+" midiCh="+_midiCh+" remote_instance_id="+remote_instance_id;
+         if(remote_instance_id > 0)
+         {
+            float paramValue = _value;
+            if(b_remote_relative)
+            {
+               SysEx.SendRemoteParamUpdateRel(remote_instance_id, remote_param_idx, paramValue);
+            }
+            else
+            {
+               // trace "xxx NT_MIDIParam: call SysEx.SendRemoteParamUpdate(iid="+remote_instance_id+" paramIdx="+remote_param_idx+" val="+paramValue+")";
+               SysEx.SendRemoteParamUpdate(remote_instance_id, remote_param_idx, paramValue);
+            }
+         }
+         return;
+      }
+
+      short intValue = _value;
+
+      switch(type)
+      {
+         case TYPE_CC:
+            if(useMSB())
+            {
+               // trace "xxx send CC "+(intValue >> 7);
+               _frame.cc(true/*set*/, _devIdx, _midiCh, cc_msb_id, intValue >> 7);
+            }
+            if(useLSB())
+            {
+               // trace "xxx send ctlchange intValue="+intValue;
+               ////outDevice.ctlChange(midiChannel, cc_lsb_id, intValue & 127);
+               _frame.cc(true/*set*/, _devIdx, _midiCh, cc_lsb_id, intValue & 127);
+            }
+            break;
+
+         case TYPE_RPN:
+            _frame.rpn(true/*set*/, _devIdx, _midiCh, rpn_id, intValue);
+            break;
+
+         case TYPE_NRPN:
+            // trace "xxx NT_MIDIParam: send NRPN id="+nrpn_id+" intValue="+intValue;
+            _frame.nrpn(true/*set*/, _devIdx, _midiCh, nrpn_id, intValue);
+            break;
+
+         case TYPE_SYSEX:
+            // (todo) implement me
+            break;
+      }
+
+   }
+
+   // <method.png>
+   public static UnmapCtlVal(int _uiRange, boolean _bLSB, boolean _bCC, boolean _bScale14bit, float _value) : float {
+      // Called during MIDI record
+
+      // trace "xxx UnmapCtlVal: bLSB="+_bLSB+" value="+_value;
+
+      // // if(TYPE_PRGCHG == type)
+      // // {
+      // //    // No scaling
+      // //    return (int(_value) & 127);
+      // // }
+
+      switch(_uiRange)
+      {
+         default:
+         case NT_CEL.RANGE_0_127:
+            if(_bCC)
+            {
+               if(_bLSB)
+               {
+                  // (todo) need orig ctlvalue (MSB part)
+                  _value = (_value / 128.0f);
+               }
+               else
+               {
+                  // keep value
+               }
+            }
+            else
+            {
+               // (N)RPN
+               if(_bScale14bit)
+               {
+                  // 16383 => 127, 8192 => 63.503875969
+                  _value = (_value * 127.0) / 16383.0;
+               }
+               else
+               {
+                  // keep value
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_M64_P63:
+            if(_bCC)
+            {
+               if(_bLSB)
+               {
+                  // (todo) need orig ctlvalue (MSB part)
+                  _value = (_value / 128.0f);
+               }
+
+               // keep value
+            }
+            else
+            {
+               // (N)RPN
+               if(_bScale14bit)
+               {
+                  // 16383 => 127, 8192 => 64
+                  _value -= 8192;
+                  if(_value < 0)
+                  {
+                     _value = 64.0 + ((_value * 64.0) / 8192.0);
+                  }
+                  else
+                  {
+                     _value = 64.0 + ((_value * 63.0) / 8191.0);
+                  }
+               }
+               else
+               {
+                  // keep value
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_BINARY_127:
+            if(_bCC)
+            {
+               if(_bLSB)
+               {
+                  _value = (_value / 128.0f);
+               }
+            }
+            _value = (_value > 0) ? 127 : 0;
+            break;
+
+         case NT_CEL.RANGE_0_255:
+            if(_bCC)
+            {
+               if(_bLSB)
+               {
+                  // (todo) need orig ctlvalue (MSB part)
+                  _value = (_value / 128.0f);
+               }
+               _value = (_value * 255.0) / 127.0;  // 127 => 255
+            }
+            else
+            {
+               // (N)RPN
+               if(_bScale14bit)
+               {
+                  // // _value = _value / (16384.0 / 256.0);
+                  _value = (_value * 255.0) / 16383.0; // 16383 => 255, 8192 => 127.507782457
+               }
+               else
+               {
+                  // keep value
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_M128_P127:
+            if(_bCC)
+            {
+               if(_bLSB)
+               {
+                  // (todo) need orig ctlvalue (MSB part)
+                  _value = (_value / 128.0f);
+               }
+
+               _value -= 64.0;
+               if(_value < 0)
+                  _value = (128.0 + ((_value * 128.0) / 64.0));
+               else
+                  _value = (128.0 + ((_value * 127.0) / 63.0));
+            }
+            else
+            {
+               // (N)RPN
+               if(_bScale14bit)
+               {
+                  _value -= 8192;
+                  if(_value < 0)
+                  {
+                     _value = 128.0 + ((_value * 128.0) / 8192.0);
+                  }
+                  else
+                  {
+                     _value = 128.0 + ((_value * 127.0) / 8191.0);  // 8192 => 128, 16383 => 255
+                  }
+               }
+               else
+               {
+                  // keep value
+               }
+            }
+            break;
+
+         case NT_CEL.RANGE_BINARY_255:
+            _value = (_value > 0) ? 255 : 0;
+            break;
+      }
+
+      return _value;
+   }
+
+   // <method.png>
+   public method unmapCtlVal(boolean _bLSB, float _val) : float {
+      return UnmapCtlVal(ui_range, _bLSB, (TYPE_CC == type), b_scale14bit, _val);
+   }
+
+   // <method.png>
+   public method unmapRemoteEventParamValue(float _remoteParamValue) : float {
+      float paramValue;
+      float paramOutMin = remote_out_min;
+      float paramOutMax = remote_out_max;
+      float t;
+      if(paramOutMin > paramOutMax)
+      {
+         t = paramOutMin;
+         paramOutMin = paramOutMax;
+         paramOutMax = t;
+      }
+
+      if(_remoteParamValue < paramOutMin)
+         _remoteParamValue = paramOutMin;
+      else if(_remoteParamValue > paramOutMax)
+         _remoteParamValue = paramOutMax;
+
+      _remoteParamValue = (_remoteParamValue - paramOutMin) / (paramOutMax - paramOutMin);
+
+      switch(ui_range)
+      {
+         default:
+         case NT_CEL.RANGE_0_127:
+            paramValue = _remoteParamValue * 127.0f;
+            break;
+
+         case NT_CEL.RANGE_M64_P63:
+            _remoteParamValue -= 0.5;
+            if(_remoteParamValue < 0)
+               paramValue = 64 + (2.0*(_remoteParamValue*64));
+            else
+               paramValue = 64 + (2.0*(_remoteParamValue*63));
+            break;
+
+         case NT_CEL.RANGE_BINARY_127:
+            paramValue = (_remoteParamValue > 0.0f) ? 127 : 0;
+            break;
+
+         case NT_CEL.RANGE_BINARY_255:
+            paramValue = (_remoteParamValue > 0.0f) ? 255 : 0;
+            break;
+
+         case NT_CEL.RANGE_0_255:
+            paramValue = _remoteParamValue * 255.0f;
+            break;
+
+         case NT_CEL.RANGE_M128_P127:
+            _remoteParamValue -= 0.5;
+            if(_remoteParamValue < 0)
+               paramValue = 128 + (2.0*(_remoteParamValue*128));
+            else
+               paramValue = 128 + (2.0*(_remoteParamValue*127));
+            break;
+      }
+
+      return paramValue;
+   }
+
+   // <method.png>
+   public method unmapRecordUsrCtlRPNParamValue(int _rpnValue) : float {
+
+      // Called by handleRecordUsrCtlRPN() (RPN_CTL_n, prev:RPN_TRACKER_RECORD_USRCTLn)
+      // (note) rpnValue is a "normalized" value (0..16383) that is mapped to the param min..max range
+
+      float paramRPNMin = recusr_rpn_min;
+      float paramRPNCtr = recusr_rpn_ctr;
+      float paramRPNMax = recusr_rpn_max;
+      float t;
+      if(paramRPNMin > paramRPNMax)
+      {
+         t = paramRPNMin;
+         paramRPNMin = paramRPNMax;
+         paramRPNMax = t;
+      }
+
+      float paramValue;
+      if(b_recusr_asym)
+      {
+         // Asymmetric interpolation about center value
+         // trace "xxx unmap recusr rpn: min="+paramRPNMin+" ctr="+paramRPNCtr+" max="+paramRPNMax;
+
+         if(paramRPNCtr < paramRPNMin)
+            paramRPNCtr = paramRPNMin;
+         else if(paramRPNCtr > paramRPNMax)
+            paramRPNCtr = paramRPNMax;
+
+         paramValue = _rpnValue - 8192;
+         if(paramValue < 0)
+         {
+            paramValue = paramRPNCtr + (paramValue/8192.0)*(paramRPNCtr - paramRPNMin);
+         }
+         else
+         {
+            paramValue = paramRPNCtr + (paramValue/8191.0)*(paramRPNMax - paramRPNCtr);
+         }
+         // trace "xxx 2 unmap recusr rpn: rpnValue="+_rpnValue+" => paramValue="+paramValue;
+      }
+      else
+      {
+         // Linear interpolation between min/max
+         paramValue = _rpnValue / 16383.0;  // normalize
+         paramValue = paramRPNMin + paramValue * (paramRPNMax - paramRPNMin);
+      }
+
+      switch(ui_range)
+      {
+         default:
+         case NT_CEL.RANGE_0_127:
+            return ((paramValue * 127.0) / 16383.0);
+
+         case NT_CEL.RANGE_M64_P63:
+            paramValue -= 8192;
+            if(paramValue < 0)
+               return 64 + ((paramValue * 64.0) / 8192.0);
+            else
+               return 64 + ((paramValue * 63.0) / 8191.0);
+
+         case NT_CEL.RANGE_BINARY_127:
+            return (paramValue >= 8192) ? 127 : 0;
+
+         case NT_CEL.RANGE_BINARY_255:
+            return (paramValue >= 8192) ? 255 : 0;
+
+         case NT_CEL.RANGE_0_255:
+            return (paramValue * 255.0) / 16383.0;
+
+         case NT_CEL.RANGE_M128_P127:
+            paramValue -= 8192;
+            if(paramValue < 0)
+               return 128 + ((paramValue * 128.0) / 8192.0);
+            else
+               return 128 + ((paramValue * 127.0) / 8191.0);
+      }
+   }
+
+   // <method_get.png>
+   public method getRecUsrCtlValueRangeString() : String {
+      Integer ioMin = unmapRecordUsrCtlRPNParamValue(0);
+      Integer ioCtr = unmapRecordUsrCtlRPNParamValue(8192);
+      Integer ioMax = unmapRecordUsrCtlRPNParamValue(16383);
+      Float foMin = unmapRecordUsrCtlRPNParamValue(0);
+      Float foCtr = unmapRecordUsrCtlRPNParamValue(8192);
+      Float foMax = unmapRecordUsrCtlRPNParamValue(16383);
+      return "0="+ioMin.printf("0x%02x")+"("+foMin.printf("%.2f")+") 8192="+ioCtr.printf("0x%02x")+"("+foCtr.printf("%.2f")+") 16383="+ioMax.printf("0x%02x")+"("+foMax.printf("%.2f")+")";
+   }
+
+   // <method_get.png>
+   public static GetRPNAliasIdxByRPN(StringArray _aliases, int _rpnId) : int {
+      if(null != _aliases)
+      {
+         String *s;
+         Integer io = _rpnId;
+         String rpnStr = "RPN#"+io.printf("%05d");
+         int aliasIdx = 0;
+         foreach s in _aliases
+         {
+            if(s.startsWith(rpnStr))
+            {
+               return aliasIdx;
+            }
+            aliasIdx++;
+         }
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public static GetNRPNAliasIdxByNRPN(StringArray _aliases, int _nrpnId) : int {
+      if(null != _aliases)
+      {
+         String *s;
+         Integer io = _nrpnId;
+         String nrpnStr = "NRPN#"+io.printf("%05d");
+         int aliasIdx = 0;
+         foreach s in _aliases
+         {
+            if(s.startsWith(nrpnStr))
+            {
+               return aliasIdx;
+            }
+            aliasIdx++;
+         }
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method uiGetMIDIParamString(boolean _bMultiLine, NT_Instrument _midiIns) : String {
+      int aliasIdx;
+
+      // (todo) optimize -- don't query all params, just the one in question
+
+      STX_MIDIOutDevice *outDev;
+
+      if(null != forced_dev)
+      {
+         outDev <= forced_dev;
+      }
+      else
+      {
+         outDev <= _midiIns.out_device;
+      }
+
+      byte midiCh;
+
+      if(0 != forced_ch)
+      {
+         midiCh = forced_ch - 1;
+      }
+      else
+      {
+         midiCh = _midiIns.midi_channel;
+      }
+
+      String r;
+      r.empty();
+      switch(type)
+      {
+         default:
+         case TYPE_CC:
+            // r.append("CC#");
+            StringArray ccNames <= _midiIns.getCCNames(outDev, midiCh, false/*bMultiLine*/);
+
+            switch(msblsb_mode)
+            {
+               default:
+                  r.append("ERR");
+                  break;
+
+               case MSBLSB_ONLYLSB:
+                  r.append( (ccNames.get(cc_lsb_id)) );
+
+                  if(_bMultiLine)
+                  {
+                     if(null != outDev)
+                     {
+                        r.append("\n\n"+outDev.getCCInfoByCtl(midiCh, cc_lsb_id));
+                     }
+                  }
+                  break;
+
+               case MSBLSB_ONLYMSB:
+                  r.append( (ccNames.get(cc_msb_id)) );
+
+                  if(_bMultiLine)
+                  {
+                     if(null != outDev)
+                     {
+                        r.append("\n\n"+outDev.getCCInfoByCtl(midiCh, cc_msb_id));
+                     }
+                  }
+                  break;
+
+               case MSBLSB_BOTH:
+                  r.append(ccNames.get(cc_msb_id));
+                  if(_bMultiLine)
+                  {
+                     r.append("\n");
+                     r.append(ccNames.get(cc_lsb_id));
+                  }
+
+                  if(_bMultiLine)
+                  {
+                     if(null != outDev)
+                     {
+                        r.append("\n\n"+outDev.getCCInfoByCtl(midiCh, cc_msb_id));
+                     }
+                  }
+                  break;
+            }
+
+            break;
+
+         case TYPE_RPN:
+            StringArray rpnAliases <= _midiIns.getRPNNames(outDev, midiCh, false/*bMultiLine*/);
+            aliasIdx = GetRPNAliasIdxByRPN(rpnAliases, rpn_id);
+            if(-1 != aliasIdx)
+            {
+               r.append(rpnAliases.get(aliasIdx));
+               r = r.substring(11, -1); // remove "RPN#16383: " prefix
+               r = r.substring(0, r.length -2); // remove ')'
+            }
+            else
+            {
+               r.append("RPN#"+rpn_id);
+            }
+
+            if(_bMultiLine)
+            {
+               if(null != outDev)
+               {
+                  r.append("\n\n"+outDev.getRPNInfoByNr(midiCh, rpn_id));
+               }
+            }
+            break;
+
+         case TYPE_NRPN:
+            StringArray nrpnAliases <= _midiIns.getNRPNNames(outDev, midiCh, false/*bMultiLine*/);
+            aliasIdx = GetNRPNAliasIdxByNRPN(nrpnAliases, nrpn_id);
+            if(-1 != aliasIdx)
+            {
+               r.append(nrpnAliases.get(aliasIdx));
+               r = r.substring(12, -1); // remove "NRPN#16383: " prefix
+               r = r.substring(0, r.length -2); // remove ')'
+            }
+            else
+            {
+               r.append("NRPN#"+nrpn_id);
+            }
+
+            if(_bMultiLine)
+            {
+               if(null != outDev)
+               {
+                  r.append("\n\n"+outDev.getNRPNInfoByNr(midiCh, nrpn_id));
+               }
+            }
+            break;
+
+         case TYPE_SYSEX:
+            r.append("SYSEX");
+            break;
+
+         case TYPE_PRGCHG:
+            r.append("PrgChg (def="+(Node.patnr_options.get(reset))+")");
+            break;
+
+         case TYPE_REMOTE:
+            r.append("Remote#"+remote_instance_id+"#"+remote_param_idx+" (def="+(Node.patnr_options.get(reset))+")");
+            break;
+      }
+
+      return r;
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 7;
+
+      // Write id
+      ofs.i8 = id;
+
+      // Write name
+      Utils.WriteString(ofs, name);
+
+      // Write type
+      ofs.i8 = type;
+
+      // Write UI style and range
+      ofs.i8 = ui_style;
+      ofs.i8 = ui_range;
+
+      // Write reset
+      ofs.i8 = b_reset_select;
+      ofs.i8 = b_reset_note; // v3+
+      ofs.f32 = reset;
+
+      // Write CC ids
+      ofs.i8 = cc_msb_id;
+      ofs.i8 = cc_lsb_id;
+
+      // Write (N)RPN ids
+      ofs.i16 = rpn_id;
+      ofs.i16 = nrpn_id;
+
+      // Write MSB/LSB mode
+      ofs.i8 = msblsb_mode;
+
+      // Write Scale 14bit
+      ofs.i8 = b_scale14bit;
+
+      // Write Remote instance id (v4+)
+      ofs.i32 = remote_instance_id;
+
+      // Write Remote param idx (v4+)
+      ofs.i32 = remote_param_idx;
+
+      // Write recusr RPN min (v5+)
+      ofs.f32 = recusr_rpn_min;
+
+      // Write recusr RPN max (v5+)
+      ofs.f32 = recusr_rpn_max;
+
+      // Write recusr RPN ctr (v7+)
+      ofs.f32 = recusr_rpn_ctr;
+
+      // Write recusr asym flag (v7+)
+      ofs.i8 = b_recusr_asym;
+
+      // Write Remote out min (v5+)
+      ofs.f32 = remote_out_min;
+
+      // Write Remote out max (v5+)
+      ofs.f32 = remote_out_max;
+
+      // Write Remote relative param mode (v6+)
+      ofs.i8 = b_remote_relative;
+
+      // Write name edited flag
+      ofs.i8 = b_name_edited;
+
+      // Write forced midi device (v2+)
+      if(null != forced_dev)
+      {
+         ofs.i32 = forced_dev.dev_idx;
+      }
+      else
+      {
+         ofs.i32 = -1;
+      }
+
+      // Write forced midi channel
+      ofs.i8 = forced_ch;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Read id
+         id = ifs.i8;
+         if!(0 <= id < NT_TrackPattern.CTL_NUMUSR)
+         {
+            trace "[---] NT_MIDIParam::loadState: invalid id="+id;
+            return false;
+         }
+
+         // Read name
+         Utils.ReadString(ifs, name);
+
+         // Read type
+         type = ifs.i8;
+
+         // Read UI style and range
+         ui_style = ifs.i8;
+         ui_range = ifs.i8;
+
+         // Read reset
+         b_reset_select = ifs.b8;
+         if(ver >= 3)
+         {
+            b_reset_note = ifs.b8; // v3+
+         }
+         reset = ifs.f32;
+
+         // Read CC ids
+         cc_msb_id = ifs.i8;
+         cc_lsb_id = ifs.i8;
+
+         // Read (N)RPN ids
+         rpn_id = ifs.i16;
+         nrpn_id = ifs.i16;
+
+         // Read MSB/LSB mode
+         msblsb_mode = ifs.i8;
+
+         // Read Scale 14bit
+         b_scale14bit = ifs.i8;
+
+         if(ver >= 4)
+         {
+            // Read Remote instance id (v4+)
+            remote_instance_id = ifs.i32;
+
+            // Read Remote param idx (v4+)
+            remote_param_idx = ifs.i32;
+         }
+
+         if(ver >= 5)
+         {
+            // Read recusr RPN min (v5+)
+            recusr_rpn_min = ifs.f32;
+
+            // Read recusr RPN max (v5+)
+            recusr_rpn_max = ifs.f32;
+
+            if(ver >= 7)
+            {
+               // Read recusr RPN ctr (v7+)
+               recusr_rpn_ctr = ifs.f32;
+
+               // Read recusr asym flag (v7+)
+               b_recusr_asym = ifs.b8;
+            }
+
+            // Read Remote out min (v5+)
+            remote_out_min = ifs.f32;
+
+            // Read Remote out max (v5+)
+            remote_out_max = ifs.f32;
+         }
+
+         if(ver >= 6)
+         {
+            // Read Remote relative param mode (v6+)
+            b_remote_relative = ifs.b8;
+         }
+
+         // Read name edited flag
+         b_name_edited = ifs.i8;
+
+         // Read device idx
+         if(ver >= 2)
+         {
+            int devIdx = ifs.i32;
+            if(devIdx >= 0)
+            {
+               _outDevUseCount.inc(devIdx);
+
+               devIdx = _outDevIdxMap.get(devIdx);
+
+               forced_dev <= MIDI.GetMIDIOutDeviceByIndex(devIdx);
+            }
+            else
+            {
+               forced_dev <= null;
+            }
+         }
+
+         // Read forced midi channel
+         forced_ch = ifs.i8;
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method matchMIDIMapEvent(NT_Instrument _ins, MIDIMapEvent _ev, Boolean _retBMatchLSB) : boolean {
+
+      // Match device
+      if(null != forced_dev)
+      {
+         if( (_ev.dev.dev_idx) != (forced_dev.dev_idx) )
+            return false;
+      }
+      else
+      {
+         if(null != _ins.out_device)
+         {
+            if( (_ev.dev.dev_idx) != (_ins.out_device.dev_idx) )
+               return false;
+         }
+         else
+         {
+            return false;
+         }
+      }
+
+      // trace "xxx match device";
+
+      // Match channel
+      if(0 != forced_ch)
+      {
+         if(_ev.dev_ch != (forced_ch - 1))
+            return false;
+      }
+      else
+      {
+         if(_ev.dev_ch != _ins.midi_channel)
+            return false;
+      }
+
+      // trace "xxx match channel";
+
+
+      // Match type
+      switch(_ev.type)
+      {
+         case MIDIMapDefs.TYPE_CC:
+            if(TYPE_CC == type)
+            {
+               // trace "xxx match CC type";
+               switch(msblsb_mode)
+               {
+                  case MSBLSB_ONLYLSB:
+                     _retBMatchLSB = (_ev.ext_type == cc_lsb_id);
+                     return _retBMatchLSB;
+
+                  case MSBLSB_ONLYMSB:
+                     _retBMatchLSB = !(_ev.ext_type == cc_msb_id);
+                     // trace "xxx match onlymsb="+_retBMatchLSB+" _ev.ext_type="+_ev.ext_type+" cc_msb_id="+cc_msb_id;
+                     // trace "xxx !_retBMatchLSB="+!_retBMatchLSB;
+                     return !_retBMatchLSB;
+
+                  case MSBLSB_BOTH:
+                     if(_ev.ext_type == cc_lsb_id)
+                     {
+                        _retBMatchLSB = (_ev.ext_type == cc_lsb_id);
+                        return _retBMatchLSB;
+                     }
+                     else if(_ev.ext_type == cc_msb_id)
+                     {
+                        _retBMatchLSB = !(_ev.ext_type == cc_msb_id);
+                        return !_retBMatchLSB;
+                     }
+                     return false;
+               }
+            }
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+            return (TYPE_RPN == type) && (rpn_id == _ev.ext_type);
+
+         case MIDIMapDefs.TYPE_NRPN:
+            return (TYPE_NRPN == type) && (nrpn_id == _ev.ext_type);
+
+         case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            return (TYPE_PRGCHG == type);
+
+      } // switch _ev.type
+
+      return false;
+   }
+
+   // <method_init.png>
+   public method initRPN(String _name, short _rpn) {
+      name          = _name;
+      b_name_edited = true;
+      type          = TYPE_RPN;
+      ui_style      = NT_CEL.STYLE_HEX;
+      ui_range      = NT_CEL.RANGE_0_255;
+      rpn_id        = _rpn;
+      b_scale14bit  = false;
+   }
+
+   // <method_init.png>
+   public method initRPNFromPipeEvent(NT_Instrument _ins, MIDIPipeEvent _pev, String _namePrefix) {
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      local MIDISynthProfile *msp;
+      if(null != outDev)
+      {
+         msp <= outDev.getMIDISynthProfile(_pev.midiCh);
+      }
+      if(null == msp)
+         msp <= MIDI.GetDefaultSynthProfile();
+
+      MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(_pev.rpn);
+      if(null != alias)
+      {
+         initRPN(alias.id/*name*/, _pev.rpn);
+         b_scale14bit = (alias.max > 255);
+      }
+      else
+      {
+         initRPN(_namePrefix+" "+_pev.rpn, _pev.rpn);
+      }
+
+      // Forced output device
+      if(@(outDev) == @(_ins.out_device))
+      {
+         forced_dev <= null;
+      }
+      else
+      {
+         forced_dev <= outDev;
+      }
+
+      // Forced output channel
+      if(_pev.midiCh == _ins.midi_channel)
+      {
+         forced_ch = 0;
+      }
+      else
+      {
+         forced_ch = 1 + _pev.midiCh;
+      }
+   }
+
+   // <method_init.png>
+   public method initNRPN(String _name, short _nrpn) {
+      name          = _name;
+      b_name_edited = true;
+      type          = TYPE_NRPN;
+      ui_style      = NT_CEL.STYLE_HEX;
+      ui_range      = NT_CEL.RANGE_0_255;
+      nrpn_id       = _nrpn;
+      b_scale14bit  = false;
+   }
+
+   // <method_init.png>
+   public method initNRPNFromPipeEvent(NT_Instrument _ins, MIDIPipeEvent _pev, String _namePrefix) {
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      local MIDISynthProfile *msp;
+      if(null != outDev)
+      {
+         msp <= outDev.getMIDISynthProfile(_pev.midiCh);
+      }
+      if(null == msp)
+         msp <= MIDI.GetDefaultSynthProfile();
+
+      MIDISynthProfileCtlAlias alias <= msp.getRPNAliasByNr(_pev.nrpn);
+      if(null != alias)
+      {
+         initNRPN(alias.id/*name*/, _pev.nrpn);
+         b_scale14bit = (alias.max > 255);
+      }
+      else
+      {
+         initNRPN(_namePrefix+" "+_pev.nrpn, _pev.nrpn);
+      }
+
+      // Forced output device
+      if(@(outDev) == @(_ins.out_device))
+      {
+         forced_dev <= null;
+      }
+      else
+      {
+         forced_dev <= outDev;
+      }
+
+      // Forced output channel
+      if(_pev.midiCh == _ins.midi_channel)
+      {
+         forced_ch = 0;
+      }
+      else
+      {
+         forced_ch = 1 + _pev.midiCh;
+      }
+   }
+
+   // <method_init.png>
+   public method initCC(String _name, byte _cc) {
+      name          = _name;
+      b_name_edited = true;
+      type          = TYPE_CC;
+      ui_style      = NT_CEL.STYLE_HEX;
+      ui_range      = NT_CEL.RANGE_0_127;
+      cc_msb_id     = _cc;
+      b_scale14bit  = false;
+   }
+
+   // <method_init.png>
+   public method initCCFromPipeEvent(NT_Instrument _ins, MIDIPipeEvent _pev, String _namePrefix) {
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+      local MIDISynthProfile *msp;
+      if(null != outDev)
+      {
+         msp <= outDev.getMIDISynthProfile(_pev.midiCh);
+      }
+      if(null == msp)
+         msp <= MIDI.GetDefaultSynthProfile();
+
+      MIDISynthProfileCtlAlias alias <= msp.getCCAliasByCtl(_pev.ccId);
+      if(null != alias)
+      {
+         initCC(alias.id/*name*/, _pev.ccId);
+      }
+      else
+      {
+         initCC(_namePrefix+" "+_pev.ccId, _pev.ccId);
+      }
+
+      // Forced output device
+      if(@(outDev) == @(_ins.out_device))
+      {
+         forced_dev <= null;
+      }
+      else
+      {
+         forced_dev <= outDev;
+      }
+
+      // Forced output channel
+      if(_pev.midiCh == _ins.midi_channel)
+      {
+         forced_ch = 0;
+      }
+      else
+      {
+         forced_ch = 1 + _pev.midiCh;
+      }
+   }
+
+   // <method_init.png>
+   public method initPrgChg(String _name) {
+      name          = _name;
+      b_name_edited = true;
+      type          = TYPE_PRGCHG;
+      ui_style      = NT_CEL.STYLE_HEX;
+      ui_range      = NT_CEL.RANGE_0_127;
+      b_scale14bit  = false;
+   }
+
+   // <method_init.png>
+   public method initPrgChgFromPipeEvent(NT_Instrument _ins, MIDIPipeEvent _pev, String _name) {
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(_pev.devIdx);
+
+      initPrgChg(_name);
+
+      // Forced output device
+      if(@(outDev) == @(_ins.out_device))
+      {
+         forced_dev <= null;
+      }
+      else
+      {
+         forced_dev <= outDev;
+      }
+
+      // Forced output channel
+      if(_pev.midiCh == _ins.midi_channel)
+      {
+         forced_ch = 0;
+      }
+      else
+      {
+         forced_ch = 1 + _pev.midiCh;
+      }
+   }
+
+   // <method_init.png>
+   public method initFromMIDIMapEvent(NT_Instrument _ins, MIDIMapEvent _ev, boolean _bMayForceDevCh) : boolean {
+      boolean bOk = false;
+
+      switch(_ev.type)
+      {
+         case MIDIMapDefs.TYPE_CC:
+            type         = TYPE_CC;
+            ui_style     = NT_CEL.STYLE_HEX;
+            ui_range     = NT_CEL.RANGE_0_127;
+            cc_msb_id    = _ev.ext_type;
+            msblsb_mode  = MSBLSB_ONLYMSB;
+            b_scale14bit = true;
+            bOk = true;
+            break;
+
+         case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            type = TYPE_PRGCHG;
+            bOk = true;
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+            type         = TYPE_RPN;
+            ui_style     = NT_CEL.STYLE_HEX;
+            ui_range     = NT_CEL.RANGE_0_255;
+            rpn_id       = _ev.ext_type;
+            b_scale14bit = true;
+            bOk = true;
+            break;
+
+         case MIDIMapDefs.TYPE_NRPN:
+            type         = TYPE_NRPN;
+            ui_style     = NT_CEL.STYLE_HEX;
+            ui_range     = NT_CEL.RANGE_0_255;
+            nrpn_id      = _ev.ext_type;
+            b_scale14bit = true;
+            bOk = true;
+            break;
+      }
+
+      if(bOk)
+      {
+         // Device
+         if(_bMayForceDevCh)
+         {
+            STX_MIDIOutDevice dev <= _ev.dev;
+            if(@(dev) == @(_ins.out_device))
+            {
+               forced_dev <= null;
+            }
+            else
+            {
+               forced_dev <= dev;
+            }
+
+            // MIDI Channel
+            if(_ev.dev_ch == _ins.midi_channel)
+            {
+               forced_ch = 0;  // 0=no forced ch
+            }
+            else
+            {
+               forced_ch = _ev.dev_ch + 1;
+            }
+         }
+      }
+
+      return bOk;
+   }
+
+   // <method_get.png>
+   public method getActualDevIdx(NT_Instrument _ins) : int {
+      if(null != forced_dev)
+         return forced_dev.dev_idx;
+      else
+         return (null != _ins.out_device) ? (_ins.out_device.dev_idx) : -1;
+   }
+
+   // <method_get.png>
+   public method getCurrentMIDIOutputStateForRecording(MIDIPipeDevice _pipeDev, byte _midiCh) : float {
+      // Called by pasteMIDIOutputState()
+      float r = -1;
+
+      MIDIPipeDevice *pipeDev;
+      byte midiCh;
+
+      if(null != forced_dev)
+      {
+         pipeDev <= forced_dev.getMIDIPipeDevice();
+      }
+      else
+      {
+         pipeDev <= _pipeDev;
+      }
+
+      if(0 != forced_ch)
+      {
+         midiCh = forced_ch - 1;
+      }
+      else
+      {
+         midiCh = _midiCh;
+      }
+
+      float outVal = -1;
+
+      switch(type)
+      {
+         case TYPE_CC:
+            if(useMSB())
+            {
+               outVal = pipeDev.getCCState(midiCh, cc_msb_id);
+            }
+            else if(useLSB())
+            {
+               outVal = pipeDev.getCCState(midiCh, cc_lsb_id);
+            }
+            break;
+
+         case TYPE_RPN:
+            outVal = pipeDev.getRPNState(midiCh, rpn_id);
+            break;
+
+         case TYPE_NRPN:
+            outVal = pipeDev.getRPNState(midiCh, nrpn_id);
+            break;
+
+         case TYPE_PRGCHG:
+            outVal = pipeDev.getPrg(midiCh);
+            break;
+
+         case TYPE_REMOTE:
+            // (todo) track plugin parameter automation
+            break;
+      }
+
+      if(-1 != outVal)
+      {
+         r = unmapCtlVal(false/*bLSB*/, outVal);
+      }
+
+      return r;
+   }
+
+   // <method_get.png>
+   public method getEffectiveDevice(NT_Instrument _ins) : STX_MIDIOutDevice {
+      if(null != forced_dev)
+         return forced_dev;
+      else
+         return _ins.out_device;
+   }
+
+   // <method_get.png>
+   public method getEffectiveChannel(NT_Instrument _ins) : byte {
+      if(0 != forced_ch)
+         return forced_ch - 1;
+      else
+         return _ins.midi_channel;
+   }
+
+   // <method_get.png>
+   public method getMIDIMapEventType() : int {
+      switch(type)
+      {
+         case TYPE_CC:
+            return MIDIMapDefs.TYPE_CC;
+
+         case TYPE_RPN:
+            return MIDIMapDefs.TYPE_RPN;
+
+         case TYPE_NRPN:
+            return MIDIMapDefs.TYPE_NRPN;
+
+         case TYPE_SYSEX:
+            return MIDIMapDefs.TYPE_SYSEX;
+
+         case TYPE_PRGCHG:
+            return MIDIMapDefs.TYPE_PROGRAM_CHANGE;
+
+         case TYPE_REMOTE:
+            break;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getMIDIMapEventExtType() : int {
+      switch(type)
+      {
+         case TYPE_CC:
+            switch(msblsb_mode)
+            {
+               case MSBLSB_ONLYLSB:
+                  return cc_lsb_id;
+
+               default:
+               case MSBLSB_ONLYMSB:
+                  return cc_msb_id;
+
+               case MSBLSB_BOTH:
+                  return cc_msb_id;
+            }
+            break;
+
+         case TYPE_RPN:
+            return rpn_id;
+
+         case TYPE_NRPN:
+            return nrpn_id;
+
+         case TYPE_SYSEX:
+         case TYPE_PRGCHG:
+         case TYPE_REMOTE:
+            break;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public =replay= method copyFromNodeModMatrixArg(NT_Instrument _ins, NMM_Arg _arg) {
+      // used by Ctl.Clipboard paste
+
+      // Device
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_arg.dev_idx);
+      if(@(dev) == @(_ins.out_device))
+      {
+         forced_dev <= null;
+      }
+      else
+      {
+         forced_dev <= dev;
+      }
+
+      // MIDI Channel
+      if(_arg.dev_ch == _ins.midi_channel)
+      {
+         forced_ch = 0;
+      }
+      else
+      {
+         forced_ch = _arg.dev_ch + 1;
+      }
+
+      // Type
+      switch(_arg.type)
+      {
+         default:
+            type         = TYPE_CC;
+            cc_msb_id    = 0;
+            cc_lsb_id    = 0;
+            msblsb_mode  = MSBLSB_ONLYMSB;
+            b_scale14bit = true;
+            break;
+
+         case NMM_Arg.TYPE_CC:
+            type         = TYPE_CC;
+            cc_msb_id    = _arg.cc_nr;
+            cc_lsb_id    = 0;
+            msblsb_mode  = MSBLSB_ONLYMSB;
+            b_scale14bit = true;
+            break;
+
+         case NMM_Arg.TYPE_PRGCHG:
+            type = TYPE_PRGCHG;
+            break;
+
+         case NMM_Arg.TYPE_RPN:
+            type   = TYPE_RPN;
+            rpn_id = _arg.rpn_nr;
+            break;
+
+         case NMM_Arg.TYPE_NRPN:
+            type    = TYPE_NRPN;
+            nrpn_id = _arg.nrpn_nr;
+            break;
+      }
+   }
+
+}

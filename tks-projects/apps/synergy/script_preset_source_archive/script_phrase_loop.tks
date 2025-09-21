@@ -1,0 +1,231 @@
+// Phrase loop / repeat utility script
+//
+//   created: 15Jun2023
+//   changed: 
+//
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ configuration
+boolean b_debug = 0;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /configuration
+
+tag int p_len_16th = 1;
+
+use namespace st2;
+
+ui::XMLForm *xfm;
+boolean b_ui_update = true;
+boolean b_ui_update_force = true;
+
+IntArray note_state;
+note_state.allocAndFill(128, false);
+
+// int param_retrig_len_16th = 6;
+
+int ticksPer16th = current_song.ppq / 4;
+int quantRetrigStartTicks = current_song.ppq / 2;  // 1/8
+int queued_retrig_start = -1;
+int queued_retrig_end = -1;
+int queued_seek_ticks = -1;
+int queued_seek_16th = -1;
+int retrig_off_16th = 0;
+int first_retrig_start_quant_tick_nr;
+
+
+function OnUIInit(ui::XMLForm _xfm) {
+   xfm <= _xfm;
+   b_ui_update = true;
+}
+
+function OnUIUpdate(ui::XMLForm _xfm, boolean _bForce, MIDIPipeFrame _frOut) {
+   xfm <= _xfm;
+   // called periodically
+   if(null != xfm)
+   {
+      if(b_ui_update || _bForce)
+      {
+         b_ui_update = false;
+         b_ui_update_force |= _bForce;
+
+         ui::CheckBox *cb;
+         ui::FloatParam *fp;
+         ui::TextField *tf;
+
+
+         b_ui_update_force = false;
+      }
+   }
+}
+
+// function OnSaveState(Stream ofs) {
+//    trace "[dbg] script<sl_mk3>: OnSaveState";
+//    ofs.i16 = 3;  // ver
+//    int idx = 0;
+//    loop(8)
+//    {
+//       ofs.i8  = rpn_enable[idx];
+//       ofs.i8  = rpn_speed [idx];  // v2+
+//       ofs.i16 = rpn_values[idx];
+//       Utils.WriteString(ofs, rpn_labels[idx]); // v3+
+//       idx++;
+//    }
+// }
+
+// function OnLoadState(Stream ifs) {
+//    trace "[dbg] script<sl_mk3>: OnLoadState";
+//    short ver = ifs.i16;
+//    if(ver >= 1)
+//    {
+//       int idx = 0;
+//       loop(8)
+//       {
+//          rpn_enable[idx] = ifs.b8;
+//          if(ver >= 2)
+//             rpn_speed[idx] = mathClampi(ifs.u8, 1, 512);
+//          rpn_values[idx] = ifs.u16 & 16383;
+//          if(ver >= 3)
+//             Utils.ReadString(ifs, rpn_labels[idx]); // v3+
+//          idx++;
+//       }
+//       b_ui_update = true;
+//       b_ui_update_force = true;
+//    }
+// }
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   ui::CheckBox *cb;
+   ui::FloatParam *fp;
+   ui::TextField *tf;
+
+   cb <= xfm.findLayerById(id);
+   fp <= cb;
+   tf <= cb;
+
+   switch(id)
+   {
+
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bMuted)
+      return;
+
+   MIDIPipeEvent pev;
+   int evIdx;
+   int numEv;
+
+   // Note-off
+   numEv = frameRec.getNumEventsNoteOffByFlt(note_dev, note_ch);
+   if(numEv > 0)
+   {
+      evIdx = 0;
+      loop(numEv)
+      {
+         frameRec.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, note_dev, note_ch);
+
+         if(note_state[pev.note])
+         {
+            // Release retrig button
+            if(b_debug) trace "xxx release retrig bt";
+
+            queued_retrig_start = -1;
+            queued_retrig_end = -1;
+            
+            if(first_retrig_start_quant_tick_nr >= 0)
+            {
+               // Continue replay as if retrig/loop never happened
+               queued_seek_ticks = ((current_song.tick_nr + ticksPer16th-1) / ticksPer16th) * ticksPer16th;
+               queued_seek_16th = (queued_seek_ticks - first_retrig_start_quant_tick_nr)/ticksPer16th + retrig_off_16th;
+               first_retrig_start_quant_tick_nr = -1;
+            }
+            else
+               queued_seek_ticks = -1;
+
+            note_state[pev.note] = false;
+         }
+
+         evIdx++;
+      }
+   }
+
+   // Note-on
+   Node *node;
+   numEv = frameRec.getNumEventsNoteOnByFlt(note_dev, note_ch);
+   if(numEv > 0)
+   {
+      evIdx = 0;
+      loop(numEv)
+      {
+         frameRec.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, note_dev, note_ch);
+
+         if(!note_state[pev.note])
+         {
+            if(b_debug) trace "xxx press retrig bt";
+            queued_retrig_start = ((current_song.tick_nr + quantRetrigStartTicks/2) / quantRetrigStartTicks) * quantRetrigStartTicks;
+            first_retrig_start_quant_tick_nr = queued_retrig_start;
+            
+            if(queued_retrig_start < current_song.tick_nr)
+            {
+               node <= current_song.findFirstNodeForAutoDevCh(seq_dev, seq_ch);
+               if(null != node)
+               {
+                  if(b_debug) trace "xxx imm node.nodeGetCurrentTickOffset()="+node.nodeGetCurrentTickOffset();
+                  retrig_off_16th = mathMaxi(0, node.nodeGetCurrentTickOffset());
+                  retrig_off_16th = ((retrig_off_16th + ticksPer16th-1) - (current_song.tick_nr-queued_retrig_start))/ticksPer16th;
+                  if(b_debug) trace "xxx imm retrig_off_16th="+retrig_off_16th;
+
+                  // quantized retrig starts before current play position
+                  queued_seek_ticks = ((current_song.tick_nr + ticksPer16th-1) / ticksPer16th) * ticksPer16th;
+                  queued_seek_16th  = retrig_off_16th + (queued_seek_ticks - queued_retrig_start)/ticksPer16th;
+
+                  queued_retrig_end = queued_retrig_start + ticksPer16th * p_len_16th;
+                  queued_retrig_start = -1;
+               }
+            }
+
+            note_state[pev.note] = true;
+         }
+
+         evIdx++;
+      }
+   }
+
+   if(queued_retrig_start == current_song.tick_nr)
+   {
+      // delayed retrig start
+      node <= current_song.findFirstNodeForAutoDevCh(seq_dev, seq_ch);
+      if(null != node)
+      {
+         if(b_debug) trace "xxx delayed node.nodeGetCurrentTickOffset()="+node.nodeGetCurrentTickOffset();
+         retrig_off_16th = mathMaxi(0, node.nodeGetCurrentTickOffset());
+         retrig_off_16th = ((retrig_off_16th + ticksPer16th/2)/ticksPer16th);
+         if(b_debug) trace "xxx delayed retrig_off_16th="+retrig_off_16th;
+
+         queued_seek_16th  = retrig_off_16th;
+         queued_seek_ticks = queued_retrig_start;
+         queued_retrig_end = queued_retrig_start + ticksPer16th * p_len_16th;
+      }
+      queued_retrig_start = -1;
+   }
+
+   if(queued_retrig_end == current_song.tick_nr)
+   {
+      if(b_debug) trace "xxx reached queued_retrig_end";
+      queued_seek_16th  = retrig_off_16th;
+      queued_seek_ticks = queued_retrig_end;
+      queued_retrig_end = queued_retrig_end + ticksPer16th * p_len_16th;
+   }
+
+   if(queued_seek_ticks == current_song.tick_nr)
+   {
+      if(b_debug) trace "xxx send seek 16th queued_seek_16th="+queued_seek_16th;
+      framePlay.rpn(true/*bSet*/, seq_dev, seq_ch, Node.RPN_COMMON_SEEK_OFFSET, queued_seek_16th);
+      queued_seek_ticks = -1;
+   }
+
+}

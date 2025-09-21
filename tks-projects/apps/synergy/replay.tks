@@ -1,0 +1,2369 @@
+// ----
+// ---- file   : replay.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 14Sep2006, 17Sep2006, 20Sep2006, 15Oct2007, 20Oct2007, 21Oct2007, 22Oct2007,
+// ----          30Oct2007, 31Oct2007, 04Nov2007, 05Nov2007, 10Nov2007, 21Dec2007, 04Jan2008
+// ----          07Jan2008, 10Jan2008, 12Jan2008, 13Jan2008, 15Jan2008, 16Jan2008, 03Aug2008
+// ----          09Aug2008, 24Aug2008, 31Aug2008, 17Sep2009, 18Sep2009, 20Sep2009, 21Sep2009
+// ----          22Sep2009, 23Sep2009, 26Dec2009, 02Jan2010, 03Jan2010, 09Jan2010, 10Jan2010
+// ----          11Jan2010, 16Jan2010, 25Jan2010, 27Jan2010, 29Jan2010, 06Feb2010, 25Feb2010
+// ----          01Mar2010, 24Apr2010, 29Apr2010, 30Apr2010, 01May2010, 02May2010, 03May2010
+// ----          04May2010, 11May2010, 14May2010, 15May2010, 16May2010, 06Jun2010, 10Jun2010
+// ----          13Jun2010, 15Jun2010, 24Jun2010, 26Jun2010, 28Jun2010, 30Jun2010, 01Jul2010
+// ----          02Jul2010, 04Jul2010, 06Jul2010, 10Jul2010, 12Jul2010, 16Jul2010, 17Jul2010
+// ----          18Jul2010, 21Jul2010, 08Sep2010, 24Sep2010, 26Sep2010, 27Sep2010, 28Sep2010
+// ----          04Oct2010, 08Oct2010, 09Oct2010, 10Oct2010, 12Oct2010, 13Oct2010, 14Oct2010
+// ----          15Oct2010, 16Oct2010, 17Oct2010, 19Oct2010, 20Oct2010, 25Oct2010, 26Oct2010
+// ----          02Nov2010, 09Nov2010, 16Nov2010, 21Nov2010, 19Jan2011, 22Jan2011, 23Jan2011
+// ----          03Feb2011, 28Feb2011, 07Apr2012, 03Nov2012, 13Nov2012, 04Jan2013, 05Jun2013
+// ----          08Mar2014, 09Aug2014, 11Aug2014, 13Aug2014, 14Aug2014, 21Aug2014, 31Aug2014
+// ----          07Sep2014, 09Sep2014, 21Sep2014, 26Sep2014, 28Sep2014, 30Jan2015, 21Feb2015
+// ----          01Mar2015, 05Mar2015, 08Mar2015, 18Mar2015, 20Mar2015, 22Mar2015, 24Mar2015
+// ----          10Apr2015, 18Apr2015, 20Apr2015, 21Apr2015, 04Jul2015, 14Nov2015, 15Nov2015
+// ----          19Jan2016, 24Jul2016, 05Dec2016, 06Jan2017, 15Jan2017, 17Jan2017, 02Feb2017
+// ----          04Feb2017, 13Mar2017, 24Mar2017, 23Jun2017, 14Jul2017, 15Jul2017, 30Jul2017
+// ----          10Aug2017, 17Aug2017, 02Sep2017, 04Jan2018, 09Feb2018, 05Apr2018, 02May2018
+// ----          04May2018, 03Jun2018, 06Jun2018, 23Jun2018, 02Dec2018, 01Mar2019, 26May2019
+// ----          30Oct2019, 02Nov2019, 05Nov2019, 20Feb2020, 25Feb2020, 17Mar2020, 08Apr2020
+// ----          07May2020, 26Aug2020, 23Oct2020, 01Nov2020, 10Nov2020, 29Nov2020, 09Dec2021
+// ----          16Dec2021, 03Nov2022, 15Nov2022, 04Feb2023, 13Jun2023, 14Jun2023, 22Jul2023
+// ----          28Jul2023, 16Nov2023, 17Nov2023, 18Nov2023, 03Dec2023, 11Apr2024, 13Apr2024
+// ----          25Jan2025, 26Jan2025, 28Feb2025, 14Mar2025
+// ----
+// ----
+// ----
+module MReplay;
+
+use namespace st2;
+use namespace ui;
+
+
+// <class.png>
+class UIMuteEntry {
+   // Created/"sent" by replay thread when RPN_COMMON_UI_* event is received,
+   //  handled by replay thread
+   define int AC_NONE        = 0;
+   define int AC_NODE_MUTE   = 1;
+   define int AC_NODE_SOLO   = 2;
+   define int AC_PIPE_MUTE   = 3;
+   define int AC_PIPE_SOLO   = 4;
+   define int AC_NODE_PRGCHG = 5;
+
+   int node_gid;
+   int action;
+   int arg;  // 0=unmute, 1=mute, 2=toggle, or pattern number (prgchg)
+
+   public method init(int _nodeGID, int _action, int _arg) {
+      node_gid = _nodeGID;
+      action   = _action;
+      arg      = _arg;
+   }
+}
+
+
+// <class.png>
+class Replay {
+
+   define String EV_MIDI;        // MIDI input event queued
+   define String EV_BPMCHANGED;  // BPM or PPQ changed
+
+   define String EV_REDRAWPATTERN;  // used by NodeTracker
+   define String EV_BPMCHANGED;     // used by NodeModMatrix, NT_TrackPattern, PageProject, RootForm
+   define String EV_SCROLLDOWNPATTERN;  // scroll down pattern after MIDI note was recorded or last note off was received
+
+   define int MAX_QUEUED_UI_MIDIMAPEVENTS = 8192;  // for UI thread / asynchronous to replay thread
+   define int MAX_QUEUED_RT_MIDIMAPEVENTS = 256;//64;   // per tick (synchronous to replay thread)
+
+   Mailbox    midi_map_ui_event_mbox;
+   Mutex      midi_map_ui_event_mtx;
+   ClassArray midi_map_ui_event_array; // MIDIMapEvent instances
+   int        midi_map_ui_event_nextid;
+   boolean    b_midi_map_ui_event_pending;
+   protected IntArray midimap_exclude_devs;  // array of (input) dev_idx to exclude from midimap event queue
+
+   ClassArray midi_map_rt_event_queue; // MIDIMapEvent instances (only within replay thread)
+
+   int time_replaystart;
+   boolean b_thread_prio_set;
+   Thread *th_replay;
+
+   // ppq = 24 ticks
+   // value resets to 0 when replay is started (see PatternView::handleStartPlaying())
+   // value is increased continuously even when replay is stopped if "send continuous timing clock" is enabled
+   int midi_timing_ticks = 0;
+
+   public int ticks_to_play = 0; // Used to e.g. replay the current patternview line (i.e. step_resolution ticks) or when edit offset changed in NodeArranger
+   int seek_ticks_after_play_step;  // -1=don't seek after playing 'ticks_to_play', song position otherwise
+   boolean b_play_step_muted;    // true=remove note-ons while playing 'ticks_to_play', auto-resets to false
+
+   boolean b_keyjazz_step; // true= play current song step and process keyjazz queue but do not advance. auto-resets to false.
+   boolean b_playstep_reset = false; // true=reset controllers after playing a step
+
+   boolean b_playing;
+   boolean b_playing_stopped; // hack for debug audio wav writer
+
+   boolean send_midi_songpos;
+   boolean b_send_midi_start;
+   int delayed_midi_start;  // countdown, delay play when recording is started  (todo) REMOVE, mmcRec always starts slave replay
+   boolean b_send_midi_stop;
+   boolean b_send_midi_mmcrec;  // set in RootForm.handleToggleReplayEx()
+   boolean b_dont_send_midi_mmcstop;  // lshift-enter, hold-click play
+
+   int mtc_start_sys_ms;   // absolute time when MTC full timecode message was sent
+   int mtc_start_tape_ms;  // time offset on tape (millisec)
+   int mtc_delayed_start_ms;  // >0: delay replay start until sysclock reaches <start_ms>
+   // true=send CC button to Studio One when record position is reached (and sequencer starts playing)
+   //  (note) see STConfig.b_mtc_studio_one_record_workaround
+   boolean b_mtc_send_s1_rec;
+
+   boolean b_cycle;  // false=off, true=loop, maybe=stop at end of loop (mute notes until replay is stopped)
+   boolean b_cycle_mute_after_loop;  // auto-reset. used in b_cycle=maybe mode (MUTE notes at end of loop)
+
+   MIDIMapEventSynProc syn_proc;
+
+   int start_song_offset;
+
+   boolean b_freerun_loop = true;
+
+   protected boolean b_discardctl;
+   protected boolean b_discardctl_collect;
+   protected MIDIPipeFrame frame_discardctl_collect;
+   protected boolean b_discardctl_send;
+   public boolean ui_b_discardctl;
+   public boolean ui_b_discardctl_collect;
+   protected IntArray discardctl_exclude_devs;  // array of dev_idx to exclude from discardctl
+
+   protected MIDIPipeFrame framerec_lastctl;
+   protected boolean b_resend_lastctl;
+
+   protected Node *pattern_node;  // Node that started pattern replay
+
+   static int keepalive_counter = 0;
+
+   Buffer     smf_export_buffer;
+   Buffer *[] smf_export_track_buffers;  // 16 Buffer instances. when fmt is 0, only buffer 0 is used.
+   boolean    b_smf_export;
+   int        smf_export_fmt;            // 0=single-track, 1=multi-track (one track per channel)
+   IntArray   smf_export_tick_delta;     // one element per track/midi channel
+   boolean    b_smf_export_sysex;        // true=in sysex message (may span several buffers)
+   boolean    b_smf_allow_sysex;         // true=include SysEx messages in exported .mid file
+   Buffer     smf_export_sysex_buffer;   // temporary, while parsing/gathering sysex message
+   int        smf_export_num_ticks;
+   String     smf_pathname;
+
+   int metronome_dev_idx; // -1=unavail
+
+   MIDIPipeFrame frame_master_inject;  // Global prgchg
+   MIDIPipeFrame frame_rec_inject;     // SysEx editor (Montage part/scene variation select)
+
+   UIMuteEntry *[] ui_mute_queue;  // UIMuteEntry instances. filled by replay thread (RPN), handled by UI thread.
+
+   boolean b_output_monitor;  // true = add sent buffers to per-device array (for UI to pick up)
+
+   public boolean b_pagenode_midi_to_pattern;  // true=select patterns via MIDI notes (node PatternManager)
+
+   IntArray rpn_queue;  // dev_idx, midi_ch, rpn#, value tuples. virtual device events only (e.g. scene selection)
+
+   int     precount_tick_countdown;
+   int     precount_ticks;
+   boolean b_metronome_before_precount;
+
+   boolean b_global_recording;
+   int     global_recording_start_song_offset;
+
+   int queued_seek;
+
+   // true=tick() called from export function. do not send MIDI.
+   boolean b_export;
+
+   boolean b_atrk_sync_restart;  // true=start audio recording at beginning of next bar (send sysex to Eureka process)
+
+   int queued_liverec_start_ticks;  // see AudioLiveRecForm
+   int queued_liverec_end_ticks;
+   int queued_liverec_instance_id;  // ModSample instance id
+   int queued_liverec_zone_idx;     // zone idx
+   boolean b_liverec_active;
+
+   float t_avg;
+
+   // See AudioLiveRecDialog
+   int voice_modulo_start;  // initial voice index at replay start (0..voice_modulo_num-1). -1=disable
+   int voice_modulo_num;
+
+
+   // <init.png>
+   public method init() {
+      midi_map_ui_event_array.template = MIDIMapEvent;
+      midi_map_ui_event_array.alloc(MAX_QUEUED_UI_MIDIMAPEVENTS);
+      midi_map_ui_event_mbox.allocEventQueue(MAX_QUEUED_UI_MIDIMAPEVENTS);
+      midi_map_ui_event_nextid = 0;
+      b_midi_map_ui_event_pending = false;
+
+      midi_map_rt_event_queue.template = MIDIMapEvent;
+      midi_map_rt_event_queue.alloc(MAX_QUEUED_RT_MIDIMAPEVENTS);
+
+      send_midi_songpos = -1;
+
+      syn_proc.init();
+
+      smf_export_buffer.size = 512*1024 * 16 + 1024;
+      smf_export_buffer.offset = 0;
+
+      delayed_midi_start = -1;
+      mtc_delayed_start_ms = -1;
+
+      queued_seek = -1;
+
+      queued_liverec_start_ticks = -1;
+      queued_liverec_end_ticks = -1;
+
+      voice_modulo_start = -1;
+
+      seek_ticks_after_play_step = -1;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMetronome(boolean _bEnable) {
+      STConfig.b_midi_metronome = _bEnable;
+   }
+
+   // <method.png>
+   public =replay= method startPreCount(float _numBars) {
+      if(_numBars > 0)
+      {
+         precount_tick_countdown = int(current_song.getNumTicksPerBar() * _numBars) - 1;
+         precount_ticks = 0;
+         b_metronome_before_precount = STConfig.b_midi_metronome;
+         STConfig.b_midi_metronome = true;
+         setEnableDiscardCtlCollect(true);
+      }
+      else
+      {
+         precount_tick_countdown = 0;
+         precount_ticks = 0;
+      }
+   }
+
+   // <method.png>
+   public =replay= method stopPreCount() {
+      precount_tick_countdown = 0;
+      precount_ticks = 0;
+      STConfig.b_midi_metronome = b_metronome_before_precount;
+      setEnableDiscardCtlCollect(false);
+   }
+
+   // <method.png>
+   public method startSMFExport() {
+      smf_export_tick_delta.allocAndFill(16, 0);
+      smf_export_buffer.offset = 0;
+      smf_export_buffer.byteOrder = YAC_BIG_ENDIAN;
+
+      // File header
+      smf_export_buffer.i8 = 'M';
+      smf_export_buffer.i8 = 'T';
+      smf_export_buffer.i8 = 'h';
+      smf_export_buffer.i8 = 'd';
+
+      // File header: file size
+      smf_export_buffer.i32 = 6; // header data size
+
+      // File header: SMF type
+      smf_export_buffer.i8 = 0;
+      smf_export_buffer.i8 = smf_export_fmt;
+
+      // File header: Num Tracks
+      smf_export_buffer.i8 = 0;
+      smf_export_buffer.i8 = (0 == smf_export_fmt) ? 1 : 16;
+
+      // File header: PPQ
+      smf_export_buffer.i8 = current_song.ppq >> 8;
+      smf_export_buffer.i8 = current_song.ppq & 255;
+      // // smf_export_buffer.i8 = 0x03;
+      // // smf_export_buffer.i8 = 0xC0;
+
+      // Create track buffers
+      smf_export_track_buffers.empty();
+      loop(16/*midi channels*/)
+      {
+         Buffer trkBuf <= new Buffer;
+         trkBuf.byteOrder = YAC_BIG_ENDIAN;
+         trkBuf.size = 512*1024;
+
+         // Track Header
+         trkBuf.i8 = 'M';
+         trkBuf.i8 = 'T';
+         trkBuf.i8 = 'r';
+         trkBuf.i8 = 'k';
+
+         trkBuf.i32 = 0; // datasz, fill out later
+
+         smf_export_track_buffers.add(#(deref trkBuf));
+      }
+
+      smf_export_sysex_buffer.size = 256*1024;
+      smf_export_sysex_buffer.offset = 0;
+
+      b_smf_export_sysex = false;
+   }
+
+   // <method.png>
+   public method finishSMFExport() {
+
+      int trackIdx = 0;
+      Buffer *trkBuf;
+      foreach trkBuf in smf_export_track_buffers
+      {
+         // End of track
+         smfAppendDeltaTime(trkBuf, trackIdx);
+         // // trkBuf.i8 = 0x00;  // Delta-time
+         trkBuf.i8 = 0xFF;  // Meta
+         trkBuf.i8 = 0x2F;  // "End of Track"
+         trkBuf.i8 = 0x00;
+
+         // Fix track chunk data size
+         int chunkDataSz = trkBuf.offset - 8/*minus FOURCC+length fields*/;
+         trkBuf.pokeI32(4/*skip 'MTrk'*/, chunkDataSz);
+         Global.Debug("finishSMFExport: track["+trackIdx+"] chunkDataSz="+chunkDataSz);
+
+         // Append to export buffer
+         smf_export_buffer.writeBuffer(trkBuf, 0, trkBuf.offset);
+
+         if(0 == smf_export_fmt)  // not multi-track ?
+            break;
+
+         // Next track
+         trackIdx++;
+      }
+
+      // // // Track Header: fix up size
+      // // smf_export_buffer.pokeI32(smf_export_tracksize_offset, smf_export_buffer.offset - smf_export_tracksize_offset - 4);
+
+      local File f;
+      smf_pathname <= Utils.ToNativePathName(smf_pathname);
+      if(f.openLocal(smf_pathname, IOS_OUT))
+      {
+         f.writeBuffer(smf_export_buffer, 0, smf_export_buffer.offset);
+         f.close();
+         trace "[...] SMF exported to \""+smf_pathname+"\" sz="+smf_export_buffer.offset;
+         Utils.HexDump(smf_export_buffer, 0, smf_export_buffer.offset);
+      }
+      else
+      {
+         trace "\n\n[---] finishSMFExport: failed to open \""+smf_pathname+"\" for writing !!!!\n\n";
+      }
+
+   }
+
+   // <method.png>
+   protected method appendEventsToSMFBuffer(Buffer _buffer) {
+      int off = 0;
+      int numEv = 0;
+      int syxStart = -1;
+      Buffer *trkBuf;
+
+      // // Integer io= smf_export_buffer.offset;
+      // // trace "xxx appendEventsToSMFBuffer: out offset="+io.printf("0x%08x")+" num="+_buffer.offset;
+
+      while(off < _buffer.offset)
+      {
+         byte msg = _buffer.peekI8(off);
+
+         if(b_smf_export_sysex)
+         {
+            // Continue SysEx message parsing
+            msg = 0xF0;
+            off--;
+         }
+
+         // Integer ioMsg = msg;
+         // trace "xxx appendEventsToSMFBuffer: msg="+ioMsg.printf("0x%08x");
+
+         if(0xF0 == msg)
+         {
+            // SysEx, seek end of msg
+            trkBuf <= smf_export_track_buffers.get(0);
+
+            if(!b_smf_export_sysex)
+            {
+               // Start sysex
+               syxStart = off;
+               b_smf_export_sysex = true;
+               smf_export_sysex_buffer.offset = 0;
+               if(b_smf_allow_sysex)
+               {
+                  smfAppendDeltaTime(trkBuf, 0/*trackIdx*/);
+                  trkBuf.i8 = 0xF0;
+               }
+            }
+
+            while(++off < _buffer.offset)
+            {
+               msg = _buffer.peekI8(off);
+
+               smf_export_sysex_buffer.i8 = msg;
+
+               if(0xF7 == msg)
+               {
+                  // (note) event length includes 0xF7 (but not 0xF0)
+                  b_smf_export_sysex = false;
+
+                  if(b_smf_allow_sysex)
+                  {
+                     MIDIFileUtils.WriteVariableLength(trkBuf, smf_export_sysex_buffer.offset - 1/*0xF0*/);
+                     trkBuf.writeBuffer(smf_export_sysex_buffer, 0, smf_export_sysex_buffer.offset);
+                  }
+
+                  off++;
+                  break;
+               }
+            }
+         }
+         else
+         {
+            int trackIdx = (1 == smf_export_fmt) ? (msg & 15) : 0;
+            trkBuf <= smf_export_track_buffers.get(trackIdx);
+
+            switch(msg & 0xF0)
+            {
+               case 0x80:
+                  // Note Off
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // note
+                  trkBuf.i8 = _buffer.peekI8(off +2);  // vel
+                  // trace "xxx SMF write note off";
+                  off += 3;
+                  break;
+
+               case 0x90:
+                  // Note On
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // note
+                  trkBuf.i8 = _buffer.peekI8(off +2);  // vel
+                  // trace "xxx SMF write note on";
+                  off += 3;
+                  break;
+
+               case 0xA0:
+                  // Polyphonic aftertouch
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // note
+                  trkBuf.i8 = _buffer.peekI8(off +2);  // val
+                  off += 3;
+                  break;
+
+               case 0xB0:
+                  // CC
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // ctl
+                  trkBuf.i8 = _buffer.peekI8(off +2);  // val
+                  off += 3;
+                  break;
+
+               case 0xC0:
+                  // Program change
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // prgnr
+                  off += 2;
+                  break;
+
+               case 0xD0:
+                  // Channel pressure
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // pressure
+                  off += 2;
+                  break;
+
+               case 0xE0:
+                  // Pitch bend
+                  smfAppendDeltaTime(trkBuf, trackIdx);
+                  trkBuf.i8 = msg;
+                  trkBuf.i8 = _buffer.peekI8(off +1);  // value LSB
+                  trkBuf.i8 = _buffer.peekI8(off +2);  // value MSB
+                  off += 3;
+                  break;
+
+               case 0xF0:
+               // case 0xF1:
+               // case 0xF2:
+               // case 0xF3:
+               // case 0xF4:
+               // case 0xF5:
+               // case 0xF6:
+                  // SysEx Realtime (ignore)
+                  off++;
+                  break;
+
+               default:
+                  // Should not be reached
+                  off++;
+                  break;
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method smfAppendDeltaTime(Buffer _trkBuf, int _trackIdx) {
+      MIDIFileUtils.WriteVariableLength(_trkBuf, smf_export_tick_delta.get(_trackIdx));
+      smf_export_tick_delta[_trackIdx] = 0;
+   }
+
+   // <method.png>
+   public method appendToSMFBuffer(Buffer _cmdBuffer, Buffer _noteBuffer) {
+
+      // trace "xxx appendToSMFBuffer ENTER";
+
+      if((_cmdBuffer.offset > 0) || (_noteBuffer.offset > 0))
+      // // if(_noteBuffer.offset > 0)
+      {
+         // Write frame raw midi events
+
+         // trace "xxx _cmdBuffer.offset="+_cmdBuffer.offset;
+         // trace "xxx _noteBuffer.offset="+_noteBuffer.offset;
+         // trace "xxx 1 smf_export_buffer.offset="+smf_export_buffer.offset;
+         if(_cmdBuffer.offset > 0)
+         {
+            appendEventsToSMFBuffer(_cmdBuffer);
+         }
+
+         if(_noteBuffer.offset > 0)
+         {
+            appendEventsToSMFBuffer(_noteBuffer);
+         }
+
+         // trace "xxx _cmdBuffer.offset="+_cmdBuffer.offset;
+         // trace "xxx _noteBuffer.offset="+_noteBuffer.offset;
+         // trace "xxx 2 smf_export_buffer.offset="+smf_export_buffer.offset;
+      }
+
+      // trace "xxx appendToSMFBuffer LEAVE";
+   }
+
+   // <method_remove.png>
+   public =replay= method removeTrackedEvent(MIDIMapEvent _ev) {
+      syn_proc.removeTrackedEvent(_ev);
+   }
+
+   // <method.png>
+   public method processMidiMapUIEventQueue() {
+      // (note) called from UI thread
+      // Global.Debug("#queued_midimap_events: "+midi_map_ui_event_mbox.numQueuedEvents);
+
+      for(;;)
+      {
+         if(midi_map_ui_event_mbox.numQueuedEvents > 0)
+         {
+            Event ev <= midi_map_ui_event_mbox.waitEvent(1); // never waits
+
+            MIDIMapEvent mapEv <= midi_map_ui_event_array.get(ev.id);
+
+            if(!MIDI.HandleMIDIMapEventUI(mapEv))
+            {
+               // trace "xxx replay: midimap event nothandled, try mmcHandleEvent";
+
+               if(!root_form.mmcHandleEvent(mapEv))
+               {
+               }
+            }
+         }
+         else
+         {
+            break;
+         }
+      }
+
+      midi_map_ui_event_mtx.lock();
+      b_midi_map_ui_event_pending = false;
+      midi_map_ui_event_mtx.unlock();
+
+   }
+
+   // <method.png>
+   public method prepNextUIEvent() : MIDIMapEvent {
+      return midi_map_ui_event_array.get(midi_map_ui_event_nextid);
+   }
+
+   // <method.png>
+   public method sendNextUIEvent() {
+      Event mboxEv;
+      mboxEv.id = midi_map_ui_event_nextid;
+
+      // trace "xxx sendNextUIEvent";
+
+      midi_map_ui_event_mbox.sendEvent(mboxEv);
+      midi_map_ui_event_nextid = (midi_map_ui_event_nextid + 1) % MAX_QUEUED_UI_MIDIMAPEVENTS;
+      midi_map_ui_event_mtx.lock();
+
+      if(!b_midi_map_ui_event_pending)//// || (1 == midi_map_ui_event_mbox.numQueuedEvents))
+      {
+         // First queued event, send user event to UI thread
+         SDL.sendEvent(EV_MIDI);
+      }
+
+      midi_map_ui_event_mtx.unlock();
+   }
+
+   // <method.png>
+   public method sendUIEvent(MIDIMapEvent _ev) {
+      // called by FaderPort/MFTwister classes (virtual fader NRPN events)
+      if(MAX_QUEUED_UI_MIDIMAPEVENTS != midi_map_ui_event_mbox.numQueuedEvents)
+      {
+         MIDIMapEvent midiMapEvent <= prepNextUIEvent();
+
+         if(null != midiMapEvent)
+         {
+            midiMapEvent.copyFrom(_ev);
+
+            sendNextUIEvent();
+
+            syn_proc.processMIDIMapEvent(midiMapEvent);
+         }
+         else
+         {
+            trace "[~~~] Replay:sendUIEvent: midiMapEvent<ui> is NULL!!";
+         }
+      }
+      else
+      {
+         // Event queue is full..
+         trace "[~~~] Replay::sendUIEvent: midiMapEventQueue<ui> is FULL";
+
+         SDL.sendEvent(EV_MIDI);
+      }
+   }
+
+   static int xxx_t_last_clk_debug;
+   static int xxx_clk_debug_cnt = 0;
+
+   // <method_set.png>
+   public =replay= method setEnableDiscardCtl(boolean _bEnable) {
+
+      b_discardctl_collect = false;
+
+      if(_bEnable && !b_discardctl)
+      {
+         // off => on
+         frame_discardctl_collect.empty();
+      }
+      else if(!_bEnable && b_discardctl)
+      {
+         // on => off
+         b_discardctl_send = true;  // send collected ctls in next replay tick
+      }
+
+      b_discardctl = _bEnable;
+
+      ui_b_discardctl_collect = false;
+      ui_b_discardctl = true;
+
+      Global.Debug2("Replay::setEnableDiscardCtl: b_discardctl="+b_discardctl);
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableDiscardCtlCollect(boolean _bEnable) {
+
+      setEnableDiscardCtl(_bEnable);
+
+      b_discardctl_collect = true;
+
+      ui_b_discardctl_collect = _bEnable;
+      ui_b_discardctl = false;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableResendLastCtl(boolean _bEnable) {
+
+      b_resend_lastctl = _bEnable;
+
+      Global.Debug2("Replay::setEnableResendLastctl: b_resend_lastctl="+b_resend_lastctl);
+   }
+
+   // <method.png>
+   public =replay= method excludeDiscardCtlDev(int _devIdx) {
+      if(!discardctl_exclude_devs.contains(_devIdx))
+         discardctl_exclude_devs.add(_devIdx);
+   }
+
+   // <method.png>
+   public =replay= method includeDiscardCtlDev(int _devIdx) {
+      if(discardctl_exclude_devs.contains(_devIdx))
+         discardctl_exclude_devs.delete(discardctl_exclude_devs.indexOf(_devIdx, 0));
+   }
+
+   // <method.png>
+   public =replay= method excludeMIDIMapInDev(int _devIdx) {
+      if(!midimap_exclude_devs.contains(_devIdx))
+         midimap_exclude_devs.add(_devIdx);
+   }
+
+   // <method.png>
+   public =replay= method includeMIDIMapInDev(int _devIdx) {
+      if(midimap_exclude_devs.contains(_devIdx))
+         midimap_exclude_devs.delete(midimap_exclude_devs.indexOf(_devIdx, 0));
+   }
+
+   // <method.png>
+   public addSynMIDIMapEventUI_Note(int _devIdx, byte _midiCh, byte _note, byte _vel) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+      if(null != dev)
+      {
+         MIDIMapEvent midiMapEvent <= prepNextUIEvent();
+
+         if(null != midiMapEvent)
+         {
+            midiMapEvent.initTransformedFromNote(dev, _midiCh, _note, _vel);
+
+            sendNextUIEvent();
+            syn_proc.processMIDIMapEvent(midiMapEvent);
+         }
+      }
+   }
+
+   // <method.png>
+   public addSynMIDIMapEventUI_CC(int _devIdx, byte _midiCh, byte _cc, byte _value) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+      if(null != dev)
+      {
+         MIDIMapEvent midiMapEvent <= prepNextUIEvent();
+
+         if(null != midiMapEvent)
+         {
+            midiMapEvent.initTransformedFromCC(dev, _midiCh, _cc, _value);
+
+            sendNextUIEvent();
+            syn_proc.processMIDIMapEvent(midiMapEvent);
+         }
+      }
+   }
+
+   // <method.png>
+   public addSynMIDIMapEventUI_ChannelPressure(int _devIdx, byte _midiCh, byte _value) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+      if(null != dev)
+      {
+         MIDIMapEvent midiMapEvent <= prepNextUIEvent();
+
+         if(null != midiMapEvent)
+         {
+            midiMapEvent.initTransformedFromChannelPressure(dev, _midiCh, _value);
+
+            sendNextUIEvent();
+            syn_proc.processMIDIMapEvent(midiMapEvent);
+         }
+      }
+   }
+
+   // <method.png>
+   public addSynMIDIMapEventUI_Pitchbend(int _devIdx, byte _midiCh, short _value) {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(_devIdx);
+      if(null != dev)
+      {
+         MIDIMapEvent midiMapEvent <= prepNextUIEvent();
+
+         if(null != midiMapEvent)
+         {
+            midiMapEvent.initTransformedFromPitchbend(dev, _midiCh, _value);
+
+            sendNextUIEvent();
+            syn_proc.processMIDIMapEvent(midiMapEvent);
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method injectFrameRec(MIDIPipeFrame _fr) {
+      frame_rec_inject.mergeFrame(_fr);
+   }
+
+   // <method.png>
+   public =replay= method injectFrameTransform(MIDIPipeFrame _fr, boolean _bMapOutToIn) {
+      // (note) bMapOutToIn=false: frame events must use input device indices
+      // (note) bMapOutToIn=true : auto-map output device indices to input device indices
+      int evIdx = 0;
+      MIDIPipeEvent pev;
+      loop(_fr.numEvents)
+      {
+         _fr.getEventByIdx(evIdx, pev, -1/*fltType*/);
+         MIDIMapEvent mev <= midi_map_rt_event_queue.nextFree;
+         if(mev.initFromMIDIPipeEvent(pev, _bMapOutToIn))
+         {
+            // trace "xxx mev.dev_ch="+mev.dev_ch;
+            mev.syn_type = MIDIMapDefs.SYN_VALUE;
+            sendUIEvent(mev);  // for MIDI input monitor
+         }
+         else
+         {
+            // unhandled event type
+            midi_map_rt_event_queue.remove(mev);
+         }
+         // else trace "xxx initFromMIDIPipeEvent succeeded";
+         evIdx++;
+      }
+   }
+
+   // <replay.png>
+   public method tickAudio(float _millisec) {
+   }
+
+   // <method.png>
+   public =replay= method queueSeek(int _ticks) {
+      // used by NodeSeq
+      // trace "xxx Replay::queueSeek("+_ticks+")";
+      queued_seek = _ticks;
+   }
+
+   // <replay.png>
+   public method tick(float _millisec, MIDIPipeFrame _frameExportOrNull) {
+      // Called from MIDITimer thread (replay mutex is already locked)
+      //  - or exportTiny()
+
+      // trace "xxx tick replay" + rnd(100);
+      int tNow = milliSeconds();
+
+      if(-1 != queued_seek)
+      {
+         // // current_song.seekInternal(queued_seek, !replay.b_freerun_loop);
+         current_song.seek(queued_seek);
+         queued_seek = -1;
+      }
+
+      boolean bMIDI = STConfig.b_enable_midi;
+
+      STX_MIDIInDevice *inDev;
+      int inDevIdx = 0;
+      STX_MIDIOutDevice *outDev;
+      MIDIMapEvent *midiMapEvent;
+      MIDIPipeFrame framePlayMaster;
+      MIDIPipeFrame framePlay;
+      MIDIPipeFrame frameRec;
+      MIDIPipeFrame frameSyx1;  // bypasses all pipes, used when STConfig.b_sysex_out_ch1_to_play_frame=1
+      BidiCtl *bidiCtl;
+
+      // trace false;
+      //trace true;
+
+      // trace "xxx Replay::tick: ENTER";
+
+      framePlay.empty();
+      frameRec.empty();
+
+      b_keyjazz_step = !b_playing;
+
+      boolean bKeyJazzStep = b_keyjazz_step && (0 == ticks_to_play);
+
+      // // if(Metronome.metronome_countdown > 0)
+      // // {
+      // //    bKeyJazzStep = true;
+      // // }
+
+      if(mtc_delayed_start_ms > 0)
+      {
+         if(tNow >= (mtc_delayed_start_ms - STConfig.mtc_studio_one_rec_pre_ms))
+         {
+            if(b_mtc_send_s1_rec)  // see STConfig.b_mtc_studio_one_record_workaround
+            {
+               b_mtc_send_s1_rec = false;
+               STX_MIDIOutDevice devS1 <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.mtc_studio_one_remote_devname);
+               if(null != devS1)
+               {
+                  // msg must be mapped to "Transport / Record" in Studio One (type "Button on/off")
+                  devS1.begin();
+                  devS1.ctlChange(0/*ch*/, 1/*cc1 modwheel*/, 127);
+                  devS1.send(tNow);
+               }
+            }
+         }
+
+         if(tNow >= mtc_delayed_start_ms)
+         {
+            trace "xxx MTC: reached mtc_delayed_start_ms="+mtc_delayed_start_ms+" tNow="+tNow;
+            mtc_delayed_start_ms = -1;
+            time_replaystart = tNow;
+         }
+      }
+
+      boolean bPlaySeq = b_playing || (ticks_to_play > 0);
+
+      if(mtc_delayed_start_ms < 0)
+      {
+         if(precount_tick_countdown > 0)
+         {
+            precount_tick_countdown--;
+            precount_ticks++;
+            bPlaySeq = bPlaySeq && (0 == precount_tick_countdown);
+
+            if(0 == precount_tick_countdown)
+            {
+               stopPreCount();
+            }
+         }
+      }
+      else
+      {
+         // Wait until tape-recorder has reached start position
+         bPlaySeq = false;
+      }
+
+      if(bMIDI)
+      {
+         if(precount_tick_countdown <= 0)
+         {
+            if(-1 != queued_liverec_end_ticks)
+            {
+               // trace "xxx current_song.tick_nr="+current_song.tick_nr+" queued_liverec_end_ticks="+queued_liverec_end_ticks;
+               if(current_song.tick_nr == queued_liverec_end_ticks)
+               {
+                  queued_liverec_end_ticks = -1;
+                  SysEx.SendRemoteParamUpdate(queued_liverec_instance_id,
+                                              65/*ModSample.PARAM_LIVEREC_STOP_IDX*/,
+                                              queued_liverec_zone_idx / 127.0
+                                              );
+                  b_liverec_active = false;
+                  configureVoiceModulo(-1/*start*/, voice_modulo_num);
+                  current_pipe_root.configureVoiceModulo(-1/*start*/, voice_modulo_num);
+               }
+            }
+
+            if(-1 != queued_liverec_start_ticks)
+            {
+               // trace "xxx current_song.tick_nr="+current_song.tick_nr+" queued_liverec_start_ticks="+queued_liverec_start_ticks;
+               if(current_song.tick_nr == queued_liverec_start_ticks)
+               {
+                  queued_liverec_start_ticks = -1;
+                  SysEx.SendRemoteParamUpdate(queued_liverec_instance_id,
+                                              63/*ModSample.PARAM_LIVEREC_START_IDX*/,
+                                              queued_liverec_zone_idx / 127.0
+                                              );
+                  b_liverec_active = true;
+               }
+            }
+         }
+      }
+
+      // Handle MIDI input events (master keyboard keyjazz, MIDIMapEvents)
+      if(bMIDI && !b_export)
+      {
+         SysEx.ParseMIDIInputEvents();
+
+         foreach inDev in MIDI.in_devices
+         {
+            if(!inDev.b_closed_temporarily)
+            {
+               inDev.readLocalMIDIEvents();
+               MIDIIn midiIn <= inDev.midiin;
+               // // boolean bFaderPort = faderport .b_connected && (@(inDev) == @(faderport .in_dev));
+               // // boolean bMFTwister = mf_twister.b_connected && (@(inDev) == @(mf_twister.in_dev));
+
+               if(null != midiIn)
+               {
+                  int numEv = midiIn.numEvents;
+                  //trace "xxx midiin numEvents="+numEv;//+" masterIdx="+Global.midi_in_master_idx;
+                  loop(numEv)
+                  {
+                     RecordedMIDIEvent recEv <= midiIn.nextEvent;
+                     boolean bHandled = false;
+
+                     // trace "xxx recEv size="+recEv.size+" recEv.data="+recEv[0]+" "+recEv[1]+" "+recEv[2];
+                     // Integer iox = recEv.shortMessage;
+                     // trace "xxx   shortMessage="+iox.printf("0x%08x");
+
+                     // // if(bFaderPort)
+                     // //    bHandled = faderport.handleMIDIEvent(recEv, midi_map_rt_event_queue);
+
+                     // // if(!bHandled && bMFTwister)
+                     // //    bHandled = mf_twister.handleMIDIEvent(recEv, midi_map_rt_event_queue);
+
+                     foreach bidiCtl in bidi_ctls
+                     {
+                        if(@(bidiCtl.in_dev) == @(inDev))
+                        {
+                           bHandled = bidiCtl.handleMIDIEvent(recEv, midi_map_rt_event_queue);
+                           if(bHandled)
+                              break;
+                        }
+                     }
+
+                     if(!bHandled)
+                     {
+                        if(-1 == midimap_exclude_devs.indexOf(inDev.dev_idx, 0))
+                        {
+                           // Queue MIDIMapEvent for UI thread midimapper
+                           if(MAX_QUEUED_UI_MIDIMAPEVENTS != midi_map_ui_event_mbox.numQueuedEvents)
+                           {
+                              midiMapEvent <= prepNextUIEvent();
+
+                              if(null != midiMapEvent)
+                              {
+                                 midiMapEvent.initFromRecordedMIDIEvent(inDev, recEv);
+
+                                 sendNextUIEvent();
+
+                                 syn_proc.processMIDIMapEvent(midiMapEvent);
+                              }
+                              else
+                              {
+                                 trace "[~~~] Replay:tick: midiMapEvent<ui> is NULL!!";
+                              }
+                           }
+                           else
+                           {
+                              trace "[~~~] Replay::tick: midiMapEventQueue<ui> is FULL";
+
+                              // Event queue is full..
+                              SDL.sendEvent(EV_MIDI);
+                           }
+                        } // if not excluded
+
+                        // Queue MIDIMapEvent for replay thread midimapper
+                        midiMapEvent <= midi_map_rt_event_queue.nextFree;
+                        if(null != midiMapEvent)
+                        {
+                           midiMapEvent.initFromRecordedMIDIEvent(inDev, recEv);
+                        }
+                        else
+                        {
+                           trace "[~~~] Replay:tick: midiMapEvent<rt> is NULL!!";
+                        }
+
+                        // // if(!recEv.isLongMessage())
+                        // // {
+                        // //    // (todo) this should be rewritten so that a MIDIMapTarget handles the event
+                        // //    if(inDevIdx == MIDI.midi_in_master_idx)
+                        // //    {
+                        // //       // (todo) rewrite recording code
+                        // //       // trace "xxx recEv="+#(recEv);
+
+                        // //       int shortMsg = recEv.shortMessage;
+                        // //       Integer io = shortMsg;
+                        // //       // trace "xxx midiin shortmsg="+io.printf("0x%08x");
+
+                        // //       int note;
+                        // //       int vel;
+
+                        // //       // Is note-on ?
+                        // //       if((shortMsg & 0x000000ff) == 0x90)
+                        // //       {
+                        // //          ////Integer ioDebug = shortMsg;
+                        // //          //trace "xxx noteon shortMessage="+io.printf("%08x");
+                        // //          note = (shortMsg>> 8) & 127;
+                        // //          vel  = (shortMsg>>16) & 127;
+                        // //       }
+                        // //       else if((shortMsg & 0x000000ff) == 0x80)
+                        // //       {
+                        // //          // Note-off
+                        // //          //trace "xxx noteoff shortMessage="+io.printf("%08x");
+                        // //          note = (shortMsg>> 8) & 127;
+                        // //          vel  = (shortMsg>>16) & 127;
+                        // //       }
+
+                        // //    } // if is master idx
+                        // // } // !sysex
+
+                     } // if bProcessEvent
+
+                     // Next event
+                  }
+               } // null != midiin
+               else if(inDev instanceof STX_JoystickMIDIInDevice)
+               {
+                  STX_JoystickMIDIInDevice inDevJS <= inDev;
+                  int numJSEv = inDevJS.lockJSEventQueueAndGetNumEv();
+                  int jsEvIdx = 0;
+                  loop(numJSEv)
+                  {
+                     STX_JoystickEvent jsEv <= inDevJS.getJSEventByIdx(jsEvIdx++);
+                     // trace "xxx jsEv["+(jsEvIdx-1)+"] type="+jsEv.type+" src="+jsEv.src+" val="+jsEv.value+" delta=("+jsEv.dx+";"+jsEv.dy+")";
+
+                     // (note) "Ball" generates two events (dx, dy)
+                     int numGenJSEv = (STX_JoystickEvent.TYPE_BALL == jsEv.type) ? 2 : (STX_JoystickEvent.TYPE_HAT == jsEv.type) ? 5 : 1;
+                     int genJSEvIdx = 0;
+                     loop(numGenJSEv)
+                     {
+                        if(-1 == midimap_exclude_devs.indexOf(inDevJS.dev_idx, 0))
+                        {
+                           // Queue MIDIMapEvent for UI thread midimapper
+                           if(MAX_QUEUED_UI_MIDIMAPEVENTS != midi_map_ui_event_mbox.numQueuedEvents)
+                           {
+                              midiMapEvent <= prepNextUIEvent();
+
+                              if(null != midiMapEvent)
+                              {
+                                 midiMapEvent.initFromJoystickEvent(inDevJS, jsEv, genJSEvIdx);
+
+                                 sendNextUIEvent();
+
+                                 syn_proc.processMIDIMapEvent(midiMapEvent);
+                              }
+                              else
+                              {
+                                 trace "[~~~] Replay:tick: midiMapEvent<ui> is NULL!!";
+                              }
+                           }
+                           else
+                           {
+                              trace "[~~~] Replay::tick: midiMapEventQueue<ui> is FULL";
+
+                              // Event queue is full..
+                              SDL.sendEvent(EV_MIDI);
+                           }
+                        } // if not excluded
+
+                        // Queue MIDIMapEvent for replay thread midimapper
+                        midiMapEvent <= midi_map_rt_event_queue.nextFree;
+                        if(null != midiMapEvent)
+                        {
+                           midiMapEvent.initFromJoystickEvent(inDevJS, jsEv, genJSEvIdx);
+                        }
+                        else
+                        {
+                           trace "[~~~] Replay:tick: midiMapEvent<rt> is NULL!!";
+                        }
+
+                        genJSEvIdx++;
+                     } // loop numGenJSEv
+                  }
+                  inDevJS.clearAndUnlockJSEventQueue();
+               }
+
+            } // if! closed_temporarily
+
+            // Next input device
+            inDevIdx++;
+
+         } // foreach inDev
+      }
+
+      // trace "xxx Replay::tick: 2";
+
+      // Process tracked events (UI button presses etc)
+      syn_proc.tickTrackedEvents();
+
+      boolean bMayClearLastCtl = !b_resend_lastctl;
+
+      if(b_discardctl_send)
+      {
+         // Send collected MIDI events now that discardctl mode has been disabled
+         b_discardctl_send = false;
+
+         // trace "xxx discardctl: send";
+
+         if(b_discardctl_collect)
+         {
+            frameRec.mergeFrame(frame_discardctl_collect);
+            framerec_lastctl.mergeFrame(frame_discardctl_collect);
+            frame_discardctl_collect.empty();
+            bMayClearLastCtl = false;
+         }
+      }
+
+      // trace "xxx Replay::tick: 3";
+
+      // Handle event recording via MIDIMapper (replay will then read recorded values during tick() call (see below))
+      MIDIMapEvent *mmev;
+
+      int lastCtlNumValues = 0;
+
+      // if(midi_map_rt_event_queue.numElements)
+      //    trace "xxx midi_map_rt_event_queue.numElements="+midi_map_rt_event_queue.numElements;
+
+      foreach mmev in midi_map_rt_event_queue
+      {
+         // trace "xxx pre-classify: mmev.type="+mmev.type;
+
+         // Transform event according to current MIDI morph scene
+         mmev.classify();
+
+         if(mmev.class_type == MIDIMapDefs.CLASS_VALUE)
+         {
+            lastCtlNumValues++;
+         }
+
+      }
+
+      // trace "xxx Replay::tick: 4";
+      MIDIMorphScene.TransformEvents(midi_map_rt_event_queue);
+      // // midi_mapper.handleEvent(mmev);
+
+      // trace "xxx Replay::tick: 5";
+
+      bMayClearLastCtl = !b_discardctl && (lastCtlNumValues > 0);
+
+      int lastCtlNumAdded = 0;
+
+      foreach mmev in midi_map_rt_event_queue
+      {
+         // trace "xxx post-transform: mmev.b_xformed="+mmev.b_xformed+" type="+mmev.type+" ext_type="+mmev.ext_type+" arg1="+mmev.arg1;
+
+         // Echo untransform events
+         if(!mmev.b_xformed)
+         {
+            // Swap in for out dev
+            mmev.echoTransform();
+
+            // Update output state
+            //  (note) will be overwritten later during this 'tick' in case event is echoed
+            //  (note) otherwise this will simply track current knob/switch states when a HW interface is used
+            mmev.copyToOutputState();
+         }
+
+         if(b_pagenode_midi_to_pattern)
+         {
+            if(root_form.pg_node.handleMIDIEvent(mmev))
+            {
+               mmev.discard();
+            }
+         }
+
+         if(null != mmev.dev) // discarded ?
+         {
+            if(mmev.class_type == MIDIMapDefs.CLASS_VALUE)
+            {
+               if(bMayClearLastCtl)
+               {
+                  if(0 == lastCtlNumAdded)
+                  {
+                     framerec_lastctl.empty();
+                     // trace "xxx re-send: clear events 1";
+                  }
+               }
+
+               // Add event if is output device
+               mmev.addToFrame(framerec_lastctl, 0/*duration=manual note off*/, false/*bDiscard*/);
+               // trace "xxx re-send: adding event";
+               lastCtlNumAdded++;
+            }
+
+            if(!b_discardctl || (discardctl_exclude_devs.contains(mmev.dev.dev_idx)))
+            {
+               // Add to frameRec and discard added events
+               // trace "xxx mmev.addToFrame";
+               if(STConfig.b_sysex_out_ch1_to_play_frame && mmev.isSyx1Event())
+               {
+                  // Redirect SysEx out device (usually "remote_audio") channel 1 events to "play" frame
+                  //  so they won't be transformed in e.g. node editors
+                  //  => prioritize Eureka sampler 'keyjazz' playback
+                  // // mmev.addToFrame(frame_master_inject, 0/*duration=manual note off*/, false/*bDiscard*/);
+                  mmev.addToFrame(frameSyx1, 0/*duration=manual note off*/, false/*bDiscard*/);
+               }
+               else
+               {
+                  mmev.addToFrame(frameRec, 0/*duration=manual note off*/, false/*bDiscard*/);
+               }
+            }
+            else if(b_discardctl_collect)
+            {
+               // Collect events (and send later when mode is turned off again)
+               mmev.addToFrame(frame_discardctl_collect, 0/*duration=manual note off*/, false/*bDiscard*/);
+            }
+
+            mmev.discard();
+         }
+      }
+
+      midi_map_rt_event_queue.empty();  // [13Jun2023] empty queue before iterating nodes so that events can be queued for next tick()
+
+      // trace "xxx Replay::tick: 6";
+
+      if(bMayClearLastCtl)
+      {
+         if(0 == lastCtlNumAdded)
+         {
+            // if(framerec_lastctl.numEvents)
+            // {
+            // trace "xxx re-send: clear events 2";
+            // }
+            framerec_lastctl.empty();
+         }
+      }
+
+      // trace "xxx Replay::tick: 7";
+
+      // Add push ctltag events (already transformed)
+      root_form.pg_ctltag.addToFrameRec(framerec_lastctl);
+
+      // trace "xxx Replay::tick: 8";
+
+      if(!b_discardctl)
+      {
+         root_form.pg_ctltag.addToFrameRec(frameRec);
+      }
+      else if(b_discardctl_collect)
+      {
+         root_form.pg_ctltag.addToFrameRec(frame_discardctl_collect);
+      }
+
+      root_form.pg_ctltag.emptyPlayFrame();
+
+      // trace "xxx Replay::tick: 9";
+
+      if(b_resend_lastctl)
+      {
+         // trace "xxx re-send: merging "+framerec_lastctl.numEvents;
+         frameRec.mergeFrame(framerec_lastctl);
+      }
+
+      // if(frameRec.hasEvents())
+      // {
+      //    trace "xxx frameRec has "+frameRec.numEvents+" events.";
+      // }
+
+      // Transform events to current synth editor output device ?
+      if(frameRec.hasEvents())
+      {
+         if(RootForm.PAGE_SYSEX == root_form.getCurrentPageNr())
+         {
+            root_form.pg_sysex.transformSysExEditorKeyboardEvents(frameRec);
+            // if(frameRec.numEventsNoteOn > 0)
+            //    trace "xxx after transformSysExEditorKeyboardEvents: frameRec.numEventsNoteOn="+frameRec.numEventsNoteOn;
+         }
+      }
+
+      // trace "xxx Replay::tick: 10";
+
+
+      boolean bSendDelayedStart = false;
+
+      if(-1 != delayed_midi_start)
+      {
+         delayed_midi_start--;
+         trace "xxx Replay: delayed_midi_start="+delayed_midi_start;
+         bSendDelayedStart = (-1 == delayed_midi_start);
+         b_playing = bSendDelayedStart;
+      }
+
+      if(bMIDI)
+      {
+         if(!b_export)
+         {
+            // ppq must be 96, then send every 4th tick (zoom=24)
+            boolean bMIDIClkTick = (0 == int(midi_timing_ticks) % (current_song.ppq / 24));
+
+            // Start buffers of all MIDI out devices
+            foreach outDev in MIDI.out_devices
+            {
+               if(null != outDev.midiout)
+               {
+                  if(!outDev.b_ui_only)
+                  {
+                     if(STConfig.b_enable_localmidi)
+                        outDev.localMIDICheckForNewConnection();
+
+                     outDev.begin();
+
+                     if(bMIDIClkTick && outDev.b_clk)
+                     {
+                        outDev.midiClock();
+                        // trace "xxx clock outDev.name="+outDev.getAliasOrDeviceName();
+
+                        // if(bDebugFirstDev)
+                        // {
+                        //    bDebugFirstDev = false;
+                        //    int tCurr = milliSeconds();
+                        //    int tDelta = tCurr - xxx_t_last_clk_debug;
+                        //    if(0 == (++xxx_clk_debug_cnt&31))
+                        //    {
+                        //       trace "xxx tDelta="+tDelta+" tCurr="+tCurr+" tLast="+xxx_t_last_clk_debug+" timTicks="+midi_timing_ticks;
+                        //    }
+                        //    xxx_t_last_clk_debug = tCurr;
+                        // }
+                     }
+
+                     boolean bMMCRecLogic = b_send_midi_mmcrec && ("logic" == outDev.getAliasOrDeviceName());
+
+                     if((-1 != send_midi_songpos) && outDev.b_spp)
+                     {
+                        // (note) sending SPP followed by rec msg causes Logic to immediately stop recording (a bug)
+                        if(!bMMCRecLogic)
+                           outDev.midiSongPos(send_midi_songpos);
+                     }
+
+                     if(b_send_midi_start || bSendDelayedStart)
+                     {
+                        if(STConfig.b_midi_send_mmc)
+                        {
+                           // trace "xxx b_send_midi_start";
+                           ////outDev.midiStart(); // restart song (do not send to Reason!)
+                           // outDev.midiStart(); // restart song (do not send to Reason!)
+                           if(outDev.b_mmcplay)
+                           {
+                              // outDev.midiContinue(); // continue at last songpos (use this with Reason)
+                              // outDev.mmcStart();
+
+                              if(b_send_midi_mmcrec)
+                              {
+                                 // trace "xxx outDev.b_mmcrec="+outDev.b_mmcrec;
+                                 if(outDev.b_mmcrec)
+                                 {
+                                    // // outDev.mmcRecPause();
+                                    outDev.mmcRec();
+                                    // // outDev.mmcPause();
+                                    // // delayed_midi_start = 24 * (current_song.ppq/24);  // no use, mmcRec always starts replay
+                                    // // b_playing = false;
+                                 }
+                                 else
+                                 {
+                                    delayed_midi_start = -1;
+                                 }
+                              }
+                              else
+                              {
+                                 delayed_midi_start = -1;
+                              }
+
+                              if(-1 == delayed_midi_start)
+                              {
+                                 if(bSendDelayedStart)
+                                 {
+                                    trace "xxx replay: send delayed record start";
+                                    outDev.mmcRec();
+                                 }
+                                 else
+                                 {
+                                    if(bMMCRecLogic && STConfig.b_midi_logic_dont_send_cont_play_after_mmc_rec)
+                                    {
+                                       // // outDev.mmcStart();
+                                       // // outDev.midiContinue();
+                                       // // outDev.mmcRec();
+                                    }
+                                    else
+                                    {
+                                       outDev.midiContinue(); // continue at last songpos (use this with Reason)
+                                       outDev.mmcStart();
+                                       // trace "xxx send mmcStart, outDev=\""+outDev.getAliasOrDeviceName()+"\"";
+                                    }
+                                 }
+                              }
+
+                           }
+                        } // if STConfig.b_midi_send_mmc
+
+                        if(outDev.b_mtc && STConfig.b_midi_send_mtc)
+                        {
+                           // Send full MIDI Time Code start message
+                           outDev.mtcSendFullTimeCode();
+                        }
+
+                     }
+                     else if(b_send_midi_stop)
+                     {
+                        delayed_midi_start = -1;
+
+                        if(outDev.b_mmcplay && !b_dont_send_midi_mmcstop)
+                        {
+                           outDev.midiStop();
+
+                           if(STConfig.b_midi_send_mmc)
+                           {
+                              outDev.mmcStop();
+
+                              if(STConfig.b_midi_send_mmc_stop_2x) // hack for Reason to rewind songpos
+                              {
+                                 outDev.mmcStop();
+                              }
+                           }
+                        }
+                     }
+
+                     // // if(outDev.b_softpanic_pending)
+                     // // {
+                     // //    outDev.b_softpanic_pending = false;
+                     // //    int midiCh=0;
+                     // //    loop(16)
+                     // //    {
+                     // //       outDev.allNotesOffDef(midiCh);
+                     // //       midiCh++;
+                     // //    }
+                     // // }
+
+                     if(b_playing && bMIDIClkTick && outDev.b_mtc && STConfig.b_midi_send_mtc)
+                     {
+                        // (note) stopping the quarterframe messages will stop the slave (tape-recorder)
+                        //         => send as long as replay is running
+                        outDev.mtcSendQuarterFrameTimePiece();
+                     }
+
+                  } // if !b_ui_only
+               } // if midiOut
+            } // foreach outDev
+         } // if !b_export
+
+         if(mtc_delayed_start_ms > 0)
+            bPlaySeq = false;
+
+         send_midi_songpos  = -1;
+         b_send_midi_start  = false;
+         b_send_midi_stop   = false;
+         b_send_midi_mmcrec = false;
+
+         int numTicksPerNote = current_song.ppq * 4;
+         int numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+         int numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+         current_pipe_root.emitAutoNoteOffs();
+
+         // (note)  first pipe: framePlayMaster.empty(), pipe->processFrame(framePlayMaster)
+         // (note) other pipes: framePlay = framePlayMaster, pipe->processFrame(framePlay), framePlay.emit()
+
+          // if(b_playing)
+          //    trace "xxx ===================== TICK ================= pos="+current_song.song_offset;
+
+         framePlayMaster.empty();
+         framePlayMaster.mergeFrame(frame_master_inject);
+         if(framePlayMaster.numEvents > 0)
+            trace "xxx replay: framePlayMaster #noteOn="+framePlayMaster.numEventsNoteOn+" #noteOff="+framePlayMaster.numEventsNoteOff;
+         frame_master_inject.empty();
+
+         if(rpn_queue.numElements)
+         {
+            int rpnIdx = 0;
+            loop(rpn_queue.numElements / 4)
+            {
+               framePlayMaster.rpn(true/*bSet*/,
+                                   rpn_queue.get(rpnIdx + 0)/*dev*/,
+                                   rpn_queue.get(rpnIdx + 1)/*ch*/,
+                                   rpn_queue.get(rpnIdx + 2)/*rpn*/,
+                                   rpn_queue.get(rpnIdx + 3)/*val*/
+                                   );
+               rpnIdx += 4;
+            }
+            rpn_queue.empty();
+         }
+
+         // if(frame_rec_inject.numEvents > 0)
+         //    trace "xxx frame_rec_inject.numEvents="+frame_rec_inject.numEvents;
+         frameRec.mergeFrame(frame_rec_inject);
+         frame_rec_inject.empty();
+
+         // if(frameRec.hasEvents())
+         //    trace "xxx replay: frameRec="+#(frameRec)+" #ev="+frameRec.numEvents;
+         // if(framePlayMaster.numEventsSysEx > 0)
+         // {
+         //    trace "xxx before processAllPipesAndEmit: framePlayMaster has "+framePlayMaster.numEventsSysEx+" sysex events";
+         // }
+
+         // let current node editor process the tick (usually sends an event to the UI thread)
+         if(precount_tick_countdown <= 0)
+         {
+            root_form.handleReplayTick();
+         }
+
+         //
+         // ---- Iterate pipes and nodes and call Node::nodeProcessFrame()
+         //
+         // trace "xxx call processAllPipesAndEmit";
+         // if(bPlaySeq)
+         //    trace "xxx processAllPipesAndEmit: song_offset="+current_song.song_offset;
+         if(b_play_step_muted || b_cycle_mute_after_loop)
+         {
+            framePlayMaster.deleteNoteOnsByFlt (-1, -1);
+            framePlayMaster.deleteNoteOffsByFlt(-1, -1);
+            framePlay      .deleteNoteOnsByFlt (-1, -1);
+            framePlay      .deleteNoteOffsByFlt(-1, -1);
+            frameRec       .deleteNoteOnsByFlt (-1, -1);
+            frameRec       .deleteNoteOffsByFlt(-1, -1);
+         }
+         current_pipe_root.setEnableDeleteNoteOnsAndOffs(b_play_step_muted || b_cycle_mute_after_loop);
+         // (note) framePlayMaster events are emitted after processing the first pipe, then marked as "don't send"
+         //         all following pipes inherit the events, though (e.g. for pattern change automation)
+         // (note) each pipe is emitted after it has been processed, unless there's a "final output" pipe
+         //         in which case all MIDI events are routed through that before they are finally emitted.
+         current_pipe_root.processAllPipesAndEmit(framePlayMaster,
+                                                  framePlay,
+                                                  frameRec,
+                                                  bPlaySeq,
+                                                  _frameExportOrNull
+                                                  );
+
+         // if(framePlay.numEventsSysEx > 0)
+         // {
+         //    trace "xxx after processAllPipesAndEmit: framePlay has "+framePlay.numEventsSysEx+" sysex events";
+         // }
+
+
+         // Emit what's left of frameRec
+         //   (note) events that have the b_dont_send flag set won't actually be emitted
+         if(frameRec.hasEvents())
+         {
+            // trace "xxx frameRec has "+frameRec.numEvents+" events ("+frameRec.numEventsSysEx+" sysex) left after process.";
+            frameRec.setRoot(current_pipe_root);
+            frameRec.emit();
+         }
+
+         // when STConfig.b_sysex_out_ch1_to_play_frame=1 (remote_audio events bypass all pipes, e.g. to prioritize sampler playback)
+         if(frameSyx1.hasEvents())
+         {
+            frameSyx1.setRoot(current_pipe_root);
+            frameSyx1.emit();
+            frameSyx1.empty();
+         }
+
+         // Metronome click
+         if(mtc_delayed_start_ms < 0)
+         {
+            MIDIPipeFrame frMetro;
+            frMetro.setRoot(current_pipe_root);
+            frMetro.empty();
+
+            if(STConfig.b_midi_metronome && b_playing)
+            {
+               if(-1 != metronome_dev_idx)
+               {
+                  boolean bMetroTickBar;
+                  boolean bMetroTickBeat;
+                  if(precount_tick_countdown > 0)
+                  {
+                     bMetroTickBar = (0 == ((precount_ticks-1) % numTicksPerBar));
+                     bMetroTickBeat = (0 == ((precount_ticks-1) % numTicksPerBeat));
+                  }
+                  else
+                  {
+                     bMetroTickBar = (0 == (current_song.song_offset % numTicksPerBar));
+                     bMetroTickBeat = (0 == (current_song.song_offset % numTicksPerBeat));
+                  }
+                  if(bMetroTickBar)
+                  {
+                     // trace "xxx metronome song_offset="+current_song.song_offset;
+                     // trace "xxx metronome precount_ticks="+precount_ticks;
+                     frMetro.noteOn(true/*bSet*/, metronome_dev_idx, STConfig.midi_metronome_ch&15, STConfig.midi_metronome_note_bar&127, 127, 1);
+                  }
+                  else if(bMetroTickBeat)
+                  {
+                     frMetro.noteOn(true/*bSet*/, metronome_dev_idx, STConfig.midi_metronome_ch&15, STConfig.midi_metronome_note_beat&127, 127, 1);
+                  }
+               }
+            }
+
+            frMetro.emit();
+         }
+
+         // if(STConfig.b_enable_korg_radias)
+         // {
+         //    // xxx kind of hardcoded..
+         //    MIDI.korg_radias.beginFrame();
+         // }
+
+      } // if bMIDI
+
+      // trace "xxx Replay::tick: 11";
+      if(b_atrk_sync_restart && b_playing && (((numTicksPerBar-STConfig.atrk_record_tick_shift)%numTicksPerBar) == (current_song.song_offset % numTicksPerBar)))
+      {
+         trace "xxx start atrk sync record at song_offset="+current_song.song_offset+" (shift="+STConfig.atrk_record_tick_shift+")";
+         b_atrk_sync_restart = false;
+         // // SysEx.QueueAtrkRecordStart();
+         SysEx.QueueSendSeqStart(); // already armed (see AudioTrackDialog::handleRecordSync())
+      }
+
+      if((b_playing || bKeyJazzStep) && (-1 == delayed_midi_start) && (0 == precount_tick_countdown) && (mtc_delayed_start_ms < 0))
+      {
+         // if(!bKeyJazzStep)
+         //    trace "xxx play offset="+(current_song.song_offset)+" b_playing="+b_playing+" bKeyJazzStep="+bKeyJazzStep;
+
+         current_song.tick(bKeyJazzStep);
+      }
+      else if(ticks_to_play > 0)
+      {
+         current_song.tick(false/*bKeyJazzOnly*/);
+
+         ticks_to_play--;
+
+         if(0 == ticks_to_play)
+         {
+            if(b_playstep_reset)
+            {
+               // (todo) send note offs
+               current_pipe_root.reset(maybe/*bSoft*/);
+            }
+
+            setPatternNode(null);
+
+            if(-1 != seek_ticks_after_play_step)
+            {
+               // Used by NodeArranger (play single tick after edit offset / mute / solo changed)
+               current_song.seek(seek_ticks_after_play_step);
+               seek_ticks_after_play_step = -1;
+            }
+
+            b_play_step_muted = false;
+         }
+      }
+
+      if(precount_tick_countdown <= 0)
+      {
+         current_song.tickIdle();
+      }
+
+      // trace "xxx Replay::tick: 12";
+      // trace "xxx Replay::tick: 13";
+
+      // // if(STConfig.b_enable_korg_radias)
+      // // {
+      // //    // xxx kind of hardcoded..
+      // //    MIDI.korg_radias.endFrame();
+      // // }
+
+      if(bMIDI && !b_export)
+      {
+         // Send buffers of all MIDI out devices
+         SysEx.SendMIDIOutputEvents();
+
+         foreach bidiCtl in bidi_ctls
+            bidiCtl.tick();
+
+         foreach outDev in MIDI.out_devices
+         {
+            if(!outDev.b_ui_only)
+            {
+               if(null != outDev.midiout)
+               {
+                  if(b_smf_export)
+                  {
+                     // if(outDev.getAliasOrDeviceName() == "reason_master") // xxxx
+                     // {
+                        // if(1 != (outDev.cmd_buffer.offset)) // filter 0xF8 clock
+                        // {
+                        //    trace "xxx replay::send: cmd_buffer.offset="+(outDev.cmd_buffer.offset);
+                        //    // Utils.HexDump(cmd_buffer, 0, cmd_buffer.offset);
+                        // }
+
+                        appendToSMFBuffer(outDev.cmd_buffer, outDev.note_buffer);
+                     // }
+                  }
+
+                  if(outDev.b_softpanic_pending)
+                  {
+                     outDev.b_softpanic_pending = false;
+                     byte midiCh = 0;
+                     loop(16)
+                     {
+                        outDev.allNotesOffDef(midiCh);
+                        midiCh++;
+                     }
+                  }
+
+                  outDev.send(_millisec);
+               }
+            }
+         }
+
+         if(b_smf_export)
+         {
+            int smfTrackIdx = 0;
+            loop(16/*midi ch*/)
+            {
+               smf_export_tick_delta[smfTrackIdx] = smf_export_tick_delta[smfTrackIdx] + 1;
+               smfTrackIdx++;
+            }
+         }
+      } // if bMIDI
+
+      // trace "xxx Replay::tick: 14";
+
+      //trace "xxx num pending events: "+(Global.midiin_radias.numEvents); // xxx
+
+      // // Flash status bar time display every quarter note
+      // // if(0 == int(midi_timing_ticks) % 24)
+      // // {
+      //    // (todo) this should be synchronized to the render thread although the worst that can happen w/o sync is a minor graphics glitch
+      // // }
+
+      // // midi_map_rt_event_queue.empty();  // [13Jun2023] move up
+
+      // Increase MIDI 24ppq timer
+      midi_timing_ticks++;
+
+      if(b_smf_export)
+      {
+         if(midi_timing_ticks >= smf_export_num_ticks)
+         {
+            finishSMFExport();
+            b_smf_export = false;
+            stopReplay(false/*bAllowBookmark*/, true/*bPanic*/);
+         }
+      }
+
+
+      dtrace true;
+
+      // trace "xxx Replay::tick: LEAVE";
+
+      if(!b_export)
+         keepAlive();
+
+      b_dont_send_midi_mmcstop = false;
+
+      tNow = milliSeconds() - tNow;
+      t_avg = (0.0f == t_avg) ? tNow : (t_avg + (tNow - t_avg)*0.1f);
+
+      // trace "xxx Replay::tick: LEAVE (keepAlive done)";
+   }
+
+   // <method.png>
+   public =replay= method startReplay(boolean _bCustomCycle) {
+      // Start (song) replay from current step on
+
+      Global.Debug3("Replay::startReplay: bCustomCycle="+_bCustomCycle+" b_playing="+b_playing);
+
+      if(b_smf_export)
+      {
+         startSMFExport();
+      }
+
+      ST_Song song <= current_song;
+
+      if(b_playing == false)
+      {
+         // bookmark_edit_offset = song.ui_song_offset;
+
+         if(b_cycle)
+         {
+            song.ui_song_offset = song.getAlignedCycleStartInTicks(song.song_offset);
+         }
+         else
+         {
+            song.ui_song_offset = song.getAlignedBeatStartInTicks(song.song_offset);
+         }
+
+         // (note) seek all nodes.
+         // (note) This is called while b_playing=false (e.g. NodeTracker will init its tick_nr)
+         // trace "xxx Replay::startReplay: song.seek("+song.ui_song_offset+")";
+         song.seek(song.ui_song_offset);
+
+         song.last_played_song_offset = song.ui_song_offset;
+
+         current_song.b_custom_cycle = _bCustomCycle;
+
+         handleStartPlaying();
+
+         if(!_bCustomCycle)
+         {
+            if(b_cycle)
+            {
+               song.current_end_offset = song.ui_song_offset + song.getCycleLengthInTicks();
+
+               song.current_repeat_offset = song.ui_song_offset;
+            }
+            else
+            {
+               song.current_end_offset = 0; // no loop
+            }
+
+            song.current_repeat_end_offset = song.current_end_offset;
+         }
+         // else: replay was started from NodeEditor (custom cycle already set)
+
+         start_song_offset = song.ui_song_offset;
+
+         // Global.Debug("Replay::startreplay: continueSongReplay from "+song.ui_song_offset);
+
+         if(!current_song.b_block_loop)
+            Global.Print("Replay started at ["+RootForm.GetSongPosString(song.ui_song_offset)+"]"+(b_send_midi_mmcrec?" (send MMC)":""));
+      }
+      else
+      {
+         // Already playing
+      }
+   }
+
+   // <method.png>
+   public =replay= method handleMetronomeDevChanged() {
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(STConfig.midi_metronome_device);
+
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("Replay::handleMetronomeDevChanged: name=\""+STConfig.midi_metronome_device+"\" dev="+#(dev));
+
+      if(null != dev)
+      {
+         metronome_dev_idx = dev.dev_idx;
+      }
+      else
+      {
+         metronome_dev_idx = -1;
+      }
+   }
+
+   // <method_reset.png>
+   public =replay= method resetNodes(boolean _bSoft) {
+
+      if(_bSoft)
+      {
+         Global.Debug3("Replay::resetNodes: ------------------- handleStartPlaying: softreset BEGIN");
+         current_pipe_root.reset(_bSoft);
+         Global.Debug3("Replay::resetNodes: ------------------- handleStartPlaying: softreset END");
+      }
+      else
+      {
+         Global.Debug3("Replay::resetNodes: ------------------- handleStartPlaying: hardreset BEGIN");
+         current_pipe_root.reset(false/*bSoft*/);
+         Global.Debug3("Replay::resetNodes: ------------------- handleStartPlaying: hardreset END");
+      }
+   }
+
+   // <method.png>
+   public =replay= method playTicks(int _numTicks, int _rewindTicks, boolean _bMuted) {
+      ticks_to_play              = _numTicks;
+      seek_ticks_after_play_step = _rewindTicks; // -1=don't seek
+      b_play_step_muted          = _bMuted;
+
+      resetNodes(maybe/*bSoft*/);
+   }
+
+   // <method.png>
+   public =replay= method sendCurrentSongPos() {
+      send_midi_songpos = current_song.song_offset;
+   }
+
+   // <method_handle.png>
+   public method handleStartPlaying() {
+      // Called by startReplay() while =replay= is locked
+      if(STConfig.b_midi_send_songpos) // true or maybe
+      {
+         sendCurrentSongPos();
+      }
+
+      b_send_midi_start = true;
+      time_replaystart = milliSeconds();
+      midi_timing_ticks = 0.0f;
+      current_song.tick_nr = 0;  // [17Jul2021]
+
+      resetNodes(false/*bSoft*/);
+
+      b_playing = true;
+      b_playing_stopped = false;
+
+      current_pipe_root.configureVoiceModulo(voice_modulo_start, voice_modulo_num);
+
+      // Delegate to NodeEditor.handleStartPlaying() if editor is active
+      root_form.handleStartPlaying();
+   }
+
+   // <method_handle.png>
+   public method handleStopPlaying(boolean _bAllowBookmark) {
+
+      b_send_midi_stop = true;
+      b_playing = false;
+      b_playing_stopped = true;
+      b_atrk_sync_restart = false;
+
+      delayed_midi_start = -1;
+      mtc_delayed_start_ms = -1;
+      b_mtc_send_s1_rec = false;
+
+      pattern_node <= null;
+
+      configureVoiceModulo(-1/*start*/, voice_modulo_num);
+      current_pipe_root.configureVoiceModulo(-1/*start*/, voice_modulo_num);
+
+      b_play_step_muted       = false;
+      b_cycle_mute_after_loop = false;
+
+      if(-1 != queued_liverec_end_ticks)
+      {
+         queued_liverec_start_ticks = -1;
+         queued_liverec_end_ticks = -1;
+         b_liverec_active = false;
+         SysEx.SendRemoteParamUpdate(queued_liverec_instance_id,
+                                     65/*ModSample.PARAM_LIVEREC_STOP_IDX*/,
+                                     queued_liverec_zone_idx / 127.0
+                                     );
+      }
+
+
+      NodeArranger recNode <= current_song.findNodeByGID(NA_TimelineForm.current_rec_node_gid);
+      if(null != recNode)
+         recNode.stopTimelineRecording();
+
+      // Delegate to NodeEditor.handleStopPlaying() if editor is active
+      root_form.handleStopPlaying(_bAllowBookmark);
+
+      if(STConfig.b_clear_midi_cache_when_replay_stops)
+         current_pipe_root.clearMIDICache();
+
+      // // if(STConfig.b_arranger_force_mute_edit)
+      // // {
+      // //    NodeArranger.SetEnableForceMute(false);
+      // // }
+   }
+
+   // <method.png>
+   public =replay= method stopReplay(boolean _bAllowBookmark, boolean _bAllowPanic) {
+      // trace "xxx stopReplay bAllowBookmark="+_bAllowBookmark+" bAllowPanic="+_bAllowPanic;
+      if(b_playing)
+      {
+         String stopPos = RootForm.GetSongPosString(current_song.song_offset);
+
+         handleStopPlaying(_bAllowBookmark);
+
+         if(_bAllowPanic)
+         {
+            // (note) SoftPanic() calls song.reset() which rewinds to ui_song_offset
+            // (note) Panic can cause discarded notes so if the replay immediately starts again, pass bAllowPanic=false
+            Global.SoftPanic();
+         }
+
+         root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+
+         Global.Print("Replay stopped at ["+stopPos+"]"+(b_dont_send_midi_mmcstop?" (skip MMC)":""));
+         /// Pos is now ["+RootForm.GetSongPosString(current_song.song_offset)+"].");
+
+         if(b_smf_export)
+         {
+            finishSMFExport();
+            b_smf_export = false;
+         }
+
+         if(precount_tick_countdown > 0)
+         {
+            stopPreCount();
+         }
+         b_global_recording = false;
+
+         current_song.tick_nr = 0;
+         current_song.b_block_loop = false;
+      }
+   }
+
+   // <method_set.png>
+   public method toggleReplayEx(boolean _bAllowBookmark, boolean _bAllowPanic) {
+      // bAllowPanic is usually true (send allnotesoff)
+      if(b_playing)
+      {
+         stopReplay(_bAllowBookmark, _bAllowPanic/*bAllowPanic*/);
+      }
+      else
+      {
+         startReplay(false/*bCustomCycle*/);
+      }
+   }
+
+   // <method_set.png>
+   public method toggleReplay(boolean _bAllowPanic) {
+      toggleReplayEx(true/*bAllowBookmark*/, _bAllowPanic);
+   }
+
+   // <method_set.png>
+   public =replay= method setCycle(boolean _bEnabled, boolean _bQuiet) {
+
+      boolean bOldCycle = b_cycle;
+
+      // // if(maybe == _bEnabled)
+      // // {
+      // //    b_cycle = !b_cycle;
+      // // }
+      // // else
+      // // {
+         b_cycle = _bEnabled;
+      // // }
+
+      if(b_playing && !bOldCycle && b_cycle)
+      {
+         Global.Debug2("Replay::setCycle: updating start_song_offset to "+start_song_offset);
+         start_song_offset = current_song.getAlignedCycleStartInTicks(current_song.song_offset);
+      }
+
+      current_song.setEnableCycle(b_cycle);
+
+      queueCycleLoop(false/*bImmediate*/);
+
+      if(!_bQuiet)
+      {
+         Global.Print("Cycle mode is "+(b_cycle?"enabled.":"disabled."));
+      }
+   }
+
+   // <method_update.png>
+   public method updateCycleStart() {
+      if(b_cycle && b_playing)
+      {
+         Global.Debug2("Replay::setCycle: updating start_song_offset to "+start_song_offset);
+         start_song_offset = current_song.getAlignedCycleStartInTicks(current_song.song_offset);
+
+         queueCycleLoop(true/*bImmediate*/);
+      }
+   }
+
+   // <method.png>
+   public method queueCycleLoop(boolean _bImmediate) {
+      if(b_playing)
+      {
+         current_song.queueCycleLoop(start_song_offset, 0/*numTicksOverrideOr0*/, false/*bQuiet*/, true/*bImmediate*/);
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableFreerunLoop(boolean _bEnabled) {
+      b_freerun_loop = _bEnabled;
+   }
+
+   // <method_get.png>
+   public method getEnableFreerunLoop() {
+      return b_freerun_loop;
+   }
+
+   // <method_set.png>
+   public =replay= method setPatternNode(Node _node) {
+      pattern_node <= _node;
+   }
+
+   // <method_get.png>
+   public =replay= method isPatternNode(Node _node) : boolean {
+      return (@(_node) == @(pattern_node));
+   }
+
+   // <replay.png>
+   public =replay= method keepAlive() {
+      // called by tick() via MIDI.onMIDITimer()
+
+      if(STConfig.b_midi_in_keepalive)
+      {
+         // Detect device disconnect/reconnect
+         if(0 == (++keepalive_counter & 1023))
+         {
+            // trace "xxx MIDIIn keepalive";
+
+            int ms = milliSeconds();
+
+            STX_MIDIInDevice *inDev;
+
+            boolean bActivity = false;
+
+            foreach inDev in MIDI.in_devices
+            {
+               bActivity |= inDev.keepAlive();
+            }
+
+            ms = milliSeconds() - ms;
+
+            if(!bActivity)
+            {
+               if(ms > 5)
+               {
+                  trace "[~~~] MIDIIn keep-alive check took more than 5ms ("+ms+" ms) -- disabling future checks.";
+                  STConfig.b_midi_in_keepalive = false;
+               }
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public =replay= method injectPrgChg(int _devIdx, byte _midiCh, byte _prog) {
+      frame_master_inject.prgChg(true/*bSet*/, _devIdx, _midiCh, _prog);
+   }
+
+   // <method_handle.png>
+   public =replay= method handleNodeStateChangedUI(local Node _node, local int _active, local int _pattern) {
+      // (note) called from UI thread
+      // (note) active: mute state (-1 = unchanged)
+      Global.Debug3("Replay::HandleNodeStateChanged: node gid="+_node.getNodeGID()+" name="+_node.nodeGetName()+" active="+_active+" pat="+_pattern+" rec_node_gid="+NA_TimelineForm.current_rec_node_gid);
+
+      NodeArranger recNode <= current_song.findNodeByGID(NA_TimelineForm.current_rec_node_gid);
+      if(null != recNode)
+      {
+         recNode.timeline.recordClip(recNode, _node, _active, _pattern);
+
+         if(recNode.nodeIsEditorVisible())
+         {
+            UI.RedrawAll();
+         }
+      }
+   }
+
+   // <method_handle.png>
+   public =replay= method handleNodeStateChangedNativeUI(local MIDIPipeNode _node, local int _active, local int _pattern) {
+      // (note) called from UI thread
+      // (note) active: mute state (-1 = unchanged)
+      if(_node instanceof MIDIPipeNodeScriptProxy)
+      {
+         MIDIPipeNodeScriptProxy nsp <= _node;
+         Node n <= nsp.sci;
+         if(n instanceof Node)
+         {
+            handleNodeStateChangedUI(n, _active, _pattern);
+         }
+      }
+   }
+
+   // <method_handle.png>
+   public =replay= method handlePipeStateChangedNativeUI(local MIDIPipe _pipe) {
+      // (note) called from UI thread
+      int nodeIdx = 0;
+
+      boolean bPipeActive = _pipe.isPipeActive();
+
+      loop(_pipe.numNodes)
+      {
+         MIDIPipeNode n <= _pipe.getNodeByIdx(nodeIdx);
+
+         if(null != n)
+         {
+            handleNodeStateChangedNativeUI(n, bPipeActive && n.isNodeActive(), -1);
+         }
+
+         // Next pipe node
+         nodeIdx++;
+      }
+   }
+
+   // <method_add.png>
+   public =replay= method addUIMuteEntry(int _nodeGID, int _action, int _arg) {
+      // Called by replay thread (RPN event handler, see Node.nodeParseRPN_Mute())
+      local UIMuteEntry en;
+      en.init(_nodeGID, _action, _arg);
+      ui_mute_queue.add(#(deref en));
+      SDL.sendEvent(EV_MIDI);
+   }
+
+   // <method_add.png>
+   public =replay= method addUIPrgChgEntry(int _nodeGID, int _patNr) {
+      // Called by replay thread (RPN event handler, see <NodeType>.handlePrgChg())
+      local UIMuteEntry en;
+      en.init(_nodeGID, UIMuteEntry.AC_NODE_PRGCHG, _patNr);
+      ui_mute_queue.add(#(deref en));
+      SDL.sendEvent(EV_MIDI);
+      PagePipeMap.b_pattern_changed = true;  // so PipeMap updates itself when TrigSeq is changed [02May2018]
+   }
+
+   // <method_handle.png>
+   public =replay= method processUIMuteQueue() {
+      // Called from UI thread (via EV_MIDI)
+      UIMuteEntry *en;
+      Node *sn;
+
+      boolean bChanged = false;
+      // // boolean bMuted;
+
+      foreach en in ui_mute_queue
+      {
+         sn <= current_song.findNodeByGID(en.node_gid);
+
+         // // boolean bMuted = !(n.parent_pipenode.isNodeActive());
+
+         if(null != sn)
+         {
+            MIDIPipeNode n <= sn.parent_pipenode;
+            MIDIPipe p <= sn.parent_pipe;
+
+            switch(en.action)
+            {
+               case UIMuteEntry.AC_NODE_MUTE:
+                  // trace "xxx AC_NODE_MUTE: arg="+en.arg;
+                  switch(en.arg)
+                  {
+                     default:
+                     case 0:  // unmute
+                        bChanged |= Node.SetNodeMuteState(n, false);
+                        break;
+
+                     case 1:  // mute
+                        bChanged |= Node.SetNodeMuteState(n, true);
+                        break;
+
+                     case 2:  // toggle
+                        Node.ToggleNodeMuteState(n);
+                        bChanged = true;
+                        break;
+                  }
+                  break;
+
+               case UIMuteEntry.AC_NODE_SOLO:
+                  // trace "xxx AC_NODE_SOLO: arg="+en.arg;
+                  switch(en.arg)
+                  {
+                     default:
+                     case 0:  // un-solo
+                        bChanged |= Node.SetNodeSoloState(n, false);
+                        break;
+
+                     case 1:  // solo
+                        bChanged |= Node.SetNodeSoloState(n, true);
+                        break;
+
+                     case 2:  // toggle
+                        Node.ToggleNodeSoloState(n);
+                        bChanged = true;
+                        break;
+                  }
+                  break;
+
+               case UIMuteEntry.AC_PIPE_MUTE:
+                  switch(en.arg)
+                  {
+                     default:
+                     case 0:  // unmute
+                        bChanged |= Node.SetPipeMuteState(p, false);
+                        break;
+
+                     case 1:  // mute
+                        bChanged |= Node.SetPipeMuteState(p, true);
+                        break;
+
+                     case 2:  // toggle
+                        Node.TogglePipeMuteState(p);
+                        bChanged = true;
+                        break;
+                  }
+                  break;
+
+               case UIMuteEntry.AC_PIPE_SOLO:
+                  switch(en.arg)
+                  {
+                     default:
+                     case 0:  // un-solo
+                        bChanged |= Node.SetPipeSoloState(p, false);
+                        break;
+
+                     case 1:  // solo
+                        bChanged |= Node.SetPipeSoloState(p, true);
+                        break;
+
+                     case 2:  // toggle
+                        Node.TogglePipeSoloState(p);
+                        bChanged = true;
+                        break;
+                  }
+                  break;
+
+               case UIMuteEntry.AC_NODE_PRGCHG:
+                  handleNodeStateChangedUI(sn, -1/*active*/, en.arg/*pat*/);
+                  break;
+            }
+         }
+      }
+
+      if(bChanged)
+      {
+         Page pg <= root_form.getCurrentPage();
+         pg.pageHandleMuteSoloChanged();
+      }
+
+      ui_mute_queue.free();
+   }
+
+   // <method_add.png>
+   public =replay= method queueRPN(int _devIdx, byte _midiCh, short _rpn, short _val) {
+      // Called by RootForm::rootHandleSceneChanged()
+      rpn_queue.add(_devIdx);
+      rpn_queue.add(_midiCh);
+      rpn_queue.add(_rpn);
+      rpn_queue.add(_val);
+   }
+
+   // <method.png>
+   public =replay= method configureVoiceModulo(int _startVoiceIdx, int _numVoices) {
+      // Called by AudioLiveRecForm
+      voice_modulo_start = _startVoiceIdx;
+      voice_modulo_num   = _numVoices;
+   }
+}

@@ -1,0 +1,1234 @@
+// ----
+// ---- file   : NT_Instrument.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2006-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 10Jan2015, 11Jan2015, 12Jan2015, 17Jan2015, 19Jan2015, 23Jan2015, 03Feb2015
+// ----          04Feb2015, 05Feb2015, 06Feb2015, 14Feb2015, 18Feb2015, 22Feb2015, 27Apr2015
+// ----          11May2015, 17May2015, 30Jun2015, 09Oct2015, 25Oct2015, 22Jan2016, 30Jan2016
+// ----          28Mar2016, 03Jul2016, 25Jul2016, 26Feb2017, 01Jul2017, 14Jul2017, 03Mar2018
+// ----          06Mar2018, 07Mar2018, 15Apr2018, 24Jun2018, 12Jan2019, 17Jan2019, 18Jan2019
+// ----          07Jun2019, 01Aug2019, 02Aug2019, 20Feb2020, 26Aug2020, 31Jan2021, 20Jul2021
+// ----          18Nov2023, 07Jul2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_Instrument;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_Instrument : MIDIMapDefs {
+
+   public NodeTracker *parent_node;
+
+   public byte instrument_nr;
+
+   public String  name;
+   public boolean b_name_edited;
+
+   public STX_MIDIOutDevice *out_device;
+   public byte               midi_channel;  // 0..15
+
+   public float   pitchbend_range;
+   public boolean b_pitchbend_reset;
+   public boolean b_mono;  // true=send (virtual) all-notes-off before sending new note on
+
+   // true=send note-on / off when pattern starts / stops playing + calc sample offset.
+   // maybe=send RPN 90 (smp_uid) instead of program change
+   public boolean b_audio;
+
+   public boolean b_bank_msb; // true=send bank MSB select when instrument is selected. maybe=send when requested
+   public boolean b_bank_lsb; // true=send bank LSB select when instrument is selected. maybe=send when requested
+   public short   bank;       // MIDI bank LSB number (MSB+LSB, 0x0000..0x7f7f)
+
+   public boolean b_program;        // true=send program change when instrument is selected. maybe=send when requested
+   public byte    program;          // MIDI program number (0..127)
+   public boolean b_program_shift;  // true=program 1 is sent as program chg 0
+
+   public short   smp_uid;    // -1=off, 0..16383
+
+   // deletable NT_MIDIParam objects.
+   //  (note) may contain null pointers (e.g. when a param has been deleted)
+   NT_MIDIParam *[] usrctl_params;  // NT_TrackPattern.CTL_NUMUSR param slots. NT_MIDIParam instances.
+
+   FloatArray reset_usrctl; // auto-send usrctl reset values when instrument is selected (INVALID_VALUE=nop)
+
+   public byte ui_last_selected_param_idx;  // last selected table entry (0..15)
+
+
+   // <init.png>
+   public method init(NodeTracker _parentNode, byte _id) {
+      parent_node <= _parentNode;
+
+      instrument_nr = _id;
+
+      out_device <= null;
+      midi_channel = 0;
+
+      pitchbend_range = 12;
+      b_pitchbend_reset = false;
+      b_mono = false;
+
+      b_audio = false;
+
+      b_bank_msb = false;
+      b_bank_lsb = false;
+      bank = 0;
+
+      b_program = false;
+      program = 0;
+
+      smp_uid = -1;
+
+      usrctl_params.alloc(NT_TrackPattern.CTL_NUMUSR);
+      usrctl_params.useAll();
+
+      reset_usrctl.allocAndFill(NT_TrackPattern.CTL_NUMUSR,
+                                NT_TrackPattern.INVALID_VALUE
+                                );
+
+      ui_last_selected_param_idx = 0;
+   }
+
+   // <method_get.png>
+   public method isValid() : boolean {
+      explain "Used to identify instruments that are not configured correctly (e.g. MIDI output device is not present)";
+      if(null != out_device)
+         return out_device.isOpen();
+      return false;
+   }
+
+   // <method.png>
+   public method copyFrom(NT_Instrument _ins, int _appendixNr) {
+
+      if(_appendixNr <= 0)
+      {
+         name = _ins.name;
+      }
+      else
+      {
+         name = Utils.BuildCopiedName(_ins.name, _appendixNr);
+      }
+
+      b_name_edited = _ins.b_name_edited;
+
+      out_device   <= _ins.out_device;
+      midi_channel  = _ins.midi_channel;
+
+      pitchbend_range   = _ins.pitchbend_range;
+      b_pitchbend_reset = _ins.b_pitchbend_reset;
+      b_mono            = _ins.b_mono;
+
+      b_audio = _ins.b_audio;
+
+      b_bank_msb = _ins.b_bank_msb;
+      b_bank_lsb = _ins.b_bank_lsb;
+      bank       = _ins.bank;
+
+      b_program       = _ins.b_program;
+      program         = _ins.program;
+      b_program_shift = _ins.b_program_shift;
+
+      smp_uid = _ins.smp_uid;
+
+      ui_last_selected_param_idx = _ins.ui_last_selected_param_idx;
+
+      copyMIDIParamsFrom(_ins);
+   }
+
+   // <method_set.png>
+   public =replay= method setPitchbendRange(float _r) {
+      pitchbend_range = _r;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePitchbendReset(boolean _bEnable) {
+      b_pitchbend_reset = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMono(boolean _bEnable) {
+      b_mono = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableAudio(boolean _bEnable) {
+      b_audio = _bEnable;
+   }
+
+   // <method_set.png>
+   public method setName(String _name) {
+      name = _name;
+   }
+
+   // <method_get.png>
+   public method getName() : String {
+      return name;
+   }
+
+   // <method_get.png>
+   public method getAutoName() : String {
+      if(null != out_device)
+         return (out_device.getAliasOrDeviceName())+":"+(midi_channel+1);
+      return null;
+   }
+
+   // <method_set.png>
+   public =replay= method setOutDevice(STX_MIDIOutDevice _outDev) {
+      out_device <= _outDev;
+   }
+
+   // <method_get.png>
+   public method getOutDeviceIdx() : int {
+      if(null != out_device)
+         return out_device.dev_idx;
+      return -1;
+   }
+
+   // <method_get.png>
+   public method getVSTOutDeviceIndex() : byte {
+      // returns vst_a..z out device index (0..25) or -1 when device is null or not a VST(localmidi) output device
+      if(null != out_device)
+         return MIDI.GetVSTOutDeviceIdxByName(out_device.getDeviceName());
+      return -1;
+   }
+
+   // <method_set.png>
+   public =replay= method setMidiChannel(byte _ch) {
+      midi_channel = _ch;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBankMSB(boolean _bEnable) {
+      b_bank_msb = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableBankLSB(boolean _bEnable) {
+      b_bank_lsb = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setBank(short _bank) {
+      bank = _bank;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableProgram(boolean _bEnable) {
+      b_program = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableProgramShift(boolean _bEnable) {
+      b_program_shift = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setProgram(short _program) {
+      program = _program;
+   }
+
+   // <method_set.png>
+   public =replay= method setSmpUID(short _smpUID) {
+      smp_uid = _smpUID;
+   }
+
+   // <method_get.png>
+   public method getNumFreeParams() : int {
+      int numFree = 0;
+      int idx = 0;
+
+      loop(usrctl_params.numElements)
+      {
+         if(null == usrctl_params.get(idx))
+            numFree++;
+         idx++;
+      }
+
+      return numFree;
+   }
+
+   // <method_find.png>
+   public method haveDefaultCC(byte _cc) : boolean {
+      NT_MIDIParam *mp;
+      foreach mp in usrctl_params
+      {
+         if(null != mp)
+         {
+            if(mp.isDefaultCC(_cc))
+               return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method createNewParam(int idx) : NT_MIDIParam {
+
+      if(-1 == idx)
+      {
+         // Find first unused param
+         idx = 0;
+         loop(usrctl_params.numElements)
+         {
+            if(null == usrctl_params.get(idx))
+               break;
+            idx++;
+         }
+      }
+
+      if(idx < NT_TrackPattern.CTL_NUMUSR)
+      {
+         // Create param
+         NT_MIDIParam mp <= new NT_MIDIParam;
+         mp.init(idx);
+         usrctl_params[idx] = deref mp;
+         return mp;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public =replay= method createDefaultParams() {
+      // Called after creating new instrument in UI
+
+      NT_MIDIParam *mp;
+
+      if(0)
+      {
+         // Modwheel
+         mp <= createNewParam(0);
+         mp.name = "Modwheel";
+
+         // Breath Control
+         mp <= createNewParam(1);
+         mp.cc_msb_id = 2;
+         mp.name ="Breath Control";
+
+         // Breath Control
+         mp <= createNewParam(2);
+         mp.cc_msb_id = 4;
+         mp.name = "Foot Control";
+
+         // Expression
+         mp <= createNewParam(3);
+         mp.cc_msb_id = 11;
+         mp.name ="Expression";
+      }
+
+      if(0)
+      {
+         // Volume
+         mp <= createNewParam(4);
+         mp.cc_msb_id = 7;
+         mp.name = "Volume";
+
+         // Panorama
+         mp <= createNewParam(5);
+         mp.cc_msb_id = 10;
+         mp.name = "Panorama";
+
+         // Effect Control 1
+         mp <= createNewParam(6);
+         mp.cc_msb_id = 12;
+         mp.name = "FX 1";
+
+         // Effect Control 2
+         mp <= createNewParam(7);
+         mp.cc_msb_id = 13;
+         mp.name = "FX 2";
+
+         // General Purpose 1
+         mp <= createNewParam(8);
+         mp.cc_msb_id = 16;
+         mp.name = "GP 1";
+
+         // General Purpose 2
+         mp <= createNewParam(9);
+         mp.cc_msb_id = 17;
+         mp.name ="GP 2";
+
+         // General Purpose 3
+         mp <= createNewParam(10);
+         mp.cc_msb_id = 18;
+         mp.name = "GP 3";
+
+         // General Purpose 4
+         mp <= createNewParam(11);
+         mp.cc_msb_id = 19;
+         mp.name = "GP 4";
+      }
+   }
+
+   // <method.png>
+   public =replay= method deleteParamByIdx(int _idx) {
+      if(0 <= _idx < usrctl_params.numElements)
+         usrctl_params[_idx] = null;
+   }
+
+   // <method.png>
+   public =replay= method copyDerefParams(PointerArray _midiParams) {
+      // called by SongFile::Load
+      int idx = 0;
+      loop(_midiParams.numElements)
+      {
+         usrctl_params[idx] = _midiParams.getDeref(idx);
+         idx++;
+      }
+   }
+
+   // <method.png>
+   public =replay= method copyMIDIParamsFrom(NT_Instrument _ins) {
+      usrctl_params.free();
+      usrctl_params.alloc(NT_TrackPattern.CTL_NUMUSR);
+      usrctl_params.useAll();
+
+      PointerArray oParams <= _ins.usrctl_params;
+
+      int idx = 0;
+
+      loop(NT_TrackPattern.CTL_NUMUSR)
+      {
+         if(null != oParams[idx])
+         {
+            NT_MIDIParam param <= new NT_MIDIParam;
+            param = oParams[idx];
+            usrctl_params[idx] = deref param;
+         }
+
+         // Next param
+         idx++;
+      }
+   }
+
+   // <method_get.png>
+   public method getUsrCtlParam(int _idx) : NT_MIDIParam {
+      NT_MIDIParam param <= usrctl_params.get(_idx);
+      return param;
+   }
+
+   // <method_get.png>
+   public method getUsrCtlParamName(int _idx) : String {
+      NT_MIDIParam param <= usrctl_params.get(_idx);
+      return (null != param) ? param.name : "<n/a>";
+   }
+
+   // <method_get.png>
+   public method getUsrCtlParamInfo(int _idx) : String {
+      NT_MIDIParam param <= usrctl_params.get(_idx);
+      return (null != param) ? param.uiGetMIDIParamString(true/*bMultiLine*/, this) : "<n/a>";
+   }
+
+   // <method_get.png>
+   public method getUsrCtlParamLayoutStyle(int _idx) : int {
+      // trace "xxx getUsrCtlParamLayoutStyle: idx="+_idx;
+      NT_MIDIParam param <= usrctl_params.get(_idx);
+      if(null != param)
+         return param.ui_style;
+
+      // No such param
+      return NT_CEL.STYLE_HEX;
+   }
+
+   // <method_get.png>
+   public method getUsrCtlParamLayoutRange(int _idx) : int {
+      NT_MIDIParam param <= usrctl_params.get(_idx);
+      if(null != param)
+         return param.ui_range;
+
+      // No such param
+      return NT_CEL.RANGE_0_127;
+   }
+
+   // <method_get.png>
+   public method getUsrCtlParamByRemoteEvent(RemoteEvent _ev) : NT_MIDIParam {
+      NT_MIDIParam *param;
+      foreach param in usrctl_params
+      {
+         if(null != param)
+         {
+            if(NT_MIDIParam.TYPE_REMOTE == param.type)
+            {
+               if(!param.b_remote_relative)
+               {
+                  if(param.remote_instance_id == _ev.instance_id)
+                  {
+                     if(param.remote_param_idx == _ev.param_idx)
+                        return param;
+                  }
+               }
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getMIDISynthProfile() : MIDISynthProfile {
+      if(null != out_device)
+      {
+         MIDISynthProfile msp <= out_device.getMIDISynthProfile(midi_channel);
+         return msp;
+      }
+      return MIDI.GetDefaultSynthProfile();
+   }
+
+   // <method_get.png>
+   public method getCCNames(STX_MIDIOutDevice _forcedDev, byte _ch, boolean _bMultiLine) : StringArray {
+      // _ch: 0..15 or -1 (default)
+
+      STX_MIDIOutDevice dev <= out_device;
+
+      if(null != _forcedDev)
+         dev <= _forcedDev;
+
+      if(null != dev)
+      {
+         if(-1 == _ch)
+            _ch = midi_channel;
+
+         StringArray ra <= _bMultiLine ?
+            (dev.getCCNamesMulti(_ch))  :
+            (dev.getCCNamesSingle(_ch)) ;
+         // // trace "xxx ra="+#(ra)+" out_device="+#(out_device)+" ch="+_ch;
+         return ra;
+      }
+      else
+      {
+         // E.g. no device selected, yet (in instrument editor)
+         return MIDI.cc_names;
+      }
+   }
+
+   // <method_get.png>
+   public method getRPNNames(STX_MIDIOutDevice _forcedDev, byte _ch, boolean _bMultiLine) : StringArray {
+      // _ch: 0..15 or -1 (default)
+
+      StringArray ra;
+      ra.free();
+
+      if(-1 == _ch)
+         _ch = midi_channel;
+
+      STX_MIDIOutDevice dev <= out_device;
+
+      if(null != _forcedDev)
+         dev <= _forcedDev;
+
+      if(null != dev)
+         dev.findRPNNamesWithCtlTag(ra, _ch, _bMultiLine);
+
+      return ra;
+   }
+
+   // <method_get.png>
+   public method getNRPNNames(STX_MIDIOutDevice _forcedDev, byte _ch, boolean _bMultiLine) : StringArray {
+      // _ch: 0..15 or -1 (default)
+
+      StringArray ra;
+      ra.free();
+
+      if(-1 == _ch)
+         _ch = midi_channel;
+
+      STX_MIDIOutDevice dev <= out_device;
+
+      if(null != _forcedDev)
+         dev <= _forcedDev;
+
+      if(null != dev)
+         dev.findNRPNNamesWithCtlTag(ra, _ch, _bMultiLine);
+
+      return ra;
+   }
+
+   // <method_find.png>
+   public method findNextUsedParamIdx(int _startIdx) : int {
+      int idx = _startIdx;
+      loop(NT_TrackPattern.CTL_NUMUSR - idx)
+      {
+         if(null != usrctl_params.get(idx))
+            return idx;
+         idx++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findPreviousUsedParamIdx(int _startIdx) : int {
+      int idx = _startIdx;
+      loop(_startIdx)
+      {
+         if(null != usrctl_params.get(idx))
+            return idx;
+         idx--;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findNextUnusedParamIdx(int _startIdx) : int {
+      int idx = _startIdx;
+      loop(NT_TrackPattern.CTL_NUMUSR - idx)
+      {
+         if(null == usrctl_params.get(idx))
+            return idx;
+         idx++;
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   public method findParamForTypeAndMSBCCOrNRPN(int _paramType, int _msbccOrNRPN) : NT_MIDIParam {
+      int idx = 0;
+
+      loop(usrctl_params.numElements)
+      {
+         boolean bFound = false;
+         NT_MIDIParam mp <= usrctl_params.get(idx);
+
+         if(null != mp)
+         {
+            if(mp.type == _paramType)
+            {
+               switch(_paramType)
+               {
+                  default:
+                     bFound = true;
+                     break;
+
+                  case NT_MIDIParam.TYPE_CC:
+                     bFound = (mp.cc_msb_id == _msbccOrNRPN);
+                     break;
+
+                  case NT_MIDIParam.TYPE_RPN:
+                     bFound = (mp.rpn_id == _msbccOrNRPN);
+                     break;
+
+                  case NT_MIDIParam.TYPE_NRPN:
+                     bFound = (mp.nrpn_id == _msbccOrNRPN);
+                     break;
+               }
+            }
+         }
+
+         if(bFound)
+            return mp;
+
+         idx++;
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public method findParamByCC(byte _cc) : NT_MIDIParam {
+      // MSB or LSB, any dev or ch
+      NT_MIDIParam *p;
+      foreach p in usrctl_params
+      {
+         if(null != p)
+         {
+            if(NT_MIDIParam.TYPE_CC == p.type)
+            {
+               if( (p.cc_msb_id == _cc) || ( (p.msblsb_mode&1) && (p.cc_msb_id == _cc) ) )
+                  return p;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findParamByRPN(short _rpn) : NT_MIDIParam {
+      // Any dev or ch
+      NT_MIDIParam *p;
+      foreach p in usrctl_params
+      {
+         if(null != p)
+         {
+            if(NT_MIDIParam.TYPE_RPN == p.type)
+            {
+               if(p.rpn_id == _rpn)
+                  return p;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findParamByNRPN(short _nrpn) : NT_MIDIParam {
+      // Any dev or ch
+      NT_MIDIParam *p;
+      foreach p in usrctl_params
+      {
+         if(null != p)
+         {
+            if(NT_MIDIParam.TYPE_NRPN == p.type)
+            {
+               if(p.nrpn_id == _nrpn)
+                  return p;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_find.png>
+   public method findParamForPipeEvent(MIDIPipeEvent _ev, boolean _bMatchInstr, Float _retCtlVal) : NT_MIDIParam {
+      // Returns ctlVal in 0..127 (or 0..255 (RPN/NRPN)) range
+      int devIdx = _ev.devIdx;
+      int devCh  = _ev.midiCh;
+
+      NT_MIDIParam *param;
+
+      // // trace "xxx name=\""+name+"\" usrctl_params="+#(usrctl_params);
+
+      foreach param in usrctl_params
+      {
+         if(null != param)
+         {
+            boolean bMatch = true;
+
+            // // trace "xxx param="+#(param)+" forced_dev="+#(param.forced_dev);
+
+            if(null != param.forced_dev)
+            {
+               bMatch = (true != _bMatchInstr) || (devIdx == (param.forced_dev.dev_idx));
+               // // trace "xxx force_dev match="+bMatch;
+            }
+            else
+            {
+               if(null != out_device)
+               {
+                  bMatch = (true != _bMatchInstr) || (devIdx == out_device.dev_idx);
+               }
+               else
+               {
+                  bMatch = false;
+               }
+            }
+
+            if(bMatch)
+            {
+               if(0 != param.forced_ch)
+               {
+                  bMatch = (false == _bMatchInstr) || (devCh == (param.forced_ch - 1));
+               }
+               else
+               {
+                  bMatch = (false == _bMatchInstr) || (devCh == midi_channel);
+                  // // trace "xxx findParamForPipeEvent: devCh="+devCh+" midi_channel="+midi_channel;
+               }
+            }
+
+            if(bMatch)
+            {
+               switch(_ev.type)
+               {
+                  default:
+                     bMatch = false;
+                     break;
+
+                  case MIDIPIPE_EVENT_TYPE_CC:
+                     bMatch = (NT_MIDIParam.TYPE_CC == param.type);
+                     if(bMatch)
+                     {
+                        switch(param.msblsb_mode)
+                        {
+                           default:
+                              bMatch = false; // should not be reached
+                              break;
+
+                           case NT_MIDIParam.MSBLSB_ONLYLSB:
+                              bMatch = (_ev.ccId == param.cc_lsb_id);
+                              if(bMatch)
+                              {
+                                 _retCtlVal = param.unmapCtlVal(false/*bLSB*/, _ev.ccValue);
+                              }
+                              break;
+
+                           case NT_MIDIParam.MSBLSB_ONLYMSB:
+                              bMatch = (_ev.ccId == param.cc_msb_id);
+                              if(bMatch)
+                              {
+                                 _retCtlVal = param.unmapCtlVal(false/*bLSB*/, _ev.ccValue);
+                              }
+                              break;
+
+                           case NT_MIDIParam.MSBLSB_BOTH:
+                              if(_ev.ccId == param.cc_lsb_id)
+                              {
+                                 // (todo) need previous value to replace only LSB part
+                                 _retCtlVal = param.unmapCtlVal(true/*bLSB*/, _ev.ccValue);
+                              }
+                              else if(_ev.ccId == param.cc_msb_id)
+                              {
+                                 _retCtlVal = param.unmapCtlVal(false/*bLSB*/, _ev.ccValue);
+                              }
+                              else
+                              {
+                                 bMatch = false;
+                              }
+                              break;
+                        }
+                     }
+                     break;
+
+                  case MIDIPIPE_EVENT_TYPE_RPN:
+                     bMatch =
+                        (NT_MIDIParam.TYPE_RPN == param.type) &&
+                        (param.rpn_id == _ev.rpn)
+                        ;
+                     if(bMatch)
+                     {
+                        _retCtlVal = param.unmapCtlVal(false/*bLSB*/, _ev.rpnValue);
+                     }
+                     break;
+
+                  case MIDIPIPE_EVENT_TYPE_NRPN:
+                     bMatch =
+                        (NT_MIDIParam.TYPE_NRPN == param.type) &&
+                        (param.nrpn_id == _ev.nrpn)
+                        ;
+                     if(bMatch)
+                     {
+                        _retCtlVal = param.unmapCtlVal(false/*bLSB*/, _ev.nrpnValue);
+                     }
+                     break;
+
+                  case MIDIPIPE_EVENT_TYPE_PRGCHG:
+                     bMatch = (NT_MIDIParam.TYPE_PRGCHG == param.type);
+                     if(bMatch)
+                     {
+                        _retCtlVal = param.unmapCtlVal(false/*bLSB*/, _ev.prgChg);
+                     }
+                     break;
+               }
+
+               if(bMatch)
+               {
+                  // // trace "xxx param match, ins.name=\""+name+"\"";
+                  return param;
+               }
+            }
+         }
+      }
+
+      return null;
+   }
+
+   // <method_find.png>
+   public method findParamForMidiMapEvent(MIDIMapEvent _ev) : NT_MIDIParam {
+
+      int idx = 0;
+
+      loop(usrctl_params.numElements)
+      {
+         NT_MIDIParam mp <= usrctl_params.get(idx);
+
+         if(null != mp)
+         {
+            Boolean bMatchLSB = false;
+
+            if(mp.matchMIDIMapEvent(this, _ev, bMatchLSB))
+               return mp;
+         }
+
+         idx++;
+      }
+
+      return null;
+   }
+
+   // <replay.png>
+   public method handleSelect(MIDIPipeFrame _framePlay) {
+      // Called when instrument is selected during replay (and track is not muted)
+
+      int outDevIdx;
+
+      if(null != out_device)
+      {
+         outDevIdx = out_device.dev_idx;
+
+         emitProgramChange(_framePlay);
+
+         if(smp_uid >= 0)
+         {
+            // trace "xxx NT_Instrument: send smp_uid="+smp_uid;
+            _framePlay.rpn(true/*bSet*/, out_device.dev_idx, midi_channel, 90/*ModSample.RPN_SMP_UID*/, smp_uid);
+         }
+      }
+      else
+      {
+         outDevIdx = -1;
+      }
+
+      NT_MIDIParam *param;
+      foreach param in usrctl_params
+      {
+         if(null != param)
+         {
+            if(param.b_reset_select)
+               param.sendParamUpdate(_framePlay, outDevIdx, midi_channel, param.reset);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method handleNoteOn(MIDIPipeFrame _framePlay) {
+      // Called when note is selected during replay (and track is not muted)
+
+      int outDevIdx = (null != out_device) ? out_device.dev_idx : -1;
+
+      NT_MIDIParam *param;
+      foreach param in usrctl_params
+      {
+         if(null != param)
+         {
+            if(param.b_reset_note)
+               param.sendParamUpdate(_framePlay, outDevIdx, midi_channel, param.reset);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method emitProgramChange(MIDIPipeFrame _framePlay) {
+      if(null != out_device)
+      {
+         if(true == b_bank_msb)
+            _framePlay.cc(true/*bSet*/, out_device.dev_idx, midi_channel,  0/*bank MSB*/, (bank >> 8));
+
+         if(true == b_bank_lsb)
+            _framePlay.cc(true/*bSet*/, out_device.dev_idx, midi_channel, 32/*bank LSB*/, (bank & 127));
+
+         // // trace "xxx emitProgramChange: b_program="+b_program;
+         if(true == b_program)
+         {
+            // // trace "xxx ntins: emitProgramChange: ch="+(midi_channel+1)+" program="+(program+1);
+            _framePlay.prgChg(true/*bSet*/, out_device.dev_idx, midi_channel, program);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method emitProgramChangeExt(MIDIPipeFrame _framePlay, byte _prg) {
+      // // trace "xxx emitProgramChangeExt: ch="+midi_channel+" prg="+_prg;
+      if(b_program_shift)
+         _prg--;
+
+      _framePlay.prgChg(true/*bSet*/, out_device.dev_idx, midi_channel, _prg&127);
+   }
+
+   // <replay.png>
+   public method emitNoteOff(MIDIPipeFrame _framePlay, byte _note, byte _vel, boolean _bPre) {
+      if(null != out_device)
+      {
+         if(_bPre)
+            _framePlay.noteOffPre(true/*bSet*/, out_device.dev_idx, midi_channel, _note, _vel);
+         else
+            _framePlay.noteOff(true/*bSet*/, out_device.dev_idx, midi_channel, _note, _vel);
+      }
+   }
+
+   // <replay.png>
+   public method emitNoteOn(MIDIPipeFrame _framePlay, byte _note, byte _vel, int _dur) {
+      if(null != out_device)
+      {
+         if(b_mono)
+         {
+            _framePlay.allNotesOff(true/*bSet*/, out_device.dev_idx, midi_channel); /* all active note offs */
+         }
+
+         // // trace "xxx emitNoteOn note="+_note+" vel="+_vel+" dur="+_dur;
+         _framePlay.noteOn(true/*bSet*/, out_device.dev_idx, midi_channel, _note, _vel, _dur);
+
+         handleNoteOn(_framePlay);
+      }
+   }
+
+   // <replay.png>
+   public method emitAllNotesOff(MIDIPipeFrame _framePlay) {
+      if(null != out_device)
+      {
+         // // trace "\n\nemitAllNotesOff: out_device.dev_idx="+out_device.dev_idx+" midi_channel="+midi_channel;
+         _framePlay.cc(true/*bSet*/, out_device.dev_idx, midi_channel, 123/*allNotesOff*/, 0);
+         _framePlay.allNotesOff(true/*bSet*/, out_device.dev_idx, midi_channel); /* all active note offs */
+      }
+   }
+
+   // <replay.png>
+   public method emitChannelPressure(MIDIPipeFrame _framePlay, byte _val) {
+      if(null != out_device)
+      {
+         _framePlay.chPressure(true/*bSet*/, out_device.dev_idx, midi_channel, _val);
+      }
+   }
+
+   // <replay.png>
+   public method emitPolyPressure(MIDIPipeFrame _framePlay, byte _note, byte _val) {
+      if(null != out_device)
+      {
+         // // trace "xxx emitPolyPressure: note="+_note+" val="+_val;
+         _framePlay.polyPressure(true/*bSet*/, out_device.dev_idx, midi_channel, _note, _val);
+
+      }
+   }
+
+   // <replay.png>
+   public method emitUsrCtl(MIDIPipeFrame _framePlay, int _idx, float _val) {
+      if(null != out_device)
+      {
+         NT_MIDIParam param <= usrctl_params.get(_idx);
+         if(null != param)
+         {
+            // // trace "xxx NT_Instrument::emitUsrCtl: idx="+_idx+" val="+_val;
+            param.sendParamUpdate(_framePlay, out_device.dev_idx, midi_channel, _val);
+         }
+      }
+   }
+
+   // <replay.png>
+   public method emitPitchbend(MIDIPipeFrame _framePlay, float _pitchbend/*-1..1*/) {
+      if(null != out_device)
+      {
+         // Scale to 14bit MIDI pitchbend range
+         int pb = (_pitchbend * 0x2000) + 0x2000;
+         if(pb < 0) pb = 0;
+         else if(pb > 0x3FFF) pb = 0x3FFF;
+
+         _framePlay.pitchbend(true/*_bSet*/, out_device.dev_idx, midi_channel, pb);
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+      // Version
+      ofs.i16 = 8;
+
+      // Write id
+      ofs.i8 = instrument_nr;
+
+      // Write name
+      Utils.WriteString(ofs, name);
+
+      // Name edited flag (v6+)
+      ofs.i8 = b_name_edited;
+
+      // Write device index
+      if(null != out_device)
+      {
+         ofs.i16 = out_device.dev_idx;
+      }
+      else
+      {
+         ofs.i16 = -1;
+      }
+
+      // Write midi channel
+      ofs.i8 = midi_channel;
+
+      // Write pitchbend range
+      ofs.f32 = pitchbend_range;
+
+      // Write pitchbend reset (v2+)
+      ofs.i8 = b_pitchbend_reset;
+
+      // Write mono auto-note-off (v3+)
+      ofs.i8 = b_mono;
+
+      // Write audio-track mode (v5+)
+      ofs.i8 = b_audio;
+
+      // Write bank
+      ofs.i8 = b_bank_msb;
+      ofs.i8 = b_bank_lsb;
+      ofs.i16 = bank;
+
+      // Write program
+      ofs.i8 = b_program;
+      ofs.i8 = program;
+
+      // Program shift-by-one (v7+)
+      ofs.i8 = b_program_shift;
+
+      // Write RPN_SMP_UID (v8+)
+      ofs.i16 = smp_uid;
+
+      // Write parameters
+      int allParamsStartOff = ofs.offset;
+      ofs.i32 = 0;
+
+      NT_MIDIParam *param;
+      foreach param in usrctl_params
+      {
+         if(null != param)
+         {
+            int paramStartOff = ofs.offset;
+            ofs.i32 = 0;
+
+            param.saveState(ofs);
+
+            Utils.FixChunkSize(ofs, paramStartOff);
+         }
+      }
+
+      Utils.FixChunkSize(ofs, allParamsStartOff);
+
+      // Last selected parameter (v4+)
+      ofs.i8 = ui_last_selected_param_idx;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         // Read id
+         instrument_nr = ifs.i8;
+         if!(0 <= instrument_nr <= 127)
+         {
+            trace "[---] NT_Instrument::loadState: invalid instrument_nr="+instrument_nr;
+            return false;
+         }
+
+         // Read name
+         Utils.ReadString(ifs, name);
+
+         if(ver >= 6)
+         {
+            // Name edited flag (v6+)
+            b_name_edited = ifs.b8;
+         }
+         else
+         {
+            b_name_edited = true;
+         }
+
+         // Read device index
+         int devIdx = ifs.s16;
+         if(-1 != devIdx)
+         {
+            _outDevUseCount.inc(devIdx);
+
+            // Remap to new MIDI out_devices index
+            devIdx = _outDevIdxMap.get(devIdx);
+            out_device <= MIDI.GetMIDIOutDeviceByIndex(devIdx);
+         }
+         else
+         {
+            out_device <= null;
+         }
+
+         // Read midi channel
+         midi_channel = ifs.i8;
+
+         // Read pitchbend range
+         pitchbend_range = ifs.f32;
+
+         if(ver >= 2)
+         {
+            // Read pitchbend reset (v2+)
+            b_pitchbend_reset = ifs.i8;
+
+            if(ver >= 3)
+            {
+               // Read mono auto-note-off (v3+)
+               b_mono = ifs.i8;
+            }
+         }
+
+         if(ver >= 5)
+         {
+            // Read audio-track mode (v5+)
+            b_audio = ifs.s8;
+         }
+
+         // Read bank
+         b_bank_msb = ifs.i8;
+         b_bank_lsb = ifs.i8;
+         bank = ifs.i16;
+
+         // Read program
+         b_program = ifs.i8;
+         program = ifs.i8;
+
+         if(ver >= 7)
+         {
+            // Program shift-by-one (v7+)
+            b_program_shift= ifs.b8;
+         }
+
+         if(ver >= 8)
+         {
+            // Read RPN_SMP_UID (v8+)
+            smp_uid = ifs.s16;
+         }
+
+         // Read parameters
+         int allParamsStartOff = ifs.offset;
+         int allParamsBytes = ifs.i32;
+         int allParamsBytesLeft = allParamsBytes - 4;
+
+         while(allParamsBytesLeft > 0)
+         {
+            int paramStartOff = ifs.offset;
+            int paramBytes = ifs.i32;
+
+            NT_MIDIParam param <= new NT_MIDIParam;
+            param.init(0/*placeholder idx*/);
+
+            if(!param.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+            {
+               trace "[---] NT_Instrument::loadState: failed to load parameter.";
+               break;
+            }
+
+            usrctl_params[param.id] = deref param;
+
+            allParamsBytesLeft -= paramBytes;
+         }
+
+         if(0 != allParamsBytesLeft)
+         {
+            trace "[---] NT_Instrument::loadState: expected all params chunk size="+allParamsBytes+", read "+(ifs.offset - allParamsStartOff);
+            return false;
+         }
+
+         // Last selected parameter (v4+)
+         if(ver >= 4)
+         {
+            ui_last_selected_param_idx = ifs.u8;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   public usesDevCh(int _devIdx, byte _midiCh) : boolean {
+      if(null != out_device)
+      {
+         if(out_device.dev_idx == _devIdx)
+         {
+            if(midi_channel == _midiCh)
+               return true;
+         }
+      }
+
+      return false;
+   }
+}

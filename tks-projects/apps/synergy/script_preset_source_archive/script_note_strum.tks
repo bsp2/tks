@@ -1,0 +1,208 @@
+// ---- 
+// ---- file   : script_note_strum.tks 
+// ---- author : (c) 2022-2023 by bsp 
+// ---- legal  : 
+// ----          Permission is hereby granted, free of charge, to any person obtaining a copy 
+// ----          of this software and associated documentation files (the "Software"), to deal 
+// ----          in the Software without restriction, including without limitation the rights 
+// ----          to use, copy, modify, merge, publish, distribute, sublicense, and/or sell 
+// ----          copies of the Software, and to permit persons to whom the Software is 
+// ----          furnished to do so, subject to the following conditions: 
+// ---- 
+// ----          The above copyright notice and this permission notice shall be included in all 
+// ----          copies or substantial portions of the Software. 
+// ---- 
+// ----          THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+// ----          IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, 
+// ----          FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE 
+// ----          AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER 
+// ----          LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, 
+// ----          OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE 
+// ----          SOFTWARE. 
+// ---- 
+// ---- created: 22Apr2022 
+// ---- changed: 23Apr2022, 09Jul2023
+// ---- 
+// ----    info: delay chord notes. strum amount can be controlled with CC (e.g. modwheel). 
+// ---- 
+// ---- 
+ 
+tag int p_tick_threshold = 50; 
+tag int p_strum_ticks_min = 10; 
+tag int p_strum_ticks_max = 50; 
+tag int p_strum_attenuate_cc = 1; 
+ 
+int NUM_FRAMES = 512; 
+
+int current_frame_idx; 
+int tick_nr; 
+
+class StrumFrames {
+   MIDIPipeFrame *[] frames; 
+   int      first_note_tick_nr; 
+   int      note_count; 
+   int      strum_delta_ticks; 
+   float    strum_amt; 
+   IntArray future_notes; 
+   IntArray future_frame_indices; 
+
+   reset() {
+      if(frames.isEmpty()) 
+      { 
+         loop(NUM_FRAMES) 
+            frames.add(#(new MIDIPipeFrame)); 
+      } 
+
+      first_note_tick_nr = -1; 
+      note_count         = 0; 
+      strum_delta_ticks  = 0; 
+      strum_amt          = 1.0; 
+
+      future_notes.empty(); 
+      future_frame_indices.empty(); 
+   }
+
+   process(MIDIPipeFrame _frame) {
+      int ticksMin = mathMini(p_strum_ticks_min, p_strum_ticks_max); 
+      int ticksMax = mathMaxi(p_strum_ticks_min, p_strum_ticks_max); 
+      int ticksMaxDelta = ticksMax - ticksMin; 
+ 
+      float attenuate = _frame.getFilteredCC(io_attenuate_dev, io_attenuate_ch, p_strum_attenuate_cc); 
+      if(attenuate >= 0) 
+         strum_amt = 1.0 - (attenuate  / 127.0); 
+ 
+      MIDIPipeFrame *frFuture; 
+      MIDIPipeEvent pev; 
+      int futureFrameIdx; 
+      int evIdx; 
+ 
+      // Spread note-ons to future frames 
+      int numEvNoteOn = _frame.getNumEventsNoteOnByFlt(io_dev, io_ch); 
+      if(numEvNoteOn > 0) 
+      { 
+         if(-1 != first_note_tick_nr) 
+            if( tick_nr >= (first_note_tick_nr + p_tick_threshold) ) 
+               first_note_tick_nr = -1; 
+ 
+         futureFrameIdx = current_frame_idx; 
+         evIdx = 0; 
+ 
+         loop(numEvNoteOn) 
+         { 
+            if(-1 == first_note_tick_nr) 
+            { 
+               first_note_tick_nr = tick_nr; 
+               note_count = 1; 
+               strum_delta_ticks = 0; 
+               // trace "xxx first note tick_nr="+tick_nr; 
+               future_notes.empty(); 
+               future_frame_indices.empty(); 
+            } 
+            else 
+            { 
+               strum_delta_ticks += ticksMin + rand(ticksMaxDelta); 
+               int futureTickNr = strum_delta_ticks * strum_amt; 
+               futureTickNr += first_note_tick_nr; 
+               if(futureTickNr > tick_nr) 
+               { 
+                  futureFrameIdx = current_frame_idx + mathMaxi(0, futureTickNr - tick_nr); 
+                  // trace "xxx note "+note_count+" tick_nr="+tick_nr+" futureTickNr="+futureTickNr+" futureFrameIdx="+futureFrameIdx; 
+                  if(futureFrameIdx >= NUM_FRAMES) 
+                     futureFrameIdx = current_frame_idx; 
+               } 
+               else 
+                  futureFrameIdx = current_frame_idx; 
+               note_count++; 
+            } 
+ 
+            _frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, io_dev, io_ch); 
+ 
+            if(futureFrameIdx != current_frame_idx) 
+            { 
+               future_notes.add(pev.note); 
+               future_frame_indices.add(futureFrameIdx); 
+            } 
+ 
+            frFuture <= frames.get(futureFrameIdx); 
+            frFuture.noteOn(true/*bSet*/, pev.devIdx, pev.midiCh, pev.note, pev.velocity, pev.duration); 
+ 
+            // Next note on 
+            evIdx++; 
+         } 
+      } 
+ 
+      _frame.deleteNoteOnsByFlt(io_dev, io_ch); 
+ 
+      if(!future_notes.isEmpty()) 
+      { 
+         // Remove delayed note-on when note-off occurs earlier 
+         int numEvNoteOff = _frame.getNumEventsNoteOffByFlt(io_dev, io_ch); 
+         if(numEvNoteOff > 0) 
+         { 
+            evIdx = 0; 
+            loop(numEvNoteOff) 
+            { 
+               _frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, io_dev, io_ch); 
+               int idxFuture = future_notes.indexOf(pev.note, 0); 
+               if(-1 != idxFuture) 
+               { 
+                  // trace "xxx remove delayed note-on idxFuture="+idxFuture+" note="+pev.note; 
+                  frFuture <= frames.get(future_frame_indices[idxFuture]); 
+                  frFuture.noteOn(false/*bSet*/, io_dev, io_ch, pev.note, 0/*vel*/, 0/*dur*/); 
+                  future_notes.delete(idxFuture); 
+                  future_frame_indices.delete(idxFuture); 
+               } 
+ 
+               // Next note off 
+               evIdx++; 
+            } 
+         } 
+      } 
+ 
+      frFuture <= frames.get(current_frame_idx); 
+      _frame.mergeFrame(frFuture); 
+      frFuture.empty(); 
+   }
+}
+
+StrumFrames strum_play;
+StrumFrames strum_rec;
+
+ 
+function OnUIInit(ui::XMLForm xfm) { 
+   ui::ComboBox *cm; 
+ 
+   cm <= xfm.findLayerById("p_strum_attenuate_cc"); 
+   if(null != cm) 
+   { 
+      cm.setOptions(MIDI.cc_names); 
+   } 
+} 
+ 
+function OnReset() { 
+   strum_play.reset();
+   strum_rec .reset();
+
+   current_frame_idx = 0; 
+   tick_nr           = 0; 
+} 
+ 
+function Process(MIDIPipeFrame _frame) { 
+ 
+} 
+ 
+function OnProcess(MIDIPipeFrame framePlay, 
+                   MIDIPipeFrame frameRec, 
+                   boolean       bMuted, 
+                   boolean       bPlaySeq 
+                   ) { 
+ 
+   if(!bMuted) 
+   { 
+      strum_play.process(framePlay);
+      strum_rec .process(frameRec);
+   } 
+ 
+   current_frame_idx = (current_frame_idx + 1) % NUM_FRAMES; 
+   tick_nr++; 
+} 

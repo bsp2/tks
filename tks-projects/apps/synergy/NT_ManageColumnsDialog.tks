@@ -1,0 +1,1476 @@
+// ----
+// ---- file   : NT_ManageColumnsDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2010-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 15Jan2010
+// ---- changed: 16Jan2010, 12Jun2010, 26Oct2010, 28Feb2011, 09Jan2012, 06Feb2012, 07Feb2012
+// ----          08Feb2012, 10Feb2012, 12Feb2012, 13Feb2012, 14Feb2012, 19Feb2012, 21Feb2012
+// ----          24Feb2012, 03Jan2013, 05Jun2013, 25Jul2016, 13Mar2017, 16Nov2018, 17Nov2018
+// ----          03Sep2020, 28Jul2023, 04Oct2023, 15Oct2023, 30Oct2023, 31Oct2023, 02Nov2023
+// ----          05Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNT_ManageColumnsDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_ManageColumnsDialog extends Dialog {
+
+   define int MINSIZEY = 200;
+
+   define int MODE_SELECT = 0;
+   define int MODE_ADD    = 1;
+   define int MODE_REMOVE = 2;
+   define int MODE_MANAGE = 3;
+
+   protected int mode;
+
+   protected XMLForm *xfm;
+
+   protected Label *lb_instr_name;
+
+   protected Button *bt_cel_moveup;
+   protected Button *bt_cel_movedn;
+
+   protected Button    *bt_close;
+   protected Button    *bt_switch_s;
+   protected Button    *bt_switch_w;
+   protected Button    *bt_switch_a;
+   protected Button    *bt_switch_d;
+
+   protected LayerSwitch *ls_all;
+   protected LayerSwitch *ls_all_tv;
+   protected SplitPane   *sp_all;
+   protected Panel       *pn_lower;
+
+   protected CheckBox *cb_show_visible;
+   protected CheckBox *cb_show_unmapped;
+   protected CheckBox *cb_show_stdctl;
+   protected CheckBox *cb_show_usrctl;
+   protected CheckBox *cb_show_usrctl_unmapped;
+   protected CheckBox *cb_show_midictl_cc;
+   protected CheckBox *cb_show_midictl_rpn;
+   protected CheckBox *cb_show_midictl_nrpn;
+
+   protected CheckBox *cb_autodel_env;
+   protected CheckBox *cb_autodel_usrctl_param;
+
+   protected CheckBox *cb_addremove_autohide;
+
+   protected TableView *tv_cels;
+   protected TableView *tv_all;
+
+   protected NT_JumpToColumnTM  tm_cels;
+   protected NT_ManageColumnsTM tm_all;
+
+   protected NT_ManageColumnsFilter *filter; // reference to tm_all.filter
+
+   protected TextField *tf_all_filter_pattern;
+
+   protected PopupMenu *contextmenu_cels;
+   protected PopupMenu *contextmenu_all;
+
+   protected int add_cel_idx; // after which cel to add a new cel in ADD mode
+
+   protected NodeTrackerEditor *editor;
+   protected NodeTracker       *parent_node;
+   protected NT_PatternView *pattern_view;
+   protected NT_Track       *track;
+   protected NT_TEL         *tel;
+   protected NT_Instrument  *ins;  // may be null
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NT_ManageColumnsDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      tm_cels.initTableModel();
+      tv_cels.setTableModel(tm_cels);
+
+      tm_all.filter.init();
+      tm_all.initTableModel();
+      tv_all.setTableModel(tm_all);
+
+      tf_all_filter_pattern.setEnableCursorUpDown(true);
+
+      initWindow(xfm,
+                 "Set cursor position to controller",
+                 100, 100,
+                 640*UI.font_scaling, 400*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   public virtual isModal():boolean {
+      // Overwrites Layer::isModal
+      return true;
+   }
+
+   public virtual isPopup():boolean {
+      // Overwrites Layer::isPopup
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           tv_cels,
+                           bt_cel_moveup,
+                           bt_cel_movedn
+                         ]
+                        );
+
+      if(MODE_SELECT != mode)
+      {
+         _retLayers.joinRR(_retLayers,
+                           [
+                              tv_all,
+                              cb_show_visible,
+                              cb_show_unmapped,
+                              cb_show_stdctl,
+                              cb_show_usrctl,
+                              cb_show_usrctl_unmapped,
+                              cb_show_midictl_cc,
+                              cb_show_midictl_rpn,
+                              cb_show_midictl_nrpn,
+                              cb_autodel_env,
+                              cb_autodel_usrctl_param,
+                              cb_addremove_autohide,
+                              bt_switch_s,
+                              bt_switch_w,
+                              bt_switch_a,
+                              bt_switch_d,
+                              tf_all_filter_pattern,
+                              bt_close
+                            ]
+                           );
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   protected method updateInstrumentLabels() {
+
+      if(null != ins)
+         lb_instr_name.setCaption(ins.getName());
+      else
+         lb_instr_name.setCaption("-");
+   }
+
+   protected method updateFilterConfigCheckBoxes() {
+
+      cb_show_midictl_cc   .setEditable(true);
+      cb_show_midictl_rpn  .setEditable(true);
+      cb_show_midictl_nrpn .setEditable(true);
+
+      cb_show_visible        .setSelected(filter.b_show_visible);
+      cb_show_unmapped       .setSelected(filter.b_show_unmapped);
+      cb_show_stdctl         .setSelected(filter.b_show_stdctl);
+      cb_show_usrctl         .setSelected(filter.b_show_usrctl);
+      cb_show_usrctl_unmapped.setSelected(filter.b_show_usrctl_unmapped);
+      cb_show_midictl_cc     .setSelected(filter.b_show_midictl_cc);
+      cb_show_midictl_rpn    .setSelected(filter.b_show_midictl_rpn);
+      cb_show_midictl_nrpn   .setSelected(filter.b_show_midictl_nrpn);
+   }
+
+   protected method updateSwitchToggleStates() {
+
+      bt_switch_s.setToggleState(false);
+      bt_switch_w.setToggleState(false);
+      bt_switch_a.setToggleState(false);
+      bt_switch_d.setToggleState(false);
+
+      switch(mode)
+      {
+         case MODE_SELECT:
+            bt_switch_s.setToggleState(true);
+            break;
+         case MODE_MANAGE:
+            bt_switch_w.setToggleState(true);
+            break;
+         case MODE_ADD:
+            bt_switch_a.setToggleState(true);
+            break;
+         case MODE_REMOVE:
+            bt_switch_d.setToggleState(true);
+            break;
+      }
+   }
+
+   protected method saveGeometry() {
+      switch(mode)
+      {
+         default:
+         case MODE_SELECT:
+            if(UI.IsHiDPI())
+            {
+               STConfig.node_tracker_dlg_mgrcol_select_geo_hidpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_select_split_hidpi = sp_all.getSplit();
+            }
+            else
+            {
+               STConfig.node_tracker_dlg_mgrcol_select_geo_lodpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_select_split_lodpi = sp_all.getSplit();
+            }
+            break;
+
+         case MODE_ADD:
+            if(UI.IsHiDPI())
+            {
+               STConfig.node_tracker_dlg_mgrcol_add_geo_hidpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_add_split_hidpi = sp_all.getSplit();
+            }
+            else
+            {
+               STConfig.node_tracker_dlg_mgrcol_add_geo_lodpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_add_split_lodpi = sp_all.getSplit();
+            }
+            break;
+
+         case MODE_REMOVE:
+            if(UI.IsHiDPI())
+            {
+               STConfig.node_tracker_dlg_mgrcol_remove_geo_hidpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_remove_split_hidpi = sp_all.getSplit();
+            }
+            else
+            {
+               STConfig.node_tracker_dlg_mgrcol_remove_geo_lodpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_remove_split_lodpi = sp_all.getSplit();
+            }
+            break;
+
+         case MODE_MANAGE:
+            if(UI.IsHiDPI())
+            {
+               STConfig.node_tracker_dlg_mgrcol_manage_geo_hidpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_manage_split_hidpi = sp_all.getSplit();
+            }
+            else
+            {
+               STConfig.node_tracker_dlg_mgrcol_manage_geo_lodpi = getGeometry4f();
+               STConfig.node_tracker_dlg_mgrcol_manage_split_lodpi = sp_all.getSplit();
+            }
+            break;
+      }
+   }
+
+   protected method restoreSplit() {
+      switch(mode)
+      {
+         default:
+         case MODE_SELECT:
+            sp_all.setSplit(UI.IsHiDPI()
+                            ? STConfig.node_tracker_dlg_mgrcol_select_split_hidpi
+                            : STConfig.node_tracker_dlg_mgrcol_select_split_lodpi
+                            );
+            break;
+
+         case MODE_ADD:
+            sp_all.setSplit(UI.IsHiDPI()
+                            ? STConfig.node_tracker_dlg_mgrcol_add_split_hidpi
+                            : STConfig.node_tracker_dlg_mgrcol_add_split_lodpi
+                            );
+            break;
+
+         case MODE_REMOVE:
+            sp_all.setSplit(UI.IsHiDPI()
+                            ? STConfig.node_tracker_dlg_mgrcol_remove_split_hidpi
+                            : STConfig.node_tracker_dlg_mgrcol_remove_split_lodpi
+                            );
+            break;
+
+         case MODE_MANAGE:
+            sp_all.setSplit(UI.IsHiDPI()
+                            ? STConfig.node_tracker_dlg_mgrcol_manage_split_hidpi
+                            : STConfig.node_tracker_dlg_mgrcol_manage_split_lodpi
+                            );
+            break;
+      }
+
+      sp_all.layoutHierarchy(true, false);
+   }
+
+   protected method updateFromEditor(NodeTrackerEditor _editor) : boolean {
+      editor       <= _editor;
+      parent_node  <= _editor.tracker_node;
+      pattern_view <= editor.pattern_view;
+      track        <= pattern_view.getCurrentTrack();
+
+      if(null != track)
+      {
+         ins <= parent_node.getInstrument(track.keyjazz_instr_nr);
+         tel <= track.getTrackLayout();
+         return true;
+      }
+      else
+      {
+         ins <= null;
+         tel <= null;
+         return false;
+      }
+   }
+
+   public method showDialog(NodeTrackerEditor _editor) : boolean {
+
+      if(!updateFromEditor(_editor))
+         return false;
+
+      // Copy filter settings from track layout
+      tm_all.filter = tel.ui_filter;
+      filter <= tm_all.filter;
+
+      if(MODE_ADD == mode)
+      {
+         filter.b_show_stdctl   = true;
+         filter.b_show_unmapped = true;
+      }
+
+      tm_cels.tel <= tel;
+      tm_cels.ins <= ins;
+      tv_cels.tableModelChanged();
+
+      tm_all.tel <= tel;
+      tm_all.ins <= ins;
+      tv_all.tableModelChanged();
+
+      // (todo) hide tv_all in selector mode
+
+      int numRows = tel.getNumVisibleCels();
+      if(numRows > 32)
+         numRows = 32; /// xxxx remove (limit dialog height)
+
+      // // int ctlId = tel.cursor_to_visctl_map[pattern_view.cursor_x] & TrackEventLayout.CTLID_MASK;
+      // // ////trace "xxx cursor_x="+(pattern_view.cursor_x)+" visCtlIdx="+ctlId;
+      // // tm_cels.setCursorIndex(ctlId);
+
+      selectCursorCel();
+
+      updateInstrumentLabels();
+
+      updateFilterConfigCheckBoxes();
+
+      switch(mode)
+      {
+         default:
+         case MODE_SELECT:
+            setWindowTitle("Set cursor position to controller");
+
+            ls_all.switchToLayerNr(0);
+            ls_all_tv.switchToLayerNr(0);
+
+            if(!restoreGeometryIfValid(UI.IsHiDPI()
+                                       ? STConfig.node_tracker_dlg_mgrcol_select_geo_hidpi
+                                       : STConfig.node_tracker_dlg_mgrcol_select_geo_lodpi
+                                       )
+               )
+            {
+               tv_cels.setRequiredSizeY(20 + numRows*15); // (TODO) should use TableView.calcRowRangeHeight(0, numRows)
+               handleResize();
+               resizeAtLeastToMinimum();
+            }
+
+            break;
+
+         case MODE_ADD:
+            setWindowTitle("Add new column");
+
+            ls_all.switchToLayerNr(1);
+            ls_all_tv.switchToLayerNr(1);
+
+            restoreGeometryIfValid(UI.IsHiDPI()
+                                   ? STConfig.node_tracker_dlg_mgrcol_add_geo_hidpi
+                                   : STConfig.node_tracker_dlg_mgrcol_add_geo_lodpi
+                                   );
+            break;
+
+         case MODE_REMOVE:
+            setWindowTitle("Remove column");
+
+            ls_all.switchToLayerNr(1);
+            ls_all_tv.switchToLayerNr(1);
+
+            restoreGeometryIfValid(UI.IsHiDPI()
+                                   ? STConfig.node_tracker_dlg_mgrcol_remove_geo_hidpi
+                                   : STConfig.node_tracker_dlg_mgrcol_remove_geo_lodpi
+                                   );
+            break;
+
+         case MODE_MANAGE:
+            setWindowTitle("Manage columns / controllers / params");
+
+            ls_all.switchToLayerNr(1);
+            ls_all_tv.switchToLayerNr(1);
+
+            restoreGeometryIfValid(UI.IsHiDPI()
+                                   ? STConfig.node_tracker_dlg_mgrcol_manage_geo_hidpi
+                                   : STConfig.node_tracker_dlg_mgrcol_manage_geo_lodpi
+                                   );
+            break;
+      }
+
+      handleResize();
+
+      restoreSplit();
+
+      tryMoveParamCursorToVisibleCelIdx();
+
+      cb_addremove_autohide.setSelected(STConfig.node_tracker_dlg_mgrcol_addremove_autohide);
+
+      Dialog::show();
+   }
+
+   public method showSelector(NodeTrackerEditor _editor) {
+      mode = MODE_SELECT;
+
+      if(!updateFromEditor(_editor))
+         return false;
+
+      updateSwitchToggleStates();
+
+      tf_all_filter_pattern.setEditable(false);
+
+      resizeAtLeastToMinimum();
+      showDialog(_editor);
+   }
+
+   public method showAdd(NodeTrackerEditor _editor) {
+      mode = MODE_ADD;
+
+      if(!updateFromEditor(_editor))
+         return false;
+
+      updateSwitchToggleStates();
+
+      tf_all_filter_pattern.setText("");
+      tf_all_filter_pattern.setEditable(true);
+
+      resizeAtLeastToMinimum();
+      showDialog(_editor);
+
+      handleFilterChanged(false/*bRowSelectAction*/);
+   }
+
+   public method showRemove(NodeTrackerEditor _editor) {
+      mode = MODE_REMOVE;
+
+      if(!updateFromEditor(_editor))
+         return false;
+
+      updateSwitchToggleStates();
+
+      tf_all_filter_pattern.setText("");
+      tf_all_filter_pattern.setEditable(true);
+
+      resizeAtLeastToMinimum();
+      showDialog(_editor);
+
+      handleFilterChanged(false/*bRowSelectAction*/);
+   }
+
+   public method showManager(NodeTrackerEditor _editor) {
+      mode = MODE_MANAGE;
+
+      if(!updateFromEditor(_editor))
+         return false;
+
+      updateSwitchToggleStates();
+
+      tf_all_filter_pattern.setText("");
+      tf_all_filter_pattern.setEditable(true);
+
+      resizeAtLeastToMinimum();
+      showDialog(_editor);
+
+      handleFilterChanged(false/*bRowSelectAction*/);
+   }
+
+   protected virtual postShow() {
+      Dialog::postShow();
+
+      resizeAtLeastToMinimum();
+
+      // Set initial keyboard focus, depending on mode
+
+      switch(mode)
+      {
+         default:
+         case MODE_SELECT:
+            UI.SetKeyboardFocus(tv_cels);
+            break;
+
+         case MODE_ADD:
+            UI.SetKeyboardFocus(tv_all);
+            tv_cels.centerRow();
+            tv_all.centerRow();
+            add_cel_idx = tm_cels.getCursorIndex();
+            break;
+
+         case MODE_REMOVE:
+            tv_cels.centerRow();
+            tv_all.centerRow();
+            UI.SetKeyboardFocus(tv_cels);
+            break;
+
+         case MODE_MANAGE:
+            tv_cels.centerRow();
+            tv_all.centerRow();
+            UI.SetKeyboardFocus(tv_cels);
+            break;
+      }
+
+   }
+
+   protected method getSelectedParamEntry() {
+      NT_ManageColumnsEntry mce <= tm_all.entries.get(tm_all.getCursorIndex());
+      return mce;
+   }
+
+   protected method selectCursorCel() {
+      int ctlId = tel.cursor_to_visctl_map[pattern_view.cursor_x] & NT_TEL.CTLID_MASK;
+      // // trace "xxx selectCursorCel: rowNr="+tm_cels.getCursorIndex()+" ctlId="+ctlId+" csrx="+pattern_view.cursor_x;
+      tm_cels.setCursorIndex(ctlId);
+      tv_cels.centerRow();
+
+      tryMoveParamCursorToVisibleCelIdx();
+   }
+
+   protected method updateCursorPosition() {
+      pattern_view.moveCursorToColumn(tm_cels.tel.calcCursorXByCelIdx(tm_cels.getCursorIndex()));
+      pattern_view.compositeAll();
+   }
+
+   protected method tryMoveParamCursorToVisibleCelIdx() {
+
+      // Only select ctl/param if cel is lead selection
+      // // ControllerEventLayout cel <= tm_cels.tel.getVisibleCelByIdx(tm_cels.getCursorIndex());
+      NT_CEL cel <= tel.getVisibleCelByIdx(tm_cels.getCursorIndex());
+      if(null != cel)
+      {
+         int rowNr = tm_all.getFirstRowForCtl(cel.ctl_id);
+         tv_all.moveCursorToRowNoAction(rowNr);
+      }
+   }
+
+   protected method relayoutParamTable() {
+      pn_lower.layoutHierarchy(true, false);
+      pn_lower.redraw();
+   }
+
+   protected method handleFilterChanged(boolean _bRowSelectAction) {
+
+      tm_all.all_filter_pattern = tf_all_filter_pattern.getText();
+
+      tm_all.setCursorIndex(-1);
+      tv_all.tableModelChanged();
+
+      tryMoveParamCursorToVisibleCelIdx();
+
+      relayoutParamTable();
+
+      if(-1 == tm_all.getCursorIndex())
+      {
+         if(_bRowSelectAction)
+            tv_all.moveCursorToFirstRow();
+         else
+            tv_all.moveCursorToFirstRowNoAction();
+      }
+   }
+
+   protected method handleCelMoveDown() {
+      int visCelIdx = tm_cels.getCursorIndex();
+
+      if(visCelIdx >= 0)
+      {
+         tel.orderByVisibility();
+
+         int numVis = tel.getNumVisibleCels();
+
+         if(visCelIdx != (numVis - 1))
+         {
+            tel.moveCelDown(visCelIdx);
+
+            tel.calcCursorExtents();
+            pattern_view.handleTrackLayoutChanged();
+            tv_cels.tableModelChanged();
+            tv_cels.moveCursorToNextRow();
+
+            tv_all.tableModelChanged();
+            tryMoveParamCursorToVisibleCelIdx();
+         }
+      }
+   }
+
+   protected method handleCelMoveUp() {
+      int visCelIdx = tm_cels.getCursorIndex();
+
+      if(visCelIdx > 0)
+      {
+         tel.orderByVisibility();
+
+         int numVis = tel.getNumVisibleCels();
+
+         tel.moveCelUp(visCelIdx);
+
+         tel.calcCursorExtents();
+         pattern_view.handleTrackLayoutChanged();
+         tv_cels.tableModelChanged();
+         tv_cels.moveCursorToPreviousRow();
+
+         tv_all.tableModelChanged();
+         tryMoveParamCursorToVisibleCelIdx();
+      }
+   }
+
+   public virtual hide() {
+
+      saveGeometry();
+
+      // Copy filter settings to track layout
+      if(MODE_ADD == mode)
+      {
+         // ADD overrides STDCTL filter setting => do not save that
+         boolean bShowStdCtl   = tel.ui_filter.b_show_stdctl;
+         boolean bShowUnmapped = tel.ui_filter.b_show_unmapped;
+         NT_ManageColumnsFilter flt <= tel.ui_filter;
+         flt = tm_all.filter;
+         flt.b_show_stdctl   = bShowStdCtl;
+         flt.b_show_unmapped = bShowUnmapped;
+      }
+      else
+      {
+         tel.ui_filter = tm_all.filter;
+      }
+
+      Dialog::hide();
+
+      updateCursorPosition();
+
+      ///Global.SetCurrentMacro(tm.getCursorIndex());
+      // (TODO) move pattern cursor to selected cel
+   }
+
+   protected method handleCelChanged(boolean _bNumRowsOrCelsChanged) {
+      tv_cels.tableModelChanged();
+      tv_all.tableModelChanged();
+
+      if(_bNumRowsOrCelsChanged)
+         selectCursorCel();
+   }
+
+   protected method tryAddRemoveAutoHide() {
+      if(cb_addremove_autohide.isSelected())
+      {
+         if(! (UI.GetKeyMod() == VMOD_LCTRL)) // kbd shortcut to (temporarily) prevent user from unchecking the auto-hide checkbox
+            hide();
+      }
+   }
+
+   protected method handleContextMenuActionDone(boolean _bNumRowsOrCelsChanged) {
+      if(MODE_MANAGE != mode)
+      {
+         if(MODE_ADD == mode)
+            handleCelChanged(_bNumRowsOrCelsChanged);
+
+         tryAddRemoveAutoHide();
+      }
+      else
+      {
+         // Cel/usrctl/param was removed/added -> refresh tables and update row selection
+         handleCelChanged(_bNumRowsOrCelsChanged);
+      }
+   }
+
+   protected =replay= method paramCM_removeCel(NT_ManageColumnsEntry _mce) {
+
+      parent_node.undoBegin("remove cel");
+
+      NT_CEL cel <= _mce.cel;
+
+      // trace "xxx paramCM_removeCel: cel.ctl_id="+cel.ctl_id+" cel="+#(cel);
+
+      // Make cel(s) invisible
+      parent_node.undoTouchTrackLayout(track.track_nr, tel);
+
+      if(tel.getNumVisibleCels() > 1)
+         tel.hideCelsByCtlId(cel.ctl_id);
+
+      tel.orderByVisibility();
+      tel.calcCursorExtents();
+      pattern_view.handleTrackLayoutChanged();
+
+      // Also remove envelope ?
+      if(cb_autodel_env.isSelected())
+         track.removeEnvelopesByCtlId(cel.ctl_id);
+
+      // Also unmap user controller and delete param ?
+      if(null != ins)
+      {
+         // Also remove instrument param
+         if(cb_autodel_usrctl_param.isSelected())
+            _mce.tryRemoveInsParam(ins);
+
+      }
+
+      parent_node.undoEnd();
+   }
+
+   protected =replay= method paramCM_addCel(NT_ManageColumnsEntry _mce) : NT_CEL {
+      // (note) track layout must not be full (checked by showParamContextMenu())
+
+      parent_node.undoBegin("add cel");
+      parent_node.undoTouchTrackLayout(track.track_nr, tel);
+
+      tel.orderByVisibility();
+
+      NT_CEL cel <= _mce.cel;
+      int celIdx;
+
+      if(NT_ManageColumnsEntry.TYPE_STDCTL == _mce.type)
+      {
+         // Allocate cel
+         cel <= tel.findFirstInvisibleCel();
+
+         if(null != cel)
+         {
+            cel.init(true, _mce.ctl_id,
+                     MNT_PatternView.default_ctl_styles[_mce.ctl_id],
+                     MNT_PatternView.default_ctl_ranges[_mce.ctl_id]
+                     );
+
+            celIdx = tel.getVisibleIdxForCel(cel);
+
+            if(MODE_ADD == mode)
+            {
+               tel.moveCelTo(celIdx, add_cel_idx + 1);
+            }
+
+            tel.calcCursorExtents();
+            tel.handleCelAdded();
+            pattern_view.handleTrackLayoutChanged();
+
+            if(MODE_ADD != mode)
+            {
+               pattern_view.moveCursorToLastColumnOrNextTrack(); // cel is added last -> select it
+            }
+            else
+            {
+               tv_cels.tableModelChanged();
+               tv_all.tableModelChanged();
+               tv_cels.moveCursorToRow(add_cel_idx + 1);
+               updateCursorPosition();
+               selectCursorCel();
+            }
+         }
+
+         parent_node.undoEnd();
+
+         resizeAtLeastToMinimum();  // in case tableview scrollbars became visible
+
+         return cel;
+      }
+
+      // TYPE_MIDI_*:
+
+      if(null != ins)
+      {
+         // may create midi_param and update mapped_to_usrctl_param
+         _mce.lazyAddParam(ins);
+      }
+
+      int usrCtlId = _mce.getCelUsrCtlId();
+
+      if(-1 != usrCtlId)
+      {
+         // Allocate cel
+         cel <= tel.findFirstInvisibleCel();
+         int layoutStyle = NT_CEL.STYLE_HEX;
+         int layoutRange = NT_CEL.RANGE_0_127;
+
+         if(null != ins)
+         {
+            layoutStyle = ins.getUsrCtlParamLayoutStyle(usrCtlId);
+            layoutRange = ins.getUsrCtlParamLayoutRange(usrCtlId);
+         }
+
+         cel.init(true, NT_TrackPattern.CTL_USR + usrCtlId,
+                  layoutStyle,
+                  layoutRange
+                  );
+
+         celIdx = tel.getVisibleIdxForCel(cel);
+
+         if(MODE_ADD == mode)
+         {
+            tel.moveCelTo(celIdx, add_cel_idx + 1);
+         }
+
+         tel.calcCursorExtents();
+         tel.handleCelAdded();
+         pattern_view.handleTrackLayoutChanged();
+
+         if(MODE_ADD != mode)
+         {
+            pattern_view.moveCursorToLastColumnOrNextTrack(); // cel is added last -> select it
+         }
+         else
+         {
+            tv_cels.tableModelChanged();
+            tv_all.tableModelChanged();
+            tv_cels.moveCursorToRow(add_cel_idx + 1);
+            updateCursorPosition();
+            selectCursorCel();
+         }
+
+         parent_node.undoEnd();
+
+         resizeAtLeastToMinimum();  // in case tableview scrollbars became visible
+
+         return cel;
+      }
+      else
+      {
+         // (note) error message already printed by lazyAddParam()
+         // // Global.Error("internal error: paramCM_addCel: usrCtlId == -1");
+         parent_node.undoEnd();
+         return null;
+      }
+   }
+
+   protected =replay= method paramCM_removeUsrCtlParam(NT_ManageColumnsEntry _mce) {
+      _mce.tryRemoveInsParam(ins);
+   }
+
+   protected method showParamContextMenu(Action _action, boolean _bFocusFirst) {
+      NT_ManageColumnsEntry mce <= getSelectedParamEntry();
+
+      if(null != mce)
+      {
+         if(null != track)
+         {
+            boolean bHaveFreeCel = (tel.getNumVisibleCels() < NT_TEL.NUM_CELS);
+
+            boolean bCelVisible = false;
+
+            if(null != mce.cel)
+            {
+               if(mce.cel.b_visible)
+               {
+                  bCelVisible = true;
+               }
+            }
+
+            contextmenu_all <= PopupMenu.New(this);
+
+            PopupMenuButton *pmb;
+
+            // Cel
+            pmb <= contextmenu_all.addDefaultButton("Remove cel", "cel_remove");
+            pmb.setToolTipCaption("Remove cel\n\n- hide controller in current track layout\n- auto-delete envelope(s)\n- auto-delete instrument param\n- hold lctrl to keep dialog open");
+            pmb.setAccelerators("DELETE", "");
+            if(!bCelVisible)
+            {
+               pmb.setActive(false);
+            }
+
+            pmb <= contextmenu_all.addDefaultButton("Add cel", "cel_add");
+            pmb.setToolTipCaption("Add cel\n\n- auto-create instrument param\n- make controller visible in current track layout");
+            pmb.setAccelerators("SPACE", "");
+
+            if(bCelVisible)
+            {
+               pmb.setActive(false);
+            }
+            else if(!bHaveFreeCel)
+            {
+               pmb.setActive(false);
+               pmb.setToolTipCaption("Warning: Cannot add cel because cel limit is reached");
+            }
+            else
+            {
+               // Check if a usrctl mapping has to be done when adding the cel (=> unused mapping entry must exist)
+               if(mce.type >= NT_ManageColumnsEntry.TYPE_MIDI_CC)
+               {
+                  if(-1 == mce.mapped_to_usrctl_param)
+                  {
+                     if(-1 == ins.findNextUnusedParamIdx(0/*startIdx*/))
+                     {
+                        pmb.setActive(false);
+                        pmb.setToolTipCaption("Warning: Cannot add cel because userctl limit is reached");
+                     }
+                  }
+               }
+            }
+
+            // Param
+            contextmenu_all.addSeparator();
+
+            pmb <= contextmenu_all.addDefaultButton("Remove param", "midiparam_remove");
+            pmb.setToolTipCaption("Remove instrument param\n\n(note) this leaves an empty param slot and does NOT affect the user controller mapping / visible cels / envelopes");
+            if(null == mce.midi_param)
+            {
+               pmb.setActive(false);
+            }
+
+            contextmenu_all.showAtXY(tv_all.contextmenu_suggested_abs_x,
+                                     tv_all.contextmenu_suggested_abs_y
+                                     );
+            if(_bFocusFirst)
+               contextmenu_all.focusNextMenuItem();
+         }
+      }
+   }
+
+   protected method removeSelectedCel() {
+      NT_ManageColumnsEntry mce <= getSelectedParamEntry();
+      if(null != mce)
+      {
+         paramCM_removeCel(mce);
+         handleContextMenuActionDone(true);
+         relayoutParamTable();
+         tv_cels.tableModelChanged();
+         tv_all.tableModelChanged();
+      }
+   }
+
+   protected method handleParamContextMenuAction(String _acName) {
+
+      NT_ManageColumnsEntry mce <= getSelectedParamEntry();
+
+      switch(_acName)
+      {
+         case "cel_remove":
+            removeSelectedCel();
+            break;
+
+         case "cel_add":
+            NT_CEL cel <= paramCM_addCel(mce);
+            if(null != cel)
+            {
+               handleContextMenuActionDone(true);
+            }
+            break;
+
+         case "midiparam_remove":
+            paramCM_removeUsrCtlParam(mce);
+            int oldCsr = tm_all.getCursorIndex();
+            handleContextMenuActionDone(true);
+            relayoutParamTable();
+            if(-1 != oldCsr)
+            {
+               tv_all.moveCursorToRow(oldCsr);
+            }
+            break;
+      }
+
+   }
+
+   protected =replay= method celsCM_removeCel() {
+
+      if(tel.getNumVisibleCels() > 1)
+      {
+         int visCelIdx = tm_cels.getCursorIndex();
+
+         NT_CEL cel <= tel.getVisibleCelByIdx(visCelIdx);
+
+         boolean bRemoveEnv = false;
+         boolean bRemoveUsrCtl = false;
+         int usrCtlId;
+
+         parent_node.undoBegin("remove cel");
+
+         // Only delete envelope (and possibly unmap usrctl) if there are no other cels showing the same controller
+         if(tel.isCtlUniquelyVisible(cel.ctl_id))
+         {
+            bRemoveEnv = cb_autodel_env.isSelected();
+
+            if(cel.ctl_id >= NT_TrackPattern.CTL_USR)
+            {
+               bRemoveUsrCtl = cb_autodel_usrctl_param.isSelected();
+               usrCtlId = (cel.ctl_id - NT_TrackPattern.CTL_USR);
+            }
+         }
+
+         parent_node.undoTouchTrackLayout(track.track_nr, tel);
+
+         // Hide cel
+         cel.b_visible = false;
+
+         // Delete envelope(s) ?
+         if(bRemoveEnv)
+         {
+            track.removeEnvelopesByCtlId(cel.ctl_id);
+         }
+
+         if(bRemoveUsrCtl)
+         {
+            if(null != ins)
+            {
+               // // trace "xxx insParam.deleteParamByIdx("+(paramId - 1)+")";
+               ins.deleteParamByIdx(usrCtlId); // -1 because params array does not include PARAM_NONE
+            } // if ins
+
+         }
+
+         tel.calcCursorExtents();
+         pattern_view.handleTrackLayoutChanged();
+
+         parent_node.undoEnd();
+
+      } // if numVisibleCels > 1
+   }
+
+   protected method getSelectedCelsMIDIParam() : NT_MIDIParam {
+      if(null != ins)
+      {
+         int visCelIdx = tm_cels.getCursorIndex();
+
+         NT_CEL cel <= tel.getVisibleCelByIdx(visCelIdx);
+
+         if(cel.ctl_id >= NT_TrackPattern.CTL_USR)
+         {
+            int usrCtlId = (cel.ctl_id - NT_TrackPattern.CTL_USR);
+
+            // Is user controller mapped to a param ?
+            return ins.getUsrCtlParam(usrCtlId);
+         }
+      }
+
+      return null;
+   }
+
+   protected method showCelContextMenu(Action _action, boolean _bFocusFirst) {
+      // (todo) remove usrctl/param only if cel.ctl_id is unique (i.e. no other cels using that ctl are visible)
+
+      contextmenu_cels <= PopupMenu.New(this);
+
+      PopupMenuButton *pmb;
+
+      // Remove Cel
+      pmb <= contextmenu_cels.addDefaultButton("Remove cel", "cel_remove");
+      pmb.setToolTipCaption("Remove cel\n\n- hide controller in current track layout\n- auto-delete envelope(s)\n- auto-delete instrument param\n- hold lctrl to keep dialog open");
+      pmb.setAccelerators("DELETE", "");
+
+      contextmenu_cels.showAtXY(tv_cels.contextmenu_suggested_abs_x,
+                                tv_cels.contextmenu_suggested_abs_y
+                                );
+      if(_bFocusFirst)
+         contextmenu_cels.focusNextMenuItem();
+   }
+
+   protected method handleCelContextMenuAction(String _acName) {
+      switch(_acName)
+      {
+         case "cel_remove":
+            celsCM_removeCel();
+            handleContextMenuActionDone(true);
+            relayoutParamTable();
+            break;
+      }
+   }
+
+   protected method reopenSelect() {
+      hide();
+      editor.cmd_cursor_jumptocolumn();
+   }
+
+   protected method reopenAdd() {
+      hide();
+      editor.cmd_track_addcel_dlg();
+   }
+
+   protected method reopenDelete() {
+      hide();
+      editor.cmd_track_removecel_dlg();
+   }
+
+   protected method reopenManage() {
+      hide();
+      editor.cmd_track_managecolumns();
+   }
+
+   public virtual onTriadKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case 'c':
+            hide();
+            return true;
+
+         case 's':
+            reopenSelect();
+            return true;
+
+         case 'a':
+            reopenAdd();
+            return true;
+
+         case 'd':
+            reopenDelete();
+            return true;
+
+         case 'w':
+            reopenManage();
+            return true;
+      }
+
+      return false;
+   }
+
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Close dialog
+
+          a         :   Switch to add-cel mode
+          s         :   Switch to select-cel mode
+          d         :   Switch to remove-cel mode
+          w         :   Switch to manage-cels mode (cel wizard)
+
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   public virtual onKey(Key _k) : boolean {
+
+      // (note) the lctrl-'s', 'a', 'd', 'w' keys are also available as lctrl-x s,a,d,w
+      //         but having these accessible also via lctrl means that combos like
+      //          'lctrl-x TAB d' are possible (while holding lctrl)
+
+      switch(_k.pressed)
+      {
+        case VKEY_ESCAPE:
+           hide();
+           return true;
+
+         case 's':
+            if(VMOD_LCTRL == _k.mod)
+            {
+               hide();
+               if(MODE_SELECT != mode)
+               {
+                  editor.cmd_cursor_jumptocolumn();
+               }
+               return true;
+            }
+            break;
+
+         case 'a':
+            if(VMOD_LCTRL == _k.mod)
+            {
+               hide();
+               editor.cmd_track_addcel_dlg();
+               UI.SetKeyboardFocus(tf_all_filter_pattern);
+               return true;
+            }
+            break;
+
+         case 'd':
+            if(VMOD_LCTRL == _k.mod)
+            {
+               hide();
+               editor.cmd_track_removecel_dlg();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(MODE_SELECT != mode)
+            {
+               UI.SetKeyboardFocus(tf_all_filter_pattern);
+               return true;
+            }
+            break;
+
+         case 'w':
+            if(VMOD_LCTRL == _k.mod)
+            {
+               hide();
+               editor.cmd_track_managecolumns();
+               return true;
+            }
+            break;
+
+         case VKEY_UP:
+            if(VMOD_LCTRL == _k.mod)
+            {
+               handleCelMoveUp();
+               return true;
+            }
+            break;
+
+         case VKEY_DOWN:
+            if(VMOD_LCTRL == _k.mod)
+            {
+               handleCelMoveDown();
+               return true;
+            }
+            break;
+
+         case VKEY_DELETE:
+            removeSelectedCel();
+            return true;
+
+         case VKEY_LEFT:
+            if(tv_all.hasKeyboardFocus())
+            {
+               UI.SetKeyboardFocus(tv_cels);
+               redraw();
+               return true;
+            }
+            break;
+
+         case VKEY_RIGHT:
+            if(tv_cels.hasKeyboardFocus())
+            {
+               if(MODE_SELECT != mode)
+               {
+                  UI.SetKeyboardFocus(tv_all);
+                  redraw();
+               }
+               return true;
+            }
+            break;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName = _action.getActionName();
+      // trace "xxx NT_ManageColumnsDialog::consumeAction: acName="+#(acName)+" ap="+#(ap);
+
+      switch(@(ap))
+      {
+         case @(bt_close):
+            hide();
+            return true;
+
+         case @(bt_switch_s):
+            reopenSelect();
+            return true;
+
+         case @(bt_switch_w):
+            reopenManage();
+            return true;
+
+         case @(bt_switch_a):
+            reopenAdd();
+            return true;
+
+         case @(bt_switch_d):
+            reopenDelete();
+            return true;
+
+         case @(tf_all_filter_pattern):
+            handleFilterChanged(false/*bRowSelectAction*/);
+            if(TextField.ACTION_TEXTENTERED == acName) // return
+            {
+               UI.SetKeyboardFocus(tv_all);
+            }
+            else if(TextField.ACTION_CURSORUP == acName) // up
+            {
+               UI.SetKeyboardFocus(tv_all);
+            }
+            return true;
+
+         case @(bt_cel_moveup):
+            handleCelMoveUp();
+            return true;
+
+         case @(bt_cel_movedn):
+            handleCelMoveDown();
+            return true;
+
+         case @(contextmenu_cels):
+            handleCelContextMenuAction(acName);
+            return true;
+
+         case @(contextmenu_all):
+            handleParamContextMenuAction(acName);
+            return true;
+
+         case @(tv_cels):
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               if(MODE_SELECT == mode)
+               {
+                  hide();
+               }
+
+               if(MODE_REMOVE == mode)
+               {
+                  celsCM_removeCel();
+                  selectCursorCel();
+
+                  tryAddRemoveAutoHide();
+
+                  return true;
+               }
+
+            }
+            else if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               add_cel_idx = tm_cels.getCursorIndex(); // for ADD mode
+
+               updateCursorPosition();
+
+               tryMoveParamCursorToVisibleCelIdx();
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showCelContextMenu(_action, tv_cels.b_contextmenu_kbd);
+            }
+            return true;
+
+         case @(tv_all):
+
+            if(acName == TableView.ACTION_ROWCLICKED) || (acName == TableView.ACTION_ROWSELECTED)
+            {
+               NT_ManageColumnsEntry mce <= tm_all.entries.get(tm_all.getCursorIndex());
+
+               if(null != mce.cel)
+               {
+                  if(mce.cel.b_visible)
+                  {
+                     if(acName == TableView.ACTION_ROWCLICKED)
+                     {
+                        if(MODE_REMOVE == mode)
+                        {
+                           paramCM_removeCel(mce);
+                           selectCursorCel();
+
+                           tryAddRemoveAutoHide();
+
+                           return true;
+                        }
+                     }
+
+                     // Select row in cel table
+                     if(MODE_ADD != mode) //////MODE_MANAGE == mode) /////! [MODE_ADD, MODE_SELECT, MODE_REMOVE].contains(mode))
+                     {
+                        tv_cels.moveCursorToRowNoAction(tm_cels.tel.getVisibleIdxForCel(mce.cel));
+                        updateCursorPosition();
+                     }
+                  }
+                  else
+                  {
+                     if(MODE_SELECT == mode)
+                     {
+                        tv_cels.selectNone();
+                     }
+
+                     if(acName == TableView.ACTION_ROWCLICKED)
+                     {
+                        if(MODE_ADD == mode)
+                        {
+                           paramCM_addCel(mce);
+                           selectCursorCel();
+
+                           tryAddRemoveAutoHide();
+                        }
+                     }
+                  }
+               }
+               else
+               {
+                  if(MODE_SELECT == mode)
+                  {
+                     tv_cels.selectNone();
+                  }
+
+                  if(acName == TableView.ACTION_ROWCLICKED)
+                  {
+                     if(MODE_ADD == mode)
+                     {
+                        paramCM_addCel(mce);
+                        selectCursorCel();
+                        tryAddRemoveAutoHide();
+                     }
+                  }
+               }
+            }
+            else if(TableView.ACTION_SHOWCONTEXTMENU == acName)
+            {
+               showParamContextMenu(_action, tv_cels.b_contextmenu_kbd);
+            }
+            return true;
+
+         case @(cb_show_visible):
+            filter.b_show_visible = cb_show_visible.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_unmapped):
+            filter.b_show_unmapped = cb_show_unmapped.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_stdctl):
+            filter.b_show_stdctl = cb_show_stdctl.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_usrctl):
+            filter.b_show_usrctl = cb_show_usrctl.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_usrctl_unmapped):
+            filter.b_show_usrctl_unmapped = cb_show_usrctl_unmapped.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_midictl_cc):
+            filter.b_show_midictl_cc = cb_show_midictl_cc.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_midictl_rpn):
+            filter.b_show_midictl_rpn = cb_show_midictl_rpn.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_show_midictl_nrpn):
+            filter.b_show_midictl_nrpn = cb_show_midictl_nrpn.isSelected();
+            handleFilterChanged(true/*bRowSelectAction*/);
+            return true;
+
+         case @(cb_addremove_autohide):
+            STConfig.node_tracker_dlg_mgrcol_addremove_autohide = cb_addremove_autohide.isSelected();
+            return true;
+      }
+
+      return Dialog::consumeAction(_action);
+   }
+
+}

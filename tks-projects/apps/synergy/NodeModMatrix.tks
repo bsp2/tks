@@ -1,0 +1,438 @@
+// ----
+// ---- file   : NodeModMatrix.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 30Oct2015, 31Oct2015, 01Nov2015, 02Nov2015, 03Nov2015, 04Nov2015, 06Nov2015
+// ----          07Nov2015, 08Nov2015, 09Nov2015, 21Dec2015, 26Jan2016, 31Jan2016, 09Apr2016
+// ----          02Jul2016, 08Jul2016, 09Jul2016, 31Jan2017, 11Feb2017, 06Mar2017, 09Mar2017
+// ----          10Mar2017, 11Mar2017, 12Mar2017, 14Mar2017, 12Aug2017, 25Aug2017, 03Sep2017
+// ----          22Sep2017, 04Jan2018, 07Mar2018, 28Apr2018, 21May2018, 27May2018, 17Jun2018
+// ----          22Feb2019, 19May2019, 08Jun2019, 09Jun2019, 25Jun2019, 29Aug2019, 19Oct2019
+// ----          07Nov2019, 30Oct2020, 10Nov2020, 26Jan2021, 27Jan2021, 29Jan2021, 30May2021
+// ----          01Jun2021, 20Jun2021, 21Jun2021, 01Jan2022, 18Mar2022, 21Nov2022, 07Apr2023
+// ----          23Jun2023, 15Oct2023, 20Oct2023, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNodeModMatrix;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeModMatrix : Node {
+
+   define int RPN_xxx   = RPN_MODMATRIX_BASE + 0;
+
+   static NodeModMatrixEditor *editor;
+
+   NMM_Pattern *[] patterns;
+
+   int tick_nr;
+
+   boolean b_queued_redraw_overlays;  // when node has processed OP_CURVE (redraw CurveForm overlay(s))
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(128);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+      local NMM_Pattern pat;
+
+      Node::nodeUIInit();
+
+      // Allocate first pattern
+      pat.patInit(this, 0);
+      pat.uiInit();
+      nodeSetPattern(0, deref pat);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTypeNameShort() : String {
+      return "MAT";
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeModMatrixEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_modmatrix_mono");
+      else
+         return UI.GetIcon("node_modmatrix");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NMM_Pattern";
+   }
+
+   // <method.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      // trace "xxx nmm: nodeReset";
+      NMM_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      if(null != pat)
+      {
+         pat.reset();
+      }
+
+      nodeSeek(0);
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+
+      // tick_nr = _ticks - last_pattern_start_song_offset;
+      tick_nr = 0;
+
+      // NMM_Pattern pat <= nodeGetCurrentPlayPattern();
+      // if(null != pat)
+      // {
+      //    pat.seek(_ticks);
+      // }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPattern(int _startOff) : int {
+      int patIdx = patterns.indexOfPointer(null, _startOff);
+
+      return patIdx;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NMM_Pattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NMM_Pattern {
+      NMM_Pattern pat <= patterns.get(edit_pattern_nr);
+
+      if(null == pat)
+      {
+         pat <= new NMM_Pattern;
+         pat.patInit(this, edit_pattern_nr);
+         patterns[edit_pattern_nr] = deref pat;
+      }
+
+      return pat;
+   }
+
+   // <method.png>
+   public =replay= method insertEmptyPatternSlotAt(int _idx) {
+      patterns.insert(_idx, null); // may inc patcnt > 128 (so deleting the slot gets back the last pat)
+   }
+
+   // <method.png>
+   public =replay= method deletePatternSlotAt(int _idx) {
+      patterns.delete(_idx);
+      patterns.insert(127, null);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NMM_Pattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NMM_Pattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NMM_Pattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 1; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // Patterns
+      NMM_Pattern *pat;
+      int patIdx = 0;
+      loop(128)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // (note) n.name has been read but not set, yet
+         // Global.Debug2("NodeModMatrix: load node \""+nodeGetName()+"\"");
+
+         int patIdx;
+         NMM_Pattern *pat;
+         boolean bPatUsed;
+
+         // Patterns
+         patIdx = 0;
+         loop(128)
+         {
+            bPatUsed = ifs.i8;
+            if(bPatUsed)
+            {
+               pat <= new NMM_Pattern;
+               pat.patInit(this, patIdx);
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeModMatrix::loadState: patLoadState failed (patIdx="+patIdx+")";
+                  return false;
+               }
+            }
+
+            // Next pattern
+            patIdx++;
+         }
+
+         // (note) [21Jun2021] moved to Node base class
+         edit_pattern_nr = ifs.u8;
+         play_pattern_nr = ifs.u8;
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeModMatrix: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     nodeSetCurrentPlayPatternNr(ev.arg1);
+                     Events.SendPlayPat();
+
+                     Global.Debug3("NodeModMatrix: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     // trace "\t\t this="+#(this);
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         Events.SendPlayPat();
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <method.png>
+   public =replay= method checkResetQueuedRedrawOverlays() : boolean {
+      boolean r = b_queued_redraw_overlays;
+      b_queued_redraw_overlays = false;
+      return r;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [RPN_COMMON_RESET,
+
+              RPN_COMMON_UI_PRGCHG,
+              RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+              RPN_COMMON_MUTE_TEMP_TOGGLE,
+              // RPN_COMMON_MUTE_TEMP_1_8,
+              // RPN_COMMON_MUTE_TEMP_9_16,
+              // RPN_COMMON_SOLO_TEMP_1_8,
+              // RPN_COMMON_SOLO_TEMP_9_16,
+              RPN_COMMON_UI_NODE_MUTE,
+              RPN_COMMON_UI_NODE_SOLO,
+              RPN_COMMON_UI_PIPE_MUTE,
+              RPN_COMMON_UI_PIPE_SOLO,
+
+              // RPN_COMMON_SEEK_OFFSET,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      if(nodeIsEditorVisible())
+         nodeHandleContextSensitiveAutoDevEvents(_frameRec, _framePlay);
+
+      // trace "xxx tick_nr="+tick_nr;
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      if(bAllowSeekPrgChgAndMute)
+      {
+         handlePrgChg(_framePlay);
+         handlePrgChg(_frameRec);
+      }
+
+      nodeSendQueuedPrgChgOut(_framePlay);
+
+      if((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0))
+      {
+         short t = getRPN(_framePlay, _frameRec, RPN_COMMON_RESET);
+         if(t >= 0)
+         {
+            nodeReset(true/*bSoft*/);
+         }
+
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // Handle MUTE_TEMP_*, MUTE_TEMP_TOGGLE, MUTE_SOLO_*
+            nodeParseRPN_Mute(_framePlay, _frameRec);
+         }
+      }
+
+      if(bAllowSeekPrgChgAndMute)
+         _bMuted |= nodeHandleQueuedMuteTemp();
+
+      // Play buffer
+      NMM_Pattern pat <= nodeGetCurrentPlayPattern();
+      // // trace "xxx nmm: nodeGetCurrentPlayPatternNr()="+nodeGetCurrentPlayPatternNr();
+      // // MIDIPipeFrame frPT;
+      // // frPT.empty();
+
+      // // if(!_bMuted)
+      // // {
+      // //    _frameRec.deleteNoteOns(bst.buffer_dev_idx, bst.buffer_ch);
+      // //    _framePlay.deleteNoteOns(bst.buffer_dev_idx, bst.buffer_ch);
+      // // }
+
+      // // _framePlay.mergeFrame(frPT);
+
+      if(null != pat)
+      {
+         // // trace "xxx 1 _framePlay.numEventsCC="+_framePlay.numEventsCC;
+
+         pat.processFrame(_framePlay,
+                          _bMuted,
+                          _bPlaySeq
+                          );
+
+         // // trace "xxx 2 _framePlay.numEventsCC="+_framePlay.numEventsCC;
+
+         pat.processFrame(_frameRec,
+                          _bMuted,
+                          _bPlaySeq
+                          );
+      }
+
+      tick_nr++;  // Always increase tick_nr so quantization works even when replay is not running
+   }
+
+}

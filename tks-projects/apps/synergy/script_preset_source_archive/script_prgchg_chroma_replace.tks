@@ -1,0 +1,198 @@
+//
+// Program Change Chromatic Replacement (note deltas)
+//
+// - track prgchg on ports A..D
+// - when note on occurs on multiple ports, replace program and note tuple via LUT
+//    - sort notes
+//    - calc delta(s) to higher note(s)
+//    - find replacement program in LUT
+//       ! e.g. +5, +7,
+//    - up to 4 notes (e.g. 047B, 037A maj7/min7 chords)
+// - when note-on occurs on single port, send last seen port prgchg + note-on
+//
+
+int tick_nr;
+
+IntArray last_prgchg;
+last_prgchg.allocAndFill(4, -1);
+
+// prgA..D, noteDeltaB..D, prgOut tuples
+//  (note) prg nrs start with 1 (== MIDI program byte 0)
+//  (note) prgA..D is ignored when port does not play a note
+IntArray prgchg_chroma_replacement_lut = [
+   // PrgA  PrgB  PrgC  PrgD   NDlt2  NDlt3  NDlt4   PrgOut
+      $08,  $08,  $08,  $08,    0,     0,     0,     $08,
+      $08,  $08,  $08,  $08,    2,     0,     0,     $09,
+      $08,  $08,  $08,  $08,    3,     0,     0,     $0A,
+      $08,  $08,  $08,  $08,    5,     0,     0,     $0B,
+      $08,  $08,  $08,  $08,    7,     0,     0,     $0C,
+      $08,  $08,  $08,  $08,   10,     0,     0,     $0D,
+                                          ];
+
+function OnReset() { 
+}
+
+function OnSeek(int ticks) {
+   tick_nr = ticks;
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+
+   if(/*bPlaySeq && */!bMuted)
+   {
+      MIDIPipeEvent pev;
+      IntArray   notes;
+      IntArray   noteDeltas;
+      FloatArray velocities;
+      IntArray   durations;
+      IntArray   iaSort;
+
+      notes.realloc(4);
+      notes.useAll();
+      notes.fill(127);
+
+      noteDeltas.realloc(4);
+      noteDeltas.useAll();
+      noteDeltas.fill(0);
+
+      velocities.realloc(4);
+      velocities.useAll();
+      velocities.fill(127);
+
+      durations.realloc(4);
+      durations.useAll();
+      durations.fill(6);
+
+      byte  pc;
+
+      if(framePlay.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_1_dev, in_1_ch))
+      {
+         notes[0]      = pev.note;
+         velocities[0] = pev.velocity;
+         durations[0]  = pev.duration;
+      }
+
+      if(framePlay.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_2_dev, in_2_ch))
+      {
+         notes[1]      = pev.note;
+         velocities[1] = pev.velocity;
+         durations[1]  = pev.duration;
+      }
+
+      if(framePlay.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_3_dev, in_3_ch))
+      {
+         notes[2]      = pev.note;
+         velocities[2] = pev.velocity;
+         durations[2]  = pev.duration;
+      }
+
+      if(framePlay.getEventByIdxAndFlt(0, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_4_dev, in_4_ch))
+      {
+         notes[3]      = pev.note;
+         velocities[3] = pev.velocity;
+         durations[3]  = pev.duration;
+      }
+
+      notes.sortByValue(iaSort);
+
+      pc = framePlay.getFilteredPrgChg(in_1_dev, in_1_ch);
+      if(pc >= 0)
+         last_prgchg[0] = pc;
+
+      pc = framePlay.getFilteredPrgChg(in_2_dev, in_2_ch);
+      if(pc >= 0)
+         last_prgchg[1] = pc;
+
+      pc = framePlay.getFilteredPrgChg(in_3_dev, in_3_ch);
+      if(pc >= 0)
+         last_prgchg[2] = pc;
+
+      pc = framePlay.getFilteredPrgChg(in_4_dev, in_4_ch);
+      if(pc >= 0)
+         last_prgchg[3] = pc;
+
+      // Count notes and calc note deltas
+      int numNotes = 0;
+      int noteIdx = 0;
+      int sortIdx;
+      loop(4)
+      {
+         sortIdx = iaSort[noteIdx];
+         if(notes[sortIdx] < 127)
+         {
+            numNotes++;
+            noteDeltas[noteIdx] = notes[sortIdx] - notes[iaSort[0]];
+         }
+         noteIdx++;
+      }
+
+      if(1 == numNotes)
+      {
+         // single note
+         sortIdx = iaSort[0];
+         if(last_prgchg[sortIdx] >= 0)
+            framePlay.prgChg(true/*bSet*/, out_dev, out_ch, last_prgchg[sortIdx]);
+         
+         framePlay.noteOn(true/*bSet*/, out_dev, out_ch,
+                          notes[sortIdx], velocities[sortIdx], mathMaxi(3, durations[sortIdx])
+                          );
+      }
+      else if(numNotes > 1)
+      {
+         // find prg for given prg+note delta combo in replacement LUT
+         int replOff = 0;
+         IntArray lut <= prgchg_chroma_replacement_lut;
+         loop(lut.numElements / 8)
+         {
+            noteIdx = 0;
+            loop(numNotes)
+            {
+               sortIdx = iaSort[noteIdx];
+               if( (last_prgchg[sortIdx]+1) != lut.get(replOff + 0) )
+                  break;
+               noteIdx++;
+            }
+            if(noteIdx == numNotes)
+            {
+               // all prg numbers match, check note deltas
+               noteIdx = 1;
+               loop(numNotes-1)
+               {
+                  if( noteDeltas[noteIdx] != lut.get(replOff + 4 + noteIdx - 1) )
+                     break;
+                  noteIdx++;
+               }
+               if(noteIdx == numNotes)
+               {
+                  // all note deltas match, too => found replacement prg
+                  byte prgOut = lut.get(replOff + 7);
+
+                  if(prgOut > 0)
+                     framePlay.prgChg(true/*bSet*/, out_dev, out_ch, prgOut - 1);
+
+                  sortIdx = iaSort[0];
+                  framePlay.noteOn(true/*bSet*/, out_dev, out_ch,
+                                   notes[sortIdx], velocities[sortIdx], mathMaxi(3, durations[sortIdx])
+                                   );
+                  // Done
+                  break;
+               }
+            }
+
+            // Try next replacement entry
+            replOff += 8;
+         } // loop entries
+
+      } // if numNotes > 1
+
+      tick_nr++;
+   } // if bPlaySeq && !bMuted
+
+}

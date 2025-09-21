@@ -1,0 +1,890 @@
+// ----
+// ---- file   : NodeArranger.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 03Oct2015, 04Oct2015, 05Oct2015, 06Oct2015, 08Oct2015, 09Oct2015, 10Oct2015
+// ----          11Oct2015, 12Oct2015, 13Oct2015, 11Nov2015, 13Nov2015, 13Mar2016, 09Apr2016
+// ----          09Jul2016, 12Jul2016, 11Apr2017, 12Apr2017, 13Apr2017, 14Apr2017, 15Apr2017
+// ----          16Apr2017, 17Apr2017, 18Apr2017, 19Apr2017, 20Apr2017, 14Jul2017, 15Jul2017
+// ----          12Aug2017, 19Aug2017, 03Sep2017, 12Oct2017, 03Jan2018, 04Jan2018, 05Jan2018
+// ----          06Jan2018, 07Mar2018, 04Apr2018, 05Apr2018, 27May2018, 17Jun2018, 18Nov2018
+// ----          24Nov2018, 25Nov2018, 01Mar2019, 19Jun2019, 29Aug2019, 23Oct2019, 31Oct2019
+// ----          06Nov2019, 07Nov2019, 08Nov2019, 09Nov2019, 30Oct2020, 12Nov2020, 22May2021
+// ----          01Jan2022, 13Feb2022, 11Aug2022, 12Aug2022, 13Aug2022, 06Jan2023, 13Oct2023
+// ----          14Oct2023, 16Nov2023, 18Nov2023, 02Feb2024, 03Feb2024, 07Jul2024, 15Nov2024
+// ----          25Jan2025, 26Jan2025, 08Mar2025
+// ----
+// ----
+// ----
+
+module MNodeArranger;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NodeArrangerPatternNode {
+   // (note) only used for (abandonded+deleted) Push-style clip matrix arranger mode
+
+
+   // <load.png>
+   public loadState(Stream ifs) : boolean {
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         int dummy;
+
+         dummy = ifs.i32;  // node_gid
+         dummy = ifs.u8;   // pattern_nr
+         dummy = ifs.u8;   // b_force_empty
+
+         if(ver >= 2)
+         {
+            dummy = ifs.i32;  // pattern_offset
+            dummy = ifs.u8;   // b_force_default_pattern_offset
+         }
+
+         if(ver >= 3)
+         {
+            dummy = ifs.b8;  // b_mute
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+// <class.png>
+class NodeArrangerPattern : NodePattern {
+   // aka "Scene"
+   // (note) only used for (abandonded+deleted) Push-style clip matrix arranger mode
+
+
+   // <method_init.png>
+   public method patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+   }
+
+   // <ui_init.png>
+   public method uiInit() {
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            if(ver >= 2)
+            {
+               int dummy;
+               int numPatNodes = ifs.u16;
+               int patNodeIdx = 0;
+
+               loop(numPatNodes)
+               {
+                  NodeArrangerPatternNode pnDummy <= new NodeArrangerPatternNode;
+
+                  if(pnDummy.loadState(ifs))
+                  {
+                  }
+                  else
+                  {
+                     trace "[---] NodeArrangerPattern: failed to load state of pattern node "+patNodeIdx+" (num="+numPatNodes+")";
+                     return false;
+                  }
+
+                  // Next pattern node
+                  patNodeIdx++;
+               }
+
+               if(ver >= 3)
+               {
+                  dummy = ifs.i32;  // pattern_length_16th
+                  dummy = ifs.u8;   // b_force_auto_pattern_length
+
+                  dummy = ifs.i32;  // num_loops
+                  dummy = ifs.u8;   // b_force_infinite_loop
+               }
+
+               if(ver >= 4)
+               {
+                  dummy = ifs.s8;   // color_offset
+               }
+            }
+
+            return true;
+         }
+      }
+      return false;
+   }
+}
+
+
+// <class.png>
+class NodeArranger : Node {
+
+   static NodeArrangerEditor *editor;
+
+   byte queue_16th; // 16th tick modulo for queue. also used by Timeline marker play modes.
+
+   NA_State timeline;
+
+   public static boolean b_force_mute;  // when replay is started in NodeTracker (=> don't change play patterns)
+
+   IntArray restore_clip_selection;  // after editing clip/arranger
+
+   public boolean b_track_mute_node;  // true=track mutes mute target node(s) + keep sending prgchanges. false=simply don't send program changes
+
+   int saved_track_sy;
+
+   public boolean b_send_clip_rel_pos;  // send RPN 561/562/563 clip relative position events
+
+   static IntArray cached_vst_device_indices;  // maps vstdevidx (0..25) to MIDI out dev_idx. (todo) move to MIDI class ?
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      queue_16th = 4;  // quantize queued scene change to quarter note (one beat)
+
+      b_track_mute_node   = true;
+      b_send_clip_rel_pos = false;
+
+      timeline.init();
+
+      cached_vst_device_indices = MIDI.FindVSTDeviceIndices();
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+      local NodeArrangerPattern pat;
+
+      Node::nodeUIInit();
+
+      // Allocate first pattern
+      pat.patInit(this, 0);
+      pat.uiInit();
+      nodeSetPattern(0, deref pat);
+
+      saved_track_sy = NA_TrackForm.DEFAULT_TRACK_SY/*23*/;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeArrangerEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_arranger_mono");
+      else
+         return UI.GetIcon("node_arranger");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NodeArrangerPattern";
+   }
+
+   // <method.png>
+   public virtual nodeReset(boolean _bSoft) {
+      Node::nodeReset(_bSoft);
+
+      // Resend PrgChg when replay starts
+      timeline.reset(this, _bSoft);
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+      timeline.seek(this, _ticks, nodeIsMaster()/*bEditorSeek*/);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return null;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      timeline.last_queued_marker_patnr = _patNr;
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPatternNr() : int {
+      // // return timeline.last_queued_marker_patnr;
+      if(-1 != timeline.queued_marker_patnr)
+         return timeline.queued_marker_patnr;
+      else
+         return timeline.last_played_marker_patnr;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentEditPatternNr(int _patNr) {
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPatternNr() : int {
+      return timeline.last_queued_marker_patnr;
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      NA_Clip clip <= timeline.findMarkerClipByPatternNr(_patNr);
+      return (null == clip);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternNumTicks(local byte _patNr) : int {
+      // (note) used by PagePipeMap progress display
+      NA_Clip clip <= timeline.findMarkerClipByPatternNr(_patNr);
+      if(null != clip)
+         return clip.end_ticks - clip.start_ticks;
+      return 0;
+   }
+
+   // <method.png>
+   public virtual nodeGetCurrentPlayPatternTickOffset() : int {
+      // (note) used by PagePipeMap progress display
+      NA_Clip clip <= timeline.findMarkerClipByPatternNr(timeline.last_played_marker_patnr);
+      if(null != clip)
+         return timeline.play_offset - clip.start_ticks;
+      return 0;
+   }
+
+   // <method.png>
+   public virtual nodeSetPatternNameByIdx(int _idx, String _name) {
+      // Set marker track clip name
+      NA_Clip clip <= timeline.findMarkerClipByPatternNr(_idx);
+      if(null != clip)
+         clip.setMarkerClipName(_name);
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternNameByIdx(int _idx) : String {
+      // Get marker track clip name
+      NA_Clip clip <= timeline.findMarkerClipByPatternNr(_idx);
+
+      if(null != clip)
+         return clip.getMarkerClipName();
+
+      return "";
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NodeArrangerPattern _pat) {
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NodeArrangerPattern {
+      return null;
+   }
+
+   // <method.png>
+   public virtual nodeCanCopyPatterns() : boolean {
+      return false;
+   }
+
+   // <method.png>
+   public =replay= virtual nodeSwapPatterns(int _idxA, int _idxB) {
+      Global.Debug("NodeArranger::nodeSwapPatterns: idxA="+_idxA+" idxB="+_idxB);
+
+      NA_Clip clipA <= timeline.findMarkerClipByPatternNr(_idxA);
+      NA_Clip clipB <= timeline.findMarkerClipByPatternNr(_idxB);
+
+      Global.Debug("NodeArranger::nodeSwapPatterns: clipA="+@(clipA)+" clipB="+@(clipB));
+
+      if(null != clipA)
+      {
+         if(null != clipB)
+         {
+            Global.Debug("NodeArranger::nodeSwapPatterns: swap clipA/clipB");
+            byte t = clipA.pattern_nr;
+            clipA.pattern_nr = clipB.pattern_nr;
+            clipB.pattern_nr = t;
+         }
+         else
+         {
+            Global.Debug("NodeArranger::nodeSwapPatterns: reassign clipA");
+            clipA.pattern_nr = _idxB;
+         }
+      }
+      else
+      {
+         if(null != clipB)
+         {
+            Global.Debug("NodeArranger::nodeSwapPatterns: reassign clipB");
+            clipB.pattern_nr = _idxA;
+         }
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NodePattern {
+      return timeline.findMarkerClipByPatternNr(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NodePattern {
+      return timeline.findMarkerClipByPatternNr(timeline.last_queued_marker_patnr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NodeArrangerPattern {
+      return timeline.findMarkerClipByPatternNr(timeline.last_queued_marker_patnr);
+   }
+
+   // <method_set.png>
+   public =replay= method setQueue16th(byte _num) {
+      queue_16th = _num;
+   }
+
+   // <method_get.png>
+   public method getQueue16th() : int {
+      return queue_16th;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableTrackMuteNode(boolean _bEnable) {
+      b_track_mute_node = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableSendClipRelPos(boolean _bEnable) {
+      b_send_clip_rel_pos = _bEnable;
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeQueuePattern(int _patNr, int _seekOff, boolean _bMuteTemp) {
+      timeline.queueMarkerPatNr(_patNr);
+   }
+
+   // <method.png>
+   public =replay= method stopTimelineRecording() {
+      //
+      // Stop timeline recording
+      //  (note) called from replay.handleStopPlaying()
+      //
+      if(timeline.b_rec)
+      {
+         Node recNode <= current_song.findNodeByGID(NA_TimelineForm.current_rec_node_gid);
+
+         Global.Debug("NodeArranger::stopTimelineRecording: rec_node_gid="+NA_TimelineForm.current_rec_node_gid);
+
+         if(null != recNode)
+         {
+            if(@(recNode) == @(this))
+            {
+               // Finish recording
+               int off = timeline.getRecOffset(this);
+               Global.Debug("NodeArranger::stopTimelineRecording: off="+off);
+               timeline.updateRecClipEnds(off);
+
+               recNode <= null;
+               NA_TimelineForm.current_rec_node_gid = -1;
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 14; // Version
+
+      Node::nodeSaveState(ofs);
+
+      ofs.i8 = queue_16th; // v2+
+      ofs.i8 = b_track_mute_node; // v12+
+      ofs.i8 = b_send_clip_rel_pos; // v14+
+
+      timeline.saveState(ofs, true/*bSaveMainClips*/, true/*bSaveScratchClips*/);
+
+      ofs.i8 = saved_track_sy; // v13+
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         if(ver >= 2)
+         {
+            queue_16th = ifs.u8;
+         }
+
+         if(ver >= 12)
+         {
+            b_track_mute_node = ifs.b8;
+         }
+
+         if(ver >= 14)
+         {
+            b_send_clip_rel_pos = ifs.b8; // v14+
+         }
+
+         if(ver < 11)  // [29Aug2019] removed Push clip-matrix support
+         {
+            int dummy;
+
+            if(ver >= 4)
+            {
+               dummy = ifs.u8;  // b_playlist
+            }
+
+            if(ver >= 5)
+            {
+               dummy = ifs.u8;  // b_playlist_advance
+               dummy = ifs.u8;  // b_playlist_skip_empty
+            }
+
+            int patIdx;
+            NodeArrangerPattern *pat;
+            boolean bPatUsed;
+
+            // Patterns
+            patIdx = 0;
+            loop(128)
+            {
+               bPatUsed = ifs.i8;
+
+               if(bPatUsed)
+               {
+                  pat <= new NodeArrangerPattern;
+                  pat.patInit(this, patIdx);
+                  // // patterns_jam[patIdx] = deref pat;
+
+                  if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+                  {
+                     trace "[---] NodeArranger::loadState: patLoadState<jam> failed (patIdx="+patIdx+")";
+                     return false;
+                  }
+               }
+
+               // Next pattern
+               patIdx++;
+            }
+
+            dummy = ifs.u8;  // edit_pattern_nr
+            dummy = ifs.u8;  // play_pattern_nr
+
+            if(ver >= 4)
+            {
+               dummy = ifs.u8;  // edit_pattern_nr_jam
+               dummy = ifs.u8;  // play_pattern_nr_jam
+
+               dummy = ifs.u8;  // edit_pattern_nr_pl
+               dummy = ifs.u8;  // play_pattern_nr_pl
+            }
+
+            if(ver >= 3)
+            {
+               // v3+
+               dummy = ifs.i16;  // ui_push_cursor_x
+               dummy = ifs.i16;  // ui_push_cursor_y
+               dummy = ifs.i16;  // ui_push_scene_off_x
+               dummy = ifs.i16;  // ui_push_scene_off_y
+            }
+
+            if(ver >= 4)
+            {
+               // Patterns
+               patIdx = 0;
+               loop(128)
+               {
+                  bPatUsed = ifs.i8;
+                  if(bPatUsed)
+                  {
+                     pat <= new NodeArrangerPattern;
+                     pat.patInit(this, patIdx);
+                     // // patterns_pl[patIdx] = deref pat;
+
+                     if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+                     {
+                        trace "[---] NodeArranger::loadState: patLoadState<pl> failed (patIdx="+patIdx+")";
+                        return false;
+                     }
+                  }
+
+                  // Next pattern
+                  patIdx++;
+               }
+            }
+
+            // // patterns <= patterns_jam;
+         } // if ver < 11
+
+         if(ver >= 6)
+         {
+            if(!timeline.loadState(ifs, (ver >= 10)/*bHaveVer*/, false/*bLoadUIDs*/))
+            {
+               trace "[---] NodeArranger::nodeLoadState: failed to load timeline state.";
+               return false;
+            }
+         }
+
+         if(ver >= 13)
+         {
+            saved_track_sy = ifs.u8; // v13+
+         }
+
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method.png>
+   public virtual nodeUpdateClonedGIDs(IntArray _newGIDMap) {
+
+      Node::nodeUpdateClonedGIDs(_newGIDMap);  // update "show in arranger" GID
+
+      int i;
+      int oldGID;
+      int newGID;
+
+      // Update timeline tracks and clips
+      NA_Track *track;
+      NA_Clip *clip;
+
+      foreach track in timeline.tracks
+      {
+         if(track.isSeq())
+         {
+            i = 0;
+
+            loop(_newGIDMap.numElements / 2)
+            {
+               oldGID = _newGIDMap[i + 0];
+               newGID = _newGIDMap[i + 1];
+
+               if(track.node_gid == oldGID)
+                  track.node_gid = newGID;
+
+               i += 2;
+            }
+
+            foreach clip in track.clips
+            {
+               i = 0;
+
+               loop(_newGIDMap.numElements / 2)
+               {
+                  oldGID = _newGIDMap[i + 0];
+                  newGID = _newGIDMap[i + 1];
+
+                  if(clip.node_gid == oldGID)
+                     clip.node_gid = newGID;
+
+                  i += 2;
+               }
+            }
+         }
+
+      } // foreach timeline track
+   }
+
+   // <method_handle.png>
+   protected method parseTriggerNote(MIDIPipeFrame _frame,
+                                     int _fltDevIdx, int _fltCh
+                                     ) {
+      MIDIPipeEvent pev;
+      int evIdx;
+      int noteIdx;
+
+      // Parse note on
+      int numNoteOn = _frame.getNumEventsNoteOnByFlt(_fltDevIdx, _fltCh);
+      evIdx = 0;
+      loop(numNoteOn)
+      {
+         if(_frame.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, _fltDevIdx, _fltCh))
+         {
+            if(pev.note >= STConfig.arranger_trigger_base_note)
+            {
+               noteIdx = pev.note - STConfig.arranger_trigger_base_note;
+
+               if(timeline.isMarkerPlayMode())
+               {
+                  // Queue marker region
+                  timeline.queueMarkerByClipIdx(this, noteIdx);
+
+                  if(nodeIsEditorVisible())
+                     Events.SendRedrawAll();  // redraw timeline
+
+                  Global.Debug3("NodeArranger: GID="+getNodeGID()+" queued timeline marker clipidx= "+noteIdx+" via Note On");
+               }
+            }
+         }
+
+         // Next event
+         evIdx++;
+      }
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         loop(numPC)
+         {
+            MIDIPipeEvent ev;
+            _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+            if(b_auto_filter_a && b_auto_recv_prgchg_a)
+            {
+               if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                  {
+                     if(timeline.isMarkerPlayMode())
+                     {
+                        // Queue marker region
+                        timeline.queueMarkerPatNr(ev.arg1);
+                        Global.Debug3("NodeArranger: GID="+getNodeGID()+" queued timeline marker "+ev.arg1+" via PrgChg A");
+                     }
+                  }
+               }
+            }
+
+            if(b_auto_filter_b && b_auto_recv_prgchg_b)
+            {
+               if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+               {
+                  if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                  {
+                     if(timeline.isMarkerPlayMode())
+                     {
+                        // Queue marker region
+                        timeline.queueMarkerPatNr(ev.arg1);
+                        Global.Debug3("NodeArranger: GID="+getNodeGID()+" queued timeline marker "+ev.arg1+" via PrgChg B");
+                     }
+                  }
+               }
+            }
+
+            pcIdx++;
+         }
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         if(timeline.isMarkerPlayMode())
+         {
+            // Queue marker region
+            timeline.queueMarkerPatNr(t);
+         }
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <method.png>
+   public =replay= static SetEnableForceMute(boolean _bEnable) {
+      // called by NT_PatternView
+      b_force_mute = _bEnable;
+   }
+
+   // <method_find.png>
+   public virtual nodeFindSampleUIDs(IntArray _retSmpUIDs) {
+      timeline.findAudioClipSampleUIDs(_retSmpUIDs);
+   }
+
+   // <method_get.png>
+   public virtual nodeIsArmedForRecording() : boolean {
+      return timeline.b_rec;
+   }
+
+   // <method_set.png>
+   public virtual nodeArmForRecording(boolean _bEnable) : boolean {
+      // (note) recording to multiple arrangers currently not supported
+      // (note) => must start recording from arranger editor
+      timeline.b_rec = _bEnable;
+   }
+
+   // <method.png>
+   public virtual nodeHandleStartRecording() {
+      // (todo) record to multiple arrangers
+      // (note) for now, start recording in arranger editor (see NA_TimelineForm::startRecording())
+
+      if(!nodeIsEditorVisible())
+      {
+         // Start background recording (via PagePipeMap)
+         NA_TimelineForm.current_rec_node_gid = getNodeGID();
+
+         if(!nodeIsMaster())
+         {
+            timeline.rec_shift_offset = timeline.getRecOffsetMaster() - timeline.edit_offset;
+         }
+
+         int off = timeline.getRecOffset(this);
+
+         Global.Debug("NodeArranger::nodeHandleStartRecording<bg>: rec_node_gid="+NA_TimelineForm.current_rec_node_gid+" off="+off);
+
+         timeline.edit_offset = off;
+      }
+      // else: recording is started from arranger editor
+   }
+
+   // <method.png>
+   public virtual nodeHandleStopRecording() {
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [RPN_COMMON_UI_PRGCHG,
+              RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+              RPN_COMMON_MUTE_TEMP_TOGGLE,
+              // // RPN_COMMON_MUTE_TEMP_1_8,
+              // // RPN_COMMON_MUTE_TEMP_9_16,
+              // // RPN_COMMON_SOLO_TEMP_1_8,
+              // // RPN_COMMON_SOLO_TEMP_9_16,
+              RPN_COMMON_UI_NODE_MUTE,
+              RPN_COMMON_UI_NODE_SOLO,
+              RPN_COMMON_UI_PIPE_MUTE,
+              RPN_COMMON_UI_PIPE_SOLO,
+
+              RPN_COMMON_SEEK_OFFSET,
+              ];
+   }
+
+   // <replay.png>
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+
+      boolean bAllowSeekPrgChgAndMute = !b_node_ignore_seek_prgchg_mute;
+
+      boolean bHaveRPN = (_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0);
+      short t;
+
+      if(-1 != timeline.queued_record_audio_smp_uid)
+      {
+         timeline.current_record_audio_smp_uid = timeline.queued_record_audio_smp_uid;
+         timeline.queued_record_audio_smp_uid = -1;
+      }
+
+      if(bHaveRPN)
+      {
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // Handle MUTE_TEMP, MUTE_TEMP_TOGGLE
+            nodeParseRPN_Mute(_framePlay, _frameRec);
+         }
+      }
+
+      boolean bForceMuteClips = false;
+
+      if(bAllowSeekPrgChgAndMute)
+         bForceMuteClips = nodeHandleQueuedMuteTemp();
+
+      if(!_bMuted)
+      {
+         if(!timeline.b_scratch)
+         {
+            if(bAllowSeekPrgChgAndMute)
+            {
+               handlePrgChg(_framePlay);
+               handlePrgChg(_frameRec);
+            }
+
+            if(b_auto_filter_a)
+            {
+               parseTriggerNote(_frameRec, auto_dev_filter_a, auto_ch_filter_a);
+               parseTriggerNote(_framePlay, auto_dev_filter_a, auto_ch_filter_a);
+            }
+
+            if(b_auto_filter_b)
+            {
+               parseTriggerNote(_frameRec, auto_dev_filter_b, auto_ch_filter_b);
+               parseTriggerNote(_framePlay, auto_dev_filter_b, auto_ch_filter_b);
+            }
+
+            nodeSendQueuedPrgChgOut(_framePlay);
+         }
+      }
+
+      int markerQueuedSeek = -1;
+
+      if(bHaveRPN)
+      {
+         if(bAllowSeekPrgChgAndMute)
+         {
+            t = getRPN(_framePlay, _frameRec, RPN_COMMON_SEEK_OFFSET);
+
+            if(-1 != t)
+            {
+               if(!timeline.isMarkerPlayMode())
+               {
+                  timeline.seek(this, t * (current_song.ppq / 4.0f), false/*bEditorSeek*/);  // 1/16th
+               }
+               else
+               {
+                  // Seek after clips have been started
+                  markerQueuedSeek = t * (current_song.ppq / 4.0f);
+               }
+            }
+         }
+      }
+
+      timeline.processFrame(this,
+                            _framePlay,
+                            _frameRec,
+                            _bMuted,
+                            _bPlaySeq,
+                            bForceMuteClips,
+                            b_track_mute_node
+                            );
+
+      if(-1 != markerQueuedSeek)
+         timeline.seek(this, markerQueuedSeek, false/*bEditorSeek*/);  // 1/16th
+   }
+
+}

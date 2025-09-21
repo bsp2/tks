@@ -1,0 +1,4316 @@
+// ----
+// ---- file   : NMM_Arg.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2015-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 30Oct2015, 31Oct2015, 01Nov2015, 02Nov2015, 03Nov2015, 04Nov2015, 06Nov2015
+// ----          07Nov2015, 08Nov2015, 09Nov2015, 21Dec2015, 26Jan2016, 31Jan2016, 09Apr2016
+// ----          02Jul2016, 08Jul2016, 09Jul2016, 31Jan2017, 11Feb2017, 06Mar2017, 09Mar2017
+// ----          10Mar2017, 11Mar2017, 12Mar2017, 14Mar2017, 12Aug2017, 25Aug2017, 03Sep2017
+// ----          22Sep2017, 04Jan2018, 07Mar2018, 28Apr2018, 21May2018, 27May2018, 17Jun2018
+// ----          22Feb2019, 19May2019, 08Jun2019, 09Jun2019, 25Jun2019, 29Aug2019, 19Oct2019
+// ----          07Nov2019, 30Oct2020, 10Nov2020, 26Jan2021, 27Jan2021, 29Jan2021, 30May2021
+// ----          01Jun2021, 20Jun2021, 21Jun2021, 01Jan2022, 18Mar2022, 21Nov2022, 07Apr2023
+// ----          23Jun2023, 15Oct2023, 20Oct2023, 07Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNMM_Arg;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NMM_Arg {
+
+   define float INVALID_VALUE = -999999.0f;
+
+   define float UI_VAL_TIMEOUT = 1.5;  // number of beats/2
+
+   define exception ParseError : CriticalError;
+
+   define int NUM_MACRO_CTLS = 4;
+   define int NUM_MACRO_DEVS = 4;
+
+   NMM_Entry *parent_entry;
+   NMM_Pattern *parent_pat;
+
+   boolean b_macro;
+
+   boolean b_debug;
+
+   float ui_out_val;
+   float ui_cur_val;
+   int ui_cur_val_timeout;  // number of ticks (1 quarter note)
+   int ui_out_val_timeout;  // number of ticks (1 quarter note)
+
+   float out_val;
+   float cur_val;  // 0..1 range (normalized)
+
+   byte    orig_note;
+   boolean b_orig_note_state; // true=on, false=off
+   float   orig_vel;
+   int     orig_dur;
+
+   byte orig_ch;
+   byte tmp_force_dst_ch;  // when dst ch is *
+
+   define int TYPE_NONE             =  0;  // src-only
+   define int TYPE_CONST            =  1;  // src-only
+   define int TYPE_RANDOM           =  2;  // src-only
+   define int TYPE_SONGPOS          =  3;  // v17+
+   define int NUM_SRC_TYPES         =  4;
+   define int TYPE_NOTE             =  4;
+   define int TYPE_NOTE_ADD         =  5;  // v8+
+   define int TYPE_NOTE_ON          =  6;  // v10+
+   define int TYPE_NOTE_ON_ADD      =  7;  // v10+
+   define int TYPE_NOTE_OFF         =  8;  // v10+
+   define int TYPE_NOTE_OFF_ADD     =  9;  // v10+
+   define int TYPE_VELOCITY         = 10;
+   define int TYPE_VELOCITY_ADD     = 11;  // v8+
+   define int TYPE_DURATION         = 12;
+   define int TYPE_DURATION_ADD     = 13;  // v8+
+   define int TYPE_POLYPRESSURE     = 14;
+   define int TYPE_POLYPRESSURE_ADD = 15;  // v8+
+   define int TYPE_CC               = 16;
+   define int TYPE_PRGCHG           = 17;
+   define int TYPE_CHPRESSURE       = 18;
+   define int TYPE_PITCHBEND        = 19;
+   define int TYPE_RPN              = 20;
+   define int TYPE_NRPN             = 21;
+   define int TYPE_BPM              = 22;  // v18+
+   define int TYPE_GROOVE           = 23;  // v19+
+   define int TYPE_REG1             = 24;
+   define int TYPE_REG2             = 25;
+   define int TYPE_REG3             = 26;
+   define int TYPE_REG4             = 27;
+   define int TYPE_REG5             = 28;
+   define int TYPE_REG6             = 29;
+   define int TYPE_REG7             = 30;
+   define int TYPE_REG8             = 31;
+   define int NUM_SRCDST_TYPES      = 32;
+   define int TYPE_MACRO1           = 32;  // v11+  (disp_type only)
+   define int TYPE_MACRO2           = 33;  // v11+
+   define int TYPE_MACRO3           = 34;  // v11+
+   define int TYPE_MACRO4           = 35;  // v11+
+   define int NUM_TYPES             = 36;
+
+   static StringArray type_names = [
+      "Note",
+      "Note+",
+      "Note On",
+      "Note On+",
+      "Note Off",
+      "Note Off+",
+      "Velocity",
+      "Velocity+",
+      "Duration",
+      "Duration+",
+      "Poly.AT",
+      "Poly.AT+",
+      "CC",
+      "PrgChg",
+      "Ch.AT",
+      "Pitchbend",
+      "RPN",
+      "NRPN",
+      "BPM",
+      "Groove",
+      "Reg 1",
+      "Reg 2",
+      "Reg 3",
+      "Reg 4",
+      "Reg 5",
+      "Reg 6",
+      "Reg 7",
+      "Reg 8"
+                                 ];
+
+
+   static StringArray extra_src_type_names = [
+      "None",
+      "Const",
+      "Random",
+      "SongPos"
+                     ];
+
+   static StringArray extra_macro_type_names = [
+      "Macro 1",
+      "Macro 2",
+      "Macro 3",
+      "Macro 4"
+                     ];
+
+   static StringArray script_type_names = [
+      "none",
+      "const",
+      "rand",
+      "songpos",
+      "note",
+      "note+",
+      "noteon",
+      "noteon+",
+      "noteoff",
+      "noteoff+",
+      "vel",
+      "vel+",
+      "dur",
+      "dur+",
+      "polyat",
+      "polyat+",
+      "cc",
+      "pc",
+      "chat",
+      "pb",
+      "rpn",
+      "nrpn",
+      "bpm",
+      "groove",
+      "r1",
+      "r2",
+      "r3",
+      "r4",
+      "r5",
+      "r6",
+      "r7",
+      "r8",
+      "m1",
+      "m2",
+      "m3",
+      "m4"
+                                 ];
+
+   define int MOD_NONE          =  0;   // val
+   define int MOD_N7            =  1;   // (val/127.0)
+   define int MOD_N7OM          =  2;   // 1 - (val/127.0)
+   define int MOD_N7N           =  3;   // - (val/127.0)
+   define int MOD_N7HS          =  4;   // (val/127.0)-0.5
+   define int MOD_N7HSN         =  5;   // -(val/127.0)-0.5
+   define int MOD_N7FS          =  6;   // ((val/127.0)-0.5)*2
+   define int MOD_N7FSN         =  7;   // -((val/127.0)-0.5)*2
+   define int MOD_N8            =  8;   // (val/255.0)
+   define int MOD_N8OM          =  9;   // 1 - (val/255.0)
+   define int MOD_N8N           = 10;   // - (val/255.0)
+   define int MOD_N8HS          = 11;   // (val/255.0)-0.5
+   define int MOD_N8HSN         = 12;   // - (val/255.0)-0.5
+   define int MOD_N8FS          = 13;   // ((val/255.0)-0.5)*2
+   define int MOD_N8FSN         = 14;   // -((val/255.0)-0.5)*2
+   define int MOD_N14           = 15;   // (val/16383.0)
+   define int MOD_N14OM         = 16;   // 1 - (val/16383.0)
+   define int MOD_N14N          = 17;   // - (val/16383.0)
+   define int MOD_N14HS         = 18;   // (val/16383.0)-0.5
+   define int MOD_N14HSN        = 19;   // -(val/16383.0)-0.5
+   define int MOD_N14FS         = 20;   // ((val/16383.0)-0.5)*2
+   define int MOD_N14FSN        = 21;   // -((val/16383.0)-0.5)*2
+   define int MOD_INT           = 22;   // int(val)
+   define int MOD_FRAC          = 23;   // frac(val)
+   define int MOD_NEG           = 24;   // -val
+   define int MOD_1M            = 25;   // 1-val
+   define int MOD_127M          = 26;   // 127-val
+   define int MOD_PPQ           = 27;   // <song_ppq> * val
+   define int MOD_DIV2          = 28;   // val/2
+   define int MOD_DIV4          = 29;   // val/4
+   define int MOD_MUL2          = 30;   // val*2
+   define int MOD_MUL4          = 31;   // val*4
+   define int MOD_M64           = 32;   // val - 64
+   define int MOD_M128          = 33;   // val - 128
+   define int MOD_M8192         = 34;   // val - 8192
+   define int MOD_A64           = 35;   // val + 64
+   define int MOD_A128          = 36;   // val + 128
+   define int MOD_A8192         = 37;   // val + 8192
+   define int MOD_DIV128        = 38;   // val / 128
+   define int MOD_PP16          = 39;   // <song_ppq> / 4 * val  (16th note)
+   define int MOD_PP64          = 40;   // <song_ppq> / 16 * val
+
+   int modifier;
+
+   static StringArray modifier_names = [
+      "-",       //  0
+      "N7",      //  1
+      "N7OM",    //  2
+      "N7N",     //  3
+      "N7HS",    //  4
+      "N7HSN",   //  5
+      "N7FS",    //  6
+      "N7FSN",   //  7
+      "N8",      //  8
+      "N8OM",    //  9
+      "N8N",     // 10
+      "N8HS",    // 11
+      "N8HSN",   // 12
+      "N8FS",    // 13
+      "N8FSN",   // 14
+      "N14",     // 15
+      "N14OM",   // 16
+      "N14N",    // 17
+      "N14HS",   // 18
+      "N14HSN",  // 19
+      "N14FS",   // 20
+      "N14FSN",  // 21
+      "Int",     // 22
+      "Frac",    // 23
+      "Neg",     // 24
+      "1 -",     // 25
+      "127 -",   // 26
+      "* PPQ",   // 27
+      "/ 2",     // 28
+      "/ 4",     // 29
+      "* 2",     // 30
+      "* 4",     // 31
+      "- 64",    // 32
+      "- 128",   // 33
+      "- 8192",  // 34
+      "+ 64",    // 35
+      "+ 128",   // 36
+      "+ 8192",  // 37
+      "/ 128",   // 38
+      "* PP16",  // 39
+      "* PP64"   // 40
+                                        ];
+
+   // (note) script name is modifier_name toLower().replace(" ", "")
+
+   static StringArray modifier_tooltips = [
+      "-: Use value as is",
+      "N7: Normalize 7bit value\n\n (note) De-normalize output value (reverse modifier)",
+      "N7OM: Normalize 7bit value and generate (1 - value)\n\n (note) De-normalize output value (reverse modifier)",
+      "N7N: Normalize 7bit value and negate (- value)\n\n (note) De-normalize output value (reverse modifier)",
+      "N7HS: Normalize 7bit value and generate signed value (-0.5..+0.5)\n\n (note) De-normalize output value (reverse modifier)",
+      "N7HSN: Normalize 7bit value and generate negated signed value (+0.5..-0.5)\n\n (note) De-normalize output value (reverse modifier)",
+      "N7FS: Normalize 7bit value and generate signed value (-1..+1)\n\n (note) De-normalize output value (reverse modifier)",
+      "N7FSN: Normalize 7bit value and generate negated signed value (+1..-1)\n\n (note) De-normalize output value (reverse modifier)",
+      "N8: Normalize 8bit value\n\n (note) De-normalize output value (reverse modifier)",
+      "N8OM: Normalize 8bit value and generate (1 - value)\n\n (note) De-normalize output value (reverse modifier)",
+      "N8N: Normalize 8bit value and negate (- value)\n\n (note) De-normalize output value (reverse modifier)",
+      "N8HS: Normalize 8bit value and generate signed value (-0.5..+0.5)\n\n (note) De-normalize output value (reverse modifier)",
+      "N8HSN: Normalize 8bit value and generate negated signed value (+0.5..-0.5)\n\n (note) De-normalize output value (reverse modifier)",
+      "N8FS: Normalize 8bit value and generate signed value (-1..+1)\n\n (note) De-normalize output value (reverse modifier)",
+      "N8FSN: Normalize 8bit value and generate negated signed value (+1..-1)\n\n (note) De-normalize output value (reverse modifier)",
+      "N14: Normalize 14bit value\n\n (note) De-normalize output value (reverse modifier)",
+      "N14OM: Normalize 14bit value and generate (1 - value)\n\n (note) De-normalize output value (reverse modifier)",
+      "N14N: Normalize 14bit value and negate (- value)\n\n (note) De-normalize output value (reverse modifier)",
+      "N14HS: Normalize 14bit value and generate signed value (-0.5..+0.5)\n\n (note) De-normalize output value (reverse modifier)",
+      "N14HSN: Normalize 14bit value and generate negated signed value (+0.5..-0.5)\n\n (note) De-normalize output value (reverse modifier)",
+      "N14FS: Normalize 14bit value and generate signed value (-1..+1)\n\n (note) De-normalize output value (reverse modifier)",
+      "N14FSN: Normalize 14bit value and generate negated signed value (+1..-1)\n\n (note) De-normalize output value (reverse modifier)",
+      "Int: Convert to integer and remove fractional part (e.g. 23.5 => 23)",
+      "Frac: Remove integer part (e.g. 23.5 => 0.5)",
+      "Neg: Invert sign",
+      "1 -: Subtract from 1.0",
+      "127 -: Subtract from 127",
+      "* PPQ: Multiply by current song precision per quarter (PPQ)",
+      "/ 2: Divide by 2.0",
+      "/ 4: Divide by 4.0",
+      "* 2: Multiply by 2.0",
+      "* 4: Multiply by 4.0",
+      "- 64: Subtract 64",
+      "- 128: Subtract 128",
+      "- 8192: Subtract 8192",
+      "+ 64: Add 64",
+      "+ 128: Add 128",
+      "+ 8192: Add 8192",
+      "/ 128: Divide by 128.0",
+      "* PP16: Multiply by current song precision per 16th note (PPQ / 4)",
+      "* PP64: Multiply by current song precision per 64th note (PPQ / 16)"
+                                           ];
+
+   define int DEF_NONE   = 0;
+   define int DEF_LOW    = 1;
+   define int DEF_CENTER = 2;
+   define int DEF_HIGH   = 3;
+   byte def_value_id;
+
+   static PointerArray def_value_tbl = [
+
+      // lo    ctr   hi
+      [ 0.0,   64.0, 127.0],  // -
+      [ 0.0,    0.5,   1.0],  // N7
+      [ 1.0,    0.5,   0.0],  // N7OM
+      [ 0.0,   -0.5,  -1.0],  // N7N
+      [-0.5,    0.0,   0.5],  // N7HS
+      [ 0.5,    0.0,  -0.5],  // N7HSN
+      [-1.0,    0.0,   1.0],  // N7FS
+      [ 1.0,    0.0,  -1.0],  // N7FSN
+      [ 0.0,    0.5,   1.0],  // N8
+      [ 0.0,    0.5,   1.0],  // N8OM
+      [ 0.0,   -0.5,  -1.0],  // N8N
+      [-0.5,    0.0,   0.5],  // N8HS
+      [ 0.5,    0.0,  -0.5],  // N8HSN
+      [-1.0,    0.0,   1.0],  // N8FS
+      [ 1.0,    0.0,  -1.0],  // N8FSN
+      [ 0.0,    0.5,   1.0],  // N14
+      [ 1.0,    0.5,   0.0],  // N14OM
+      [ 0.0,   -0.5,  -1.0],  // N14N
+      [-0.5,    0.0,   0.5],  // N14HS
+      [ 0.5,    0.0,  -0.5],  // N14HSN
+      [-1.0,    0.0,   1.0],  // N14FS
+      [ 1.0,    0.0,  -1.0],  // N14FSN
+      [ 0.0,   64.0,8192.0],  // Int
+      [ 0.0,    0.5,   0.0],  // Frac
+      [ 0.0,   -0.5,  -1.0],  // Neg
+      [ 1.0,    0.5,   0.0],  // 1 -
+      [127.0,  64.0,   0.0],  // 127 -
+      [48.0,   96.0, 192.0],  // * PPQ
+      [ 0.0,   0.25,   0.5],  // /2
+      [ 0.0,   0.125, 0.25],  // /4
+      [ 0.0,    1.0,   2.0],  // *2
+      [ 0.0,    2.0,   4.0],  // *4
+      [ 0.0,   64.0, 128.0],  // /128
+      [48.0,   96.0, 192.0],  // * PP16
+      [48.0,   96.0, 192.0]   // * PP64
+                                         ];
+
+   define int SH_NONE  =  0;
+   define int SH_Q64   =  1;  // Quantize events to 1/64 intervals
+   define int SH_Q32   =  2;
+   define int SH_Q16   =  3;
+   define int SH_Q8    =  4;
+   define int SH_Q4    =  5;
+   define int SH_Q2    =  6;
+   define int SH_Q1    =  7;
+   define int SH_64    =  8;  // Hold for 1/64 after new event was received
+   define int SH_32    =  9;
+   define int SH_16    = 10;
+   define int SH_8     = 11;
+   define int SH_4     = 12;
+   define int SH_2     = 13;
+   define int SH_1     = 14;
+   define int SH_INF   = 15;
+   define int SH_RESET = 16;
+
+   int sh_type;
+
+   int sh_timeout;
+   float sh_val;
+   float sh_val_next;  // initial value for next quantization interval
+
+   static StringArray sh_type_names = [
+      "-",
+      "Q 1/64",
+      "Q 1/32",
+      "Q 1/16",
+      "Q 1/8",
+      "Q 1/4",
+      "Q 1/2",
+      "Q 1/1",
+      "H 1/64",
+      "H 1/32",
+      "H 1/16",
+      "H 1/8",
+      "H 1/4",
+      "H 1/2",
+      "H 1/1",
+      "H Inf",
+      "Reset"
+                                       ];
+
+   static StringArray script_sh_type_names = [
+      "none",
+      "q1/64",
+      "q1/32",
+      "q1/16",
+      "q1/8",
+      "q1/4",
+      "q1/2",
+      "q1/1",
+      "h1/64",
+      "h1/32",
+      "h1/16",
+      "h1/8",
+      "h1/4",
+      "h1/2",
+      "h1/1",
+      "hinf",
+      "reset"
+                                       ];
+
+   boolean b_reset_done_in;
+   boolean b_reset_done_out;
+
+   int type;  // actual eval type
+   int disp_type;  // displayed type (for macro ctl)
+
+   int dev_idx; // -1=no dev assigned
+   int disp_dev_idx; // -1=no dev assigned, 0..3=macro1..4 dev, 4..n=actual device index
+   int dev_ch; // -1=* or 0..15
+   int macro_dev_ch;  // -2=def, -1=*, or 0..15
+
+   int cc_nr;
+   int rpn_nr;
+   int nrpn_nr;
+
+   define int CONST_TYPE_FLOAT    = 0;
+   define int CONST_TYPE_INT_DEC  = 1;
+   define int CONST_TYPE_INT_HEX  = 2;
+   define int CONST_TYPE_NOTE     = 3;
+   define int CONST_TYPE_PATNR    = 4;
+   define int CONST_TYPE_KEY      = 5;
+   define int CONST_TYPE_MODE     = 6;
+   define int CONST_TYPE_BINARY   = 7;
+   define int CONST_TYPE_CHORD    = 8;
+
+   static StringArray const_val_type_names = ["Float", "Int (Dec)", "Int (Hex)", "Note", "PatNr", "Key", "Mode", "Binary", "ChordIdx"];
+
+   float   const_val;
+   float   ui_last_read_const_val;
+   int     const_val_range;
+   boolean b_const_val_signed;
+   int     const_val_type;
+
+   define int VAL_RANGE_0_1          =  0;
+   define int VAL_RANGE_0_10         =  1;
+   define int VAL_RANGE_0_63         =  2;
+   define int VAL_RANGE_0_127        =  3;
+   define int VAL_RANGE_0_255        =  4;
+   define int VAL_RANGE_0_511        =  5;
+   define int VAL_RANGE_0_1023       =  6;
+   define int VAL_RANGE_0_8191       =  7;
+   define int VAL_RANGE_0_16383      =  8;
+
+   static StringArray val_range_names = [
+      "1",
+      "10",
+      "63",
+      "127",
+      "255",
+      "511",
+      "1023",
+      "8191",
+      "16383"
+                                               ];
+
+   static FloatArray val_range_tbl = [ // min/max/step tuples  (step only applies to FLOAT consts, for ints it's 1)
+           0.0,     1.0,    0.025,  // VAL_RANGE_0_1    : unsigned
+          -1.0,     1.0,    0.05,   // VAL_RANGE_0_1    : signed
+           0.0,    10.0,    0.1,    // VAL_RANGE_0_10   : unsigned
+         -10.0,    10.0,    0.2,    // VAL_RANGE_0_10   : signed
+           0.0,    63.0,    1.0,    // VAL_RANGE_0_63   : unsigned
+         -64.0,    63.0,    1.0,    // VAL_RANGE_0_63   : signed
+           0.0,   127.0,    1.0,    // VAL_RANGE_0_127  : unsigned
+        -128.0,   127.0,    1.0,    // VAL_RANGE_0_127  : signed
+           0.0,   255.0,    1.0,    // VAL_RANGE_0_255  : unsigned
+        -256.0,   255.0,    1.0,    // VAL_RANGE_0_255  : signed
+           0.0,   511.0,    2.0,    // VAL_RANGE_0_511  : unsigned
+        -512.0,   511.0,    2.0,    // VAL_RANGE_0_511  : signed
+           0.0,  1023.0,    4.0,    // VAL_RANGE_0_1023 : unsigned
+       -1024.0,  1023.0,    4.0,    // VAL_RANGE_0_1023 : signed
+           0.0,  8191.0,   32.0,    // VAL_RANGE_0_8191 : unsigned
+       -8192.0,  8191.0,   32.0,    // VAL_RANGE_0_8191 : signed
+           0.0, 16383.0,   64.0,    // VAL_RANGE_0_16383: unsigned
+      -16384.0, 16383.0,   64.0     // VAL_RANGE_0_16383: signed
+                                             ];
+
+   float   rand_min;
+   float   rand_max;
+   float   rand_min_time;  // 1/16 notes
+   float   rand_max_time;
+   byte    rand_val_range;  // VAL_RANGE_xxx
+   boolean b_rand_val_signed;
+
+
+   float cur_rand_val;
+   int   cur_rand_countdown; // tick count
+   float cur_rand_val_step;
+
+   // temporary, while parsing script:
+   StringArray script_words;
+   int script_word_idx;
+   int script_word_last_idx;
+
+
+
+   // <method_init.png>
+   public method init(NMM_Entry _en, NMM_Pattern _pat, boolean _bMacro, boolean _bDst) {
+      parent_entry <= _en;
+      parent_pat <= _pat;
+
+      b_macro = _bMacro;
+
+      cur_val = INVALID_VALUE;
+
+      modifier = MOD_NONE;
+      def_value_id = DEF_NONE;
+
+      if(_bDst)
+      {
+         // // type = TYPE_CC;
+         type = TYPE_REG1;
+      }
+      else
+      {
+         type = TYPE_CONST;
+      }
+      disp_type = type;
+
+      dev_idx = -1;
+      dev_ch = 0;
+      macro_dev_ch = -2;  // default (== use macro ch)
+
+      const_val          = 64.0;
+      const_val_range    = VAL_RANGE_0_127;
+      b_const_val_signed = false;
+      const_val_type     = CONST_TYPE_INT_DEC;
+
+      rand_min          = 0;
+      rand_max          = 127;
+      rand_min_time     = 1.0;
+      rand_max_time     = 4.0;
+      rand_val_range    = VAL_RANGE_0_127;
+      b_rand_val_signed = false;
+   }
+
+   // <method.png>
+   public method copyFrom(NMM_Arg _o, boolean _bMacroCtlOnly) {
+
+      dev_idx            = _o.dev_idx;
+      dev_ch             = _o.dev_ch;
+
+      macro_dev_ch = _o.macro_dev_ch;
+
+      // // trace "xxx arg copyFrom bMacroCtlOnly="+_bMacroCtlOnly+" dev_idx="+dev_idx+" dev_ch="+dev_ch;
+
+      if(_bMacroCtlOnly)
+      {
+         // Called when updating macro refs
+         // (note) keep disp_type
+         // (note) keep disp_dev_idx
+         type               = _o.type;
+      }
+      else
+      {
+         cur_val            = _o.cur_val;
+         disp_dev_idx       = _o.disp_dev_idx;
+         updateMacroCtlDevIdxAndCh();
+         disp_type          = _o.disp_type;
+         type               = getMacroCtlType();
+         sh_type            = _o.sh_type;
+         modifier           = _o.modifier;
+         def_value_id       = _o.def_value_id;
+      }
+
+      cc_nr              = _o.cc_nr;
+      rpn_nr             = _o.rpn_nr;
+      nrpn_nr            = _o.nrpn_nr;
+      const_val          = _o.const_val;
+      const_val_range    = _o.const_val_range;
+      b_const_val_signed = _o.b_const_val_signed;
+      const_val_type     = _o.const_val_type;
+      rand_min           = _o.rand_min;
+      rand_max           = _o.rand_max;
+      rand_min_time      = _o.rand_min_time;
+      rand_max_time      = _o.rand_max_time;
+      rand_val_range     = _o.rand_val_range;
+      b_rand_val_signed  = _o.b_rand_val_signed;
+   }
+
+   // <method_init.png>
+   public method initFromCopiedCtl(int _devIdx, byte _midiCh, int _type, byte _ccNr, short _rpnNr, short _nrpnNr) {
+      // used by "mmarg_clipboard_*", see NT_PatternView.copyCurrentCtlToClipboard()
+      dev_idx = _devIdx;
+      dev_ch  = _midiCh;
+      type    = _type;
+      cc_nr   = _ccNr;
+      rpn_nr  = _rpnNr;
+      nrpn_nr = _nrpnNr;
+   }
+
+   // <method_get.png>
+   public method isValidClipboardArg() : boolean {
+      return
+         (dev_idx >= 0) &&
+         (TYPE_NOTE <= type <= TYPE_NRPN);
+   }
+
+   // <method_get.png>
+   public method getPortStringForClipboardMenu() : String {
+      if(isValidClipboardArg())
+      {
+         STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+         if(null != dev)
+         {
+            local String r <= dev.getAliasOrDeviceName()+":"+((dev_ch>=0) ? (dev_ch+1) : "*");
+            return deref r;
+         }
+      }
+      return "";
+   }
+
+   // <method_get.png>
+   public method getStringForClipboardMenu() : String {
+      if(isValidClipboardArg())
+      {
+         STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+         if(null != dev)
+         {
+            local String r <= dev.getAliasOrDeviceName()+":"+((dev_ch>=0) ? (dev_ch+1) : "*");
+            r.append(" ");
+            r.append(type_names.get(type-NUM_SRC_TYPES));
+            int ext = getExtType();
+            if(ext >= 0)
+               r.append("#"+ext);
+            return deref r;
+         }
+      }
+      return "";
+   }
+
+   // <method_get.png>
+   public method getExtType() : int {
+      if(TYPE_CC == type)
+         return cc_nr;
+      if(TYPE_RPN == type)
+         return rpn_nr;
+      if(TYPE_NRPN == type)
+         return nrpn_nr;
+      return -1;
+   }
+
+   // <method.png>
+   public method copyTypeFromNodeTrackerMIDIParam(NT_MIDIParam _param) {
+      switch(_param.type)
+      {
+         default:
+            type = TYPE_NONE;
+            break;
+
+         case NT_MIDIParam.TYPE_CC:
+            type = TYPE_CC;
+            switch(_param.msblsb_mode)
+            {
+               case NT_MIDIParam.MSBLSB_ONLYLSB:
+                  cc_nr = _param.cc_lsb_id;
+                  break;
+
+               default:
+               case NT_MIDIParam.MSBLSB_ONLYMSB:
+                  cc_nr = _param.cc_msb_id;
+                  break;
+
+               case NT_MIDIParam.MSBLSB_BOTH:
+                  cc_nr = _param.cc_msb_id;
+                  break;
+            }
+            break;
+
+         case NT_MIDIParam.TYPE_RPN:
+            type = TYPE_RPN;
+            rpn_nr = _param.rpn_id;
+            break;
+
+         case NT_MIDIParam.TYPE_NRPN:
+            type = TYPE_RPN;
+            rpn_nr = _param.rpn_id;
+            break;
+
+         case NT_MIDIParam.TYPE_PRGCHG:
+            type = TYPE_PRGCHG;
+            break;
+      }
+   }
+
+   // <method_init.png>
+   public method copyFromMIDIMapEventType(MIDIMapEventType _ev) {
+      // used by "mmarg_clipboard_*", see PageEditMIDIMorph.copyEntryTypeAndPortToCtlClipboard()
+      type = TYPE_CONST;
+
+      switch(_ev.type)
+      {
+         case MIDIMapDefs.TYPE_NOTE_ON:
+            type = TYPE_NOTE_ON;
+            break;
+
+         case MIDIMapDefs.TYPE_NOTE_OFF:
+            type = TYPE_NOTE_OFF;
+            break;
+
+         case MIDIMapDefs.TYPE_POLY_PRESSURE:
+            type = TYPE_POLYPRESSURE;
+            break;
+
+         case MIDIMapDefs.TYPE_CC:
+            type = TYPE_CC;
+            cc_nr = _ev.ext_type;
+            break;
+
+         case MIDIMapDefs.TYPE_PROGRAM_CHANGE:
+            type = TYPE_PRGCHG;
+            break;
+
+         case MIDIMapDefs.TYPE_CHANNEL_PRESSURE:
+            type = TYPE_CHPRESSURE;
+            break;
+
+         case MIDIMapDefs.TYPE_PITCHBEND:
+            type = TYPE_PITCHBEND;
+            break;
+
+         case MIDIMapDefs.TYPE_RPN:
+            type = TYPE_RPN;
+            rpn_nr = _ev.ext_type;
+            break;
+
+         case MIDIMapDefs.TYPE_NRPN:
+            type = TYPE_NRPN;
+            nrpn_nr = _ev.ext_type;
+            break;
+      }
+   }
+
+   // <method_init.png>
+   public method copyToMIDIMapEventType(MIDIMapEventType _ev) {
+      _ev.type = TYPE_CONST;
+
+      switch(type)
+      {
+         case TYPE_NOTE_ON:
+            _ev.type = MIDIMapDefs.TYPE_NOTE_ON;
+            break;
+
+         case TYPE_NOTE_OFF:
+            _ev.type = MIDIMapDefs.TYPE_NOTE_OFF;
+            break;
+
+         case TYPE_POLYPRESSURE:
+            _ev.type = MIDIMapDefs.TYPE_POLY_PRESSURE;
+            break;
+
+         case TYPE_CC:
+            _ev.type = MIDIMapDefs.TYPE_CC;
+            _ev.ext_type = cc_nr;
+            break;
+
+         case TYPE_PRGCHG:
+            _ev.type = MIDIMapDefs.TYPE_PROGRAM_CHANGE;
+            break;
+
+         case TYPE_CHPRESSURE:
+            _ev.type = MIDIMapDefs.TYPE_CHANNEL_PRESSURE;
+            break;
+
+         case TYPE_PITCHBEND:
+            _ev.type = MIDIMapDefs.TYPE_PITCHBEND;
+            break;
+
+         case TYPE_RPN:
+            _ev.type = MIDIMapDefs.TYPE_RPN;
+            _ev.ext_type = rpn_nr;
+            break;
+
+         case TYPE_NRPN:
+            _ev.type = MIDIMapDefs.TYPE_NRPN;
+            _ev.ext_type = nrpn_nr;
+            break;
+      }
+   }
+
+   // <method_init.png>
+   public method copyFromMIDIMapEvent(MIDIMapEvent _ev) {
+
+      copyFromMIDIMapEventType(_ev);
+
+      if(null != _ev.dev)
+      {
+         dev_idx = _ev.dev.dev_idx;
+         dev_ch  = _ev.dev_ch;
+      }
+      else
+      {
+         // should not be reachable
+         dev_idx = -1;
+         dev_ch = -1;
+      }
+
+      Global.Debug2("NMM_Arg::copyFromMIDIMapEvent: type="+type+" cc="+cc_nr+" rpn="+rpn_nr+" nrpn="+nrpn_nr+" dev_idx="+dev_idx+" dev_ch="+dev_ch);
+   }
+
+   // <method_init.png>
+   public method clipboardCopyTypeAndPortFrom(NMM_Arg _o) {
+      // used by Ctl.Clipboard (NMM_ArgForm context menu)
+      setDispType(_o.type);  // copy from type, not disp_type
+      setCC(_o.cc_nr);
+      setRPN(_o.rpn_nr);
+      setNRPN(_o.nrpn_nr);
+      copyDevChFrom(_o);
+   }
+
+   // <method_update.png>
+   public method updateMacroEntryRefs() {
+      // trace "xxx ENTER arg updateMacroEntryRefs this="+#(this);
+      switch(disp_type)
+      {
+         case TYPE_MACRO1:
+            copyFrom(parent_pat.arg_m1, true/*bMacroCtlOnly*/);
+            break;
+
+         case TYPE_MACRO2:
+            copyFrom(parent_pat.arg_m2, true/*bMacroCtlOnly*/);
+            break;
+
+         case TYPE_MACRO3:
+            copyFrom(parent_pat.arg_m3, true/*bMacroCtlOnly*/);
+            break;
+
+         case TYPE_MACRO4:
+            copyFrom(parent_pat.arg_m4, true/*bMacroCtlOnly*/);
+            break;
+      }
+
+      updateMacroCtlDevIdxAndCh();
+      // trace "xxx LEAVE arg dev_idx="+dev_idx+" dev_ch="+dev_ch;
+   }
+
+   // <method_get.png>
+   public method getClipboardTypeString() : String {
+      // called by NT_PatternView.copyCurrentCtlToClipboard()
+      switch(type)
+      {
+         case TYPE_NOTE:
+            return "NOTE";
+
+         case TYPE_VELOCITY:
+            return "VELOCITY";
+
+         case TYPE_DURATION:
+            return "DURATION";
+
+         case TYPE_POLYPRESSURE:
+            return "POLYPRESSURE";
+
+         case TYPE_CC:
+            return "CC#"+cc_nr;
+
+         case TYPE_PRGCHG:
+            return "PRGCHG";
+
+         case TYPE_CHPRESSURE:
+            return "CHPRESSURE";
+
+         case TYPE_PITCHBEND:
+            return "PITCHBEND";
+
+         case TYPE_RPN:
+            return "RPN#"+rpn_nr;
+
+         case TYPE_NRPN:
+            return "NRPN#"+nrpn_nr;
+
+         case TYPE_BPM:
+            return "BPM";
+
+         case TYPE_GROOVE:
+            return "Groove";
+      }
+      return "?";
+   }
+
+   // <method_get.png>
+   public method getClipboardPortString() : String {
+      local String r;
+      local STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+      if(null != dev)
+      {
+         r = dev.getAliasOrDeviceName();
+      }
+      else
+      {
+         r = "<n/a>";
+      }
+      r.append(":"+(1+dev_ch));
+      return deref r;
+   }
+
+   // <method_set.png>
+   public =replay= method setModifier(int _mod) {
+      modifier = _mod;
+   }
+
+   // <method_set.png>
+   public =replay= method setDefValueId(int _defValueId) {
+      def_value_id = _defValueId;
+   }
+
+   // <method_set.png>
+   public =replay= method setSH(int _sh) {
+      sh_type = _sh;
+   }
+
+   // <method_set.png>
+   public =replay= method setDispType(int _type) {
+      disp_type = _type;
+      type      = getMacroCtlType();
+
+      if(TYPE_MACRO1 <= disp_type <= TYPE_MACRO4)
+      {
+         setDispDevIdx(disp_type - TYPE_MACRO1);
+      }
+   }
+
+   // <method.png>
+   public method copyTypeFrom(NMM_Arg _o) {
+      setDispType(_o.type);
+      cc_nr   = _o.cc_nr;
+      rpn_nr  = _o.rpn_nr;
+      nrpn_nr = _o.nrpn_nr;
+   }
+
+   // <method_get.png>
+   public method isNoteType() : boolean {
+      return [TYPE_NOTE, TYPE_NOTE_ADD, TYPE_NOTE_ON, TYPE_NOTE_ON_ADD, TYPE_NOTE_OFF, TYPE_NOTE_OFF_ADD]
+         .contains(type);
+   }
+
+   // <method_set.png>
+   public =replay= method setDispDevIdx(int _devIdx) {
+      disp_dev_idx = _devIdx;
+      dev_idx      = _devIdx - NUM_MACRO_DEVS;
+      if(dev_idx < 0)
+         dev_idx = -1;
+      updateMacroCtlDevIdxAndCh();
+   }
+
+   // <method_set.png>
+   public =replay= method setDevCh(int _devCh) {
+      dev_ch = _devCh;
+      updateMacroCtlDevIdxAndCh();  // [01Jun2021]
+   }
+
+   // <method_set.png>
+   public =replay= method setMacroDevCh(int _devCh) {
+      macro_dev_ch = _devCh;
+      updateMacroCtlDevIdxAndCh();  // [01Jun2021]
+   }
+
+   // <method.png>
+   public method copyDevChFrom(NMM_Arg _o) {
+      setDispDevIdx(_o.dev_idx + 4);
+      setDevCh(_o.dev_ch);
+   }
+
+   // <method_set.png>
+   public =replay= method setCC(int _nr) {
+      cc_nr = _nr;
+   }
+
+   // <method_set.png>
+   public =replay= method setRPN(int _nr) {
+      rpn_nr = _nr;
+   }
+
+   // <method_set.png>
+   public =replay= method setNRPN(int _nr) {
+      nrpn_nr = _nr;
+   }
+
+   // <method_set.png>
+   public =replay= method setConstVal(float _f) {
+      const_val = _f;
+   }
+
+   // <method_set.png>
+   public method setConstValRange(int _range) {
+      const_val_range = _range;
+   }
+
+   // <method_set.png>
+   public method setConstValRangeFromVal(float _val) {
+      if(abs(_val) > 8191)
+         const_val_range = VAL_RANGE_0_16383;
+      else if(abs(_val) > 1023)
+         const_val_range = VAL_RANGE_0_8191;
+      else if(abs(_val) > 511)
+         const_val_range = VAL_RANGE_0_1023;
+      else if(abs(_val) > 255)
+         const_val_range = VAL_RANGE_0_511;
+      else if(abs(_val) > 127)
+         const_val_range = VAL_RANGE_0_255;
+      else if(abs(_val) > 63)
+         const_val_range = VAL_RANGE_0_127;
+      else if(abs(_val) > 10)
+         const_val_range = VAL_RANGE_0_63;
+      else if(abs(_val) > 1)
+         const_val_range = VAL_RANGE_0_10;
+      else
+         const_val_range = VAL_RANGE_0_1;
+   }
+
+   // <method_set.png>
+   public method setEnableConstValSigned(boolean _bEnable) {
+      b_const_val_signed = _bEnable ? 1 : 0;
+   }
+
+   // <method_set.png>
+   public method setConstValType(int _type) {
+      const_val_type = _type;
+   }
+
+   // <method_get.png>
+   public method getConstValTypeString() : String {
+      return const_val_type_names.get(const_val_type);
+   }
+
+   // <method_get.png>
+   public method getConstValRangeMin() : float {
+      if(const_val_type <= CONST_TYPE_INT_HEX)
+      {
+         return val_range_tbl.get( (const_val_range*2 + b_const_val_signed) * 3 + 0);
+      }
+      else if(const_val_type == CONST_TYPE_NOTE) {
+         return 0;
+      }
+      else if(const_val_type == CONST_TYPE_PATNR) {
+         return 0;
+      }
+      else if(const_val_type == CONST_TYPE_KEY) {
+         return 0;
+      }
+      else if(const_val_type == CONST_TYPE_MODE) {
+         return 0;
+      }
+      else if(const_val_type == CONST_TYPE_BINARY) {
+         return 0;
+      }
+      else if(const_val_type == CONST_TYPE_CHORD) {
+         return 0;
+      }
+   }
+
+   // <method_get.png>
+   public method getConstValRangeMax() : float {
+      if((const_val_type <= CONST_TYPE_INT_HEX) || (const_val_type == CONST_TYPE_BINARY))
+      {
+         return val_range_tbl.get( (const_val_range*2 + b_const_val_signed) * 3 + 1);
+      }
+      else if(const_val_type == CONST_TYPE_NOTE) {
+         return 127;
+      }
+      else if(const_val_type == CONST_TYPE_PATNR) {
+         return 127;
+      }
+      else if(const_val_type == CONST_TYPE_KEY) {
+         return 11;
+      }
+      else if(const_val_type == CONST_TYPE_MODE) {
+         return Scale.NUM_MODES-1;
+      }
+      else if(const_val_type == CONST_TYPE_CHORD) {
+         return Chord.NUM_CHORDS-1;
+      }
+   }
+
+   // <method_get.png>
+   public method getConstValStep() : float {
+      if(const_val_type <= CONST_TYPE_INT_HEX)
+      {
+         return (CONST_TYPE_FLOAT == const_val_type) ? val_range_tbl.get( (const_val_range*2 + b_const_val_signed) * 3 + 2) : 1.0f;
+      }
+      else
+      {
+         return 1;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setRandMin(float _f) {
+      rand_min = _f;
+   }
+
+   // <method_set.png>
+   public =replay= method setRandMax(float _f) {
+      rand_max = _f;
+   }
+
+   // <method_set.png>
+   public method setRandValRange(int _range) {
+      rand_val_range = _range;
+   }
+
+   // <method_set.png>
+   public method setRandValRangeFromValues() {
+
+      float f = abs(rand_min);
+      if(abs(rand_max) > f)
+         f = abs(rand_max);
+
+      if(f > 8191)
+         rand_val_range = VAL_RANGE_0_16383;
+      else if(f > 1023)
+         rand_val_range = VAL_RANGE_0_8191;
+      else if(f > 511)
+         rand_val_range = VAL_RANGE_0_1023;
+      else if(f > 255)
+         rand_val_range = VAL_RANGE_0_511;
+      else if(f > 127)
+         rand_val_range = VAL_RANGE_0_255;
+      else if(f > 63)
+         rand_val_range = VAL_RANGE_0_127;
+      else if(f > 10)
+         rand_val_range = VAL_RANGE_0_63;
+      else if(f > 1)
+         rand_val_range = VAL_RANGE_0_10;
+      else
+         rand_val_range = VAL_RANGE_0_1;
+
+      b_rand_val_signed =( (rand_min < 0) || (rand_max < 0) );
+   }
+
+   // <method_set.png>
+   public method setEnableRandValSigned(boolean _bEnable) {
+      b_rand_val_signed = _bEnable ? 1 : 0;
+   }
+
+   // <method_get.png>
+   public method getRandValRangeMin() : float {
+      return val_range_tbl.get( (rand_val_range*2 + b_rand_val_signed) * 3 + 0);
+   }
+
+   // <method_get.png>
+   public method getRandValRangeMax() : float {
+      return val_range_tbl.get( (rand_val_range*2 + b_rand_val_signed) * 3 + 1);
+   }
+
+   // <method_get.png>
+   public method getRandValStep() : float {
+      return val_range_tbl.get( (rand_val_range*2 + b_rand_val_signed) * 3 + 2);
+   }
+
+   // <method_set.png>
+   public =replay= method setRandMinTime(float _f) {
+      rand_min_time = _f;
+   }
+
+   // <method_set.png>
+   public =replay= method setRandMaxTime(float _f) {
+      rand_max_time = _f;
+   }
+
+   // <replay.png>
+   public method reset() {
+      if(SH_INF != sh_type)
+      {
+         cur_val = INVALID_VALUE;
+
+         orig_note         = INVALID_VALUE;
+         b_orig_note_state = false;
+         orig_vel          = INVALID_VALUE;
+         orig_dur          = INVALID_VALUE;
+         orig_ch           = -1;
+
+         cur_rand_val       = INVALID_VALUE;
+         cur_rand_countdown = 0;
+         cur_rand_val_step  = 0;
+
+         sh_timeout = 0;
+         sh_val = INVALID_VALUE;
+         sh_val_next = INVALID_VALUE;
+
+         b_reset_done_in  = false;
+         b_reset_done_out = false;
+      }
+   }
+
+   // <method_get.png>
+   public method getShQuantTicks() : int {
+      switch(sh_type)
+      {
+         case SH_Q64:
+            return current_song.ppq / 16;
+
+         case SH_Q32:
+            return current_song.ppq / 8;
+
+         case SH_Q16:
+            return current_song.ppq / 4;
+
+         case SH_Q8:
+            return current_song.ppq / 2;
+
+         case SH_Q4:
+            return current_song.ppq;
+
+         case SH_Q2:
+            return current_song.ppq * 2;
+
+         case SH_Q1:
+            return current_song.ppq * 4;
+
+         case SH_INF:
+         case SH_NONE:
+         case SH_RESET:
+            return 0;
+      }
+   }
+
+   // <method_get.png>
+   protected method getShTicks() : int {
+      switch(sh_type)
+      {
+         case SH_Q64:
+         case SH_64:
+            return current_song.ppq / 16;
+
+         case SH_Q32:
+         case SH_32:
+            return current_song.ppq / 8;
+
+         case SH_Q16:
+         case SH_16:
+            return current_song.ppq / 4;
+
+         case SH_Q16:
+         case SH_16:
+            return current_song.ppq / 2;
+
+         case SH_Q4:
+         case SH_4:
+            return current_song.ppq;
+
+         case SH_Q2:
+         case SH_2:
+            return current_song.ppq * 2;
+
+         case SH_Q1:
+         case SH_1:
+            return current_song.ppq * 4;
+
+         case SH_INF:
+         case SH_NONE:
+         case SH_RESET:
+            return 0;
+      }
+   }
+
+   // <method_get.png>
+   public method getDefOptions() : StringArray {
+      StringArray ret;
+      ret.free();
+
+      ret.add("-");
+
+      Object defTbl <= def_value_tbl.get(modifier);
+
+      if(null != defTbl)
+      {
+         ret.add(String(defTbl.yacArrayGet(DEF_LOW    -1)));
+         ret.add(String(defTbl.yacArrayGet(DEF_CENTER -1)));
+         ret.add(String(defTbl.yacArrayGet(DEF_HIGH   -1)));
+      }
+
+      return ret;
+   }
+
+   // <method_get.png>
+   public method isMultiType() : boolean {
+      return [TYPE_NOTE,         TYPE_NOTE_ADD,
+              TYPE_NOTE_ON,      TYPE_NOTE_ON_ADD,
+              TYPE_NOTE_OFF,     TYPE_NOTE_OFF_ADD,
+              TYPE_VELOCITY,     TYPE_VELOCITY_ADD,
+              TYPE_DURATION,     TYPE_DURATION_ADD,
+              TYPE_POLYPRESSURE, TYPE_POLYPRESSURE_ADD].contains(type);
+   }
+
+   // <method_get.png>
+   public method isRegType() : boolean {
+      return (TYPE_REG1 <= type <= TYPE_REG8);
+   }
+
+   // <method_get.png>
+   public method getMacroCtlName() : String {
+      switch(disp_type)
+      {
+         case TYPE_MACRO1:
+            return parent_pat.m1_name;
+
+         case TYPE_MACRO2:
+            return parent_pat.m2_name;
+
+         case TYPE_MACRO3:
+            return parent_pat.m3_name;
+
+         case TYPE_MACRO4:
+            return parent_pat.m4_name;
+      }
+      return "-";
+   }
+
+   // <method_get.png>
+   public method getMacroCtlType() : int {
+      if(null != parent_pat) // may be null when "this" is the clipboard (en_clipboard)
+      {
+         switch(disp_type)
+         {
+            case TYPE_MACRO1:
+               return parent_pat.arg_m1.type;
+
+            case TYPE_MACRO2:
+               return parent_pat.arg_m2.type;
+
+            case TYPE_MACRO3:
+               return parent_pat.arg_m3.type;
+
+            case TYPE_MACRO4:
+               return parent_pat.arg_m4.type;
+         }
+      }
+      return disp_type;
+   }
+
+   // <method_get.png>
+   public method updateMacroCtlDevIdxAndCh() {
+      if(null != parent_pat) // may be null when "this" is the clipboard (en_clipboard)
+      {
+         switch(disp_dev_idx)
+         {
+            case 0:
+               dev_idx = parent_pat.arg_m1.dev_idx;
+
+               if(-2 == macro_dev_ch)
+               {
+                  dev_ch  = parent_pat.arg_m1.dev_ch;
+               }
+               else
+               {
+                  dev_ch = macro_dev_ch;
+               }
+               // trace "xxx updateMacroCtlDevIdxAndCh: macro_dev_ch="+macro_dev_ch+" => dev_ch="+dev_ch;
+               break;
+
+            case 1:
+               // trace "xxx updateMacroCtlDevIdxAndCh: parent_pat.arg_m2 dev_idx="+parent_pat.arg_m2.dev_idx+" dev_ch="+parent_pat.arg_m2.dev_ch;
+               dev_idx = parent_pat.arg_m2.dev_idx;
+
+               if(-2 == macro_dev_ch)
+               {
+                  dev_ch  = parent_pat.arg_m2.dev_ch;
+               }
+               else
+               {
+                  dev_ch = macro_dev_ch;
+               }
+               break;
+
+            case 2:
+               dev_idx = parent_pat.arg_m3.dev_idx;
+
+               if(-2 == macro_dev_ch)
+               {
+                  dev_ch  = parent_pat.arg_m3.dev_ch;
+               }
+               else
+               {
+                  dev_ch = macro_dev_ch;
+               }
+               break;
+
+            case 3:
+               dev_idx = parent_pat.arg_m4.dev_idx;
+
+               if(-2 == macro_dev_ch)
+               {
+                  dev_ch  = parent_pat.arg_m4.dev_ch;
+               }
+               else
+               {
+                  dev_ch = macro_dev_ch;
+               }
+               break;
+         }
+      }
+   }
+
+
+   // <replay.png>
+   public method readCurrentVal(MIDIPipeFrame _frame, int _evIdx, Boolean _bReadMore) : boolean {
+      float nval = INVALID_VALUE;
+      MIDIPipeEvent ev;
+      int numEvNoteOff;
+      boolean bReadNewVal;
+
+      return = false;
+
+      if(SH_RESET == sh_type)
+      {
+         if(b_reset_done_in)
+         {
+            // Keep value
+            return;
+         }
+      }
+      b_reset_done_in = true;
+
+      // // if(_evIdx > 0)
+      // // {
+      // //    if(!isMultiType())
+      // //    {
+      // //       // Keep CC/const/rand cur_val
+      // //       return false;
+      // //    }
+      // // }
+
+      int tickNr;
+
+      if(null != parent_entry)
+      {
+         tickNr = parent_entry.parent_node.tick_nr;
+      }
+      else
+      {
+         tickNr = 0; // macro ctl arg
+      }
+
+      int shQuantTicks = getShQuantTicks();
+
+      bReadNewVal = (0 == shQuantTicks) || (0 == (tickNr % shQuantTicks));
+
+      // if(b_debug)
+      //    trace "xxx readCurrentVal: evIdx="+_evIdx+" bReadNewVal="+bReadNewVal+" tickNr="+tickNr+" quantTicks="+getShQuantTicks();
+
+      if(bReadNewVal)
+      {
+         orig_note         = INVALID_VALUE;
+         b_orig_note_state = false;
+         orig_vel          = INVALID_VALUE;
+         orig_dur          = INVALID_VALUE;
+      }
+
+      switch(type)
+      {
+         case TYPE_NONE:
+            nval = INVALID_VALUE;
+            break;
+
+         case TYPE_CONST:
+            // if(0 == _evIdx)
+            // {
+               nval = const_val;
+
+               orig_ch = -1;
+
+               if(SH_RESET == sh_type)
+                  trace "xxx SH_RESET read const_val="+nval;
+
+               // UI editing, calc new output
+               // trace "xxx TYPE_CONST: nval="+nval+" ui_last_read_const_val="+ui_last_read_const_val;
+               if(nval != ui_last_read_const_val)
+               {
+                  ui_last_read_const_val = nval;
+                  return = true;
+               }
+               // // else
+               // // {
+               // //    return false; // 03Jul2016
+               // // }
+            // }
+            break;
+
+         case TYPE_RANDOM:
+            if(0 == _evIdx)
+            {
+               cur_rand_countdown--;
+
+               orig_ch = -1;
+
+               if(cur_rand_countdown <= 0)
+               {
+                  float tf;
+                  float minV = rand_min;
+                  float maxV = rand_max;
+
+                  if(minV > maxV)
+                  {
+                     tf = minV;
+                     minV = maxV;
+                     maxV = tf;
+                  }
+
+                  float nextV = rand(maxV - minV) + minV;
+
+                  if(INVALID_VALUE == cur_rand_val)
+                  {
+                     // First random value
+                     cur_rand_val = nextV;
+                     cur_rand_val_step = 0;
+                     nval = nextV;
+                  }
+                  else
+                  {
+                     // New random value
+                     float minT = rand_min_time;
+                     float maxT = rand_max_time;
+
+                     if(minT > maxT)
+                     {
+                        tf = minT;
+                        minT = maxT;
+                        maxT = tf;
+                     }
+
+                     float randT = rand(maxT - minT) + minT;
+
+                     cur_rand_countdown = randT * current_song.ppq * 0.25;
+                     if(cur_rand_countdown <= 0)
+                        cur_rand_countdown = 1;
+
+                     cur_rand_val += cur_rand_val_step;
+                     nval = cur_rand_val;
+
+                     cur_rand_val_step = (nextV - cur_rand_val) / cur_rand_countdown;
+                  }
+               }
+               else
+               {
+                  cur_rand_val += cur_rand_val_step;
+                  nval = cur_rand_val;
+               }
+            }
+            else
+            {
+               nval = cur_rand_val;
+            }
+            break;
+
+         case TYPE_SONGPOS:
+            nval = current_song.song_offset;  // ticks
+            orig_ch = -1;
+            break;
+
+         case TYPE_NOTE:
+         case TYPE_NOTE_ADD:
+            if(-1 != dev_idx)
+            {
+               numEvNoteOff = _frame.getNumEventsNoteOffByFlt(dev_idx, dev_ch);
+
+               // if(numEvNoteOff > 0)
+               //    trace "xxx read TYPE_NOTE[_ADD] numEvNoteOff="+numEvNoteOff+" evIdx="+_evIdx;
+
+               if(_evIdx < numEvNoteOff)
+               {
+                  if(_frame.getEventByIdxAndFlt(_evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, dev_idx, dev_ch))
+                  {
+                     nval              = ev.note;
+                     orig_note         = nval;
+                     b_orig_note_state = false;
+                     orig_vel          = ev.velocity;
+                     orig_dur          = 0;
+                     orig_ch           = ev.midiCh;
+
+                     _bReadMore |= ((_evIdx+1) < numEvNoteOff);
+                  }
+               }
+               else
+               {
+                  if(_frame.getEventByIdxAndFlt(_evIdx - numEvNoteOff, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, dev_idx, dev_ch))
+                  {
+                     nval              = ev.note;
+                     orig_note         = nval;
+                     b_orig_note_state = true;
+                     orig_vel          = ev.velocity;
+                     orig_dur          = ev.duration;
+                     orig_ch           = ev.midiCh;
+                     // trace "xxx read TYPE_NOTE_ON nval=orig_note="+nval+" orig_vel="+orig_vel+" orig_dur="+orig_dur+" orig_ch="+orig_ch;
+
+                     _bReadMore |= ((_evIdx+1-numEvNoteOff) < _frame.getNumEventsNoteOnByFlt(dev_idx, dev_ch));
+                  }
+                  // else
+                  // {
+                  //    return false;  // 03Jul2016
+                  // }
+               }
+            }
+            break;
+
+         case TYPE_NOTE_ON:
+         case TYPE_NOTE_ON_ADD:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(_evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, dev_idx, dev_ch))
+               {
+                  nval              = ev.note;
+                  orig_note         = nval;
+                  b_orig_note_state = true;
+                  orig_vel          = ev.velocity;
+                  orig_dur          = ev.duration;
+                  orig_ch           = ev.midiCh;
+                  // trace "xxx read NOTE_ON dev_ch="+dev_ch+" ev.midiCh="+ev.midiCh+" note="+orig_note;
+                  // trace "xxx evIdx="+_evIdx+" numNoteOn="+_frame.getNumEventsNoteOnByFlt(dev_idx, dev_ch);
+
+                  _bReadMore |= ((_evIdx+1) < _frame.getNumEventsNoteOnByFlt(dev_idx, dev_ch));
+               }
+               // else
+               // {
+               //    return false;  // 03Jul2016
+               // }
+            }
+            break;
+
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_OFF_ADD:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(_evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, dev_idx, dev_ch))
+               {
+                  nval              = ev.note;
+                  orig_note         = nval;
+                  b_orig_note_state = false;
+                  orig_vel          = ev.velocity;
+                  orig_dur          = 0;
+                  orig_ch           = ev.midiCh;
+
+                  _bReadMore |= ((_evIdx+1) < _frame.getNumEventsNoteOffByFlt(dev_idx, dev_ch));
+               }
+               // else
+               // {
+               //    return false;  // 03Jul2016
+               // }
+            }
+            break;
+
+         case TYPE_VELOCITY:
+         case TYPE_VELOCITY_ADD:
+            if(-1 != dev_idx)
+            {
+               numEvNoteOff = _frame.getNumEventsNoteOffByFlt(dev_idx, dev_ch);
+
+               if(_evIdx < numEvNoteOff)
+               {
+                  if(_frame.getEventByIdxAndFlt(_evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, dev_idx, dev_ch))
+                  {
+                     nval              = ev.velocity;
+                     orig_note         = ev.note;
+                     b_orig_note_state = false;
+                     orig_vel          = nval;
+                     orig_dur          = 0;
+                     orig_ch           = ev.midiCh;
+                     // trace "xxx read VELOCITY<off> evIdx="+_evIdx+" note="+orig_note+" vel="+orig_vel+" dur="+orig_dur;
+
+                     _bReadMore |= ((_evIdx+1) < _frame.getNumEventsNoteOffByFlt(dev_idx, dev_ch));
+                  }
+               }
+               else
+               {
+                  if(_frame.getEventByIdxAndFlt(_evIdx - numEvNoteOff, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, dev_idx, dev_ch))
+                  {
+                     nval              = ev.velocity;
+                     orig_note         = ev.note;
+                     b_orig_note_state = true;
+                     orig_vel          = nval;
+                     orig_dur          = ev.duration;
+                     orig_ch           = ev.midiCh;
+                     // trace "xxx read VELOCITY<on> evIdx="+_evIdx+" note="+orig_note+" vel="+orig_vel+" dur="+orig_dur;
+
+                     _bReadMore |= ((_evIdx+1 - numEvNoteOff) < _frame.getNumEventsNoteOnByFlt(dev_idx, dev_ch));
+                  }
+                  // else
+                  // {
+                  //    return false;  // 03Jul2016
+                  // }
+               }
+            }
+            break;
+
+         case TYPE_DURATION:
+         case TYPE_DURATION_ADD:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(_evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, dev_idx, dev_ch))
+               {
+                  nval              = ev.duration;
+                  orig_note         = ev.note;
+                  b_orig_note_state = true;
+                  orig_vel          = ev.velocity;
+                  orig_dur          = nval;
+                  orig_ch           = ev.midiCh;
+                  // trace "xxx read TYPE_DURATION evIdx="+_evIdx+" note="+orig_note+" vel="+orig_vel+" dur="+orig_dur;
+
+                  _bReadMore |= ((_evIdx+1) < _frame.getNumEventsNoteOnByFlt(dev_idx, dev_ch));
+               }
+               // else
+               // {
+               //    return false;  // 03Jul2016
+               // }
+            }
+            break;
+
+         case TYPE_POLYPRESSURE:
+         case TYPE_POLYPRESSURE_ADD:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(_evIdx, ev, MIDIPIPE_EVENT_TYPE_POLYPRESSURE, dev_idx, dev_ch))
+               {
+                  nval = ev.polyPressureValue;
+                  orig_note = ev.polyPressureNote;
+                  orig_ch   = ev.midiCh;
+
+                  _bReadMore |= ((_evIdx+1) < _frame.getNumEventsPolyPressureByFlt(dev_idx, dev_ch));
+               }
+               // else
+               // {
+               //    return false;  // 03Jul2016
+               // }
+            }
+            break;
+
+         case TYPE_CC:
+            // trace "xxx TYPE_CC nval="+nval;
+            if(-1 != dev_idx)
+            {
+               if(_frame.getCCEventByIdxAndFlt(_evIdx, ev, cc_nr, dev_idx, dev_ch))
+               {
+                  nval    = ev.ccValue;
+                  orig_ch = ev.midiCh;
+               }
+               else
+               {
+                  nval = INVALID_VALUE;
+               }
+
+               // trace "xxx TYPE_CC 3 nval="+nval;
+            }
+            break;
+
+         case TYPE_PRGCHG:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(0, ev, MIDIPIPE_EVENT_TYPE_PRGCHG, dev_idx, dev_ch))
+               {
+                  nval = ev.getPrgChg();
+                  orig_ch = ev.midiCh;
+               }
+            }
+            break;
+
+         case TYPE_CHPRESSURE:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(0, ev, MIDIPIPE_EVENT_TYPE_CHPRESSURE, dev_idx, dev_ch))
+               {
+                  nval = ev.getChPressure();
+                  orig_ch = ev.midiCh;
+               }
+            }
+            break;
+
+         case TYPE_PITCHBEND:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getEventByIdxAndFlt(0, ev, MIDIPIPE_EVENT_TYPE_PITCHBEND, dev_idx, dev_ch))
+               {
+                  nval = ev.getPitchbend();
+                  orig_ch = ev.midiCh;
+               }
+            }
+            break;
+
+         case TYPE_RPN:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getRPNEventByIdxAndFlt(_evIdx, ev, rpn_nr, dev_idx, dev_ch))
+               {
+                  nval    = ev.rpnValue;
+                  // trace "xxx TYPE_RPN rpn_nr="+rpn_nr+" nval="+nval;
+                  orig_ch = ev.midiCh;
+               }
+               else
+               {
+                  nval = INVALID_VALUE;
+               }
+            }
+            break;
+
+         case TYPE_NRPN:
+            if(-1 != dev_idx)
+            {
+               if(_frame.getNRPNEventByIdxAndFlt(_evIdx, ev, nrpn_nr, dev_idx, dev_ch))
+               {
+                  nval    = ev.nrpnValue;
+                  orig_ch = ev.midiCh;
+               }
+               else
+               {
+                  nval = INVALID_VALUE;
+               }
+
+            }
+            break;
+
+         case TYPE_BPM:
+            if(bReadNewVal)
+            {
+               nval = current_song.bpm;
+            }
+            break;
+
+         case TYPE_GROOVE:
+            if(bReadNewVal)
+            {
+               nval = current_pipe_root.pipeDelay;
+            }
+            break;
+
+         case TYPE_REG1:
+         case TYPE_REG2:
+         case TYPE_REG3:
+         case TYPE_REG4:
+         case TYPE_REG5:
+         case TYPE_REG6:
+         case TYPE_REG7:
+         case TYPE_REG8:
+            if(bReadNewVal)
+            {
+               nval = parent_pat.getRegValue(type - TYPE_REG1);
+            }
+            break;
+      }
+
+      // trace "xxx 2 raw nval="+nval;
+
+      boolean bDefValue = false;
+
+      if(INVALID_VALUE == nval)
+      {
+         if(DEF_NONE != def_value_id)
+         {
+            Object defTbl <= def_value_tbl.get(modifier);
+
+            if(null != defTbl)
+            {
+               if(bReadNewVal)
+               {
+                  nval = defTbl.yacArrayGet(def_value_id - 1);
+                  bDefValue = true;
+
+                  if(SH_INF == sh_type)
+                  {
+                     if(INVALID_VALUE == cur_val)
+                     {
+                        cur_val = nval;
+                     }
+                  }
+                  else
+                  {
+                     cur_val = nval;
+                  }
+
+                  return = false;  // default value does not register as new event
+               }
+            }
+         }
+      }
+
+      if(!bDefValue)
+      {
+         if(INVALID_VALUE != nval)
+         {
+            switch(modifier)
+            {
+               case MOD_NONE:
+                  break;
+
+               case MOD_N7:
+                  nval = nval / 127.0;
+                  break;
+
+               case MOD_N7OM:
+                  nval = 1.0 - (nval / 127.0);
+                  break;
+
+               case MOD_N7N:
+                  nval = -(nval / 127.0);
+                  break;
+
+               case MOD_N7HS:
+                  nval = nval - 64.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 128.0;
+                  }
+                  else
+                  {
+                     nval = nval / 126.0;
+                  }
+                  break;
+
+               case MOD_N7HSN:
+                  nval = nval - 64.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 128.0;
+                  }
+                  else
+                  {
+                     nval = nval / 126.0;
+                  }
+                  nval = -nval;
+                  break;
+
+               case MOD_N7FS:
+                  nval = nval - 64.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 64.0;
+                  }
+                  else
+                  {
+                     nval = nval / 63.0;
+                  }
+                  break;
+
+               case MOD_N7FSN:
+                  nval = nval - 64.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 64.0;
+                  }
+                  else
+                  {
+                     nval = nval / 63.0;
+                  }
+                  nval = -nval;
+                  break;
+
+               case MOD_N8:
+                  nval = nval / 255.0;
+                  break;
+
+               case MOD_N8OM:
+                  nval = 1.0 - (nval / 255.0);
+                  break;
+
+               case MOD_N8N:
+                  nval = -(nval / 255.0);
+                  break;
+
+               case MOD_N8HS:
+                  nval = nval - 128.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 256.0;
+                  }
+                  else
+                  {
+                     nval = nval / 254.0;
+                  }
+                  break;
+
+               case MOD_N8HSN:
+                  nval = nval - 128.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 256.0;
+                  }
+                  else
+                  {
+                     nval = nval / 254.0;
+                  }
+                  nval = -nval;
+                  break;
+
+               case MOD_N8FS:
+                  nval = nval - 128.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 128.0;
+                  }
+                  else
+                  {
+                     nval = nval / 127.0;
+                  }
+                  break;
+
+               case MOD_N8FSN:
+                  nval = nval - 128.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 128.0;
+                  }
+                  else
+                  {
+                     nval = nval / 127.0;
+                  }
+                  nval = -nval;
+                  break;
+
+               case MOD_N14:
+                  nval = nval / 16383.0;
+                  break;
+
+               case MOD_N14OM:
+                  nval = 1.0 - (nval / 16383.0);
+                  break;
+
+               case MOD_N14N:
+                  nval = -(nval / 16383.0);
+                  break;
+
+               case MOD_N14HS:
+                  nval = nval - 8192.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 16384.0;
+                  }
+                  else
+                  {
+                     nval = nval / 16382.0;
+                  }
+                  break;
+
+               case MOD_N14HSN:
+                  nval = nval - 8192.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 16384.0;
+                  }
+                  else
+                  {
+                     nval = nval / 16382.0;
+                  }
+                  nval = -nval;
+                  break;
+
+               case MOD_N14FS:
+                  nval = nval - 8192.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 8192.0;
+                  }
+                  else
+                  {
+                     nval = nval / 8191.0;
+                  }
+                  break;
+
+               case MOD_N14FSN:
+                  nval = nval - 8192.0;
+                  if(nval < 0)
+                  {
+                     nval = nval / 8192.0;
+                  }
+                  else
+                  {
+                     nval = nval / 8191.0;
+                  }
+                  nval = -nval;
+                  break;
+
+               case MOD_INT:
+                  nval = int(nval);
+                  break;
+
+               case MOD_FRAC:
+                  nval = frac(nval);
+                  break;
+
+               case MOD_NEG:
+                  nval = -nval;
+                  break;
+
+               case MOD_1M:
+                  nval = 1.0 - nval;
+                  break;
+
+               case MOD_127M:
+                  nval = 127.0 - nval;
+                  break;
+
+               case MOD_PPQ:
+                  nval = current_song.ppq * nval;
+                  break;
+
+               case MOD_DIV2:
+                  nval = nval / 2.0;
+                  break;
+
+               case MOD_DIV4:
+                  nval = nval / 4.0;
+                  break;
+
+               case MOD_MUL2:
+                  nval = nval * 2.0;
+                  break;
+
+               case MOD_MUL4:
+                  nval = nval * 4.0;
+                  break;
+
+               case MOD_M64:
+                  nval = nval - 64;
+                  break;
+
+               case MOD_M128:
+                  nval = nval - 128;
+                  break;
+
+               case MOD_M8192:
+                  nval = nval - 8192;
+                  break;
+
+               case MOD_A64:
+                  nval = nval + 64;
+                  break;
+
+               case MOD_A128:
+                  nval = nval + 128;
+                  break;
+
+               case MOD_A8192:
+                  nval = nval + 8192;
+                  break;
+
+               case MOD_DIV128:
+                  nval = nval / 128.0;
+                  break;
+
+               case MOD_PP16:
+                  nval = current_song.ppq * nval / 4.0;
+                  break;
+
+               case MOD_PP64:
+                  nval = current_song.ppq * nval / 16.0;
+                  break;
+            }
+
+            if(INVALID_VALUE != nval)
+            {
+               sh_timeout = getShTicks();
+            }
+
+            // trace "xxx 2 read nval="+nval;
+
+            if(bReadNewVal)
+            {
+               cur_val = nval;
+               return = true;/////////(INVALID_VALUE != nval);
+            }
+
+         } // if nval valid
+      } // if !bDefValue
+
+
+      if(SH_NONE < sh_type <= SH_Q1)
+      {
+         return = false;
+
+         if(0 == _evIdx)
+         {
+            if(bReadNewVal)
+            {
+               // Start of S&H quantization interval
+               sh_val = INVALID_VALUE;
+            }
+
+            if(INVALID_VALUE == sh_val)
+            {
+               // Read up to one event per S&H quantization interval (not necessarily on first tick)
+               sh_val = nval;
+
+               if(INVALID_VALUE == sh_val)
+               {
+                  if(bReadNewVal)
+                  {
+                     sh_val = sh_val_next;
+                     sh_val_next = INVALID_VALUE;
+                  }
+               }
+               else
+               {
+                  sh_val_next = INVALID_VALUE;
+               }
+
+               return = (INVALID_VALUE != sh_val);
+            }
+            else if(INVALID_VALUE != nval)
+            {
+               sh_val_next = nval;
+            }
+
+            if(INVALID_VALUE != nval)
+            {
+               // trace "xxx bReadNewVal="+bReadNewVal+" nval="+nval+" sh="+sh_val+" shnext="+sh_val_next;
+            }
+
+            cur_val = sh_val;////bReadNewVal ? (0 == _evIdx) ? INVALID_VALUE : cur_val : cur_val;
+            // // nval = cur_val;
+            // trace "xxx return cur_val="+cur_val+" bReadNewVal="+bReadNewVal+" shnext="+sh_val_next;
+            return = bReadNewVal;
+         }
+
+         // if(bReadNewVal && (INVALID_VALUE == nval))
+         // {
+         // nval = sh_val;
+         // }
+      } // if SH_Q*
+      else
+      {
+         if(INVALID_VALUE == nval)
+         {
+            // Sample&hold
+            if(SH_NONE == sh_type)
+            {
+               cur_val = INVALID_VALUE;
+            }
+            else if(sh_type > SH_Q1)
+            {
+               sh_timeout--;
+               if(sh_timeout <= 0)
+               {
+                  sh_timeout = 0;
+
+                  if((SH_INF != sh_type) && (SH_RESET != sh_type))
+                  {
+                     cur_val = INVALID_VALUE;
+                     return = true;
+                  }
+                  // // else
+                  // // {
+                  // //    nval = cur_val;
+                  // // }
+               }
+               // // else
+               // // {
+               // //    // keep cur_val
+               // //    nval = cur_val;
+               // // }
+            }
+
+         }
+      }
+
+      // UI display timeout
+      nval = cur_val;
+      if(INVALID_VALUE != nval)
+      {
+         // if(b_debug)
+         //    trace "xxx set ui_cur_val="+nval+" timeout="+ui_cur_val_timeout;
+         ui_cur_val = nval;
+         ui_cur_val_timeout = UI_VAL_TIMEOUT * current_song.ppq;
+      }
+      else
+      {
+         // if(b_debug)
+         //    trace "xxx keep ui_cur_val="+ui_cur_val+" timeout="+ui_cur_val_timeout;
+         ui_cur_val_timeout--;
+         if(ui_cur_val_timeout <= 0)
+         {
+            ui_cur_val_timeout = 0;
+            ui_cur_val = INVALID_VALUE;
+         }
+      }
+
+      return;
+   }
+
+   // <replay.png>
+   public method outputVal(MIDIPipeFrame _frame, MIDIPipeFrame _framePlus, float nval) {
+
+      // trace "xxx nmm: outputVal: nval="+nval;
+      if(SH_RESET == sh_type)
+      {
+         if(b_reset_done_out)
+         {
+            // Keep value
+            return;
+         }
+      }
+      b_reset_done_out = true;
+
+      if(INVALID_VALUE != nval)
+      {
+         switch(modifier)
+         {
+            case MOD_NONE:
+               break;
+
+            case MOD_N7:
+               nval = mathClampf(nval, 0.0, 1.0);
+               nval = nval * 127.0;
+               break;
+
+            case MOD_N7OM:
+               nval = mathClampf(nval, 0.0, 1.0);
+               nval = (1.0 - nval) * 127.0;
+               break;
+
+            case MOD_N7N:
+               nval = -(nval * 127.0);
+               nval = mathClampf(nval, 0.0, 127.0);
+               break;
+
+            case MOD_N7HS:
+               nval = mathClampf(nval, -0.5, 0.5);
+               if(nval < 0)
+               {
+                  nval = nval * 128.0;
+               }
+               else
+               {
+                  nval = nval * 127.0;
+               }
+               nval = nval + 64.0;
+               break;
+
+            case MOD_N7HSN:
+               nval = mathClampf(-nval, -0.5, 0.5);
+               if(nval < 0)
+               {
+                  nval = nval * 128.0;
+               }
+               else
+               {
+                  nval = nval * 127.0;
+               }
+               nval = nval + 64.0;
+               break;
+
+            case MOD_N7FS:
+               nval = mathClampf(nval, -1.0, 1.0);
+               if(nval < 0)
+               {
+                  nval = nval * 64.0;
+               }
+               else
+               {
+                  nval = nval * 63.0;
+               }
+               nval = nval + 64.0;
+               break;
+
+            case MOD_N7FSN:
+               nval = mathClampf(-nval, -1.0, 1.0);
+               if(nval < 0)
+               {
+                  nval = nval * 64.0;
+               }
+               else
+               {
+                  nval = nval * 63.0;
+               }
+               nval = nval + 64.0;
+               break;
+
+            case MOD_N8:
+               nval = mathClampf(nval, 0.0, 1.0);
+               nval = nval * 255.0;
+               break;
+
+            case MOD_N8OM:
+               nval = mathClampf(nval, 0.0, 1.0);
+               nval = (1.0 - nval) * 255.0;
+               break;
+
+            case MOD_N8N:
+               nval = -(nval * 255.0);
+               nval = mathClampf(nval, 0.0, 255.0);
+               break;
+
+            case MOD_N8HS:
+               nval = mathClampf(nval, -0.5, 0.5);
+               if(nval < 0)
+               {
+                  nval = nval * 255.0;
+               }
+               else
+               {
+                  nval = nval * 254.0;
+               }
+               nval = nval + 128.0;
+               break;
+
+            case MOD_N8HSN:
+               nval = mathClampf(-nval, -0.5, 0.5);
+               if(nval < 0)
+               {
+                  nval = nval * 255.0;
+               }
+               else
+               {
+                  nval = nval * 254.0;
+               }
+               nval = nval + 128.0;
+               break;
+
+            case MOD_N8FS:
+               nval = mathClampf(nval, -1.0, 1.0);
+               if(nval < 0)
+               {
+                  nval = nval * 128.0;
+               }
+               else
+               {
+                  nval = nval * 127.0;
+               }
+               nval = nval + 128.0;
+               break;
+
+            case MOD_N8FSN:
+               nval = mathClampf(-nval, -1.0, 1.0);
+               if(nval < 0)
+               {
+                  nval = nval * 128.0;
+               }
+               else
+               {
+                  nval = nval * 127.0;
+               }
+               nval = nval + 128.0;
+               break;
+
+            case MOD_N14:
+               nval = mathClampf(nval, 0.0, 1.0);
+               nval = nval * 16383.0;
+               break;
+
+            case MOD_N14OM:
+               nval = mathClampf(nval, 0.0, 1.0);
+               nval = (1.0 - nval) * 16383.0;
+               break;
+
+            case MOD_N14N:
+               nval = -(nval * 16383.0);
+               nval = mathClampf(nval, 0.0, 16383.0);
+               break;
+
+            case MOD_N14HS:
+               nval = mathClampf(nval, -0.5, 0.5);
+               if(nval < 0)
+               {
+                  nval = nval * 16384.0;
+               }
+               else
+               {
+                  nval = nval * 16383.0;
+               }
+               nval = nval + 8192.0;
+               break;
+
+            case MOD_N14HSN:
+               nval = mathClampf(-nval, -0.5, 0.5);
+               if(nval < 0)
+               {
+                  nval = nval * 16384.0;
+               }
+               else
+               {
+                  nval = nval * 16383.0;
+               }
+               nval = nval + 8192.0;
+               break;
+
+            case MOD_N14FS:
+               nval = mathClampf(nval, -1.0, 1.0);
+               if(nval < 0)
+               {
+                  nval = nval * 8192.0;
+               }
+               else
+               {
+                  nval = nval * 8191.0;
+               }
+               nval = nval + 8192.0;
+               break;
+
+            case MOD_N14FSN:
+               nval = mathClampf(-nval, -1.0, 1.0);
+               if(nval < 0)
+               {
+                  nval = nval * 8192.0;
+               }
+               else
+               {
+                  nval = nval * 8191.0;
+               }
+               nval = nval + 8192.0;
+               break;
+
+            case MOD_INT:
+               nval = int(nval);
+               break;
+
+            case MOD_FRAC:
+               // actually this little sense for output values (MIDI values are always ints)
+               //  => just round the value before the (implicit) int conversion
+               nval = frac(nval + 0.5);
+               break;
+
+            case MOD_NEG:
+               nval = -nval;
+               break;
+
+            case MOD_1M:
+               nval = 1.0 - nval;
+               break;
+
+            case MOD_127M:
+               nval = 127.0 - nval;
+               break;
+
+            case MOD_PPQ:
+               nval = current_song.ppq * nval;
+               break;
+
+            case MOD_DIV2:
+               nval = nval / 2.0;
+               break;
+
+            case MOD_DIV4:
+               nval = nval / 4.0;
+               break;
+
+            case MOD_MUL2:
+               nval = nval * 2.0;
+               break;
+
+            case MOD_MUL4:
+               nval = nval * 4.0;
+               break;
+
+            case MOD_M64:
+               nval = nval - 64;
+               break;
+
+            case MOD_M128:
+               nval = nval - 128;
+               break;
+
+            case MOD_M8192:
+               nval = nval - 8192;
+               break;
+
+            case MOD_A64:
+               nval = nval + 64;
+               break;
+
+            case MOD_A128:
+               nval = nval + 128;
+               break;
+
+            case MOD_A8192:
+               nval = nval + 8192;
+               break;
+
+            case MOD_DIV128:
+               nval = nval / 128.0;
+               break;
+
+            case MOD_PP16:
+               nval = current_song.ppq * nval / 4.0;
+               break;
+
+            case MOD_PP64:
+               nval = current_song.ppq * nval / 16.0;
+               break;
+         }
+      } // if !INVALID_VALUE
+
+      // trace "xxx nmm: outputVal: (mod) nval="+nval;
+
+      // trace "xxx dev_ch="+dev_ch+" tmp_force_dst_ch="+tmp_force_dst_ch;
+      byte outCh = (-1 == dev_ch) ? tmp_force_dst_ch : dev_ch;
+      if(-1 == outCh)
+         outCh = orig_ch;  // [01Jun2021] TYPE_VELOCITY add
+      if(outCh < 0)
+         outCh = 0; // should not happen
+
+      switch(type)
+      {
+         case TYPE_NONE:
+         case TYPE_CONST:
+         case TYPE_RANDOM:
+         case TYPE_SONGPOS:
+            break;
+
+         case TYPE_NOTE:
+         case TYPE_NOTE_ADD:
+            // trace "xxx emit: TYPE_NOTE_ADD: orig_note="+orig_note+" nval="+nval+" orig_note_state="+b_orig_note_state;
+            if(INVALID_VALUE != orig_note)
+            {
+               // // if(TYPE_NOTE_ADD != type)
+               // // {
+               // //    // Delete previous event
+               // //    if(b_orig_note_state)
+               // //       _frame.noteOn(false/*bSet*/, dev_idx, dev_ch, orig_note, 0, 0);
+               // //    else
+               // //       _frame.noteOff(false/*bSet*/, dev_idx, dev_ch, orig_note, 0);
+               // // }
+
+               if((INVALID_VALUE != nval) && (0 <= nval <= 127))
+               {
+                  // (note) passing nval > 127 can be a trick to conditionally discard a note (e.g. see note repeat preset)
+                  // trace "xxx out note="+nval+" b_orig_note_state="+b_orig_note_state;
+                  // // if(0 <= nval <= 127)
+                  {
+                     if(TYPE_NOTE_ADD == type)
+                     {
+                        if(b_orig_note_state)
+                           _framePlus.noteOn(true/*bSet*/, dev_idx, outCh, nval, orig_vel, orig_dur);
+                        else
+                           _framePlus.noteOff(true/*bSet*/, dev_idx, outCh, nval, orig_vel);
+                     }
+                     else
+                     {
+                        // Replace event
+                        // // if(b_orig_note_state)
+                        // //    _frame.noteOn(true/*bSet*/, dev_idx, dev_ch, nval, orig_vel, orig_dur);
+                        // // else
+                        // //    _frame.noteOff(true/*bSet*/, dev_idx, dev_ch, nval, orig_vel);
+
+                        if(b_orig_note_state)
+                        {
+                           if(!_frame.noteOnReplace(dev_idx, outCh, orig_note, nval, orig_vel, orig_dur))
+                           {
+                              _frame.noteOn(true/*bSet*/, dev_idx, outCh, nval, orig_vel, orig_dur);
+                           }
+                           _frame.polyPressureReplace(dev_idx, outCh, orig_note, nval/*newNote*/, -1/*nval=keep*/);
+                        }
+                        else
+                        {
+                           if(!_frame.noteOffReplace(dev_idx, outCh, orig_note, nval, orig_vel))
+                           {
+                              _frame.noteOff(true/*bSet*/, dev_idx, outCh, nval, orig_vel);
+                           }
+                        }
+                        orig_note = nval;
+                     }
+                  }
+
+                  out_val = nval;
+               }
+               else
+               {
+                  if(TYPE_NOTE_ADD != type)
+                  {
+                     // Delete previous event (WARNING: changes evIdx)
+                     if(b_orig_note_state)
+                     {
+                        // // _frame.noteOn(false/*bSet*/, dev_idx, outCh, orig_note, 0/*vel*/, 0/*dur*/);
+                        // (note) replace by 0-velocity noteOn event (will be deleted at end of processFrame())
+                        _frame.noteOn(true/*bSet*/, dev_idx, outCh, orig_note, 0/*vel*/, 0/*dur*/);
+                     }
+                     else
+                        _frame.noteOff(false/*bSet*/, dev_idx, outCh, orig_note, 0);
+                  }
+
+                  out_val = INVALID_VALUE;
+               }
+
+
+            }
+            else
+            {
+               out_val = INVALID_VALUE;
+            }
+            break;
+
+         case TYPE_NOTE_ON:
+         case TYPE_NOTE_ON_ADD:
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_OFF_ADD:
+            if((INVALID_VALUE != orig_note) || (TYPE_NOTE_ON_ADD == type) || (TYPE_NOTE_OFF_ADD == type))
+            {
+               // // if((TYPE_NOTE_ON_ADD != type) && (TYPE_NOTE_OFF_ADD != type))
+               // // {
+               // //    if(b_orig_note_state)
+               // //       _frame.noteOn(false/*bSet*/, dev_idx, dev_ch, orig_note, 0, 0);
+               // //    else
+               // //       _frame.noteOff(false/*bSet*/, dev_idx, dev_ch, orig_note, 0);
+               // // }
+
+               if((INVALID_VALUE != nval) && (0 <= nval <= 127))
+               {
+                  // trace "xxx out note="+nval;
+                  {
+                     if((TYPE_NOTE_ON == type) || (TYPE_NOTE_ON_ADD == type))
+                     // // if(b_orig_note_state)
+                     {
+                        if(TYPE_NOTE_ON_ADD == type)
+                        {
+                           _framePlus.noteOn(true/*bSet*/, dev_idx, outCh, nval, orig_vel?orig_vel:1, b_orig_note_state?orig_dur:1);
+                        }
+                        else
+                        {
+                           // Replace event
+                           if(!_frame.noteOnReplace(dev_idx, outCh, orig_note, nval, orig_vel?orig_vel:1, b_orig_note_state?orig_dur:1))
+                           {
+                              _frame.noteOn(true/*bSet*/, dev_idx, outCh, nval, orig_vel?orig_vel:1, b_orig_note_state?orig_dur:1);
+                           }
+                           _frame.polyPressureReplace(dev_idx, outCh, orig_note, nval/*newNote*/, -1/*nval=keep*/);
+                           orig_note = nval;
+                        }
+                     }
+                     else
+                     {
+                        if(TYPE_NOTE_OFF_ADD == type)
+                        {
+                           _framePlus.noteOff(true/*bSet*/, dev_idx, outCh, nval, orig_vel?orig_vel:0);
+                        }
+                        else
+                        {
+                           // Replace event
+                           if(!_frame.noteOffReplace(dev_idx, outCh, orig_note, nval, orig_vel))
+                           {
+                              _frame.noteOff(true/*bSet*/, dev_idx, outCh, nval, orig_vel);
+                           }
+                           orig_note = nval;
+                        }
+                     }
+                  }
+
+                  out_val = nval;
+               }
+               else
+               {
+                  // Delete previous event (WARNING: changes evIdx)
+                  // trace "xxx delete event outCh="+outCh+" orig_note="+orig_note;
+                  if((TYPE_NOTE_ON_ADD != type) && (TYPE_NOTE_OFF_ADD != type))
+                  {
+                     if(b_orig_note_state)
+                     {
+                        // // _frame.noteOn(false/*bSet*/, dev_idx, outCh, orig_note, 0, 0);
+                        // (note) replace by 0-velocity noteOn event (will be deleted at end of processFrame())
+                        _frame.noteOn(true/*bSet*/, dev_idx, outCh, orig_note, 0/*vel*/, 0/*dur*/);
+                     }
+                     else
+                        _frame.noteOff(false/*bSet*/, dev_idx, outCh, orig_note, 0);
+                  }
+
+                  out_val = INVALID_VALUE;
+               }
+            }
+            else
+            {
+               out_val = INVALID_VALUE;
+            }
+            break;
+
+         case TYPE_VELOCITY:
+         case TYPE_VELOCITY_ADD:
+            // trace "xxx output VELOCITY note="+orig_note+" vel="+nval+" dur="+orig_dur+" outCh="+outCh;
+
+            if(INVALID_VALUE != orig_note)
+            {
+               // // if(TYPE_VELOCITY_ADD != type)
+               // // {
+               // //    // Delete previous event
+               // //    if(b_orig_note_state)
+               // //       _frame.noteOn(false/*bSet*/, dev_idx, dev_ch, orig_note, 0, 0);
+               // //    else
+               // //       _frame.noteOff(false/*bSet*/, dev_idx, dev_ch, orig_note, 0);
+               // // }
+
+               if(INVALID_VALUE != nval)
+               {
+                  nval = mathClampf(nval, 1, 127);  // (note) 0=note off
+
+                  if(TYPE_VELOCITY_ADD == type)
+                  {
+                     if(b_orig_note_state)
+                        _framePlus.noteOn(true/*bSet*/, dev_idx, outCh, orig_note, nval, orig_dur);
+                     else
+                        _framePlus.noteOff(true/*bSet*/, dev_idx, outCh, orig_note, nval);
+                  }
+                  else
+                  {
+                     // Replace event
+                     if(b_orig_note_state)
+                        _frame.noteOnReplace(dev_idx, outCh, orig_note, orig_note, nval, orig_dur);
+                     else
+                        _frame.noteOffReplace(dev_idx, outCh, orig_note, orig_note, nval);
+                  }
+               }
+               else
+               {
+                  if(TYPE_VELOCITY_ADD != type)
+                  {
+                     // Delete previous event (WARNING: changes evIdx)
+                     if(b_orig_note_state)
+                     {
+                        // // _frame.noteOn(false/*bSet*/, dev_idx, outCh, orig_note, 0, 0);
+                        // (note) replace by 0-velocity noteOn event (will be deleted at end of processFrame())
+                        _frame.noteOn(true/*bSet*/, dev_idx, outCh, orig_note, 0/*vel*/, 0/*dur*/);
+                     }
+                     else
+                        _frame.noteOff(false/*bSet*/, dev_idx, outCh, orig_note, 0);
+                  }
+               }
+
+               out_val = nval;
+            }
+            else
+            {
+               out_val = INVALID_VALUE;
+            }
+            break;
+
+         case TYPE_DURATION:
+         case TYPE_DURATION_ADD:
+            if(INVALID_VALUE != orig_note)
+            {
+               // // if(TYPE_DURATION_ADD != type)
+               // // {
+               // //    // Delete previous event
+               // //    _frame.noteOn(false/*bSet*/, dev_idx, dev_ch, orig_note, 0, 0);
+               // // }
+
+               if(INVALID_VALUE != nval)
+               {
+                  // trace "xxx out TYPE_DURATION orig_note="+orig_note+" vel="+nval+" orig_dur="+orig_dur;
+                  nval = mathClampi(nval, 1, 9999999);
+
+                  if(TYPE_DURATION_ADD == type)
+                  {
+                     _framePlus.noteOn(true/*bSet*/, dev_idx, outCh, orig_note, orig_vel, nval);
+                  }
+                  else
+                  {
+                     // Replace event
+                     _frame.noteOnReplace(dev_idx, outCh, orig_note, orig_note, orig_vel, nval);
+                  }
+               }
+               else
+               {
+                  if(TYPE_DURATION_ADD != type)
+                  {
+                     // Delete previous event (WARNING: changes evIdx)
+                     // // _frame.noteOn(false/*bSet*/, dev_idx, outCh, orig_note, 0, 0);
+                     // (note) replace by 0-velocity noteOn event (will be deleted at end of processFrame())
+                     _frame.noteOn(true/*bSet*/, dev_idx, outCh, orig_note, 0/*vel*/, 0/*dur*/);
+                  }
+               }
+
+               out_val = nval;
+            }
+            else
+            {
+               out_val = INVALID_VALUE;
+            }
+            break;
+
+         case TYPE_POLYPRESSURE:
+         case TYPE_POLYPRESSURE_ADD:
+            if(INVALID_VALUE != orig_note)
+            {
+               // // if(TYPE_POLYPRESSURE_ADD != type)
+               // // {
+               // //    _frame.polyPressure(false/*bSet*/, dev_idx, dev_ch, orig_note, 0);
+               // // }
+
+               if(INVALID_VALUE != nval)
+               {
+                  nval = mathClampi(nval, 0, 127);
+
+                  if(TYPE_POLYPRESSURE_ADD == type)
+                  {
+                     _framePlus.polyPressure(true/*bSet*/, dev_idx, outCh, orig_note, nval);
+                  }
+                  else
+                  {
+                     // Replace event
+                     _frame.polyPressureReplace(dev_idx, outCh, orig_note, orig_note, nval);
+                  }
+               }
+               else
+               {
+                  // Delete previous event (WARNING: changes evIdx)
+                  if(TYPE_POLYPRESSURE_ADD != type)
+                  {
+                     _frame.polyPressure(false/*bSet*/, dev_idx, outCh, orig_note, 0);
+                  }
+               }
+
+               out_val = nval;
+            }
+            else
+            {
+               out_val = INVALID_VALUE;
+            }
+            break;
+
+         case TYPE_CC:
+            if(INVALID_VALUE != nval)
+            {
+               nval = mathClampf(nval, 0, 127);
+               // trace "xxx TYPE_CC dev_idx="+dev_idx+" dev_ch="+dev_ch+" (outCh="+outCh+") cc_nr="+cc_nr+" nval="+nval+" numCC="+_frame.numEventsCC;
+               _frame.cc(true/*bSet*/, dev_idx, outCh, cc_nr, nval);
+               // trace "xxx    => new numCC="+_frame.numEventsCC;
+               // Utils.Backtrace();
+            }
+            else
+            {
+               _frame.cc(false/*bSet*/, dev_idx, outCh, cc_nr, 0);
+            }
+            out_val = nval;
+            break;
+
+         case TYPE_PRGCHG:
+            if(INVALID_VALUE != nval)
+            {
+               nval = mathClampi(nval, 0, 127);
+               // trace "xxx nmm: send prgchg nval="+nval;
+               _frame.prgChg(true/*bSet*/, dev_idx, outCh, nval);
+            }
+            else
+            {
+               _frame.prgChg(false/*bSet*/, dev_idx, outCh, 0);
+            }
+            out_val = nval;
+            break;
+
+         case TYPE_CHPRESSURE:
+            if(INVALID_VALUE != nval)
+            {
+               nval = mathClampf(nval, 0, 127);
+               _frame.chPressure(true/*bSet*/, dev_idx, outCh, nval);
+            }
+            else
+            {
+               _frame.chPressure(false/*bSet*/, dev_idx, outCh, 0);
+            }
+            out_val = nval;
+            break;
+
+         case TYPE_PITCHBEND:
+            if(INVALID_VALUE != nval)
+            {
+               nval = mathClampf(nval, 0, 16383);
+               _frame.pitchbend(true/*bSet*/, dev_idx, outCh, nval);
+            }
+            else
+            {
+               _frame.pitchbend(false/*bSet*/, dev_idx, outCh, 0);
+            }
+            out_val = nval;
+            break;
+
+         case TYPE_RPN:
+            if(INVALID_VALUE != nval)
+            {
+               nval = mathClampf(nval, 0, 16383);
+               _frame.rpn(true/*bSet*/, dev_idx, outCh, rpn_nr, nval);
+            }
+            else
+            {
+               _frame.rpn(false/*bSet*/, dev_idx, outCh, rpn_nr, 0);
+            }
+            out_val = nval;
+            break;
+
+         case TYPE_NRPN:
+            if(INVALID_VALUE != nval)
+            {
+               nval = mathClampf(nval, 0, 16383);
+               _frame.nrpn(true/*bSet*/, dev_idx, outCh, nrpn_nr, nval);
+            }
+            else
+            {
+               _frame.nrpn(false/*bSet*/, dev_idx, outCh, nrpn_nr, 0);
+            }
+            out_val = nval;
+            break;
+
+         case TYPE_BPM:
+            if(INVALID_VALUE != nval)
+            {
+               current_song.setBPM(nval);
+               MIDI.UpdateMIDITimer();
+               Events.SendBPMChanged();
+               out_val = nval;
+            }
+            break;
+
+         case TYPE_GROOVE:
+            if(INVALID_VALUE != nval)
+            {
+               current_pipe_root.pipeDelay = nval;
+               out_val = nval;
+            }
+            break;
+
+         case TYPE_REG1:
+         case TYPE_REG2:
+         case TYPE_REG3:
+         case TYPE_REG4:
+         case TYPE_REG5:
+         case TYPE_REG6:
+         case TYPE_REG7:
+         case TYPE_REG8:
+            // if(SH_RESET == sh_type)
+            //    trace "xxx modmatrix::outputVal: SH_RESET nval="+nval;
+            out_val = nval;
+            // if(this == parent_entry.arg_dst)
+            //    trace "xxx set out reg val="+out_val+" this="+#(this);
+            parent_pat.setRegValue(type - TYPE_REG1, nval);
+            break;
+      }
+
+   }
+
+   // <method.png>
+   public method uiOutputValDecay() {
+      // Called even when node is muted
+
+      if(INVALID_VALUE != out_val)
+      {
+         // trace "xxx  out_val is not invalid reset timeout";
+         ui_out_val = out_val;
+         ui_out_val_timeout = UI_VAL_TIMEOUT * current_song.ppq;
+      }
+      else
+      {
+         // trace "xxx  out_val is INVALID timeout="+ui_out_val_timeout;
+         ui_out_val_timeout--;
+         if(ui_out_val_timeout <= 0)
+         {
+            ui_out_val_timeout = 0;
+            ui_out_val = INVALID_VALUE;
+         }
+      }
+   }
+
+   // <method_parse.png>
+   protected method getScriptWord(StringArray _words, int _idx, int _lastIdx) : String {
+      if(_idx <= _lastIdx)
+         return _words.get(_idx);
+      else
+         throw NMM_Arg::ParseError("Parse: word idx="+_idx+" out of bounds (lastIdx="+_lastIdx+")");
+   }
+
+   // <method_parse.png>
+   protected method getNextScriptWord() : String {
+      return getScriptWord(script_words, script_word_idx++, script_word_last_idx);
+   }
+
+   // <method_parse.png>
+   protected method isNextScriptWord(String _s) : boolean {
+      if(script_word_idx <= script_word_last_idx)
+         return script_words.get(script_word_idx) == _s;
+      return false;
+   }
+
+   // <method_parse.png>
+   protected method parseDevAndCh() {
+      String w <= getNextScriptWord();
+
+      if("." != w)
+      {
+         if("m1" == w)
+         {
+            setDispDevIdx(0);
+         }
+         else if("m2" == w)
+         {
+            setDispDevIdx(1);
+         }
+         else if("m3" == w)
+         {
+            setDispDevIdx(2);
+         }
+         else if("m4" == w)
+         {
+            setDispDevIdx(3);
+         }
+         else
+         {
+            STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName(w);
+
+            if(null == outDev)
+            {
+               // Try pattern
+               String pattern = "*"+w+"*";
+               // // if(-1 == pattern.charsetIndexOf("*?", 0))
+               // //    pattern = "*"+pattern+"*";
+               outDev <= MIDI.GetMIDIOutDeviceByAliasOrNamePattern(pattern);
+            }
+
+            if(NodeModMatrixEditor.b_script_debug)
+               trace "[trc] NodeModMatrix::script: outDev \""+w+"\" is "+#(outDev);
+
+            if(null != outDev)
+            {
+               if(NodeModMatrixEditor.b_script_debug)
+                  trace "[trc] NodeModMatrix::script: outDev \""+w+"\" is outDev.name="+outDev.getAliasOrDeviceName();
+
+               setDispDevIdx(outDev.dev_idx + NUM_MACRO_DEVS);
+            }
+            else
+            {
+               throw NMM_Arg::ParseError("Parse: dev \""+w+"\" not found");
+            }
+         }
+      }
+
+      if(disp_dev_idx >= NUM_MACRO_DEVS)
+      {
+         if(isNextScriptWord(":"))
+         {
+            // Parse (optional) midi ch
+            w <= getNextScriptWord();  // skip ":"
+            w <= getNextScriptWord();
+            if(w != ".")
+            {
+               dev_ch = int(w - 1) & 15;
+            }
+         }
+      }
+   }
+
+   // <method_parse.png>
+   protected method expectScriptWord(String _s) {
+      String n <= getNextScriptWord();
+      if(n != _s)
+         throw NMM_Arg::ParseError("Parse: expected \""+_s+"\", have \""+n+"\"");
+   }
+
+   // <method_parse.png>
+   public =replay= method parseScript(StringArray _words, int _startIdx, int _lastIdx) : int {
+
+      // throws NMM_Arg::ParseError, returns new script_word_idx
+
+      script_words <= _words;
+      script_word_idx = _startIdx;
+      script_word_last_idx = _lastIdx;
+
+      String w  <= getNextScriptWord();
+
+      boolean bHaveMod = false;
+      int modIdx;
+      boolean bShortNone = false;
+      boolean bParseNextMod = false;
+
+      if(w != ":")
+      {
+         // has modifier ?
+         String modNameLC;
+         String *modName;
+         modIdx = 0;
+         foreach modName in modifier_names
+         {
+            if(modIdx > 0) // Skip "no mod"
+            {
+               modName.toLower() => modNameLC;
+               modNameLC.replace(" ", "");  // "1 -" => "1-"
+               if(w == modNameLC)
+               {
+                  bHaveMod = true;
+                  break;
+               }
+            }
+            modIdx++;
+         }
+      }
+      else
+      {
+         // Shortcut for no modifier
+         bHaveMod = true;
+         modIdx = MOD_NONE;
+         bShortNone = true;
+      }
+
+      if(NodeModMatrixEditor.b_script_debug)
+         trace "xxx NodeModMatrix::script: arg bHaveMod="+bHaveMod+" modIdx="+modIdx+" w=\""+w+"\"";
+
+      if(bHaveMod)
+      {
+         // e.g. n7
+         modifier = modIdx;
+         if(!bShortNone)
+            expectScriptWord(":");
+         w <= getNextScriptWord();
+
+         if(w == ":")
+         {
+            bShortNone = true;
+            bParseNextMod = true;
+         }
+         else
+         {
+            bParseNextMod = isNextScriptWord(":");
+            bShortNone = false;
+         }
+
+         if(bParseNextMod)
+         {
+            // Parse default value, e.g. "n7:64:r1"
+            if(!bShortNone)
+            {
+               if("." != w)
+               {
+                  if("-" == w)
+                  {
+                     def_value_id = DEF_NONE;
+                  }
+                  else if("none" == w)
+                  {
+                     def_value_id = DEF_NONE;
+                  }
+                  else if("low" == w)
+                  {
+                     def_value_id = DEF_LOW;
+                  }
+                  else if("center" == w)
+                  {
+                     def_value_id = DEF_CENTER;
+                  }
+                  else if("high" == w)
+                  {
+                     def_value_id = DEF_HIGH;
+                  }
+                  else
+                  {
+                     FloatArray defVals <= def_value_tbl.get(modifier);
+
+                     if(null != defVals)
+                     {
+                        if(float(w) == defVals.get(0))
+                        {
+                           def_value_id = DEF_LOW;
+                        }
+                        else if(float(w) == defVals.get(1))
+                        {
+                           def_value_id = DEF_CENTER;
+                        }
+                        else if(float(w) == defVals.get(2))
+                        {
+                           def_value_id = DEF_HIGH;
+                        }
+                        else
+                        {
+                           throw NMM_Arg::ParseError("Parse: invalid default \""+w+"\" (can be none, low, center, high, or "+defVals.string+")");
+                        }
+                     }
+                  }
+               }
+
+               expectScriptWord(":");
+               w <= getNextScriptWord();
+               bShortNone = false;
+               bParseNextMod = isNextScriptWord(":");
+            }
+            else
+            {
+               // Shortcut for no def value
+               def_value_id = DEF_NONE;
+               bShortNone = false;
+               bParseNextMod = true;
+               w <= getNextScriptWord();
+            }
+
+            if(bParseNextMod)
+            {
+               if(w != ":")
+               {
+                  // Parse SH
+                  int shIdx = script_sh_type_names.indexOfObject(w, 0);
+                  if(-1 != shIdx)
+                  {
+                     sh_type = shIdx;
+                  }
+                  else
+                  {
+                     throw NMM_Arg::ParseError("Parse: invalid SH type \""+w+"\"");
+                  }
+
+                  expectScriptWord(":");
+               }
+               else
+               {
+                  // Shortcut for SH
+                  sh_type = SH_NONE;
+               }
+               w <= getNextScriptWord();
+            }
+         }
+
+      }
+      else
+      {
+         modifier = MOD_NONE;
+      }
+
+      // Parse type
+      int typeIdx = script_type_names.indexOfObject(w, 0);
+      boolean bTypeParenthesis = false;
+      if(NodeModMatrixEditor.b_script_debug)
+         trace "xxx NodeModMatrix::script: arg parse type: w=\""+w+"\" typeIdx="+typeIdx;
+      if(-1 == typeIdx)
+      {
+         // Assume const
+         typeIdx = TYPE_CONST;
+         boolean bNegConst = false;
+         if((w <= "-") && !(w <= "--"))
+         {
+            bNegConst = true;
+            w.replace("-", "");
+         }
+         int typeConv = w.checkConversions();
+         if(NodeModMatrixEditor.b_script_debug)
+            trace "xxx NodeModMatrix::script: arg typeConv="+typeConv+" w=\""+w+"\"";
+         if(YAC_TYPE_INT == typeConv)
+         {
+            int intVal = w;
+            if(bNegConst) intVal = -intVal;
+            bTypeParenthesis = false;
+            if((w <= "0x") || (w <= "$"))
+            {
+               const_val_type = CONST_TYPE_INT_HEX;
+            }
+            else if(w <= "0b")
+            {
+               const_val_type = CONST_TYPE_BINARY;
+            }
+            else
+            {
+               const_val_type = CONST_TYPE_INT_DEC;
+            }
+            b_const_val_signed = (intVal < 0);
+            const_val = intVal;
+            setConstValRangeFromVal(abs(intVal));
+         }
+         else if(YAC_TYPE_FLOAT == typeConv)
+         {
+            float floatVal = w;
+            if(bNegConst) floatVal = -floatVal;
+            bTypeParenthesis = false;
+            const_val_type = CONST_TYPE_FLOAT;
+            b_const_val_signed = (floatVal < 0);
+            const_val = floatVal;
+            setConstValRangeFromVal(abs(floatVal));
+         }
+         else
+         {
+            int keyIdx   = Scale.FindKeyIdxByString(w);
+            int modeIdx;
+            if(w.length > 3)
+               modeIdx = Scale.FindModeIdxBySubString(w);
+            else
+               modeIdx = -1;
+            int patNrIdx = Node.FindPatNrIdxByString(w);
+            int noteIdx  = MIDI.FindNoteIdxByString(w);
+            int chordIdx = Chord.FindChordIdxByString(w);
+
+            if(NodeModMatrixEditor.b_script_debug)
+            {
+               trace "xxx w=\""+w+"\" keyIdx="+keyIdx;
+               trace "xxx w=\""+w+"\" modeIdx="+modeIdx;
+               trace "xxx w=\""+w+"\" patNrIdx="+patNrIdx;
+               trace "xxx w=\""+w+"\" noteIdx="+noteIdx;
+            }
+
+            if(-1 != keyIdx)
+            {
+               const_val_type     = CONST_TYPE_KEY;
+               b_const_val_signed = false;
+               const_val          = keyIdx;
+               const_val_range    = VAL_RANGE_0_127;
+            }
+            else if(-1 != modeIdx)
+            {
+               const_val_type     = CONST_TYPE_MODE;
+               b_const_val_signed = false;
+               const_val          = modeIdx;
+               const_val_range    = VAL_RANGE_0_127;
+            }
+            else if(-1 != chordIdx)
+            {
+               const_val_type     = CONST_TYPE_CHORD;
+               b_const_val_signed = false;
+               const_val          = chordIdx;
+               const_val_range    = VAL_RANGE_0_127;
+            }
+            else if(-1 != noteIdx)
+            {
+               const_val_type     = CONST_TYPE_NOTE;
+               b_const_val_signed = false;
+               const_val          = noteIdx;
+               const_val_range    = VAL_RANGE_0_127;
+            }
+            else if(-1 != patNrIdx)
+            {
+               const_val_type     = CONST_TYPE_PATNR;
+               b_const_val_signed = false;
+               const_val          = patNrIdx;
+               const_val_range    = VAL_RANGE_0_127;
+            }
+            else
+            {
+               throw NMM_Arg::ParseError("Parse: expected value, have \""+w+"\"");
+            }
+         }
+      }
+      else
+      {
+         if!([TYPE_NONE,
+              TYPE_SONGPOS, TYPE_BPM, TYPE_GROOVE,
+              TYPE_REG1, TYPE_REG2, TYPE_REG3, TYPE_REG4, TYPE_REG5, TYPE_REG6, TYPE_REG7, TYPE_REG8,
+             TYPE_MACRO1, TYPE_MACRO2, TYPE_MACRO3, TYPE_MACRO4]
+            .contains(typeIdx))
+         {
+            bTypeParenthesis = true;
+         }
+      }
+
+      setDispType(typeIdx);
+
+      if(bTypeParenthesis)
+      {
+         expectScriptWord("(");
+
+         STX_MIDIOutDevice *outDev;
+         String pattern;
+
+         // Parse type args
+         switch(typeIdx)
+         {
+            case TYPE_RANDOM:
+               // min max tmin tmax
+               if(!isNextScriptWord(")"))
+               {
+                  w <= getNextScriptWord();
+                  if(w != ".")
+                  {
+                     rand_min = w;
+                  }
+                  if(NodeModMatrixEditor.b_script_debug)
+                     trace "xxx NodeModMatrix::script: arg rand_min="+rand_min+" w=\""+w+"\"";
+
+                  if(!isNextScriptWord(")"))
+                  {
+                     w <= getNextScriptWord();
+                     if(w != ".")
+                     {
+                        rand_max = w;
+                     }
+                     if(NodeModMatrixEditor.b_script_debug)
+                        trace "xxx NodeModMatrix::script: arg rand_max="+rand_max+" w=\""+w+"\"";
+
+                     if(!isNextScriptWord(")"))
+                     {
+                        w <= getNextScriptWord();
+                        if(w != ".")
+                        {
+                           rand_min_time = w;
+                           if(rand_min_time < 0)
+                              rand_min_time = 0;
+                        }
+                        if(NodeModMatrixEditor.b_script_debug)
+                           trace "xxx NodeModMatrix::script: arg rand_min_time="+rand_min_time+" w=\""+w+"\"";
+
+                        if(!isNextScriptWord(")"))
+                        {
+                           w <= getNextScriptWord();
+                           if(w != ".")
+                           {
+                              rand_max_time = w;
+                              if(rand_max_time < 0)
+                                 rand_max_time = 0;
+                           }
+                           if(NodeModMatrixEditor.b_script_debug)
+                              trace "xxx NodeModMatrix::script: arg rand_max_time="+rand_max_time+" w=\""+w+"\"";
+                        }
+                     }
+                  }
+                  setRandValRangeFromValues();
+               }
+               break;
+
+            case TYPE_NOTE:
+            case TYPE_NOTE_ADD:
+            case TYPE_NOTE_ON:
+            case TYPE_NOTE_ON_ADD:
+            case TYPE_NOTE_OFF:
+            case TYPE_NOTE_OFF_ADD:
+            case TYPE_VELOCITY:
+            case TYPE_VELOCITY_ADD:
+            case TYPE_DURATION:
+            case TYPE_DURATION_ADD:
+            case TYPE_POLYPRESSURE:
+            case TYPE_POLYPRESSURE_ADD:
+            case TYPE_PRGCHG:
+            case TYPE_CHPRESSURE:
+            case TYPE_PITCHBEND:
+               // <dev>[:ch]
+               // Parse dev
+               parseDevAndCh();
+               break;
+
+            case TYPE_CC:
+               // <dev>[:ch] <ccnr_or_name>
+               parseDevAndCh();
+               outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+
+               if(!isNextScriptWord(")"))
+               {
+                  w <= getNextScriptWord();
+                  if(w != ".")
+                  {
+                     if(null != outDev)
+                     {
+                        int ccNr;
+                        if(YAC_TYPE_INT == w.checkConversions())
+                        {
+                           ccNr = w;
+                           if(0 <= w <= 127)
+                           {
+                           }
+                           else
+                           {
+                              throw NMM_Arg::ParseError("Parse: invalid CC "+ccNr);
+                           }
+                        }
+                        else
+                        {
+                           // // pattern = w;
+                           // // if(-1 == pattern.charsetIndexOf("*?", 0))
+                           // //    pattern = "*"+pattern+"*";
+                           pattern = "*"+w+"*";
+                           ccNr = outDev.getCCByNamePattern(dev_ch, pattern);
+                        }
+                        if(-1 != ccNr)
+                        {
+                           cc_nr = ccNr;
+                        }
+                        else
+                        {
+                           throw NMM_Arg::ParseError("Parse: CC \""+w+"\" not found");
+                        }
+                     }
+                     else
+                     {
+                        throw NMM_Arg::ParseError("Parse: unable to resolve CC (invalid dev)");
+                     }
+                  }
+               }
+               break;
+
+            case TYPE_RPN:
+               // <dev>[:ch] <rpnid_or_name>
+               parseDevAndCh();
+               outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+
+               if(!isNextScriptWord(")"))
+               {
+                  w <= getNextScriptWord();
+                  if(w != ".")
+                  {
+                     if(null != outDev)
+                     {
+                        int rpnNr;
+                        if(YAC_TYPE_INT == w.checkConversions())
+                        {
+                           rpnNr = w;
+                           if(0 <= w <= 16383)
+                           {
+                           }
+                           else
+                           {
+                              throw NMM_Arg::ParseError("Parse: invalid RPN "+rpnNr);
+                           }
+                        }
+                        else
+                        {
+                           // // pattern = w;
+                           // // if(-1 == pattern.charsetIndexOf("*?", 0))
+                           // //    pattern = "*"+pattern+"*";
+                           pattern = "*"+w+"*";
+                           rpnNr = outDev.getRPNByNamePattern(dev_ch, pattern);
+                        }
+                        if(-1 != rpnNr)
+                        {
+                           rpn_nr = rpnNr;
+                        }
+                        else
+                        {
+                           throw NMM_Arg::ParseError("Parse: RPN \""+w+"\" not found");
+                        }
+                     }
+                     else
+                     {
+                        throw NMM_Arg::ParseError("Parse: unable to resolve RPN (invalid dev)");
+                     }
+                  }
+               }
+               break;
+
+            case TYPE_NRPN:
+               // <dev>[:ch] <nrpnid_or_name>
+               parseDevAndCh();
+               outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+
+               if(!isNextScriptWord(")"))
+               {
+                  w <= getNextScriptWord();
+                  if(w != ".")
+                  {
+                     if(null != outDev)
+                     {
+                        int nrpnNr;
+                        if(YAC_TYPE_INT == w.checkConversions())
+                        {
+                           nrpnNr = w;
+                           if(0 <= w <= 16383)
+                           {
+                           }
+                           else
+                           {
+                              throw NMM_Arg::ParseError("Parse: invalid NRPN "+nrpnNr);
+                           }
+                        }
+                        else
+                        {
+                           // // pattern = w;
+                           // // if(-1 == pattern.charsetIndexOf("*?", 0))
+                           // //    pattern = "*"+pattern+"*";
+                           pattern = "*"+w+"*";
+                           nrpnNr = outDev.getNRPNByNamePattern(dev_ch, pattern);
+                        }
+                        if(-1 != nrpnNr)
+                        {
+                           nrpn_nr = nrpnNr;
+                        }
+                        else
+                        {
+                           throw NMM_Arg::ParseError("Parse: NRPN \""+w+"\" not found");
+                        }
+                     }
+                     else
+                     {
+                        throw NMM_Arg::ParseError("Parse: unable to resolve NRPN (invalid dev)");
+                     }
+                  }
+               }
+               break;
+         }
+
+         expectScriptWord(")");
+      }
+
+      return script_word_idx;
+   }
+
+   // <method.png>
+   public method appendDevAndChToScript(String _script) {
+      if(0 <= disp_dev_idx < NUM_MACRO_DEVS)
+      {
+         _script.append("m"+(disp_dev_idx+1));
+      }
+      else
+      {
+         STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+         if(null != outDev)
+         {
+            _script.append("\""+outDev.getAliasOrDeviceName()+"\"");
+         }
+         else
+         {
+            // Should not be reachable
+            trace "[~~~] NodeModMatrix::appendDevAndChToScript: failed to resolve dev#"+dev_idx;
+            _script.append(dev_idx);
+         }
+
+         _script.append(":");
+         _script.append((dev_ch & 15)+1);
+      }
+   }
+
+   // <method.png>
+   public method appendToScript(String _script) {
+      // Modifiers
+
+      // trace "xxx appendToScript: modifier="+modifier+" def_value_id="+def_value_id+" sh_type="+sh_type;
+
+      // Mod:conversion
+      if(MOD_NONE != modifier)
+      {
+         _script.append(modifier_names.get(modifier).toLower().replace(" ", ""));
+      }
+
+      if((DEF_NONE != def_value_id) || (SH_NONE != sh_type))
+      {
+         _script.append(":");
+      }
+
+      // Mod:default value
+      if(DEF_NONE != def_value_id)
+      {
+         switch(def_value_id)
+         {
+            case DEF_LOW:
+               _script.append("low");
+               break;
+
+            case DEF_CENTER:
+               _script.append("center");
+               break;
+
+            case DEF_HIGH:
+               _script.append("high");
+               break;
+         }
+      }
+
+      // Mod:SH
+      if(SH_NONE != sh_type)
+      {
+         _script.append(":");
+         _script.append(script_sh_type_names.get(sh_type));
+      }
+
+      if((MOD_NONE != modifier) || (DEF_NONE != def_value_id) || (SH_NONE != sh_type))
+      {
+         _script.append(":");
+      }
+
+      // Type
+      STX_MIDIOutDevice *outDev;
+
+      switch(disp_type)
+      {
+         case TYPE_NONE:
+            _script.append("none");
+            break;
+
+         case TYPE_RANDOM:
+            // min max tmin tmax
+            _script.append("rand(");
+            _script.append(rand_min);
+            _script.append(" ");
+            _script.append(rand_max);
+            _script.append(" ");
+            _script.append(rand_min_time);
+            _script.append(" ");
+            _script.append(rand_max_time);
+            _script.append(")");
+            break;
+
+         case TYPE_CONST:
+            switch(const_val_type)
+            {
+               case CONST_TYPE_FLOAT:
+                  _script.append(const_val);
+                  break;
+
+               case CONST_TYPE_INT_DEC:
+                  _script.append(const_val);
+                  break;
+
+               case CONST_TYPE_INT_HEX:
+                  Integer io;
+                  if(const_val < 0)
+                  {
+                     io = -const_val;
+                     _script.append("-" + io.printf("%x"));
+                  }
+                  else
+                  {
+                     io = const_val;
+                     _script.append(io.printf("%x"));
+                  }
+                  break;
+
+               case CONST_TYPE_NOTE:
+                  _script.append(MIDI.midi_notes.get(const_val&127));
+                  break;
+
+               case CONST_TYPE_PATNR:
+                  _script.append(Node.patnr_options_short.get(const_val&127));
+                  break;
+
+               case CONST_TYPE_KEY:
+                  _script.append(Scale.key_names.get(const_val % 12));
+                  break;
+
+               case CONST_TYPE_MODE:
+                  _script.append((Scale.mode_names.get(const_val % (Scale.mode_names.numElements))).toLower().replace(" ", ""));
+                  break;
+
+               case CONST_TYPE_BINARY:
+                  _script.append(Utils.IntToBinary255String(const_val));
+                  break;
+
+               case CONST_TYPE_CHORD:
+                  _script.append((Chord.chord_names_short.get(const_val % (Chord.chord_names_short.numElements))).toLower().replace(" ", ""));
+                  break;
+            }
+            break;
+
+         case TYPE_SONGPOS:
+            _script.append("songpos");
+            break;
+
+         case TYPE_NOTE:
+         case TYPE_NOTE_ADD:
+         case TYPE_NOTE_ON:
+         case TYPE_NOTE_ON_ADD:
+         case TYPE_NOTE_OFF:
+         case TYPE_NOTE_OFF_ADD:
+         case TYPE_VELOCITY:
+         case TYPE_VELOCITY_ADD:
+         case TYPE_DURATION:
+         case TYPE_DURATION_ADD:
+         case TYPE_POLYPRESSURE:
+         case TYPE_POLYPRESSURE_ADD:
+         case TYPE_PRGCHG:
+         case TYPE_CHPRESSURE:
+         case TYPE_PITCHBEND:
+            // <dev>[:ch]
+            // Parse dev
+            _script.append(script_type_names.get(disp_type));
+            _script.append("(");
+            appendDevAndChToScript(_script);
+            _script.append(")");
+            break;
+
+         case TYPE_CC:
+            // <dev>[:ch] <ccnr_or_name>
+            _script.append("cc(");
+            appendDevAndChToScript(_script);
+            outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+
+            if(null != outDev)
+            {
+               String ccName = outDev.getCCLongNameByCtl(dev_ch, cc_nr);
+               if(ccName.getc(3) == ':') // auto-added by MIDISynthProfile.getCCCaption()
+                  ccName = ccName.substring(5, ccName.length-5);
+               if(!ccName.isBlank())
+               {
+                  _script.append(" \"");
+                  _script.append(ccName);
+                  _script.append("\"");
+               }
+               else
+               {
+                  _script.append(" ");
+                  _script.append(cc_nr);
+               }
+            }
+            else
+            {
+               _script.append(" ");
+               _script.append(cc_nr);
+            }
+
+            _script.append(")");
+            break;
+
+         case TYPE_RPN:
+            // <dev>[:ch] <rpnid_or_name>
+            _script.append("rpn(");
+            appendDevAndChToScript(_script);
+            outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+
+            if(null != outDev)
+            {
+               String rpnName = outDev.getRPNLongNameByNr(dev_ch, rpn_nr);
+               if(rpnName.getc(5) == ':') // auto-added by MIDISynthProfile.getRPNCaption()
+                  rpnName = rpnName.substring(7, rpnName.length-7);
+               if(!rpnName.isBlank())
+               {
+                  _script.append(" \"");
+                  _script.append(rpnName);
+                  _script.append("\"");
+               }
+               else
+               {
+                  _script.append(" ");
+                  _script.append(rpn_nr);
+               }
+            }
+            else
+            {
+               _script.append(" ");
+               _script.append(rpn_nr);
+            }
+
+            _script.append(")");
+            break;
+
+         case TYPE_NRPN:
+            // <dev>[:ch] <nrpnid_or_name>
+            _script.append("nrpn(");
+            appendDevAndChToScript(_script);
+            outDev <= MIDI.GetMIDIOutDeviceByIndex(dev_idx);
+
+            if(null != outDev)
+            {
+               String nrpnName = outDev.getNRPNLongNameByNr(dev_ch, nrpn_nr);
+               if(nrpnName.getc(5) == ':') // auto-added by MIDISynthProfile.getNRPNCaption()
+                  nrpnName = nrpnName.substring(7, nrpnName.length-7);
+               if(!nrpnName.isBlank())
+               {
+                  _script.append(" \"");
+                  _script.append(nrpnName);
+                  _script.append("\"");
+               }
+               else
+               {
+                  _script.append(" ");
+                  _script.append(nrpn_nr);
+               }
+            }
+            else
+            {
+               _script.append(" ");
+               _script.append(nrpn_nr);
+            }
+
+            _script.append(")");
+            break;
+
+         case TYPE_BPM:
+            _script.append("bpm");
+            break;
+
+         case TYPE_GROOVE:
+            _script.append("groove");
+            break;
+
+         case TYPE_REG1:
+            _script.append("r1");
+            break;
+
+         case TYPE_REG2:
+            _script.append("r2");
+            break;
+
+         case TYPE_REG3:
+            _script.append("r3");
+            break;
+
+         case TYPE_REG4:
+            _script.append("r4");
+            break;
+
+         case TYPE_REG5:
+            _script.append("r5");
+            break;
+
+         case TYPE_REG6:
+            _script.append("r6");
+            break;
+
+         case TYPE_REG7:
+            _script.append("r7");
+            break;
+
+         case TYPE_REG8:
+            _script.append("r8");
+            break;
+
+         case TYPE_MACRO1:
+            _script.append("m1");
+            break;
+
+         case TYPE_MACRO2:
+            _script.append("m2");
+            break;
+
+         case TYPE_MACRO3:
+            _script.append("m3");
+            break;
+
+         case TYPE_MACRO4:
+            _script.append("m4");
+            break;
+      }
+
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      ofs.i16 = 19; // Version
+
+      ofs.i8  = modifier; // v2+
+      ofs.i8  = def_value_id; // v7+
+      ofs.i8  = sh_type;  // v3+
+      ofs.i8  = disp_type; // v13+
+      ofs.i8  = type;
+
+      // Save disp_dev_idx/dev_idx
+      boolean bScratch = false;
+      STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByIndex(disp_dev_idx - NUM_MACRO_DEVS);
+      if(null != dev)
+      {
+         if(dev.getDeviceName() == STX_VirtualMIDIOutDevice.SCRATCH_NAME)
+         {
+            ofs.i8 = -2; // disp_dev_idx
+            ofs.i8 = -2; // dev_idx
+            bScratch = true;
+         }
+      }
+
+      if(!bScratch)
+      {
+         ofs.i8  = disp_dev_idx; // v14+
+         ofs.i8  = dev_idx;
+      }
+
+      ofs.i8  = dev_ch;
+      ofs.i8  = macro_dev_ch; // v15+
+      ofs.i8  = cc_nr;
+      ofs.i16 = rpn_nr;
+      ofs.i16 = nrpn_nr;
+      ofs.f32 = const_val;
+      ofs.i8  = const_val_range; // v4+
+      ofs.i8  = b_const_val_signed; // v5+
+      ofs.i8  = const_val_type; // v9+
+      ofs.f32 = rand_min;
+      ofs.f32 = rand_max;
+      ofs.f32 = rand_min_time;
+      ofs.f32 = rand_max_time;
+      ofs.i8  = rand_val_range; // v6+
+      ofs.i8  = b_rand_val_signed; // v6+
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs,
+                           IntArray _outDevIdxMap, IntArray _outDevUseCount,
+                           boolean _bPreset, boolean _bMacro) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(ver >= 2)
+         {
+            modifier = ifs.u8;
+         }
+
+         if(ver >= 7)
+         {
+            def_value_id = ifs.u8;
+         }
+
+         if(ver >= 3)
+         {
+            sh_type = ifs.u8;
+         }
+
+         if(ver >= 13)
+         {
+            disp_type = ifs.u8; // v13+
+         }
+
+         // Type
+         type = ifs.u8;
+
+         short typeVer = ver;
+
+         if(typeVer < 8)
+         {
+            // (note) *_ADD types were add in v8
+            if(type >= 7)
+               type += 4;
+            else if(4 == type)
+               type = 5;
+            else if(5 == type)
+               type = 7;
+            else if(6 == type)
+               type = 9;
+
+            typeVer = 8;
+         }
+
+         if(typeVer < 10)
+         {
+            // (note) TYPE_NOTE_ON*, TYPE_NOTE_OFF* were added in v10
+            if(type >= 5)
+               type += 4;
+
+            typeVer = 10;
+         }
+
+         if(typeVer < 11)
+         {
+            // TYPE_MACRO* added before TYPE_NOTE
+            if(type >= 3)
+               type += 4;
+
+            typeVer = 11;
+         }
+
+         if(typeVer < 12)
+         {
+            if(type >= 3) // TYPE_MACRO* moved to end of type list in v12+
+               type -= 4;
+
+            typeVer = 12;
+         }
+
+         if(ver < 13)
+         {
+            disp_type = type;
+         }
+
+         if(typeVer < 17)
+         {
+            // TYPE_SONGPOS added in v17
+            if(disp_type >= 3)  // macro1..4
+               disp_type++;
+            if(type >= 3)
+            {
+               type++;
+            }
+            typeVer = 17;
+         }
+
+         // trace "xxx typeVer="+typeVer+" type="+type+" disp_type="+disp_type;
+
+         if(typeVer < 18)
+         {
+            // TYPE_BPM added in v18
+            if(disp_type >= 22)  // macro1..4
+            {
+               disp_type++;
+            }
+            if(type >= 22)
+            {
+               type++;
+            }
+            typeVer = 18;
+         }
+
+         if(typeVer < 19)
+         {
+            // TYPE_GROOVE added in v19
+            if(disp_type >= 23)  // macro1..4
+            {
+               disp_type++;
+            }
+            if(type >= 23)
+            {
+               type++;
+            }
+            typeVer = 19;
+         }
+
+         // trace "xxx    FIXED typeVer="+typeVer+" type="+type+" disp_type="+disp_type;
+
+         // Device
+         if(_bPreset && _bMacro)
+         {
+            // Loading preset, keep disp_dev_idx, dev_idx, dev_ch
+            if(ver >= 14)
+            {
+               ifs.getS8();  // disp_dev_idx
+            }
+            ifs.getS8();  // dev_idx
+            ifs.getU8();  // dev_ch
+         }
+         else
+         {
+            boolean bScratch = false;
+            if(ver >= 14)
+            {
+               disp_dev_idx = ifs.s8; // v14+
+
+               bScratch = (-2 == disp_dev_idx);
+               if(bScratch)
+               {
+                  STX_MIDIOutDevice dev <= MIDI.GetMIDIOutDeviceByAliasOrName(STX_VirtualMIDIOutDevice.SCRATCH_NAME);
+                  if(null != dev)
+                  {
+                     disp_dev_idx = 4 + dev.dev_idx;
+                     dev_idx = dev.dev_idx;
+                  }
+                  else
+                  {
+                     trace "[!!!] internal error: NodeModMatrix: failed to resolve scratch device";
+                     disp_dev_idx = -1;
+                     dev_idx = -1;
+                  }
+               }
+
+               if(!bScratch)
+               {
+                  if(_bPreset)
+                  {
+                     if(disp_dev_idx >= 4)
+                     {
+                        disp_dev_idx = -1;
+                     }
+                  }
+                  else
+                  {
+                     if(disp_dev_idx >= 4)
+                     {
+                        disp_dev_idx = NUM_MACRO_DEVS + _outDevIdxMap.get(disp_dev_idx - NUM_MACRO_DEVS);
+                     }
+                  }
+               }
+            }
+
+            if(bScratch)
+            {
+               ifs.getS8(); // skip dev_idx
+            }
+            else
+            {
+               dev_idx = ifs.s8;
+
+               if(_bPreset)
+               {
+                  dev_idx = -1;
+               }
+
+               if(-1 != dev_idx)
+               {
+                  _outDevUseCount.inc(dev_idx);
+
+                  dev_idx = _outDevIdxMap.get(dev_idx);
+               }
+
+               if(ver < 14)
+               {
+                  disp_dev_idx = (dev_idx >= 0) ? (dev_idx + 4) : -1;
+               }
+            }
+
+            // Device channel
+            dev_ch = ifs.s8;
+
+            if(ver >= 15)
+            {
+               macro_dev_ch = ifs.s8; // v15+
+            }
+         }
+
+         cc_nr = ifs.u8;
+         rpn_nr = ifs.u16;
+         nrpn_nr = ifs.u16;
+
+         const_val = ifs.f32;
+         if(ver >= 4)
+         {
+            const_val_range = ifs.u8;
+
+            if(ver >= 5)
+            {
+               b_const_val_signed = ifs.b8;
+
+               if(ver >= 9)
+               {
+                  const_val_type = ifs.u8;
+               }
+            }
+         }
+
+         rand_min = ifs.f32;
+         rand_max = ifs.f32;
+         rand_min_time = ifs.f32;
+         rand_max_time = ifs.f32;
+         if(ver >= 6)
+         {
+            rand_val_range    = ifs.u8;  // v6+
+            b_rand_val_signed = ifs.b8;  // v6+
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+}

@@ -1,0 +1,5091 @@
+// ----
+// ---- file   : NSQ_Arranger.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 07Apr2020
+// ---- changed: 08Apr2020, 09Apr2020, 11Apr2020, 12Apr2020, 13Apr2020, 14Apr2020, 15Apr2020
+// ----          16Apr2020, 17Apr2020, 18Apr2020, 20Apr2020, 21Apr2020, 24Apr2020, 25Apr2020
+// ----          26Apr2020, 28Apr2020, 06May2020, 07May2020, 09May2020, 10May2020, 13May2020
+// ----          29Oct2020, 30Oct2020, 06Nov2020, 08Nov2020, 11Nov2020, 15Nov2020, 05Dec2020
+// ----          23May2021, 02Jun2021, 18Jun2021, 18Mar2022, 07May2022, 24Jun2022, 11Feb2023
+// ----          03Apr2023, 11Jun2023, 23Jun2023, 24Jun2023, 19Sep2023, 03Oct2023, 05Oct2023
+// ----          02Feb2024, 24Mar2024, 04Jan2025, 17Jan2025, 24Jan2025, 28Feb2025, 28May2025
+// ----          07Jun2025, 11Sep2025, 16Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MNSQ_Arranger;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug_drag = 0;
+
+
+// <class.png>
+class NSQ_PrgChgFloatParamDialog : FloatingLayer {
+
+   NodeSeqEditor *parent_editor;
+   FloatParam *fp;
+
+   // <function.png>
+   public static prgchg_to_value(String _text) : float {
+      local String t <= _text.trim().toUpper();
+      if(t.isBlank())
+         return -1;
+      if(3 != t.numChars)
+         t.insert("0", 0);  // 5A / 5 => 05A / 05
+      if(3 != t.numChars)
+         t.append("A");  // 05 => 05A
+      int patIdx = Node.patnr_options_short.indexOfObject(t, 0);
+      if(-1 != patIdx)
+         return patIdx;
+      patIdx = _text;
+      return patIdx;
+   }
+
+   // <ui_show.png>
+   public method showFP(NodeSeqEditor _editor, int _value, StringArray _options, int _uiPrgChgDisplayType, int _posX, int _posY) {
+      initFloatingLayer();
+      fp <= new FloatParam;
+      fp.initFloatParam();
+      fp.setStepFine(1);    // 01A=>01B
+      fp.setStepCoarse(4);  // 01A=>02A
+      fp.setMinMaxValues(0, 127);
+      fp.setUserTable(_options);
+      if(NSQ_Track.PRGCHG_DISPLAY_TYPE_PATNR == _uiPrgChgDisplayType)
+         fp.setUserStringToValueFxn(NSQ_PrgChgFloatParamDialog.prgchg_to_value);
+      fp.setDisplayType(FloatParam.DISPLAY_USER);
+      fp.setPrecision(0);
+      fp.setMousePrecision(0);
+      fp.setInnerPadTop(0.0f);
+      fp.setInnerPadLeft(0.0f);
+      fp.setPositionX(0.0f);
+      fp.setEnableBorders(false);
+      fp.setValue(_value);
+
+      parent_editor <= _editor;
+      removeChildHierarchy();
+      addLayer(fp, Layout.CENTER);
+      int w = NSQ_Arranger.BAR_W;
+      int h = TextField.GetMinSizeY();
+      fp.setRequiredSize2f(w, h);
+      setRequiredSize2f(w, h);
+      showAtXY(_posX, _posY);
+      UI.SetMouseFocus(fp);
+      UI.SetKeyboardFocus(fp);
+      fp.onTabFocus();
+   }
+
+   public virtual isModal() : boolean {
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual wantShadeModal() : boolean {
+      return false;
+   }
+
+   public virtual hide() {
+      FloatingLayer::hide();
+      parent_editor.arr.handlePrgChgFloatParamClosed();
+   }
+
+   public method handleNonChildMouseOver(MouseEvent _ev, Layer _newMouseLayer) : boolean {
+      if(0 == _ev.current_state)
+      {
+         hide();
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+
+      return FloatingLayer::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(@(ap) == @(fp))
+      {
+         parent_editor.arr.handlePrgChgFloatParamEdited(fp);
+
+         if(FloatParam.ACTION_VALUECHANGED == acName)
+            hide();
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class NSQ_Arranger extends Control, ActionProvider {
+
+   define int BAR_W = 48;
+
+   define int DRAG_NONE      = 0;
+   define int DRAG_LOOP_L    = 1;
+   define int DRAG_LOOP_R    = 2;
+   define int DRAG_PUNCH_IN  = 3;
+   define int DRAG_PUNCH_OUT = 4;
+   define int DRAG_SEL       = 5;
+   int   drag_mode;
+   float drag_start_mx;
+   int   drag_bar_idx;
+
+   protected NodeSeqEditor *parent_editor;
+   protected NSQ_Tempo *tempo;
+   protected NSQ_Events *evt;
+   protected NodeSeq *seq;
+
+   public static boolean b_autocolorize_cels = true;
+
+   protected Icon *icon_locator_l;
+   protected Icon *icon_locator_r;
+
+   protected Icon *icon_punch_in;
+   protected Icon *icon_punch_out;
+
+   NSQ_PrgChgFloatParamDialog *dlg_prgchg;
+   protected boolean b_dlg_prgchg_undo;
+
+   protected PopupMenu *pm_ctx;
+   protected PopupMenu *pm_sel;
+
+   protected Texture tex_checker_1;
+   protected Texture tex_checker_2;
+   protected Texture tex_checker_3;
+   protected Texture tex_checker_4;
+   protected Texture tex_checker_5;
+
+   protected boolean b_extended_block_selection_mode;
+
+
+   // <ui_init.png>
+   public method init(NodeSeqEditor _editor) {
+      initControl();
+      parent_editor <= _editor;
+      tempo <= parent_editor.tempo;
+      evt   <= parent_editor.evt;
+
+      icon_locator_l <= UI.GetIcon("locator_l");
+      icon_locator_r <= UI.GetIcon("locator_r");
+
+      icon_punch_in  <= UI.GetIcon("punch_in");
+      icon_punch_out <= UI.GetIcon("punch_out");
+
+   }
+
+   // <method_get.png>
+   public virtual isEditable() : boolean {
+      // So that UI does not skip tab focus
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isTabCycleMember() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeSeq _seq) {
+      seq <= _seq;
+      b_allow_cycle_loop_sel = true;  // paranoia (reset lctrl-a cycling)
+   }
+
+   // <ui.png>
+   protected virtual calcSizeX() : float {
+      return 0;
+   }
+
+   // <ui.png>
+   protected virtual calcSizeY() : float {
+      return 32;
+   }
+
+   // <method.png>
+   public =replay= method setMasterSongPosToCursor() {
+      if(!replay.b_playing)
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+            int ticks = ticksPerBar * seq.cursor_x;
+            if(true == seq.b_master)
+            {
+               current_song.seek(ticks);
+            }
+            else
+            {
+               // // current_song.seek(seq.nodeGetLastPatternStartSongOffset()+ticks);
+               // // seq.nodeSeek(current_song.song_offset + ticks);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method setMasterSongPosToTicks(int _ticks) {
+      if(!replay.b_playing)
+      {
+         if(true == seq.b_master)
+         {
+            current_song.seek(_ticks);
+         }
+      }
+   }
+
+   // <method.png>
+   public method toggleExtendedBlockSelectionMode() {
+      b_extended_block_selection_mode = !b_extended_block_selection_mode;
+      Global.Print("Extended block selection mode (lctrl-lshift-<cursor>) is "+Utils.GetEnableString(b_extended_block_selection_mode));
+   }
+
+   // <method.png>
+   protected method extendSelectionX(int _startCursorX) {
+      // trace "xxx extend seq.sel_start_x="+seq.sel_start_x+" startCursorX="+_startCursorX;
+      if(-1 == seq.sel_start_x)
+      {
+         seq.sel_start_x = _startCursorX;
+         seq.sel_end_x   = seq.cursor_x;
+         seq.sel_start_y = seq.cursor_y;
+         seq.sel_end_y   = seq.cursor_y;
+      }
+      else
+      {
+         seq.sel_end_x = seq.cursor_x;
+      }
+      seq.sortSelection();
+      seq.tempoSelectNone(false/*bFromTempo*/);
+      seq.evtSelectNone(false/*bFromEvent*/);
+      seq.ui_wheel_tick_move_count = 0;
+   }
+
+   // <method.png>
+   protected method extendSelectionY(int _startCursorY) {
+      if(-1 == seq.sel_start_x)
+      {
+         seq.sel_start_x = seq.cursor_x;
+         seq.sel_end_x   = seq.cursor_x;
+         seq.sel_start_y = _startCursorY;
+         seq.sel_end_y   = seq.cursor_y;
+      }
+      else
+      {
+         seq.sel_end_y = seq.cursor_y;
+      }
+      seq.sortSelection();
+   }
+
+   // <method.png>
+   public method setCursorX(int _x) {
+      _x = mathClampi(_x, 0, NSQ_Track.MAX_BARS-1);
+      int oldViewX = seq.view_x;
+      int oldCursorX = seq.cursor_x;
+      seq.cursor_x = _x;
+      int numVisBars = (getSizeX() / BAR_W);
+      if(seq.cursor_x >= (seq.view_x + numVisBars))
+         seq.view_x = seq.cursor_x - numVisBars + 1;
+      else if(seq.cursor_x < seq.view_x)
+         seq.view_x = seq.cursor_x;
+      if((oldViewX != seq.view_x) || (oldCursorX != seq.cursor_x))
+      {
+         parent_editor.redrawSeq();
+         setMasterSongPosToCursor();
+      }
+      if(STConfig.b_node_seq_autoreset_smooth_scroll)
+         seq.scroll_x = 0;
+   }
+
+   // <method.png>
+   public method moveCursorLeft(boolean _bSel) {
+      int oldCursorX = seq.cursor_x;
+      setCursorX(mathClampi(seq.cursor_x - 1, 0, NSQ_Track.MAX_BARS-1));
+      if(_bSel)
+         extendSelectionX(oldCursorX);
+      else
+         selectNone();
+
+      seq.ui_track_all_none_cursor_x = -1;
+      seq.ui_track_all_none_cursor_y = -1;
+      b_allow_cycle_loop_sel = true;
+
+      if(NSQ_Tempo.DRAG_NONE == tempo.drag_mode)
+         seq.tempoSelectNone(false/*bFromTempo*/);
+
+      if(NSQ_Events.DRAG_NONE == evt.drag_mode)
+         seq.evtSelectNone(false/*bFromEvent*/);
+   }
+
+   // <method.png>
+   public method moveCursorRight(boolean _bSel) {
+      int oldCursorX = seq.cursor_x;
+      setCursorX(mathClampi(seq.cursor_x + 1, 0, NSQ_Track.MAX_BARS-1));
+      if(_bSel)
+         extendSelectionX(oldCursorX);
+      else
+         selectNone();
+
+      seq.ui_track_all_none_cursor_x = -1;
+      seq.ui_track_all_none_cursor_y = -1;
+      b_allow_cycle_loop_sel = true;
+
+      if(NSQ_Tempo.DRAG_NONE == tempo.drag_mode)
+         seq.tempoSelectNone(false/*bFromTempo*/);
+
+      if(NSQ_Events.DRAG_NONE == evt.drag_mode)
+         seq.evtSelectNone(false/*bFromEvent*/);
+   }
+
+   // <method.png>
+   public method handleAutoRecFocusTrack() {
+      if(maybe == seq.ui_b_auto_rec_focus)
+      {
+         NSQ_Track track <= parent_editor.getEditTrack();
+         if(!track.b_rec)
+            parent_editor.toggleFocusTrackByIdx(seq.cursor_y);
+      }
+   }
+
+   // <method.png>
+   public method setCursorY(int _y) {
+      seq.cursor_y = mathClampi(_y, 0, NodeSeq.NUM_TRACKS-1);
+
+      handleAutoRecFocusTrack();
+
+      parent_editor.redrawSeq();
+   }
+
+   // <method.png>
+   public method moveCursorToTrack(int _trackIdx, boolean _bSel) {
+      int oldCursorY = seq.cursor_y;
+      setCursorY(_trackIdx);
+
+      if(_bSel)
+         extendSelectionY(oldCursorY);
+      else
+         selectNone();
+
+      seq.ui_track_all_none_cursor_x = -1;
+      seq.ui_track_all_none_cursor_y = -1;
+      b_allow_cycle_loop_sel = true;
+
+      seq.tempoSelectNone(false/*bFromTempo*/);
+      seq.evtSelectNone(false/*bFromEvent*/);
+   }
+
+   // <method.png>
+   public method moveCursorUp(boolean _bSel) {
+      moveCursorToTrack(seq.cursor_y - 1, _bSel);
+   }
+
+   // <method.png>
+   public method moveCursorDown(boolean _bSel) {
+      moveCursorToTrack(seq.cursor_y + 1, _bSel);
+   }
+
+   // <method.png>
+   public method moveCursorDelta(int _delta, boolean _bSel) {
+      if(_delta < 0)
+      {
+         loop(-_delta)
+            moveCursorUp(_bSel);
+      }
+      else
+      {
+         loop(_delta)
+            moveCursorDown(_bSel);
+      }
+   }
+
+   // <method.png>
+   public method moveCursorHome(boolean _bSel) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int newX = seq.cursor_x;
+         int oldX = seq.cursor_x;
+         int ticksPerBar = pat.getNumTicksPerBar();
+         if(newX > 0)
+         {
+            int loopX = -1;
+            int selX = seq.sorted_sel_start_x;
+            int firstUsedX;
+            firstUsedX = pat.findFirstUsedTrackBarIdx(seq.cursor_y);
+
+            // trace "xxx firstUsedX="+firstUsedX+" selX="+selX;
+
+            if(-1 != firstUsedX)
+            {
+               if(firstUsedX > newX)
+                  firstUsedX = -1;
+            }
+
+            if(-1 != selX)
+            {
+               if(selX > newX)
+                  selX = -1;
+            }
+
+            if(-1 != seq.cur_loop_start_ticks)
+            {
+               loopX = seq.cur_loop_start_ticks / ticksPerBar;
+               if(loopX > newX)
+                  loopX = -1;
+            }
+
+            if(-1 != firstUsedX)
+               newX = firstUsedX;
+
+            if(-1 != selX)
+            {
+               newX = (newX == oldX) ? selX : mathMaxi(newX, selX);
+            }
+
+            if(-1 != loopX)
+            {
+               newX = (newX == oldX) ? loopX : mathMaxi(newX, loopX);
+            }
+
+            if(newX == oldX)
+               newX = 0;
+
+            setCursorX(newX);
+         }
+
+         if(_bSel)
+            extendSelectionX(oldX);
+         else
+            selectNone();
+
+         seq.ui_track_all_none_cursor_x = -1;
+         seq.ui_track_all_none_cursor_y = -1;
+         b_allow_cycle_loop_sel = true;
+
+         if(NSQ_Tempo.DRAG_NONE == tempo.drag_mode)
+            seq.tempoSelectNone(false/*bFromTempo*/);
+
+         if(NSQ_Events.DRAG_NONE == evt.drag_mode)
+            seq.evtSelectNone(false/*bFromEvent*/);
+      }
+   }
+
+   // <method.png>
+   public method moveCursorEnd(boolean _bSel) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int newX = seq.cursor_x;
+         int oldX = seq.cursor_x;
+         int ticksPerBar = pat.getNumTicksPerBar();
+         if(newX < NSQ_Track.MAX_BARS-1)
+         {
+            int loopX = -1;
+            int selX = (-1 != seq.sorted_sel_start_x) ? seq.sorted_sel_end_x : -1;
+            int lastUsedX;
+            lastUsedX = pat.findLastUsedTrackBarIdx(seq.cursor_y);
+
+            // trace "xxx lastUsedX="+lastUsedX+" selX="+selX;
+
+            if(-1 != lastUsedX)
+            {
+               if(!_bSel)
+                  lastUsedX++;
+               if(lastUsedX <= newX)
+                  lastUsedX = -1;
+            }
+
+            if(-1 != selX)
+            {
+               if(!_bSel)
+                  selX++;
+               if(selX <= newX)
+                  selX = -1;
+            }
+
+            if(-1 != seq.cur_loop_start_ticks)
+            {
+               if(-1 != (seq.cur_loop_start_ticks + seq.cur_loop_len_ticks))
+               {
+                  loopX = (seq.cur_loop_start_ticks + seq.cur_loop_len_ticks) / ticksPerBar;
+                  if(_bSel)
+                     loopX--;
+                  if(loopX <= newX)
+                     loopX = -1;
+               }
+            }
+
+            if(-1 != lastUsedX)
+               newX = lastUsedX;
+
+            if(-1 != selX)
+            {
+               newX = (newX == oldX) ? selX : mathMini(newX, selX);
+            }
+
+            if(-1 != loopX)
+            {
+               newX = (newX == oldX) ? loopX : mathMini(newX, loopX);
+            }
+
+            if(newX == oldX)
+               newX = NSQ_Track.MAX_BARS-1;
+
+            setCursorX(newX);
+         }
+
+         if(_bSel)
+            extendSelectionX(oldX);
+         else
+            selectNone();
+
+         seq.ui_track_all_none_cursor_x = -1;
+         seq.ui_track_all_none_cursor_y = -1;
+         b_allow_cycle_loop_sel = true;
+
+         if(NSQ_Tempo.DRAG_NONE == tempo.drag_mode)
+            seq.tempoSelectNone(false/*bFromTempo*/);
+
+         if(NSQ_Events.DRAG_NONE == evt.drag_mode)
+            seq.evtSelectNone(false/*bFromEvent*/);
+      }
+   }
+
+   // <method.png>
+   public method expandSelectionY(int _dir) {
+      if(_dir < 0)
+      {
+         seq.cursor_y = 0;
+      }
+      else if(_dir > 0)
+      {
+         seq.cursor_y = NodeSeq.NUM_TRACKS-1;
+      }
+      seq.sel_start_y = 0;
+      seq.sel_end_y   = NodeSeq.NUM_TRACKS-1;
+      if(-1 == seq.sel_start_x)
+      {
+         seq.sel_start_x = seq.cursor_x;
+         seq.sel_end_x   = seq.cursor_x;
+      }
+
+      seq.ui_track_all_none_cursor_x = -1;
+      seq.ui_track_all_none_cursor_y = -1;
+      b_allow_cycle_loop_sel = true;
+
+      seq.sortSelection();
+      seq.tempoSelectNone(false/*bFromTempo*/);
+      seq.evtSelectNone(false/*bFromEvent*/);
+
+      parent_editor.redrawSeq();
+      Global.Print("Expand track selection");
+   }
+
+   // <method.png>
+   public =replay= method handleDeleteSelection(boolean _bTempo) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int startX;
+         int startY;
+         int numBars;
+         int numTracks;
+         int numFramesDeleted = 0;
+         int numTicksPerBar = pat.getNumTicksPerBar();
+
+         parent_editor.undoBegin();
+
+         if(haveSelection())
+         {
+            startX    = seq.sorted_sel_start_x;
+            numBars   = seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1;
+            startY    = seq.sorted_sel_start_y;
+            numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+         }
+         else
+         {
+            startX = seq.cursor_x;
+            startY = seq.cursor_y;
+            numBars = 1;
+            numTracks = 1;
+         }
+
+         trace "xxx handleDeleteSelection: startX="+startX+" numBars="+numBars;
+
+         if(_bTempo)
+         {
+            startY = 0;
+            numTracks = NodeSeq.NUM_TRACKS;
+            seq.tempoSelectNone(false/*bFromTempo*/);
+            seq.evtSelectNone(false/*bFromEvent*/);
+         }
+         else
+            _bTempo = (0 == startY) && (NodeSeq.NUM_TRACKS == numTracks);
+
+         int cy = startY;
+         loop(numTracks)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(cy);
+            int cx = startX;
+            loop(numBars)
+            {
+               numFramesDeleted += track.clearBar(cx);
+               cx++;
+            }
+            track.shiftTime(startX, -numTicksPerBar*numBars);
+            track.rebuildBarLUT();
+            cy++;
+         }
+
+         if(_bTempo)
+            pat.deleteTempoBars(startX, numBars);
+
+         // Move loop/punch regions
+         if(NodeSeq.NUM_TRACKS == numTracks)
+         {
+            int startTicks = startX * numTicksPerBar;
+            if(pat.loop_start_ticks > startTicks)
+            {
+               pat.setLoop(pat.loop_start_ticks - numTicksPerBar, pat.loop_len_ticks);
+            }
+            if(pat.punch_start_ticks > startTicks)
+            {
+               pat.setPunchInOut(pat.punch_start_ticks - numTicksPerBar, pat.punch_len_ticks);
+            }
+         }
+
+         parent_editor.undoEnd();
+
+         Global.Print("Delete "+numFramesDeleted+" frame"+Utils.GetPluralString(numFramesDeleted));
+         parent_editor.redrawSeq();
+      }
+   }
+
+   // <method.png>
+   public =replay= method handleClearSelection(boolean _bUndoBegin) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int startX;
+         int startY;
+         int numBars;
+         int numTracks;
+         int numFramesDeleted = 0;
+
+         if(_bUndoBegin)
+            parent_editor.undoBegin();
+
+         if(haveSelection())
+         {
+            startX    = seq.sorted_sel_start_x;
+            numBars   = seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1;
+            startY    = seq.sorted_sel_start_y;
+            numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+         }
+         else
+         {
+            startX = seq.cursor_x;
+            startY = seq.cursor_y;
+            numBars = 1;
+            numTracks = 1;
+         }
+
+         int cy = startY;
+         loop(numTracks)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(cy);
+            int cx = startX;
+            loop(numBars)
+            {
+               numFramesDeleted += track.clearBar(cx);
+               cx++;
+            }
+            cy++;
+         }
+
+         if(_bUndoBegin)
+            parent_editor.undoEnd();
+
+         Global.Print("Clear "+numFramesDeleted+" frame"+Utils.GetPluralString(numFramesDeleted));
+         parent_editor.redrawSeq();
+      }
+   }
+
+   // <method.png>
+   public =replay= method clearTrack() {
+      NSQ_Track track <= parent_editor.getEditTrack();
+      if(null != track)
+      {
+         parent_editor.undoBegin();
+         track.clearTrack();
+         // // setCursorX(0);
+         parent_editor.undoEnd();
+         parent_editor.redrawSeq();
+      }
+      Global.Print("Clear track");
+   }
+
+   // <method.png>
+   public =replay= method clearPattern() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         parent_editor.undoBegin();
+         pat.clearPattern();
+         // // setCursorX(0);
+         parent_editor.undoEnd();
+         parent_editor.redrawSeq();
+      }
+      Global.Print("Clear pattern");
+   }
+
+   // <method.png>
+   public =replay= method handleInsertBars(boolean _bTempo) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int startX;
+         int startY;
+         int numBars;
+         int numTracks;
+         int numFramesDeleted = 0;
+         int numTicksPerBar = pat.getNumTicksPerBar();
+
+         parent_editor.undoBegin();
+
+         if(haveSelection())
+         {
+            startX    = seq.sorted_sel_start_x;
+            numBars   = seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1;
+            startY    = seq.sorted_sel_start_y;
+            numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+         }
+         else
+         {
+            startX = seq.cursor_x;
+            startY = seq.cursor_y;
+            numBars = 1;
+            numTracks = 1;
+         }
+
+         if(_bTempo)
+         {
+            startY = 0;
+            numTracks = NodeSeq.NUM_TRACKS;
+            seq.tempoSelectNone(false/*bFromTempo*/);
+            seq.evtSelectNone(false/*bFromEvent*/);
+         }
+         else
+            _bTempo = (0 == startY) && (NodeSeq.NUM_TRACKS == numTracks);
+
+         int cy = startY;
+         loop(numTracks)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(cy);
+            track.shiftTime(startX, numTicksPerBar*numBars);
+            track.rebuildBarLUT();
+            cy++;
+         }
+
+         if(_bTempo)
+            pat.insertTempoBars(startX, numBars);
+
+         // Move loop/punch regions
+         if(NodeSeq.NUM_TRACKS == numTracks)
+         {
+            int startTicks = startX * numTicksPerBar;
+            if(pat.loop_start_ticks >= startTicks)
+            {
+               pat.setLoop(pat.loop_start_ticks + numTicksPerBar, pat.loop_len_ticks);
+            }
+            if(pat.punch_start_ticks >= startTicks)
+            {
+               pat.setPunchInOut(pat.punch_start_ticks + numTicksPerBar, pat.punch_len_ticks);
+            }
+         }
+
+         parent_editor.undoEnd();
+
+         Global.Print("Insert "+numBars+" bar"+Utils.GetPluralString(numBars)+" ("+(numBars*numTicksPerBar)+" ticks)");
+         parent_editor.redrawSeq();
+      }
+   }
+
+   // <method.png>
+   public method isSelectionEmpty() : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         return pat.isSelectionEmpty();
+      }
+      return true;
+   }
+
+   // <method.png>
+   public method toggleMuteSelectedTracks() {
+      int startY;
+      int numTracks;
+
+      if(haveSelection())
+      {
+         startY    = seq.sorted_sel_start_y;
+         numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+      }
+      else
+      {
+         startY = seq.cursor_y;
+         numTracks = 1;
+      }
+
+      int trackIdx = startY;
+      loop(numTracks)
+      {
+         parent_editor.toggleMuteTrackByIdx(trackIdx++);
+      }
+   }
+
+   // <method.png>
+   public method forceMuteSelectedTracks(boolean _bTemp) {
+      int startY;
+      int numTracks;
+
+      if(haveSelection())
+      {
+         startY    = seq.sorted_sel_start_y;
+         numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+      }
+      else
+      {
+         startY = seq.cursor_y;
+         numTracks = 1;
+      }
+
+      int trackIdx = startY;
+      seq.force_mute_temp_track_mask = 0;
+      if(_bTemp)
+      {
+         // Mute temporarily (until temporary Tracker editor is exited)
+         loop(numTracks)
+         {
+            seq.force_mute_temp_track_mask |= (1 << trackIdx++);
+         }
+      }
+      else
+      {
+         // Mute permanently
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(trackIdx++);
+            track.setPlayState(NSQ_Track.STATE_MUTE);
+         }
+      }
+   }
+
+   // <method.png>
+   public method toggleSoloSelectedTracks() {
+      int startY;
+      int numTracks;
+
+      if(haveSelection())
+      {
+         startY    = seq.sorted_sel_start_y;
+         numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+      }
+      else
+      {
+         startY = seq.cursor_y;
+         numTracks = 1;
+      }
+
+      int trackIdx = startY;
+      loop(numTracks)
+      {
+         parent_editor.toggleSoloTrackByIdx(trackIdx++);
+      }
+   }
+
+   // <method.png>
+   public method toggleRecordSelectedTracks() {
+      int startY;
+      int numTracks;
+
+      if(haveSelection())
+      {
+         startY    = seq.sorted_sel_start_y;
+         numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+      }
+      else
+      {
+         startY = seq.cursor_y;
+         numTracks = 1;
+      }
+
+      int trackIdx = startY;
+      loop(numTracks)
+      {
+         parent_editor.toggleRecordTrackByIdx(trackIdx++);
+      }
+   }
+
+   // <method.png>
+   public =replay= method loopSelection() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int loopOff;
+         int loopLen;
+
+         if(haveSelection())
+         {
+            loopOff = seq.sorted_sel_start_x * ticksPerBar;
+            loopLen = (seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1) * ticksPerBar;
+         }
+         else
+         {
+            loopOff = seq.cursor_x * ticksPerBar;
+            loopLen = ticksPerBar;
+         }
+
+         if((pat.loop_start_ticks == loopOff) && (pat.loop_len_ticks == loopLen))
+         {
+            loopOff = 0;
+            loopLen = 999 * ticksPerBar;
+            Global.Print("Loop all");
+         }
+         else
+         {
+            Global.Print("Loop selection (off="+loopOff+" len="+loopLen+")");
+         }
+         pat.setLoop(loopOff, loopLen);
+         seq.queueLoop(loopOff, loopLen);
+
+         setMasterSongPosToTicks(loopOff);
+
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method loopBars(int _num) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int loopOff;
+         int loopLen;
+
+         if( (seq.cursor_x + _num) > NSQ_Track.MAX_BARS)
+         {
+            _num = NSQ_Track.MAX_BARS - seq.cursor_x;
+         }
+
+
+         loopOff = seq.cursor_x * ticksPerBar;
+         loopLen = ticksPerBar * _num;
+
+         Global.Print("Loop "+_num+" bar"+Utils.GetPluralString(_num)+" (off="+loopOff+" len="+loopLen+")");
+
+         pat.setLoop(loopOff, loopLen);
+         seq.queueLoop(loopOff, loopLen);
+         setMasterSongPosToTicks(loopOff);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method setLeftLoopLocatorToCursor() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int loopL;
+         int loopR;
+         loopR = seq.cur_loop_start_ticks + seq.cur_loop_len_ticks;
+         loopL = seq.cursor_x * ticksPerBar;
+         int t;
+         if(loopL > loopR)
+         {
+            t = loopL;
+            loopL = loopR;
+            loopR = t;
+         }
+         else if(loopL == loopR)
+         {
+            loopR += seq.cur_loop_len_ticks;
+         }
+         int loopLen = (loopR - loopL);
+         pat.setLoop(loopL, loopLen);
+         seq.queueLoop(loopL, loopLen);
+         setMasterSongPosToTicks(loopL);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method setRightLoopLocatorToCursor() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int loopL;
+         int loopR;
+         loopL = seq.cur_loop_start_ticks;
+         loopR = (seq.cursor_x + 1) * ticksPerBar;
+         if(loopL >= loopR)
+         {
+            loopL = seq.cursor_x * ticksPerBar;
+            loopR = loopL + seq.cur_loop_len_ticks;
+         }
+         int loopLen = (loopR - loopL);
+         pat.setLoop(loopL, loopLen);
+         seq.queueLoop(loopL, loopLen);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method moveLoopToCursor() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int loopL;
+         int loopR;
+         loopL = seq.cursor_x * ticksPerBar;
+         loopR = loopL + seq.cur_loop_len_ticks;
+         int loopLen = (loopR - loopL);
+         pat.setLoop(loopL, loopLen);
+         seq.queueLoop(loopL, loopLen);
+         setMasterSongPosToTicks(loopL);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method setPunchInToCursor() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int punchL;
+         int punchR;
+         int oldL = pat.punch_start_ticks;
+         if(-1 == pat.punch_start_ticks)
+            pat.punch_start_ticks = seq.cursor_x * ticksPerBar;
+         if(-1 == pat.punch_len_ticks)
+            pat.punch_len_ticks = ticksPerBar;
+         punchR = pat.punch_start_ticks + pat.punch_len_ticks;
+         punchL = seq.cursor_x * ticksPerBar;
+         int t;
+         if(punchL > punchR)
+         {
+            t = punchL;
+            punchL = punchR;
+            punchR = t;
+         }
+         else if(punchL == punchR)
+         {
+            punchR += pat.punch_len_ticks;
+         }
+         int punchLen = (punchR - punchL);
+         if(punchL != oldL)
+            pat.setPunchInOut(punchL, punchLen);
+         else
+            pat.setPunchInOut(-1, punchLen);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method setPunchOutToCursor() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int punchL;
+         int punchR;
+         int oldR = -1;
+         if(-1 == pat.punch_start_ticks)
+            pat.punch_start_ticks = seq.cursor_x * ticksPerBar;
+         else
+            oldR = pat.punch_start_ticks + pat.punch_len_ticks;
+         if(-1 == pat.punch_len_ticks)
+         {
+            pat.punch_len_ticks = ticksPerBar;
+            oldR = -1;
+         }
+         punchL = pat.punch_start_ticks;
+         punchR = (seq.cursor_x + 1) * ticksPerBar;
+         if(punchL >= punchR)
+         {
+            punchL = seq.cursor_x * ticksPerBar;
+            punchR = punchL + pat.punch_len_ticks;
+         }
+         int punchLen = (punchR - punchL);
+         if(punchR != oldR)
+            pat.setPunchInOut(punchL, punchLen);
+         else
+            pat.setPunchInOut(punchL, -1);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public method setPunchInOutToSelection() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int punchOff;
+         int punchLen;
+
+         if(haveSelection())
+         {
+            punchOff = seq.sorted_sel_start_x * ticksPerBar;
+            punchLen = (seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1) * ticksPerBar;
+         }
+         else
+         {
+            punchOff = seq.cursor_x * ticksPerBar;
+            punchLen = ticksPerBar;
+         }
+
+         if((pat.punch_start_ticks == punchOff) && (pat.punch_len_ticks == punchLen))
+         {
+            punchOff = -1;
+            punchLen = 0;
+            Global.Print("Disable Punch In / Out");
+         }
+         else
+         {
+            Global.Print("Punch In at "+punchOff+" len="+punchLen);
+         }
+         pat.setPunchInOut(punchOff, punchLen);
+         redraw();
+      }
+   }
+
+   // <method.png>
+   public =replay= method freezeSelectionQuantization() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int startX;
+         int startY;
+         int numBars;
+         int numTracks;
+
+         parent_editor.undoBegin();
+
+         if(haveSelection())
+         {
+            startX    = seq.sorted_sel_start_x;
+            numBars   = seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1;
+            startY    = seq.sorted_sel_start_y;
+            numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+         }
+         else
+         {
+            startX = seq.cursor_x;
+            startY = seq.cursor_y;
+            numBars = 1;
+            numTracks = 1;
+         }
+
+         int cy = startY;
+         loop(numTracks)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(cy);
+            track.freezeQuantization(startX, numBars);
+            cy++;
+         }
+
+         parent_editor.undoEnd();
+
+         Global.Print("Freeze quantization ("+numBars+" bar"+Utils.GetPluralString(numBars)+", "+numTracks+" track"+Utils.GetPluralString(numTracks)+")");
+         parent_editor.redrawSeq();
+      }
+   }
+
+   // <ui_timer.png>
+   public method handleReplayTickUI() {
+      if(replay.b_playing)
+      {
+         // trace "xxx handleReplayTickUI";
+         doAutoScroll(false/*bForce*/);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSongPosSelected() {
+      doAutoScroll(false/*bForce*/);
+   }
+
+   // <method.png>
+   public method doAutoScroll(boolean _bForce) {
+      // trace "xxx doAutoScroll(bForce="+_bForce+")";
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         if(seq.b_autoscroll || _bForce)
+         {
+            int oldViewX = seq.view_x;
+            float sx = getSizeX();
+            int numVisBars = (sx / BAR_W);
+            int ticksPerBar = pat.getNumTicksPerBar();
+            float barIdxF = float(seq.tick_nr) / ticksPerBar;
+            int barIdx = barIdxF;
+            if(barIdx < seq.view_x)
+               seq.view_x = barIdx;
+            else if( barIdx >= (seq.view_x + numVisBars - STConfig.node_seq_autoscroll_border) )
+            {
+               seq.view_x = barIdx - numVisBars + 1 + STConfig.node_seq_autoscroll_border;
+            }
+
+            boolean bSmoothScroll = (maybe == seq.b_autoscroll);
+
+            if(!_bForce && bSmoothScroll)
+            {
+               if(replay.b_playing)
+               {
+                  // Smooth scroll
+                  seq.scroll_x = -frac(barIdxF);
+               }
+               else
+               {
+                  seq.scroll_x = 0;
+               }
+               parent_editor.redrawSeq();
+            }
+
+            if(barIdx != seq.cursor_x)
+            {
+               // // if(bSmoothScroll || !(seq.view_x <= seq.cursor_x < (seq.view_x + numVisBars)))
+               {
+                  seq.cursor_x = barIdx;
+                  parent_editor.redrawSeq();
+               }
+            }
+
+            if(seq.view_x != oldViewX)
+            {
+               parent_editor.redrawSeq();
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public method haveSelection() : boolean {
+      return (-1 != seq.sel_start_x);
+   }
+
+   // <method.png>
+   public method selectNone() {
+      seq.selectNone();
+      UI.CompositeAll();
+   }
+
+   // <method.png>
+   public method selectNoneAtAll() {
+      seq.selectNone();
+      seq.tempoSelectNone(false/*bFromTempo*/);
+      seq.evtSelectNone(false/*bFromEvent*/);
+      seq.ui_wheel_tick_move_count = 0;
+      parent_editor.redrawSeq();
+   }
+
+   // <method.png>
+   static boolean b_allow_cycle_loop_sel = true;
+   public method selectTrackOrAllOrNone() {
+
+      int oldCursorX = seq.cursor_x;
+      int oldCursorY = seq.cursor_y;
+
+      seq.tempoSelectNone(false/*bFromTempo*/);
+      seq.evtSelectNone(false/*bFromEvent*/);
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         NSQ_Track *track;
+         int firstBarIdx;
+         int lastBarIdx;
+
+         // Find min/max on all tracks
+         int minBarIdx = 999999;
+         int maxBarIdx = 0;
+         int minTrackY = -1;
+         int maxTrackY = -1;
+         int trackIdx = 0;
+         foreach track in pat.tracks
+         {
+            firstBarIdx = track.findFirstUsedTrackBarIdx();
+            lastBarIdx  = track.findLastUsedTrackBarIdx();
+
+            if(-1 != firstBarIdx)
+            {
+               if(firstBarIdx < minBarIdx)
+                  minBarIdx = firstBarIdx;
+               if(firstBarIdx > maxBarIdx)
+                  maxBarIdx = firstBarIdx;
+
+               if(lastBarIdx < minBarIdx)
+                  minBarIdx = lastBarIdx;
+               if(lastBarIdx > maxBarIdx)
+                  maxBarIdx = lastBarIdx;
+
+               if(-1 == minTrackY)
+                  minTrackY = trackIdx;
+
+               maxTrackY = trackIdx;
+            }
+            trackIdx++;
+         }
+
+         boolean bAllSel =
+            (-1 != minTrackY) &&
+            (-1 != seq.sorted_sel_start_x) &&
+            (seq.sorted_sel_start_x == minBarIdx) &&
+            (seq.sorted_sel_end_x   == maxBarIdx) &&
+            (seq.sorted_sel_start_y == minTrackY) &&
+            (seq.sorted_sel_end_y   == maxTrackY)
+            ;
+
+         Global.Debug("NSQ_Arranger::selectTrackOrAllOrNone: min=("+minBarIdx+";"+minTrackY+") max=("+maxBarIdx+";"+maxTrackY+") bAllSel="+bAllSel+" sel=("+seq.sorted_sel_start_x+";"+seq.sorted_sel_start_y+";"+seq.sorted_sel_end_x+";"+seq.sorted_sel_end_y+")");
+
+         if(bAllSel)
+         {
+            seq.selectNone();
+
+            // Restore initial cursor position
+            // trace "xxx restore seq.ui_track_all_none_cursor_x="+seq.ui_track_all_none_cursor_x;
+            if(-1 != seq.ui_track_all_none_cursor_x)
+            {
+               setCursorX(0);
+               setCursorX(seq.ui_track_all_none_cursor_x);
+               setCursorY(seq.ui_track_all_none_cursor_y);
+               seq.ui_track_all_none_cursor_x = -1;
+               seq.ui_track_all_none_cursor_y = -1;
+               b_allow_cycle_loop_sel = true;
+            }
+         }
+         else
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+            boolean bTrackSel = true;
+            if(b_allow_cycle_loop_sel)
+            {
+               boolean bLoopSel =
+                  ((seq.sorted_sel_start_x * ticksPerBar) == pat.loop_start_ticks) &&
+                  (((seq.sorted_sel_end_x + 1 - seq.sorted_sel_start_x) * ticksPerBar) == pat.loop_len_ticks)
+                  ;
+               int loopBarIdx = pat.loop_start_ticks / ticksPerBar;
+               int numLoopBars = pat.loop_len_ticks / ticksPerBar;
+
+               if(bLoopSel)
+               {
+                  // Loop already selected
+                  if(seq.sorted_sel_start_y == seq.sorted_sel_end_y)
+                  {
+                     if(minTrackY != maxTrackY)
+                     {
+                        // Extend loop selection to all tracks
+                        setCursorX(loopBarIdx + mathMaxi(0, numLoopBars - 1));
+                        setCursorX(loopBarIdx);
+                        seq.setSelection(loopBarIdx,
+                                         minTrackY,
+                                         loopBarIdx + mathMaxi(0, numLoopBars - 1),
+                                         maxTrackY
+                                         );
+                        seq.ui_wheel_tick_move_count = 0;
+                        bTrackSel = false;
+                     }
+                     else
+                     {
+                        // Loop already selected (on all tracks), continue with used-bar selection
+                        b_allow_cycle_loop_sel = false;
+                     }
+                  }
+                  else
+                  {
+                     // Continue with used-bars selection
+                     b_allow_cycle_loop_sel = false;
+                  }
+               }
+               else
+               {
+                  // Select loop (current track)
+                  seq.ui_track_all_none_cursor_x = oldCursorX;
+                  seq.ui_track_all_none_cursor_y = oldCursorY;
+                  setCursorX(loopBarIdx + mathMaxi(0, numLoopBars - 1));
+                  setCursorX(loopBarIdx);
+                  seq.setSelection(loopBarIdx,
+                                   seq.cursor_y,
+                                   loopBarIdx + mathMaxi(0, numLoopBars - 1),
+                                   seq.cursor_y
+                                   );
+                  seq.ui_wheel_tick_move_count = 0;
+                  bTrackSel = false;
+               }
+            }
+
+            if(bTrackSel)
+            {
+               // Try select current track bars
+               track <= pat.getCursorTrack();
+               firstBarIdx = track.findFirstUsedTrackBarIdx();
+               lastBarIdx  = track.findLastUsedTrackBarIdx();
+               Global.Debug("NSQ_Arranger::selectTrackOrAllOrNone: track first="+firstBarIdx+" last="+lastBarIdx);
+               if(-1 != firstBarIdx)
+               {
+                  if(-1 != seq.sorted_sel_start_x)  // haveSelection ?
+                  {
+                     if((seq.sorted_sel_start_x != firstBarIdx)  ||
+                        (seq.sorted_sel_end_x   != lastBarIdx)   ||
+                        (seq.sorted_sel_start_y != seq.cursor_y) ||
+                        (seq.sorted_sel_end_y   != seq.cursor_y)
+                        )
+                     {
+                        // // seq.ui_track_all_none_cursor_x = oldCursorX;
+                        // // seq.ui_track_all_none_cursor_y = oldCursorY;
+                        setCursorX(lastBarIdx);
+                        setCursorX(firstBarIdx);
+                        seq.setSelection(firstBarIdx, seq.cursor_y, lastBarIdx, seq.cursor_y);
+                        seq.ui_wheel_tick_move_count = 0;
+                     }
+                     else
+                     {
+                        // Select on all tracks
+                        if(-1 != minTrackY)
+                        {
+                           setCursorX(maxBarIdx);
+                           setCursorX(firstBarIdx);
+                           setCursorY(minTrackY);
+                           seq.setSelection(minBarIdx, minTrackY, maxBarIdx, maxTrackY);
+                           seq.ui_wheel_tick_move_count = 0;
+                        }
+                        else
+                        {
+                           // Reset selection
+                           seq.selectNone();
+                           seq.ui_wheel_tick_move_count = 0;
+                           b_allow_cycle_loop_sel = true;
+                        }
+                     }
+                  }
+                  else
+                  {
+                     // No selection, yet
+                     // // seq.ui_track_all_none_cursor_x = oldCursorX;
+                     // // seq.ui_track_all_none_cursor_y = oldCursorY;
+                     setCursorX(lastBarIdx);
+                     setCursorX(firstBarIdx);
+                     seq.setSelection(firstBarIdx, seq.cursor_y, lastBarIdx, seq.cursor_y);
+                     seq.ui_wheel_tick_move_count = 0;
+                  }
+               }
+               else
+               {
+                  // Track has no bars, try select-all
+                  if(-1 != minTrackY)
+                  {
+                     // // seq.ui_track_all_none_cursor_x = oldCursorX;
+                     // // seq.ui_track_all_none_cursor_y = oldCursorY;
+                     setCursorX(maxBarIdx);
+                     setCursorX(firstBarIdx);
+                     setCursorY(minTrackY);
+                     seq.setSelection(minBarIdx, minTrackY, maxBarIdx, maxTrackY);
+                     seq.ui_wheel_tick_move_count = 0;
+                  }
+                  else
+                  {
+                     // No used tracks (empty pattern ?) fall back to loop selection
+                     b_allow_cycle_loop_sel = true;
+                  }
+               }
+            }
+         }
+      }
+
+      parent_editor.redrawSeq();
+   }
+
+   // <method.png>
+   public method setSelection(int _sx, int _sy, int _ex, int _ey) {
+      seq.setSelection(_sx, _sy, _ex, _ey);
+      UI.CompositeAll();
+   }
+
+   // <method.png>
+   public method copyToClipboard() {
+      int numEventsCopied = seq.copyToClipboard();
+      Global.Print("Copy "+numEventsCopied+" event"+Utils.GetPluralString(numEventsCopied)+" to clipboard");
+   }
+
+   // <method.png>
+   public method pasteClipboard(boolean _bInsert, boolean _bMix) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         parent_editor.undoBegin();
+         int numEvents = seq.getNumClipboardEvents();
+         int numTicksPerBar = pat.getNumTicksPerBar();
+         int numBars = seq.findClipboardNumBars(numTicksPerBar);
+         int numTracks = seq.getClipboardNumTracks();
+         seq.pasteClipboard(_bInsert, _bMix);
+
+         Global.Debug("pasteClipboard: numBars="+numBars+" numTracks="+numTracks+" bInsert="+_bInsert);
+
+         if(_bInsert)
+         {
+            // Move loop/punch regions
+            if(NodeSeq.NUM_TRACKS == numTracks)
+            {
+               int startTicks = seq.cursor_x * numTicksPerBar;
+               // trace "xxx pasteClipboard: startTicks="+startTicks+" pat.loop_start_ticks="+pat.loop_start_ticks;
+               if(pat.loop_start_ticks > startTicks)
+               {
+                  pat.setLoop(pat.loop_start_ticks + (numBars * numTicksPerBar), pat.loop_len_ticks);
+               }
+               if(pat.punch_start_ticks > startTicks)
+               {
+                  pat.setPunchInOut(pat.punch_start_ticks + (numBars * numTicksPerBar), pat.punch_len_ticks);
+               }
+            }
+         }
+
+         parent_editor.undoEnd();
+         Global.Print((_bInsert ? "Insert" : _bMix ? "Mix" : "Paste")+" "+numEvents+" event"+Utils.GetPluralString(numEvents)+" from clipboard");
+         parent_editor.redrawSeq();
+      }
+   }
+
+   // <ui_show.png>
+   protected =replay= method showPrgChgFloatParamDialog() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         // Calc layer position
+         Point2f abspos;
+         calcAbsolutePositionFBO(abspos);
+         float trackX = 2;
+         float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+         float sx = getSizeX();
+         float trackSy = NSQ_TrackForm.GetTrackSizeY();
+         float x = trackX + (seq.cursor_x * BAR_W) - (seq.view_x * BAR_W);
+         float y = trackY + trackSy * seq.cursor_y;
+         x += abspos.x;
+         y += abspos.y;
+
+         // Find current program change nr
+         NSQ_Track track <= pat.getCursorTrack();
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int ticks = seq.cursor_x * ticksPerBar;
+         int frameIdx = track.findFirstFrameIdxNearAbsTime(ticks, ticksPerBar);
+         int pc = 0;
+         if(-1 != frameIdx)
+         {
+            MIDIPipeFrame fr <= track.frames.get(frameIdx);
+            if(fr.timeStamp == ticks)
+            {
+               pc = fr.getFilteredPrgChg(-1/*fltDev*/, -1/*fltCh*/);
+               if(-1 == pc)
+                  pc = 0;
+            }
+         }
+
+         b_dlg_prgchg_undo = false;
+         dlg_prgchg <= new NSQ_PrgChgFloatParamDialog;
+         dlg_prgchg.showFP(parent_editor,
+                           pc,
+                           track.uiGetPrgChgOptions(),
+                           track.ui_prgchg_display_type,
+                           x, y
+                           );
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handlePrgChgFloatParamEdited(FloatParam _fp) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         b_dlg_prgchg_undo = true;
+         parent_editor.undoBeginMini();
+         int pc = _fp.getFloatValue();
+         // trace "xxx pc="+pc;
+
+         // Find current program change nr
+         NSQ_Track track <= pat.getCursorTrack();
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int ticks = seq.cursor_x * ticksPerBar;
+         int frameIdx = track.findFirstFrameIdxNearAbsTime(ticks, 1);
+         DeviceIOPort port <= seq.out_ports.get(seq.cursor_y);
+         local MIDIPipeFrame *fr;
+         if(-1 != frameIdx)
+         {
+            // Update existing frame
+            fr <= track.frames.get(frameIdx);
+            if(fr.timeStamp == ticks)
+            {
+               fr.prgChg(true/*bSet*/, port.dev_idx, (-1 == port.dev_ch) ? 0 : port.dev_ch, pc);
+               IntArray barFlags <= track.bar_flags;
+               barFlags[seq.cursor_x] = barFlags[seq.cursor_x] | NSQ_Track.CalcBarFlags(fr);
+               Global.Debug("NSQ_Arranger: update prgchg to "+pc);
+            }
+            else
+               fr <= null;
+         }
+         if(null == fr)
+         {
+            // Create new frame
+            fr <= new MIDIPipeFrame;
+            fr.prgChg(true/*bSet*/, port.dev_idx, (-1 == port.dev_ch) ? 0 : port.dev_ch, pc);
+            Global.Debug("NSQ_Arranger: create prgchg frame @ticks="+ticks+" pc="+pc);
+            track.recordFrame(ticks,
+                              fr,
+                              false/*bTrackActiveNotes*/,
+                              false/*bMarkPlayed*/,
+                              false/*bNoteOffOnly*/,
+                              false/*bQuantize*/,
+                              false/*bAllowQLoop*/,
+                              false/*bRecLatency*/
+                              );
+         }
+
+         parent_editor.redrawSeq();
+
+         local String sDpyType <= NSQ_Track.prgchg_display_type_names.get(track.ui_prgchg_display_type);
+         Global.Print("Bar "+(seq.cursor_x+1)+" Program Change is "+_fp.getText()+" (dpy=\""+sDpyType+"\")");
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePrgChgFloatParamClosed() {
+      if(b_dlg_prgchg_undo)
+      {
+         parent_editor.undoEndMini();
+         parent_editor.redrawSeq();
+      }
+      UI.SetKeyboardFocus(this);
+   }
+
+   // <ui_handle.png>
+   public method selectNextUIPrgChgDisplayMode() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         NSQ_Track track <= pat.getCursorTrack();
+         if(null != track)
+         {
+            track.ui_prgchg_display_type = (track.ui_prgchg_display_type + 1) % NSQ_Track.NUM_PRGCHG_DISPLAY_TYPES;
+            Global.Print("PrgChg Display Type is \""+(NSQ_Track.prgchg_display_type_names.get(track.ui_prgchg_display_type))+"\"");
+            redraw();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleDeletePrgChg() {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         boolean bDeleted = false;
+         NSQ_Track track <= pat.getCursorTrack();
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int ticks = seq.cursor_x * ticksPerBar;
+         int frameIdx = track.findFirstFrameIdxNearAbsTime(ticks, 1);
+         DeviceIOPort port <= seq.out_ports.get(seq.cursor_y);
+         local MIDIPipeFrame *fr;
+         if(-1 != frameIdx)
+         {
+            fr <= track.frames.get(frameIdx);
+            if(fr.timeStamp == ticks)
+            {
+               parent_editor.undoBegin();
+               bDeleted = (-1 != fr.getFilteredPrgChg(-1/*fltDev*/, -1/*fltCh*/));
+               fr.prgChg(false/*bSet*/, port.dev_idx, (-1 == port.dev_ch) ? 0 : port.dev_ch, 0);
+               track.rebuildBarLUT();
+               parent_editor.undoEnd();
+            }
+            else
+               fr <= null;
+         }
+
+         if(bDeleted)
+         {
+            parent_editor.redrawSeq();
+
+            Global.Print("Delete bar "+(seq.cursor_x+1)+" Program Change");
+         }
+         else
+         {
+            Global.Warning("No Program Change at bar "+(seq.cursor_x+1));
+         }
+      }
+   }
+
+   // <ui_show.png>
+   public method showContextMenu(boolean _bFocusFirst) {
+      // Create context-sensitive popupmenu
+      pm_ctx <= PopupMenu.New(this);
+
+      boolean bHavePattern = (null != parent_editor.getEditPattern());
+      boolean bHaveSelection = haveSelection();
+      boolean bHaveClipboard = seq.haveClipboard();
+      boolean bHaveTempoSelection = tempo.haveSelection();
+      boolean bHaveEventSelection = evt.haveSelection();
+      boolean bTempo = parent_editor.isTempoViewVisible();
+      boolean bEvent = parent_editor.isEventViewVisible();
+      PopupMenu *spm;
+      PopupMenuButton *pmb;
+      NSQ_Track track <= parent_editor.getEditTrack();
+
+      pmb <= pm_ctx.addDefaultButton("Explode to Sub-Song..", "explode");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-x e");
+      pmb.setToolTipCaption("Explode to Sub-Song\n\n (note) split into separate nodes and create+select new sub-song");
+
+      // Clear submenu
+      pm_ctx.addSeparator();
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Clear", deref spm);
+
+      pmb <= spm.addDefaultButton("Clear Track", "clear_track");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-BACKSPACE");
+
+      pmb <= spm.addDefaultButton("Clear Pattern", "clear_pat");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-lshift-BACKSPACE");
+
+      // Cursor submenu (bar)
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Bar", deref spm);
+
+      pmb <= spm.addDefaultButton("Move Cursor to Previous Bar", "bar_prev");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "LEFT");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor 8 Bars to the Left", "bar_prev8");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "PAGEUP");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor to selection, loop, or pattern start", "bar_home");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-LEFT");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor to Next Bar", "bar_next");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "RIGHT");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor 8 Bars to the Right", "bar_next8");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "PAGEDOWN");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor to selection, loop, or pattern end", "bar_end");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-RIGHT");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("Insert Bar(s)", "bar_insert");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "INSERT");
+
+      pmb <= spm.addDefaultButton("Clear Bar(s)", "bar_clear");
+      pmb.setActive(bHavePattern && !isSelectionEmpty());
+      pmb.setAccelerators("", "DELETE");
+      pmb.setToolTipCaption("(note) clear when selection is not empty, delete when it is");
+
+      pmb <= spm.addDefaultButton("Delete Bar(s)", "bar_delete");
+      pmb.setActive(bHavePattern && isSelectionEmpty());
+      pmb.setAccelerators("", "DELETE");
+      pmb.setToolTipCaption("(note) clear when selection is not empty, delete when it is");
+
+      pmb <= spm.addDefaultButton("Insert Bar on All Tracks (including Tempo)", "bar_insertall");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-INSERT");
+
+      pmb <= spm.addDefaultButton("Delete Bar on All Tracks (including Tempo)", "bar_deleteall");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-DELETE");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Edit Bar Program Change", "bar_prgchg_edit");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "p");
+
+      pmb <= spm.addDefaultButton("Delete Bar Program Change", "bar_prgchg_delete");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-p");
+
+      pmb <= spm.addDefaultButton("Next Bar PrgChg Display Type", "bar_prgchg_next");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-p");
+      // (todo) program change display-style radiobuttons submenu
+
+      // Cursor submenu (track)
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Track", deref spm);
+
+      pmb <= spm.addDefaultButton("Move Cursor to Previous Track", "track_prev");
+      pmb.setActive(bHavePattern && (seq.cursor_y > 0));
+      pmb.setAccelerators("", "UP");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor to First Track + Select All", "track_first");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-UP");
+      pmb.setToolTipCaption("(note) starts or extends selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor to Next Track", "track_next");
+      pmb.setActive(bHavePattern && (seq.cursor_y < (NodeSeq.NUM_TRACKS-1)));
+      pmb.setAccelerators("", "DOWN");
+      pmb.setToolTipCaption("(note) hold lshift to start or extend selection");
+
+      pmb <= spm.addDefaultButton("Move Cursor to Last Track + Select All", "track_last");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-DOWN");
+      pmb.setToolTipCaption("(note) starts or extends selection");
+
+      spm.addSeparator();
+
+      pmb <= spm.addCheckButton("Mute Track", (null != track) && (NSQ_Track.STATE_MUTE == track.play_state), "track_mute");
+      pmb.setAccelerators("", "d");
+
+      pmb <= spm.addCheckButton("Solo Track", (null != track) && (NSQ_Track.STATE_SOLO == track.play_state), "track_solo");
+      pmb.setAccelerators("", "s");
+
+      pmb <= spm.addDefaultButton("Focus Quant.Amount widget", "track_focusquant");
+      pmb.setAccelerators("", "q");
+
+      pmb <= spm.addCheckButton("Input Focus", (null != track) && (seq.input_focus_idx == track.track_idx), "track_focus");
+      pmb.setAccelerators("", "f");
+
+      pmb <= spm.addCheckButton("Arm for Recording", (null != track) && track.b_rec, "track_rec");
+      pmb.setAccelerators("", "w");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Copy I/O Port", "track_copy_port");
+      pmb.setAccelerators("", "lshift-c");
+
+      // (note) lshift-v is already assigned to "insert event clipboard" (used quite frequently) => use lshift-t instead
+      pmb <= spm.addDefaultButton("Paste I/O Port", "track_paste_port");
+      pmb.setAccelerators("", "lshift-t");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Edit track sound", "track_editsound");
+      pmb.setToolTipCaption("Edit track sound\n\n (note) SysEx, AnalogRytm, or Eureka sample / plugin\n\n (note) 'k'");
+      pmb.setAccelerators("", "k");
+
+
+      // Loop submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Loop", deref spm);
+
+      pmb <= spm.addDefaultButton("Set Left Loop Locator", "loop_left");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("lctrl-x l", "t");
+
+      pmb <= spm.addDefaultButton("Set Right Loop Locator", "loop_right");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("lctrl-x r", "y");
+      pmb.setToolTipCaption("'z' on german kbd");
+
+      pmb <= spm.addDefaultButton("Move Loop to Cursor", "loop_move");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "r");
+
+      pmb <= spm.addDefaultButton("Loop Selection", "loop_sel");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "c");
+
+      pmb <= spm.addDefaultButton("Loop 1 Bar", "loop_1bar");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "1");
+
+      pmb <= spm.addDefaultButton("Loop 2 Bars", "loop_2bars");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "2");
+
+      pmb <= spm.addDefaultButton("Loop 4 Bars", "loop_4bars");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "3");
+
+      pmb <= spm.addDefaultButton("Loop 8 Bars", "loop_8bars");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "4");
+
+      // Punch In/Out submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Punch In / Out", deref spm);
+
+      pmb <= spm.addDefaultButton("Set Punch In", "punch_in");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "i");
+
+      pmb <= spm.addDefaultButton("Set Punch Out", "punch_out");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "o");
+
+      pmb <= spm.addDefaultButton("Punch In / Out From Selection", "punch_sel");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "e");
+
+      // Selection submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Selection", deref spm);
+
+      pmb <= spm.addDefaultButton("Select none", "sel_none");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-a");
+
+      pmb <= spm.addDefaultButton("Copy to Clipboard", "sel_copy");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-c");
+      pmb.setToolTipCaption("(note) copy current bar when there is no selection");
+
+      spm.addSeparator();
+
+      pmb <= spm.addDefaultButton("Detail-Edit in Tracker", "sel_export_tracker");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("\'", "RETURN");
+      pmb.setToolTipCaption("(note) 'ä' on german keyboard\n\n(note) export current bar when there is no selection\n\n (note) tracker pattern will overwrite output capture buffer\n\n (note) in case the pattern length has increased, select a larger block and paste the output capture buffer manually via lctrl-x v");
+
+      pmb <= spm.addDefaultButton("Export to Monitor Clipboard", "sel_export_mon");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("lctrl-e", "");
+      pmb.setToolTipCaption("(note) export current bar when there is no selection");
+
+      pmb <= spm.addDefaultButton("Export to new Tracker", "sel_export_tracker_new");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("lctrl-lshift-e", "");
+      pmb.setToolTipCaption("Export to new Tracker\n\n (note) export current bar when there is no selection");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Paste Clipboard (replace)", "sel_paste_replace");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-v");
+
+      pmb <= spm.addDefaultButton("Paste Clipboard (insert)", "sel_paste_insert");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-v");
+
+      pmb <= spm.addDefaultButton("Paste-Mix Clipboard", "sel_paste_mix");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-m");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Merge Selected Frames (Tempo View)", "sel_tempo_merge");
+      pmb.setActive(bHavePattern && bTempo && bHaveTempoSelection);
+      pmb.setAccelerators("", "m");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Freeze Quantization", "sel_freezequant");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-lshift-a");
+
+      pmb <= spm.addDefaultButton("Filter Selected Events..", "sel_filter");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-f");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Delete Selected Bars", "sel_delete_bars");
+      pmb.setActive(bHavePattern && !(bTempo && bHaveTempoSelection) && !(bEvent && bHaveEventSelection));
+      pmb.setAccelerators("", "DELETE");
+
+      pmb <= spm.addDefaultButton("Delete Selected Frames", "sel_delete_frames");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection) && !(bEvent && bHaveEventSelection));
+      pmb.setAccelerators("", "DELETE");
+
+      pmb <= spm.addDefaultButton("Delete Selected Notes", "sel_delete_notes");
+      pmb.setActive(bHavePattern && !(bTempo && bHaveTempoSelection) && (bEvent && bHaveEventSelection));
+      pmb.setAccelerators("", "DELETE");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Move Selected Frames Left 1 Tick", "sel_moveframes_left_fine");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection));
+      pmb.setAccelerators("", ".");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Left by 64th note", "sel_moveframes_left_coarse");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection));
+      pmb.setAccelerators("", "lshift-.");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Left (Snap 64th)", "sel_moveframes_left_snap");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection));
+      pmb.setAccelerators("", "lctrl-.");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Right 1 Tick", "sel_moveframes_right_fine");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection));
+      pmb.setAccelerators("", "/");
+      pmb.setToolTipCaption("(note) '-' on german keyboard");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Right by 64th note", "sel_moveframes_right_coarse");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection));
+      pmb.setAccelerators("", "lshift-/");
+      pmb.setToolTipCaption("(note) lshift-'-' on german keyboard");
+
+      pmb <= spm.addDefaultButton("Move Selected Frames Right (Snap 64th)", "sel_moveframes_right_snap");
+      pmb.setActive(bHavePattern && (bTempo && bHaveTempoSelection));
+      pmb.setAccelerators("", "lctrl-/");
+      pmb.setToolTipCaption("(note) lctrl-'-' on german keyboard");
+
+      pmb <= spm.addCheckButton("Extended block selection keys", b_extended_block_selection_mode, "sel_toggleext");
+      pmb.setAccelerators("", "x");
+      pmb.setToolTipCaption("When checked, lctrl-lshift-<cursor left/right> keys are used to extend block selection\n\nWhen unchecked, the keys are used for node navigation [default]");
+
+      // Time Signature submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Time Signature", deref spm);
+
+      pmb <= spm.addDefaultButton("Half Note Length", "sig_half");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-[");
+      pmb.setToolTipCaption("(note) lshift-ü on german kbd");
+
+      pmb <= spm.addDefaultButton("Double Note Length", "sig_double");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-]");
+      pmb.setToolTipCaption("(note) lshift-+ on german kbd");
+
+      // MIDI submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("MIDI", deref spm);
+
+      pmb <= spm.addDefaultButton("Copy Output States", "midi_copy");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-\\", "lctrl-o");
+      pmb.setToolTipCaption("Copy MIDI output states to selected track(s) at selection/cursor pos\n\n(note) lctrl-< on german kbd");
+
+      pmb <= spm.addDefaultButton("Clear Output States", "midi_clear");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-lshift-\\", "lctrl-lshift-o");
+      pmb.setToolTipCaption("Clear MIDI output states of selected track(s)\n\n(note) lctrl-lshift-< on german kbd");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Merge perf.ctls to bar starts", "midi_perfctl_bars");
+      pmb.setAccelerators("", "b");
+      pmb.setToolTipCaption("Merge performance controllers to bar starts\n\n (note) pitchbend, channel pressure\n (note) modwheel, footctl, breathctl, expression levers/wheels/pedals\n (note) GP1..8 ctls (CC#16..19,80..83)\n (note) sustain(hold 1),portamento,sostenuto,soft,legato,hold 2 pedal switches\n (note) MPE brightness (CC#74)");
+      pmb <= spm.addDefaultButton("Merge perf.ctls to bar starts (Bar 1..end of loop)", "midi_perfctl_bars_eol");
+      pmb.setAccelerators("", "lctrl-b");
+      pmb.setToolTipCaption("Merge performance controllers to bar starts (from bar 1 until end of current loop)\n\n (note) pitchbend, channel pressure\n (note) modwheel, footctl, breathctl, expression levers/wheels/pedals\n (note) GP1..8 ctls (CC#16..19,80..83)\n (note) sustain(hold 1),portamento,sostenuto,soft,legato,hold 2 pedal switches\n (note) MPE brightness (CC#74)");
+
+      spm.addSeparator();
+      NM_Pattern patMon <= NodePattern.PatGetClipboardForClass("NM_Pattern");
+      pmb <= spm.addDefaultButton("Import monitor clipboard", "midi_import_mon_clipboard");
+      pmb.setActive((null != patMon));
+      pmb.setAccelerators("lshift-F9", "");
+      pmb.setToolTipCaption("Import from Monitor clipboard");
+
+      pmb <= spm.addDefaultButton("Import Standard MIDI File..", "midi_import_smf");
+      pmb.setActive(true);
+      pmb.setAccelerators("lctrl-lshift-F9", "");
+      pmb.setToolTipCaption("Import Standard MIDI File (.mid)\n\n (note) record to all tracks and match MIDI channels when there is no track input focus\n\n (note) SMFs can also be imported via drag'n'drop");
+
+      // Output-capture submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Capture", deref spm);
+
+      pmb <= spm.addDefaultButton("Start output capture", "capture_begin");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x c");
+      pmb.setToolTipCaption("Start output capture\n\n (note) stops when replay is stopped\n\n (note) can be pasted in this node, or other Tracker+TrigSeq nodes");
+
+      pmb <= spm.addDefaultButton("Paste output capture", "capture_paste");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x v");
+      pmb.setToolTipCaption("Paste output capture buffer\n\n (note) capture buffer is shared between all nodes\n\n (note) track I/O filter(s) are applied when pasting events\n (note) set selection to restrict import to selected bars / tracks");
+
+      pmb <= spm.addCheckButton("Use ticks instead of millisec", STConfig.b_node_monitor_capture_tick_timebase, "capture_ticks");
+      pmb.setToolTipCaption("When enabled, use ticks instead of millisec as capture timebase.\n\n (note) ticks are (slightly) more precise\n (note) millisec capture timing modulations");
+
+      spm.addSeparator();
+      pmb <= spm.addDefaultButton("Export selection to output capture buffer", "capture_export");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x \\");
+      pmb.setToolTipCaption("Export selection to output capture buffer\n\n (note) '<' on german kbds\n\n (note) can be pasted in Tracker nodes (for example)");
+
+      // Undo / Redo submenu
+      spm <= PopupMenu.New(pm_ctx);
+      pmb <= pm_ctx.addMenu("Undo / Redo", deref spm);
+
+      pmb <= spm.addDefaultButton("Undo", "undo");
+      pmb.setActive(seq.hasUndoHistory());
+      pmb.setAccelerators("", "lctrl-y");
+      pmb.setToolTipCaption("(note) lctrl-z on german kbd\n\n (note) mouse-undo: hold LMB, press RMB");
+
+      pmb <= spm.addDefaultButton("Redo", "redo");
+      pmb.setActive(seq.hasRedoHistory());
+      pmb.setAccelerators("", "lctrl-lshift-y");
+      pmb.setToolTipCaption("(note) lctrl-lshift-z on german kbd\n\n (note) mouse-undo: hold RMB, press LMB");
+
+      pmb <= spm.addDefaultButton("Clear Undo / Redo History", "undo_clear");
+      pmb.setActive(seq.hasUndoHistory() || seq.hasRedoHistory());
+      pmb.setAccelerators("", "lctrl-x h");
+
+      // Main menu
+      pm_ctx.addSeparator();
+      pmb <= pm_ctx.addDefaultButton("Start Replay or Recording", "replay_start");
+      pmb.setActive(bHavePattern && !replay.b_playing);
+      pmb.setAccelerators("", "SPACE");
+      pmb.setToolTipCaption("(note) starts recording when node is armed");
+
+      pmb <= pm_ctx.addDefaultButton("Start Replay and send MMC", "replay_start_mmc");
+      pmb.setActive(bHavePattern && !replay.b_playing);
+      pmb.setAccelerators("", "lshift-SPACE");
+      pmb.setToolTipCaption("(note) starts recording when node is armed");
+
+      pmb <= pm_ctx.addDefaultButton("Stop Replay or Recording", "replay_stop");
+      pmb.setActive(bHavePattern && replay.b_playing);
+      pmb.setAccelerators("", "SPACE");
+      pmb.setToolTipCaption("(note) stops recording when node is armed");
+
+      pmb <= pm_ctx.addDefaultButton("Stop Replay and skip MMC", "replay_stop_mmc");
+      pmb.setActive(bHavePattern && replay.b_playing);
+      pmb.setAccelerators("", "lshift-SPACE");
+      pmb.setToolTipCaption("(note) stops recording when node is armed");
+
+      pmb <= pm_ctx.addDefaultButton("Stop Replay at Cursor", "replay_stop_cur");
+      pmb.setActive(bHavePattern && replay.b_playing);
+      pmb.setAccelerators("", "lctrl-SPACE");
+      pmb.setToolTipCaption("(note) stops recording when node is armed");
+
+      pm_ctx.addSeparator();
+      pmb <= pm_ctx.addCheckButton("Rec Auto-Focus", seq.ui_b_auto_rec_focus, "rec_autofocus");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x f");
+      pmb.setToolTipCaption("When checked, track focus follows record focus and vice versa");
+
+      pmb <= pm_ctx.addCheckButton("Rec Pre-Count", seq.b_pre, "rec_precount");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x RCTRL");
+
+      pmb <= pm_ctx.addCheckButton("Arm Node for Recording", seq.b_rec, "rec_toggle");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "RCTRL");
+
+      pmb <= pm_ctx.addDefaultButton("Start Recording", "rec_start");
+      pmb.setActive(bHavePattern && !replay.b_playing);
+      pmb.setAccelerators("", "RSHIFT");
+      pmb.setToolTipCaption("(note) auto-arms node");
+
+      pmb <= pm_ctx.addDefaultButton("Stop Recording", "rec_stop");
+      pmb.setActive(bHavePattern && replay.b_playing);
+      pmb.setAccelerators("", "RSHIFT");
+      pmb.setToolTipCaption("(note) auto-disarms node");
+
+      pmb <= pm_ctx.addDefaultButton("Synchronized undo + record restart", "rec_restart");
+      pmb.setActive(bHavePattern && replay.b_playing && seq.b_rec);
+      pmb.setAccelerators("", "RETURN");
+
+      pmb <= pm_ctx.addCheckButton("Step-Recording", seq.b_step_rec, "steprec_toggle");
+      pmb.setAccelerators("z", "lctrl-x RALT");
+      pmb.setToolTipCaption("When checked, enable step-recording mode\n\n (note) position cursor with mouse or cursor keys\n\n (note) step-recording can be enabled temporarily by holding RALT or MMB (lctrl snaps to 16ths)");
+
+      pm_ctx.addSeparator();
+      pmb <= pm_ctx.addDefaultButton("Toggle Tempo / Event Views", "toggle_views");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "TAB");
+
+      pmb <= pm_ctx.addCheckButton("Auto-Reset Smooth Scroll", STConfig.b_node_seq_autoreset_smooth_scroll, "autoreset_smoothscroll");
+      pmb.setToolTipCaption("When checked, auto-reset smooth scroll offset when bar is selected via cursor keys or mouse click\n\n (note) this setting is saved in the config file");
+
+      pm_ctx.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+
+      if(_bFocusFirst)
+         pm_ctx.focusNextMenuItem();
+   }
+
+   // <ui_show.png>
+   public method showSelectionMenu(boolean _bFocusFirst) {
+      // Create context-sensitive popupmenu
+      pm_sel <= PopupMenu.New(this);
+
+      boolean bHavePattern = (null != parent_editor.getEditPattern());
+      boolean bHaveSelection = haveSelection();
+      boolean bHaveClipboard = seq.haveClipboard();
+      boolean bHaveTempoSelection = tempo.haveSelection();
+      boolean bHaveEventSelection = evt.haveSelection();
+      boolean bTempo = parent_editor.isTempoViewVisible();
+      boolean bEvent = parent_editor.isEventViewVisible();
+      PopupMenuButton *pmb;
+      NSQ_Track track <= parent_editor.getEditTrack();
+
+      pmb <= pm_sel.addDefaultButton("Loop Selection", "loop_sel");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "c");
+
+      pmb <= pm_sel.addDefaultButton("Punch In / Out From Selection", "punch_sel");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "e");
+
+      // Selection submenu
+      pm_sel.addSeparator();
+
+      pmb <= pm_sel.addDefaultButton("Select none", "sel_none");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-a");
+
+      pmb <= pm_sel.addDefaultButton("Copy to Clipboard", "sel_copy");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-c");
+      pmb.setToolTipCaption("(note) copy current bar when there is no selection");
+
+      pm_sel.addSeparator();
+
+      pmb <= pm_sel.addDefaultButton("Detail-Edit in Tracker", "sel_export_tracker");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("\'", "");
+      pmb.setToolTipCaption("(note) 'ä' on german keyboard\n\n(note) export current bar when there is no selection");
+
+      pmb <= pm_sel.addDefaultButton("Export to Monitor Clipboard", "sel_export_mon");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("lctrl-e", "lctrl-x c");
+      pmb.setToolTipCaption("(note) export current bar when there is no selection");
+
+      pmb <= pm_sel.addDefaultButton("Export to new Tracker", "sel_export_tracker_new");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("lctrl-lshift-e", "");
+      pmb.setToolTipCaption("Export to new Tracker\n\n (note) export current bar when there is no selection");
+
+      pm_sel.addSeparator();
+      pmb <= pm_sel.addDefaultButton("Paste Clipboard (replace)", "sel_paste_replace");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-v");
+
+      pmb <= pm_sel.addDefaultButton("Paste Clipboard (insert)", "sel_paste_insert");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lshift-v");
+
+      pmb <= pm_sel.addDefaultButton("Paste-Mix Clipboard", "sel_paste_mix");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-m");
+
+      pm_sel.addSeparator();
+      pmb <= pm_sel.addDefaultButton("Export selection to output capture buffer", "sel_capture_export");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x \\");
+      pmb.setToolTipCaption("Export selection to output capture buffer\n\n (note) '<' on german kbds\n\n (note) can be pasted in Tracker nodes (for example)");
+
+      pmb <= pm_sel.addDefaultButton("Paste output capture", "sel_capture_paste");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-x v");
+      pmb.setToolTipCaption("Paste output capture buffer\n\n (note) capture buffer is shared between all nodes\n\n (note) track I/O filter(s) are applied when pasting events");
+
+      pm_sel.addSeparator();
+      pmb <= pm_sel.addDefaultButton("Create vel curve modmatrix node(s)", "sel_velcurve");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-l");
+      pmb.setToolTipCaption("Create velocity curve modmatrix/modmatrices for selected track output port(s)");
+
+      pmb <= pm_sel.addDefaultButton("Create vel rand modmatrix node(s)", "sel_velrand");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-lshift-l");
+      pmb.setToolTipCaption("Create velocity randomization modmatrix/modmatrices for selected track output port(s)\n\n (note) the randomization amount is read from CC#2(breathctl) (initially 1.0 until first event)\n\n (note) edit the mod matrix entry/entries to change the CC number or MIDI port");
+
+      pm_sel.addSeparator();
+      pmb <= pm_sel.addDefaultButton("Create vel*modwheel modmatrix node(s)", "sel_vel_mw");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-j");
+      pmb.setToolTipCaption("Create velocity * modwheel modmatrix/modmatrices for selected track output port(s)\n\n (note) modwheel2 input is read from last selected track port (e.g. <scratch>:1)\n\n (note) centered modwheel=no change\n\n (note) edit the mod matrix entry/entries to change the CC number(s) or MIDI port(s)");
+
+      pmb <= pm_sel.addDefaultButton("Create modwheel+modwheel2<delta> modmatrix node(s)", "sel_mw_mwdelta");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "lctrl-lshift-j");
+      pmb.setToolTipCaption("Create modwheel + (modwheel2-64) delta modulation modmatrix/modmatrices for selected track output port(s)\n\n (note) secondary modwheel input is read from last selected track port (e.g. <scratch>:1)\n\n (note) centered modwheel(64)=no change\n (note) initial modwheel2 value is 64\n\n (note) edit the mod matrix entry/entries to change the CC number(s) or MIDI port(s)");
+
+      pm_sel.addSeparator();
+      pmb <= pm_sel.addDefaultButton("Merge Selected Frames (Tempo View)", "sel_tempo_merge");
+      pmb.setActive(bHavePattern && bTempo && bHaveTempoSelection);
+      pmb.setAccelerators("", "m");
+
+      pmb <= pm_sel.addDefaultButton("Freeze Quantization", "sel_freezequant");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-lshift-a");
+
+      pmb <= pm_sel.addDefaultButton("Filter Selected Events..", "sel_filter");
+      pmb.setActive(bHavePattern);
+      pmb.setAccelerators("", "lctrl-x f");
+
+      pmb <= pm_sel.addDefaultButton("Delete Selected Bars", "sel_delete_bars");
+      pmb.setActive(bHavePattern && !(bTempo && bHaveTempoSelection) && !(bEvent && bHaveEventSelection));
+      pmb.setAccelerators("", "DELETE");
+
+      pm_sel.addSeparator();
+      pmb <= pm_sel.addDefaultButton("Show Context Menu", "show_ctxmenu");
+      pmb.setActive(true);
+      pmb.setAccelerators("", "a");
+
+      pm_sel.showAtXY(UI.GetMouseX(), UI.GetMouseY());
+
+      if(_bFocusFirst)
+         pm_sel.focusNextMenuItem();
+   }
+
+   // <method.png>
+   public method selectBarAndTrackAtXY(float _x, float _y, boolean _bExtendSelection) {
+      float trackX = 2;
+      float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+
+      int oldCursorX = seq.cursor_x;
+      int oldCursorY = seq.cursor_y;
+
+      int relX = _x - trackX;
+      int relY = _y - trackY;
+      if(relX >= 0 && relY >= 0)
+      {
+         relX /= BAR_W;
+         relY /= NSQ_TrackForm.GetTrackSizeY();
+         if(STConfig.b_node_seq_autoreset_smooth_scroll || ((seq.cursor_x == relX) && (seq.cursor_y == relY)))
+            seq.scroll_x = 0;
+         seq.cursor_x = relX + seq.view_x;
+         seq.cursor_y = relY;
+         setMasterSongPosToCursor();
+         handleAutoRecFocusTrack();
+      }
+
+      seq.ui_track_all_none_cursor_x = -1;
+      seq.ui_track_all_none_cursor_y = -1;
+
+      // trace "xxx bExtendSelection="+_bExtendSelection;
+      if(_bExtendSelection)
+      {
+         if(!haveSelection())
+            setSelection(oldCursorX, oldCursorY, seq.cursor_x, seq.cursor_y);
+
+         extendSelectionX(seq.cursor_x);
+         extendSelectionY(seq.cursor_y);
+      }
+      else
+      {
+         selectNoneAtAll();
+         // // seq.tempoSelectNone(false/*bFromTempo*/);
+         // // seq.evtSelectNone(false/*bFromEvent*/);
+      }
+
+      parent_editor.redrawSeq();
+   }
+
+   // <method.png>
+   public method getBarAndTrackAtXY(float _x, float _y, Integer _retTrackIdx) : int {
+      // returns barIdx
+      float trackX = 2;
+      float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+
+      int relX = _x - trackX;
+      int relY = _y - trackY;
+      if(relX >= 0 && relY >= 0)
+      {
+         relX /= BAR_W;
+         relY /= NSQ_TrackForm.GetTrackSizeY();
+         _retTrackIdx = relY;
+         return relX + seq.view_x;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   public method getBarIdxNearX(float _x, Boolean _retPreferL) : int {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         float trackX = 2;
+         _x -= trackX;
+         if(_x >= 0)
+         {
+            if(null != _retPreferL)
+            {
+               _retPreferL = ( int((_x + BAR_W*0.5) / BAR_W) == int(_x / BAR_W) );
+               trace "xxx set _retPreferL="+_retPreferL;
+            }
+            return ((_x + BAR_W*0.5) / BAR_W) + seq.view_x;
+         }
+      }
+      return -1;
+   }
+
+   // <method_get.png>
+   protected method getLocatorBarIdxAndDragModeNear(MouseEvent _ev, Integer _retDragMode) : int {
+      // returns barIdx. called by mouse drag handler
+      float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+      if(_ev.mouse_rel_y < trackY)
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            boolean bPreferPunch =
+               _ev.isRightButtonDown()        ||
+               _ev.isRightButton()            ||
+               (VMOD_LCTRL == UI.GetKeyMod()) ||
+               (_ev.mouse_rel_y < 9)
+               ;
+            int barIdx;
+            int barIdxMouse = getBarIdxNearX(_ev.mouse_rel_x, null/*bPreferL*/);
+
+            if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: barIdxMouse="+barIdxMouse+" bPreferPunch="+bPreferPunch;
+
+            if(-1 != barIdxMouse)
+            {
+               int ticksPerBar = pat.getNumTicksPerBar();
+
+               if(bPreferPunch)
+               {
+                  if(-1 != pat.punch_start_ticks)
+                  {
+                     barIdx = pat.punch_start_ticks / ticksPerBar;
+                     if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: barIdx<PUNCH_IN>="+barIdx;
+                     if(barIdx == barIdxMouse)
+                     {
+                        if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: DRAG_PUNCH_IN";
+                        _retDragMode = DRAG_PUNCH_IN;
+                        UI.CompositeAll();
+                        return barIdx;
+                     }
+
+                     barIdx = (pat.punch_start_ticks + pat.punch_len_ticks) / ticksPerBar;
+                     if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: barIdx<PUNCH_OUT>="+barIdx;
+                     if(barIdx == barIdxMouse)
+                     {
+                        if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: DRAG_PUNCH_OUT";
+                        _retDragMode = DRAG_PUNCH_OUT;
+                        UI.CompositeAll();
+                        return barIdx;
+                     }
+                  }
+               }
+
+               if(-1 != pat.loop_start_ticks)
+               {
+                  barIdx = pat.loop_start_ticks / ticksPerBar;
+                  if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: barIdx<LOOP_L>="+barIdx;
+                  if(barIdx == barIdxMouse)
+                  {
+                     if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: DRAG_LOOP_L";
+                     _retDragMode = DRAG_LOOP_L;
+                     UI.CompositeAll();
+                     return barIdx;
+                  }
+
+                  barIdx = (pat.loop_start_ticks + pat.loop_len_ticks) / ticksPerBar;
+                  if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: barIdx<LOOP_R>="+barIdx;
+                  if(barIdx == barIdxMouse)
+                  {
+                     if(b_debug_drag) trace "xxx NSQ_Arranger::getLocatorBarIdxAndDragModeNear: DRAG_LOOP_R";
+                     _retDragMode = DRAG_LOOP_R;
+                     UI.CompositeAll();
+                     return barIdx;
+                  }
+               }
+
+            } // if barIdxMouse
+         } // if pat
+      } // if <trackY
+      return -1;
+   }
+
+   // <method_get.png>
+   protected method getLocatorBarIdxAndClickDragModeNear(MouseEvent _ev, Integer _retDragMode) : int {
+      // returns barIdx. called by mouse click handler
+      float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+      if(_ev.mouse_rel_y < trackY)
+      {
+         NSQ_Pattern pat <= parent_editor.getEditPattern();
+         if(null != pat)
+         {
+            boolean bPreferPunch =
+               _ev.isRightButtonDown()        ||
+               _ev.isRightButton()            ||
+               (VMOD_LCTRL == UI.GetKeyMod()) ||
+               (_ev.mouse_rel_y < 9)
+               ;
+            int barIdxL;
+            // // int barIdxR;
+            local Boolean bPreferL;
+            int barIdxMouse = getBarIdxNearX(_ev.mouse_rel_x, bPreferL);
+
+            Global.Debug2("NSQ_Arranger::getLocatorBarIdxAndDragModeNear: barIdxMouse="+barIdxMouse+" bPreferPunch="+bPreferPunch+" bPreferL="+bPreferL);
+
+            if(-1 != barIdxMouse)
+            {
+               int ticksPerBar = pat.getNumTicksPerBar();
+
+               if(bPreferPunch)
+               {
+                  if(-1 != pat.punch_start_ticks)
+                  {
+                     // Modify existing punch in/out range
+                     barIdxL = pat.punch_start_ticks / ticksPerBar;
+                     // // barIdxR = (pat.punch_start_ticks + pat.punch_len_ticks) / ticksPerBar;
+
+                     if( (barIdxMouse < barIdxL) || bPreferL )
+                     {
+                        _retDragMode = DRAG_PUNCH_IN;
+                        UI.CompositeAll();
+                        return barIdxMouse;
+                     }
+
+                     if(barIdxMouse > barIdxL)
+                     {
+                        _retDragMode = DRAG_PUNCH_OUT;
+                        UI.CompositeAll();
+                        return mathMaxi(0, barIdxMouse-1);
+                     }
+                  }
+                  else
+                  {
+                     // Begin punch in/out
+                     _retDragMode = DRAG_PUNCH_IN;
+                     UI.CompositeAll();
+                     return barIdxMouse;
+                  }
+               }
+
+               if(-1 != pat.loop_start_ticks)
+               {
+                  barIdxL = pat.loop_start_ticks / ticksPerBar;
+                  // // barIdxR = (pat.loop_start_ticks + pat.loop_len_ticks) / ticksPerBar;
+
+                  if( (barIdxMouse < barIdxL) || bPreferL )
+                  {
+                     _retDragMode = DRAG_LOOP_L;
+                     UI.CompositeAll();
+                     return barIdxMouse;
+                  }
+
+                  if(barIdxMouse > barIdxL)
+                  {
+                     _retDragMode = DRAG_LOOP_R;
+                     UI.CompositeAll();
+                     return mathMaxi(0, barIdxMouse-1);
+                  }
+               }
+
+            } // if barIdxMouse
+         } // if pat
+      } // if <trackY
+      return -1;
+   }
+
+   // <method.png>
+   public method tryQueueRecordRestart() {
+      if(seq.b_rec && replay.b_playing)
+      {
+         seq.queueRecordRestart();
+         Global.Print("Queue undo + record-restart");
+      }
+   }
+
+   // <method.png>
+   public method handleFastClearTrackOrPatternLoopRange(int _trackIdx, boolean _bAllowLazyClearPattern) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int loopBarIdx = pat.loop_start_ticks / ticksPerBar;
+         int numLoopBars = pat.loop_len_ticks / ticksPerBar;
+         setCursorX(loopBarIdx);
+         seq.setSelection(loopBarIdx,
+                          _trackIdx,
+                          loopBarIdx + mathMaxi(0, numLoopBars - 1),
+                          _trackIdx
+                          );
+         if(_bAllowLazyClearPattern && pat.isSelectionEmpty())
+         {
+            seq.setSelection(loopBarIdx,
+                             0,
+                             loopBarIdx + mathMaxi(0, numLoopBars - 1),
+                             NodeSeq.NUM_TRACKS-1
+                             );
+            // // clearPattern();
+            handleClearSelection(true/*bUndoBegin*/);
+            Global.Print("Fast-clear all tracks bar="+(loopBarIdx+1)+" numBars="+numLoopBars);
+         }
+         else
+         {
+            handleClearSelection(true/*bUndoBegin*/);
+            Global.Print("Fast-clear track "+(_trackIdx+1)+" bar="+(loopBarIdx+1)+" numBars="+numLoopBars);
+         }
+         redraw();
+      }
+   }
+
+   // <method.png>
+   protected =replay= method beginTrackerEdit1(boolean _bTemp) : boolean {
+
+      boolean ret = true;
+
+      // // // if(_bTemp)
+      // // //    parent_editor.undoBegin();
+
+      // (note) export/import during replay causes stuttering and
+      //         (sometimes) raises an "empty clipboard" error => better requires the replay to be stopped (for now)
+      // (note) see NodeSeqEditor.endTrackerEdit()
+      boolean bWasPlaying = replay.b_playing;
+      int oldSongOffset = current_song.song_offset;
+      if(bWasPlaying)
+      {
+         // // root_form.handleToggleReplay(false/*bSendMMC*/);
+         replay.b_playing = false;
+      }
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int startTicks = haveSelection() ? seq.sorted_sel_start_x : seq.cursor_x;
+         startTicks *= pat.getNumTicksPerBar();
+
+         if(pat.loop_start_ticks <= startTicks < (pat.loop_start_ticks + pat.loop_len_ticks))
+         {
+            startTicks += seq.nodeGetLastPatternStartSongOffset();
+            Global.Debug2("[trc] NSQ_Arranger::beginTrackerEdit1: seq.nodeGetLastPatternStartSongOffset()="+seq.nodeGetLastPatternStartSongOffset()+" => trackerNode startTicks="+startTicks);
+
+            // (note) exports with quantization, i.e. this basically freezes it when the pattern is re-imported
+            local NM_Pattern patMon <= parent_editor.exportSelectionToMonitorClipboard(current_song,
+                                                                                       true/*bQuiet*/,
+                                                                                       true/*bTickTimebase*/,
+                                                                                       true/*bIgnorePlayState*/,
+                                                                                       true/*bTrackerImportRPN*/,
+                                                                                       false/*bOutputCapture*/
+                                                                                       );
+
+            boolean bHavePolyPressureEvents = patMon.hasPolyPressureEvents();
+
+            if(bHavePolyPressureEvents && !patMon.hasNoteOnsForPolyPressureEvents())
+            {
+               if(bWasPlaying)
+               {
+                  // Continue replay
+                  current_song.song_offset = oldSongOffset;
+                  replay.b_playing = true;
+               }
+               Global.Warning("Missing note-ons for poly-pressure events");
+               return false;
+            }
+
+            // Force-mute selected tracks
+            //  (note) will revert to unmuted when NodeSeq editor is shown again
+            forceMuteSelectedTracks(_bTemp);
+
+            // Create temp node
+            //  (placed directly after 'this' node)
+            PagePipe pgPipe <= root_form.pg_pipe;
+            PageNode pgNode <= root_form.pg_node;
+            String *nodeName;
+            if(_bTemp)
+               nodeName <= "temp";
+            else
+            {
+               if(seq.sorted_sel_start_y == seq.sorted_sel_end_y)
+               {
+                  // Single track
+                  DeviceIOPort port <= seq.out_ports.get(seq.cursor_y);
+                  nodeName <= port.info.trim().abbrev(16);
+               }
+               else
+                  nodeName <= seq.nodeGetName();
+            }
+            MIDIPipeNodeScriptProxy pn <= pgPipe.handleAdd3(NodeTracker, nodeName, false/*bEdit*/);
+            NodeTracker tempNode <= pn.sci;
+            NSQ_TrackerState ts <= seq.tracker_state;
+            ts.copyTo(tempNode);  // restore editor state
+            tempNode.seq_tracker_state <= ts;
+            tempNode.b_seq_temp = _bTemp;
+            // // trace "xxx temp tracker node nodeSetLastPatternStartSongOffset("+startTicks+")";
+            tempNode.nodeSetLastPatternStartSongOffset(startTicks);
+            tempNode.nodeSetLastPatternStartEditorSongOffset(startTicks);
+            tempNode.pv_edit_mode = NodeTracker.PV_EDIT_STEP;  // turn on edit mode
+            parent_editor.tracker_node <= tempNode;
+
+            // Special case: copy "<swing>" autodev B
+            if(seq.b_auto_filter_b)
+            {
+               STX_MIDIOutDevice autoDevB <= MIDI.GetMIDIOutDeviceByIndex(seq.auto_dev_filter_b);
+               if((null != autoDevB) && (STConfig.autodev_swing_devicename == autoDevB.getAlias()))
+               {
+                  // continue swing (copy autodev)
+                  tempNode.b_auto_filter_b = true;
+                  tempNode.auto_dev_filter_b = seq.auto_dev_filter_b;
+                  tempNode.auto_ch_filter_b  = seq.auto_ch_filter_b;
+               }
+            }
+
+            // Show Tracker editor
+            NodeTrackerEditor trackerEditor <= tempNode.nodeGetEditor();
+            pgNode.showPipeNodeByIdx(tempNode.parent_pipe.pipeIdx,
+                                     tempNode.parent_pipenode.nodeIdx
+                                     );
+            tempNode.b_skip_rec_undo = true;
+            trackerEditor.cmd_pattern_import_monitor_handle_ok(patMon,//NodePattern.PatGetClipboardForClass("NM_Pattern"),
+                                                               false/*bForceReInit*/,
+                                                               true/*bForceMulti*/,  // match track instr + record all tracks
+                                                               true/*bCreateInstrumentsAndParams*/,
+                                                               false/*bConvRPNPC*/,
+                                                               false/*bPreferCTLPC*/,
+                                                               false/*bCopyPatName*/,
+                                                               !bHavePolyPressureEvents/*bResetRec*/,    // assume note-on duration (no explicit note-offs)
+                                                               false/*bAlignBars*/,
+                                                               false/*bExplode*/,
+                                                               false/*bUndo*/
+                                                               );
+            tempNode.b_skip_rec_undo = false;
+
+            // (note) temp editing ends in PageNode::endTrackerEdit() when ESC is pressed (if _bTemp == true)
+         }
+         else
+         {
+            Global.Warning("Cannot detail-edit bar(s) outside of loop area");
+            ret = false;
+         }
+      }
+      else
+      {
+         // No pattern (reachable?)
+         ret = false;
+      }
+
+      if(bWasPlaying)
+      {
+         // Continue replay
+         // // current_song.seek(oldSongOffset);
+         // // root_form.handleToggleReplay(false/*bSendMMC*/);
+         current_song.song_offset = oldSongOffset;
+         replay.b_playing = true;
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method beginTrackerEdit2() {
+      // Lazy-finish pattern import from NodeSeq
+      NodeTracker nt <= NodeTracker;
+      NodeTrackerEditor trackerEditor <= nt.nodeGetEditor();  // get editor singleton
+      NT_TEL tel <= trackerEditor.pattern_view.getCurrentTrackLayout();
+      tel.groupNoteVelDur();
+      if(b_autocolorize_cels)
+      {
+         trackerEditor.cmd_track_autocolorizecels();
+         if(UI.IsDarkOrMono())
+            trackerEditor.cmd_track_autocolorizecels();
+      }
+      if(STConfig.b_node_seq_tracker_vel_bars)
+         trackerEditor.toggleveldurstyles_noundo(true/*bBar*/, true/*bNibble*/);
+   }
+
+   // <method.png>
+   public method beginTrackerEdit(boolean _bTemp) {
+      if(beginTrackerEdit1(_bTemp))  // =replay= synchronized
+      {
+         beginTrackerEdit2(); // post-import (colorize+group cels)
+      }
+   }
+
+   // <method.png>
+   public =replay= method createModMatricesForSelectedTracks(int _type) {
+      // type 0: velocity curve
+      // type 1: velocity randomization
+      // type 2: velocity * modwheel(last track) modulation
+      // type 3: modwheel * modwheel2<delta>(last track) modulation
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int startX;
+         int startY;
+         int numTracks;
+
+         if(haveSelection())
+         {
+            startY    = seq.sorted_sel_start_y;
+            numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+         }
+         else
+         {
+            numTracks = 1;
+         }
+
+         NSQ_Track *track;
+         DeviceIOPort *port;
+         local IntArray    uniquePortDevIdx;
+         local IntArray    uniquePortMidiCh;
+         local StringArray uniquePortNames;
+         int uniqueIdx;
+         int trackIdx = startY;
+         int lastTrackDevIdx = -1;
+         int lastTrackMidiCh = -1;
+         loop(numTracks)
+         {
+            port <= seq.out_ports.get(trackIdx);
+            if(port.dev_idx >= 0)
+            {
+               boolean bAddPort = true;
+
+               // Last track ?
+               if(trackIdx == (startY + numTracks - 1))
+               {
+                  lastTrackDevIdx = port.dev_idx;
+                  lastTrackMidiCh = port.dev_ch;
+
+                  if(_type >= 2 && numTracks > 1)
+                  {
+                     // Skip vel*mw / mw+mw2<delta> modulation port (special case)
+                     bAddPort = false;
+                  }
+               }
+
+               if(bAddPort)
+               {
+                  uniqueIdx = 0;
+                  boolean bFound = false;
+                  loop(uniquePortDevIdx.numElements)
+                  {
+                     if(uniquePortDevIdx[uniqueIdx] == port.dev_idx)
+                     {
+                        if(-1 == port.dev_ch ||
+                           -1 == uniquePortMidiCh[uniqueIdx] ||
+                           port.dev_ch == uniquePortMidiCh[uniqueIdx]
+                           )
+                        {
+                           bFound = true;
+                           break;
+                        }
+                     }
+                     uniqueIdx++;
+                  }
+                  if(!bFound)
+                  {
+                     uniquePortDevIdx.add(port.dev_idx);
+                     uniquePortMidiCh.add(port.dev_ch);
+                     uniquePortNames.add(port.info.trim().abbrev(16));
+                  }
+               } // if bAddPort
+            } // if dev_idx >= 0
+            trackIdx++;
+         } // loop numTracks
+
+         int numPorts = uniquePortDevIdx.numElements;
+         if(numPorts > 0)
+         {
+            PagePipe pgPipe <= root_form.pg_pipe;
+            PageNode pgNode <= root_form.pg_node;
+            boolean bWasPlaying = replay.b_playing;
+            int oldSongOffset = current_song.song_offset;
+            replay.b_playing = false;
+
+            // Create ModMatrix instance(s)
+            uniqueIdx = 0;
+            int numNodesCreated = 0;
+            int numEntriesCreated = 0;
+            int entryIdx = 0;
+            int mmPortIdx = 0;
+            local NodeModMatrix *mmNode;
+            local NodeModMatrix *mmNodeFirst;
+            loop(uniquePortDevIdx.numElements)
+            {
+               if(0 == (mmPortIdx & 3))
+               {
+                  // Up to 4 ports/curves per ModMatrix instance
+                  entryIdx = 0;
+                  mmPortIdx = 0;
+               }
+
+               if(0 == mmPortIdx)
+               {
+                  // Create new ModMatrix instance
+                  String nodeName <= ["seq vel curve",
+                                      "seq vel rand",
+                                      "seq vel * mw",
+                                      "seq mw * mwdt"
+                                      ].get(_type);
+                  MIDIPipeNodeScriptProxy pn <= pgPipe.handleAdd3(NodeModMatrix, nodeName, false/*bEdit*/);
+                  mmNode <= pn.sci;
+                  mmNode.nodeSetLastPatternStartSongOffset(seq.nodeGetLastPatternStartSongOffset());
+                  mmNode.nodeSetLastPatternStartEditorSongOffset(seq.nodeGetLastPatternStartEditorSongOffset());
+
+                  if(null == mmNodeFirst)
+                     mmNodeFirst <= mmNode;
+
+                  numNodesCreated++;
+               }
+
+               NMM_Pattern mmPat <= mmNode.nodeGetPatternByIdx(0);
+
+               String portName <= uniquePortNames[uniqueIdx];
+               portName.trim();
+               if(portName.isBlank())
+               {
+                  STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(uniquePortDevIdx[uniqueIdx]);
+                  if(null != outDev)
+                  {
+                     portName = outDev.getAliasOrDeviceName();
+                  }
+                  portName.append(":");
+                  portName.append( (uniquePortMidiCh[uniqueIdx] < 0) ? "*" : String(uniquePortMidiCh[uniqueIdx] +1) );
+               }
+
+               NMM_Arg *arg;
+               NMM_Entry mmEn <= mmPat.getEntry(entryIdx);
+               if(null == mmEn)
+                  mmEn <= mmPat.createNewEntry(entryIdx);
+
+               // Macro port
+               arg <= mmPat.getMacroArgByIdx(mmPortIdx);
+               arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+               arg.setDispDevIdx(4/*skip macrodevs*/ + uniquePortDevIdx[uniqueIdx]);
+               arg.setDevCh(uniquePortMidiCh[uniqueIdx]);
+               mmPat.setMacroCtlNameByIdx(mmPortIdx, portName);
+
+               if(0 == _type)
+               {
+                  // Velocity curve
+                  mmEn.b_op = true;
+                  mmEn.op   = NMM_Entry.OP_CURVE;
+                  mmEn.name = portName+" vel curve "+mmPortIdx;
+
+                  arg <= mmEn.arg_dst;
+                  arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(0); // arg1 (mode)
+                  arg.setDispType(NMM_Arg.TYPE_CONST);
+                  arg.setConstValType(NMM_Arg.CONST_TYPE_INT_DEC);
+                  arg.setConstVal(0/*clamp*/);
+
+                  arg <= mmEn.getIndexedArg(1); // arg2 (curveIdx)
+                  arg.setDispType(NMM_Arg.TYPE_CONST);
+                  arg.setConstValType(NMM_Arg.CONST_TYPE_INT_DEC);
+                  arg.setConstVal(mmPortIdx/*curveIdx*/);
+
+                  arg <= mmEn.getIndexedArg(2); // arg3 (curve x-position)
+                  arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+               }
+               else if(1 == _type)
+               {
+                  // Velocity randomization
+                  //  (note) create random value and multiply by constant and breathctl CC
+                  mmEn.b_op = true;
+                  mmEn.op   = NMM_Entry.OP_MUL;
+                  mmEn.name = portName+" vel rand: vel*rand*ctl";
+
+                  arg <= mmEn.arg_dst; // output (velocity)
+                  arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(0); // arg1 (velocity input)
+                  arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(1); // arg2 (random)
+                  arg.setDispType(NMM_Arg.TYPE_RANDOM);
+                  arg.setRandMin(77);
+                  arg.setRandMax(127);
+                  arg.setRandValRange(NMM_Arg.VAL_RANGE_0_127);
+                  arg.setRandMinTime(0.02);
+                  arg.setRandMaxTime(0.07);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(2); // arg3 (breathctl CC, initially 127)
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setDispType(NMM_Arg.TYPE_CC);
+                  arg.setCC(2/*breath ctl*/);
+                  arg.setSH(NMM_Arg.SH_INF);
+                  arg.setDefValueId(NMM_Arg.DEF_HIGH/*127*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+               }
+               else if(2 == _type)
+               {
+                  // Velocity * modwheel randomization
+                  mmEn.b_op = true;
+                  mmEn.op   = NMM_Entry.OP_MUL;
+                  mmEn.name = portName+" vel scale: vel*ctl*amt";
+
+                  arg <= mmEn.arg_dst; // output (velocity)
+                  arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(0); // arg1 (velocity input)
+                  arg.setDispType(NMM_Arg.TYPE_VELOCITY);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(1); // arg2 (modwheel CC, initially 127)
+                  arg.setDispDevIdx(4/*skip macro devs*/ + lastTrackDevIdx);
+                  arg.setDevCh(lastTrackMidiCh);
+                  arg.setDispType(NMM_Arg.TYPE_CC);
+                  arg.setCC(1/*modwheel*/);
+                  arg.setSH(NMM_Arg.SH_INF);
+                  arg.setDefValueId(NMM_Arg.DEF_HIGH/*127*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(2); // arg3 (amt)  (may be edited by user later on)
+                  arg.setDispType(NMM_Arg.TYPE_CONST);
+                  arg.setConstValRange(NMM_Arg.VAL_RANGE_0_10);
+                  arg.setConstValType(NMM_Arg.CONST_TYPE_FLOAT);
+                  arg.setConstVal(1/*ctl amount*/);
+               }
+               else // if(3 == _type)
+               {
+                  // Modwheel * modwheel2<delta> randomization
+                  mmEn.b_op = true;
+                  mmEn.op   = NMM_Entry.OP_BLEND;
+                  mmEn.name = portName+" mw delta: mw+(mw2-ctr)*amt";
+                  mmEn.setOpArg1(1);
+                  mmEn.setOpArg2(2);
+                  mmEn.setOpArg3(3);
+                  mmEn.setOpArg4(4);
+
+                  arg <= mmEn.arg_dst; // output (modwheel1)
+                  arg.setDispType(NMM_Arg.TYPE_CC);
+                  arg.setCC(1/*modwheel*/);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(0); // arg1 (modwheel1 input)
+                  arg.setDispType(NMM_Arg.TYPE_CC);
+                  arg.setCC(1/*modwheel*/);
+                  arg.setDispDevIdx(mmPortIdx/*macro port*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(1); // arg2 (modwheel2 CC, initially 127)
+                  arg.setDispDevIdx(4/*skip macro devs*/ + lastTrackDevIdx);
+                  arg.setDevCh(lastTrackMidiCh);
+                  arg.setDispType(NMM_Arg.TYPE_CC);
+                  arg.setCC(1/*modwheel*/);
+                  arg.setSH(NMM_Arg.SH_INF);
+                  arg.setDefValueId(NMM_Arg.DEF_HIGH/*127*/);
+                  arg.setModifier(NMM_Arg.MOD_N7);
+
+                  arg <= mmEn.getIndexedArg(2); // arg3 (delta center pos, should be 0.5)
+                  arg.setDispType(NMM_Arg.TYPE_CONST);
+                  arg.setConstValRange(NMM_Arg.VAL_RANGE_0_10);
+                  arg.setConstValType(NMM_Arg.CONST_TYPE_FLOAT);
+                  arg.setConstVal(0.5/*center pos*/);
+
+                  arg <= mmEn.getIndexedArg(3); // arg4 (amt)
+                  arg.setDispType(NMM_Arg.TYPE_CONST);
+                  arg.setConstValRange(NMM_Arg.VAL_RANGE_0_10);
+                  arg.setConstValType(NMM_Arg.CONST_TYPE_FLOAT);
+                  arg.setConstVal(1.0/*delta amount*/);
+               }
+
+               // Next curve / port
+               numEntriesCreated++;
+               entryIdx++;
+               mmPortIdx++;
+               uniqueIdx++;
+            }
+
+            // Show first ModMatrix velocity curve editor
+            NodeModMatrixEditor mmEditor <= mmNodeFirst.nodeGetEditor();
+            pgNode.showPipeNodeByIdx(mmNodeFirst.parent_pipe.pipeIdx,
+                                     mmNodeFirst.parent_pipenode.nodeIdx
+                                     );
+
+
+            if(bWasPlaying)
+            {
+               // Continue replay
+               // // current_song.seek(oldSongOffset);
+               // // root_form.handleToggleReplay(false/*bSendMMC*/);
+               current_song.song_offset = oldSongOffset;
+               replay.b_playing = true;
+            }
+
+            Global.Print("Create "+numNodesCreated+" node"+Utils.GetPluralString(numNodesCreated)+" for "+numPorts+" port"+Utils.GetPluralString(numPorts));
+
+         } // if #uniqueports > 0
+         else
+         {
+            Global.Warning("ModMatrix<vel>: no output ports found");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method tryEditSound() : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         NSQ_Track track <= pat.getCursorTrack();
+         if(null != track)
+         {
+            DeviceIOPort io <= track.getPort();
+            if(null != io)
+            {
+               STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(io.dev_idx);
+               if(null != outDev)
+               {
+                  byte outCh = io.dev_ch;
+                  if(outCh < 0)  // -1=*
+                     outCh = 0;
+                  MIDISynthProfile msp <= outDev.getMIDISynthProfile(outCh/*midiCh*/);
+                  if(null != msp)
+                  {
+                     int noteIdxHint = -1;
+                     Global.Debug("NSQ_Arranger::tryEditSound: outDev=\""+outDev.getAliasOrDeviceName()+"\" ch="+(outCh+1)+" msp.id=\""+msp.midi_profile_id+"\" noteIdxHint="+noteIdxHint+"("+(MIDI.midi_notes.get(noteIdxHint))+")");
+
+                     if(Global.TryEditSound(outDev, outCh, msp, noteIdxHint))
+                        return true;
+
+                     Global.Warning("tryEditSound: failed to find editor");
+                  }
+                  else
+                     Global.Warning("tryEditSound: outDev msp is null");
+               }
+               else
+                  Global.Warning("tryEditSound: outDev is null");
+            }
+            else
+               Global.Warning("tryEditSound: track is null");
+         }
+         else
+            Global.Warning("tryEditSound: track is null");
+      }
+      else
+         Global.Warning("tryEditSound: pattern is null");
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDoubleClick(MouseEvent _ev) : boolean {
+
+      local Integer trackIdx;
+      int barIdx = getBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, trackIdx);
+      if(trackIdx >= 0 && barIdx >= 0)
+      {
+         if(seq.sel_start_x <= barIdx <= seq.sel_end_x)
+         {
+            if(seq.sel_start_y <= trackIdx <= seq.sel_end_y)
+            {
+               // already selected, auto-expand
+               selectTrackOrAllOrNone();
+               selectTrackOrAllOrNone();
+               return true;
+            }
+         }
+         if( (seq.cursor_x != barIdx) || (seq.cursor_y != trackIdx) )
+         {
+            // trace "xxx not selected";
+            selectBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, false/*bExtendSelection*/);
+            return true;
+         }
+         else
+         {
+            // already the cursor cel, auto-expand
+            selectTrackOrAllOrNone();
+            selectTrackOrAllOrNone();
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+
+      UI.SetKeyboardFocus(this);
+
+      if(_ev.isLeftButtonDown() && _ev.isRightButton())
+      {
+         parent_editor.undo();
+         return true;
+      }
+      else if(_ev.isRightButtonDown() && _ev.isLeftButton())
+      {
+         parent_editor.redo();
+         return true;
+      }
+
+      local Integer dragMode;
+      int barIdx = getLocatorBarIdxAndClickDragModeNear(_ev, dragMode);
+      if(-1 != barIdx)
+      {
+         if(DRAG_LOOP_L == dragMode)
+         {
+            setCursorX(barIdx);
+            setLeftLoopLocatorToCursor();
+            return true;
+         }
+         else if(DRAG_LOOP_R == dragMode)
+         {
+            setCursorX(barIdx);
+            setRightLoopLocatorToCursor();
+            return true;
+         }
+         else if(DRAG_PUNCH_IN == dragMode)
+         {
+            setCursorX(barIdx);
+            setPunchInToCursor();
+            return true;
+         }
+         else if(DRAG_PUNCH_OUT == dragMode)
+         {
+            setCursorX(barIdx);
+            setPunchOutToCursor();
+            return true;
+         }
+         return true;
+      }
+
+      if(_ev.isLeftButton())
+      {
+         boolean bExtendSelection = (VMOD_LSHIFT == UI.GetKeyMod());
+         selectBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, bExtendSelection);
+         return true;
+      }
+      else if(_ev.isRightButton())
+      {
+         if(haveSelection())
+         {
+            // Mouse over selection ?
+            local Integer trackIdx;
+            barIdx = getBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, trackIdx);
+            if(-1 != barIdx)
+            {
+               if((seq.sorted_sel_start_x <= barIdx <= seq.sorted_sel_end_x) &&
+                  (seq.sorted_sel_start_y <= trackIdx <= seq.sorted_sel_end_y)
+                  )
+               {
+                  showSelectionMenu(false/*bFocusFirst*/);
+                  return true;
+               }
+            }
+         }
+         selectBarAndTrackAtXY(_ev.mouse_rel_x, _ev.mouse_rel_y, false/*bExtendSelection*/);
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      if(_ev.isWheel())
+         return handleMouseWheel(_ev);
+
+      String cursor <= UIConstants.CURSOR_NORMAL;
+
+      local Integer dragMode;
+      int barIdx = getLocatorBarIdxAndDragModeNear(_ev, dragMode);
+      if(-1 != barIdx)
+         cursor <= UIConstants.CURSOR_MOVEX;
+
+      UI.ShowCursor(cursor);
+
+      return false;
+   }
+
+   // <method.png>
+   public method handleMouseWheel(MouseEvent _ev) : boolean {
+      if(_ev.wheelDown())
+      {
+         if(STConfig.b_node_seq_swap_mousewheel_dir)
+            moveCursorLeft((VMOD_LSHIFT == UI.GetKeyMod())/*bSel*/);
+         else
+            moveCursorRight((VMOD_LSHIFT == UI.GetKeyMod())/*bSel*/);
+         return true;
+      }
+
+      if(_ev.wheelUp())
+      {
+         if(STConfig.b_node_seq_swap_mousewheel_dir)
+            moveCursorRight((VMOD_LSHIFT == UI.GetKeyMod())/*bSel*/);
+         else
+            moveCursorLeft((VMOD_LSHIFT == UI.GetKeyMod())/*bSel*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if(b_debug_drag) trace "xxx NSQ_Arranger::onMouseBeginDrag";
+
+      local Integer dragMode;
+      int barIdx = getLocatorBarIdxAndDragModeNear(_ev, dragMode);
+      if(-1 != barIdx)
+      {
+         drag_mode    = dragMode;
+         drag_bar_idx = barIdx;
+         UI.CompositeAll();
+         return true;
+      }
+
+      local Integer trackIdx;
+      barIdx = getBarAndTrackAtXY(_dragStart.mouse_rel_x, _dragStart.mouse_rel_y, trackIdx);
+      if(-1 != barIdx)
+      {
+         seq.tempoSelectNone(false/*bFromTempo*/);
+         seq.evtSelectNone(false/*bFromEvent*/);
+         setSelection(barIdx, trackIdx, barIdx, trackIdx);
+         drag_mode = DRAG_SEL;
+         seq.ui_wheel_tick_move_count = 0;
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         int barIdxMouse = getBarIdxNearX(_currentEv.mouse_rel_x, null/*bPreferL*/);
+         if(b_debug_drag) trace "xxx NSQ_Arranger::onMouseDrag: barIdxMouse="+barIdxMouse;
+
+         if(DRAG_LOOP_L == drag_mode)
+         {
+            if(-1 != barIdxMouse)
+            {
+               drag_bar_idx = barIdxMouse;
+               UI.CompositeAll();
+            }
+            return true;
+         }
+         else if(DRAG_LOOP_R == drag_mode)
+         {
+            if(-1 != barIdxMouse)
+            {
+               drag_bar_idx = barIdxMouse;
+               UI.CompositeAll();
+            }
+            return true;
+         }
+         else if(DRAG_PUNCH_IN == drag_mode)
+         {
+            if(-1 != barIdxMouse)
+            {
+               drag_bar_idx = barIdxMouse;
+               UI.CompositeAll();
+            }
+            return true;
+         }
+         else if(DRAG_PUNCH_OUT == drag_mode)
+         {
+            if(-1 != barIdxMouse)
+            {
+               drag_bar_idx = barIdxMouse;
+               UI.CompositeAll();
+            }
+            return true;
+         }
+      }
+
+      if(DRAG_SEL == drag_mode)
+      {
+         local Integer trackIdx;
+         int barIdx = getBarAndTrackAtXY(_currentEv.mouse_rel_x, _currentEv.mouse_rel_y, trackIdx);
+         if(-1 != barIdx)
+         {
+            setSelection(seq.sel_start_x, seq.sel_start_y, barIdx, trackIdx);
+         }
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      if(null != pat)
+      {
+         if(DRAG_LOOP_L == drag_mode)
+         {
+            setCursorX(drag_bar_idx);
+            setLeftLoopLocatorToCursor();
+            redraw();
+         }
+         else if(DRAG_LOOP_R == drag_mode)
+         {
+            setCursorX(mathMaxi(0, drag_bar_idx-1));
+            setRightLoopLocatorToCursor();
+            redraw();
+         }
+         else if(DRAG_PUNCH_IN == drag_mode)
+         {
+            setCursorX(drag_bar_idx);
+            setPunchInToCursor();
+            redraw();
+         }
+         else if(DRAG_PUNCH_OUT == drag_mode)
+         {
+            setCursorX(mathMaxi(0, drag_bar_idx-1));
+            setPunchOutToCursor();
+            redraw();
+         }
+      }
+
+      if(DRAG_SEL == drag_mode)
+      {
+         seq.cursor_x = seq.sel_end_x;
+         seq.cursor_y = seq.sel_end_y;
+      }
+
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      drag_mode = DRAG_NONE;
+      UI.CompositeAll();
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      drag_mode = DRAG_NONE;
+      UI.ShowCursor(UIConstants.CURSOR_NORMAL);
+      UI.CompositeAll();
+   }
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+      return (null == pat);
+   }
+
+   // <method.png>
+   protected static LoadTex(Texture _tex, String _pathname) {
+      _tex.unload();
+      _tex.loadImage(_pathname, 0,0,0);
+      _tex.flags = TEX_MODULATE | TEX_ALPHA | TEX_REPEAT_S | TEX_REPEAT_T;
+   }
+
+   // <ui_init.png>
+   public virtual onOpen() {
+      if(Configuration.debugLevel >= 2)
+         Global.Debug2("NSQ_Arranger::onOpen: load checker textures");
+
+      LoadTex(tex_checker_1, "checker_1.png");
+      LoadTex(tex_checker_2, "checker_2.png");
+      LoadTex(tex_checker_3, "checker_3.png");
+      LoadTex(tex_checker_4, "checker_4.png");
+      LoadTex(tex_checker_5, "checker_5.png");
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      float sx = getSizeX();
+      float sy = getSizeY();
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.DrawFilledRectangle(0, 0, sx, sy, app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BG));
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)
+      {
+         float trackX = 2;
+         float trackSy = NSQ_TrackForm.GetTrackSizeY();
+         float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+         float cy;
+         int trackIdx = 0;
+         int firstBarIdx = seq.view_x;
+         int numVisBars = ((sx-2*2) / BAR_W)+1;
+         int ticksPerBar = pat.getNumTicksPerBar();
+
+         int c32BarEmptyDef    = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_EMPTY);
+         int c32BarEmptyCur;
+         if(seq.ui_b_fast_clear)
+            c32BarEmptyCur = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_EMPTY_FASTCLEAR_CUR);
+         else
+            c32BarEmptyCur = c32BarEmptyDef;
+         int c32BarNotesDef    = app_lnf.getColor(seq.ui_b_fast_clear ? AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_NOTES_FASTCLEAR : AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_NOTES);
+         int c32BarNotesCur    = app_lnf.getColor(seq.ui_b_fast_clear ? AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_NOTES_FASTCLEAR_CUR : AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_NOTES);
+         int c32BarCtls        = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_CTLS);
+         int c32BarPerf        = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_PERF);
+         int c32BarSysEx       = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_SYSEX);
+         int c32BarTintB       = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_GRADIENT_TINT);
+         int c32BarSep         = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_SEPARATOR);
+         int c32BarMod         = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_MODULO);
+
+         float cx;
+         int barIdx;
+         int c32;
+
+         // Draw bar modulo
+         if(seq.ui_bar_highlight_modulo > 0)
+         {
+            UIRenderer.EnableBlending();
+            cx = trackX;
+            barIdx = firstBarIdx;
+            loop(numVisBars)
+            {
+               if(barIdx < NSQ_Track.MAX_BARS)
+               {
+                  if(0 == (barIdx % seq.ui_bar_highlight_modulo))
+                  {
+                     UIRenderer.DrawFilledRectangle(cx, 2, BAR_W, sx-2*2, c32BarMod);
+                  }
+
+                  cx += BAR_W;
+                  barIdx++;
+               }
+            }
+            UIRenderer.DisableBlending();
+         }
+
+         // Draw bar labels
+         cx = trackX;
+         cy = 7;
+         barIdx = firstBarIdx;
+         String sLabel;
+         float w;
+         Font font <= UI.GetFontByName(UIConstants.DEFAULT_FONT_NAME_LABEL);
+         int c32BarLabel = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_LABEL);
+         loop(numVisBars)
+         {
+            if(barIdx < NSQ_Track.MAX_BARS)
+            {
+               sLabel = barIdx + 1;
+               w = font.stringWidth(sLabel);
+               UIRenderer.DrawText(sLabel, font, c32BarLabel, c32BarLabel, cx + (BAR_W - w)*0.5, cy, 0/*availW*/, 0/*align*/);
+
+               barIdx++;
+               cx += BAR_W;
+            }
+         }
+
+         UIRenderer.EnableBlending();
+         // Draw vertical label<>bar separator
+         UIRenderer.DrawLine(trackX, trackY-1, sx-2, trackY-1, c32BarSep);
+
+         // Draw loop locators
+         int c32LocTint;
+         int loopStart;
+         int loopLen;
+
+         if(-1 != seq.queued_loop_start_ticks)
+         {
+            loopStart = seq.queued_loop_start_ticks;
+            loopLen   = seq.queued_loop_len_ticks;
+            c32LocTint = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_LOCATOR_QUEUED_ICON_TINT);
+         }
+         else
+         {
+            loopStart = seq.cur_loop_start_ticks;
+            loopLen   = seq.cur_loop_len_ticks;
+            c32LocTint = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_LOCATOR_ICON_TINT);
+         }
+
+         // Left Loop Locator
+         icon_locator_l.setShaderType((icon_locator_l.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
+         cx = float(loopStart) / ticksPerBar;
+         cx -= seq.view_x;
+         cx *= BAR_W;
+         cx += trackX;
+         icon_locator_l.drawIconScaledC32(cx, 5+4,
+                                          UI.icon_scaling, UI.icon_scaling,
+                                          c32LocTint
+                                          );
+
+         // Right Loop Locator
+         cx = float(loopStart + loopLen) / ticksPerBar;
+         cx -= seq.view_x;
+         cx *= BAR_W;
+         cx += trackX;
+         icon_locator_r.setShaderType((icon_locator_r.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
+         icon_locator_r.drawIconScaledC32(cx - 16*UI.icon_scaling, 5+4,
+                                          UI.icon_scaling, UI.icon_scaling,
+                                          c32LocTint
+                                          );
+
+         UIRenderer.DisableBlending();
+
+
+         // Draw punch in/out markers
+         if((-1 != pat.punch_start_ticks) && (-1 != pat.punch_len_ticks))
+         {
+            int c32PunchTint = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_PUNCH_ICON_TINT);
+
+            // Left / Punch In
+            cx = float(pat.punch_start_ticks) / ticksPerBar;
+            cx -= seq.view_x;
+            cx *= BAR_W;
+            cx += trackX;
+            icon_punch_in.drawIconScaledC32(cx, 2+0,
+                                            UI.icon_scaling, UI.icon_scaling,
+                                            c32PunchTint
+                                            );
+
+            // Right / Punch Out
+            cx = float(pat.punch_start_ticks + pat.punch_len_ticks) / ticksPerBar;
+            cx -= seq.view_x;
+            cx *= BAR_W;
+            cx += trackX;
+            icon_punch_out.drawIconScaledC32(cx - 4*UI.icon_scaling, 2+0,
+                                             UI.icon_scaling, UI.icon_scaling,
+                                             c32PunchTint
+                                             );
+
+            UIRenderer.DisableBlending();
+         }
+
+         UIRenderer.EnableBlending();
+
+         // Draw bars
+         int c32BarPrgChg = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_BAR_PRGCHG);
+         cy = trackY;
+         trackIdx = 0;
+         loop(NodeSeq.NUM_TRACKS)
+         {
+            NSQ_Track track <= pat.getTrackByIdx(trackIdx);
+            cx = trackX;
+            barIdx = firstBarIdx;
+            // if(4 == trackIdx)
+            //    trace "xxx draw: track["+trackIdx+"] bar_flags="+#(track.bar_flags);
+
+            int c32BarEmpty = (trackIdx == seq.cursor_y) ? c32BarEmptyCur : c32BarEmptyDef;
+            int c32BarNotes = (trackIdx == seq.cursor_y) ? c32BarNotesCur : c32BarNotesDef;
+
+            loop(numVisBars)
+            {
+               if(barIdx < NSQ_Track.MAX_BARS)
+               {
+                  int flags = track.bar_flags[barIdx];
+                  int c32B;
+
+                  if(0)
+                  {
+                     c32 = c32BarEmpty;
+                     if(flags & NSQ_Track.BAR_FLAG_NOTES)
+                        c32 |= c32BarNotes;
+                     if(flags & NSQ_Track.BAR_FLAG_CTLS)
+                        c32 |= c32BarCtls;
+                     if(flags & NSQ_Track.BAR_FLAG_PERF)
+                        c32 |= c32BarPerf;
+                     if(flags & NSQ_Track.BAR_FLAG_SYSEX)
+                        c32 |= c32BarSysEx;
+
+                     c32B = UI.TintColor32(c32, c32BarTintB);
+                     UIRenderer.DrawGradientFilledRectangle(cx, cy, BAR_W, NSQ_TrackForm.GetTrackSizeY(), c32, c32, c32B, c32B);
+                  }
+                  else
+                  {
+                     c32 = c32BarEmpty;
+                     if(flags & NSQ_Track.BAR_FLAG_NOTES)
+                        c32 |= c32BarNotes;
+
+                     c32B = UI.TintColor32(c32, c32BarTintB);
+                     UIRenderer.DrawGradientFilledRectangle(cx, cy, BAR_W, NSQ_TrackForm.GetTrackSizeY(), c32, c32, c32B, c32B);
+
+                     if(UI.IsLight())
+                     {
+                        UIRenderer.EnableBlending();
+                     }
+                     else
+                     {
+                        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                     }
+
+                     if(flags & NSQ_Track.BAR_FLAG_CTLS)
+                     {
+                        UIRenderer.SetColorARGB(c32BarCtls);
+                        UIRenderer.DrawTexture(tex_checker_4,
+                                               cx, cy, BAR_W, NSQ_TrackForm.GetTrackSizeY(),
+                                               0,0,
+                                               BAR_W, NSQ_TrackForm.GetTrackSizeY()
+                                               );
+                     }
+                     if(flags & NSQ_Track.BAR_FLAG_PERF)
+                     {
+                        UIRenderer.SetColorARGB(c32BarPerf);
+                        UIRenderer.DrawTexture(tex_checker_5,
+                                               cx, cy, BAR_W, NSQ_TrackForm.GetTrackSizeY(),
+                                               0,0,
+                                               BAR_W, NSQ_TrackForm.GetTrackSizeY()
+                                               );
+                     }
+                     if(flags & NSQ_Track.BAR_FLAG_SYSEX)
+                     {
+                        UIRenderer.SetColorARGB(c32BarSysEx);
+                        UIRenderer.DrawTexture(tex_checker_3,
+                                               cx, cy, BAR_W, NSQ_TrackForm.GetTrackSizeY(),
+                                               0,0,
+                                               BAR_W, NSQ_TrackForm.GetTrackSizeY()
+                                               );
+                     }
+
+                     UIRenderer.EnableBlending();
+                  }
+
+                  if(flags & NSQ_Track.BAR_FLAG_PRGCHG)
+                  {
+                     int frameIdx = track.findFirstFrameIdxNearAbsTime(barIdx * ticksPerBar, 1);
+                     if(-1 != frameIdx)
+                     {
+                        MIDIPipeFrame fr <= track.frames.get(frameIdx);
+                        int pc = fr.getFilteredPrgChg(-1/*fltDev*/, -1/*fltCh*/);
+                        // trace "xxx pc frameIdx="+frameIdx+" pc="+pc;
+                        if(-1 != pc)
+                        {
+                           StringArray patNrOpt <= track.uiGetPrgChgOptions();
+                           sLabel = patNrOpt.get(pc);
+                           w = font.stringWidth(sLabel);
+                           UIRenderer.DrawText(sLabel, font, c32BarPrgChg, c32BarPrgChg, cx + (BAR_W - w)*0.5, cy+5, 0/*availW*/, 0/*align*/);
+                           UIRenderer.EnableBlending();
+                        }
+                     }
+                  }
+
+                  barIdx++;
+                  cx += BAR_W;
+               }
+            }
+
+            // Next track
+            trackIdx++;
+            cy += trackSy;
+         }
+
+         // Draw bar separators
+         cx = trackX;
+         barIdx = firstBarIdx;
+         loop(numVisBars)
+         {
+            UIRenderer.DrawLine(cx, 1, cx, cy-1, c32BarSep);
+            cx += BAR_W;
+         }
+
+         UIRenderer.DisableBlending();
+      }
+
+      UIRenderer.DrawDefaultSunkenBorder(0, 0, sx, sy);
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      // // glPopAttrib();
+   }
+
+   // <method_get.png>
+   public static GetCursorC32(NodeSeq _seq, NSQ_Pattern _pat) : int {
+      return app_lnf.getColor((_seq.b_rec || _seq.b_step_rec) ? ((-1 != _pat.punch_start_ticks) && (-1 != _pat.punch_len_ticks)) ? AppLookAndFeel.COLOR_NODESEQ_ARR_CURSOR_REC_PUNCH : AppLookAndFeel.COLOR_NODESEQ_ARR_CURSOR_REC : AppLookAndFeel.COLOR_NODESEQ_ARR_CURSOR_NORMAL);
+   }
+
+   // <method_get.png>
+   public static GetReplayMarkerC32(NodeSeq _seq, NSQ_Pattern _pat) : int {
+      return app_lnf.getColor((_seq.b_rec || _seq.b_step_rec) ? ((-1 != _pat.punch_start_ticks) && (-1 != _pat.punch_len_ticks)) ? AppLookAndFeel.COLOR_NODESEQ_ARR_MARKER_REC_PUNCH : AppLookAndFeel.COLOR_NODESEQ_ARR_MARKER_REC : replay.b_playing ? AppLookAndFeel.COLOR_NODESEQ_ARR_MARKER_REPLAY : AppLookAndFeel.COLOR_NODESEQ_ARR_MARKER_IDLE);
+   }
+
+   // <ui_render.png>
+   public virtual onDrawOverlays() {
+
+      int c32;
+
+      NSQ_Pattern pat <= parent_editor.getEditPattern();
+
+      if(null != pat)
+      {
+         float sx = getSizeX();
+         float sy = getSizeY();
+
+         float trackX = 2;
+         float trackY = 1 + NSQ_TrackForm.GetTrackSizeY();  // +space for bar label area
+
+         Point2f abspos;
+         calcAbsolutePositionFBO(abspos);
+
+         // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+         sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+         sdvg_EnableScissor();
+
+         float trackSy = NSQ_TrackForm.GetTrackSizeY();
+         float cx;
+         float cy = trackY;
+         int trackIdx = 0;
+         int firstBarIdx = seq.view_x;
+         int numVisBars = ((sx-2) / BAR_W)+1;
+         float w;
+         float h;
+
+         UIRenderer.EnableBlending();
+
+         loop(NodeSeq.NUM_TRACKS)
+         {
+            // Next track
+            trackIdx++;
+            cy += trackSy;
+         }
+
+         int c32LocDragTint = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_LOCATOR_ICON_DRAG_TINT);
+         int c32PunchDragTint = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_PUNCH_ICON_DRAG_TINT);
+
+         if(DRAG_LOOP_L == drag_mode)
+         {
+            cx = drag_bar_idx;
+            cx -= seq.view_x;
+            cx *= BAR_W;
+            cx += trackX;
+            icon_locator_l.setShaderType((icon_locator_l.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
+            icon_locator_l.drawIconScaledC32(cx, 5+4,
+                                             UI.icon_scaling, UI.icon_scaling,
+                                             c32LocDragTint
+                                             );
+         }
+         else if(DRAG_LOOP_R == drag_mode)
+         {
+            cx = drag_bar_idx;
+            cx -= seq.view_x;
+            cx *= BAR_W;
+            cx += trackX;
+            icon_locator_r.setShaderType((icon_locator_r.isMono() && lnf.b_icon_invert_mono) ? Icon.SHADER_INVERTCOLOR : 0);
+            icon_locator_r.drawIconScaledC32(cx - 16*UI.icon_scaling, 5+4,
+                                             UI.icon_scaling, UI.icon_scaling,
+                                             c32LocDragTint
+                                             );
+         }
+         else if(DRAG_PUNCH_IN == drag_mode)
+         {
+            cx = drag_bar_idx;
+            cx -= seq.view_x;
+            cx *= BAR_W;
+            cx += trackX;
+            icon_punch_in.drawIconScaledC32(cx, 2+0,
+                                            UI.icon_scaling, UI.icon_scaling,
+                                            c32PunchDragTint
+                                            );
+         }
+         else if(DRAG_PUNCH_OUT == drag_mode)
+         {
+            cx = drag_bar_idx;
+            cx -= seq.view_x;
+            cx *= BAR_W;
+            cx += trackX;
+            icon_punch_out.drawIconScaledC32(cx - 4*UI.icon_scaling, 2+0,
+                                             UI.icon_scaling, UI.icon_scaling,
+                                             c32PunchDragTint
+                                             );
+         }
+
+         UIRenderer.EnableBlending();
+
+
+         // Draw cursor
+         cx = (seq.cursor_x - seq.view_x) * BAR_W +trackX;
+         cy = (seq.cursor_y * NSQ_TrackForm.GetTrackSizeY()) +trackY;
+         int c32Cursor = GetCursorC32(seq, pat);
+         UIRenderer.DrawRectangle(cx, cy, BAR_W-1, NSQ_TrackForm.GetTrackSizeY(), 1, c32Cursor);
+
+         // Draw replay marker
+         if(1 || replay.b_playing)
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+            cx = float(seq.tick_nr * BAR_W) / ticksPerBar;
+            cx -= seq.view_x * BAR_W;
+            cx += trackX;
+            int c32Marker = GetReplayMarkerC32(seq, pat);
+            UIRenderer.DrawLine(cx, trackY, cx, sy-1, c32Marker);
+         }
+
+         // Draw selection
+         // trace "xxx seq.sorted_sel_start_x="+seq.sorted_sel_start_x;
+         if(-1 != seq.sorted_sel_start_x)
+         {
+            int c32SelBG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_BG);
+            int c32SelFG = app_lnf.getColor(AppLookAndFeel.COLOR_NODESEQ_ARR_SELECT_FG);
+            // trace "xxx sorted_sel=("+seq.sorted_sel_start_x+";"+seq.sorted_sel_start_y+")..("+seq.sorted_sel_end_x+";"+seq.sorted_sel_end_y+")";
+            cx = (seq.sorted_sel_start_x - seq.view_x) * BAR_W +trackX;
+            cy = (seq.sorted_sel_start_y * NSQ_TrackForm.GetTrackSizeY()) +trackY;
+            w = (seq.sorted_sel_end_x - seq.view_x) * BAR_W +trackX + BAR_W-1;
+            h = (seq.sorted_sel_end_y * NSQ_TrackForm.GetTrackSizeY()) +trackY + NSQ_TrackForm.GetTrackSizeY()-1;
+            w -= cx;
+            h -= cy;
+            UIRenderer.DrawFilledRectangle(cx, cy, w, h, c32SelBG);
+            UIRenderer.DrawRectangle(cx, cy, w, h, 1, c32SelFG);
+         }
+
+         UIRenderer.DisableBlending();
+
+         sdvg_PopScissor();
+         sdvg_DisableScissor();
+
+         // // glPopAttrib();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "xxx _k.pressed="+_k.pressed+" _k.code="+_k.code;
+
+      if(seq.ui_b_fast_clear && _k.modNone())
+      {
+         int trackIdx = -1;
+         boolean bAllowLazyClearPattern = false;
+
+         switch(_k.pressed)
+         {
+            case '1':
+            case 'a':
+            case 'q':
+            case VKEY_KP1:
+               trackIdx = 0;
+               break;
+
+            case '2':
+            case 's':
+            case 'w':
+            case VKEY_KP2:
+               trackIdx = 1;
+               break;
+
+            case '3':
+            case 'd':
+            case 'e':
+            case VKEY_KP3:
+               trackIdx = 2;
+               break;
+
+            case '4':
+            case 'f':
+            case 'r':
+            case VKEY_KP4:
+               trackIdx = 3;
+               break;
+
+            case '5':
+            case 'g':
+            case 't':
+            case VKEY_KP5:
+               trackIdx = 4;
+               break;
+
+            case '6':
+            case 'h':
+            case 'y':  // z on german kbd
+            case VKEY_KP6:
+               trackIdx = 5;
+               break;
+
+            case '7':
+            case 'j':
+            case 'u':
+            case VKEY_KP7:
+               trackIdx = 6;
+               break;
+
+            case '8':
+            case 'k':
+            case 'i':
+            case VKEY_KP8:
+               trackIdx = 7;
+               break;
+
+            case '9':
+            case 'l':
+            case 'o':
+            case VKEY_KP9:
+               trackIdx = 8;
+               break;
+
+            case '0':
+            case VKEY_SEMICOLON: // ö (de)
+            case 'p':
+               trackIdx = 9;
+               break;
+
+            case VKEY_MINUS:  // ß (de)
+            case VKEY_QUOTE: // ä
+            case VKEY_LEFTBRACKET:  // ü (de)
+               trackIdx = 10;
+               break;
+
+            case VKEY_BACKSLASH: // # (de)
+            case VKEY_RIGHTBRACKET:  // + (de)
+               trackIdx = 11;
+               break;
+
+            case VKEY_KP0:
+            case VKEY_BACKSPACE:
+            case VKEY_TAB:
+            case VKEY_SPACE:
+               trackIdx = seq.cursor_y;
+               bAllowLazyClearPattern = true;
+               break;
+
+            case VKEY_DELETE:
+               if(!haveSelection())
+               {
+                  trackIdx = seq.cursor_y;
+                  bAllowLazyClearPattern = true;
+               }
+               break;
+         }
+
+         if(trackIdx >= 0)
+         {
+            handleFastClearTrackOrPatternLoopRange(trackIdx, bAllowLazyClearPattern);
+            return true;
+         }
+
+      }
+
+
+      switch(_k.pressed)
+      {
+         case VKEY_LEFT:
+            if(seq.b_step_rec)
+            {
+               if(_k.modCtrl())
+                  parent_editor.stepRecMoveCursor(-8);
+               else if(_k.modShift())
+                  parent_editor.stepRecMoveCursor(-32);
+               else
+                  parent_editor.stepRecMoveCursor(-16);
+            }
+            else
+            {
+               if(_k.modCtrl())
+               {
+                  if(_k.modShift())
+                  {
+                     if(b_extended_block_selection_mode)
+                        moveCursorHome(true/*bShift*/);
+                     else
+                        return false;  // reserve key for node navigation
+                  }
+                  else
+                     moveCursorHome(false/*bShift*/);
+               }
+               else
+               {
+                  moveCursorLeft(_k.modShift());
+               }
+            }
+            return true;
+
+         case VKEY_RIGHT:
+            if(seq.b_step_rec)
+            {
+               if(_k.modCtrl())
+                  parent_editor.stepRecMoveCursor(8);
+               else if(_k.modShift())
+                  parent_editor.stepRecMoveCursor(32);
+               else
+                  parent_editor.stepRecMoveCursor(16);
+            }
+            else
+            {
+               if(_k.modCtrl())
+               {
+                  if(_k.modShift())
+                  {
+                     if(b_extended_block_selection_mode)
+                        moveCursorEnd(true/*bShift*/);
+                     else
+                        return false;  // reserve key for node navigation
+                  }
+                  else
+                     moveCursorEnd(false/*bShift*/);
+               }
+               else
+               {
+                  moveCursorRight(_k.modShift());
+               }
+            }
+            return true;
+
+         case VKEY_PAGEUP:
+            if(!_k.modCtrl())
+            {
+               loop(8)
+               {
+                  moveCursorLeft(_k.modShift());
+               }
+               return true;
+            }
+            break;
+
+         case VKEY_PAGEDOWN:
+            if(!_k.modCtrl())
+            {
+               loop(8)
+               {
+                  moveCursorRight(_k.modShift());
+               }
+               return true;
+            }
+            break;
+
+         case VKEY_UP:
+            if(seq.b_step_rec)
+            {
+               if(_k.modCtrl())
+                  parent_editor.stepRecMoveCursor(-8);
+               else if(_k.modShift())
+                  parent_editor.stepRecMoveCursor(-3);
+               else
+                  parent_editor.stepRecMoveCursor(-4);
+            }
+            else
+            {
+               if(_k.modCtrl())
+               {
+                  if(_k.modShift())
+                     return false; // reserve key for node navigation
+                  else
+                     expandSelectionY(-1);
+               }
+               else
+               {
+                  moveCursorUp(_k.modShift());
+               }
+            }
+            return true;
+
+         case VKEY_DOWN:
+            if(seq.b_step_rec)
+            {
+               if(_k.modCtrl())
+                  parent_editor.stepRecMoveCursor(8);
+               else if(_k.modShift())
+                  parent_editor.stepRecMoveCursor(3);
+               else
+                  parent_editor.stepRecMoveCursor(4);
+            }
+            else
+            {
+               if(_k.modCtrl())
+               {
+                  if(_k.modShift())
+                     return false; // reserve key for node navigation
+                  else
+                     expandSelectionY(1);
+               }
+               else
+               {
+                  moveCursorDown(_k.modShift());
+               }
+            }
+            return true;
+
+         case '1':
+            if(_k.modNone())
+            {
+               loopBars(1);
+               return true;
+            }
+            break;
+
+         case '2':
+            if(_k.modNone())
+            {
+               loopBars(2);
+               return true;
+            }
+            break;
+
+         case '3':
+            if(_k.modNone())
+            {
+               loopBars(4);
+               return true;
+            }
+            break;
+
+         case '4':
+            if(_k.modNone())
+            {
+               loopBars(8);
+               return true;
+            }
+            break;
+
+         case 'a':
+            if(_k.modCtrl() && _k.modShift())
+            {
+               freezeSelectionQuantization();
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               selectTrackOrAllOrNone();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               if(haveSelection())
+                  showSelectionMenu(true/*bFocusFirst*/);
+               else
+                  showContextMenu(true/*bFocusFirst*/);
+               return true;
+            }
+            break;
+
+         case 'b':
+            parent_editor.handleMergePerfCtlsToBarStarts(_k.modCtrlOnly()/*bStartUntilEndOfLoop*/);
+            return true;
+
+         case 'e':
+            if(_k.modNone())
+            {
+               setPunchInOutToSelection();
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(_k.modNone())
+            {
+               loopSelection();
+               return true;
+            }
+            else if( _k.modCtrlOnly() || (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               copyToClipboard();
+               return true;
+            }
+            break;
+
+         case 'd':
+            if(_k.modNone())
+            {
+               toggleMuteSelectedTracks();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modNone())
+            {
+               parent_editor.toggleFocusTrackByIdx(seq.cursor_y);
+               return true;
+            }
+            else if(VMOD_LSHIFT == _k.mod)
+            {
+               parent_editor.showFilterDialog();
+               return true;
+            }
+            break;
+
+         case 'i':
+            if(_k.modNone())
+            {
+               setPunchInToCursor();
+               return true;
+            }
+            break;
+
+         case 'j':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  createModMatricesForSelectedTracks(3/*mw+mw2<delta>*/);
+               else
+                  createModMatricesForSelectedTracks(2/*velocity*mw2*/);
+               return true;
+            }
+            break;
+
+         case 'k':
+            tryEditSound();
+            return true;
+
+         case 'l':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  createModMatricesForSelectedTracks(1/*velocity rand*/);
+               else
+                  createModMatricesForSelectedTracks(0/*velocity curve*/);
+               return true;
+            }
+            break;
+
+         case 'm':
+            if(_k.modCtrl())
+            {
+               pasteClipboard(false/*bInsert*/, true/*bMix*/);
+               return true;
+            }
+            else
+            {
+               if(tempo.haveSelection())
+               {
+                  tempo.mergeSelectedFrames();
+                  return true;
+               }
+               else
+               {
+                  if(_k.modNone())
+                  {
+                     // Let PageNode handle the key (toggle MMT editor)
+                  }
+                  else
+                  {
+                     Global.Warning("Merge Frames: no frames selected");
+                  }
+               }
+            }
+            break;
+
+         case 'o':
+            if(_k.modNone())
+            {
+               setPunchOutToCursor();
+               return true;
+            }
+            break;
+
+         case 'p':
+            if(_k.modNone())
+            {
+               showPrgChgFloatParamDialog();
+               return true;
+            }
+            else if(_k.modShift())
+            {
+               handleDeletePrgChg();
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               selectNextUIPrgChgDisplayMode();
+               return true;
+            }
+            break;
+
+         case 'q':
+            if(_k.modNone())
+            {
+               parent_editor.focusTrackQAmountByIdx(seq.cursor_y);
+               return true;
+            }
+            else if(_k.modCtrl())
+            {
+               freezeSelectionQuantization();
+               return true;
+            }
+            break;
+
+         case 'r':
+            if(_k.modNone())
+            {
+               moveLoopToCursor();
+               return true;
+            }
+            break;
+
+         case 's':
+            if(_k.modNone())
+            {
+               toggleSoloSelectedTracks();
+               return true;
+            }
+            break;
+
+         case 't':
+            if(_k.modNone())
+            {
+               setLeftLoopLocatorToCursor();
+               return true;
+            }
+            break;
+
+         case 'v':
+            if( _k.modCtrlOnly() ||  (_k.modCmd() && UI.b_key_cmd_copy_paste) )
+            {
+               pasteClipboard(false/*bInsert*/, false/*bMix*/);
+               return true;
+            }
+            else if(_k.modShiftOnly())
+            {
+               pasteClipboard(true/*bInsert*/, false/*bMix*/);
+               return true;
+            }
+            break;
+
+         case 'w':
+            if(_k.modNone())
+            {
+               toggleRecordSelectedTracks();
+               return true;
+            }
+            break;
+
+         case 'x':
+            if(_k.modNone())
+            {
+               toggleExtendedBlockSelectionMode();
+               return true;
+            }
+            break;
+
+         case 'y':  // 'z' on german kbd
+            if(_k.modNone())
+            {
+               setRightLoopLocatorToCursor();
+               return true;
+            }
+            break;
+
+         case VKEY_DELETE:
+            if(parent_editor.isTempoViewVisible() && tempo.haveSelection())
+            {
+               tempo.deleteSelectedFrames();
+               return true;
+            }
+            else if(parent_editor.isEventViewVisible() && evt.haveSelection())
+            {
+               evt.deleteSelectedNotes();
+               return true;
+            }
+            else
+            {
+               if(_k.modShift() || isSelectionEmpty() || _k.modCtrl())
+               {
+                  handleDeleteSelection(_k.modCtrl()/*bTempo*/);
+               }
+               else
+               {
+                  handleClearSelection(true/*bUndoBegin*/);
+               }
+            }
+            return true;
+
+         case VKEY_INSERT:
+            handleInsertBars(_k.modCtrl()/*bTempo*/);
+            return true;
+
+         case VKEY_RETURN:
+            if(seq.b_rec && replay.b_playing)
+               tryQueueRecordRestart();
+            else
+               beginTrackerEdit(true/*bTemp*/);
+            return true;
+
+         case VKEY_TAB:
+            // // if(_k.modCtrlOnly())
+            // //    beginTrackerEdit(true/*bTemp*/);
+            // // else
+               parent_editor.toggleTempoAndEventViews(false/*bFromButton*/);
+            return true;
+
+         case VKEY_PERIOD:
+            if(parent_editor.isTempoViewVisible() && tempo.haveSelection() && (NSQ_Tempo.DRAG_NONE == tempo.drag_mode))
+            {
+               parent_editor.undoBeginMini();
+               if(_k.modShift())
+               {
+                  tempo.moveSelectedFrames(-current_song.ppq / 16, true/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+               }
+               else if(_k.modCtrl())
+               {
+                  tempo.moveSelectedFramesSnap(-1, true/*bNoUndo*/, false/*bQuiet*/);
+               }
+               else
+               {
+                  tempo.moveSelectedFrames(-1, true/*bNoUndo*/, false/*bQuiet*/);
+               }
+            }
+            return true;
+
+         case VKEY_SLASH:  // de:'_'
+            if(parent_editor.isTempoViewVisible() && tempo.haveSelection() && (NSQ_Tempo.DRAG_NONE == tempo.drag_mode))
+            {
+               parent_editor.undoBeginMini();
+               if(_k.modShift())
+               {
+                  tempo.moveSelectedFrames(current_song.ppq / 16, true/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+               }
+               else if(_k.modCtrl())
+               {
+                  tempo.moveSelectedFramesSnap(1, true/*bNoUndo*/, false/*bQuiet*/);
+               }
+               else
+               {
+                  tempo.moveSelectedFrames(1, true/*bNoUndo*/, false/*bQuiet*/);
+               }
+            }
+            return true;
+
+         // case VKEY_HOME:
+         // case VKEY_END:
+
+         case VKEY_BACKSPACE:
+            if(_k.modShift())
+            {
+               if(_k.modCtrl())
+                  clearPattern();
+               else
+                  clearTrack();
+               return true;
+            }
+            break;
+
+         case VKEY_QUOTE:  // ''' (us/en) / 'Ä' (de)
+            beginTrackerEdit(true/*bTemp*/);
+            return true;
+      }
+
+      return Control::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      boolean bShift = (UI.GetKeyMod() & VMOD_LSHIFT);
+      boolean bCtrl  = (UI.GetKeyMod() & VMOD_LCTRL);
+
+      switch(@(ap))
+      {
+         case @(pm_ctx):
+            if(!PopupMenu.IsFocusAction(_action))
+               parent_editor.refocusDefault();
+            switch(acName)
+            {
+               default:
+                  return true;
+
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  return true;
+
+               case "explode":
+                  parent_editor.showExplodeDialog();
+                  return true;
+
+               case "clear_track":
+                  clearTrack();
+                  return true;
+
+               case "clear_pat":
+                  clearPattern();
+                  return true;
+
+               case "bar_prev":
+                  moveCursorLeft(bShift);
+                  return true;
+
+               case "bar_prev8":
+                  loop(8)
+                     moveCursorLeft(bShift);
+                  return true;
+
+               case "bar_home":
+                  moveCursorHome(bShift);
+                  return true;
+
+               case "bar_next":
+                  moveCursorRight(bShift);
+                  return true;
+
+               case "bar_next8":
+                  loop(8)
+                     moveCursorRight(bShift);
+                  return true;
+
+               case "bar_end":
+                  moveCursorEnd(bShift);
+                  return true;
+
+               case "bar_insert":
+                  handleInsertBars(false/*bTempo*/);
+                  return true;
+
+               case "bar_clear":
+                  handleClearSelection(true/*bUndoBegin*/);
+                  return true;
+
+               case "bar_delete":
+                  handleDeleteSelection(false/*bTempo*/);
+                  return true;
+
+               case "bar_insertall":
+                  handleInsertBars(true/*bTempo*/);
+                  return true;
+
+               case "bar_deleteall":
+                  handleDeleteSelection(true/*bTempo*/);
+                  return true;
+
+               case "bar_prgchg_edit":
+                  showPrgChgFloatParamDialog();
+                  return true;
+
+               case "bar_prgchg_delete":
+                  handleDeletePrgChg();
+                  return true;
+
+               case "bar_prgchg_next":
+                  selectNextUIPrgChgDisplayMode();
+                  return true;
+
+               case "track_prev":
+                  moveCursorUp(bShift);
+                  return true;
+
+               case "track_first":
+                  expandSelectionY(-1);
+                  return true;
+
+               case "track_next":
+                  moveCursorDown(bShift);
+                  return true;
+
+               case "track_last":
+                  expandSelectionY(1);
+                  return true;
+
+               case "track_mute":
+                  parent_editor.toggleMuteTrackByIdx(seq.cursor_y);
+                  return true;
+
+               case "track_solo":
+                  parent_editor.toggleSoloTrackByIdx(seq.cursor_y);
+                  return true;
+
+               case "track_focusquant":
+                  parent_editor.focusTrackQAmountByIdx(seq.cursor_y);
+                  return true;
+
+               case "track_focus":
+                  parent_editor.toggleFocusTrackByIdx(seq.cursor_y);
+                  return true;
+
+               case "track_rec":
+                  parent_editor.toggleRecordTrackByIdx(seq.cursor_y);
+                  return true;
+
+               case "track_copy_port":
+                  parent_editor.copyPort();
+                  return true;
+
+               case "track_paste_port":
+                  parent_editor.pastePort();
+                  return true;
+
+               case "track_editsound":
+                  tryEditSound();
+                  return true;
+
+               case "loop_left":
+                  setLeftLoopLocatorToCursor();
+                  return true;
+
+               case "loop_right":
+                  setRightLoopLocatorToCursor();
+                  return true;
+
+               case "loop_move":
+                  moveLoopToCursor();
+                  return true;
+
+               case "loop_sel":
+                  loopSelection();
+                  return true;
+
+               case "loop_1bar":
+                  loopBars(1);
+                  return true;
+
+               case "loop_2bars":
+                  loopBars(2);
+                  return true;
+
+               case "loop_4bars":
+                  loopBars(4);
+                  return true;
+
+               case "loop_8bars":
+                  loopBars(8);
+                  return true;
+
+               case "punch_in":
+                  setPunchInToCursor();
+                  return true;
+
+               case "punch_out":
+                  setPunchOutToCursor();
+                  return true;
+
+               case "punch_sel":
+                  setPunchInOutToSelection();
+                  return true;
+
+               case "sel_none":
+                  selectNoneAtAll();
+                  return true;
+
+               case "sel_export_tracker":
+                  beginTrackerEdit(true/*bTemp*/);
+                  return true;
+
+               case "sel_export_tracker_new":
+                  beginTrackerEdit(false/*bTemp*/);
+                  return true;
+
+               case "sel_export_mon":
+                  parent_editor.exportSelectionToMonitorClipboard(current_song,
+                                                                  false/*bQuiet*/,
+                                                                  true/*bTickTimebase*/,
+                                                                  false/*bIgnorePlayState*/,
+                                                                  false/*bTrackerImportRPN*/,
+                                                                  false/*bOutputCapture*/
+                                                                  );
+                  return true;
+
+               case "sel_copy":
+                  copyToClipboard();
+                  return true;
+
+               case "sel_paste_replace":
+                  pasteClipboard(false/*bInsert*/, false/*bMix*/);
+                  return true;
+
+               case "sel_paste_insert":
+                  pasteClipboard(true/*bInsert*/, false/*bMix*/);
+                  return true;
+
+               case "sel_paste_mix":
+                  pasteClipboard(false/*bInsert*/, true/*bMix*/);
+                  return true;
+
+               case "sel_tempo_merge":
+                  tempo.mergeSelectedFrames();
+                  return true;
+
+               case "sel_freezequant":
+                  freezeSelectionQuantization();
+                  return true;
+
+               case "sel_filter":
+                  parent_editor.showFilterDialog();
+                  return true;
+
+               case "sel_delete_bars":
+                  handleDeleteSelection(false/*bTempo*/);
+                  return true;
+
+               case "sel_delete_frames":
+                  tempo.deleteSelectedFrames();
+                  return true;
+
+               case "sel_delete_notes":
+                  evt.deleteSelectedNotes();
+                  return true;
+
+               case "sel_moveframes_left_fine":
+                  tempo.moveSelectedFrames(-1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_moveframes_left_coarse":
+                  tempo.moveSelectedFrames(-current_song.ppq / 16, false/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+                  return true;
+
+               case "sel_moveframes_left_snap":
+                  tempo.moveSelectedFramesSnap(-1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_moveframes_right_fine":
+                  tempo.moveSelectedFrames(1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_moveframes_right_coarse":
+                  tempo.moveSelectedFrames(current_song.ppq / 16, false/*bNoUndo*/, false/*bQuiet*/);  // 1/64 (12 ticks @ppq=192)
+                  return true;
+
+               case "sel_moveframes_right_snap":
+                  tempo.moveSelectedFramesSnap(1, false/*bNoUndo*/, false/*bQuiet*/);
+                  return true;
+
+               case "sel_toggleext":
+                  toggleExtendedBlockSelectionMode();
+                  return true;
+
+               case "sig_half":
+                  parent_editor.halfNoteLen();
+                  return true;
+
+               case "sig_double":
+                  parent_editor.doubleNoteLen();
+                  return true;
+
+               case "midi_copy":
+                  parent_editor.handleCopyOutputStates();
+                  return true;
+
+               case "midi_clear":
+                  parent_editor.handleClearOutputStates();
+                  return true;
+
+               case "midi_perfctl_bars":
+                  parent_editor.handleMergePerfCtlsToBarStarts(false/*bStartUntilEndOfLoop*/);
+                  return true;
+
+               case "midi_perfctl_bars_eol":
+                  parent_editor.handleMergePerfCtlsToBarStarts(true/*bStartUntilEndOfLoop*/);
+                  return true;
+
+               case "midi_import_mon_clipboard":
+                  parent_editor.importMonitorClipboard();
+                  return true;
+
+               case "midi_import_smf":
+                  parent_editor.importSMFFileDialog();
+                  return true;
+
+               case "capture_begin":
+                  parent_editor.beginOutputCapture();
+                  return true;
+
+               case "capture_paste":
+                  parent_editor.pasteOutputCapture(false/*bLazySelectBar*/, true/*bUndoBegin*/);
+                  return true;
+
+               case "capture_ticks":
+                  parent_editor.toggleOutputCaptureTicks();
+                  return true;
+
+               case "capture_export":
+                  parent_editor.exportSelectionToMonitorClipboard(current_song,
+                                                                  false/*bQuiet*/,
+                                                                  true/*bTickTimebase*/,
+                                                                  false/*bIgnorePlayState*/,
+                                                                  false/*bTrackerImportRPN*/,
+                                                                  true/*bOutputCapture*/
+                                                                  );
+                  return true;
+
+               case "undo":
+                  parent_editor.undo();
+                  return true;
+
+               case "redo":
+                  parent_editor.redo();
+                  return true;
+
+               case "undo_clear":
+                  parent_editor.clearUndoRedoStates();
+                  return true;
+
+               case "replay_start":
+                  if(!replay.b_playing)
+                     parent_editor.toggleReplayEx(true/*bAllowBookmark*/, false/*bSendMMC*/);
+                  return true;
+
+               case "replay_start_mmc":
+                  if(!replay.b_playing)
+                     parent_editor.toggleReplayEx(true/*bAllowBookmark*/, true/*bSendMMC*/);
+                  return true;
+
+               case "replay_stop":
+                  if(replay.b_playing)
+                     parent_editor.toggleReplayEx(true/*bAllowBookmark*/, false/*bSkipMMC*/);
+                  return true;
+
+               case "replay_stop_mmc":
+                  if(replay.b_playing)
+                     parent_editor.toggleReplayEx(true/*bAllowBookmark*/, true/*bSkipMMC*/);
+                  return true;
+
+               case "replay_stop_cur":
+                  if(replay.b_playing)
+                     parent_editor.toggleReplayEx(false/*bAllowBookmark*/, false/*bSkipMMC*/);
+                  return true;
+
+               case "rec_precount":
+                  parent_editor.togglePreCount();
+                  return true;
+
+               case "rec_autofocus":
+                  parent_editor.toggleAutoRecFocus();
+                  return true;
+
+               case "rec_start":
+                  if(!replay.b_playing)
+                     parent_editor.startOrStopRecording(false/*bMMC*/);
+                  return true;
+
+               case "rec_stop":
+                  if(replay.b_playing)
+                     parent_editor.startOrStopRecording(false/*bMMC*/);
+                  return true;
+
+               case "rec_toggle":
+                  parent_editor.toggleRec();
+                  return true;
+
+               case "rec_restart":
+                  if(seq.b_rec && replay.b_playing)
+                     seq.queueRecordRestart();
+                  return true;
+
+               case "toggle_views":
+                  parent_editor.toggleTempoAndEventViews(false/*bFromButton*/);
+                  return true;
+
+               case "autoreset_smoothscroll":
+                  parent_editor.toggleAutoResetSmoothScroll();
+                  return true;
+
+               case "steprec_toggle":
+                  parent_editor.stepRecToggle();
+                  return true;
+            }
+            return true;
+
+
+         case @(pm_sel):
+            if(!PopupMenu.IsFocusAction(_action))
+               parent_editor.refocusDefault();
+            switch(acName)
+            {
+               default:
+                  return true;
+
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  return true;
+
+               case "loop_sel":
+                  loopSelection();
+                  return true;
+
+               case "punch_sel":
+                  setPunchInOutToSelection();
+                  return true;
+
+               case "sel_none":
+                  selectNoneAtAll();
+                  return true;
+
+               case "sel_export_tracker":
+                  beginTrackerEdit(true/*bTemp*/);
+                  return true;
+
+               case "sel_export_tracker_new":
+                  beginTrackerEdit(false/*bTemp*/);
+                  return true;
+
+               case "sel_export_mon":
+                  parent_editor.exportSelectionToMonitorClipboard(current_song,
+                                                                  false/*bQuiet*/,
+                                                                  true/*bTickTimebase*/,
+                                                                  false/*bIgnorePlayState*/,
+                                                                  false/*bTrackerImportRPN*/,
+                                                                  false/*bOutputCapture*/
+                                                                  );
+                  return true;
+
+               case "sel_copy":
+                  copyToClipboard();
+                  return true;
+
+               case "sel_paste_replace":
+                  pasteClipboard(false/*bInsert*/, false/*bMix*/);
+                  return true;
+
+               case "sel_paste_insert":
+                  pasteClipboard(true/*bInsert*/, false/*bMix*/);
+                  return true;
+
+               case "sel_paste_mix":
+                  pasteClipboard(false/*bInsert*/, true/*bMix*/);
+                  return true;
+
+               case "sel_capture_export":
+                  parent_editor.exportSelectionToMonitorClipboard(current_song,
+                                                                  false/*bQuiet*/,
+                                                                  true/*bTickTimebase*/,
+                                                                  false/*bIgnorePlayState*/,
+                                                                  false/*bTrackerImportRPN*/,
+                                                                  true/*bOutputCapture*/
+                                                                  );
+                  return true;
+
+               case "sel_velcurve":
+                  createModMatricesForSelectedTracks(0/*type=velcurve*/);
+                  return true;
+
+               case "sel_velrand":
+                  createModMatricesForSelectedTracks(1/*type=velrand*/);
+                  return true;
+
+               case "sel_vel_mw":
+                  createModMatricesForSelectedTracks(2/*velocity*mw2*/);
+                  return true;
+
+               case "sel_mw_mwdelta":
+                  createModMatricesForSelectedTracks(3/*mw+mw2<delta>*/);
+                  return true;
+
+               case "sel_capture_paste":
+                  parent_editor.pasteOutputCapture(false/*bLazySelectBar*/, true/*bUndoBegin*/);
+                  return true;
+
+               case "sel_freezequant":
+                  freezeSelectionQuantization();
+                  return true;
+
+               case "sel_filter":
+                  parent_editor.showFilterDialog();
+                  return true;
+
+               case "sel_delete_bars":
+                  handleDeleteSelection(false/*bTempo*/);
+                  return true;
+
+               case "show_ctxmenu":
+                  showContextMenu(false/*bFocusFirst*/);
+                  return true;
+            }
+            return true;
+      }
+
+      return false;
+   }
+}

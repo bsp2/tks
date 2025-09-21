@@ -1,0 +1,3037 @@
+// ----
+// ---- file   : NSQ_Track.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 06Apr2020
+// ---- changed: 07Apr2020, 08Apr2020, 09Apr2020, 11Apr2020, 12Apr2020, 13Apr2020, 14Apr2020
+// ----          15Apr2020, 16Apr2020, 17Apr2020, 18Apr2020, 20Apr2020, 24Apr2020, 25Apr2020
+// ----          26Apr2020, 06May2020, 09May2020, 13May2020, 30Oct2020, 06Nov2020, 07Nov2020
+// ----          08Nov2020, 09Nov2020, 10Nov2020, 14Nov2020, 15Nov2020, 27Jan2021, 23May2021
+// ----          02Jun2021, 14Jun2021, 20Jun2021, 21Jun2021, 18Jul2021, 01Jan2022, 24Feb2022
+// ----          24Jun2022, 03Nov2022, 07Mar2023, 22Jun2023, 02Sep2023, 03Sep2023, 20Sep2023
+// ----          13Oct2023, 14Oct2023, 15Oct2023, 06Oct2024, 07Oct2024, 28Feb2025, 28May2025
+// ----
+// ----
+// ----
+
+module MNSQ_Track;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug = 0;
+boolean b_debug_quant = 0;
+
+
+// <class.png>
+class NSQ_Track {
+   define int MAX_FRAMES = 500000;
+   define int MAX_BARS   = 1000;
+
+   NodeSeq *seq;
+   NSQ_Pattern *pat;
+
+   int track_idx;
+
+   // MIDIPipeFrame instances
+   //  - timeStamp is absolute time in ticks
+   //  - timeStampTmp stores last played tick_nr (no reset)
+   MIDIPipeFrame *[] frames;
+
+   IntArray bar_lut;  // index=barIdx, value=frameIdx (first frame in bar) (-1 when there are no events)
+
+   define int BAR_FLAG_NOTES  = (1 << 0);
+   define int BAR_FLAG_CTLS   = (1 << 1);
+   define int BAR_FLAG_PERF   = (1 << 2);
+   define int BAR_FLAG_PRGCHG = (1 << 3);
+   define int BAR_FLAG_SYSEX  = (1 << 4);
+   IntArray bar_flags;
+
+   boolean b_rec;  // true= armed for recording
+
+   float quant_amount;  // 0..1
+   int   quant_note;    // 0=1/1, 1=1/2, .. (see quant_note_options)
+
+   // 1/1, 1/2, 1/4, ..
+   static IntArray quant_note_options = [
+      1, 2, 4, 6, 8, 12, 16, 18, 24, 32, 36, 48, 64, 96, 128, 192, 256
+                                         ];
+
+   define int STATE_PLAY = 0;
+   define int STATE_MUTE = 1;
+   define int STATE_SOLO = 2;
+   byte play_state;
+   byte play_state_presolo;
+
+   // temporary array, resets each 2nd bar. used for finding already played, quantized frames
+   MIDIPipeFrame *[] played_bar_frames;
+
+   define int PRGCHG_DISPLAY_TYPE_PATNR  = 0;  // 01A..32D
+   define int PRGCHG_DISPLAY_TYPE_DEC0   = 1;  // 0..127
+   define int PRGCHG_DISPLAY_TYPE_DEC1   = 2;  // 1..128
+   define int PRGCHG_DISPLAY_TYPE_HEX0   = 3;  // 00..7F
+   define int PRGCHG_DISPLAY_TYPE_HEX1   = 4;  // 01..80
+   define int PRGCHG_DISPLAY_TYPE_ROL64  = 5;  // A11..B88 (e.g.Roland Juno)
+   define int NUM_PRGCHG_DISPLAY_TYPES   = 6;
+   byte ui_prgchg_display_type;
+   static StringArray prgchg_display_type_names = [
+      "Pat.Nr (01A..32D)",
+      "Dec0 (0..127)",
+      "Dec1 (1..128)",
+      "Hex0 (00..7F)",
+      "Hex1 (01..80)",
+      "Rol64 (A11..B88)",
+                                                   ];
+
+   int ui_evt_note_off;  // yoff
+   int ui_evt_num_visible_notes;
+
+   MIDIPipeFrame *[] delta_base_frames;  // during PianoRoll mouse-drag (vel+dur)
+
+   define int EXPLODE_TYPE_TRACKER = 0;
+   define int EXPLODE_TYPE_TRIGSEQ = 1;
+   static StringArray explode_type_names = [
+      "Tracker",
+      "TrigSeq"
+                                    ];
+
+   int     explode_node_type;
+   int     explode_node_cat;
+   int     explode_bars_per_pattern;
+   boolean b_explode;
+   boolean b_explode_first;   // true when NSQ_ExplodeTrackDialog is shown for the first time (auto-select tracks)
+
+
+   define int UI_MIDI_ACTIVITY_INC = 15;  // #frames
+   define int UI_MIDI_ACTIVITY_MAX = 30;  // #frames
+   int ui_midi_in_activity_countdown;
+   int ui_midi_out_activity_countdown;
+
+   int lap_end_tick_nr_mono;  // after replace auto-clear: stop clear when tick_nr reached lap_end_ticks
+
+
+   // <method_init.png>
+   public method init(NodeSeq _seq, NSQ_Pattern _pat) {
+      seq         <= _seq;
+      pat         <= _pat;
+      b_rec        = false;
+      quant_amount = 0;
+      quant_note   = 6;  // def=6 (1/16)
+      play_state   = STATE_PLAY;
+
+      bar_lut.allocAndFill(MAX_BARS, -1);
+      bar_flags.allocAndFill(MAX_BARS, 0);
+      played_bar_frames.alloc(512);  // initial capacity
+
+      ui_prgchg_display_type = PRGCHG_DISPLAY_TYPE_PATNR;
+
+      resetNoteOffsetAndScaling();
+
+      explode_node_type        = EXPLODE_TYPE_TRACKER;
+      explode_node_cat         = 19;  // "Keys", see STConfig.newtrackdialog_track_categories
+      explode_bars_per_pattern = 1;
+      b_explode                = false;
+      b_explode_first          = true;
+   }
+
+   // <method.png>
+   public method resetNoteOffsetAndScaling() {
+      ui_evt_note_off          = 3*12;
+      ui_evt_num_visible_notes = 4*12;
+   }
+
+   // <method.png>
+   public method copyFrom(NSQ_Track _o) {
+      frames       = _o.frames;
+      b_rec        = _o.b_rec;
+      quant_amount = _o.quant_amount;
+      quant_note   = _o.quant_note;
+      play_state   = _o.play_state;
+      ui_prgchg_display_type = _o.ui_prgchg_display_type;
+
+      explode_node_type        = _o.explode_node_type;
+      explode_node_cat         = _o.explode_node_cat;
+      explode_bars_per_pattern = _o.explode_bars_per_pattern;
+      b_explode                = _o.b_explode;
+   }
+
+   // <method.png>
+   public method getPort() : DeviceIOPort {
+      DeviceIOPort port <= seq.out_ports.get(track_idx);
+      return port;
+   }
+
+   // <method.png>
+   public method getPortName() : String {
+      DeviceIOPort port <= seq.out_ports.get(track_idx);
+      return port.info;
+   }
+
+   // <method.png>
+   public =replay= method setPlayState(int _state) {
+      play_state = _state;
+      play_state_presolo = _state;
+   }
+
+   // <method.png>
+   public static CalcBarFlags(MIDIPipeFrame fr) : int {
+      return
+         ((fr.numEventsNoteOn > 0) ? BAR_FLAG_NOTES : 0) |
+         (((fr.numEventsCC > 0) || (fr.numEventsRPN > 0) || (fr.numEventsNRPN > 0)) ? BAR_FLAG_CTLS : 0) |
+         (((fr.numEventsChPressure > 0) || (fr.numEventsPolyPressure > 0) || (fr.numEventsPitchbend > 0)) ? BAR_FLAG_PERF : 0) |
+         ((fr.numEventsPrgChg > 0) ? BAR_FLAG_PRGCHG : 0) |
+         ((fr.numEventsSysEx > 0) ? BAR_FLAG_SYSEX : 0)
+         ;
+   }
+
+   // <method.png>
+   public method rebuildBarLUT() {
+      if(null == seq)
+         return; // clipboard
+
+      int ticksPerBar = pat.getNumTicksPerBar();
+      MIDIPipeFrame *fr;
+      int lastBarIdx = -1;
+      int frameIdx = 0;
+      bar_flags.fill(0);
+      bar_lut.fill(-1);
+      foreach fr in frames
+      {
+         int tAbs = fr.timeStamp;
+         int barIdx = tAbs / ticksPerBar;
+         // trace "xxx rebuildBarLUT: barIdx="+barIdx+" tAbs="+tAbs+" fr.numEvents="+fr.numEvents;
+         if(barIdx < MAX_BARS)
+         {
+            if(barIdx > lastBarIdx)
+            {
+               lastBarIdx = barIdx;
+               bar_lut[barIdx] = frameIdx;
+            }
+         }
+
+         bar_flags[barIdx] = bar_flags[barIdx] | CalcBarFlags(fr);
+
+         // Next frame
+         frameIdx++;
+      }
+   }
+
+   // <method.png>
+   public method shiftBarLUT(int _barIdx, int _shift) : int {
+      // e.g. after inserting frame
+      // returns first shifted frame idx
+      int firstShiftedIdx = -1;
+      loop(MAX_BARS - _barIdx)
+      {
+         if(-1 != bar_lut[_barIdx])
+         {
+            // trace "xxx shiftBarLUT: was "+bar_lut[_barIdx];
+            bar_lut[_barIdx] = bar_lut[_barIdx] + _shift;
+            if(-1 == firstShiftedIdx)
+               firstShiftedIdx = bar_lut[_barIdx];
+            // trace "xxx shiftBarLUT:  => "+bar_lut[_barIdx]+" (shift="+_shift+")";
+         }
+         _barIdx++;
+      }
+      return firstShiftedIdx;
+   }
+
+   // <method.png>
+   public method shiftTime(int _barIdx, int _shift) {
+      // Find first frame
+      int frameIdx = -1;
+      int barIdx = _barIdx;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      // trace "xxx track shiftTime frameIdx="+frameIdx+" barIdx="+_barIdx+" shift="+_shift;
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            fr.timeStamp = fr.timeStamp + _shift;
+            frameIdx++;
+            // (note) caller must rebuildBarLUT()
+         }
+      }
+   }
+
+   // <method.png>
+   public method autoMergeFrames() : int {
+      // - merge frames that share the same timestamp
+      // - purge empty frames
+      int numMerged = 0;
+      int frameIdx = 0;
+      MIDIPipeFrame frLast <= null;
+      MIDIPipeFrame *fr;
+      int tAbsLast;
+      while(frameIdx < frames.numElements)
+      {
+         fr <= frames.get(frameIdx);
+         int tAbs = fr.timeStamp;
+         if((null != frLast) && (tAbs == tAbsLast))
+         {
+            // Same timestamp => merge
+            frLast.mergeFrame(fr);
+            frames.delete(frameIdx);
+            numMerged++;
+         }
+         else if(!fr.hasEvents())
+         {
+            // purge empty frame
+            frames.delete(frameIdx);
+            numMerged++;
+         }
+         else
+         {
+            frLast <= fr;
+            tAbsLast = tAbs;
+            frameIdx++;
+         }
+      }
+      if(numMerged > 0)
+         Global.Debug("NSQ_Track::autoMergeFrames: merge "+numMerged+" frame(s)");
+      return numMerged;
+   }
+
+   // <method.png>
+   public method multiplyBarFrameTimes(int _barIdx, float _ratio) : int {
+      int frameIdx = bar_lut[_barIdx];
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int minTicks = _barIdx*ticksPerBar;
+      int maxSrcT = minTicks + (ticksPerBar / _ratio);
+      int numUpdated = 0;
+      int shiftTicks = (ticksPerBar * _ratio) - ticksPerBar;
+      // trace "xxx minTicks="+minTicks+" maxSrcT="+maxSrcT+" shiftTicks="+shiftTicks;
+
+      if(frameIdx >= 0)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            int tAbs = fr.timeStamp;
+            if(tAbs <= maxSrcT)
+            {
+               fr.timeStamp = (tAbs-minTicks) * _ratio + minTicks;
+               numUpdated++;
+            }
+            else
+            {
+               // Shift following bars
+               fr.timeStamp = tAbs + shiftTicks;
+            }
+            frameIdx++;
+         }
+      }
+
+      if(numUpdated > 0)
+      {
+         autoMergeFrames();
+         rebuildBarLUT();
+      }
+      return numUpdated;
+   }
+
+   // <method_find.png>
+   public method findFirstUsedTrackBarIdx() : int {
+      int r = -1;
+      int i = 0;
+      loop(bar_flags.numElements)
+      {
+         if(0 != bar_flags[i])
+            return i;
+         i++;
+      }
+      return -1;
+   }
+
+   // <method_find.png>
+   public method findLastUsedTrackBarIdx() : int {
+      int r = -1;
+      int i = 0;
+      loop(bar_flags.numElements)
+      {
+         if(0 != bar_flags[i])
+            r = i;
+         i++;
+      }
+      return r;
+   }
+
+   // <method_find.png>
+   public =replay= method findMinMaxNotes(Integer _retMinNoteIdx, Integer _retMaxNoteIdx) {
+      int minNoteIdx = 999;
+      int maxNoteIdx = -999;
+      MIDIPipeFrame *fr;
+      local MIDIPipeEvent pev;
+      foreach fr in frames
+      {
+         int numEv = fr.numEventsNoteOn;
+         int evIdx = 0;
+         loop(numEv)
+         {
+            if(fr.getEventByIdxAndFlt(evIdx,
+                                      pev,
+                                      MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                      -1/*fltDevIdx*/, -1/*fltCh*/
+                                      )
+               )
+            {
+               if(pev.note < minNoteIdx)
+                  minNoteIdx = pev.note;
+               if(pev.note > maxNoteIdx)
+                  maxNoteIdx = pev.note;
+            }
+
+            // Next note-on
+            evIdx++;
+         }
+
+         // Next frame
+      }
+
+      if(999 != minNoteIdx)
+      {
+         _retMinNoteIdx = minNoteIdx;
+         _retMaxNoteIdx = maxNoteIdx;
+      }
+      else
+      {
+         _retMinNoteIdx = -1;
+         _retMaxNoteIdx = -1;
+      }
+   }
+
+   // <method.png>
+   public =replay= method getNumTempoSelectedFrames() : int {
+      int num = 0;
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  frameIdx++;
+                  num++;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      return num;
+   }
+
+   // <method.png>
+   public method reduceTempoSelectionToFirstFrame() : int {
+      // returns frame idx (or -1)
+      //  (note) caller must lock =replay=
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  // Update selection
+                  seq.sorted_tempo_sel_start_x = fr.timeStamp;
+                  seq.sorted_tempo_sel_end_x   = fr.timeStamp + 1;
+                  seq.tempo_sel_start_x = seq.sorted_tempo_sel_start_x;
+                  seq.tempo_sel_end_x   = seq.sorted_tempo_sel_end_x;
+                  return frameIdx;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      return -1;
+   }
+
+   // <method.png>
+   public =replay= method deleteTempoSelectedFrames() : int {
+      int numDeleted = 0;
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  frames.delete(frameIdx);
+                  numDeleted++;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      if(numDeleted > 0)
+         rebuildBarLUT();
+
+      return numDeleted;
+   }
+
+   // <method.png>
+   public =replay= method mergeTempoSelectedFrames() : int {
+      int numMerged = 0;
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         MIDIPipeFrame frFirst <= null;
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  if(frFirst != null)
+                  {
+                     frFirst.mergeFrame(fr);
+                     // trace "xxx mergeTempoSelectedFrames: delete frameIdx="+frameIdx;
+                     frames.delete(frameIdx);
+                     if(0 == numMerged)
+                        numMerged += 2;
+                     else
+                        numMerged++;
+                  }
+                  else
+                  {
+                     frFirst <= fr;
+                     frameIdx++;
+                  }
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      if(numMerged > 0)
+         rebuildBarLUT();
+
+      return numMerged;
+   }
+
+   // <method.png>
+   public =replay= method moveTempoSelectedFramesFindMinDelta(int _tickDelta) : int {
+      int minDelta = _tickDelta;
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  if(minDelta < 0)
+                     if(fr.timeStamp < -minDelta)
+                        minDelta = -fr.timeStamp;
+                  break;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      return minDelta;
+   }
+
+   // <method.png>
+   public =replay= method moveTempoSelectedFrames(int _tickDelta) : int {
+      int numMoved = 0;
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  fr.timeStamp = mathMaxi(0, fr.timeStamp + _tickDelta);
+                  frameIdx++;
+                  numMoved++;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      if(numMoved > 0)
+      {
+         autoMergeFrames();
+         rebuildBarLUT();
+      }
+
+      return numMoved;
+   }
+
+   // <method.png>
+   public =replay= method moveTempoSelectedFramesSnapFindMinDelta(int _dir) : int {
+
+      int minTicks = seq.sorted_tempo_sel_start_x;
+      int maxTicks = seq.sorted_tempo_sel_end_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+
+      int barIdx = minTicks / ticksPerBar;
+      int snapTicks = current_song.ppq / 16;  // 1/64 @ppq=192
+      int tickDelta = 999999;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= minTicks)
+            {
+               if(fr.timeStamp < maxTicks)
+               {
+                  int tSnap;
+                  if(_dir < 0)
+                  {
+                     tSnap = (fr.timeStamp / snapTicks) * snapTicks;
+                  }
+                  else
+                  {
+                     tSnap = ((fr.timeStamp / snapTicks)+1) * snapTicks;
+                  }
+                  if(tSnap == fr.timeStamp)
+                  {
+                     if(_dir < 0)
+                     {
+                        if(fr.timeStamp < snapTicks)
+                        {
+                           tickDelta = -fr.timeStamp;
+                        }
+                        else
+                        {
+                           tickDelta = -snapTicks;
+                        }
+                     }
+                     else
+                     {
+                        tickDelta = snapTicks;
+                     }
+                  }
+                  else
+                  {
+                     tickDelta = tSnap - fr.timeStamp;
+                  }
+                  break;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      if(999999 == tickDelta)
+         tickDelta = _dir * snapTicks;
+
+      return tickDelta;
+   }
+
+   // <method.png>
+   public =replay= method applyEventFilter(int _minTicks, int _maxTicks,
+                                           boolean _bNotes,
+                                           boolean _bCC,
+                                           boolean _bRPN,
+                                           boolean _bNRPN,
+                                           boolean _bPitchbend,
+                                           boolean _bPolyPressure,
+                                           boolean _bChPressure,
+                                           boolean _bPrgChg,
+                                           boolean _bSysEx,
+                                           Integer _retNumDelete,
+                                           Integer _retNumKeep
+                                           ) {
+
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barIdx = _minTicks / ticksPerBar;
+
+      int oldNumDelete = _retNumDelete;
+
+      // Find first frame
+      int frameIdx = -1;
+      loop(MAX_BARS - barIdx)
+      {
+         frameIdx = bar_lut[barIdx];
+         if(-1 != frameIdx)
+         {
+            break;
+         }
+         barIdx++;
+      }
+
+      if(-1 != frameIdx)
+      {
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+            if(fr.timeStamp >= _minTicks)
+            {
+               if(fr.timeStamp < _maxTicks)
+               {
+                  int oldNumEv = fr.numEvents;
+
+                  if(!_bNotes)
+                  {
+                     fr.deleteNoteOnsByFlt(-1/*fltDev*/, -1/*fltCh*/);
+                     fr.deleteNoteOffsByFlt(-1/*fltDev*/, -1/*fltCh*/);  // (note) there shouldn't be any note offs
+                  }
+
+                  if(!_bCC)
+                  {
+                     fr.deleteCCByFlt(-1/*fltDev*/, -1/*fltCh*/, -1/*cc*/);
+                  }
+
+                  if(!_bRPN)
+                  {
+                     fr.deleteRPNByFlt(-1/*fltDev*/, -1/*fltCh*/, -1/*rpn*/);
+                  }
+
+                  if(!_bNRPN)
+                  {
+                     fr.deleteNRPNByFlt(-1/*fltDev*/, -1/*fltCh*/, -1/*nrpn*/);
+                  }
+
+                  if(!_bPitchbend)
+                  {
+                     fr.deletePitchbendByFlt(-1/*fltDev*/, -1/*fltCh*/);
+                  }
+
+                  if(!_bPolyPressure)
+                  {
+                     fr.deletePolyPressureByFlt(-1/*fltDev*/, -1/*fltCh*/);
+                  }
+
+                  if(!_bChPressure)
+                  {
+                     fr.deleteChPressureByFlt(-1/*fltDev*/, -1/*fltCh*/);
+                  }
+
+                  if(!_bPrgChg)
+                  {
+                     fr.deletePrgChgByFlt(-1/*fltDev*/, -1/*fltCh*/);
+                  }
+
+                  if(!_bSysEx)
+                  {
+                     fr.deleteSysExByFlt(-1/*fltDev*/);
+                  }
+
+                  int newNumEv = fr.numEvents;
+                  _retNumKeep += newNumEv;
+                  _retNumDelete += oldNumEv - newNumEv;
+
+                  frameIdx++;
+               }
+               else
+                  break;
+            }
+            else
+            {
+               frameIdx++;
+            }
+         }
+      }
+
+      if(_retNumDelete != oldNumDelete)
+      {
+         rebuildBarLUT();
+      }
+   }
+
+   // <method.png>
+   public =replay= mergePerfCtlsToBarStarts(int _barIdxStart, int _barIdxEnd) : int {
+      // (note) use 'copy output states' to init bar 0
+
+      int retNumBarsUpdated = 0;
+
+      local MIDIPipeFrame frCtl;  // current performance controller state (at bar start)
+      local MIDIPipeFrame frTmp;
+
+      DeviceIOPort port <= getPort();
+      byte fltCh = -1;
+      if(null != port && port.b_enable)
+      {
+         int fltDev = port.dev_idx;
+         fltCh = port.dev_ch;  // -1=all channels (MPE)
+
+         int evDev = fltDev;  // always the same as fltDev (just for readability purposes)
+         // // byte evCh = (fltCh >= 0) ? fltCh : 0;
+
+         int lastBarFrameIdx = -1;
+         int barIdx = (_barIdxStart > 0) ? (_barIdxStart - 1) : 0;
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int ticks = barIdx * ticksPerBar;
+         int numBars = (_barIdxEnd + 1 - barIdx);
+         MIDIPipeFrame *fr;
+         loop(numBars)
+         {
+            int nextBarTicks = ticks + ticksPerBar;
+
+            // Merge current performance controller state to first bar frame
+            if(frCtl.numEvents > 0)
+            {
+               int frameIdx = bar_lut.get(barIdx);
+               boolean bNewFrame = (frameIdx < 0);
+               if(!bNewFrame)
+               {
+                  fr <= frames.get(frameIdx);
+                  bNewFrame = (fr.timeStamp != ticks);
+               }
+               if(bNewFrame)
+               {
+                  // New frame
+                  fr <= new MIDIPipeFrame;
+                  fr.mergeFrame(frCtl);
+                  fr.timeStamp = ticks;
+                  Global.Debug2("[trc] mergePerfCtlsToBarStarts: barIdx="+barIdx+" new frame at ticks="+ticks+" #ev="+fr.numEvents+" frameIdx="+(lastBarFrameIdx+1));
+                  frames.insert(lastBarFrameIdx+1, #(deref fr));
+                  shiftBarLUT(lastBarFrameIdx+1, 1);
+                  bar_lut[barIdx] = lastBarFrameIdx + 1;
+                  retNumBarsUpdated++;
+               }
+               else
+               {
+                  // Update existing frame (located exactly at bar start ticks)
+                  frTmp = frCtl;
+                  frTmp.mergeFrame(fr);
+                  if(fr.numEvents != frTmp.numEvents)
+                     retNumBarsUpdated++;
+                  fr.mergeFrame(frTmp);
+                  Global.Debug2("[trc] mergePerfCtlsToBarStarts: barIdx="+barIdx+" update frame at ticks="+ticks+"(fr.timeStamp="+fr.timeStamp+") #ev="+fr.numEvents+" frameIdx="+frameIdx);
+               }
+            } // if frCtl.numEvents
+
+            // Loop bar frames and update(/track) controller state (frCtl)
+            //  (note) could skip this for last bar
+            frameIdx = bar_lut.get(barIdx);
+            if(frameIdx >= 0)
+            {
+               for(;;)
+               {
+                  fr <= frames.get(frameIdx);
+                  if(null == fr || fr.timeStamp >= nextBarTicks)
+                     break;
+
+                  lastBarFrameIdx = frameIdx;
+            
+                  // Merge performance controller events to frCtl
+                  byte midiCh = (fltCh >= 0) ? fltCh : 0;
+                  loop((fltCh >= 0) ? 1 : 16)
+                  {
+                     float t;
+
+                     int cc;
+                     foreach cc in [1/*modwheel*/,
+                                    2/*breath control*/,
+                                    4/*foot control*/,
+                                    11/*expression pedal*/,
+                                    16,17,18,19/*gp1..4*/,
+                                    64/*sustain/hold 1*/,
+                                    65/*portamento sw*/,
+                                    66/*sostenuto sw*/,
+                                    67/*soft pedal sw*/,
+                                    68/*legato sw*/,
+                                    69/*hold 2 sw*/,
+                                    74/*mpe brightness*/,
+                                    80,81,82,83/*gp5..9*/
+                                    ]
+                     {
+                        t = fr.getFilteredCC(fltDev, midiCh, cc);
+                        if(t >= 0.0)
+                           frCtl.cc(true/*bSet*/, evDev, midiCh, cc, t);
+                     }
+
+                     t = fr.getFilteredPitchbend(fltDev, midiCh);
+                     if(t >= 0.0)
+                        frCtl.pitchbend(true/*bSet*/, evDev, midiCh, t);
+
+                     t = fr.getFilteredChPressure(fltDev, midiCh);
+                     if(t >= 0.0)
+                        frCtl.chPressure(true/*bSet*/, evDev, midiCh, t);
+
+                     if(0/*PolyPressure*/)
+                     {
+                        // (todo) delete PAT events from frCtl after note offs
+                        int numEvPAT = fr.getNumEventsPolyPressureByFlt(fltDev, midiCh);
+                        if(numEvPAT > 0)
+                        {
+                           int pevIdx = 0;
+                           MIDIPipeEvent pev;
+                           loop(numEvPAT)
+                           {
+                              if(fr.getEventByIdxAndFlt(pevIdx,
+                                                        pev,
+                                                        MIDIPIPE_EVENT_TYPE_POLYPRESSURE,
+                                                        fltDev,
+                                                        midiCh
+                                                        )
+                                 )
+                              {
+                                 frCtl.polyPressure(true/*bSet*/, evDev, midiCh, pev.polyPressureNote, pev.polyPressureValue);
+                              }
+                           
+                              // Next poly pressure event
+                              pevIdx++;
+                           }
+                        } // if numEvPAT
+                     } // if enable poly pressure events
+
+                     // Next MIDI channel
+                     midiCh++;
+
+                  } // loop midi channels
+
+                  // Next bar frame
+                  frameIdx++;
+                  
+               } // loop bar frames
+
+            } // if frameIdx >= 0
+
+            // Next bar
+            barIdx++;
+            ticks = nextBarTicks;
+         } // loop maxBars
+
+      } // if port
+
+      if(retNumBarsUpdated > 0)
+         rebuildBarLUT();  // update bar_flags for UI
+
+      return retNumBarsUpdated;
+   }
+
+   // <method.png>
+   public =replay= clearTrack() {
+      bar_lut.allocAndFill(MAX_BARS, -1);
+      bar_flags.allocAndFill(MAX_BARS, 0);
+      played_bar_frames.alloc(512);  // initial capacity
+      frames.free();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRec(boolean _bEnable) {
+      b_rec = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setQuantAmount(float _amount) {
+      quant_amount = _amount;
+   }
+
+   // <method_set.png>
+   public =replay= method setQuantNote(int _noteIdx) {
+      quant_note = _noteIdx;
+   }
+
+   // <method_get.png>
+   public method getQuantNoteLen() : int {
+      return quant_note_options.get(quant_note);
+   }
+
+   // // // <method_set.png>
+   // // public =replay= method setEnableMute(boolean _bMute) {
+   // //    b_mute = _bMute;
+   // // }
+
+   // <method.png>
+   public method reset() {
+   }
+
+   // <method.png>
+   public method seek(int _ticks) {
+   }
+
+   // <debug.png>
+   public method debugPrintFrames() {
+      MIDIPipeFrame *fr;
+      Integer frameIdx = 0;
+      int ticksPerBar = pat.getNumTicksPerBar();
+      foreach fr in frames
+      {
+         trace "xxx frame["+frameIdx.printf("%5d")+"] t="+fr.timeStamp+" barIdx="+(fr.timeStamp/ticksPerBar)+" #noteOn="+fr.numEventsNoteOn+" #ctl="+(fr.numEventsCC+fr.numEventsRPN+fr.numEventsNRPN)+" #perf="+(fr.numEventsPitchbend+fr.numEventsChPressure+fr.numEventsPolyPressure)+" #sysex="+fr.numEventsSysEx;
+         frameIdx++;
+      }
+   }
+
+   // <method_get.png>
+   public method haveEvents() : boolean {
+      MIDIPipeFrame *fr;
+      foreach fr in frames
+      {
+         if(fr.hasEvents())
+            return true;
+      }
+      return false;
+   }
+
+   // <method_find.png>
+   public method findFrameAtAbsTime(int _t, boolean _bCreate) : MIDIPipeFrame {
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barIdx = _t / ticksPerBar;
+      int barStartTicks = barIdx * ticksPerBar;
+      int frameIdx = bar_lut.get(barIdx);
+      MIDIPipeFrame *fr;
+      int numFrames = frames.numElements;
+      int tAbs;
+      int barIdxTmp;
+
+      // boolean bDebug = (b_debug && _bCreate);
+      boolean bDebug = (b_debug && (4 == track_idx));
+
+      // trace "xxx findFrameAtAbsTime: bar_lut="+bar_lut;
+
+      if(bDebug)
+         trace "xxx rec findFrameAtAbsTime: t="+_t+" barIdx="+barIdx+" frameIdx="+frameIdx+" #frames="+numFrames;
+
+      if(0 == numFrames)
+      {
+         // First frame
+         if(_bCreate)
+         {
+            fr <= new MIDIPipeFrame;
+            fr.timeStamp = _t;
+            frames.add(#(deref fr));
+            // // if(null != _retFrameIdx)
+            // //    _retFrameIdx = frames.numElements - 1;
+            bar_lut[barIdx] = 0;
+            return fr;
+         }
+         return null;
+      }
+      else if(frameIdx >= 0)
+      {
+         // Find within bar
+         while(frameIdx < numFrames)
+         {
+            fr <= frames.get(frameIdx);
+            tAbs = fr.timeStamp;
+            if(bDebug)
+               trace "xxx   fr="+#(fr)+" tAbs="+tAbs;
+            if(_t == tAbs)
+            {
+               // // if(null != _retFrameIdx)
+               // //    _retFrameIdx = frameIdx;
+               return fr;
+            }
+            else if(_t < tAbs)
+            {
+               // Before bar frame
+               if(_bCreate)
+               {
+                  fr <= new MIDIPipeFrame;
+                  fr.timeStamp = _t;
+                  frames.insert(frameIdx, #(deref fr));
+                  // // if(null != _retFrameIdx)
+                  // //    _retFrameIdx = frameIdx;
+                  shiftBarLUT(barIdx+1, 1);
+                  return fr;
+               }
+               else
+                  return null;
+            }
+
+            frameIdx++;
+         }
+
+         // After last bar frame
+         if(_bCreate)
+         {
+            fr <= new MIDIPipeFrame;
+            fr.timeStamp = _t;
+            // trace "xxx DEBUG insert 2: frameIdx="+frameIdx+" frames.numElements="+frames.numElements;
+            frames.insert(frameIdx, #(deref fr));
+            // trace "xxx DEBUG insert 2b";
+            if(b_debug) trace "xxx rec append bar frame frameIdx="+frameIdx;
+            shiftBarLUT(barIdx + 1, 1);
+            return fr;
+         }
+      }
+      else if(_bCreate)
+      {
+         // First bar frame => find closest frameIdx
+         barIdxTmp = 0;
+         loop(bar_lut.numElements)
+         {
+            frameIdx = bar_lut.get(barIdxTmp);
+            if(frameIdx >= 0)
+            {
+               fr <= frames.get(frameIdx);
+               tAbs = fr.timeStamp;
+               if(tAbs > _t)
+               {
+                  fr <= new MIDIPipeFrame;
+                  fr.timeStamp = _t;
+                  frames.insert(frameIdx, #(deref fr));
+                  bar_lut[barIdx] = frameIdx;
+                  shiftBarLUT(barIdx+1, 1);
+                  return fr;
+               }
+            }
+            // else: empty bar
+
+            // Next bar
+            barIdxTmp++;
+         }
+
+         // Append new bar
+         fr <= new MIDIPipeFrame;
+         fr.timeStamp = _t;
+         frames.add(#(deref fr));
+         frameIdx = frames.numElements - 1;
+         bar_lut[barIdx] = frameIdx;
+         return fr;
+      }
+      // // if(null != _retFrameIdx)
+      // //    _retFrameIdx = -1;
+      return null;
+   }
+
+   // <method_find.png>
+   public method findFirstFrameIdxNearAbsTime(int _t, int _tWin) : int {
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barIdx = _t / ticksPerBar;
+      int tEnd = _t + _tWin;
+      int searchNum;
+
+      if(barIdx > 0)
+      {
+         barIdx--;
+         searchNum = 3;
+      }
+      else
+         searchNum = 2;
+
+      if(b_debug)
+         trace "xxx t="+_t+" tWin="+_tWin+" barIdx="+barIdx+" searchNum="+searchNum;
+
+      loop(searchNum)
+      {
+         if(barIdx < NSQ_Track.MAX_BARS)
+         {
+            int frameIdx = bar_lut.get(barIdx);
+            // trace "xxx search bar_lut["+barIdx+"] = "+frameIdx;
+            if(-1 != frameIdx)
+            {
+               for(;;)
+               {
+                  MIDIPipeFrame fr <= frames.get(frameIdx);
+                  if(null != fr)
+                  {
+                     int tAbs = fr.timeStamp;
+                     // trace "xxx search tAbs="+tAbs+" t="+_t+" tEnd="+tEnd;
+                     if(_t <= tAbs < tEnd)
+                        return frameIdx;
+                     if(tAbs >= tEnd)
+                        return -1;
+                     frameIdx++;
+                  }
+                  else
+                     return -1;
+               }
+            }
+            barIdx++;
+         }
+         else
+            break;
+      }
+
+      return -1;
+   }
+
+   // <method_find.png>
+   public =replay= method findFrameIdxNearRadius(int _t, int _tRadius, boolean _bNoteOn) : int {
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int tMin = _t - _tRadius;
+      int tMax = _t + _tRadius;
+      int barIdx = tMin / ticksPerBar;
+      int searchNum = (tMax / ticksPerBar) - barIdx + 1;
+
+      if(barIdx < 0)
+      {
+         barIdx--;
+         searchNum--;
+      }
+
+      // if(b_debug)
+      //    trace "xxx t="+_t+" tRadius="+_tRadius+" barIdx="+barIdx+" searchNum="+searchNum+" bNoteOn="+_bNoteOn;
+
+      int bestMatchDist = 9999999;
+      int bestMatchFrameIdx = -1;
+
+      loop(searchNum)
+      {
+         if(barIdx < NSQ_Track.MAX_BARS)
+         {
+            int frameIdx = bar_lut.get(barIdx);
+            if(-1 != frameIdx)
+            {
+               for(;;)
+               {
+                  MIDIPipeFrame fr <= frames.get(frameIdx);
+                  if(null != fr)
+                  {
+                     boolean bSearch = !_bNoteOn || (fr.numEventsNoteOn > 0);
+                     if(bSearch)
+                     {
+                        int tAbs = fr.timeStamp;
+                        if(tMin < tAbs < tMax)
+                        {
+                           int tDist = abs(_t - tAbs);
+                           if(tDist < bestMatchDist)
+                           {
+                              bestMatchDist     = tDist;
+                              bestMatchFrameIdx = frameIdx;
+                           }
+                        }
+                        else if(tAbs >= tMax)
+                        {
+                           return bestMatchFrameIdx;
+                        }
+                     }
+                     frameIdx++;
+                  }
+                  else
+                     return bestMatchFrameIdx;
+               }
+            }
+            barIdx++;
+         }
+         else
+            break;
+      }
+
+      return bestMatchFrameIdx;
+   }
+
+   // <method_find.png>
+   public method findFirstNoteFrameIdxNearAbsTime(int _noteIdx, int _t, int _tWin) : int {
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barIdx = 0;
+      // int tEnd = _t + _tWin;
+      int tWin2 = _tWin/2;
+
+      loop(bar_lut.numElements)
+      {
+         int frameIdx = bar_lut.get(barIdx);
+         if(-1 != frameIdx)
+         {
+            // trace "xxx frameIdx="+frameIdx;
+            for(;;)
+            {
+               MIDIPipeFrame fr <= frames.get(frameIdx);
+               if(null != fr)
+               {
+                  int tAbs = fr.timeStamp;
+                  // trace "xxx tAbs="+tAbs+" t="+_t+" noteIdx="+_noteIdx;
+                  if((tAbs-tWin2) >= _t)
+                     return -1;
+
+                  if(fr.getNumEventsNoteOnInRangeByFlt(-1/*fltDev*/, -1/*fltCh*/, _noteIdx, _noteIdx) > 0)
+                  {
+                     local MIDIPipeEvent pev;
+                     int evIdx = 0;
+                     int numEv = fr.getNumEventsNoteOnByFlt(-1/*fltDev*/, -1/*fltCh*/);
+                     // trace "xxx search "+numEv+" notes";
+                     loop(numEv)
+                     {
+                        if(fr.getEventByIdxAndFlt(evIdx,
+                                                  pev,
+                                                  MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                                  -1/*fltDevIdx*/, -1/*fltCh*/
+                                                  )
+                           )
+                        {
+                           if(pev.note == _noteIdx)
+                           {
+                              // trace "xxx tAbs="+tAbs+" t="+_t+" pev.duration="+pev.duration;
+                              if( (_t >= (tAbs-tWin2)) && (_t < (tAbs + pev.duration + tWin2)) )
+                                 return frameIdx;
+                           }
+                        }
+                        evIdx++;
+                     }
+                  }
+
+                  frameIdx++;
+               }
+               else
+                  return -1;
+            }
+         }
+         barIdx++;
+      }
+
+      return -1;
+   }
+
+   // <method.png>
+   public =replay= method backupSelectedNoteFrames() {
+      // Called when starting vel/dur mouse-drag
+      delta_base_frames.free();
+      MIDIPipeFrame *frSrc;
+      foreach frSrc in frames
+      {
+         MIDIPipeFrame frBak <= new MIDIPipeFrame;
+         frBak = frSrc;
+         frBak.timeStampTmp = false;  // reset "played" flag
+         delta_base_frames.add(#(deref frBak));
+      }
+   }
+
+   // <method.png>
+   public =replay= method restoreSelectedNoteFrames() {
+      // Called when canceling vel/dur mouse-drag
+      MIDIPipeFrame *frDst;
+      int frameIdx = 0;
+      foreach frDst in frames
+      {
+         MIDIPipeFrame frBak <= delta_base_frames.get(frameIdx);
+         frDst = frBak;
+         frDst.timeStampTmp = false;  // reset "played" flag
+
+         // Next frame
+         frameIdx++;
+      }
+      played_bar_frames.empty();
+   }
+
+   // <method.png>
+   public =replay= method restoreSelectedNoteFramesForTimeshift(boolean _bRebuildLUT) {
+      // Called by timeshiftSelectedNotesFromBackup()
+      MIDIPipeFrame *frBak;
+      frames.empty();
+      foreach frBak in delta_base_frames
+      {
+         MIDIPipeFrame fr <= new MIDIPipeFrame;
+         fr = frBak;
+         fr.timeStampTmp = false;  // reset "played" flag
+         frames.add(#(deref fr));
+
+         // Next frame
+      }
+      played_bar_frames.empty();
+
+      if(_bRebuildLUT)
+         rebuildBarLUT();
+   }
+
+   // <method.png>
+   public method freeDeltaNoteFrames() {
+      delta_base_frames.free();
+   }
+
+   // <method.png>
+   public =replay= method getEvtSelectedNotes(IntArray _ret) : int {
+      _ret.empty();
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int frameIdx = 0;
+      for(;;)
+      {
+         MIDIPipeFrame fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         int tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         int numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            int evIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  int noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     int tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        _ret.add(noteIdx);
+                     }
+                  }
+               }
+
+               // Next note-on
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+   }
+
+   // <method.png>
+   public =replay= method getNumEvtSelectedNotes() : int {
+      local IntArray notes;
+      getEvtSelectedNotes(notes);
+      return notes.numElements;
+   }
+
+   // <method.png>
+   public =replay= method findFirstEvtSelectionAbsTime() : int {
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int tMin = 9999999;
+
+      int frameIdx = 0;
+      for(;;)
+      {
+         MIDIPipeFrame fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         int tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         int numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            int evIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  int noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     int tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        if(tAbs < tMin)
+                           tMin = tAbs;
+                     }
+                  }
+               }
+
+               // Next note-on
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      if(9999999 != tMin)
+         return tMin;
+      else
+         return -1;
+   }
+
+   // <method.png>
+   public =replay= method isFrameIdxAndNoteIdxSelected(int _frameIdx, int _noteIdx) : int {
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int frameIdx = 0;
+      for(;;)
+      {
+         MIDIPipeFrame fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         int tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         int numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            int evIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  int noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     int tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        if((frameIdx == _frameIdx) && (noteIdx == _noteIdx))
+                           return true;
+                     }
+                  }
+               }
+
+               // Next note-on
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      return false;
+   }
+
+   // <method.png>
+   public =replay= method modulateSelectedNotesFrames(float   _velMul,
+                                                      float   _velDelta,
+                                                      int     _durDelta,
+                                                      int     _noteDelta,
+                                                      boolean _bSnapEnd
+                                                      ) {
+      // trace "xxx -------------- modulateSelectedNotesFrames -------------";
+      // (note) requires delta_base_frames
+      if(delta_base_frames.isEmpty())
+         return; // internal error
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int snapTicks = current_song.ppq / 8;  // 1/32
+      int maxSnapEnd = 0;
+      int snapPassIdx = 0;
+
+      loop(2)
+      {
+         int frameIdx = 0;
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null == fr)
+               break;
+
+            int tAbs = fr.timeStamp;
+            if(tAbs >= maxTicks)
+               break;
+
+            MIDIPipeFrame frBak <= delta_base_frames.get(frameIdx);
+            int numEv = frBak.numEventsNoteOn;
+            if(numEv > 0)
+            {
+               int evIdx = 0;
+               local MIDIPipeEvent pev;
+               loop(numEv)
+               {
+                  if(frBak.getEventByIdxAndFlt(evIdx,
+                                               pev,
+                                               MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                               -1/*fltDevIdx*/, -1/*fltCh*/
+                                               )
+                     )
+                  {
+                     int noteIdx = pev.note;
+                     // trace "xxx noteIdx="+noteIdx+" (min="+minNote+" max="+maxNote+")";
+                     if(minNote <= noteIdx <= maxNote)
+                     {
+                        int tAbsEnd = tAbs + pev.duration;
+
+                        if( (tAbs <= minTicks < tAbsEnd) ||
+                            (tAbs <= maxTicks < tAbsEnd) ||
+                            ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                            )
+                        {
+                           // Update note-on event
+                           int dur = pev.duration + _durDelta;
+                           if(_bSnapEnd)
+                           {
+                              if(0 == snapPassIdx)
+                              {
+                                 int tAbsEndSnap = ((tAbs + dur + snapTicks - 1) / snapTicks) * snapTicks;
+                                 if(tAbsEndSnap > maxSnapEnd)
+                                    maxSnapEnd = tAbsEndSnap;
+                              }
+                              else
+                              {
+                                 dur = maxSnapEnd - tAbs;
+                              }
+                           }
+
+                           if(!_bSnapEnd || (1 == snapPassIdx))
+                           {
+                              // Update event vel/dur
+                              dur = mathMaxi(1, dur);
+                              fr.noteOn(true/*bSet*/,
+                                        pev.devIdx, pev.midiCh,
+                                        pev.note,
+                                        (pev.velocity * _velMul) + _velDelta,
+                                        dur
+                                        );
+                           }
+                        }
+                     }
+                  }
+
+                  // Next note-on
+                  evIdx++;
+               }
+            }
+
+            // Next frame
+            frameIdx++;
+
+         } // loop frames
+
+         if(!_bSnapEnd)
+            return;
+
+         snapPassIdx++;
+      } // loop 2
+   }
+
+   // <method.png>
+   public =replay= method transposeSelectedNotesFrames(int _noteDelta) {
+      // trace "xxx -------------- transposeSelectedNotesFrames -------------";
+      // (note) requires delta_base_frames
+      if(delta_base_frames.isEmpty())
+         return; // internal error
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int frameIdx = 0;
+      for(;;)
+      {
+         MIDIPipeFrame fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         int tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         MIDIPipeFrame frBak <= delta_base_frames.get(frameIdx);
+         int numEv = frBak.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            int evIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numEv)
+            {
+               if(frBak.getEventByIdxAndFlt(evIdx,
+                                            pev,
+                                            MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                            -1/*fltDevIdx*/, -1/*fltCh*/
+                                            )
+                  )
+               {
+                  int noteIdx = pev.note;
+                  // trace "xxx noteIdx="+noteIdx+" (min="+minNote+" max="+maxNote+")";
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     int tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        // Update note-on event
+                        // trace "xxx transpose pev.note="+pev.note+" delta="+_noteDelta+" => "+(pev.note + _noteDelta);
+                        int newNote = mathClampi(pev.note + _noteDelta, 0, 127);
+                        fr.noteOnUpdateByIdx(pev.devIdx, pev.midiCh,
+                                             evIdx, newNote
+                                             );
+                     }
+                  }
+               }
+
+               // Next note-on
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+   }
+
+   // <method.png>
+   public =replay= method deleteSelectedNotes() : int {
+      int numDeleted = 0;
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int frameIdx = 0;
+      for(;;)
+      {
+         MIDIPipeFrame fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         int tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         int numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            int evIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  int noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     int tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        fr.noteOn(false/*bSet*/, pev.devIdx, pev.midiCh, pev.note, pev.velocity, 0);
+
+                        numDeleted++;
+                     }
+                     else
+                        evIdx++;
+                  }
+                  else
+                     evIdx++;
+               }
+               else
+               {
+                  evIdx++;
+               }
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      if(numDeleted > 0)
+         rebuildBarLUT();
+
+      return numDeleted;
+   }
+
+   // <method.png>
+   public =replay= method timeshiftSelectedNotesFromBackup(int _tickDelta, boolean _bQuantize) : int {
+
+      // bQuantize:  true=quantize to Beat/Bar/Loop.
+      //            maybe=quantize to 1/32
+
+      // returns actual tickDelta
+
+      // (note) requires delta_base_frames
+      if(delta_base_frames.isEmpty())
+         return; // internal error
+
+      int minTicks = seq.sorted_evt_sel_start_x;
+      int maxTicks = seq.sorted_evt_sel_end_x;
+      int minNote = seq.sorted_evt_sel_start_y;
+      int maxNote = seq.sorted_evt_sel_end_y;
+
+      int numMoved = 0;
+      MIDIPipeFrame *fr;
+      int numEv;
+      int tAbs;
+      local MIDIPipeEvent pev;
+      int evIdx;
+      int frameIdx;
+      int noteIdx;
+      int tAbsEnd;
+
+      int minTickDelta = _tickDelta;
+
+      // Find min tickdelta
+      frameIdx = 0;
+      for(;;)
+      {
+         fr <= delta_base_frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            evIdx = 0;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        if( (tAbs + minTickDelta) < 0)
+                        {
+                           // // trace "xxx tAbs="+tAbs+" minTickDelta="+minTickDelta;
+                           minTickDelta = -tAbs;  // clip to 0
+                           // // trace "xxx   => new minTickDelta="+minTickDelta;
+                        }
+                     }
+                  }
+               }
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      // // trace "xxx minTickDelta="+minTickDelta;
+
+      // Move notes
+      restoreSelectedNoteFramesForTimeshift(true/*bRebuildLUT*/);
+
+      // Remove selected notes
+      frameIdx = 0;
+      for(;;)
+      {
+         fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            evIdx = 0;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  noteIdx = pev.note;
+                  // trace "xxx evIdx="+evIdx+" minNote="+minNote+" noteIdx="+noteIdx+" maxNote="+maxNote;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        // Remove note from old frame
+                        fr.noteOn(false/*bSet*/, pev.devIdx, pev.midiCh, noteIdx, pev.velocity, 0);
+                     }
+                     else
+                        evIdx++;
+                  }
+                  else
+                     evIdx++;
+               }
+               else
+                  evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      // Re-Add timeshifted notes
+      local MIDIPipeFrame frTmp;
+      MIDIPipeFrame *frBak;
+      frameIdx = 0;
+      for(;;)
+      {
+         frBak <= delta_base_frames.get(frameIdx);
+         if(null == frBak)
+            break;
+
+         tAbs = frBak.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         numEv = frBak.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            evIdx = 0;
+            loop(numEv)
+            {
+               if(frBak.getEventByIdxAndFlt(evIdx,
+                                            pev,
+                                            MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                            -1/*fltDevIdx*/, -1/*fltCh*/
+                                            )
+                  )
+               {
+                  noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        // Add note to new frame
+                        frTmp.empty();
+                        frTmp.noteOn(true/*bSet*/, pev.devIdx, pev.midiCh, pev.note, pev.velocity, pev.duration);
+
+                        recordFrame(frBak.timeStamp + minTickDelta,
+                                    frTmp,
+                                    false/*bTrackActiveNotes*/,
+                                    false/*bMarkPlayed*/,
+                                    false/*bNoteOffOnly*/,
+                                    _bQuantize,
+                                    false/*bAllowQLast*/,
+                                    false/*bRecLatency*/
+                                    );
+
+                        numMoved++;
+                     }
+                  }
+               }
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      if(numMoved > 0)
+         rebuildBarLUT();
+
+      return minTickDelta;
+   }
+
+   // <method.png>
+   public =replay= method clearBar(int _barIdx) : int {
+      int numFramesDeleted = 0;
+      int frameIdx = bar_lut[_barIdx];
+      // // trace "xxx bar_lut[barIdx+1] PRE = "+bar_lut.get(_barIdx+1);
+      if(frameIdx >= 0)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         int barStartTicks = _barIdx * ticksPerBar;
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            // trace "xxx clearBar: frameIdx="+frameIdx+" fr="+#(fr);
+            if(null == fr)
+               break;
+            int tAbs = fr.timeStamp;
+            if(tAbs >= (barStartTicks + ticksPerBar))
+               break;
+            played_bar_frames.remove(fr);
+            frames.delete(frameIdx);
+            numFramesDeleted++;
+         }
+
+         if(numFramesDeleted > 0)
+         {
+            bar_lut[_barIdx] = -1;
+            bar_flags[_barIdx] = 0;
+            shiftBarLUT(_barIdx+1, -numFramesDeleted);
+            // // trace "xxx bar_lut[barIdx+1] POST = "+bar_lut.get(_barIdx+1)+" numFramesDeleted="+numFramesDeleted;
+         }
+      }
+
+      return numFramesDeleted;
+   }
+
+   // <method.png>
+   public =replay= method freezeQuantization(int _barIdx, int _numBars) {
+
+      if(0.0 == quant_amount)
+         return;
+
+      int ticksPerBar = pat.getNumTicksPerBar();
+      // // int origTickNr = _seq.tick_nr;
+      int startTicks = _barIdx * ticksPerBar;
+      int endTicks = (_barIdx + _numBars) * ticksPerBar;
+      lazyResetPlayedBarFrames(true/*bForce*/);
+      // // _seq.tick_nr = startTicks;
+      int tickNr = startTicks;
+      local MIDIPipeFrame *[] newFrames;
+      MIDIPipeFrame fr <= new MIDIPipeFrame;
+
+      for(;;)
+      {
+         if(b_debug_quant) trace "xxx freezeQuantization: tickNr="+tickNr;
+         int nextTickNr = playQuantizedFrames(fr, tickNr, false/*bUIActivity*/); // also tags played frames (timeStampTmp)
+         if(b_debug_quant) trace "xxx   fr.numEvents="+fr.numEvents+" nextTickNr="+nextTickNr;
+         if(fr.hasEvents())
+         {
+            fr.timeStamp = tickNr;
+            newFrames.add(#(deref fr));
+            fr <= new MIDIPipeFrame;
+         }
+
+         tickNr = nextTickNr;
+         if(tickNr >= endTicks)
+            break;
+      }
+
+      // Deleted unused frame
+      fr <= null;
+
+      // Remove tagged frames
+      int numFramesRemoved = removePlayedFramesInRange(startTicks, endTicks);
+
+      if(numFramesRemoved > 0)
+         rebuildBarLUT();
+
+      if(b_debug_quant) trace "xxx freezeQuantization: newFrames.numElements="+newFrames.numElements;
+
+      // Insert new (quantized) frames
+      foreach fr in newFrames
+      {
+         recordFrame(fr.timeStamp,
+                     fr,
+                     false/*bTrackActiveNotes*/,
+                     false/*bMarkPlayed*/,
+                     false/*bNoteOffOnly*/,
+                     true/*bQuantize*/,
+                     false/*bAllowQLoop*/,
+                     false/*bRecLatency*/
+                     );
+      }
+
+      played_bar_frames.empty();
+      // // lazyResetPlayedBarFrames(true/*bForce*/);
+      seq.resetActiveNotes();
+   }
+
+   // <method.png>
+   protected method removePlayedFramesInRange(int _startTicks, int _endTicks) : int {
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barIdx = _startTicks / ticksPerBar;
+      int numFramesRemoved = 0;
+
+      // Find first frame >= startTicks
+      while(barIdx < NSQ_Track.MAX_BARS)
+      {
+         int frameIdx = bar_lut.get(barIdx);
+         if(-1 != frameIdx)
+         {
+            // Remove played frames
+            for(;;)
+            {
+               MIDIPipeFrame fr <= frames.get(frameIdx);
+               if(null != fr)
+               {
+                  int tAbs = fr.timeStamp;
+                  if(tAbs >= _startTicks)
+                  {
+                     if(tAbs < _endTicks)
+                     {
+                        if(fr.timeStampTmp)  // played ?
+                        {
+                           // trace "xxx removePlayedFramesInRange: startTicks="+_startTicks+" endTicks="+_endTicks+" tAbs="+tAbs+" frameIdx="+frameIdx;
+                           frames.delete(frameIdx);
+                           numFramesRemoved++;
+                        }
+                        else
+                           return numFramesRemoved;  // moved to >=endTicks due to quantization
+                     }
+                     else
+                        return numFramesRemoved;
+                  }
+                  else
+                     frameIdx++;
+               }
+               else
+                  return numFramesRemoved;
+            }
+         }
+         barIdx++;
+      }
+
+      return numFramesRemoved;
+   }
+
+   // <method.png>
+   protected method removeFramesInRange(int _startTicks, int _endTicks) : int {
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barIdx = _startTicks / ticksPerBar;
+      int numFramesRemoved = 0;
+
+      // Find first frame >= startTicks
+      while(barIdx < NSQ_Track.MAX_BARS)
+      {
+         int frameIdx = bar_lut.get(barIdx);
+         if(-1 != frameIdx)
+         {
+            // Remove played frames
+            for(;;)
+            {
+               MIDIPipeFrame fr <= frames.get(frameIdx);
+               if(null != fr)
+               {
+                  int tAbs = fr.timeStamp;
+                  if(tAbs >= _startTicks)
+                  {
+                     if(tAbs < _endTicks)
+                     {
+                        // trace "xxx removeFramesInRange: startTicks="+_startTicks+" endTicks="+_endTicks+" tAbs="+tAbs+" frameIdx="+frameIdx;
+                        frames.delete(frameIdx);
+                        numFramesRemoved++;
+                     }
+                     else
+                        return numFramesRemoved;  // moved to >=endTicks due to quantization
+                  }
+                  else
+                     frameIdx++;
+               }
+               else
+                  return numFramesRemoved;
+            }
+         }
+         barIdx++;
+      }
+
+      return numFramesRemoved;
+   }
+
+   // <method.png>
+   public =replay= method chordDetect(boolean _bEvent, Integer _retChordBaseNote, Integer _retChordIndex) {
+
+      local IntArray activeNotes;
+
+      int minTicks;
+      int maxTicks;
+      int minNote;
+      int maxNote;
+
+      if(_bEvent)
+      {
+         minTicks = seq.sorted_evt_sel_start_x;
+         maxTicks = seq.sorted_evt_sel_end_x;
+         minNote  = seq.sorted_evt_sel_start_y;
+         maxNote  = seq.sorted_evt_sel_end_y;
+      }
+      else
+      {
+         minTicks = seq.sorted_tempo_sel_start_x;
+         maxTicks = seq.sorted_tempo_sel_end_x;
+         minNote = 0;
+         maxNote = 127;
+      }
+
+      int frameIdx = 0;
+      for(;;)
+      {
+         MIDIPipeFrame fr <= frames.get(frameIdx);
+         if(null == fr)
+            break;
+
+         int tAbs = fr.timeStamp;
+         if(tAbs >= maxTicks)
+            break;
+
+         int numEv = fr.numEventsNoteOn;
+         if(numEv > 0)
+         {
+            int evIdx = 0;
+            local MIDIPipeEvent pev;
+            loop(numEv)
+            {
+               if(fr.getEventByIdxAndFlt(evIdx,
+                                         pev,
+                                         MIDIPIPE_EVENT_TYPE_NOTE_ON,
+                                         -1/*fltDevIdx*/, -1/*fltCh*/
+                                         )
+                  )
+               {
+                  int noteIdx = pev.note;
+                  if(minNote <= noteIdx <= maxNote)
+                  {
+                     int tAbsEnd = tAbs + pev.duration;
+
+                     if( (tAbs <= minTicks < tAbsEnd) ||
+                         (tAbs <= maxTicks < tAbsEnd) ||
+                         ((minTicks < tAbs) && (maxTicks > tAbsEnd))
+                         )
+                     {
+                        activeNotes.add(noteIdx);
+                     }
+                  }
+               }
+
+               // Next note-on
+               evIdx++;
+            }
+         }
+
+         // Next frame
+         frameIdx++;
+
+      } // loop frames
+
+      _retChordBaseNote = -1;
+      _retChordIndex    = -1;
+
+      if(activeNotes.numElements > 0)
+      {
+         local ActiveNoteState chord_detect;
+         chord_detect.setActiveNotes(activeNotes);
+
+         _retChordIndex = chord_detect.findChordIndexAndBase(_retChordBaseNote);
+         if(-1 != _retChordIndex)
+         {
+            if(_retChordBaseNote < 0) _retChordBaseNote+=12;
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method uiGetPrgChgOptions() : StringArray {
+      switch(ui_prgchg_display_type)
+      {
+         default:
+         case PRGCHG_DISPLAY_TYPE_PATNR:
+            return Node.patnr_options_short;
+
+         case PRGCHG_DISPLAY_TYPE_DEC0:
+            return Node.patnr_options_dec0;
+
+         case PRGCHG_DISPLAY_TYPE_DEC1:
+            return Node.patnr_options_dec1;
+
+         case PRGCHG_DISPLAY_TYPE_HEX0:
+            return Node.patnr_options_hex0;
+
+         case PRGCHG_DISPLAY_TYPE_HEX1:
+            return Node.patnr_options_hex1;
+
+         case PRGCHG_DISPLAY_TYPE_ROL64:
+            return Node.patnr_options_rol64;
+      }
+   }
+
+   // // // <replay.png>
+   // // public method clearFrame(int _tickNr) {
+   // //    // in b_rec_replace mode
+   // //    MIDIPipeFrame fr <= findFrameAtAbsTime(_tickNr, false/*bCreate*/);
+   // //    if(null != fr)
+   // //    {
+   // //       fr.empty();
+
+   // //       int ticksPerBar = pat.getNumTicksPerBar();
+   // //       int barIdx = _tickNr / ticksPerBar;
+   // //       bar_flags[barIdx] = 0;////CalcBarFlags(fr);
+   // //    }
+   // // }
+
+   // <replay.png>
+   public method recordFrame(int           _tickNr,
+                             MIDIPipeFrame _fr,
+                             boolean       _bTrackActiveNotes,
+                             boolean       _bMarkPlayed,
+                             boolean       _bNoteOffOnly,
+                             boolean       _bQuantize,
+                             boolean       _bAllowQLoop,
+                             boolean       _bRecLatency
+                             ) : boolean {
+      // (note) returns true when recorded event was quantized to future frame
+
+      // (note) bNoteOffOnly: true when recording note-off outside of punch in/out range (=> fix previous note-on duration)
+
+      // bQuantize:  true=quantize to Beat/Bar/Loop.
+      //            maybe=quantize to 1/32
+
+      int baseOff = track_idx * 16 * 128;
+      int off;
+      int numEv;
+      MIDIPipeEvent ev;
+      int evIdx;
+      byte midiCh;
+      int idx;
+      MIDIPipeFrame *frp;
+      int curTicks = current_song.tick_nr;  // monotonic
+      int qTickNr = _tickNr;
+      boolean bQFuture = false;
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int ticksPerBeat = pat.getNumTicksPerBeat();
+      int ticks16th = current_song.getNumTicksPer16th();
+      int qBarTicks;
+      boolean bPlayed = _bMarkPlayed;
+      boolean bWasCleared = false;
+      boolean bHaveNoteOn = (_fr.numEventsNoteOn > 0);
+
+      if(seq.b_rec_replace && !_bNoteOffOnly && _bRecLatency)
+      {
+         // (note) only react to note on (don't let stray CC/pb events clear the loop)
+         if(bHaveNoteOn)
+         {
+            // trace "xxx noteOn @tickNr="+_tickNr+" lap_end_tick_nr_mono="+lap_end_tick_nr_mono+" tick_nr_mono="+seq.tick_nr_mono;
+            if(-1 == lap_end_tick_nr_mono)
+            {
+               int numFramesRemoved = removeFramesInRange(seq.cur_loop_start_ticks, seq.cur_loop_start_ticks + seq.cur_loop_len_ticks);
+               // trace "xxx CLEAR !!!! numFramesRemoved="+numFramesRemoved;
+               bWasCleared = true;
+               if(numFramesRemoved > 0)
+               {
+                  played_bar_frames.empty();
+                  rebuildBarLUT();
+               }
+            }
+         }
+      }
+
+      if(_bQuantize)
+      {
+         if(replay.b_playing && _bRecLatency)
+         {
+            if(STConfig.b_node_tracker_rec_latency)
+            {
+               qTickNr -= current_song.milliSecondsToTicks(STConfig.node_tracker_rec_latency);
+               // trace "xxx sub rec latency => qTickNr="+qTickNr;
+            }
+            qTickNr -= current_pipe_root.pipeDelay;
+            if(qTickNr < 0)
+               qTickNr = 0;
+         }
+
+         if(1 || bHaveNoteOn/*untested*/)
+         {
+            if(true == _bQuantize)
+            {
+               if(NodeSeq.Q_BEAT == seq.q_mode)
+               {
+                  // Quantize to loop or next beat start
+                  qBarTicks = seq.cur_loop_start_ticks + seq.cur_loop_len_ticks;
+                  if(_bAllowQLoop && (0 < (qBarTicks - qTickNr) < ticks16th))
+                  {
+                     qTickNr = seq.cur_loop_start_ticks;
+                     bQFuture = true;
+                  }
+                  else
+                  {
+                     qBarTicks = (int(qTickNr / ticksPerBeat)+1) * ticksPerBeat;  // next beat start
+                     if(b_debug_quant) trace "xxx Q_BEAT: qBarTicks="+qBarTicks+" qTickNr="+qTickNr;
+                     if(0 < (qBarTicks - qTickNr) < ticks16th)
+                     {
+                        qTickNr = qBarTicks;
+                        bQFuture = true;
+                     }
+                  }
+               }
+               else if(NodeSeq.Q_BAR == seq.q_mode)
+               {
+                  // Quantize to loop or next bar start
+                  // // qBarTicks = int((float(qTickNr) / ticksPerBar)+0.5) * ticksPerBar;
+                  qBarTicks = seq.cur_loop_start_ticks + seq.cur_loop_len_ticks;
+                  if(_bAllowQLoop && (0 < (qBarTicks - qTickNr) < ticks16th))
+                  {
+                     qTickNr = seq.cur_loop_start_ticks;
+                     bQFuture = true;
+                  }
+                  else
+                  {
+                     qBarTicks = (int(qTickNr / ticksPerBar)+1) * ticksPerBar;  // next bar start
+                     if(b_debug_quant) trace "xxx Q_BAR: qBarTicks="+qBarTicks+" qTickNr="+qTickNr;
+                     if(0 < (qBarTicks - qTickNr) < ticks16th)
+                     {
+                        qTickNr = qBarTicks;
+                        bQFuture = true;
+                     }
+                  }
+               }
+               else if(NodeSeq.Q_LOOP == seq.q_mode)
+               {
+                  // Quantize to next loop start
+                  qBarTicks = seq.cur_loop_start_ticks + seq.cur_loop_len_ticks;
+                  if(_bAllowQLoop && (0 < (qBarTicks - qTickNr) < ticks16th))
+                  {
+                     qTickNr = seq.cur_loop_start_ticks;
+                     bQFuture = true;
+                  }
+               }
+            }
+            else
+            {
+               // Quantize to 1/32th notes
+               //  (todo) when is this reached ?
+               //          (not during normal recording, not when freezing quantization. never ?)
+               //          (when converting back from tracker edit ??)
+               if(b_debug)
+                  trace "xxx NSQ_Track::recordFrame: quantize to 32th. tickNr="+qTickNr;
+               int ticks32 = current_song.ppq / 8;
+               qTickNr = ((qTickNr + ticks32/2) / ticks32) * ticks32;
+               bQFuture = (qTickNr > _tickNr);
+            }
+         } // if bHaveNoteOn
+      }
+
+      MIDIPipeFrame fr <= null;
+      if(!_bNoteOffOnly)
+      {
+         fr <= findFrameAtAbsTime(qTickNr, true/*bCreate*/);
+         if(b_debug)
+            trace "xxx rec findFrame: tick_nr="+qTickNr+" fr="+#(fr);
+      }
+
+      if(_bNoteOffOnly || (null != fr))
+      {
+         if(!_bNoteOffOnly)
+            fr.timeStampTmp = bPlayed && !bQFuture;  // "was played" flag
+
+         PointerArray activeNoteFrames <= seq.active_note_frames;
+         IntArray activeNoteTicks <= seq.active_note_ticks;
+
+         // (todo) All Notes Off
+         // // numEv = _fr.getNumEventsAllNotesOffByFlt(-1/*fltDev*/, -1/*fltCh*/);
+         // // evIdx = 0;
+         // // loop(numEv)
+         // // {
+         // //    _fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_ALL_NOTES_OFF, -1/*fltDev*/, -1/*fltCh*/);
+         // //    midiCh = ev.midiCh;
+
+         // //    do
+         // //    {
+         // //       idx = activeNoteFrames.
+         // //    }
+
+         // //    bChanged |= (active_notes.numElements > 0);
+
+         // //    for(activeNoteIdx = 0; activeNoteIdx < active_notes.numElements; activeNoteIdx++)
+         // //    {
+         // //       delegate "note_off"(activeNoteIdx, active_notes.get(activeNoteIdx), 0/*vel*/);
+         // //    }
+
+         // //    bChanged = true;
+
+         // //    evIdx++;
+         // // }
+
+         // Note Off (pre)
+         if(_bTrackActiveNotes)
+         {
+            numEv = _fr.getNumEventsNoteOffByFlt(-1/*fltDev*/, -1/*fltCh*/);
+            evIdx = 0;
+            loop(numEv)
+            {
+               _fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, -1/*fltDev*/, -1/*fltCh*/);
+
+               if(ev.isNoteOffPre())
+               {
+                  off = baseOff + ev.midiCh * 128 + ev.note;
+                  frp <= activeNoteFrames.get(off);
+                  if(null != frp)
+                  {
+                     frp.updateNoteDuration(-1/*fltDev*/, ev.midiCh, ev.note, curTicks - activeNoteTicks[off]);
+                     if(b_debug) trace "xxx NodeSeq: pre note "+ev.note+" duration is "+(curTicks - activeNoteTicks[off]);
+                     activeNoteFrames[off] = null;
+                  }
+               }
+
+               evIdx++;
+            }
+
+            if(!_bNoteOffOnly)
+            {
+               // Note On
+               numEv = _fr.getNumEventsNoteOnByFlt(-1/*fltDev*/, -1/*fltCh*/);
+               evIdx = 0;
+               loop(numEv)
+               {
+                  _fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, -1/*fltDev*/, -1/*fltCh*/);
+
+                  off = baseOff + ev.midiCh * 128 + ev.note;
+                  frp <= activeNoteFrames.get(off);
+                  if(null == frp)  // not already active ?
+                  {
+                     activeNoteFrames[off] = fr;
+                     activeNoteTicks[off] = curTicks;
+                  }
+
+                  evIdx++;
+               }
+            }
+
+            // Note Off
+            numEv = _fr.getNumEventsNoteOffByFlt(-1/*fltDev*/, -1/*fltCh*/);
+            evIdx = 0;
+            loop(numEv)
+            {
+               _fr.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, -1/*fltDev*/, -1/*fltCh*/);
+
+               if(!ev.isNoteOffPre())
+               {
+                  off = baseOff + ev.midiCh * 128 + ev.note;
+                  frp <= activeNoteFrames.get(off);
+                  if(null != frp)
+                  {
+                     frp.updateNoteDuration(-1/*fltDev*/, ev.midiCh, ev.note, curTicks - activeNoteTicks[off]);
+                     if(b_debug) trace "xxx NodeSeq: note "+ev.note+" duration is "+(curTicks - activeNoteTicks[off]);
+                     activeNoteFrames[off] = null;
+                  }
+               }
+
+               evIdx++;
+            }
+         } // if bTrackActiveNotes
+
+         // trace "xxx recordFrame bNoteOffOnly="+_bNoteOffOnly;
+
+         if(!_bNoteOffOnly)
+         {
+            // trace "xxx rec mergeFrame _fr.numEvents="+_fr.numEvents;
+            if(seq.b_rec_replace)
+            {
+               // // if(-1 == lap_end_tick_nr_mono)
+               if(bWasCleared)
+               {
+                  lap_end_tick_nr_mono =
+                     (((seq.tick_nr_mono - seq.cur_loop_start_ticks)/seq.cur_loop_len_ticks)*seq.cur_loop_len_ticks) + (qTickNr - seq.cur_loop_start_ticks) + seq.cur_loop_start_ticks + seq.cur_loop_len_ticks;
+                  if(qTickNr < (seq.tick_nr-seq.cur_loop_len_ticks/2))
+                     lap_end_tick_nr_mono += seq.cur_loop_len_ticks;  // quantized to start (but not just shifted due to recording latency offset)
+
+                  // trace "xxx recordFrame: lap_end_tick_nr_mono="+lap_end_tick_nr_mono+" qTickNr="+qTickNr+" tickNr="+seq.tick_nr+" tickNrMono="+seq.tick_nr_mono;
+
+               }
+            }
+
+            fr.mergeFrame(_fr);
+            fr.deleteNoteOffsByFlt(-1/*fltDev*/, -1/*fltCh*/);
+            fr.updateDontSendFlags(false/*bDontSend*/);
+
+            if(_bMarkPlayed)
+               played_bar_frames.add(fr);
+
+            int barIdx = qTickNr / ticksPerBar;
+            bar_flags[barIdx] = bar_flags[barIdx] | CalcBarFlags(fr);
+         }
+      } // if fr
+
+      return bQFuture;
+   }
+
+   // <replay.png>
+   public method playFrame(MIDIPipeFrame frOut, int _tickNr, boolean _bUIActivity) {
+      MIDIPipeFrame fr <= findFrameAtAbsTime(_tickNr, false/*bCreate*/);
+      // // trace "xxx tick_nr="+_seq.tick_nr+" fr="+#(fr);
+      if(null != fr)
+      {
+         if(false == fr.timeStampTmp)
+         {
+            if(b_debug)
+               trace "xxx NSQ_Track::playFrame: ticknr="+_tickNr+" fr="+#(fr);
+            frOut.mergeFrame(fr);
+            // trace "xxx NSQ_Track::playFrame: frOut.numEventsNoteOn="+frOut.numEventsNoteOn;
+            played_bar_frames.add(fr);
+
+            if(_bUIActivity && fr.hasEvents())
+            {
+               ui_midi_out_activity_countdown =
+                  mathClampi(ui_midi_out_activity_countdown + NSQ_Track.UI_MIDI_ACTIVITY_INC,
+                             0,
+                             NSQ_Track.UI_MIDI_ACTIVITY_MAX
+                             );
+               seq.b_ui_activity = true;
+            }
+         }
+         else
+         {
+            // Frame has already been played (quantization), reset flag
+            fr.timeStampTmp = false;
+         }
+      }
+   }
+
+   // <replay.png>
+   public method playQuantizedFrames(MIDIPipeFrame frOut, int _tickNr, boolean _bUIActivity) : int {
+      if(b_debug_quant) trace "xxx ------------------------------ playQuantizedFrames";
+      int nextTickAfterQ = -1;  // returned to speed up freezeQuantization()
+      int qNoteLen = quant_note_options.get(quant_note);
+      int qNoteTicks = (current_song.ppq * 4) / qNoteLen;
+      int qTickCtr = ( (_tickNr + (qNoteTicks/2)) / qNoteTicks) * qNoteTicks;
+      int qTickMin =  qTickCtr - qNoteTicks/2;
+      int qTickMax = qTickMin + qNoteTicks;
+      int frameIdx = findFirstFrameIdxNearAbsTime(qTickMin, qNoteTicks);
+      if(-1 != frameIdx)
+      {
+         if(b_debug_quant) trace "xxx playQuantizedFrames: start frameIdx="+frameIdx+" _tickNr="+_tickNr;
+         float qAmt = 1.0 - quant_amount;//// * 2.0;
+         for(;;)
+         {
+            MIDIPipeFrame fr <= frames.get(frameIdx);
+            if(null != fr)
+            {
+               int tAbs = fr.timeStamp;
+               if(b_debug_quant) trace "xxx playQuantizedFrames: qTickMin="+qTickMin+" qTickCtr="+qTickCtr+" tAbs="+tAbs+" qTickMax="+qTickMax+" qAmt="+qAmt;
+               if(qTickMin <= tAbs < qTickMax)
+               {
+                  if(b_debug_quant) trace "xxx playQuantizedFrames: fr.timeStampTmp="+fr.timeStampTmp;
+                  if(!fr.timeStampTmp)  // already played ?
+                  {
+                     int qTick = qTickCtr + (tAbs - qTickCtr) * qAmt;
+                     if(b_debug_quant) trace "xxx playQuantizedFrames: qTick="+qTick+" tickNr="+_tickNr;
+                     if(qTick == _tickNr)
+                     {
+                        frOut.mergeFrame(fr);
+                        fr.timeStampTmp = true;
+                        played_bar_frames.add(fr);
+                        nextTickAfterQ = tAbs + 1;
+
+                        if(_bUIActivity && fr.hasEvents())
+                        {
+                           ui_midi_out_activity_countdown =
+                              mathClampi(ui_midi_out_activity_countdown + NSQ_Track.UI_MIDI_ACTIVITY_INC,
+                                         0,
+                                         NSQ_Track.UI_MIDI_ACTIVITY_MAX
+                                         );
+                           seq.b_ui_activity = true;
+                        }
+                     }
+                     else if(qTick > _tickNr)
+                        nextTickAfterQ = qTick;
+                  }
+                  else
+                     if(b_debug_quant) trace "xxx playQuantizedFrame: skip tAbs="+tAbs;
+               }
+               else
+                  break;
+            }
+            else
+               break;
+
+            frameIdx++;
+            if(b_debug_quant) trace "xxx playQuantizedFrames: next frameIdx="+frameIdx;
+         }
+      }
+      if(-1 == nextTickAfterQ)
+         nextTickAfterQ = qTickMax;
+      // // nextTickAfterQ = _tickNr + 1;
+      return nextTickAfterQ;
+   }
+
+   // <replay.png>
+   public method lazyResetPlayedBarFrames(boolean _bForce) {
+      if(!played_bar_frames.isEmpty())
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         if(_bForce || (0 == (current_song.tick_nr % (ticksPerBar*2))))
+         {
+            MIDIPipeFrame *fr;
+            foreach fr in played_bar_frames
+            {
+               if(b_debug_quant) trace "xxx reset played flag fr="+#(fr);
+               fr.timeStampTmp = false;
+            }
+            played_bar_frames.empty();
+         }
+      }
+   }
+
+   // <method.png>
+   public method lazyExplodeAutoSelect(boolean _bForce) {
+      if(b_explode_first || _bForce)
+      {
+         b_explode_first = false;
+         b_explode = false;
+
+         DeviceIOPort port <= seq.out_ports.get(track_idx);
+         if!(port.info.isBlank())
+         {
+            b_explode = haveEvents();
+         }
+      }
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      ofs.i16 = 4; // Version
+
+      // Frames
+      ofs.i32 = frames.numElements;
+      MIDIPipeFrame *fr;
+      foreach fr in frames
+      {
+         fr.saveState(ofs);
+      }
+
+      // Rec enable
+      ofs.i8 = b_rec;
+
+      // Quantization amount
+      ofs.f32 = quant_amount;
+
+      // Quantization note
+      ofs.i8 = quant_note;
+
+      // Play State
+      ofs.i8 = play_state;
+
+      // PrgChg display type
+      ofs.i8 = ui_prgchg_display_type;
+
+      // Event note offset (v3+)
+      ofs.i8 = ui_evt_note_off;
+
+      // Event number of visible notes (v3+)
+      ofs.i8 = ui_evt_num_visible_notes;
+
+      // Explode (v4+)
+      ofs.i8 = explode_node_type;
+      ofs.i8 = explode_node_cat;
+      ofs.i8 = explode_bars_per_pattern;
+      ofs.i8 = b_explode;
+      ofs.i8 = b_explode_first;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Frames
+         int numFrames = ifs.i32;
+         frames.free();
+         played_bar_frames.empty();
+         MIDIPipeFrame *fr;
+         int frameIdx = 0;
+         loop(numFrames)
+         {
+            fr <= new MIDIPipeFrame;
+
+            if(!fr.loadState(ifs))
+            {
+               trace "[---] NSQ_Track: failed to load frame "+(frameIdx+1)+"/"+numFrames;
+               return false;
+            }
+            fr.remapDeviceIndices(_outDevIdxMap, _outDevUseCount);
+
+            frames.add(#(deref fr));
+
+            // Next frame
+            frameIdx++;
+         }
+
+         // Rec enable
+         b_rec = ifs.b8;
+
+         // Quantization amount
+         quant_amount = ifs.f32;
+
+         // Quantization note
+         quant_note = ifs.i8;
+
+         // Play State
+         play_state = ifs.u8;
+
+         if(ver >= 2)
+         {
+            // PrgChg display type
+            ui_prgchg_display_type = ifs.u8;
+         }
+
+         if(ver >= 3)
+         {
+            // Event note offset (v3+)
+            ui_evt_note_off = ifs.u8;
+
+            // Event number of visible notes (v3+)
+            ui_evt_num_visible_notes = ifs.u8;
+         }
+
+         if(ver >= 4)
+         {
+            // Explode (v4+)
+            explode_node_type        = ifs.u8;
+            explode_node_cat         = ifs.u8;
+            explode_bars_per_pattern = ifs.u8;
+            b_explode                = ifs.b8;
+            b_explode_first          = ifs.b8;
+         }
+
+         // Succeeded
+         rebuildBarLUT();
+
+         if(b_debug) debugPrintFrames();
+
+         return true;
+      }
+
+      return false;
+   }
+
+}

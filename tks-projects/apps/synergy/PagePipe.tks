@@ -1,0 +1,1653 @@
+// ----
+// ---- file   : PagePipe.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 04Sep2014, 05Sep2014, 07Sep2014, 09Sep2014, 14Sep2014, 16Sep2014, 19Sep2014
+// ----          26Sep2014, 28Sep2014, 24Feb2015, 09Mar2015, 10Mar2015, 06Apr2015, 14Apr2015
+// ----          19Apr2015, 17May2015, 24Sep2015, 04Oct2015, 08Jan2016, 08Jul2016, 12Jul2016
+// ----          15Oct2016, 19Jan2017, 09Feb2017, 04Mar2017, 10Mar2017, 12Mar2017, 13Mar2017
+// ----          16Jun2017, 04Jan2018, 24Jun2018, 21Sep2019, 06Mar2020, 26Apr2020, 14Nov2020
+// ----          19Apr2022, 18Feb2023, 03Oct2023, 15Oct2023, 04Nov2023, 22Mar2024, 02Oct2024
+// ----          31Jan2025, 07Feb2025
+// ----
+// ----
+// ----
+
+module MPagePipe;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NewNodeNameAndPresetDialog extends TextInputDialog {
+   protected ComboBox *cm_preset;
+
+   public static NewNodeNameAndPreset(String _caption, String _message, String _btOkCaption, String _btCancelCaption,
+                                      String _defaultText, int _maxCols, int _visCols,
+                                      ActionConsumer _recipient
+                                      ) : NewNodeNameAndPresetDialog {
+      local NewNodeNameAndPresetDialog d;
+      d.initTextInputDialog(deref _caption, deref _message, _btOkCaption, _btCancelCaption, _defaultText, _maxCols, _visCols, "textinput", true, _recipient);
+      return deref d;
+   }
+
+   public method addNodePresetComboBox(Object _clazz) {
+      cm_preset <= ComboBox.New();
+      cm_preset.setAlignment(Layout.EXPANDX);
+
+      local StringArray aPresetNames;
+      aPresetNames.add("-");
+      local String nodeTypeFlt <= _clazz.yacMetaClassName().toLower().replace("node","");
+
+      NewTrackDialog.AddPresets(nodeTypeFlt, ""/*relPath*/, null/*catName*/, false/*/bCatFlt*/, null/*userFltOrNull*/,
+                                null/*presetNodeTypesOrNull*/,
+                                aPresetNames
+                                );
+      cm_preset.setOptions(aPresetNames);
+      cm_preset.setToolTipCaption("Node Preset");
+      p_extra.addLayer(cm_preset, Layout.BOTTOM);
+
+      recursiveBuildTabCycleLists();  // does not seem to work (focus is stuck in textfield)
+   }
+
+   public method getSelectedPresetName() : String {
+      if(cm_preset.getSelectedOption() > 0/*"-"*/)
+         return cm_preset.getSelectedOptionName();
+      else
+         return null;
+   }
+
+   public virtual consumeAction(Action _ac) : boolean {
+      String name = _ac.getActionName();
+
+      ActionProvider ap <= _ac.getActionProvider();
+      switch(@(ap))
+      {
+         case @(cm_preset):
+            Global.Print("Preset is \""+cm_preset.getSelectedOptionName()+"\"");
+            return true;
+      }
+
+      return TextInputDialog::consumeAction(_ac);
+   }
+}
+
+
+
+// <class.png>
+class PagePipe extends Page, MIDIMapContext {
+
+   define String MMT_ADD;
+   define String MMT_CLONE;
+   define String MMT_REMOVE;
+   define String MMT_MOVEUP;
+   define String MMT_MOVEDOWN;
+   define String MMT_PIPE_PREV;
+   define String MMT_PIPE_NEXT;
+   define String MMT_SOLO_TOGGLE;
+   define String MMT_SOLO_TOGGLE_1;
+   define String MMT_SOLO_TOGGLE_2;
+   define String MMT_SOLO_TOGGLE_3;
+   define String MMT_SOLO_TOGGLE_4;
+   define String MMT_SOLO_TOGGLE_5;
+   define String MMT_SOLO_TOGGLE_6;
+   define String MMT_SOLO_TOGGLE_7;
+   define String MMT_SOLO_TOGGLE_8;
+   define String MMT_SOLO_TOGGLE_9;
+   define String MMT_SOLO_TOGGLE_10;
+   define String MMT_SOLO_TOGGLE_11;
+   define String MMT_SOLO_TOGGLE_12;
+   define String MMT_SOLO_TOGGLE_13;
+   define String MMT_SOLO_TOGGLE_14;
+   define String MMT_SOLO_TOGGLE_15;
+   define String MMT_SOLO_TOGGLE_16;
+   define String MMT_MUTE_TOGGLE;
+   define String MMT_MUTE_TOGGLE_1;
+   define String MMT_MUTE_TOGGLE_2;
+   define String MMT_MUTE_TOGGLE_3;
+   define String MMT_MUTE_TOGGLE_4;
+   define String MMT_MUTE_TOGGLE_5;
+   define String MMT_MUTE_TOGGLE_6;
+   define String MMT_MUTE_TOGGLE_7;
+   define String MMT_MUTE_TOGGLE_8;
+   define String MMT_MUTE_TOGGLE_9;
+   define String MMT_MUTE_TOGGLE_10;
+   define String MMT_MUTE_TOGGLE_11;
+   define String MMT_MUTE_TOGGLE_12;
+   define String MMT_MUTE_TOGGLE_13;
+   define String MMT_MUTE_TOGGLE_14;
+   define String MMT_MUTE_TOGGLE_15;
+   define String MMT_MUTE_TOGGLE_16;
+
+   define String ACTION_PIPE_EDITED;  // consumed by PagePipeRoot but not actually used ?!
+
+   protected Label *lb_pipenr;
+   protected TextField *tf_name;
+   protected Button *bt_remark;
+   protected Button *bt_prev;
+   protected Button *bt_next;
+
+   protected Button *bt_previous_page;
+
+   protected Button *bt_add;
+   protected Button *bt_remove;
+
+   protected Button *bt_moveup;
+   protected Button *bt_movedown;
+
+   protected LayerSwitch *ls_nodes;
+   public TableView *tv_nodes;
+   protected NodesTM tm_nodes;
+   protected TextEdit *tx_remark;
+
+   public MIDIPipe *pipe;
+
+   protected ActionConsumer *listener;
+
+   protected static Dialog_DeleteNode dialog_deletenode;
+   protected Object *new_clazz;
+   protected NewNodeNameAndPresetDialog *dlg_new_name;
+   protected TextInputDialog *dlg_clone_name;
+
+   protected boolean b_cont_edit;
+
+   protected boolean b_remark_return_to_pipemap;
+
+   protected ComboBoxPopup *cmp_class;
+
+   protected boolean b_pipemap_quick_add;
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PagePipe.xfm"))
+      {
+         trace "[---] failed to parse PagePipe.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tm_nodes.initTableModel();
+      tv_nodes.setTableModel(tm_nodes);
+
+      tx_remark.setEnableQuietHandleEsc(true);  // close dialog on escape (don't just stop editing)
+
+      recursiveBuildTabCycleLists();
+
+      initMMC();
+
+      if(app_lnf.b_ascii_back_buttons)
+         Global.ASCIIBackButton(bt_previous_page);
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_PIPEROOT;
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("PagePipe");
+
+      mmcAddTarget(MMT_ADD,            CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_CLONE,          CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_REMOVE,         CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MOVEUP,         CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MOVEDOWN,       CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PIPE_PREV,      CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_PIPE_NEXT,      CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE,    CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_1,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_2,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_3,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_4,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_5,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_6,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_7,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_8,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_9,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_10, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_11, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_12, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_13, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_14, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_15, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_SOLO_TOGGLE_16, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE,    CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_1,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_2,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_3,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_4,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_5,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_6,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_7,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_8,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_9,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_10, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_11, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_12, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_13, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_14, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_15, CLASS_BUTTON, SYN_BUTTON_CLICK);
+      mmcAddTarget(MMT_MUTE_TOGGLE_16, CLASS_BUTTON, SYN_BUTTON_CLICK);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         switch(boundEv.bound_target.target_name)
+         {
+            case MMT_ADD:
+               if(pageIsCurrent())
+               {
+                  handleAdd();
+                  return true;
+               }
+               break;
+
+            case MMT_CLONE:
+               if(pageIsCurrent())
+               {
+                  handleClone();
+                  return true;
+               }
+               break;
+
+            case MMT_REMOVE:
+               if(pageIsCurrent())
+               {
+                  confirmDeleteSelectedNode();
+                  return true;
+               }
+               break;
+
+            case MMT_MOVEUP:
+               handleMoveUp();
+               return true;
+
+            case MMT_MOVEDOWN:
+               handleMoveDown();
+               return true;
+
+            case MMT_PIPE_PREV:
+               if(pageIsCurrent())
+               {
+                  // (todo) allow prev selection while editing a node
+                  handleSelectPrev();
+                  return true;
+               }
+               break;
+
+            case MMT_PIPE_NEXT:
+               if(pageIsCurrent())
+               {
+                  // (todo) allow next pipe selection while editing a node
+                  handleSelectNext();
+                  return true;
+               }
+               break;
+
+            case MMT_SOLO_TOGGLE:
+               handleSoloToggle(tm_nodes.getCursorIndex());
+               return true;
+
+            case MMT_SOLO_TOGGLE_1:
+               handleSoloToggle(0);
+               return true;
+
+            case MMT_SOLO_TOGGLE_2:
+               handleSoloToggle(1);
+               return true;
+
+            case MMT_SOLO_TOGGLE_3:
+               handleSoloToggle(2);
+               return true;
+
+            case MMT_SOLO_TOGGLE_4:
+               handleSoloToggle(3);
+               return true;
+
+            case MMT_SOLO_TOGGLE_5:
+               handleSoloToggle(4);
+               return true;
+
+            case MMT_SOLO_TOGGLE_6:
+               handleSoloToggle(5);
+               return true;
+
+            case MMT_SOLO_TOGGLE_7:
+               handleSoloToggle(6);
+               return true;
+
+            case MMT_SOLO_TOGGLE_8:
+               handleSoloToggle(7);
+               return true;
+
+            case MMT_SOLO_TOGGLE_9:
+               handleSoloToggle(8);
+               return true;
+
+            case MMT_SOLO_TOGGLE_10:
+               handleSoloToggle(9);
+               return true;
+
+            case MMT_SOLO_TOGGLE_11:
+               handleSoloToggle(10);
+               return true;
+
+            case MMT_SOLO_TOGGLE_12:
+               handleSoloToggle(11);
+               return true;
+
+            case MMT_SOLO_TOGGLE_13:
+               handleSoloToggle(12);
+               return true;
+
+            case MMT_SOLO_TOGGLE_14:
+               handleSoloToggle(13);
+               return true;
+
+            case MMT_SOLO_TOGGLE_15:
+               handleSoloToggle(14);
+               return true;
+
+            case MMT_SOLO_TOGGLE_16:
+               handleSoloToggle(15);
+               return true;
+
+            case MMT_MUTE_TOGGLE:
+               handleMuteToggle(tm_nodes.getCursorIndex());
+               return true;
+
+            case MMT_MUTE_TOGGLE_1:
+               handleMuteToggle(0);
+               return true;
+
+            case MMT_MUTE_TOGGLE_2:
+               handleMuteToggle(1);
+               return true;
+
+            case MMT_MUTE_TOGGLE_3:
+               handleMuteToggle(2);
+               return true;
+
+            case MMT_MUTE_TOGGLE_4:
+               handleMuteToggle(3);
+               return true;
+
+            case MMT_MUTE_TOGGLE_5:
+               handleMuteToggle(4);
+               return true;
+
+            case MMT_MUTE_TOGGLE_6:
+               handleMuteToggle(5);
+               return true;
+
+            case MMT_MUTE_TOGGLE_7:
+               handleMuteToggle(6);
+               return true;
+
+            case MMT_MUTE_TOGGLE_8:
+               handleMuteToggle(7);
+               return true;
+
+            case MMT_MUTE_TOGGLE_9:
+               handleMuteToggle(8);
+               return true;
+
+            case MMT_MUTE_TOGGLE_10:
+               handleMuteToggle(9);
+               return true;
+
+            case MMT_MUTE_TOGGLE_11:
+               handleMuteToggle(10);
+               return true;
+
+            case MMT_MUTE_TOGGLE_12:
+               handleMuteToggle(11);
+               return true;
+
+            case MMT_MUTE_TOGGLE_13:
+               handleMuteToggle(12);
+               return true;
+
+            case MMT_MUTE_TOGGLE_14:
+               handleMuteToggle(13);
+               return true;
+
+            case MMT_MUTE_TOGGLE_15:
+               handleMuteToggle(14);
+               return true;
+
+            case MMT_MUTE_TOGGLE_16:
+               handleMuteToggle(15);
+               return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_show.png>
+   public method showPipe(MIDIPipe _pipe, ActionConsumer _listener, boolean _bShowPage) {
+
+      listener <= _listener;
+
+      showPipeInt(_pipe, true/*bLog*/);
+
+      if(_bShowPage)
+      {
+         ls_nodes.switchToLayerNr(0); // Hide remark editor
+         bt_remark.setToggleState(false);
+
+         root_form.showPage(RootForm.PAGE_PIPE, true/*bAllowHistory*/);
+      }
+   }
+
+   // <method.png>
+   public method unsetPipe() {
+      pipe <= null;
+   }
+
+   // <ui_show.png>
+   public method showPipeInt(MIDIPipe _pipe, boolean _bLog) : boolean {
+
+      if(@(_pipe) != @(pipe))
+      {
+         pipe <= _pipe;
+         tm_nodes.pipe <= pipe;
+
+         String sPipeNr <= "Pipe #"+(pipe.pipeIdx+1)+ ":";
+         lb_pipenr.setCaption(sPipeNr);
+         tf_name.setText(pipe.name);
+         tf_name.redraw();
+         // trace "xxx showPipeInt: pipe.name=\""+pipe.name+"\"";
+
+         if(_bLog)
+         {
+            Global.Print("Now editing "+sPipeNr+" \""+pipe.name+"\".");
+         }
+
+         bt_prev.setEditable(null != current_pipe_root.uiGetPipeBeforeIdx(pipe.pipeIdx));
+         bt_next.setEditable(null != current_pipe_root.uiGetPipeAfterIdx(pipe.pipeIdx));
+
+         updateRemark();
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public method unsetPipeIfCurrent(MIDIPipe _pipe) {
+      if(@(pipe) == @(_pipe))
+      {
+         pipe <= null;
+         tm_nodes.pipe <= null;
+
+         updateTable();
+      }
+   }
+
+   // <ui_update.png>
+   public method updateTable() {
+      tv_nodes.tableModelChanged();
+
+      if(-1 == tm_nodes.getCursorIndex())
+         tv_nodes.moveCursorToFirstRow();
+
+      boolean bEditable = (null != getSelectedNode());
+      bt_remove  .setEditable(bEditable);
+
+      updateMoveUpDownButtons();
+   }
+
+   // <ui_update.png>
+   protected method updateMoveUpDownButtons() {
+      MIDIPipeNode n <= getSelectedNode();
+
+      if(null != pipe)
+      {
+         if(null != n)
+         {
+            bt_moveup  .setEditable((null != n.prev));
+            bt_movedown.setEditable((null != n.next));
+         }
+         else
+         {
+            bt_moveup  .setEditable(false);
+            bt_movedown.setEditable(false);
+         }
+      }
+      else
+      {
+         bt_moveup  .setEditable(false);
+         bt_movedown.setEditable(false);
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      if(!b_cont_edit)
+         updateTable();
+
+      b_cont_edit = false;
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      if(null != pipe)
+         saveRemark();
+
+      b_remark_return_to_pipemap = false;
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_nodes);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         tf_name, bt_prev, bt_next,
+         bt_add, bt_moveup, bt_movedown, bt_remove,
+         tv_nodes
+                              ];
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(kbdLayer instanceof Layer)
+      {
+         if(kbdLayer.hasParentOrIs(tv_nodes))
+         {
+            tv_nodes.moveCursorToRow(mmtSelectTableRow(tm_nodes, _val));
+            tv_nodes.centerRow();
+            return;
+         }
+      }
+
+      return MMTListener::mmtHandleGlobalValue(_val);
+   }
+
+   // <midi.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(kbdLayer instanceof Layer)
+      {
+         if(kbdLayer.hasParentOrIs(tv_nodes))
+         {
+            mmtSelectTableRowDelta(tv_nodes, _delta);
+            tv_nodes.centerRow();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   public method getSelectedNode() : MIDIPipeNode {
+      if(null != pipe)
+      {
+         int idx = tm_nodes.getCursorIndex();
+         if(-1 != idx)
+         {
+            MIDIPipeNode node <= pipe.getNodeByIdx(idx);
+            return node;
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedScriptNode() : Node {
+      if(null != pipe)
+      {
+         int idx = tm_nodes.getCursorIndex();
+         if(-1 != idx)
+         {
+            MIDIPipeNodeScriptProxy node <= pipe.getNodeByIdx(idx);
+            if(node instanceof MIDIPipeNodeScriptProxy)
+            {
+               return node.sci;
+            }
+         }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public method getSelectedNodeIdx() : int {
+      if(null != pipe)
+         return tm_nodes.getCursorIndex();
+      return -1;
+   }
+
+   // <method_select.png>
+   public method selectNodeByIdx(int _idx) : boolean {
+
+      MIDIPipeNode lastNode <= getSelectedNode();
+
+      updateTable();
+
+      tv_nodes.moveCursorToRow(_idx);
+
+      root_form.tryAutoLockKeyJazz();
+
+      return (null != getSelectedNode());
+   }
+
+   // <ui_toggle.png>
+   public method toggleSelectedNodeMuteState() {
+      if(-1 != tm_nodes.getCursorIndex())
+         tm_nodes.toggleNodeMuteState(tm_nodes.getCursorIndex());
+   }
+
+   // <ui_toggle.png>
+   public method toggleSelectedNodeSoloState() {
+      if(-1 != tm_nodes.getCursorIndex())
+         tm_nodes.toggleNodeSoloState(tm_nodes.getCursorIndex());
+   }
+
+   // <ui_handle.png>
+   protected method handleEdited() {
+      if(null != listener)
+         listener.consumeAction(Action.New(ACTION_PIPE_EDITED, this));
+   }
+
+   // <ui_handle.png>
+   protected method handleNameChanged() {
+      pipe.name = tf_name.getText();
+      pipe.finalOutput = ("output" == pipe.name);
+   }
+
+   // <ui_handle.png>
+   protected method handleSoloToggle(int _row) {
+      tv_nodes.moveCursorToRow(_row);
+      tm_nodes.toggleNodeSoloState(_row);
+      tv_nodes.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleMuteToggle(int _row) {
+      tv_nodes.moveCursorToRow(_row);
+      tm_nodes.toggleNodeMuteState(_row);
+      tv_nodes.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleArrangerToggle(int _row) {
+      tv_nodes.moveCursorToRow(_row);
+      tm_nodes.toggleNodeArrangerState(_row);
+      tv_nodes.redraw();
+   }
+
+   // <ui_handle.png>
+   public method handleAdd() {
+      if((null == dlg_clone_name) && (null == dlg_new_name))
+      {
+         new_clazz <= null;
+
+         b_pipemap_quick_add = false;
+         root_form.pg_nodetype.showNodeTypeSelector(RootForm.PAGE_PIPE, this);
+      }
+   }
+
+   // <method.png>
+   protected method genNewNodeName(Object _clazz) : String {
+      MIDIPipeNode *n;
+      int nodeIdx = 0;
+      String namePrefix = Node.GetNodeShortTypeName(_clazz) + "#";
+      int maxInst = 0;
+      int maxInstType = 0;
+
+      loop(pipe.numNodes)
+      {
+         n <= pipe.getNodeByIdx(nodeIdx);
+         String nn = n.name;
+
+         if(nn.startsWith(namePrefix))
+         {
+            nn.replace(namePrefix, "");
+            int inst = int(nn);
+            if(inst > maxInst)
+               maxInst = inst;
+         }
+
+         if(n instanceof MIDIPipeNodeScriptProxy)
+         {
+            MIDIPipeNodeScriptProxy nsp <= n;
+            if(nsp.sci instanceof _clazz)
+            {
+               maxInstType++;
+            }
+         }
+         else if(n instanceof _clazz)
+         {
+            maxInstType++;
+         }
+
+         nodeIdx++;
+      }
+
+      if(maxInstType > maxInst)
+         maxInst = maxInstType;
+
+      return namePrefix + (maxInst + 1);
+   }
+
+   // <ui_handle.png>
+   protected method handleAdd2(Object cl, String _suggestedNameOrNull) {
+      // Node selected
+      if(null == cl) // e.g. when TSL load failed
+         return;
+
+      new_clazz <= cl;
+
+      Global.Debug2("PagePipe::handleAdd2: cl="+#(cl));
+
+      String defNodeName;
+
+      if(null != _suggestedNameOrNull && !_suggestedNameOrNull.isBlank())
+         defNodeName = _suggestedNameOrNull;
+      else if( (0 == pipe.numNodes) && STConfig.b_first_node_name_follows_pipe )
+         defNodeName = pipe.name;
+      else
+         defNodeName = genNewNodeName(cl);
+
+      dlg_new_name <= NewNodeNameAndPresetDialog.NewNodeNameAndPreset("Enter node name",
+                                                                      " Enter new node name",
+                                                                      "Create", "Cancel",
+                                                                      defNodeName, 30, 16,
+                                                                      this
+                                                                      );
+      dlg_new_name.addNodePresetComboBox(new_clazz);
+      dlg_new_name.setButtonFontByName("big3");
+      dlg_new_name.setMessageFontByName("big5");
+      dlg_new_name.setTextFontByName("big4");
+      dlg_new_name.setButtonIcons(//UI.GetIcon(UI.IsDarkOrMono()?"add_mono":"add"),
+                                  UI.GetIcon("add"),
+                                  UI.GetIcon("cancel")
+                                  );
+      dlg_new_name.setOkButtonToolTipCaption("Create new node\n\n (note) hold-click to immediately edit it\n\n (note) hold lshift key to skip \"default\" preset auto-loading");
+      dlg_new_name.invalidateSizeCaches();
+      dlg_new_name.resizeToMinimum();
+      dlg_new_name.showCentered();
+   }
+
+   // <ui_handle.png>
+   public method handleQuickAddByClassFromPipeMap(Object cl, String _suggestedNameOrNull) {
+      b_pipemap_quick_add = true;
+      handleAdd2(cl, _suggestedNameOrNull);
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAdd3(Object _newClazz, String _name, boolean _bEdit) : MIDIPipeNode {
+      // Name entered
+      Global.Debug2("PagePipe::handleAdd3: name=\""+_name+"\"");
+      Global.Debug2("PagePipe::handleAdd3: newClazz="+#(_newClazz));
+
+      Object no <= Object(_newClazz);
+      // trace "handleAdd3: xxx no="+#(no);
+      local MIDIPipeNode *ao;
+
+      if(null != no)
+      {
+         Node sn <= null;
+
+         if(no instanceof Node)
+         {
+            sn <= no;
+
+            // Create proxy
+            ao <= new MIDIPipeNodeScriptProxy;
+            MIDIPipeNodeScriptProxy nsp <= ao;
+            nsp.sci = #(deref no);
+
+            if(sn.nodeInit(pipe, ao))
+            {
+               sn.nodeUIInit();
+               Global.Debug2("PagePipe::handleAdd3: GID0"+sn.getNodeGID());
+            }
+            else
+            {
+               Global.Error("PagePipe: Node::init() failed.");
+               no <= null;
+               ao <= null;
+            }
+         }
+         else
+         {
+            ao <= deref no;
+         }
+
+         if(ao != null)
+         {
+            pipe.addNode(#(deref ao));
+
+            int cIdx = tm_nodes.getCursorIndex();
+
+            updateTable();
+            tv_nodes.moveCursorToLastRow();
+
+            if(-1 != cIdx)
+            {
+               // Move new node
+               loop( (tm_nodes.getNumRows() - 1 - 1 - cIdx) )
+               {
+                  handleMoveUp();
+               }
+               tv_nodes.centerRow();
+            }
+
+            if(RootForm.PAGE_PIPE == root_form.getCurrentPageNr())
+            {
+               UI.SetKeyboardFocus(tv_nodes);
+            }
+
+            PagePipeMap pgPipeMap <= root_form.pg_pipemap;
+            pgPipeMap.updateMap();
+            pgPipeMap.updateMapState();
+
+            if(null != dlg_new_name)  // may be null when called from NodeSeqEditor (temporary tracker edit)
+            {
+               String presetName <= dlg_new_name.getSelectedPresetName();
+               Global.Debug("PagePipe::handleAdd3: presetName=\""+presetName+"\"");
+               if(null != presetName)
+               {
+                  local String typeName = (sn.yacMetaClassName().toLower().replace("node",""));
+                  local String nodeBaseDir = Utils.FixFileName(STConfig.node_rootpath+"/"+typeName+"/");
+                  local String pathName <= nodeBaseDir+presetName;
+                  Global.Debug("PagePipe::handleAdd3: preset pathName=\""+pathName+"\"");
+                  if(Utils.CanFileBeRead(Utils.ToNativePathName(pathName)))
+                     pgPipeMap.loadNodePreset(pathName);
+               }
+               else
+               {
+                  pgPipeMap.tryAutoLoadNodePreset();
+               }
+            }
+
+            ao.name = _name;
+
+            if(null != pipe.soloNode)
+            {
+               ao.state = MIDIPIPE_STATE_MUTE;
+            }
+
+            ao.reset(false/*bSoft*/);
+
+            if(replay.b_playing)
+            {
+               replay.b_playing = false;  // hack for NodeTracker
+               ao.seek(current_song.getSongOffset());
+               replay.b_playing = true;
+            }
+
+            pgPipeMap.updateMapState();
+
+            if(b_pipemap_quick_add)
+            {
+               pgPipeMap.handleQuickAddNodeByClassAndDevChString2(sn);
+            }
+            else if(_bEdit)
+            {
+               editSelectedNode();
+            }
+         }
+      }
+
+      dlg_new_name <= null;
+      return ao;
+   }
+
+   // <ui_handle.png>
+   public method handleClone() {
+      if((null == dlg_clone_name) && (null == dlg_new_name))
+      {
+         b_pipemap_quick_add = false;
+         MIDIPipeNode node <= getSelectedNode();
+         if(null != node)
+         {
+            dlg_clone_name <= TextInputDialog.NewHold("Enter node name",
+                                                      " Enter cloned node name",
+                                                      "Clone", "Cancel",
+                                                      "+"+node.name, 32, 16, this
+                                                      );
+
+            dlg_clone_name.setButtonFontByName("big3");
+            dlg_clone_name.setMessageFontByName("big5");
+            dlg_clone_name.setTextFontByName("big4");
+            dlg_clone_name.setButtonIcons(UI.GetIcon("add"), UI.GetIcon("cancel"));
+            dlg_clone_name.invalidateSizeCaches();
+            dlg_clone_name.resizeToMinimum();
+            dlg_clone_name.showCentered();
+         }
+         else
+         {
+            Global.Warning("No node selected to clone");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClone3(String _name, boolean _bEdit) {
+      // Name entered
+      Global.Debug2("PagePipe::handleClone3: name=\""+_name+"\"");
+
+      MIDIPipeNode node <= getSelectedNode();
+
+      if(null != node) // paranoia
+      {
+         // Determine node size
+         DummyStream ds;
+         ds.offset = 0;
+         ds.size = 0;
+         PipeIO.PipeNode_SaveState(node, ds);
+
+         Global.Debug2("PagePipe: cloned node size="+ds.size);
+
+         // Save state to memory buffer
+         Buffer b <= new Buffer;
+         b.size = ds.offset;
+         PipeIO.PipeNode_SaveState(node, b);
+
+         SongFileReader.InitIdentityOutDevIdxMap();
+
+         b.offset = 0;
+
+         Node.StartClone();
+
+         // Load/create node and add to pipe
+         if(PipeIO.PipeNode_LoadState(pipe, b,
+                                      MSongFileReader.piperoot_outdevidxmap,
+                                      MSongFileReader.piperoot_outdevusecount,
+                                      null/*nodeOrNull*/,
+                                      null/*catClassOrNull*/
+                                      ))
+         {
+            MIDIPipeNode ao <= pipe.last;
+
+            Node.UpdateClonedGIDs();
+
+            // // if(ao instanceof MIDIPipeNodeScriptProxy)
+            // // {
+            // //    MIDIPipeNodeScriptProxy nsp <= ao;
+            // //    Node sci <= nsp.sci;
+            // //    sci.setNodeGID(current_song.nodeAllocGID());
+            // //    trace "[trc] PagePipe::handleClone3: GID="+sci.getNodeGID();
+            // // }
+
+            if(null != pipe.soloNode)
+            {
+               ao.state = MIDIPIPE_STATE_MUTE;
+            }
+
+            ao.name = _name;
+
+            ao.reset(false/*bSoft*/);
+
+            if(replay.b_playing)
+            {
+               replay.b_playing = false;  // hack for NodeTracker
+               ao.seek(current_song.getSongOffset());
+               replay.b_playing = true;
+            }
+
+            int cIdx = tm_nodes.getCursorIndex();
+
+            updateTable();
+            tv_nodes.moveCursorToLastRow();
+
+            if(-1 != cIdx)
+            {
+               // Move new node
+               loop( (tm_nodes.getNumRows() - 1 - 1 - cIdx) )
+               {
+                  handleMoveUp();
+               }
+               tv_nodes.centerRow();
+            }
+
+            if(_bEdit)
+            {
+               editSelectedNode();
+            }
+
+            if(RootForm.PAGE_PIPE == root_form.getCurrentPageNr())
+            {
+               UI.SetKeyboardFocus(tv_nodes);
+            }
+
+            root_form.pg_pipemap.updateMap();
+            root_form.pg_pipemap.updateMapState();
+
+            Global.Success("Cloned node \""+ao.name+"\"");
+         }
+         else
+         {
+            Global.Error("Failed to clone node!!");
+         }
+
+         Node.EndClone();
+
+         b <= null;
+      }
+      dlg_clone_name <= null;
+   }
+
+   // <ui_show.png>
+   public editSelectedNode() {
+      MIDIPipeNode node <= getSelectedNode();
+      if(null != node)
+      {
+         b_cont_edit = true;
+         root_form.pg_node.showNode(node, RootForm.PAGE_PIPE, this);
+      }
+      else
+      {
+         Global.Warning("PagePipe: cannot edit non-existing node.");
+         Utils.Backtrace();
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleMoveUp() {
+      MIDIPipeNode node <= getSelectedNode();
+      if(null != node)
+      {
+         int rowIdx = tm_nodes.getCursorIndex();
+
+         if(rowIdx > 0)
+         {
+            node.moveUp();
+            updateTable();
+            tv_nodes.moveCursorToRow(rowIdx - 1);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleMoveDown() {
+      MIDIPipeNode node <= getSelectedNode();
+      if(null != node)
+      {
+         int rowIdx = tm_nodes.getCursorIndex();
+         node.moveDown();
+         updateTable();
+         tv_nodes.moveCursorToRow(rowIdx + 1);
+      }
+   }
+
+   // <ui_confirm.png>
+   public method confirmDeleteSelectedNode() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         MIDIPipeNode node <= getSelectedNode();
+         if(null != node)
+            dialog_deletenode.run(node.name);
+      }
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteSelectedNode() : boolean {
+      MIDIPipeNode node <= getSelectedNode();
+      if(null != node)
+      {
+         current_song.releaseKeyJazzLockIfMatched(node);
+
+         if(pipe.lastEditedNodeIdx == node.nodeIdx)
+            pipe.lastEditedNodeIdx = -1;
+
+         int rowIdx = tm_nodes.getCursorIndex();
+         pipe.removeNode(node);
+         updateTable();
+         tv_nodes.moveCursorToRow(rowIdx);
+         root_form.pg_pipemap.updateMap();
+         root_form.pg_pipemap.updateMapState();
+         return true;
+      }
+      return false;
+   }
+
+   // <method_delete.png>
+   public =replay= method deleteNextNode1() {
+      // called after temporary Tracker node edit
+      int idx = tm_nodes.getCursorIndex();
+      MIDIPipeNode node <= pipe.getNodeByIdx(idx + 1);
+      current_song.releaseKeyJazzLockIfMatched(node);
+      pipe.removeNode(node);
+      // (note) UI update is done in deleteNextNode2() when replay mutex is not locked anymore
+   }
+
+   // <method_delete.png>
+   public method deleteNextNode2() {
+      // called after temporary Tracker node edit
+      //  (note) cursor has already been moved back to NodeSeq
+      int rowIdx = tm_nodes.getCursorIndex();
+      updateTable();
+      tv_nodes.moveCursorToRow(rowIdx);
+      root_form.pg_pipemap.updateMap();
+      root_form.pg_pipemap.updateMapState();
+   }
+
+   // <method_delete.png>
+   public method deleteAllPipeNodes() {
+      int nr = 0;
+      while(deleteSelectedNode() && (nr++ < 200))
+      {
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPrev() {
+      MIDIPipe p <= current_pipe_root.uiGetPipeBeforeIdx(pipe.pipeIdx);
+      if(null != p)
+      {
+         saveRemark();
+         showPipeInt(p, true/*bLog*/);
+         updateTable();
+         tx_remark.validateCursorPosition();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNext() {
+      MIDIPipe p <= current_pipe_root.uiGetPipeAfterIdx(pipe.pipeIdx);
+      if(null != p)
+      {
+         saveRemark();
+         showPipeInt(p, true/*bLog*/);
+         updateTable();
+         tx_remark.validateCursorPosition();
+      }
+   }
+
+   // <ui_handle.png>
+   public method toggleRemarkEditor(boolean _bFromKeyboard, boolean _bReturnToPipeMap) {
+
+      if(_bFromKeyboard)
+      {
+         bt_remark.setToggleState(!bt_remark.getToggleState());
+         bt_remark.redraw();
+      }
+
+      if(bt_remark.getToggleState())
+      {
+         // Show remark
+         ls_nodes.switchToLayerNr(1);
+         relayout();
+         tx_remark.onResize();
+
+         if(_bFromKeyboard)
+         {
+            UI.SetKeyboardFocus(tx_remark);
+            tx_remark.startEditing();
+         }
+
+         b_remark_return_to_pipemap = _bReturnToPipeMap;
+      }
+      else
+      {
+         // Hide remark
+         tx_remark.stopEditing(true/*bQuiet*/);
+         saveRemark();
+         updateRemark();
+         ls_nodes.switchToLayerNr(0);
+
+         if(_bFromKeyboard)
+            pageFocusDefault();
+
+         if(b_remark_return_to_pipemap)
+            root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+      }
+
+   }
+
+   // <ui_update.png>
+   protected method updateRemark() {
+      String pipeRemark = pipe.remark;
+      if(!pipeRemark.isBlank())
+         bt_remark.setBackgroundTint(#1000ff00);
+      else
+         bt_remark.setBackgroundTint(0);
+      tx_remark.setText(pipeRemark);
+   }
+
+   // <method.png>
+   protected method saveRemark() {
+      String newPipeRemark = tx_remark.getText();
+
+      // // trace "xxx saveRemark: newPipeRemark=\""+newPipeRemark+"\"";
+
+      if(!newPipeRemark.isBlank())
+      {
+         pipe.remark = newPipeRemark;
+      }
+      else
+      {
+         pipe.remark = null;
+      }
+   }
+
+   // <method.png>
+   protected method handleAutoAssignAutomationPort1() {
+
+      Node n <= getSelectedScriptNode();
+      if(null != n)
+      {
+         int nodeClass = n.getNodeClassId();
+         StringArray classNames; classNames.empty();
+         String *s;
+         StringArray clPorts <= STConfig.newtrackdialog_track_categories;  // class:port tuples
+         foreach s in STConfig.node_class_names
+         {
+            int idx = clPorts.indexOfObject(s, 0);
+            if(-1 != idx)
+               classNames.add(s+"\t"+clPorts.get(idx+1));
+            else
+               classNames.add(s);
+         }
+         ComboBoxPopup cmp <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                             null/*fontOrNull*/,
+                                                             classNames,
+                                                             null/*optionsLongOrNull*/,
+                                                             nodeClass,
+                                                             150*UI.font_scaling/*prefSx*/,
+                                                             null/*toolTipCaptions*/,
+                                                             null/*optionBGColors*/,
+                                                             null/*option_fgtints*/
+                                                             );
+
+         cmp.showNearMouse(0, 0);
+         cmp.centerRow();
+         cmp.focusFirstTabCycleMember();
+         cmp.setEnableHideOnFirstEntryUp(false);
+         cmp.setEnableSelectOnKeyRelease(true);
+         cmp.setPageSize(4);
+         cmp_class <= deref cmp;
+
+         Global.Print("Auto assign automation port: Select node class");
+      }
+
+   }
+
+   // <method.png>
+   protected method handleAutoAssignAutomationPort2(int _classId) {
+
+      Node n <= getSelectedScriptNode();
+      if(null != n)
+      {
+         n.setNodeClassId(_classId);
+
+         local AutoDeviceForm f;
+         local StringArray devAll;
+         devAll.join(["*"], MIDI.out_device_names_sorted);
+         local IntArray bgcolorsAll;
+         bgcolorsAll.join([0], MIDI.out_device_bgcolors_sorted);
+         if(f.initAutoDeviceForm())
+         {
+            f.showNode(n, devAll, bgcolorsAll);
+            f.autoAssignPortFromClass(false/*bB*/);
+         }
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          u         :   Focus node name widget
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "xxx PageNode::onTriadKey k.code="+_k.code;
+
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case 'u':
+               UI.SetKeyboardFocus(tf_name);
+               return true;
+
+            default:
+               r = maybe; break;
+         }
+
+         if(true == r)
+         {
+            return true;
+         }
+         else if(maybe == r)
+         {
+            Global.Print("");
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_ESCAPE:
+               if(tx_remark.isEditing())
+               {
+                  tx_remark.stopEditing(true/*bQuiet*/);
+                  saveRemark();
+                  toggleRemarkEditor(true/*bFromKeyboard*/, false/*bReturnToPipeMap*/);
+
+                  if(!b_remark_return_to_pipemap)
+                  {
+                     UI.SetKeyboardFocus(tv_nodes);
+                     return true;
+                  }
+               }
+
+               if(b_remark_return_to_pipemap)
+               {
+                  if(1 == ls_nodes.getCurrentChildNr())
+                  {
+                     // Hide remark editor
+                     toggleRemarkEditor(true/*bFromKeyboard*/, true/*bReturnToPipeMap*/);
+                  }
+                  else
+                  {
+                     b_remark_return_to_pipemap = false;
+                  }
+                  root_form.showPage(RootForm.PAGE_PIPEMAP, false/*bAllowHistory*/);
+                  return true;
+               }
+
+               root_form.showPagePrev();
+               return true;
+
+            case VKEY_DELETE:
+               confirmDeleteSelectedNode();
+               return true;
+
+            case VKEY_INSERT:
+               handleAdd();
+               return true;
+
+            case 'a':
+               handleArrangerToggle(tm_nodes.getCursorIndex());
+               return true;
+
+            case 'd':
+               handleMuteToggle(tm_nodes.getCursorIndex());
+               return true;
+
+            case 's':
+               handleSoloToggle(tm_nodes.getCursorIndex());
+               return true;
+
+            case 'r':
+               root_form.showPage(RootForm.PAGE_PIPEROOT, true);
+               return true;
+
+            case 'e':
+               editSelectedNode();
+               return true;
+
+            case 'q':
+               handleAutoAssignAutomationPort1();
+               return true;
+         }
+      }
+      else if(_k.modShift())
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_INSERT:
+               handleClone();
+               return true;
+
+            case VKEY_UP:
+               if(_k.modCtrl())
+               {
+                  handleSelectPrev();
+               }
+               else
+               {
+                  handleMoveUp();
+               }
+               return true;
+
+            case VKEY_DOWN:
+               if(_k.modCtrl())
+               {
+                  handleSelectNext();
+               }
+               else
+               {
+                  handleMoveDown();
+               }
+               return true;
+
+            case 'c':
+               if(_k.modCtrl())
+               {
+                  toggleRemarkEditor(true/*bFromKeyboard*/, false/*bReturnToPipeMap*/);
+                  return true;
+               }
+               break;
+
+            case 'n':
+               UI.SetKeyboardFocus(tf_name);
+               return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      if(PageNodeType.ACTION_SELECTED == acName)
+      {
+         handleAdd2(root_form.pg_nodetype.getSelectedNodeType()/*cl*/, null/*suggestedNameOrNull*/);
+         return true;
+      }
+
+      if(@(ap) == @(dlg_new_name))
+      {
+         if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED == acName)
+         {
+            Global.Debug2("PagePipe::handleAdd3: _action="+#(_action));
+            sac <= _action;
+            handleAdd3(new_clazz, sac.getStringValue(), false/*bEdit*/);
+            return true;
+         }
+         else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED_HOLD == acName)
+         {
+            Global.Debug2("PagePipe::handleAdd3: hold _action="+#(_action));
+            sac <= _action;
+            handleAdd3(new_clazz, sac.getStringValue(), true/*bEdit*/);
+            return true;
+         }
+         else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED == acName)
+         {
+            dlg_new_name <= null;
+         }
+      }
+
+      if(@(ap) == @(dlg_clone_name))
+      {
+         if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED == acName)
+         {
+            Global.Debug2("PagePipe::handleClone3: _action="+#(_action));
+            sac <= _action;
+            handleClone3(sac.getStringValue(), false/*bEdit*/);
+            return true;
+         }
+         else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCLOSED_HOLD == acName)
+         {
+            Global.Debug2("PagePipe:handleClone3: hold _action="+#(_action));
+            sac <= _action;
+            handleClone3(sac.getStringValue(), true/*bEdit*/);
+            return true;
+         }
+         else if(TextInputDialog.ACTION_TEXTINPUTDIALOGCANCELED == acName)
+         {
+            dlg_clone_name <= null;
+         }
+      }
+
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(tv_nodes):
+            MIDIPipeNode *n <= getSelectedNode();
+            if(null != n)
+            {
+               local String autoInfo;
+               if(n instanceof MIDIPipeNodeScriptProxy)
+               {
+                  MIDIPipeNodeScriptProxy np <= n;
+                  Node sn <= np.sci;
+                  autoInfo <= sn.getAutoPortString();
+                  root_form.tryAutoLockKeyJazz();
+               }
+               Global.Print("Select node "+(n.getNodeIdx() + 1) +"/"+ (n.parent.numNodes)+" \""+n.name+"\" "+autoInfo);
+            }
+
+            bt_remove.setEditable(true);
+
+            updateMoveUpDownButtons();
+
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               editSelectedNode();
+            }
+            return true;
+
+         case @(tf_name):
+            handleNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               pageFocusDefault();
+               redraw();
+            }
+            return true;
+
+         case @(bt_remark):
+            toggleRemarkEditor(false/*bFromKeyboard*/, false/*bReturnToPipeMap*/);
+            return true;
+
+         case @(bt_previous_page):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               root_form.showPageParent();
+            }
+            else
+            {
+               root_form.showPagePrev();
+            }
+            return true;
+
+         case @(bt_moveup):
+            handleMoveUp();
+            return true;
+
+         case @(bt_movedown):
+            handleMoveDown();
+            return true;
+
+         case @(bt_add):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleClone();
+            }
+            else
+            {
+               handleAdd();
+            }
+            return true;
+
+         case @(bt_remove):
+            confirmDeleteSelectedNode();
+            return true;
+
+         case @(bt_prev):
+            UI.SetEnableLockKeyboardFocus(true);
+            handleSelectPrev();
+            UI.SetEnableLockKeyboardFocus(false);
+            return true;
+
+         case @(bt_next):
+            UI.SetEnableLockKeyboardFocus(true);
+            handleSelectNext();
+            UI.SetEnableLockKeyboardFocus(false);
+            return true;
+
+         case @(cmp_class):
+            if(ComboBoxPopup.ACTION_OPTIONSELECTED == acName)
+            {
+               IntAction iac <= _action;
+               handleAutoAssignAutomationPort2(iac.getIntValue()/*classId*/);
+            }
+            UI.SetKeyboardFocus(tv_nodes);
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

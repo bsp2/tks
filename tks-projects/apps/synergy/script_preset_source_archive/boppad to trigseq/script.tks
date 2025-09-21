@@ -1,0 +1,453 @@
+//
+// Keith McMillen Bop Pad to NodeTrigSeq event transformer
+//
+//  - convert incoming CC#002 (breathcontrol) and note events to TrigSeq automation events
+//  - optional: split each pad in up to 4 zones
+//  - optional: radius to velocity
+//  - optional: dual velocity (finger drumming) (split into lo/hi velocity at threshold)
+//  - optional: rescale finger drumming velocity to full range
+//
+//  Changelog:
+//    19Dec2017: <bsp> initial version
+//
+
+// params:
+tag int   p_offset     = 0;    // track offset (final track idx wraps around)
+tag int   p_num_zones  = 1;    // per pad. 1..4
+tag int   p_vel_mode   = 0;    // 0=as-is, 1=radius to velocity, 2=dual velocity (64(lo) or 127(hi)),3=const(127)
+tag int   p_vel_scale  = 1;    // 0=as-is, 1=scale (finger-drumming) velocity to full range
+tag float p_vel_gain   = 1.0;
+tag int   p_vel_off    = 0;
+tag int   p_out_frame  = 0;    // 0=output to frameRec, 1=output to framePlay
+
+int FINGER_VEL_MIN = 11;
+int FINGER_VEL_MAX = 28;
+
+int DUAL_VEL_THRESHOLD = 24;
+
+
+// Radius split configurations:
+
+// Mathmetical:
+PointerArray radius_splits_even <= [
+   // 2 zones
+   [64],
+
+   // 3 zones
+   [42, 84],
+
+   // 4 zones
+   [32, 64, 96]
+                               ];
+
+// Manually tweaked:
+PointerArray radius_splits_custom <= [
+   // 2 zones
+   [72],
+
+   // 3 zones
+   [40, 92],
+
+   // 4 zones
+   [30, 68, 106]
+                               ];
+
+// PointerArray radius_splits <= radius_splits_even;
+PointerArray radius_splits <= radius_splits_custom;
+
+int NOTE_RT = 42;  // f#3
+int NOTE_RB = 36;  // c-3
+int NOTE_LB = 38;  // d-3
+int NOTE_LT = 47;  // b-3
+
+
+// ---------------- end of config ---------------
+
+
+int rt_note;  // -1=inactive, last output note otherwise
+int rb_note;
+int lb_note;
+int lt_note;
+
+int rt_queued_note;  // raw note
+int rb_queued_note;
+int lb_queued_note;
+int lt_queued_note;
+
+int rt_queued_vel;  // raw velocity. only valid when queued_note is !=-1
+int rb_queued_vel;
+int lb_queued_vel;
+int lt_queued_vel;
+
+int rt_bc;
+int rb_bc;
+int lb_bc;
+int lt_bc;
+
+
+function OnReset() {
+   rt_note = -1;
+   rb_note = -1;
+   lb_note = -1;
+   lt_note = -1;
+
+   rt_queued_note = -1;
+   rb_queued_note = -1;
+   lb_queued_note = -1;
+   lt_queued_note = -1;
+
+   rt_bc = -1;
+   rb_bc = -1;
+   lb_bc = -1;
+   lt_bc = -1;
+}
+
+function OnSeek(int ticks) {
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   
+}
+
+function GetFilteredNoteOn(MIDIPipeFrame _frame, int _ch, int _note, Integer _retVel, Integer _retDur) {
+   
+   int numNoteOn = _frame.getNumEventsNoteOnByFlt(in_1234_dev, _ch);
+   int evIdx = 0;
+   int r = -1;
+
+   loop(numNoteOn)
+   {
+      MIDIPipeEvent ev;
+      _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_ON, in_1234_dev, _ch);
+      if(ev.note == _note)
+      {
+         _retVel = ev.velocity;
+         _retDur = ev.duration;
+         r = ev.note;
+      }
+      evIdx++;
+   }
+
+   return r;
+}
+
+function GetFilteredNoteOff(MIDIPipeFrame _frame, int _ch, int _note) {
+   
+   int numNoteOff = _frame.getNumEventsNoteOffByFlt(in_1234_dev, _ch);
+   int evIdx = 0;
+   int r = -1;
+
+   loop(numNoteOff)
+   {
+      MIDIPipeEvent ev;
+      _frame.getEventByIdxAndFlt(evIdx, ev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, in_1234_dev, _ch);
+      if(ev.note == _note)
+      {
+         r = ev.note;
+      }
+      evIdx++;
+   }
+
+   return r;
+}
+
+function CalcNoteNrAndVel(Integer _noteNr, int _padIdx, Integer _vel, int _radius) {
+   // Keep or update 'vel'
+   int relRadius = _radius;
+
+   if(p_num_zones > 1)
+   {
+      _padIdx = _padIdx * p_num_zones;
+
+      int relPadIdx = 0;
+      IntArray splits <= radius_splits[p_num_zones-2];
+      int threshold;
+
+      foreach threshold in splits
+      {
+         if(_radius >= threshold)
+            relPadIdx++;
+      }
+
+      if(1 == p_vel_mode)  // radius to velocity ?
+      {
+         int minRad;
+         int maxRad;
+
+         if(relPadIdx == splits.numElements)
+         {
+            maxRad = 127;
+         }
+         else
+         {
+            maxRad = splits.get(relPadIdx);
+         }
+
+         if(0 == relPadIdx)
+         {
+            minRad = 0;
+         }
+         else
+         {
+            minRad = splits.get(relPadIdx - 1);
+         }
+
+         relRadius = 127 * (float(_radius - minRad) / float(maxRad - minRad));
+      }
+
+      _padIdx += relPadIdx;
+   }
+
+   if(1 == p_vel_scale)
+   {
+      _vel = mathClampi(
+         (float(mathClampi(_vel, FINGER_VEL_MIN, FINGER_VEL_MAX) - FINGER_VEL_MIN) /
+          float(FINGER_VEL_MAX - FINGER_VEL_MIN)
+          ) * 127,
+         1, 127
+                        );
+   }
+
+   if(1 == p_vel_mode) // radius to velocity ?
+   {
+      _vel = mathMaxi(1, relRadius);
+   }
+   else if(2 == p_vel_mode) // dual velocity ?
+   {
+      _vel = (_vel < DUAL_VEL_THRESHOLD) ? 64 : 127;
+   }
+   else if(3 == p_vel_mode) // constant ?
+   {
+      _vel = 127;
+   }
+
+   _vel = mathClampi((_vel * p_vel_gain) + p_vel_off, 1, 127);
+
+   _noteNr = STConfig.node_trig_seq_rec_base_note + ((p_offset + _padIdx) & 15);  // TrigSeq track 1..16
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   int ccVal;
+   int numNoteOn;
+   int evIdx;
+
+   p_num_zones = mathClampi(p_num_zones, 1, 4);
+
+
+   Integer noteNr;
+   Integer noteVel;
+   Integer noteDur;
+
+   MIDIPipeFrame frameOut;
+   frameOut.empty();
+
+   // Process note ons+offs
+
+   // RT
+   if(-1 != rt_note)
+   {
+      noteNr = GetFilteredNoteOff(frameRec, in_1234_ch + 0/*ch*/, NOTE_RT);
+
+      if(-1 != noteNr)
+      {
+         // Stop note
+         frameOut.noteOff(true/*bSet*/, out_1_dev, out_1_ch,
+                          rt_note, 0/*vel*/
+                          );
+         rt_note = -1;
+         rt_bc = -1;
+      }
+   }
+
+   noteNr = GetFilteredNoteOn(frameRec, in_1234_ch + 0/*ch*/, NOTE_RT, noteVel, noteDur);
+
+   if(-1 != noteNr)
+   {
+      // Play note
+      rt_queued_note = noteNr;
+      rt_queued_vel = noteVel;        
+   }
+
+   // RB
+   if(-1 != rb_note)
+   {
+      noteNr = GetFilteredNoteOff(frameRec, in_1234_ch + 1/*ch*/, NOTE_RB);
+
+      if(-1 != noteNr)
+      {
+         // Stop note
+         frameOut.noteOff(true/*bSet*/, out_1_dev, out_1_ch,
+                          rb_note, 0/*vel*/
+                          );
+         rb_note = -1;
+         rb_bc = -1;
+      }
+   }
+
+   noteNr = GetFilteredNoteOn(frameRec, in_1234_ch + 1/*ch*/, NOTE_RB, noteVel, noteDur);
+
+   if(-1 != noteNr)
+   {
+      // Play note
+      rb_queued_note = noteNr;
+      rb_queued_vel = noteVel;        
+   }
+
+   // LB
+   if(-1 != lb_note)
+   {
+      noteNr = GetFilteredNoteOff(frameRec, in_1234_ch + 2/*ch*/, NOTE_LB);
+
+      if(-1 != noteNr)
+      {
+         // Stop note
+         frameOut.noteOff(true/*bSet*/, out_1_dev, out_1_ch,
+                          lb_note, 0/*vel*/
+                          );
+         lb_note = -1;
+         lb_bc = -1;
+      }
+   }
+
+   noteNr = GetFilteredNoteOn(frameRec, in_1234_ch + 2/*ch*/, NOTE_LB, noteVel, noteDur);
+
+   if(-1 != noteNr)
+   {
+      // Play note
+      lb_queued_note = noteNr;
+      lb_queued_vel = noteVel;        
+   }
+
+   // LT
+   if(-1 != lt_note)
+   {
+      noteNr = GetFilteredNoteOff(frameRec, in_1234_ch + 3/*ch*/, NOTE_LT);
+
+      if(-1 != noteNr)
+      {
+         // Stop note
+         frameOut.noteOff(true/*bSet*/, out_1_dev, out_1_ch,
+                          lt_note, 0/*vel*/
+                          );
+         lt_note = -1;
+         lt_bc = -1;
+      }
+   }
+
+   noteNr = GetFilteredNoteOn(frameRec, in_1234_ch + 3/*ch*/, NOTE_LT, noteVel, noteDur);
+
+   if(-1 != noteNr)
+   {
+      // Play note
+      lt_queued_note = noteNr;
+      lt_queued_vel = noteVel;        
+   }
+
+   //
+   // Process breath control (radius) events
+   //
+   //  (note) CC arrives _after_ a note on, i.e. radius-zone notes can only be triggered properly
+   //          once the CC is recv'd
+   //
+
+   // RT
+   ccVal = frameRec.getFilteredCC(in_1234_dev, in_1234_ch + 0, 2/*breathcontrol*/);
+   if(-1 != ccVal)
+   {
+      rt_bc = ccVal;  // Radius (0=center, 127=outer edge)
+
+      if(-1 != rt_queued_note)
+      {
+         trace "xxx note on noteNr="+rt_queued_note+" rt_bc="+rt_bc;
+         noteNr  = rt_queued_note;
+         noteVel = rt_queued_vel;
+         rt_queued_note = -1;
+         CalcNoteNrAndVel(noteNr, 0/*padIdx*/, noteVel, rt_bc);
+         rt_note = noteNr;
+         frameOut.noteOn(true/*bSet*/, out_1_dev, out_1_ch,
+                         noteNr,
+                         noteVel,
+                         noteDur
+                         );
+      }
+   }
+
+   // RB
+   ccVal = frameRec.getFilteredCC(in_1234_dev, in_1234_ch + 1, 2/*breathcontrol*/);
+   if(-1 != ccVal)
+   {
+      rb_bc = ccVal;  // Radius (0=center, 127=outer edge)
+
+      if(-1 != rb_queued_note)
+      {
+         trace "xxx note on noteNr="+rb_queued_note+" rb_bc="+rb_bc;
+         noteNr  = rb_queued_note;
+         noteVel = rb_queued_vel;
+         rb_queued_note = -1;
+         CalcNoteNrAndVel(noteNr, 1/*padIdx*/, noteVel, rb_bc);
+         rb_note = noteNr;
+         frameOut.noteOn(true/*bSet*/, out_1_dev, out_1_ch,
+                         noteNr,
+                         noteVel,
+                         noteDur
+                         );
+      }
+   }
+
+   // LB
+   ccVal = frameRec.getFilteredCC(in_1234_dev, in_1234_ch + 2, 2/*breathcontrol*/);
+   if(-1 != ccVal)
+   {
+      lb_bc = ccVal;  // Radius (0=center, 127=outer edge)
+
+      if(-1 != lb_queued_note)
+      {
+         trace "xxx note on noteNr="+lb_queued_note+" lb_bc="+lb_bc;
+         noteNr  = lb_queued_note;
+         noteVel = lb_queued_vel;
+         lb_queued_note = -1;
+         CalcNoteNrAndVel(noteNr, 2/*padIdx*/, noteVel, lb_bc);
+         lb_note = noteNr;
+         frameOut.noteOn(true/*bSet*/, out_1_dev, out_1_ch,
+                         noteNr,
+                         noteVel,
+                         noteDur
+                         );
+      }
+   }
+
+   // LT
+   ccVal = frameRec.getFilteredCC(in_1234_dev, in_1234_ch + 3, 2/*breathcontrol*/);
+   if(-1 != ccVal)
+   {
+      lt_bc = ccVal;  // Radius (0=center, 127=outer edge)
+
+      if(-1 != lt_queued_note)
+      {
+         trace "xxx note on noteNr="+lt_queued_note+" lt_bc="+lt_bc;
+         noteNr  = lt_queued_note;
+         noteVel = lt_queued_vel;
+         lt_queued_note = -1;
+         CalcNoteNrAndVel(noteNr, 3/*padIdx*/, noteVel, lt_bc);
+         lt_note = noteNr;
+         frameOut.noteOn(true/*bSet*/, out_1_dev, out_1_ch,
+                         noteNr,
+                         noteVel,
+                         noteDur
+                         );
+      }
+   }
+
+   if(0 == p_out_frame)
+   {
+      frameRec.mergeFrame(frameOut);
+   }
+   else
+   {
+      framePlay.mergeFrame(frameOut);
+   }
+}

@@ -1,0 +1,290 @@
+// ----
+// ---- file   : PageOutputMon.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 17Aug2017
+// ---- changed: 05Oct2019, 01Nov2019, 19Dec2021, 02Nov2022, 03Oct2023
+// ----
+// ----
+// ----
+
+module MPageOutputMon;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageOutputMon extends Page, ActionProvider {
+
+   define String TA_UPDATE;
+
+   protected Button *bt_parent;
+
+   protected CheckBox *cb_capture;
+   protected CheckBox *cb_bg;
+   protected Button   *bt_clear;
+
+   protected TextView *tx_data;
+
+   protected TimerAction *ta_update;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageOutputMon.xfm"))
+      {
+         trace "[---] failed to parse PageOutputMon.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tx_data.setLogMaxLines(STConfig.output_mon_max_log_lines);
+
+      ta_update <= TimerAction.New(TA_UPDATE, this, 50);
+
+      recursiveBuildTabCycleLists();
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(app_lnf.b_ascii_back_buttons)
+         Global.ASCIIBackButton(bt_parent);
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return -1/*show prev*/;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      cb_bg.setSelected(STConfig.b_output_mon_bg);
+
+      tx_data.onResize();
+      relayout(); // workaround for TextView
+      tx_data.gotoEnd();
+      tx_data.validateCursorPosition();
+
+      relayout();
+      tx_data.onResize();
+
+      replay.b_output_monitor = true;
+
+      ta_update.reschedule();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      if(!STConfig.b_output_mon_bg)
+         replay.b_output_monitor = false;
+
+      ta_update.cancel();
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tx_data);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         cb_capture, bt_clear,
+         tx_data
+                              ];
+   }
+
+   // <ui_handle.png>
+   protected method handleClear() {
+      tx_data.setText("");
+      Global.Print("Clear output monitor log");
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleCapture() {
+      Global.Print("Capture is "+Utils.GetEnableString(cb_capture.isSelected()));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleBg() {
+      STConfig.b_output_mon_bg = cb_bg.isSelected();
+      Global.Print("Background capturing is "+Utils.GetEnableString(STConfig.b_output_mon_bg));
+   }
+
+   // <method.png>
+   protected method appendBuffer(Buffer data) {
+      String buf; buf.empty();
+
+      if(data.offset > 0)
+      {
+         int j, i = 0;
+         int num = data.offset;
+         int c;
+         int x = 0;
+         int y = 0;
+         Integer io;
+         io.value = i;
+         buf.append("            ");
+         buf.append(io.printf("%04x: "));
+         loop(num)
+         {
+            io = data.peekI8(i++);
+            buf.append(io.printf("%02x "));
+
+            if( (++x % STConfig.output_mon_hexdump_cols) == 0)
+            {
+               j = y;
+               tx_data.appendLogLine(buf);
+               buf.empty();
+               if(i < num)
+               {
+                  io = i;
+                  buf.append(io.printf("            %04x: "));
+               }
+               x = 0;
+               y += STConfig.output_mon_hexdump_cols;
+            }
+         }
+
+         if(!buf.isBlank())
+         {
+            tx_data.appendLogLine(buf);
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleUpdate() {
+      STX_MIDIOutDevice *outDev;
+      boolean bAdded = false;
+
+      foreach outDev in MIDI.out_devices
+      {
+         if(null != outDev)
+         {
+            boolean bShow =
+               // (@(outDev) != @(SysEx.out_dev)) &&
+               (@(outDev) != @(faderport.out_dev)
+                );
+
+            if(bShow)
+            {
+               local PointerArray history <= outDev.unlinkOutputMonitorHistory();
+
+               if(null != history)
+               {
+                  if(cb_capture.isSelected())
+                  {
+                     OutputMonitorEntry *en;
+                     int enIdx = 0;
+
+                     foreach en in history
+                     {
+                        // // trace "xxx PageOutputMon: dev="+outDev.getAliasOrDeviceName()+" enIdx="+enIdx;
+                        Integer ioTimestamp = en.timestamp;
+
+                        String buf; buf.empty();
+                        buf.append(ioTimestamp.printf("%10i"));
+                        buf.append(" ");
+                        buf.append(outDev.getAliasOrDeviceName());
+                        buf.append(":");
+                        tx_data.appendLogLine(buf);
+
+                        appendBuffer(en.cmd_buffer);
+                        appendBuffer(en.note_buffer);
+
+                        bAdded = true;
+
+                        enIdx++;
+                     }
+                  }
+
+                  history <= null;
+               }
+            } // if bShow
+
+         } // if outDev
+      } // foreach outDev
+
+      if(bAdded)
+         tx_data.gotoEnd();
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_BACKSPACE:
+            handleClear();
+            return true;
+
+         case 'g':
+            if(_k.modNone())
+            {
+               cb_bg.toggleSelection();
+               handleToggleBg();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modNone())
+            {
+               cb_capture.toggleSelection();
+               handleToggleCapture();
+               return true;
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      if(TA_UPDATE == acName)
+      {
+         handleUpdate();
+         ta_update.reschedule();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(cb_capture):
+            handleToggleCapture();
+            return true;
+
+         case @(cb_bg):
+            handleToggleBg();
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            return true;
+
+         case @(bt_parent):
+            root_form.showPageParent();
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

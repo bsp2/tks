@@ -1,0 +1,232 @@
+// ----
+// ---- file   : Montage_EGPreset.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2022 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 28Oct2022
+// ---- changed: 29Oct2022
+// ----
+// ----
+// ----
+
+module MMontage_EGPreset;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class Montage_EGPreset {
+   static String EGPRESET_FILE = "$(ROOT)/montage_eg_presets.txt";
+
+   String name;
+
+   float hl;  // hold level / initial level (-1..1)
+   float al;  // attack level (-1..1)
+   float d1l; // decay 1 level (-1..1)
+   float d2l; // decay 2 level (-1..1)
+   float rl;  // release level (-1..1)
+
+   float ht;  // hold time (0..1)
+   float at;  // attack time (0..1)
+   float d1t; // decay 1 time (0..1)
+   float d2t; // decay 2 time (0..1)
+   float rt;  // release time (0..1)
+
+   // temporarily valid while loading preset:
+   Montage_EGMixerSettings eg_mixer_settings;
+
+   static Montage_EGPreset *[] all_presets;
+
+
+   // <load.png>
+   static LoadPresets() {
+
+      all_presets.free();
+
+      local String pathName <= Utils.ToNativePathName(EGPRESET_FILE);
+      local String buf;
+      local String nextPresetName;
+      if(buf.loadLocal(pathName, true/*bRemoveCR*/))
+      {
+         local StringArray lines <= buf.splitChar('\n');
+         local String *line;
+         int lineNr = 1;
+         foreach line in lines
+         {
+            line.trim();
+            if(!(line <= "#") && !line.isBlank())
+            {
+               if(line <= "[")
+               {
+                  // [my preset name]
+                  int idxNameEnd = line.indexOf("]", 0);
+                  if(-1 != idxNameEnd)
+                  {
+                     line.substring(1, idxNameEnd-1) => nextPresetName;
+                     // trace "xxx set nextPresetName=\""+nextPresetName+"\"";
+                  }
+               }
+               else if(!nextPresetName.isBlank())
+               {
+                  if(line & ":")
+                  {
+                     //  HL:0  AL:1 D1L:0.48 D2L:0.2  RL:-0.31  HT:0  AT:0 D1T:0.24 D2T:0.33  RT:0.37
+                     line.toLower();
+
+                     Montage_EGPreset p <= new Montage_EGPreset;
+                     p.name = nextPresetName;
+                     nextPresetName.empty();
+
+                     // nr <name> <cat> <subcat>
+                     local StringArray words <= line.splitSpace(true);
+                     String *w;
+                     foreach w in words
+                     {
+                        if(w <= "hl:")
+                        {
+                           p.hl = w.replace("hl:", "");
+                        }
+                        else if(w <= "al:")
+                        {
+                           p.al = w.replace("al:", "");
+                        }
+                        else if(w <= "d1l:")
+                        {
+                           p.d1l = w.replace("d1l:", "");
+                        }
+                        else if(w <= "d2l:")
+                        {
+                           p.d2l = w.replace("d2l:", "");
+                        }
+                        else if(w <= "rl:")
+                        {
+                           p.rl = w.replace("rl:", "");
+                        }
+                        else if(w <= "ht:")
+                        {
+                           p.ht = w.replace("ht:", "");
+                        }
+                        else if(w <= "at:")
+                        {
+                           p.at = w.replace("at:", "");
+                        }
+                        else if(w <= "d1t:")
+                        {
+                           p.d1t = w.replace("d1t:", "");
+                        }
+                        else if(w <= "d2t:")
+                        {
+                           p.d2t = w.replace("d2t:", "");
+                        }
+                        else if(w <= "rt:")
+                        {
+                           p.rt = w.replace("rt:", "");
+                        }
+
+                     } // foreach w
+
+                     all_presets.add(#(deref p));
+
+                  } // if line & ":"
+               } // if nextPresetName
+            } // if ! comment or blank
+         } // foreach line
+      } // if buf load
+
+      Global.Debug("Montage_EGPreset::LoadPresets: parsed "+all_presets.numElements+" presets");
+   }
+
+   // <method.png>
+   public static EGNormUni(byte _v) : float {
+      int i;
+      i = 1000*((_v/127.0));
+      return (i/1000.0);
+   }
+
+   // <method.png>
+   public static EGNormUni99(byte _v) : float {
+      int i;
+      i = 1000*((_v/99.0));
+      return (i/1000.0);
+   }
+
+   // <method.png>
+   public static EGNormBi(byte _v) : float {
+      int i;
+      if(_v < 0)
+         i = 1000*((_v/128.0));
+      else
+         i = 1000*((_v/127.0));
+      return (i/1000.0);
+   }
+
+   // <method.png>
+   public static EGNormBi50(byte _v) : float {
+      int i;
+      i = 1000*((_v/50.0));
+      return (i/1000.0);
+   }
+
+   // <method.png>
+   public static EGToUni(float _f) : byte {
+      return mathClampi(_f * 127 + 0.5, 0, 127);
+   }
+
+   // <method.png>
+   public static EGToUni99(float _f) : byte {
+      return mathClampi(_f * 99 + 0.5, 0, 99);
+   }
+
+   // <method.png>
+   public static EGToBi(float _f) : byte {
+      if(_f < 0.0)
+         return mathClampi(_f * 128 - 0.5, -128, 127);
+      else
+         return mathClampi(_f * 127 + 0.5, -128, 127);
+   }
+
+   // <method.png>
+   public static EGToBi50(float _f) : byte {
+      if(_f < 0.0)
+         return mathClampi(_f * 50 - 0.5, -50, 50);
+      else
+         return mathClampi(_f * 50 + 0.5, -50, 50);
+   }
+
+   // <method.png>
+   public method dump() {
+      local String buf;
+      trace "["+name+"]";
+      buf.append("  HL:"+hl);
+      buf.append("  AL:"+al);
+      buf.append(" D1L:"+d1l);
+      buf.append(" D2L:"+d2l);
+      buf.append("  RL:"+rl);
+      buf.append("  HT:"+ht);
+      buf.append("  AT:"+at);
+      buf.append(" D1T:"+d1t);
+      buf.append(" D2T:"+d2t);
+      buf.append("  RT:"+rt);
+      buf.append("\n\n");
+      trace buf;
+   }
+
+   // <method.png>
+   public method mix(Montage_EGPreset _a, Montage_EGPreset _b, float _amt) {
+      hl  = mathLerpf(_a.hl,  _b.hl,  _amt);
+      al  = mathLerpf(_a.al,  _b.al,  _amt);
+      d1l = mathLerpf(_a.d1l, _b.d1l, _amt);
+      d2l = mathLerpf(_a.d2l, _b.d2l, _amt);
+      rl  = mathLerpf(_a.rl,  _b.rl,  _amt);
+      ht  = mathLerpf(_a.ht,  _b.ht,  _amt);
+      at  = mathLerpf(_a.at,  _b.at,  _amt);
+      d1t = mathLerpf(_a.d1t, _b.d1t, _amt);
+      d2t = mathLerpf(_a.d2t, _b.d2t, _amt);
+      rt  = mathLerpf(_a.rt,  _b.rt,  _amt);
+   }
+}

@@ -1,0 +1,431 @@
+// Phrase loop / repeat utility script
+//
+//    author: bsp
+//   created: 15Jun2023
+//   changed: 17Jun2023, 18Jun2023
+//
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ configuration
+// (note) the default note numbers refer to the common Synergy drum pad layout (see drum_layout.txt):
+//
+//          Bank A:
+//          +-------+-------+-------+-------+-------+-------+-------+-------+
+//          |  BD1  |  SD1  |  CP1  |  LT1  |  MT1  |  HT1  |  CH1  |  OH1  |   
+//          +-------+-------+-------+-------+-------+-------+-------+-------+
+//          |  BD2  |  SD2  |  CP2  |  MA1  |  CL1  |  CB1  |  RS1  |  CY1  |   
+//          +-------+-------+-------+-------+-------+-------+-------+-------+
+//           =
+//          +-------+-------+-------+-------+-------+-------+-------+-------+
+//          |  C-4  |  D-4  |  E-4  |  F-4  |  G-4  |  A-4  |  A#4  |  B-4  |   
+//          +-------+-------+-------+-------+-------+-------+-------+-------+
+//          |  C-5  |  D-5  |  E-5  |  F-5  |  G-5  |  A-5  |  A#5  |  B-5  |   
+//          +-------+-------+-------+-------+-------+-------+-------+-------+
+//
+// (note) feel free to customize as needed
+// (note) min repeatlen is 1/128 (==0.125 16th)
+// (note) use default "seq" device set in UI "ports" when device cannot be mapped
+// (note) use default "seq" midich set in UI "ports" when midich is invalid (<1 or >16)
+// (note) use default phrase length set in UI "params" when repeatlen_num16th is invalid (<1 or >16)
+//
+StringArray note_autodev_ports = [
+   // note:device:midich:repeatlen_num16th:bCur:bSeek
+   //    bCur: 1=start repeat from current play position. 0=start from beginning of sequence [def=1]
+   //   bSeek: 1=when pad is released, continue as if repeat never occured. 0=continue at current position [def=1]
+   "C-4:<play_d>:8:6.000:1:1",  // pad 1
+   "D-4:<play_d>:8:4.000:1:1",  // pad 2
+   "E-4:<play_d>:8:3.000:1:1",  // pad 3
+   "F-4:<play_d>:8:2.000:1:1",  // pad 4
+   "G-4:<play_d>:8:1.000:1:1",  // pad 5
+   "A-4:<play_d>:8:0.500:1:1",  // pad 6
+   "A#4:<play_d>:8:0.250:1:1",  // pad 7
+   "B-4:<play_d>:8:0.125:1:1",  // pad 8
+   "C-5:<play_d>:8:6.000:0:1",  // pad 9
+   "D-5:<play_d>:8:4.000:0:1",  // pad 10
+   "E-5:<play_d>:8:3.000:0:0",  // pad 11
+   "F-5:<play_d>:8:2.000:0:0",  // pad 12
+   "G-5:<play_d>:8:1.000:0:1",  // pad 13
+   "A-5:<play_d>:8:0.500:0:1",  // pad 14
+   "A#5:<play_d>:8:0.250:0:1",  // pad 15
+   "B-5:<play_d>:8:0.125:0:1",  // pad 16
+                                  ];
+
+boolean b_debug = 0;
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /configuration
+
+tag float p_len_16th = 0;  // override per-pad phrase length (when >= 1) (min=0.125 = 1/128 = 6 ticks @ppq=192)
+tag int   p_quant_start_idx = 1; // 0=1/4, 1=1/8, 2=1/16 [def=1]
+
+use namespace st2;
+
+IntArray note_state;
+note_state.allocAndFill(128, false);
+
+// parsed from "note_autodev_ports" when node is reset
+IntArray pad_note_numbers;
+IntArray pad_autodev_device_indices;
+IntArray pad_autodev_midi_channels;
+IntArray pad_repeat_len_128th;
+IntArray pad_start_cur;
+IntArray pad_cont_seek;
+
+int ticksPer16th;
+int ticksPer128th;
+IntArray aQuantStartTicks;
+
+IntArray queued_retrig_start;  queued_retrig_start.allocAndFill(16, -1);
+IntArray queued_retrig_end;    queued_retrig_end.allocAndFill(16, -1);
+IntArray queued_seek_ticks;    queued_seek_ticks.allocAndFill(16, -1);
+IntArray queued_seek_16th;     queued_seek_16th.allocAndFill(16, -1);
+IntArray retrig_off_16th;      retrig_off_16th.allocAndFill(16, 0);
+IntArray retrig_start_off_16th;      retrig_start_off_16th.allocAndFill(16, 0);  // for seek() when pad is released
+IntArray retrig_start_quant_tick_nr; retrig_start_quant_tick_nr.allocAndFill(16, 0);
+
+
+function OnReset() {
+
+   ticksPer16th  = current_song.ppq / 4;   // 48 ticks @ppq=192
+   ticksPer128th = current_song.ppq / 32;  //  6 ticks @ppq=192
+
+   aQuantStartTicks = [current_song.ppq,      // 0: 1/4
+                       current_song.ppq / 2,  // 1: 1/8
+                       current_song.ppq / 4,  // 2: 1/16
+                       ];
+
+   pad_note_numbers          .allocAndFill(16, -1);
+   pad_autodev_device_indices.allocAndFill(16, -1);
+   pad_autodev_midi_channels .allocAndFill(16, 0);
+   pad_repeat_len_128th      .allocAndFill(16, 6*(128/16));
+   pad_start_cur             .allocAndFill(16, true);
+   pad_cont_seek             .allocAndFill(16, true);
+
+   // Parse pad configuration
+   String *sPad;
+   int padIdx = 0;
+   int numParsed = 0;
+   local StringArray *aWords;
+   StringArray midiNotes <= MIDI.midi_notes;
+   foreach sPad in note_autodev_ports
+   {
+      aWords <= sPad.splitChar(':');
+      String *s;
+      if(aWords.numElements >= 1)
+      {
+         // Note index (0..127 => C-0..G-A)
+         s <= aWords[0];
+         s.toUpper();
+         int noteIdx = midiNotes.indexOfObject(s, 0);
+         if(-1 == noteIdx)
+            noteIdx = s;  // treat as integer, e.g 60(=C-5), or $3C
+         noteIdx = mathClampi(noteIdx, 0, 127);
+         pad_note_numbers[padIdx] = noteIdx;
+
+         // Target automation port: device
+         if(aWords.numElements >= 2)
+         {
+            s <= aWords[1];
+            STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName(s);
+            if(null != outDev)
+            {
+               pad_autodev_device_indices[padIdx] = outDev.dev_idx;
+            }
+            else
+            {
+               trace "[~~~] script<phrase_repeat>: failed to map alias or device name \""+s+"\" (padIdx="+padIdx+"), using seq_default_dev="+seq_default_dev;
+               pad_autodev_device_indices[padIdx] = seq_default_dev;
+            }
+
+            numParsed++;
+
+            /// Target automation port: midi channel
+            if(aWords.numElements >= 3)
+            {
+               s <= aWords[2];
+               int midiCh = s;
+               if(1 <= midiCh <= 16)
+                  pad_autodev_midi_channels[padIdx] = midiCh - 1;
+               else
+               {
+                  trace "[~~~] script<phrase_repeat>: invalid midiCh="+midiCh+" (padIdx="+padIdx+"), using seq_default_ch="+seq_default_ch;
+                  pad_autodev_device_indices[padIdx] = seq_default_ch;
+               }
+
+               // Phrase repeat length (#16th, fractional)
+               if(aWords.numElements >= 4)
+               {
+                  s <= aWords[3];
+                  int phraseLen = int(float(s) * (128/16));
+                  if(1 <= phraseLen <= 128)
+                  {
+                     pad_repeat_len_128th[padIdx] = phraseLen;
+                  }
+                  else
+                  {
+                     trace "[~~~] script<phrase_repeat>: invalid repeatlen_num16th=\""+s+"\" (padIdx="+padIdx+"), using default repeatplen="+p_len_16th;
+                     pad_repeat_len_128th[padIdx] = int(p_len_16th * 8);
+                  }
+
+                  // "bCur" flag (1=start from cur play pos, 0=start from beginning of sequence)
+                  if(aWords.numElements >= 5)
+                  {
+                     pad_start_cur[padIdx] = (0 != int(aWords[4]));
+
+                     // "bSeek" flag (1=continue as if repeat never occured, 0=continue at current pos)
+                     if(aWords.numElements >= 6)
+                     {
+                        pad_cont_seek[padIdx] = (0 != int(aWords[5]));
+                     }
+                  }
+               }
+            } // if #words >= 3 (midich)
+         } // if #words >= 2 (dev)
+      } // if #words >= 1 (note)
+
+      // Next pad
+      padIdx++;
+   }
+
+   if(b_debug) trace "[dbg] script<phrase_repeat>:OnReset: parsed "+numParsed+" pad(s)";
+}
+
+function FindPadIdxByNote(byte _note) {
+   byte padIdx = 0;
+   loop(pad_note_numbers.numElements)
+   {
+      if(pad_note_numbers[padIdx] == _note)
+         return padIdx;
+      padIdx++;
+   }
+   return -1;
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bMuted)
+      return;
+
+   MIDIPipeEvent pev;
+   int evIdx;
+   int numEv;
+   byte padIdx;
+   int note;
+   int seqDev;
+   byte seqCh;
+   float repLen16th;
+
+   // Note-off
+   numEv = frameRec.getNumEventsNoteOffByFlt(note_dev, note_ch);
+   if(numEv > 0)
+   {
+      evIdx = 0;
+      loop(numEv)
+      {
+         // trace "xxx have note off -----------------------------------";
+         frameRec.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_OFF, note_dev, note_ch);
+
+         if(note_state[pev.note])
+         {
+            padIdx = FindPadIdxByNote(pev.note);
+            if(b_debug) trace "[dbg] script<phrase_repeat>: note-off. note="+pev.note+" => padIdx="+padIdx;
+            if(padIdx >= 0)
+            {
+               // Release retrig button
+               if(b_debug) trace "[dbg] script<phrase_repeat>: release retrig bt note="+pev.note+" padIdx="+padIdx;
+
+               queued_retrig_start[padIdx] = -1;
+               queued_retrig_end[padIdx] = -1;
+            
+               // trace "xxx end retrig_start_quant_tick_nr[padIdx]="+retrig_start_quant_tick_nr[padIdx];
+               // trace "xxx end retrig_start_quant_tick_nr[padIdx] mod16="+((retrig_start_quant_tick_nr[padIdx]/ticksPer16th)%16);
+               // trace "xxx end retrig_start_off_16th[padIdx]           ="+retrig_start_off_16th[padIdx];
+               if(retrig_start_quant_tick_nr[padIdx] >= 0)
+               {
+                  // trace "xxx end pad_cont_seek["+padIdx+"] = "+pad_cont_seek[padIdx];
+                  if(pad_cont_seek[padIdx])
+                  {
+                     // Continue replay as if retrig/loop never happened
+                     queued_seek_ticks[padIdx] = ((current_song.tick_nr + ticksPer16th-1) / ticksPer16th) * ticksPer16th;
+                     queued_seek_16th[padIdx] =
+                        (queued_seek_ticks[padIdx]
+                         - retrig_start_quant_tick_nr[padIdx]
+                         ) / ticksPer16th
+                        + retrig_start_off_16th[padIdx]
+                        ;
+                     // trace "xxx end queued_seek_ticks[padIdx] mod16="+((queued_seek_ticks[padIdx]/ticksPer16th)%16);
+                     // trace "xxx end queued_seek_16th[padIdx]="+((queued_seek_16th[padIdx]/ticksPer16th)%16);
+                  }
+                  // else: don't seek, simply continue playback
+                  retrig_start_quant_tick_nr[padIdx] = -1;
+               }
+               else
+                  queued_seek_ticks[padIdx] = -1;
+            }
+
+            note_state[pev.note] = false;
+         }
+
+         // Next note-off event
+         evIdx++;
+      }
+   }
+
+   // Note-on
+   Node *node;
+   numEv = frameRec.getNumEventsNoteOnByFlt(note_dev, note_ch);
+   if(numEv > 0)
+   {
+      evIdx = 0;
+      loop(numEv)
+      {
+         frameRec.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NOTE_ON, note_dev, note_ch);
+
+         if(!note_state[pev.note])
+         {
+            padIdx = FindPadIdxByNote(pev.note);
+            if(b_debug) trace "[dbg] script<phrase_repeat>: note-on. note="+pev.note+" => padIdx="+padIdx;
+            if(padIdx >= 0)
+            {
+               if(b_debug) trace "[dbg] script<phrase_repeat>: press retrig bt note="+pev.note+" padIdx="+padIdx;
+
+               int quantStartTicks = aQuantStartTicks.get(p_quant_start_idx);
+
+               queued_retrig_start[padIdx] =
+                  ((current_song.tick_nr + quantStartTicks/2) / quantStartTicks) * quantStartTicks;
+               retrig_start_quant_tick_nr[padIdx] = queued_retrig_start[padIdx];
+            
+               if(queued_retrig_start[padIdx] < current_song.tick_nr)
+               {
+                  // quantized retrig starts before current play position
+                  seqDev = pad_autodev_device_indices[padIdx];
+                  seqCh = pad_autodev_midi_channels[padIdx];
+                  if(b_debug) trace "[dbg] script<phrase_repeat>: IMM press retrig bt note="+pev.note+" padIdx="+padIdx+" seqPort=("+seqDev+":"+seqCh+")";
+                  if(seqDev >= 0)
+                  {
+                     node <= current_song.findFirstNodeForAutoDevCh(seqDev, seqCh);
+                     if(b_debug) trace "[dbg] script<phrase_repeat>: IMM press retrig bt note="+pev.note+" padIdx="+padIdx+" seqPort=("+seqDev+":"+seqCh+") node="+#(node);
+                     if(null != node)
+                     {
+                        if(b_debug) trace "[dbg] script<phrase_repeat>: IMM node.nodeGetCurrentTickOffset()="+node.nodeGetCurrentTickOffset();
+                        retrig_start_off_16th[padIdx] = mathMaxi(0, node.nodeGetCurrentTickOffset());
+                        // // retrig_start_off_16th[padIdx] = ((retrig_start_off_16th[padIdx] + ticksPer16th-1) - (current_song.tick_nr-queued_retrig_start[padIdx]))/ticksPer16th;
+                        retrig_start_off_16th[padIdx] =
+                           (retrig_start_off_16th[padIdx]/*ticks*/
+                            - (current_song.tick_nr - queued_retrig_start[padIdx])
+                            ) / ticksPer16th;
+                        // trace "xxx IMM pad_start_cur[padIdx]="+pad_start_cur[padIdx];
+                        if(pad_start_cur[padIdx])
+                           retrig_off_16th[padIdx] = retrig_start_off_16th[padIdx];
+                        else
+                           retrig_off_16th[padIdx] = 0;  // start retrig from beginning of sequence
+                        if(b_debug) trace "[dbg] script<phrase_repeat>: IMM retrig_off_16th="+retrig_off_16th[padIdx];
+
+                        queued_seek_ticks[padIdx] = ((current_song.tick_nr + ticksPer16th-1) / ticksPer16th) * ticksPer16th;
+                        queued_seek_16th[padIdx]  = retrig_off_16th[padIdx] + (queued_seek_ticks[padIdx] - queued_retrig_start[padIdx])/ticksPer16th;
+
+                        if(p_len_16th >= 0.125)
+                           repLen16th = p_len_16th;  // override
+                        else
+                           repLen16th = pad_repeat_len_128th[padIdx] / (128.0/16);
+                        queued_retrig_end[padIdx] = queued_retrig_start[padIdx] + ticksPer128th * int(repLen16th * (128.0/16));
+                        if(repLen16th > 0.0) // paranoia (should not be 0 at any time)
+                        {
+                           // (note) may happen when repeat_len is <1/16 (initial end scheduled before quantized start)
+                           while(queued_retrig_end[padIdx] < queued_seek_ticks[padIdx])
+                              queued_retrig_end[padIdx] = queued_retrig_end[padIdx] + ticksPer128th * int(repLen16th * (128.0/16));
+                        }
+                        queued_retrig_start = -1;
+                     }
+                  } // if seqDev >= 0
+               }
+            }
+
+            note_state[pev.note] = true;
+         }
+
+         // Next note-on event
+         evIdx++;
+      }
+   }
+
+   // Check active pad delayed start and repeat end
+   padIdx = 0;
+   loop(16)
+   {
+      if(queued_retrig_start[padIdx] == current_song.tick_nr)
+      {
+         // delayed (quantized) retrig start
+         seqDev = pad_autodev_device_indices[padIdx];
+         seqCh = pad_autodev_midi_channels[padIdx];
+         if(b_debug) trace "[dbg] script<phrase_repeat>: DELAYED retrig bt padIdx="+padIdx+" seqPort=("+seqDev+":"+seqCh+")";
+         if(seqDev >= 0)
+         {
+            node <= current_song.findFirstNodeForAutoDevCh(seqDev, seqCh);
+            if(b_debug) trace "[dbg] script<phrase_repeat>: DELAYED retrig bt padIdx="+padIdx+" seqPort=("+seqDev+":"+seqCh+") node="+#(node);
+            if(null != node)
+            {
+               if(b_debug) trace "[dbg] script<phrase_repeat>: padIdx="+padIdx+" DELAYED node.nodeGetCurrentTickOffset()="+node.nodeGetCurrentTickOffset();
+               retrig_start_off_16th[padIdx] = mathMaxi(0, node.nodeGetCurrentTickOffset());
+               // // retrig_start_off_16th[padIdx] = ((retrig_start_off_16th[padIdx] + ticksPer16th/2)/ticksPer16th);
+               retrig_start_off_16th[padIdx] = retrig_start_off_16th[padIdx] / ticksPer16th;
+               if(pad_start_cur[padIdx])
+                  retrig_off_16th[padIdx] = retrig_start_off_16th[padIdx];
+               else
+                  retrig_off_16th[padIdx] = 0;
+               // trace "xxx DELAYED  mod16 retrig_start_off_16th[padIdx]="+retrig_start_off_16th[padIdx]+" songTickNr16="+((current_song.tick_nr/ticksPer16th)%16);
+               if(b_debug) trace "[dbg] script<phrase_repeat>: padIdx="+padIdx+" DELAYED retrig_off_16th="+retrig_off_16th[padIdx];
+
+               queued_seek_16th[padIdx]  = retrig_off_16th[padIdx];
+               queued_seek_ticks[padIdx] = queued_retrig_start[padIdx];
+
+               if(p_len_16th >= 0.125)
+                  repLen16th = p_len_16th;  // override
+               else
+                  repLen16th = pad_repeat_len_128th[padIdx] / (128.0/16);
+               queued_retrig_end[padIdx] = queued_retrig_start[padIdx] + ticksPer128th * int(repLen16th * (128.0/16.0));
+            }
+         }
+         else
+         {
+            // invalid dev
+            queued_retrig_end[padIdx] = -1;
+         }
+         queued_retrig_start[padIdx] = -1;
+      }
+
+      if(queued_retrig_end[padIdx] == current_song.tick_nr)
+      {
+         if(b_debug) trace "[dbg] script<phrase_repeat>: padIdx="+padIdx+" reached queued_retrig_end="+queued_retrig_end[padIdx]+" retrig_off_16th="+retrig_off_16th[padIdx];
+         queued_seek_16th[padIdx]  = retrig_off_16th[padIdx];
+         queued_seek_ticks[padIdx] = queued_retrig_end[padIdx];
+
+         if(p_len_16th >= 0.125)
+            repLen16th = p_len_16th;  // override
+         else
+            repLen16th = pad_repeat_len_128th[padIdx] / (128.0/16);
+         queued_retrig_end[padIdx] = queued_retrig_end[padIdx] + ticksPer128th * int(repLen16th * (128.0/16));
+      }
+
+      if(queued_seek_ticks[padIdx] == current_song.tick_nr)
+      {
+         if(b_debug) trace "[dbg] script<phrase_repeat>: padIdx="+padIdx+" send seek 16th queued_seek_16th="+queued_seek_16th[padIdx];
+         seqDev = pad_autodev_device_indices[padIdx];
+         if(seqDev >= 0)
+         {
+            seqCh = pad_autodev_midi_channels[padIdx];
+            if(0 <= seqCh <= 15)
+            {
+               if(b_debug) trace "[dbg] script<phrase_repeat>: padIdx="+padIdx+"   => send to automation port dev="+seqDev+" ch="+seqCh;
+               framePlay.rpn(true/*bSet*/, seqDev, seqCh, Node.RPN_COMMON_SEEK_OFFSET, queued_seek_16th[padIdx]);
+            }
+         }
+         queued_seek_ticks[padIdx] = -1;
+      }
+
+      // Next pad
+      padIdx++;
+   }
+
+}

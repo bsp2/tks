@@ -1,0 +1,244 @@
+// ----
+// ---- file   : PushGrid.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2015 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 30Sep2014, 17Oct2014, 16Nov2014, 21Nov2014, 11Nov2015, 12Nov2015, 15Nov2015
+// ----
+// ----
+// ----
+
+module MPushGrid;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PushGrid extends MIDIMapDefs {
+
+   define int RET_NONE    = 0;
+   define int RET_SCROLL  = 1;
+   define int RET_PRESS   = 2;
+   define int RET_RELEASE = 3;
+
+   public int grid_px; // 0=left
+   public int grid_py; // 0=top
+   public int grid_sx;
+   public int grid_sy;
+
+   public int grid_sz;  // total num cells (grid_sx * grid_sy)
+
+   public int padidx_lb;  // 0=left/bottom
+   public int padidx_rt;
+
+   protected int scroll_y;
+   protected int max_scroll_y;
+
+   protected Object owner;
+
+   protected boolean b_may_update;
+
+
+   // <init.png>
+   public method init(int _gridPx, int _gridPy, int _gridSx, int _gridSy, Object _owner) {
+      grid_px = _gridPx;
+      grid_py = _gridPy;
+      grid_sx = _gridSx;
+      grid_sy = _gridSy;
+
+      grid_sz = grid_sx * grid_sy;
+
+      padidx_lb = getPadIdxByXY(          0, grid_sy - 1);
+      padidx_rt = getPadIdxByXY(grid_sx - 1, 0          );
+
+      scroll_y = 0;
+      max_scroll_y = 0;
+
+      owner <= _owner;
+
+      b_may_update = true;
+   }
+
+   // <method_set.png>
+   public method setEnableUpdates(boolean _bEnable) {
+      b_may_update = _bEnable;
+   }
+
+   // <method_get.png>
+   public method getPadIdxByXY(int _x, int _y) : int {
+      // (note) (_x; _y) are relative to origin (grid_px; grid_py)
+      return grid_px + _x + (7 - (grid_py + _y)) * 8;
+   }
+
+   // <method_get.png>
+   public method getXYByPadIdx(int _padIdx, Integer _retX, Integer _retY) {
+      _padIdx -= padidx_lb;
+      _retY = (grid_sy - 1 - (_padIdx / 8));
+      _retX = (_padIdx & 7);
+   }
+
+   // <method.png>
+   public method setMaxY(int _maxY) {
+
+      max_scroll_y = (_maxY - grid_sy);
+
+      if(max_scroll_y < 0)
+      {
+         max_scroll_y = 0;
+      }
+
+      if(scroll_y >= max_scroll_y)
+      {
+         scroll_y = max_scroll_y;
+      }
+   }
+
+   // <method.png>
+   public method getScrollY() : int {
+      return scroll_y;
+   }
+
+   // <midi_push.png>
+   public method setGridColor(int _x, int _y, byte _color) {
+      if(STConfig.b_push && b_may_update)
+      {
+         _y -= scroll_y;
+
+         if(0 <= _y < grid_sy)
+         {
+            if(0 <= _x < grid_sx)
+            {
+               push.setSinglePadColorAndOwner(((7 - (_y + grid_py)) * 8) + _x + grid_px, _color, owner);
+            }
+         }
+      }
+   }
+
+   // <midi_push.png>
+   public method setGridColorByPadIdx(int _padIdx, byte _color) {
+      if(STConfig.b_push && b_may_update)
+      {
+         push.setSinglePadColorAndOwner(_padIdx, _color, owner);
+      }
+   }
+
+   // <midi_push.png>
+   public method clear() {
+      if(STConfig.b_push && b_may_update)
+      {
+         int y = 0;
+         loop(grid_sy)
+         {
+            int x = 0;
+            loop(grid_sx)
+            {
+               setGridColor(x, y, 0);
+               x++;
+            }
+            y++;
+         }
+      }
+   }
+
+   // <midi_push.png>
+   public method handleEvent(MIDIMapEvent _ev,
+                             Integer _retIdx,
+                             Integer _retX,
+                             Integer _retY,
+                             Integer _retType
+                             ) : boolean {
+
+      _retType = RET_NONE;
+
+      if(STConfig.b_push)
+      {
+         if(@(_ev.dev) == @(push.indev))
+         {
+            if((TYPE_NOTE_ON == _ev.type) || (TYPE_NOTE_OFF == _ev.type))
+            {
+               // trace "xxx PushGrid::handleEvent: NOTE_ON _ev.type="+_ev.type;
+
+               if(0x24 <= _ev.arg1 <= 0x63)
+               {
+                  int y = (7 - ((_ev.arg1 - 0x24) >> 3)) - grid_py;
+                  int x = ((_ev.arg1 - 0x24) & 7) - grid_px;
+
+                  // trace "xxx PushGrid::handleEvent: x="+x+" y="+y;
+
+                  if(0 <= y < grid_sy)
+                  {
+                     if(0 <= x < grid_sx)
+                     {
+                        y += scroll_y;
+
+                        if(null != _retIdx)
+                        {
+                           _retIdx = (y * grid_sx) + x;
+                        }
+
+                        if(null != _retX)
+                        {
+                           _retX = x;
+                        }
+
+                        if(null != _retY)
+                        {
+                           _retY = y;
+                        }
+
+                        if(SYN_NONE == _ev.syn_type)
+                        {
+                           if(TYPE_NOTE_ON == _ev.type)
+                           {
+                              _retType = RET_PRESS;
+                           }
+                           else
+                           {
+                              _retType = RET_RELEASE;
+                           }
+                        }
+
+                        replay.removeTrackedEvent(_ev);
+                        _ev.discard();
+                        return true;
+                     }
+                  }
+               }
+            } // if note on or off
+            else if(TYPE_PITCHBEND == _ev.type)
+            {
+               if(_ev.arg1 < 8192) // release
+               {
+                  // trace "xxx PushGrid::handleEvent: max_scroll_y="+max_scroll_y;
+
+                  if(max_scroll_y > 0)
+                  {
+                     scroll_y = ((max_scroll_y + 1) * _ev.arg1) >> 13;
+
+                     if(scroll_y >= max_scroll_y)
+                     {
+                        scroll_y = max_scroll_y;
+                     }
+
+                     _retType = RET_SCROLL;
+                  }
+
+                  // trace "xxx PushGrid::handleEvent: scroll_y="+scroll_y+" arg1="+_ev.arg1;
+               }
+
+               replay.removeTrackedEvent(_ev);
+               _ev.discard();
+               return true;
+            }
+         }
+      }
+
+      // Not handled
+      return false;
+   }
+}

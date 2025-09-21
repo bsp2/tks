@@ -1,0 +1,2348 @@
+// ----
+// ---- file   : NA_TimelineForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 11Apr2017
+// ---- changed: 12Apr2017, 13Apr2017, 14Apr2017, 15Apr2017, 16Apr2017, 17Apr2017, 19Apr2017
+// ----          20Apr2017, 25Apr2017, 27Apr2017, 30Apr2017, 26May2017, 14Jul2017, 15Jul2017
+// ----          10Aug2017, 12Aug2017, 19Aug2017, 20Aug2017, 12Oct2017, 13Oct2017, 02Jan2018
+// ----          03Jan2018, 04Jan2018, 05Jan2018, 06Jan2018, 05Apr2018, 22Jun2018, 17Nov2018
+// ----          18Nov2018, 19Nov2018, 24Nov2018, 25Nov2018, 27Nov2018, 28Nov2018, 31May2019
+// ----          19Aug2019, 21Sep2019, 22Sep2019, 31Oct2019, 01Nov2019, 09Nov2019, 26Apr2020
+// ----          13May2021, 22May2021, 27May2021, 24Jul2021, 12Feb2022, 13Feb2022, 18Mar2022
+// ----          11Aug2022, 12Aug2022, 11Feb2023, 15Mar2023, 21Sep2023, 03Oct2023, 05Oct2023
+// ----          08Oct2023, 19Oct2023, 21Oct2023, 29Oct2023, 11Nov2023, 16Nov2023, 17Nov2023
+// ----          02Feb2024, 03Feb2024, 22Mar2024, 24Mar2024, 02Oct2024, 15Nov2024, 06Jan2025
+// ----          07Jan2025, 24Jan2025, 25Jan2025, 26Jan2025, 22May2025
+// ----
+// ----
+// ----
+
+module MNA_TimelineForm;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NA_TimelineForm : XMLForm, ActionProvider {
+
+   NodeArrangerEditor *parent_editor;
+   NodeArranger       *parent_node;
+   NA_State *tstate;
+
+   NA_TimelineData *data;
+
+   protected LayerSwitch *ls_data_scroll;
+   protected Slider      *sl_data_scroll;
+
+   protected Button     *bt_edit_select;
+   protected Button     *bt_edit_draw;
+   protected CheckBox   *cb_edit_draw_audio;
+   protected Button     *bt_edit_erase;
+   protected Button     *bt_edit_razor;
+   protected Button     *bt_edit_mute;
+
+   protected CheckBox   *cb_rec;
+
+   protected Button     *bt_menu;
+   protected PopupMenu  *pm_menu;
+
+   protected FloatParam *fp_grid;
+   protected ComboBox   *cm_grid_unit;
+   protected CheckBox   *cb_grid_snap;
+
+   protected FloatParam *fp_default_len;
+   protected ComboBox   *cm_default_len_unit;
+
+   protected FloatParam *fp_canvas_size;
+   protected ComboBox   *cm_canvas_unit;
+
+   protected ComboBox *cm_play_mode;
+
+   protected CheckBox *cb_follow;
+   namespace CheckBox *cb_cursor;
+   namespace CheckBox *cb_edge;
+   namespace CheckBox *cb_scratch;
+   namespace CheckBox *cb_shift;
+
+   Spacer *spc_liverec_dock;
+   Panel  *pn_liverec_dock;
+
+   namespace boolean b_update_knob_size;
+
+   namespace ScrollPane *sp_data;
+   protected Panel *pn_trackforms;
+   namespace NA_TrackForm *[] track_forms;
+
+   protected Button  *bt_newtrack;
+   protected Button  *bt_newaudiotrack;
+
+   protected Panel       *pn_clip;
+   protected ComboBox    *cm_clip_start_len_unit;
+   protected FloatParam  *fp_clip_start;
+   protected FloatParam  *fp_clip_len;
+   protected ComboBox    *cm_clip_pattern;
+   namespace TextField   *tf_clip_name;
+   protected FloatParam  *fp_clip_offset;
+   protected ComboBox    *cm_clip_offset_unit;
+   protected CheckBox    *cb_clip_offset;
+   protected CheckBox    *cb_clip_play;
+   namespace CheckBox    *cb_clip_force_multi_all;
+
+   public static int current_rec_node_gid = -1;  // Reference to Arranger node that's currently recording (or -1)
+
+
+   // <init.png>
+   public method init(NodeArrangerEditor _parentEditor) : boolean {
+
+      parent_editor <= _parentEditor;
+
+      if(initPakFile("NA_TimelineForm.xfm"))
+      {
+         if(!autoResolveIds(this))
+            return false;
+
+         spc_liverec_dock.setRequiredSizeX(NA_TrackForm.GetTrackSX());
+
+         if(data.init(this))
+         {
+            if(UI.IsLight())
+               cb_rec.b_ignore_icon_name_suffix = true; // [23Jan2025]
+
+            cm_grid_unit          .setOptions(NA_TimelineData.grid_unit_names);
+            cm_default_len_unit   .setOptions(NA_TimelineData.grid_unit_names);
+            cm_canvas_unit        .setOptions(NA_TimelineData.grid_unit_names);
+            cm_clip_start_len_unit.setOptions(NA_TimelineData.grid_unit_names);
+            cm_play_mode          .setOptions(NA_TimelineData.play_mode_names);
+            cm_play_mode          .setToolTipCaptions(NA_TimelineData.play_mode_tooltips);
+
+            cm_clip_offset_unit.setOptions(NA_TimelineData.grid_unit_names);
+            cm_clip_pattern    .setOptions(Node.patnr_options);
+            cm_clip_pattern    .setOptionBGColors(Node.patnr_colors);
+
+            sl_data_scroll.setEnableFlatHighContrast(false);
+            sp_data.setAutoScrollerMode(Layout.VERTICAL);
+
+            initTimers();
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+
+      layers.add(bt_edit_select);
+      layers.add(bt_edit_draw);
+      layers.add(bt_edit_erase);
+      layers.add(bt_edit_razor);
+      layers.add(bt_edit_mute);
+
+      layers.add(cb_rec);
+
+      layers.add(fp_grid);
+      layers.add(cm_grid_unit);
+      layers.add(cb_grid_snap);
+
+      layers.add(fp_default_len);
+      layers.add(cm_default_len_unit);
+
+      layers.add(bt_menu);
+
+      layers.add(cm_play_mode);
+      layers.add(cb_follow);
+      layers.add(cb_cursor);
+      layers.add(cb_edge);
+      layers.add(cb_scratch);
+      layers.add(cb_shift);
+
+      layers.add(fp_canvas_size);
+      layers.add(cm_canvas_unit);
+
+      layers.add(data);
+
+      layers.add(cm_clip_start_len_unit);
+      layers.add(fp_clip_start);
+      layers.add(fp_clip_len);
+      layers.add(fp_clip_offset);
+      layers.add(cm_clip_offset_unit);
+      layers.add(cb_clip_offset);
+      layers.add(cm_clip_pattern);
+      layers.add(tf_clip_name);
+      layers.add(cb_clip_play);
+      layers.add(cb_clip_force_multi_all);
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeArranger _node, boolean _bUndoRedo) {
+
+      parent_node <= _node;
+      tstate <= parent_node.timeline;
+
+      if(!_bUndoRedo)
+      {
+         data.showNode(_node);
+      }
+
+      updateTrackForms();
+
+      cm_clip_start_len_unit.setSelectedOption(tstate.start_len_unit);
+
+      fp_grid.setValue(tstate.grid_size);
+      cm_grid_unit.setSelectedOption(tstate.grid_unit);
+      cb_grid_snap.setSelected(tstate.grid_snap);
+
+      fp_default_len.setValue(tstate.default_len);
+      cm_default_len_unit.setSelectedOption(tstate.default_len_unit);
+
+      fp_canvas_size.setValue(tstate.canvas_size);
+      cm_canvas_unit.setSelectedOption(tstate.canvas_unit);
+      cm_play_mode.setSelectedOption(tstate.play_mode);
+      cb_follow.setSelected(tstate.b_follow);
+      cb_cursor.setSelected(tstate.b_grid_cursor_mode);
+      cb_edge.setSelected(tstate.b_edge_selection_mode);
+      cb_scratch.setSelected(tstate.b_scratch);
+      cb_shift.setSelected(STConfig.arranger_beatbar_label_offset > 0);
+      cb_rec.setSelected(tstate.b_rec);
+      cb_edit_draw_audio.setSelected(tstate.b_edit_draw_audio);
+
+      updateEditModeButtons();
+
+      b_update_knob_size = true;  // (note) widget size is not available, yet
+
+      relayout();  // remove unused trackform ("fix double marker track")
+
+      data.handleSelectionChanged();
+
+      updateClipStartEndStep();
+
+      updateMuteSoloLockStates();
+   }
+
+   // <method.png>
+   public method showNodeQuiet(NodeArranger _arranger) {
+      parent_node <= _arranger;
+      tstate <= parent_node.timeline;
+      data.showNodeQuiet(_arranger);
+   }
+
+   // <ui_hide.png>
+   public method leaveNode() {
+      Global.Debug("NA_TimelineForm::leaveNode");
+
+      parent_node <= null;
+      data.leaveNode();
+   }
+
+   // <method_get.png>
+   public method isClipNrEditable() : boolean {
+      // (note) not editable when 'force' is disabled and selected clips have different pattern nrs
+      return cm_clip_pattern.isEditable();
+   }
+
+   // <method.png>
+   protected method tryEditAudioClipSample(NA_Clip _clip, boolean _bForceEdit) {
+      if(null != _clip && _clip.isAudio())
+      {
+         NA_Track track <= tstate.findTrackByGID(_clip.node_gid);
+         if(null != track)
+         {
+            if(!track.isAudioTimeline())
+            {
+               SysExSamplerInstance lri <= AudioLiveRecForm.FindSamplerInstanceByDevIdxAndCh(track.audio_dev_idx, track.audio_midi_ch);
+               if(null != lri)
+               {
+                  if(!replay.b_playing)
+                  {
+                     // Select sample in Eureka ModSample instance
+                     if(lri.sendRPN_sync(90/*smp_uid*/, _clip.audio_smp_uid, true/*bWait*/))
+                     {
+                        lri.unique_id = _clip.audio_smp_uid;
+                     }
+                  }
+
+                  // Postpone since =replay= may be locked at this point
+                  float smpSelStartMS;
+                  float smpSelLenMS = -1;
+                  if(_clip.start_ticks <= tstate.edit_offset < _clip.end_ticks)
+                  {
+                     smpSelStartMS = current_song.ticksToMilliSeconds(tstate.edit_offset - _clip.start_ticks + _clip.calcOffsetTicks());
+                     int gridTicks = tstate.calcGridTicks();
+                     smpSelLenMS = current_song.ticksToMilliSeconds(gridTicks);
+                  }
+                  else
+                  {
+                     // Select entire clip region
+                     smpSelStartMS = current_song.ticksToMilliSeconds(_clip.calcOffsetTicks());
+                     smpSelLenMS = current_song.ticksToMilliSeconds(_clip.end_ticks - _clip.start_ticks);
+                  }
+                  parent_editor.queueAudioLiveRecSelectInstanceAndSample(lri.instance_id,
+                                                                         _clip.audio_smp_uid,
+                                                                         smpSelStartMS,
+                                                                         smpSelLenMS,
+                                                                         _bForceEdit
+                                                                         );
+                  // (note) see NodeArrangerEditor::handleLiveRecSelectTimer()
+               }
+            }
+            else
+            {
+               // Eureka audio timeline clip
+               //  (todo) show Eureka window and select timeline track
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method tryEditAudioSample() {
+      trace "xxx tryEditAudioSample()";
+      if(SysEx.IsAudioConnected())
+      {
+         NA_Clip clip <= data.getFirstSelectedClip();
+         if(null != clip && clip.isAudio())
+         {
+            NA_Track track <= tstate.findTrackByGID(clip.node_gid);
+            if(null != track)
+            {
+               if(!track.isAudioTimeline())
+               {
+                  tryEditAudioClipSample(clip, true/*bForceEdit*/);
+               }
+               else
+               {
+                  trace "xxx tryEditAudioSample: call SysEx.QueueSendTrackShowByMIDIPort: devIdx="+track.audio_dev_idx+" ch="+track.audio_midi_ch;
+                  SysEx.QueueSendTrackShowByMIDIPort(track.audio_dev_idx,
+                                                     track.audio_midi_ch,
+                                                     true/*bShowTrackPage*/,
+                                                     false/*bEditFirstMod*/,
+                                                     -1/*noteIdxHint*/
+                                                     );
+               }
+            }
+         }
+         else
+         {
+            // no clip selected, edit currently selected sample
+            f_audio_liverec.handleEdit(0/*selStartMS*/, -1/*selLenMS==keep*/);
+         }
+      }
+   }
+
+   // <ui_update.png>
+   public method updateClip(NA_Clip _clip, int _multiFlags) {
+      if(null != _clip)
+      {
+         int startLenTicks = tstate.calcStartLenTicks();
+
+         float clipStart = float(_clip.start_ticks) / startLenTicks;
+         fp_clip_start.setValue(clipStart);
+         fp_clip_start.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_START));
+
+         float clipLen = float(_clip.end_ticks - _clip.start_ticks) / startLenTicks;
+         fp_clip_len.setValue(clipLen);
+         fp_clip_len.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_END));
+
+         cm_clip_pattern.setSelectedOption(_clip.pattern_nr);
+         cm_clip_pattern.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_PATTERNNR));
+
+         if(2 == (data.clip_selection.numElements))
+         {
+            tf_clip_name.setEditable(true);  // only one clip selected ?
+            tf_clip_name.setText(_clip.getName());
+         }
+         else
+         {
+            tf_clip_name.setEditable(false);
+            tf_clip_name.setText("");
+         }
+
+         fp_clip_offset.setValue(_clip.offset);
+         fp_clip_offset.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_OFFSET));
+
+         cm_clip_offset_unit.setSelectedOption(_clip.offset_unit);
+         cm_clip_offset_unit.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_OFFSETUNIT));
+
+         cb_clip_offset.setSelected(_clip.b_offset);
+         cb_clip_offset.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_OFFSETENABLE));
+
+         cb_clip_play.setSelected(!_clip.b_mute);
+         cb_clip_play.setEditable(0 != (_multiFlags & NA_TimelineData.CLIP_MULTI_MUTE));
+
+         tryEditAudioClipSample(_clip, false/*bForceEdit*/);
+      }
+      else
+      {
+         fp_clip_start      .setValueAndDisable(0);
+         fp_clip_len        .setValueAndDisable(0);
+         cm_clip_pattern    .setSelectedOptionAndDisable(-1);
+         tf_clip_name       .setEditable(false);
+         tf_clip_name       .setText("");
+         fp_clip_offset     .setValueAndDisable(0);
+         cm_clip_offset_unit.setSelectedOptionAndDisable(-1);
+         cb_clip_offset     .setSelectedAndDisable(false);
+         cb_clip_play       .setSelectedAndDisable(false);
+      }
+
+      pn_clip.redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateClipStartEndStep() {
+      // (note) commented out after adding start/len unit combobox
+
+      // // int gridTicks = tstate.calcGridTicks();
+      // // fp_clip_start.setStep(gridTicks);
+      // // fp_clip_len  .setStep(gridTicks);
+   }
+
+   // <ui.png>
+   public method autoEnableDataScroll() {
+      boolean bShow = false;
+      float relKnobSize = 1.0;
+
+      // trace "xxx autoEnableDataScroll";
+
+      int visTicks = tstate.vis_ticks;
+      int totalTicks = tstate.calcCanvasSizeTicks();
+
+      if(totalTicks > visTicks)
+      {
+         bShow = true;
+         sl_data_scroll.setRange(0, 100 * (totalTicks - visTicks));
+         sl_data_scroll.setStepCoarse(100 * tstate.calcGridTicks());
+         relKnobSize = float(visTicks) / totalTicks;
+         // trace "xxx autoEnableDataScroll: rel knob size="+relKnobSize;
+         sl_data_scroll.redraw();
+      }
+
+      if(bShow != ls_data_scroll.getCurrentChildNr())
+      {
+         ls_data_scroll.switchToLayerNr(bShow);
+         _= getParent().relayout();
+      }
+
+      if(bShow)
+      {
+         sl_data_scroll.setRelativeKnobSize(relKnobSize);
+         sl_data_scroll.setValue(tstate.view_offset*100.0);
+         // trace "xxx sl_data_scroll.getSizeX()="+sl_data_scroll.getSizeX();
+      }
+   }
+
+   // <ui_update.png>
+   namespace method updateTrackForms() {
+      // Called after NodeArrangerEditor::scanPipeNodes()
+
+      // trace "xxx ------------------------ updateTrackForms";
+
+      pn_trackforms.removeChildren();
+      track_forms.free();
+
+      NA_Track *track;
+
+      Node *sci;
+
+      float totalSy = 18 * UI.font_scaling;
+      NA_TrackForm *tf;
+
+      if(tstate.b_show_marker)
+      {
+         NA_TrackFormMarker *tfMarker;
+         tfMarker <= new NA_TrackFormMarker;
+         tfMarker.init(this);
+         pn_trackforms.addLayer(deref tfMarker, Layout.BOTTOM);
+         totalSy += data.getCurrentTrackSYScaled();
+      }
+
+      // Add track form for each Node that is controlled by this Arranger
+      foreach track in tstate.tracks
+      {
+         // trace "xxx updateTrackForms: track.node_gid="+track.node_gid+" isSeq="+track.isSeq()+" isAudio="+track.isAudio();
+
+         if(track.isSeq())
+         {
+            // trace "xxx NA_TimelineForm::updateTrackForms: add sci="+#(sci);
+            sci <= current_song.findNodeByGID(track.node_gid);
+
+            if(null != sci)
+            {
+               tf <= new NA_TrackForm;
+
+               boolean bAvail = (-1 != (parent_editor.available_gids.indexOf(track.node_gid, 0)));
+
+               tf.init(this, sci, bAvail);
+               track_forms.add(#(deref tf));
+               pn_trackforms.addLayer(tf, Layout.BOTTOM);
+               totalSy += data.getCurrentTrackSYScaled();
+            }
+         }
+         else if(track.isAudio())
+         {
+            NA_TrackFormAudio tfAudio <= new NA_TrackFormAudio;
+            tfAudio.initAudio(this, track.node_gid);
+            track_forms.add(#(deref tfAudio));
+            pn_trackforms.addLayer(tfAudio, Layout.BOTTOM);
+            totalSy += data.getCurrentTrackSYScaled();
+         }
+      }
+
+      // Update names, types, and tooltips and check whether auto dev+ch are unique
+
+      foreach tf in track_forms
+      {
+         // trace "xxx updateTrackForms: tf="+#(tf);
+
+         if(tf.isAudio())
+         {
+            tfAudio <= tf;
+            tfAudio.updateAudioNameTypeAndToolTip();
+         }
+         else
+         {
+            sci <= tf.parent_node;
+
+            boolean bUniqueDevCh = true;
+
+            String sharedAutoNodeNames;
+            sharedAutoNodeNames.empty();
+
+            NA_TrackForm *tfO;
+            foreach tfO in track_forms
+            {
+               if(!tfO.isAudio())
+               {
+                  if(@(tf) != @(tfO))
+                  {
+                     Node nodeO <= tfO.parent_node;
+
+                     if(sci.sameAutoDevChAs(nodeO))
+                     {
+                        bUniqueDevCh = false;
+                        if(!sharedAutoNodeNames.isBlank())
+                           sharedAutoNodeNames.append("\n");
+                        sharedAutoNodeNames.append("    - \"");
+                        sharedAutoNodeNames.append(nodeO.nodeGetName());
+                        sharedAutoNodeNames.append("\"");
+                     }
+                  }
+               }
+            }
+
+            tf.updateNameTypeAndToolTip(bUniqueDevCh, sharedAutoNodeNames);
+         }
+      }
+
+      if((tstate.tracks.numElements) < STConfig.arranger_timeline_min_num_tracks)
+      {
+         totalSy += (STConfig.arranger_timeline_min_num_tracks - (tstate.tracks.numElements)) * data.getCurrentTrackSYScaled();
+      }
+
+      pn_trackforms.relayout(); // [22Jun2018] fix disappearing track names
+
+      totalSy += 21 * UI.font_scaling; // Reserve space for scroller
+      totalSy += (2+4) * UI.font_scaling;
+
+      // [14Mar2023] experimental
+      ViewPane vp <= sp_data.getViewPane();
+      vp.setManualPreferredSizeY(totalSy);
+      sp_data.setManualPreferredSizeY(totalSy);
+
+      sp_data.setViewSize2f(root_form.getSizeX() - 8, totalSy);
+      Global.Debug("NA_TimelineForm::updateTrackForms: totalSy="+totalSy);
+   }
+
+   // <ui_update.png>
+   public method updateMuteSoloLockStates() {
+
+      NA_TrackForm *tf;
+      NA_Track *track;
+
+      foreach tf in track_forms
+      {
+         track <= tstate.findTrackByGID(tf.getNodeGID());
+
+         if(null != track)
+         {
+            tf.updateMuteSoloLockState(track);
+            tf.redraw();
+         }
+      }
+
+   }
+
+   // <method_get.png>
+   protected method getTrackSy() : float {
+      // (todo) remove this ? track height is currently constant (NA_TimelineForm::current_track_sy)
+      if(track_forms.numElements > 0)
+         return track_forms.get(0).getSizeY();
+      return 0;
+   }
+
+   // <ui_update.png>
+   public method updateEditModeButtons() {
+
+      bt_edit_select.setToggleState(false);
+      bt_edit_draw  .setToggleState(false);
+      bt_edit_erase .setToggleState(false);
+      bt_edit_razor .setToggleState(false);
+      bt_edit_mute  .setToggleState(false);
+
+      switch(tstate.edit_mode) {
+
+         case NA_State.EDIT_MODE_SELECT:
+            bt_edit_select.setToggleState(true);
+            break;
+
+         case NA_State.EDIT_MODE_DRAW:
+            bt_edit_draw  .setToggleState(true);
+            break;
+
+         case NA_State.EDIT_MODE_ERASE:
+            bt_edit_erase .setToggleState(true);
+            break;
+
+         case NA_State.EDIT_MODE_RAZOR:
+            bt_edit_razor .setToggleState(true);
+            break;
+
+         case NA_State.EDIT_MODE_MUTE:
+            bt_edit_mute  .setToggleState(true);
+            break;
+      }
+
+      bt_edit_select.redraw();
+      bt_edit_draw  .redraw();
+      bt_edit_erase .redraw();
+      bt_edit_razor .redraw();
+      bt_edit_mute  .redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectEditMode(int _mode, boolean _bUpdateButtons) {
+
+      tstate.undoAdd(data.clip_selection);
+      tstate.edit_mode = _mode;
+      tstate.undoEnd(data.clip_selection);
+
+      if(_bUpdateButtons)
+         updateEditModeButtons();
+
+      data.selectCursorByEditMode(false/*bForce*/);
+
+      Global.Print("Edit mode is "+(NA_TimelineData.edit_mode_names.get(tstate.edit_mode)));
+   }
+
+   // <ui_handle.png>
+   protected method handleGridChanged() {
+      tstate.undoAdd(data.clip_selection);
+      tstate.grid_size = fp_grid.getFloatValue();
+      tstate.undoEnd(data.clip_selection);
+
+      autoEnableDataScroll();
+      b_update_knob_size = true;
+
+      updateClipStartEndStep();
+      data.redraw();
+
+      Global.Print("Grid is "+tstate.grid_size+" "+cm_grid_unit.getSelectedOptionName()+"(s) ("+tstate.calcGridTicks()+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handleGridUnitChanged() {
+      tstate.undoAdd(data.clip_selection);
+
+      int oldTicks = tstate.calcGridTicks();
+      tstate.grid_unit = cm_grid_unit.getSelectedOption();
+      tstate.grid_size = oldTicks / NA_Defs.CalcTicks(1, tstate.grid_unit);
+      fp_grid.setValue(tstate.grid_size);
+
+      tstate.undoEnd(data.clip_selection);
+
+      updateClipStartEndStep();
+      data.redraw();
+
+      Global.Print("Grid is "+tstate.grid_size+" "+cm_grid_unit.getSelectedOptionName()+"(s) ("+tstate.calcGridTicks()+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handleGridSnapChanged() {
+      tstate.undoAdd(data.clip_selection);
+      tstate.grid_snap = cb_grid_snap.isSelected();
+      tstate.undoEnd(data.clip_selection);
+
+      Global.Print("Snap-to-grid is "+Utils.GetEnableString(tstate.grid_snap));
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleGridSnap() {
+      cb_grid_snap.toggleSelection();
+      handleGridSnapChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleDefaultLenChanged() {
+      tstate.undoAdd(data.clip_selection);
+      tstate.default_len = fp_default_len.getFloatValue();
+      tstate.undoEnd(data.clip_selection);
+
+      Global.Print("Default length is "+tstate.default_len+" "+cm_default_len_unit.getSelectedOptionName()+"(s) ("+tstate.calcDefaultLenTicks()+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handleDefaultLenUnitChanged() {
+      tstate.undoAdd(data.clip_selection);
+
+      int oldTicks = tstate.calcDefaultLenTicks();
+      tstate.default_len_unit = cm_default_len_unit.getSelectedOption();
+      tstate.default_len = oldTicks / NA_Defs.CalcTicks(1, tstate.default_len_unit);
+      fp_default_len.setValue(tstate.default_len);
+
+      tstate.undoEnd(data.clip_selection);
+
+      Global.Print("Default length is "+tstate.default_len+" "+cm_default_len_unit.getSelectedOptionName()+"(s) ("+tstate.calcDefaultLenTicks()+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handleCanvasSizeChanged() {
+      tstate.undoAdd(data.clip_selection);
+      tstate.canvas_size = fp_canvas_size.getFloatValue();
+
+      int canvasTicks = tstate.calcCanvasSizeTicks();
+
+      if(tstate.vis_ticks > canvasTicks)
+         tstate.vis_ticks = canvasTicks;
+
+      data.clipTickOffset();
+
+
+      tstate.undoEnd(data.clip_selection);
+
+      redraw();
+      b_update_knob_size = true;
+
+      Global.Print("Canvas size is "+tstate.canvas_size+" "+cm_canvas_unit.getSelectedOptionName()+"(s) ("+tstate.calcCanvasSizeTicks()+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handleCanvasUnitChanged() {
+      tstate.undoAdd(data.clip_selection);
+
+      int oldTicks = tstate.calcCanvasSizeTicks();
+      tstate.canvas_unit = cm_canvas_unit.getSelectedOption();
+      tstate.canvas_size = oldTicks / NA_Defs.CalcTicks(1, tstate.canvas_unit);
+      fp_canvas_size.setValue(tstate.canvas_size);
+
+      tstate.undoEnd(data.clip_selection);
+
+      Global.Print("Canvas size is "+tstate.canvas_size+" "+cm_canvas_unit.getSelectedOptionName()+"(s) ("+tstate.calcCanvasSizeTicks()+" ticks)");
+   }
+
+   // <ui_handle.png>
+   protected method handlePlayModeChanged() {
+      tstate.undoAdd(data.clip_selection);
+      tstate.setPlayMode(cm_play_mode.getSelectedOption());
+      tstate.undoEnd(data.clip_selection);
+
+      Global.Print("Play Mode is "+cm_play_mode.getSelectedOptionName());
+   }
+
+   // // // <ui_handle.png>
+   // // protected method handleActiveChanged() {
+   // //    tstate.undoAdd(data.clip_selection);
+   // //    tstate.undoEnd(data.clip_selection);
+
+   // //    Global.Print("Timeline Play Mode is "+(tstate.b_active ? "active" : "inactive"));
+   // // }
+
+   // <ui_handle.png>
+   protected method handleFollowChanged() {
+      tstate.undoAdd(data.clip_selection);
+      tstate.b_follow = cb_follow.isSelected();
+      tstate.undoEnd(data.clip_selection);
+
+      if(maybe == tstate.b_follow)
+         data.centerReplayOffset();
+
+      Global.Print("Follow mode is "+((true==tstate.b_follow)?"PAGE":(false == tstate.b_follow)?"disabled":"CENTER"));
+   }
+
+   // <ui_handle.png>
+   protected method handleRecChanged() {
+
+      parent_node.stopTimelineRecording();
+
+      Node recNode <= current_song.findNodeByGID(NA_TimelineForm.current_rec_node_gid);
+
+      if(null == recNode)
+      {
+         tstate.b_rec = cb_rec.isSelected();
+
+         Global.Print((tstate.b_rec ? "ARM" : "Disable")+" record");
+      }
+      else
+      {
+         Global.Error("Arranger GID="+NA_TimelineForm.current_rec_node_gid+" is still recording !");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEditDrawAudioChanged() {
+      tstate.b_edit_draw_audio = cb_edit_draw_audio.isSelected();
+      Global.Print("Create-samples-for-new-audio-clips is "+Utils.GetEnableString(tstate.b_edit_draw_audio));
+   }
+
+   // <ui_show.png>
+   protected method showToolsAndOptionsMenu() {
+
+      pm_menu <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_menu;
+
+      pmb <= pm.addCheckButton("Show marker track", tstate.b_show_marker, "toggle_show_marker");
+      pmb <= pm.addCheckButton("Show pattern names", tstate.b_show_pattern_names, "toggle_show_pattern_names");
+      // // pmb.setAccelerators("", "");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Delete muted+selected clips", "delete_muted_clips");
+      pmb.setToolTipCaption("Delete all clips that are currently muted and selected");
+      pmb.setAccelerators("", "lctrl-DELETE");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Silence (current track)", "silence_cur");
+      pmb.setToolTipCaption("Insert silence on first selected clip track\n\n (note) Default length ticks");
+      pmb.setAccelerators("INSERT", "");
+
+      pmb <= pm.addDefaultButton("Silence (all tracks)", "silence_all");
+      pmb.setToolTipCaption("Insert silence on all tracks\n\n (note) Default length ticks");
+      pmb.setAccelerators("lshift-INSERT", "");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Snapshot (current track)", "snapshot_cur");
+      pmb.setToolTipCaption("Insert snapshot of currently playing pattern\n\n (note) The arranger node should be muted so it does not update the pattern selection");
+      pmb.setAccelerators("", "v");
+
+      pmb <= pm.addDefaultButton("Snapshot (all tracks)", "snapshot_all");
+      pmb.setToolTipCaption("Insert snapshot of all currently playing patterns\n\n (note) The arranger node should be muted so it does not update the pattern selection");
+      pmb.setAccelerators("", "lshift-v");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy clip state from arranger", "copy_clip_state");
+      pmb.setToolTipCaption("Copy mute+pattern_nr state from clips at edit offset\n\n (note) this can be used to reset the nodes to a pre-precording state");
+      pmb.setAccelerators("", "lshift-RCTRL");
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Delete unused clip samples", "delete_unused_samples");
+      pmb.setToolTipCaption("Iterate all sub-songs, nodes, and timelines and find sample references, then delete all unreferenced samples that are named \"* clip *\"\n\n (note) requires the Eureka audio process to be connected");
+      pmb.setActive(SysEx.IsAudioConnected());
+
+      pm.addSeparator();
+      pmb <= pm.addDefaultButton("Next clip edit mode", "clip_edit_mode_next");
+      pmb.setToolTipCaption("Select next clip edit mode");
+      pmb.setAccelerators("", "PAGEUP");
+
+      pmb <= pm.addDefaultButton("Previous clip edit mode", "clip_edit_mode_prev");
+      pmb.setToolTipCaption("Select previous clip edit mode");
+      pmb.setAccelerators("", "PAGEDOWN");
+
+      pm.resizeToMinimum();
+      pm.showAboveLayer(bt_menu);
+
+      Global.Print("Show tools and options menu.");
+   }
+
+   // <ui_handle.png>
+   namespace method handleToggleShowMarkerTrack() {
+      tstate.b_show_marker = !tstate.b_show_marker;
+
+      if(!tstate.b_show_marker)
+         data.removeMarkerTrackClipsFromSelection();
+
+      updateTrackForms();
+      updateMuteSoloLockStates();
+      relayout();
+
+      Global.Print((tstate.b_show_marker ? "Show":"Hide")+" marker track");
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleShowPatternNames() {
+      tstate.b_show_pattern_names = !tstate.b_show_pattern_names;
+
+      redraw();
+
+      Global.Print((tstate.b_show_pattern_names ? "Show":"Hide")+" pattern names");
+   }
+
+   // <ui_handle.png>
+   namespace method handleInsertSilence(boolean _bAllTracks) {
+      tstate.undoAdd(data.clip_selection);
+
+      if(!tstate.b_grid_cursor_mode)
+         _bAllTracks |= (0 == data.clip_selection.numElements);
+
+      if(_bAllTracks)
+      {
+         tstate.insertSilenceAllTracks(tstate.edit_offset, tstate.calcDefaultLenTicks());
+
+         data.makeRegionVisible(tstate.edit_offset, tstate.edit_offset + tstate.calcDefaultLenTicks());
+
+         data.handleSelectionChanged();
+         redraw();
+
+         Global.Print("Insert silence (all tracks)");
+      }
+      else
+      {
+         NA_Track *track;
+         int trackIdx;
+         int numTracksChanged = 0;
+
+         if(tstate.b_grid_cursor_mode)
+         {
+            // Grid cursor mode: Insert on all selected tracks
+            trackIdx = data.drag_start_track_sorted;
+            while(trackIdx <= data.drag_end_track_sorted)
+            {
+               track <= tstate.getTrackByIdx(trackIdx);
+
+               if(null != track)
+               {
+                  track.insertSilence(tstate.edit_offset, tstate.calcDefaultLenTicks());
+
+                  data.makeRegionVisible(tstate.edit_offset, tstate.edit_offset + tstate.calcDefaultLenTicks());
+                  numTracksChanged++;
+               }
+               trackIdx++;
+            }
+
+            Global.Print("Insert silence ("+numTracksChanged+" track"+Utils.GetPluralString(numTracksChanged)+" changed");
+
+            redraw();
+         }
+         else
+         {
+            // Selection cursor mode: Insert on all selected tracks
+            IntArray trackIndices;
+            data.getSelectedTrackIndices(trackIndices);
+            foreach trackIdx in trackIndices
+            {
+               track <= tstate.getTrackByIdx(trackIdx);
+
+               if(null != track)
+               {
+                  track.insertSilence(tstate.edit_offset, tstate.calcDefaultLenTicks());
+                  numTracksChanged++;
+               }
+            }
+            data.makeRegionVisible(tstate.edit_offset, tstate.edit_offset + tstate.calcDefaultLenTicks());
+            data.handleSelectionChanged();
+            redraw();
+            Global.Print("Insert silence ("+numTracksChanged+" track"+Utils.GetPluralString(numTracksChanged)+" changed");
+         }
+      }
+
+      tstate.undoEnd(data.clip_selection);
+   }
+
+   // <ui_handle.png>
+   namespace method handleInsertSnapshot(boolean _bAllTracks, boolean _bRec) {
+
+      tstate.undoAdd(data.clip_selection);
+
+      _bAllTracks |= !tstate.b_grid_cursor_mode && (0 == data.clip_selection.numElements);
+
+      int defTicks = tstate.calcDefaultLenTicks();
+      int trackFlt = -1;
+
+      if(_bAllTracks)
+      {
+         // (note) exclude marker track from intersection check
+         if(tstate.anyClipsWithinRange(1, tstate.getNumTracks()-1,
+                                       tstate.edit_offset, tstate.edit_offset + defTicks
+                                       )
+            )
+         {
+            // Snapshot clip(s) don't fit, make some room
+            tstate.insertSilenceAllTracks(tstate.edit_offset, defTicks);
+         }
+      }
+      else
+      {
+         if(tstate.b_grid_cursor_mode)
+         {
+            trackFlt = data.drag_start_track_sorted;
+         }
+         else
+         {
+            trackFlt = data.getFirstSelectedTrackIdx();
+         }
+
+         if(tstate.anyClipsWithinRange(trackFlt, trackFlt,
+                                       tstate.edit_offset, tstate.edit_offset + defTicks
+                                       )
+            )
+         {
+            tstate.insertSilenceTrackIdx(trackFlt, tstate.edit_offset, defTicks);
+         }
+      }
+
+      NA_Track *track;
+      int numCreated = 0;
+      data.clip_selection.empty();
+
+      int trackIdx = 0;
+      foreach track in tstate.tracks
+      {
+         if(!track.b_lock)
+         {
+            if((-1 == trackFlt) || (trackIdx == trackFlt))
+            {
+               Node node <= current_song.findNodeByGID(track.node_gid);
+
+               if(null != node)
+               {
+                  byte patternNr = node.nodeGetCurrentPlayPatternNr();
+
+                  NA_Clip clip <= track.newClip(tstate.edit_offset, tstate.edit_offset + defTicks, true/*bSort*/);
+                  clip.setPatternNr(patternNr);
+                  data.clip_selection.add(clip.node_gid);
+                  data.clip_selection.add(clip.clip_uid);
+                  clip.b_mute = node.isNodeOrPipeMuted();
+
+                  if(_bRec)
+                  {
+                     clip.rec_state = NA_Clip.REC_STATE_BEGIN;
+                     track.rec_prev_clip <= clip;
+                  }
+
+                  numCreated++;
+               }
+            }
+         }
+         trackIdx++;
+      }
+
+      data.makeRegionVisible(tstate.edit_offset, tstate.edit_offset + defTicks);
+
+      tstate.undoEnd(data.clip_selection);
+
+      tstate.updateEmptyFlags();
+
+      data.handleSelectionChanged();
+      redraw();
+
+      Global.Print("Insert snapshot ("+numCreated+" clip"+Utils.GetPluralString(numCreated)+")");
+   }
+
+   // <ui_handle.png>
+   protected method handleBeatBarLabelShiftChanged(boolean _bSelected) {
+      STConfig.arranger_beatbar_label_offset = _bSelected;
+      Global.Print("Beat / Bar label shift is "+_bSelected);
+      UI.RedrawAll();
+   }
+
+   // <ui_handle.png>
+   protected method handleDataScrollChanged() {
+      if(null != parent_node)
+      {
+         tstate.view_offset = sl_data_scroll.getValue() / 100;
+         data.redraw();
+      }
+   }
+
+   // <method.png>
+   namespace method scrollLeft() {
+      if(1 == ls_data_scroll.getCurrentChildNr())
+      {
+         sl_data_scroll.decCoarse();
+      }
+   }
+
+   // <method.png>
+   namespace method scrollRight() {
+      if(1 == ls_data_scroll.getCurrentChildNr())
+      {
+         sl_data_scroll.incCoarse();
+      }
+   }
+
+   // <method.png>
+   namespace method scrollLeftDrag() {
+      // when autoscrolling near left window border
+
+      int oldTickOffset = tstate.view_offset;
+
+      int scrollTicks = tstate.calcGridTicks() / 4;
+      if(scrollTicks <= 0)
+         scrollTicks = 1;
+
+      tstate.view_offset -= scrollTicks;
+
+      if(tstate.view_offset < 0)
+         tstate.view_offset = 0;
+
+      if(1 == ls_data_scroll.getCurrentChildNr())
+      {
+         sl_data_scroll.setValue(tstate.view_offset * 100);
+      }
+
+      return (oldTickOffset != tstate.view_offset);
+   }
+
+   // <method.png>
+   namespace method scrollRightDrag() : boolean {
+      // when autoscrolling near right window border
+
+      int oldTickOffset = tstate.view_offset;
+
+      int scrollTicks = tstate.calcGridTicks() / 4;
+      if(scrollTicks <= 0)
+         scrollTicks = 1;
+
+      tstate.view_offset += scrollTicks;
+
+      int visTicks = tstate.vis_ticks;
+
+      int totalTicks = tstate.calcCanvasSizeTicks();
+
+      if( (tstate.view_offset + visTicks) > totalTicks)
+         tstate.view_offset = totalTicks - visTicks;
+
+      if(1 == ls_data_scroll.getCurrentChildNr())
+      {
+         sl_data_scroll.setValue(tstate.view_offset * 100);
+      }
+
+      return (oldTickOffset != tstate.view_offset);
+   }
+
+   // <ui_handle.png>
+   protected method handleClipForceMultiAllChanged() {
+      data.handleSelectionChanged();
+      Global.Print("Force Multi-Edit All is "+Utils.GetEnableString(cb_clip_force_multi_all.isSelected()));
+   }
+
+   // <method.png>
+   namespace method toggleClipForceMultiAll() {
+      cb_clip_force_multi_all.toggleSelection();
+      handleClipForceMultiAllChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleStartLenUnitChanged() {
+      tstate.start_len_unit = cm_clip_start_len_unit.getSelectedOption();
+      Global.Print("Start / Len unit is "+cm_clip_start_len_unit.getSelectedOptionName()+"(s) ("+tstate.calcStartLenTicks()+" ticks)");
+      data.handleSelectionChanged();  // update clip start / len widgets (if there's a selection)
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipStartChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         int startLenTicks = tstate.calcStartLenTicks();
+         int startTicks = fp_clip_start.getFloatValue() * startLenTicks;
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+               {
+                  clip.start_ticks = startTicks;
+               }
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+
+         int clipStart = fp_clip_start.getFloatValue();
+
+         Global.Print("Clip start is "+clipStart+" ticks "+current_song.getTicksAsBarsAndBeatsString(clipStart));
+
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipLenChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         int startLenTicks = tstate.calcStartLenTicks();
+         int lenTicks = fp_clip_len.getFloatValue() * startLenTicks;
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+               {
+                  clip.end_ticks = clip.start_ticks + lenTicks;
+               }
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+
+         int clipLen = fp_clip_len.getFloatValue();
+         Global.Print("Clip length is "+clipLen+" ticks "+current_song.getTicksAsBarsAndBeatsString(clipLen));
+
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipPatternChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+                  clip.pattern_nr = cm_clip_pattern.getSelectedOption();
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+         tstate.updateEmptyFlags();
+
+         Global.Print("Clip pattern is "+cm_clip_pattern.getSelectedOptionName());
+
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleClipNameChanged() {
+      NA_Clip clip <= data.getFirstSelectedClip();
+
+      if(null != clip) // paranoia
+      {
+         clip.setName(tf_clip_name.getText());
+
+         NA_Track track <= tstate.findTrackByGID(clip.node_gid);
+         if(null != track && track.isAudioTimeline())
+         {
+            Global.Print("Audio clip name is \""+clip.getName()+"\"");
+         }
+         else
+         {
+            Global.Print((clip.isMarker() ? "Marker clip":clip.isAudio()?"Sample":"Pattern")+" name is \""+clip.getName()+"\"");
+         }
+
+         if(tstate.b_show_pattern_names)
+            data.redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipOffsetChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         NA_Clip clip <= null;
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+                  clip.offset = fp_clip_offset.getFloatValue();
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+
+         if(null != clip)
+         {
+            int offTicks = clip.calcOffsetTicks();
+            Global.Print("Clip start offset is "+fp_clip_offset.getFloatValue()+" "+cm_clip_offset_unit.getSelectedOptionName()+"(s) " +current_song.getTicksAsBarsAndBeatsString(offTicks));
+         }
+
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipOffsetUnitChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+               {
+                  int oldClipOffsetTicks = clip.calcOffsetTicks();
+                  clip.offset_unit = cm_clip_offset_unit.getSelectedOption();
+                  clip.offset = oldClipOffsetTicks / NA_Defs.CalcTicks(1, clip.offset_unit);
+                  fp_clip_offset.setValue(clip.offset);
+               }
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+
+         Global.Print("Clip start offset unit is "+cm_clip_offset_unit.getSelectedOptionName()+" ("+NA_Defs.CalcTicks(1, cm_clip_offset_unit.getSelectedOption())+")");
+
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipOffsetEnableChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+                  clip.b_offset = cb_clip_offset.isSelected();
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+
+         Global.Print("Clip start offset is "+Utils.GetEnableString(cb_clip_offset.isSelected()));
+
+         redraw();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleClipPlayChanged() {
+      if(data.haveSelection())
+      {
+         int i = 0;
+
+         tstate.undoAdd(data.clip_selection);
+
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+                  clip.b_mute = !cb_clip_play.isSelected();
+            }
+
+            // Next selected clip
+            i += 2;
+         }
+
+         tstate.undoEnd(data.clip_selection);
+
+         Global.Print((((data.clip_selection.numElements/2)>2) ? "Clips are " : "Clip is ")+(cb_clip_play.isSelected() ? "playing" : "muted"));
+
+         redraw();
+      }
+   }
+
+   // <method.png>
+   protected =replay= method handleCopyNodeStateFromArranger() {
+
+      NA_Track *track;
+      NA_Clip clip <= null;
+
+      int numMuted = 0;
+      int numUnmuted = 0;
+
+      foreach track in tstate.tracks
+      {
+         clip <= track.findClipNear(tstate.edit_offset);
+
+         if(null != clip)
+         {
+            Node node <= current_song.findNodeByGID(clip.node_gid);
+
+            if(null != node)
+            {
+               node.nodeSetEnableMute(clip.b_mute);
+               node.nodeSetCurrentPlayPatternNr(clip.pattern_nr);
+
+               if(clip.b_mute)
+                  numMuted++;
+               else
+                  numUnmuted++;
+            }
+         }
+      }
+
+      Global.Print("Copy clip state: "+numMuted+" node"+Utils.GetPluralString(numMuted)+" muted, "+numUnmuted+" unmuted");
+   }
+
+   // <ui_handle.png>
+   public =replay= method handleAudioLiveRecFormSampleSelected(SysExSamplerInstance _lri, SysExSample _smp) {
+      NA_Clip firstClip <= data.getFirstSelectedClip();
+      if(null != firstClip)
+      {
+         if(firstClip.isAudio())
+         {
+            NA_Track track <= tstate.findTrackByGID(firstClip.node_gid);
+            if(null != track && !track.isAudioTimeline())
+            {
+               if(track.matchesMIDIPort(_lri.dev_idx, _lri.midi_ch))
+               {
+                  firstClip.audio_smp_uid              = _smp.unique_id;
+                  firstClip.cached_audio_smp_name      = _smp.name;
+                  firstClip.b_queued_audio_clip_change = true;  // continue with new sample
+                  Global.Debug("NA_TimelineForm::handleAudioLiveRecFormSampleSelected: Update clip_uid="+firstClip.clip_uid+" node_gid="+firstClip.node_gid+" audio_smp_uid="+firstClip.audio_smp_uid+" (\""+firstClip.cached_audio_smp_name+"\")");
+                  redraw();
+               }
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public handleCreateAudioTrack() {
+      NA_Track atrk <= tstate.newAudioTrack();
+
+      if(SysEx.IsAudioConnected())
+         updateAudioTimelineTrackModesFromSysEx(AudioLiveRecForm.all_tracks);
+
+      updateTrackForms();
+      updateMuteSoloLockStates();
+      parent_editor.relayout();
+      parent_editor.redraw();
+
+      Global.Print("Create audio track");
+   }
+
+   // <method.png>
+   public handleDeleteAudioTrackByNodeGID(int _nodeGID) {
+      tstate.deleteAudioTrackByNodeGID(_nodeGID);
+
+      updateTrackForms();
+      updateMuteSoloLockStates();
+      relayout();
+      refocusDefault();
+
+      Global.Print("Delete audio track");
+   }
+
+   // <method.png>
+   public handleMoveAudioTrackUp(int _nodeGID) {
+      tstate.moveAudioTrackUpByNodeGID(_nodeGID);
+
+      updateTrackForms();
+      updateMuteSoloLockStates();
+      relayout();
+      refocusDefault();
+
+      Global.Print("Move audio track up");
+   }
+
+   // <method.png>
+   public handleMoveAudioTrackDown(int _nodeGID) {
+      tstate.moveAudioTrackDownByNodeGID(_nodeGID);
+
+      updateTrackForms();
+      updateMuteSoloLockStates();
+      relayout();
+      refocusDefault();
+
+      Global.Print("Move audio track down");
+   }
+
+   // <method.png>
+   namespace method startReplay() {
+      if(!replay.b_playing)
+      {
+         Global.Print("Start replay");
+         if(parent_node.nodeIsMaster())
+         {
+            current_song.seek(tstate.play_offset);
+            root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+         }
+         tstate.queuePlayOffset(tstate.play_offset, true/*bReplay*/);
+         replay.startReplay(true/*bCustomCycle*/);
+         if(maybe == tstate.b_follow)
+            redraw();
+      }
+   }
+
+   // <method.png>
+   namespace method stopReplayAndRewind() {
+      if(replay.b_playing)
+      {
+         replay.stopReplay(false/*bAllowBookmark*/, true/*bAllowPanic*/);
+         if(parent_node.nodeIsMaster())
+         {
+            current_song.seek(tstate.edit_offset);
+            root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+            Global.Print("Stop replay and rewind");
+         }
+         if(tstate.b_follow)
+            data.centerReplayOffset();
+      }
+   }
+
+   // <method.png>
+   namespace method stopReplayAtCursor() {
+      if(replay.b_playing)
+      {
+         int stopEditOff = tstate.play_offset;
+         replay.stopReplay(false/*bAllowBookmark*/, true/*bAllowPanic*/);
+         stopEditOff = int(stopEditOff / tstate.calcGridTicks()) * tstate.calcGridTicks();
+         data.setEditOffsetToTicks(stopEditOff);
+         data.selectFirstClipNearTicks(tstate.edit_offset, false/*bDown*/, false/*bSetEditOffset*/);
+         Global.Print("Stop replay at current position");
+      }
+   }
+
+   // events::
+
+   // <method.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(data);
+   }
+
+   // <method.png>
+   protected method startRecording() {
+
+      // Start recording (from editor)
+      NA_TimelineForm.current_rec_node_gid = parent_node.getNodeGID();
+
+      if(!parent_node.nodeIsMaster())
+      {
+         tstate.rec_shift_offset = tstate.getRecOffsetMaster() - tstate.edit_offset;
+      }
+
+      int off = tstate.getRecOffset(parent_node);
+
+      Global.Debug("NA_TimelineForm::startRecording: rec_node_gid="+NA_TimelineForm.current_rec_node_gid+" off="+off);
+
+      tstate.edit_offset = off;
+
+      if(STConfig.b_node_arranger_editor_insert_snapshot_when_recording_starts)
+         handleInsertSnapshot(true/*bAllTracks*/, true/*bRec*/);
+   }
+
+   // <method_handle.png>
+   public method handleStartPlaying() {
+      // Called from UI thread
+      Global.Debug2("NA_TimelineForm::handleStartPlaying");
+      if(tstate.b_rec)
+      {
+         startRecording();
+      }
+   }
+
+   // <method_handle.png>
+   public method handleStopPlaying() {
+      // Called from UI thread
+      if(SysEx.IsAudioConnected())
+      {
+         f_audio_liverec.handleStopPlaying();
+      }
+   }
+
+   // <method_handle.png>
+   public method handleSongPosSelected() {
+      // called from UI thread while =replay= is locked (via NodeArrangerEditor::handleSongPosSelected())
+
+      if(parent_node.nodeIsMaster())
+      {
+         int gridTicks = tstate.calcGridTicks();
+         int ticks = (current_song.song_offset / gridTicks) * gridTicks;
+
+         tstate.edit_offset = ticks;
+         tstate.view_offset = ticks - tstate.vis_ticks/2;
+
+         data.clipTickOffset();
+
+         b_update_knob_size = true;
+         redraw();
+      }
+   }
+
+   // <ui.png>
+   public method onResize() {
+      updateTrackForms();
+      updateMuteSoloLockStates();
+      // // relayout();
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      if(b_update_knob_size)
+      {
+         b_update_knob_size = false;
+         autoEnableDataScroll();
+      }
+
+      XMLForm::onDraw();
+   }
+
+   // <ui_cmd.png>
+   public =replay= method cmdCalcStartOffsetsRelativeToFirstSelectedClip() {
+      int numUpdated = 0;
+
+      if(data.haveSelection())
+      {
+         tstate.undoAdd(data.clip_selection);
+
+         float ticksPer16th = (current_song.ppq / 4.0);
+         int i = 0;
+         int firstStartTicks = -1;
+         loop(data.clip_selection.numElements / 2)
+         {
+            int nodeGID = data.clip_selection[i + 0];
+            int clipUID = data.clip_selection[i + 1];
+            NA_Track *track;
+            NA_Clip *clip;
+
+            track <= tstate.findTrackByGID(nodeGID);
+
+            if(null != track)
+            {
+               clip <= track.findClipByUID(clipUID);
+
+               if(null != clip)
+               {
+                  if(-1 == firstStartTicks)
+                  {
+                     firstStartTicks = clip.start_ticks;
+                  }
+                  else
+                  {
+                     if(!clip.b_offset)
+                     {
+                        int relTicks = clip.start_ticks - firstStartTicks;
+                        if(relTicks >= 0)
+                        {
+                           clip.setOffsetTicks(relTicks);
+                           clip.setEnableOffset(true);
+                           numUpdated++;
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next selected clip
+            i += 2;
+         } // loop selected clips
+
+         tstate.undoEnd(data.clip_selection);
+      } // if haveSelection()
+
+      Global.Print("CalcStartOffsets: updated "+numUpdated+" clip"+Utils.GetPluralString(numUpdated));
+   }
+
+   // <ui_cmd.png>
+   public method refreshAudioClipNamesFromSampleNames2() {
+      int numUpdated = 0;
+      NA_Track *track;
+      foreach track in tstate.tracks
+      {
+         if(track.isAudio() && !track.isAudioTimeline())
+         {
+            NA_Clip *clip;
+            foreach clip in track.clips
+            {
+               if(-1 != clip.audio_smp_uid)
+               {
+                  SysExSample sysSmp <= AudioLiveRecForm.FindSampleByUniqueId(clip.audio_smp_uid);
+                  if(null != sysSmp)
+                  {
+                     if(clip.cached_audio_smp_name != sysSmp.name)
+                     {
+                        Global.Debug("cmdRefreshAudioClipNamesFromSampleNames: update clip.uid="+clip.clip_uid+" name to \""+sysSmp.name+"\"");
+                        clip.cached_audio_smp_name = sysSmp.name;
+                        numUpdated++;
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      Global.Print("updated "+numUpdated+" clip name"+Utils.GetPluralString(numUpdated));
+      redraw();
+   }
+
+   // <ui_cmd.png>
+   public method cmdRefreshAudioClipNamesFromSampleNames() {
+      AudioLiveRecForm.Query();
+      refreshAudioClipNamesFromSampleNames2();
+   }
+
+   // <method.png>
+   public =replay= method updateAudioTimelineTrackModesFromSysEx(PointerArray _aSysExTracks) {
+      Global.Debug("[dbg] NA_TimelineForm::updateAudioTimelineTrackModesFromSysEx: ENTER");
+      boolean bChanged = false;
+      NA_Track *track;
+      foreach track in tstate.tracks
+      {
+         if(track.isAudio())
+         {
+            boolean bTimeline = maybe;
+            SysExTrack *syxTrack;
+            foreach syxTrack in _aSysExTracks
+            {
+               if(track.audio_dev_idx == syxTrack.dev_idx)
+               {
+                  if( (-1 == track.audio_midi_ch) || (-1 == syxTrack.midi_ch) || (track.audio_midi_ch == syxTrack.midi_ch) )
+                  {
+                     if(track.b_audio_timeline != syxTrack.b_audio_timeline)
+                     {
+                        track.b_audio_timeline = syxTrack.b_audio_timeline;
+                        bChanged = true;
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      if(bChanged)
+      {
+         Global.Debug("NA_TimelineForm::updateAudioTimelineTrackModesFromSysEx: audio timeline configuration HAS CHANGED");
+         redraw();
+      }
+      else
+      {
+         Global.Debug("NA_TimelineForm::updateAudioTimelineTrackModesFromSysEx: audio timeline configuration unchanged");
+      }
+   }
+
+   // <ui_cmd.png>
+   public method cmdExec(StringArray _argv) : boolean {
+      Global.Debug("NA_TimelineForm::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "calc_start_offsets_relative_to_first_selected_clip":
+            cmdCalcStartOffsetsRelativeToFirstSelectedClip();
+            return true;
+
+         case "refresh_audio_clip_names_from_sample_names":
+            cmdRefreshAudioClipNamesFromSampleNames();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "xxx NA_TimelineForm::onKey: _k.pressed="+_k.pressed+" _k.mod="+_k.mod;
+
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case 'a':
+               showToolsAndOptionsMenu();
+               return true;
+
+            case 'q':
+               handleSelectEditMode(NA_State.EDIT_MODE_SELECT, true/*bUpdateButtons*/);
+               return true;
+
+            case 'w':
+               handleSelectEditMode(NA_State.EDIT_MODE_DRAW, true/*bUpdateButtons*/);
+               return true;
+
+            case 'e':
+               if(NA_State.EDIT_MODE_ERASE == tstate.edit_mode ||  tstate.clip_edit_mode != NA_State.CLIP_EDIT_MODE_DEFAULT)
+                  data.editFirstSelectedClipCtl(true/*bWarpMouse*/, null/*k*/);
+               else
+                  handleSelectEditMode(NA_State.EDIT_MODE_ERASE, true/*bUpdateButtons*/);
+               return true;
+
+            case 'r':
+               handleSelectEditMode(NA_State.EDIT_MODE_RAZOR, true/*bUpdateButtons*/);
+               return true;
+
+            case 't':
+               handleSelectEditMode(NA_State.EDIT_MODE_MUTE, true/*bUpdateButtons*/);
+               return true;
+
+            case 'd':
+               data.toggleTrackMute(null/*track*/);
+               return true;
+
+            case 's':
+               data.toggleTrackSolo(null/*track*/);
+               return true;
+
+            case 'm':
+               handleToggleShowMarkerTrack();
+               return true;
+
+            case 'n':
+               // discard global "show next page" shortcut
+               return true;
+
+            case VKEY_SPACE:
+               if(replay.b_playing)
+               {
+                  stopReplayAndRewind();
+               }
+               else
+               {
+                  startReplay();
+               }
+               return true;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_SPACE:
+            if(_k.modCtrl())
+            {
+               stopReplayAtCursor();
+               return true;
+            }
+            break;
+
+         case 'a':
+            // if(_k.modShift() && ! _k.modCtrl()) // (note) unreachable
+            if(_k.modAltOnly())
+            {
+               UI.SetKeyboardFocus(fp_grid);
+               return true;
+            }
+            break;
+
+         case 'c':
+            if(!_k.modCtrl())
+            {
+               if(!_k.modShift())
+               {
+                  if(tstate.b_grid_cursor_mode && !data.haveSelection())
+                     data.selectClips(false/*bAllowToggle*/, false/*bAdd*/);
+
+                  data.loopSelectedClips();
+               }
+               else
+               {
+                  int newOff;
+                  if(tstate.edit_offset == tstate.loop_start)
+                  {
+                     newOff = tstate.loop_end - tstate.calcGridTicks();
+                     if(newOff < tstate.loop_start)
+                        newOff = tstate.loop_start;
+                  }
+                  else
+                  {
+                     newOff = tstate.loop_start;
+                  }
+                  data.setEditOffsetToTicks(newOff);
+                  // // data.makeRegionVisible(tstate.loop_start,
+                  // //                        tstate.loop_end
+                  // //                        );
+                  tstate.view_offset = tstate.edit_offset;
+                  data.centerEditOffset();
+                  // b_update_knob_size = true;
+                  // redraw();
+                  if(tstate.b_grid_cursor_mode)
+                  {
+                     data.drag_start_ticks = tstate.edit_offset;
+                     data.drag_end_ticks   = tstate.edit_offset + tstate.calcGridTicks();
+                     data.sortDragSelection();
+                  }
+
+               }
+               return true;
+            }
+            return false;
+
+         case 'd':
+            if(_k.modShift())
+            {
+               if(!_k.modCtrl())  // (note) lctrl-lshift-d: toggle mute node
+               {
+                  data.toggleMuteAllTracks();
+                  return true;
+               }
+            }
+            break;
+
+         case 'e':
+            if(_k.modShiftOnly())
+            {
+               tryEditAudioSample();
+               return true;
+            }
+            else if(_k.modCtrlOnly())
+            {
+               if(SysEx.IsAudioConnected())
+                  f_audio_liverec.handleToggleAutoEditSample();
+               return true;
+            }
+            break;
+
+         case 'f':
+            if(_k.modShift())
+            {
+               if(_k.modCtrl())
+               {
+                  data.toggleFollowMode();
+                  cb_follow.setSelected(tstate.b_follow);
+                  return true;
+               }
+               else
+               {
+                  data.toggleShowAll();
+               }
+            }
+            else if(_k.modCtrl())
+            {
+               data.toggleZoomToSelectedClips();
+            }
+            else
+            {
+               data.centerReplayOffset();
+            }
+            return true;
+
+         case 'h':
+            if(_k.modCtrl())
+            {
+               data.alignSelectedClipsToGrid();
+               return true;
+            }
+            break;
+
+         case 'k':  // (note) edit-track-sound shortcut in other nodes
+            if(_k.modNone())
+            {
+               tryEditAudioSample();
+               return true;
+            }
+            break;
+
+
+         case 'm':
+         case 'w':
+            if(_k.modShift())
+            {
+               if(_k.modCtrl())
+                  cb_edit_draw_audio.toggleSelectionAction();
+               else
+                  data.createMarkerClipForSelection();
+               return true;
+            }
+            break;
+
+         case 'p':
+            if(_k.modShift())
+            {
+               cm_play_mode.selectPreviousOptionCycle();
+               handlePlayModeChanged();
+               return true;
+            }
+            else if(_k.modNone())
+            {
+               cm_play_mode.selectNextOptionCycle();
+               handlePlayModeChanged();
+               return true;
+            }
+            break;
+
+         case 's':
+            if(VMOD_LSHIFT == _k.mod)
+            {
+               handleToggleGridSnap();
+               return true;
+            }
+            else if(_k.modAltOnly())
+            {
+               UI.SetKeyboardFocus(fp_canvas_size);
+               return true;
+            }
+            break;
+
+         case 'v':
+            handleInsertSnapshot(_k.modShift()/*bAllTracks*/, false/*bRec*/);
+            return true;
+
+         case 'z':
+         case 'y':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+                  data.redo();
+               else
+                  data.undo();
+
+               return true;
+            }
+            else
+            {
+               data.switchBetweenMarkerAndRegularTrack();
+               return true;
+            }
+            break;
+
+         case VKEY_RCTRL:
+            if(_k.modNone())
+            {
+               cb_rec.toggleSelection();
+               handleRecChanged();
+            }
+            else if(_k.modShift())
+            {
+               handleCopyNodeStateFromArranger();
+            }
+            return true;
+      }
+
+      return XMLForm::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+      PagePipeMap pgPipeMap <= root_form.pg_pipemap;
+
+      // // trace "[>>>] NodeTrackerEnvelopeView::consumeAction: acName="+acName+" ap="+#(ap);
+
+      switch(@(ap))
+      {
+         case @(bt_newtrack):
+            pgPipeMap.createNewTrack1(data/*recipient*/, false/*bCurrentPipe*/, maybe/*bShowAllNodeTypes*/);
+            break;
+
+         case @(bt_newaudiotrack):
+            handleCreateAudioTrack();
+            break;
+
+         case @(bt_edit_select):
+            handleSelectEditMode(NA_State.EDIT_MODE_SELECT, true/*bUpdateButtons*/);
+            return true;
+
+         case @(bt_edit_draw):
+            handleSelectEditMode(NA_State.EDIT_MODE_DRAW, true/*bUpdateButtons*/);
+            return true;
+
+         case @(bt_edit_razor):
+            handleSelectEditMode(NA_State.EDIT_MODE_RAZOR, true/*bUpdateButtons*/);
+            return true;
+
+         case @(bt_edit_erase):
+            handleSelectEditMode(NA_State.EDIT_MODE_ERASE, true/*bUpdateButtons*/);
+            return true;
+
+         case @(bt_edit_mute):
+            handleSelectEditMode(NA_State.EDIT_MODE_MUTE, true/*bUpdateButtons*/);
+            return true;
+
+         case @(fp_grid):
+            handleGridChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName || FloatParam.ACTION_VALUEUNCHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_grid_unit):
+            handleGridUnitChanged();
+            return true;
+
+         case @(cb_grid_snap):
+            handleGridSnapChanged();
+            return true;
+
+         case @(fp_default_len):
+            handleDefaultLenChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName || FloatParam.ACTION_VALUEUNCHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_default_len_unit):
+            handleDefaultLenUnitChanged();
+            return true;
+
+         case @(fp_canvas_size):
+            handleCanvasSizeChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName | FloatParam.ACTION_VALUEUNCHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_canvas_unit):
+            handleCanvasUnitChanged();
+            return true;
+
+         case @(cb_rec):
+            handleRecChanged();
+            return true;
+
+         case @(cb_edit_draw_audio):
+            handleEditDrawAudioChanged();
+            return true;
+
+         case @(bt_menu):
+            showToolsAndOptionsMenu();
+            return true;
+
+         case @(pm_menu):
+            Global.Debug2("NA_TimelineForm: pm_menu acName="+acName);
+            if(!PopupMenu.IsFocusAction(_action))
+               refocusDefault();
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  Global.Print("Select: "+acName);
+                  return true;
+
+               case "toggle_show_marker":
+                  handleToggleShowMarkerTrack();
+                  return true;
+
+               case "toggle_show_pattern_names":
+                  handleToggleShowPatternNames();
+                  return true;
+
+               case "silence_cur":
+                  handleInsertSilence(false/*bAllTracks*/);
+                  return true;
+
+               case "silence_all":
+                  handleInsertSilence(true/*bAllTracks*/);
+                  return true;
+
+               case "snapshot_cur":
+                  handleInsertSnapshot(false/*bAllTracks*/, false/*bRec*/);
+                  return true;
+
+               case "snapshot_all":
+                  handleInsertSnapshot(true/*bAllTracks*/, false/*bRec*/);
+                  return true;
+
+               case "copy_clip_state":
+                  handleCopyNodeStateFromArranger();
+                  return true;
+
+               case "delete_muted_clips":
+                  data.deleteSelection(false/*bMoveClips*/, true/*bMutedOnly*/);
+                  Global.Print("Delete muted+selected clips");
+                  return true;
+
+               case "delete_unused_samples":
+                  parent_editor.cmdDeleteUnusedSamples();
+                  return true;
+
+               case "clip_edit_mode_next":
+                  data.cycleClipEditMode(1);
+                  return true;
+
+               case "clip_edit_mode_prev":
+                  data.cycleClipEditMode(-1);
+                  return true;
+            }
+            return true;
+
+         case @(cm_play_mode):
+            handlePlayModeChanged();
+            return true;
+
+         case @(cb_follow):
+            handleFollowChanged();
+            return true;
+
+         case @(cb_cursor):
+            data.toggleOrSetGridCursorMode(cb_cursor.isSelected(), true/*bUpdateSelection*/, true/*bVerbose*/);
+            return true;
+
+         case @(cb_edge):
+            data.toggleOrSetEdgeSelectionMode(cb_edge.isSelected());
+            return true;
+
+         case @(cb_scratch):
+            data.toggleOrSetScratch(cb_scratch.isSelected());
+            return true;
+
+         case @(cb_shift):
+            handleBeatBarLabelShiftChanged(cb_shift.isSelected());
+            return true;
+
+         case @(sl_data_scroll):
+            handleDataScrollChanged();
+            return true;
+
+         case @(cb_clip_force_multi_all):
+            handleClipForceMultiAllChanged();
+            return true;
+
+         case @(cm_clip_start_len_unit):
+            handleStartLenUnitChanged();
+            return true;
+
+         case @(fp_clip_start):
+            handleClipStartChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName || FloatParam.ACTION_VALUEUNCHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_clip_len):
+            handleClipLenChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName || FloatParam.ACTION_VALUEUNCHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_clip_pattern):
+            handleClipPatternChanged();
+            return true;
+
+         case @(tf_clip_name):
+            handleClipNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_clip_offset):
+            handleClipOffsetChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName || FloatParam.ACTION_VALUEUNCHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cm_clip_offset_unit):
+            handleClipOffsetUnitChanged();
+            return true;
+
+         case @(cb_clip_offset):
+            handleClipOffsetEnableChanged();
+            return true;
+
+         case @(cb_clip_play):
+            handleClipPlayChanged();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

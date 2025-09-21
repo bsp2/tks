@@ -1,0 +1,2285 @@
+// ----
+// ---- file   : KorgRadias.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 24Jan2019
+// ---- changed: 26Jan2019, 27Jan2019, 28Jan2019, 29Jan2019, 04Feb2019, 08Feb2019, 09Feb2019
+// ----          18Feb2019, 21Feb2019, 06Apr2019, 09Nov2019, 17Nov2019, 20Feb2020, 10May2020
+// ----          18May2020, 27Nov2020, 26Jan2021, 17Feb2021, 18Feb2021, 19Feb2021, 09Jul2021
+// ----          10Jul2021, 11Jul2021, 12Jul2021, 16Jul2021, 17Jun2022, 18Jun2022, 14Nov2022
+// ----          25Nov2022, 29Mar2024, 30May2025
+// ----
+// ----
+// ----
+
+// (note) synth sometimes does not update its UI when params are changed via SysEx (and PageJump is off)
+
+module MKorgRadias;
+
+use tkradiastools;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug  = 0;
+boolean b_debug2 = 0;  // proxy events
+
+
+// <class.png>
+class KorgRadias_Patch : GenericSynthEdit_Patch {
+}
+
+
+// <class.png>
+class KorgRadias_MIDISynthProfileData : MIDISynthProfileDataGeneric {
+}
+
+
+// <class.png>
+class KorgRadias_EditMIDISynthForm : EditMIDISynthFormGeneric {
+
+   define int RADIAS_TIMBREDATASIZE      = 228; // docs say 226 but it is 228 !
+   define int RADIAS_PROGRAMDATASIZE_DEC = 1790/*0x6FE*/; // decoded size
+   define int RADIAS_DRUMKITDATASIZE_DEC = 0x6B4; // decoded size
+
+   GenericSynthEdit_Patch *synth_patch;      // current synth patch state
+   GenericSynthEdit_Patch *temp_lock_patch;  // temporary emitPatchDiff() dest patch, when diff/proxy group locks are enabled
+
+   Buffer tmp_syx_buf;
+   Buffer tmp_cc_buf;  // [12Jul2021] not used anymore, requires unique timbre MIDI channels (deprecated in tkradiastools plugin)
+
+   static Buffer *timbre_clipboard;
+
+   // Insert effect names
+   static StringArray ifx_names = [
+
+      "-",                         //  0: none
+      " 1: St.Compressor",             //  1
+      " 2: St.Limiter",                //  2
+      " 3: St.Gate",                   //  3
+      " 4: St.Filter",                 //  4
+      " 5: St.Wah",                    //  5
+      " 6: St.Band EQ",                //  6
+      " 7: Distortion",                //  7
+      " 8: Cabinet Simulator",         //  8
+      " 9: Tube Preamp Simulator",     //  9
+      "10: St.Decimator",              // 10
+      "11: Reverb",                    // 11
+      "12: Early Reflections",         // 12
+      "13: L/C/R Delay",               // 13
+      "14: St.Delay",                  // 14
+      "15: Auto Panning Delay",        // 15
+      "16: St.Auto Panning Delay",     // 16
+      "17: Modulation Delay",          // 17
+      "18: St.Modulation Delay",       // 18
+      "19: Tape Echo",                 // 19
+      "20: St.Chorus",                 // 20
+      "21: Ensemble",                  // 21
+      "22: St.Flanger / Comb Filter",  // 22
+      "23: St.Phaser",                 // 23
+      "24: St.Tremolo",                // 24
+      "25: St.Ring Modulator",         // 25
+      "26: Pitch Shifter",             // 26
+      "27: Grain Shifter",             // 27
+      "28: St.Vibrato",                // 28
+      "29: Rotary Speaker",            // 29
+      "30: Talking Modulator",         // 30
+                                   ];
+
+
+   // Master effect names
+   static StringArray mfx_names = [
+
+      "-",                         //  0: none
+      " 1: St.Compressor",             //  1
+      " 2: St.Limiter",                //  2
+      " 3: St.Gate",                   //  3
+      " 4: St.Filter",                 //  4
+      " 5: St.Wah",                    //  5
+      " 6: St.4Band EQ",               //  6  *
+      " 7: Distortion",                //  7
+      " 8: Cabinet Simulator",         //  8
+      " 9: Tube Preamp Simulator",     //  9
+      "10: St.Decimator",              // 10
+      "11: Reverb",                    // 11
+      "12: Early Reflections",         // 12
+      "13: L/C/R Delay",               // 13
+      "14: St.Delay",                  // 14
+      "15: Auto Panning Delay",        // 15
+      "16: St.Auto Panning Delay",     // 16
+      "17: Modulation Delay",          // 17
+      "18: St.Modulation Delay",       // 18
+      "19: Tape Echo",                 // 19
+      "20: St.Chorus",                 // 20
+      "21: Ensemble",                  // 21
+      "22: St.Flanger / Comb Filter",  // 22
+      "23: St.Phaser",                 // 23
+      "24: St.Tremolo",                // 24
+      "25: St.Ring Modulator",         // 25
+      "26: Pitch Shifter",             // 26
+      "27: Grain Shifter",             // 27
+      "28: St.Vibrato",                // 28
+      "29: Rotary Speaker",            // 29
+      "30: Talking Modulator",         // 30
+
+
+                                   ];
+
+
+   static HashTable ifx_param_vars = #[
+      // T03-01
+      "LFO_FREQUENCIES" = "0.01 Hz;0.02 Hz;0.03 Hz;0.04 Hz;0.05 Hz;0.06 Hz;0.07 Hz;0.08 Hz;0.09 Hz;0.10 Hz;0.11 Hz;0.12 Hz;0.13 Hz;0.14 Hz;0.15 Hz;0.16 Hz;0.17 Hz;0.18 Hz;0.19 Hz;0.20 Hz;0.21 Hz;0.22 Hz;0.23 Hz;0.24 Hz;0.25 Hz;0.29 Hz;0.33 Hz;0.42 Hz;0.50 Hz;0.58 Hz;0.67 Hz;0.75 Hz;0.83 Hz;0.92 Hz;1.00 Hz;1.13 Hz;1.25 Hz;1.38 Hz;1.50 Hz;1.63 Hz;1.75 Hz;1.88 Hz;2.00 Hz;2.13 Hz;2.25 Hz;2.38 Hz;2.50 Hz;2.63 Hz;2.75 Hz;2.88 Hz;3.00 Hz;3.13 Hz;3.25 Hz;3.38 Hz;3.50 Hz;3.63 Hz;3.75 Hz;3.88 Hz;4.00 Hz;4.13 Hz;4.25 Hz;4.38 Hz;4.50 Hz;4.63 Hz;4.75 Hz;4.88 Hz;5.00 Hz;5.25 Hz;5.50 Hz;5.75 Hz;6.00 Hz;6.25 Hz;6.50 Hz;6.75 Hz;7.00 Hz;7.25 Hz;7.50 Hz;7.75 Hz;8.00 Hz;8.25 Hz;8.50 Hz;8.75 Hz;9.00 Hz;9.25 Hz;9.50 Hz;9.75 Hz;10.0 Hz;10.5 Hz;11.0 Hz;11.5 Hz;12.0 Hz;12.5 Hz;13.0 Hz;13.5 Hz;14.0 Hz;14.5 Hz;15.0 Hz;16.0 Hz;17.0 Hz;18.0 Hz;19.0 Hz;20.0 Hz;21.5 Hz;23.0 Hz;24.5 Hz;26.0 Hz;27.5 Hz;29.0 Hz;31.0 Hz;33.0 Hz;35.0 Hz;37.0 Hz;39.0 Hz;41.0 Hz;44.0 Hz;47.0 Hz;50.0 Hz;53.0 Hz;57.0 Hz;61.0 Hz;65.0 Hz;70.0 Hz;75.0 Hz;80.0 Hz;85.0 Hz;90.0 Hz;95.0 Hz;100 Hz",
+
+      // T03-03
+      "RINGMOD_FREQUENCIES" = "0.000 kHz;0.002 kHz;0.004 kHz;0.006 kHz;0.008 kHz;0.010 kHz;0.015 kHz;0.020 kHz;0.025 kHz;0.03 kHz;0.04 kHz;0.05 kHz;0.06 kHz;0.07 kHz;0.08 kHz;0.09 kHz;0.10 kHz;0.11 kHz;0.12 kHz;0.13 kHz;0.14 kHz;0.15 kHz;0.17 kHz;0.19 kHz;0.21 kHz;0.23 kHz;0.25 kHz;0.27 kHz;0.29 kHz;0.31 kHz;0.33 kHz;0.35 kHz;0.37 kHz;0.39 kHz;0.41 kHz;0.43 kHz;0.45 kHz;0.50 kHz;0.55 kHz;0.60 kHz;0.65 kHz;0.70 kHz;0.75 kHz;0.80 kHz;0.85 kHz;0.90 kHz;0.95 kHz;1.00 kHz;1.05 kHz;1.10 kHz;1.15 kHz;1.20 kHz;1.25 kHz;1.30 kHz;1.35 kHz;1.40 kHz;1.45 kHz;1.50 kHz;1.55 kHz;1.60 kHz;1.65 kHz;1.70 kHz;1.80 kHz;1.90 kHz;2.00 kHz;2.10 kHz;2.20 kHz;2.30 kHz;2.40 kHz;2.50 kHz;2.60 kHz;2.70 kHz;2.80 kHz;2.90 kHz;3.00 kHz;3.10 kHz;3.20 kHz;3.30 kHz;3.40 kHz;3.50 kHz;3.60 kHz;3.70 kHz;3.80 kHz;3.90 kHz;4.00 kHz;4.10 kHz;4.20 kHz;4.30 kHz;4.40 kHz;4.50 kHz;4.60 kHz;4.80 kHz;5.00 kHz;5.20 kHz;5.40 kHz;5.60 kHz;5.80 kHz;6.00 kHz;6.20 kHz;6.40 kHz;6.60 kHz;6.80 kHz;7.00 kHz;7.20 kHz;7.40 kHz;7.60 kHz;7.80 kHz;8.00 kHz;8.20 kHz;8.40 kHz;8.60 kHz;8.80 kHz;9.00 kHz;9.20 kHz;9.40 kHz;9.60 kHz;9.80 kHz;10.0 kHz;10.2 kHz;10.4 kHz;10.6 kHz;10.8 kHz;11.0 kHz;11.2 kHz;11.4 kHz;11.6 kHz;11.8 kHz;12.0 kHz",
+
+      "LFO_SYNC_NOTES" = "8/1;4/1;2/1;1/1;3/4;1/2;3/8;1/3;1/4;3/16;1/6;1/8;1/12;1/16;1/24;1/32;1/64",
+
+      "LFO_INIT_PHASES" = "0°;10°;20°;30°;40°;50°;60°;70°;80°;90°;100°;110°;120°;130°;140°;150°;160°;170°;180°",
+
+      "LFO_WAVEFORMS" = "Saw;Squ;Tri;Sin;S&H",
+
+      "CTL_SOURCES" = "Off;Velocity;AfterTouch;PitchBend;ModWheel;Assignable Pedal;Assignable SW;Damper;Env.Follower;MIDI1;MIDI2;MIDI3;MIDI4;MIDI5",
+
+      "BAND_FREQUENCIES" = "20 Hz;22 Hz;25 Hz;28 Hz;32 Hz;36 Hz;40 Hz;45 Hz;50 Hz;56 Hz;63 Hz;71 Hz;80 Hz;90 Hz;100 Hz;112 Hz;125 Hz;140 Hz;160 Hz;180 Hz;200 Hz;224 Hz;250 Hz;280 Hz;315 Hz;400 Hz;450 Hz;500 Hz;560 Hz;630 Hz;710 Hz;800 Hz;900 Hz;1.0 kHz;1.12 kHz;1.25 kHz;1.4 kHz;1.6 kHz;1.8 kHz;2.0 kHz;2.24 kHz;2.50 kHz;2.80 kHz;3.15 kHz;4.00 kHz;4.50 kHz;5.00 kHz;5.60 kHz;6.30 kHz;7.10 kHz;8.00 kHz;9.00 kHz;10.0 kHz;11.2 kHz;12.5 kHz;14.0 kHz;16.0 kHz;18.0 kHz;20.0 kHz",
+
+      "BAND_Q" = "0.5;0.6;0.7;0.8;0.9;1;1.1;1.2;1.3;1.4;1.5;1.6;1.7;1.8;1.9;2;2.1;2.2;2.3;2.4;2.5;2.6;2.7;2.8;2.9;3;3.1;3.2;3.3;3.4;3.5;3.6;3.7;3.8;3.9;4;4.1;4.2;4.3;4.4;4.5;4.6;4.7;4.8;4.9;5;5.1;5.2;5.3;5.4;5.5;5.6;5.7;5.8;5.9;6;6.1;6.2;6.3;6.4;6.5;6.6;6.7;6.8;6.9;7;7.1;7.2;7.3;7.4;7.5;7.6;7.7;7.79999;7.89999;7.99999;8.09999;8.2;8.3;8.4;8.5;8.6;8.7;8.8;8.9;9;9.1;9.2;9.3;9.4;9.5;9.6;9.7;9.8;9.9;10",
+
+      // T06-03
+      "DELAY_500MS" = "0 ms;1 ms;2 ms;3 ms;4 ms;5 ms;6 ms;7 ms;8 ms;9 ms;10 ms;11 ms;12 ms;13 ms;14 ms;15 ms;16 ms;17 ms;18 ms;19 ms;20 ms;21 ms;22 ms;23 ms;24 ms;25 ms;26 ms;27 ms;28 ms;29 ms;30 ms;32 ms;34 ms;36 ms;38 ms;40 ms;42 ms;44 ms;46 ms;48 ms;50 ms;52 ms;54 ms;56 ms;58 ms;60 ms;62 ms;64 ms;66 ms;68 ms;70 ms;72 ms;74 ms;76 ms;78 ms;80 ms;85 ms;90 ms;95 ms;100 ms;105 ms;110 ms;115 ms;120 ms;125 ms;130 ms;135 ms;140 ms;145 ms;150 ms;155 ms;160 ms;165 ms;170 ms;175 ms;180 ms;185 ms;190 ms;195 ms;200 ms;205 ms;210 ms;215 ms;220 ms;225 ms;230 ms;235 ms;240 ms;245 ms;250 ms;255 ms;260 ms;265 ms;270 ms;275 ms;280 ms;285 ms;290 ms;295 ms;300 ms;305 ms;310 ms;315 ms;320 ms;325 ms;330 ms;335 ms;340 ms;345 ms;350 ms;355 ms;360 ms;365 ms;370 ms;375 ms;380 ms;390 ms;400 ms;410 ms;420 ms;430 ms;440 ms;450 ms;460 ms;470 ms;480 ms;490 ms;500 ms",
+
+      // T06-13
+      "DELAY_30MS" = "0.0 ms;0.1 ms;0.2 ms;0.3 ms;0.4 ms;0.5 ms;0.6 ms;0.7 ms;0.8 ms;0.9 ms;1.0 ms;1.1 ms;1.2 ms;1.3 ms;1.4 ms;1.5 ms;1.6 ms;1.7 ms;1.8 ms;1.9 ms;2.0 ms;2.1 ms;2.2 ms;2.3 ms;2.4 ms;2.5 ms;2.6 ms;2.7 ms;2.8 ms;2.9 ms;3.0 ms;3.1 ms;3.2 ms;3.3 ms;3.4 ms;3.5 ms;3.6 ms;3.7 ms;3.8 ms;3.9 ms;4.0 ms;4.1 ms;4.2 ms;4.3 ms;4.4 ms;4.5 ms;4.6 ms;4.7 ms;4.8 ms;4.9 ms;5.0 ms;5.1 ms;5.2 ms;5.3 ms;5.4 ms;5.5 ms;5.6 ms;5.7 ms;5.8 ms;5.9 ms;6.0 ms;6.2 ms;6.4 ms;6.6 ms;6.8  ms;7.0  ms;7.2  ms;7.4  ms;7.6  ms;7.8  ms;8.0  ms;8.2  ms;8.4  ms;8.6  ms;8.8  ms;9.0  ms;9.3  ms;9.6  ms;9.9  ms;10.2 ms;10.5 ms;10.8 ms;11.1 ms;11.4 ms;11.7 ms;12.0 ms;12.3 ms;12.6 ms;12.9 ms;13.2 ms;13.5 ms;13.8 ms;14.1 ms;14.4 ms;14.7 ms;15.0 ms;15.3 ms;15.6 ms;15.9 ms;16.2 ms;16.5 ms;17.0 ms;17.5 ms;18.0 ms;18.5 ms;19.0 ms;19.5 ms;20.0 ms;21.0 ms;22.0 ms;24.0 ms;26.0 ms;28.0 ms;30.0 ms",
+
+      // T06-12
+      "DELAY_50MS" = "0.0 ms;0.1 ms;0.2 ms;0.3 ms;0.4 ms;0.5 ms;0.6 ms;0.7 ms;0.8 ms;0.9 ms;1.0 ms;1.1 ms;1.2 ms;1.3 ms;1.4 ms;1.5 ms;1.6 ms;1.7 ms;1.8 ms;1.9 ms;2.0 ms;2.2 ms;2.4 ms;2.6 ms;2.8 ms;3.0 ms;3.2 ms;3.4 ms;3.6 ms;3.8 ms;4.0 ms;4.2 ms;4.4 ms;4.6 ms;4.8 ms;5.0 ms;5.2 ms;5.4 ms;5.6 ms;5.8 ms;6.0 ms;6.3 ms;6.6 ms;6.9 ms;7.2 ms;7.5 ms;7.8 ms;8.1 ms;8.4 ms;8.7 ms;9.0 ms;9.3 ms;9.6 ms;9.9 ms;10.2 ms;10.5 ms;10.8 ms;11.1 ms;11.4 ms;11.7 ms;12.0 ms;12.5 ms;13.0 ms;13.5 ms;14.0 ms;14.5 ms;15.0 ms;15.5 ms;16.0 ms;16.5 ms;17.0 ms;17.5 ms;18.0 ms;18.5 ms;19.0 ms;19.5 ms;20.0 ms;20.5 ms;21.0 ms;21.5 ms;22.0 ms;22.5 ms;23.0 ms;23.5 ms;24.0 ms;24.5 ms;25.0 ms;25.5 ms;26.0 ms;26.5 ms;27.0 ms;27.5 ms;28.0 ms;28.5 ms;29.0 ms;29.5 ms;30.0 ms;30.5 ms;31.0 ms;31.5 ms;32.0 ms;32.5 ms;33.0 ms;34.0 ms;35.0 ms;36.0 ms;37.0 ms;38.0 ms;39.0 ms;40.0 ms;41.0 ms;42.0 ms;43.0 ms;44.0 ms;45.0 ms;46.0 ms;47.0 ms;48.0 ms;49.0 ms;50.0 ms",
+
+      // T06-11
+      "DELAY_1380MS" = "0 ms;1 ms;2 ms;3 ms;4 ms;5 ms;6 ms;7 ms;8 ms;9 ms;10 ms;12 ms;14 ms;16 ms;18 ms;20 ms;22 ms;24 ms;26 ms;28 ms;30 ms;35 ms;40 ms;45 ms;50 ms;55 ms;60 ms;65 ms;70 ms;75 ms;80 ms;85 ms;90 ms;95 ms;100 ms;105 ms;110 ms;115 ms;120 ms;125 ms;130 ms;135 ms;140 ms;145 ms;150 ms;160 ms;170 ms;180 ms;190 ms;200 ms;210 ms;220 ms;230 ms;240 ms;250 ms;260 ms;270 ms;280 ms;290 ms;300 ms;310 ms;320 ms;330 ms;340 ms;350 ms;360 ms;370 ms;380 ms;390 ms;400 ms;410 ms;420 ms;430 ms;440 ms;450 ms;460 ms;470 ms;480 ms;490 ms;500 ms;510 ms;520 ms;530 ms;540 ms;550 ms;560 ms;570 ms;580 ms;600 ms;620 ms;640 ms;660 ms;680 ms;700 ms;720 ms;740 ms;760 ms;780 ms;800 ms;820 ms;840 ms;860 ms;880 ms;900 ms;920 ms;940 ms;960 ms;980 ms;1000 ms;1020 ms;1040 ms;1060 ms;1080 ms;1100 ms;1120 ms;1140 ms;1160 ms;1180 ms;1200 ms;1220 ms;1240 ms;1260 ms;1280 ms;1300 ms;1320 ms;1340 ms;1360 ms;1380 ms",
+
+      // T06-14
+      "DELAY_SYNC" = "1/64;1/32;1/24;1/16;1/12;1/8;1/6;3/16;1/4;1/3;3/8;1/2;3/4;1/1",
+
+      // T06-06
+      "DELAY_1400MS" = "0 ms;1 ms;2 ms;3 ms;4 ms;5 ms;6 ms;7 ms;8 ms;9 ms;10 ms;12 ms;14 ms;16 ms;18 ms;20 ms;22 ms;24 ms;26 ms;28 ms;30 ms;35 ms;40 ms;45 ms;50 ms;55 ms;60 ms;65 ms;70 ms;75 ms;80 ms;85 ms;90 ms;95 ms;100 ms;105 ms;110 ms;115 ms;120 ms;125 ms;130 ms;135 ms;140 ms;145 ms;150 ms;160 ms;170 ms;180 ms;190 ms;200 ms;210 ms;220 ms;230 ms;240 ms;250 ms;260 ms;270 ms;280 ms;290 ms;300 ms;310 ms;320 ms;330 ms;340 ms;350 ms;360 ms;370 ms;380 ms;390 ms;400 ms;410 ms;420 ms;430 ms;440 ms;450 ms;460 ms;470 ms;480 ms;490 ms;500 ms;510 ms;520 ms;530 ms;540 ms;550 ms;560 ms;580 ms;600 ms;620 ms;640 ms;660 ms;680 ms;700 ms;720 ms;740 ms;760 ms;780 ms;800 ms;820 ms;840 ms;860 ms;880 ms;900 ms;920 ms;940 ms;960 ms;980 ms;1000 ms;1020 ms;1040 ms;1060 ms;1080 ms;1100 ms;1120 ms;1140 ms;1160 ms;1180 ms;1200 ms;1220 ms;1240 ms;1260 ms;1280 ms;1300 ms;1320 ms;1340 ms;1360 ms;1380 ms;1400 ms",
+
+      // T06-07 grain shift duration
+      "DURATION_350MS" = "0 ms;1 ms;2 ms;3 ms;4 ms;5 ms;6 ms;7 ms;8 ms;9 ms;10 ms;11 ms;12 ms;13 ms;14 ms;15 ms;16 ms;17 ms;18 ms;19 ms;20 ms;21 ms;22 ms;23 ms;24 ms;25 ms;26 ms;27 ms;28 ms;29 ms;30 ms;31 ms;32 ms;33 ms;34 ms;35 ms;36 ms;37 ms;38 ms;39 ms;40 ms;41 ms;42 ms;43 ms;44 ms;45 ms;46 ms;47 ms;48 ms;49 ms;50 ms;52 ms;54 ms;56 ms;58 ms;60 ms;62 ms;64 ms;66 ms;68 ms;70 ms;72 ms;74 ms;76 ms;78 ms;80 ms;82 ms;84 ms;86 ms;88 ms;90 ms;92 ms;94 ms;96 ms;98 ms;100 ms;102 ms;104 ms;106 ms;108 ms;110 ms;115 ms;120 ms;125 ms;130 ms;135 ms;140 ms;145 ms;150 ms;155 ms;160 ms;165 ms;170 ms;175 ms;180 ms;185 ms;190 ms;195 ms;200 ms;205 ms;210 ms;215 ms;220 ms;225 ms;230 ms;235 ms;240 ms;245 ms;250 ms;255 ms;260 ms;265 ms;270 ms;275 ms;280 ms;285 ms;290 ms;295 ms;300 ms;305 ms;310 ms;315 ms;320 ms;325 ms;330 ms;335 ms;340 ms;350 ms",
+
+      // T06-05
+      "DELAY_700MS" = "0 ms;1 ms;2 ms;3 ms;4 ms;5 ms;6 ms;7 ms;8 ms;9 ms;10 ms;11 ms;12 ms;13 ms;14 ms;15 ms;16 ms;17 ms;18 ms;19 ms;20 ms;22 ms;24 ms;26 ms;28 ms;30 ms;32 ms;34 ms;36 ms;38 ms;40 ms;42 ms;44 ms;46 ms;48 ms;50 ms;52 ms;54 ms;56 ms;58 ms;60 ms;65 ms;70 ms;75 ms;80 ms;85 ms;90 ms;95 ms;100 ms;105 ms;110 ms;115 ms;120 ms;125 ms;130 ms;135 ms;140 ms;145 ms;150 ms;155 ms;160 ms;165 ms;170 ms;175 ms;180 ms;185 ms;190 ms;195 ms;200 ms;205 ms;210 ms;215 ms;220 ms;225 ms;230 ms;235 ms;240 ms;245 ms;250 ms;255 ms;260 ms;265 ms;270 ms;275 ms;280 ms;285 ms;290 ms;300 ms;310 ms;320 ms;330 ms;340 ms;350 ms;360 ms;370 ms;380 ms;390 ms;400 ms;410 ms;420 ms;430 ms;440 ms;450 ms;460 ms;470 ms;480 ms;490 ms;500 ms;510 ms;520 ms;530 ms;540 ms;550 ms;560 ms;570 ms;580 ms;590 ms;600 ms;610 ms;620 ms;630 ms;640 ms;650 ms;660 ms;670 ms;680 ms;690 ms;700 ms",
+
+      // T01-10 Horn/Rotor Ratio
+      "HORN_ROTOR_RATIO" = "Stop;0.50;0.52;0.54;0.56;0.58;0.60;0.62;0.64;0.66;0.68;0.70;0.72;0.74;0.76;0.78;0.80;0.82;0.84;0.86;0.88;0.90;0.92;0.94;0.96;0.98;1.00;1.02;1.04;1.06;1.08;1.10;1.12 ;1.14 ;1.16 ;1.18 ;1.20 ;1.22 ;1.24 ;1.26 ;1.28 ;1.30 ;1.32 ;1.34 ;1.36 ;1.38 ;1.40 ;1.42 ;1.44;1.46;1.48;1.50;1.52;1.54;1.56;1.58;1.60;1.62;1.64;1.66;1.68;1.70;1.72;1.74;1.76;1.78;1.80;1.82;1.84;1.86;1.88;1.90;1.92;1.94;1.96;1.98;2.00",
+
+      "HORN_ROTOR_BALANCE" = "Rotor;1:99;2:98;3:97;4:96;5:95;6:94;7:93;8:92;9:91;10:90;11:89;12:88;13:87;14:86;15:85;16:84;17:83;18:82;19:81;20:80;21:79;22:78;23:77;24:76;25:75;26:74;27:73;28:72;29:71;30:70;31:69;32:68;33:67;34:66;35:65;36:64;37:63;38:62;39:61;40:60;41:59;42:58;43:57;44:56;45:55;46:54;47:53;48:52;49:51;50:50;51:49;52:48;53:47;54:46;55:45;56:44;57:43;58:42;59:41;60:40;61:39;62:38;63:37;64:36;65:35;66:34;67:33;68:32;69:31;70:30;71:29;72:28;73:27;74:26;75:25;76:24;77:23;78:22;79:21;80:20;81:19;82:18;83:17;84:16;85:15;86:14;87:13;88:12;89:11;90:10;91:9;92:8;93:7;94:6;95:5;96:4;97:3;98:2;99:1;Horn",
+
+      // Dry/Wet
+      "DRY_WET" = "Dry;99:1;98:2;97:3;96:4;95:5;94:6;93:7;92:8;91:9;90:10;89:11;88:12;87:13;86:14;85:15;84:16;83:17;82:18;81:19;80:20;79:21;78:22;77:23;76:24;75:25;74:26;73:27;72:28;71:29;70:30;69:31;68:32;67:33;66:34;65:35;64:36;63:37;62:38;61:39;60:40;59:41;58:42;57:43;56:44;55:45;54:46;53:47;52:48;51:49;50:50;49:51;48:52;47:53;46:54;45:55;44:56;43:57;42:58;41:59;40:60;39:61;38:62;37:63;36:64;35:65;34:66;33:67;32:68;31:69;30:70;29:71;28:72;27:73;26:74;25:75;24:76;23:77;22:78;21:79;20:80;19:81;18:82;17:83;16:84;15:85;14:86;13:87;12:88;11:89;10:90;9:91;8:92;7:93;6:94;5:95;4:96;3:97;2:98;1:99;Wet",
+
+      // T01-09 early reflection time
+      "ER_800MS" = "10 ms;11 ms;12 ms;13 ms;14 ms;15 ms;16 ms;17 ms;18 ms;19 ms;20 ms;21 ms;22 ms;23 ms;24 ms;25 ms;26 ms;27 ms;28 ms;29 ms;30 ms;31 ms;32 ms;33 ms;34 ms;35 ms;36 ms;37 ms;38 ms;39 ms;40 ms;41 ms;42 ms;43 ms;44 ms;45 ms;46 ms;47 ms;48 ms;49 ms;50 ms;55 ms;60 ms;65 ms;70 ms;75 ms;80 ms;85 ms;90 ms;95 ms;100 ms;105 ms;110 ms;115 ms;120 ms;125 ms;130 ms;135 ms;140 ms;145 ms;150 ms;155 ms;160 ms;165 ms;170 ms;180 ms;190 ms;200 ms;210 ms;220 ms;230 ms;240 ms;250 ms;260 ms;270 ms;280 ms;290 ms;300 ms;310 ms;320 ms;330 ms;340 ms;350 ms;360 ms;370 ms;380 ms;390 ms;400 ms;410 ms;420 ms;430 ms;440 ms;450 ms;460 ms;470 ms;480 ms;490 ms;500 ms;510 ms;520 ms;530 ms;540 ms;550 ms;560 ms;570 ms;580 ms;590 ms;600 ms;610 ms;620 ms;630 ms;640 ms;650 ms;660 ms;670 ms;680 ms;690 ms;700 ms;710 ms;720 ms;730 ms;740 ms;750 ms;760 ms;770 ms;780 ms;790 ms;800 ms",
+
+      // T02-01 predelay
+      "PREDELAY_200MS" = "0 ms;1 ms;2 ms;3 ms;4 ms;5 ms;6 ms;7 ms;8 ms;9 ms;10 ms;11 ms;12 ms;13 ms;14 ms;15 ms;16 ms;17 ms;18 ms;19 ms;20 ms;21 ms;22 ms;23 ms;24 ms;25 ms;26 ms;27 ms;28 ms;29 ms;30 ms;31 ms;32 ms;33 ms;34 ms;35 ms;36 ms;37 ms;38 ms;39 ms;40 ms;41 ms;42 ms;43 ms;44 ms;45 ms;46 ms;47 ms;48 ms;49 ms;50 ms;51 ms;52 ms;53 ms;54 ms;56 ms;58 ms;60 ms;62 ms;64 ms;66 ms;68 ms;70 ms;72 ms;74 ms;76 ms;78 ms;80 ms;82 ms;84 ms;86 ms;88 ms;90 ms;92 ms;94 ms;96 ms;98 ms;100 ms;102 ms;104 ms;106 ms;108 ms;110 ms;112 ms;114 ms;116 ms;118 ms;120 ms;122 ms;124 ms;126 ms;128 ms;130 ms;132 ms;134 ms;136 ms;138 ms;140 ms;142 ms;144 ms;146 ms;148 ms;150 ms;152 ms;154 ms;156 ms;158 ms;160 ms;162 ms;164 ms;166 ms;168 ms;170 ms;172 ms;174 ms;176 ms;178 ms;180 ms;182 ms;184 ms;186 ms;188 ms;190 ms;192 ms;194 ms;196 ms;198 ms;200 ms",
+
+      // T01-04 gain (0..88, table starts at 23)
+      "GAIN_ADJUST" = "-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-Inf;-40 dB;-39 dB;-38 dB;-37 dB;-36 dB;-35 dB;-34 dB;-33 dB;-32 dB;-31 dB;-30 dB;-29 dB;-28 dB;-27 dB;-26 dB;-25 dB;-24 dB;-23 dB;-22 dB;-21 dB;-20 dB;-19 dB;-18 dB;-17 dB;-16 dB;-15 dB;-14 dB;-13 dB;-12 dB;-11 dB;-10 dB;-9 dB;-8 dB;-7 dB;-6 dB;-5 dB;-4 dB;-3 dB;-2 dB;-1 dB;0 dB;+1 dB;+2 dB;+3 dB;+4 dB;+5 dB;+6 dB;+7 dB;+8 dB;+9 dB;+10 dB;+11 dB;+12 dB;+13 dB;+14 dB;+15 dB;+16 dB;+17 dB;+18 dB;+19 dB;+20 dB;+21 dB;+22 dB;+23 dB;+24 dB",
+
+      // T01-01 attack time
+      "ATTACK_500MS" = "0.1 ms;0.2 ms;0.3 ms;0.4 ms;0.5 ms;0.6 ms;0.7 ms;0.8 ms;0.9 ms;1.0 ms;1.1 ms;1.2 ms;1.3 ms;1.4 ms;1.5 ms;1.6 ms;1.7 ms;1.8 ms;1.9 ms;2.0 ms;2.2 ms;2.4 ms;2.6 ms;2.8 ms;3.0 ms;3.2 ms;3.4 ms;3.6 ms;3.8 ms;4.0 ms;4.2 ms;4.4 ms;4.7  ms;5.0  ms;5.3  ms;5.6  ms;5.9  ms;6.2  ms;6.5  ms;6.8  ms;7.1  ms;7.4  ms;7.8  ms;8.2  ms;8.6  ms;9.0  ms;9.4  ms;10.0 ms;10.5 ms;11.0 ms;11.5 ms;12.0 ms;12.5 ms;13.0 ms;13.5 ms;14.0 ms;15.0 ms;16.0 ms;17.0 ms;18.0 ms;19.0 ms;20.0 ms;21.0 ms;22.0 ms;23.0 ms;24.0 ms;25.0 ms;27.0 ms;28.0 ms;29.0 ms;31.0 ms;32.0 ms;34.0 ms;36.0 ms;37.0 ms;39.0 ms;41.0 ms;43.0 ms;46.0 ms;48.0 ms;50.0 ms;53.0 ms;55.0 ms;58.0 ms;61.0 ms;64.0 ms;68.0 ms;71.0 ms;75.0 ms;78.0 ms;82.0 ms;86.0 ms;91.0 ms;95.0 ms;99.0 ms;104  ms;110 ms;115 ms;121 ms;127 ms;133 ms;140 ms;147 ms;155 ms;162 ms;170 ms;179 ms;188 ms;197 ms;207 ms;218 ms;229 ms;240 ms;252 ms;265 ms;278 ms;292 ms;307 ms;322 ms;338 ms;355 ms;373 ms;391 ms;411 ms;432 ms;453 ms;476 ms;500 ms",
+
+      // T01-02 compressor ratio
+      "COMP_RATIO" = "1.0:1;1.5:1;2.0:1;2.5:1;3.0:1;3.5:1;4.0:1;4.5:1;5.0:1;5.5:1;6.0:1;6.5:1;7.0:1;7.5:1;8.0:1;8.5:1;9.0:1 ;9.5:1 ;10.0:1;10.5:1;11.0:1;11.5:1;12.0:1;12.5:1;13.0:1;13.5:1;14.0:1;14.5:1;15.0:1;15.5:1;16.0:1;16.5:1;17.0:1;17.5:1;18.0:1;18.5:1;19.0:1;19.5:1;20.0:1;21.0:1;22.0:1;23.0:1;24.0:1;25.0:1;26.0:1;27.0:1;28.0:1;29.0:1;30.0:1;31.0:1;32.0:1;33.0:1;34.0:1;35.0:1;36.0:1;37.0:1;38.0:1;39.0:1;40.0:1;41.0:1;42.0:1;43.0:1;44.0:1;45.0:1;46.0:1;47.0:1;48.0:1;49.0:1;50.0:1;Inf:1",
+
+      // T01-05 release time
+      "RELEASE_1500MS" = "0.3 ms;0.6 ms;0.9 ms;1.2 ms;1.5 ms;1.8 ms;2.1 ms;2.4 ms;2.7 ms;3.0 ms;3.3 ms;3.6 ms;3.9 ms;4.2 ms;4.5 ms;4.8 ms;5.1 ms;5.4 ms;5.7 ms;6.0 ms;6.6 ms;7.2 ms;7.8 ms;8.4 ms;9.0 ms;9.6 ms;10.2 ms;10.8 ms;11.4 ms;12.0 ms;12.6 ms;13.2 ms;14 ms;15 ms;16 ms;17 ms;18 ms;19 ms;20 ms;21 ms;22 ms;23 ms;24 ms;25 ms;26 ms;27 ms;28 ms;30 ms;32 ms;33 ms;35 ms;36 ms;38 ms;39 ms;41 ms;42 ms;45 ms;48 ms;51 ms;54 ms;57 ms;60 ms;63 ms;66 ms;69 ms;72 ms;76 ms;80 ms;84 ms;88 ms;92 ms;97 ms;101 ms;107 ms;112 ms;118 ms;124 ms;130 ms;137 ms;143 ms;151 ms;158 ms;166 ms;174 ms;183 ms;193 ms;203 ms;213 ms;224 ms;235 ms;247 ms;259 ms;272 ms;284 ms;298 ms;313 ms;329 ms;346 ms;363 ms;381 ms;400 ms;420 ms;441 ms;464 ms;487 ms;511 ms;537 ms;564 ms;592 ms;622 ms;653 ms;686 ms;720 ms;756 ms;794 ms;834 ms;876 ms;920 ms;966 ms;1014 ms;1065 ms;1118 ms;1174 ms;1233 ms;1295 ms;1360 ms;1428 ms;1500 ms",
+
+      "FS" = "1 kHz;1.5 kHz;2 kHz;2.5 kHz;3 kHz;3.5 kHz;4 kHz;4.5 kHz;5 kHz;5.5 kHz;6 kHz;6.5 kHz;7 kHz;7.5 kHz;8 kHz;8.5 kHz;9 kHz;9.5 kHz;10 kHz;10.5 kHz;11 kHz;11.5 kHz;12 kHz;12.5 kHz;13 kHz;13.5 kHz;14 kHz;14.5 kHz;15 kHz;15.5 kHz;16 kHz;16.5 kHz;17 kHz;17.5 kHz;18 kHz;18.5 kHz;19 kHz;19.5 kHz;20 kHz;20.5 kHz;21 kHz;21.5 kHz;22 kHz;22.5 kHz;23 kHz;23.5 kHz;24 kHz;24.5 kHz;25 kHz;25.5 kHz;26 kHz;26.5 kHz;27 kHz;27.5 kHz;28 kHz;28.5 kHz;29 kHz;29.5 kHz;30 kHz;30.5 kHz;31 kHz;31.5 kHz;32 kHz;32.5 kHz;33 kHz;33.5 kHz;34 kHz;34.5 kHz;35 kHz;35.5 kHz;36 kHz;36.5 kHz;37 kHz;37.5 kHz;38 kHz;38.5 kHz;39 kHz;39.5 kHz;40 kHz;40.5 kHz;41 kHz;41.5 kHz;42 kHz;42.5 kHz;43 kHz;43.5 kHz;44 kHz;44.5 kHz;45 kHz;45.5 kHz;46 kHz;46.5 kHz;47 kHz;47.5 kHz;48 kHz",
+
+      "BIT" = "4 bit;5 bit;6 bit;7 bit;8 bit;9 bit;10 bit;11 bit;12 bit;13 bit;14 bit;15 bit;16 bit;17 bit;18 bit;19 bit;20 bit;21 bit;22 bit;23 bit;24 bit",
+
+      // T06-02
+      //  (todo) implement T06-01 (sync on)
+      "TIME_RATIO_SYNC_OFF" = "0.5%;1.0%;1.5%;2.0%;2.5%;3.0%;3.5%;4.0%;4.5%;5.0%;5.5%;6.0%;6.5%;7.0%;7.5%;8.0%;8.5%;9.0%;9.5%;10.0%;11.0%;12.5%;13.0%;14.0%;15.0%;16.7%;17.0%;18.0%;19.0%;20.0%;21.0%;22.0%;23.0%;25.0%;28.0%;30.0%;32.0%;33.3%;36.0%;38.0%;40.0%;42.0%;44.0%;46.0%;48.0%;50.0%;53.0%;56.0%;59.0%;62.0%;65.0%;66.6%;72.0%;75.0%;78.0%;81.0%;85.0%;89.0%;92.0%;95.0%;98.0%;100.0%;100.0%;100.0%;100.0%;100.0%;101.0%;102.0%;103.0%;104.0%;105.0%;106.0%;107.0%;108.0%;109.0%;110.0%;112.0%;114.0%;116.0%;118.0%;120.0%;122.0%;123.0%;125.0%;128.0%;130.0%;133.3%;134.0%;136.0%;138.0%;140.0%;143.0%;146.0%;150.0%;152.0%;155.0%;158.0%;161.0%;164.0%;167.0%;170.0%;173.0%;176.0%;179.0%;182.0%;185.0%;188.0%;191.0%;194.0%;197.0%;200.0%;205.0%;210.0%;215.0%;220.0%;225.0%;230.0%;240.0%;250.0%;260.0%;270.0%;280.0%;300.0%;320.0%;340.0%;360.0%;380.0%;400.0%",
+
+      // table starts at idx=14 (14..64..114 => -50..0..+50 cents)
+      "FINE_CENTS" = "-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-50 cents;-49 cents;-48 cents;-47 cents;-46 cents;-45 cents;-44 cents;-43 cents;-42 cents;-41 cents;-40 cents;-39 cents;-38 cents;-37 cents;-36 cents;-35 cents;-34 cents;-33 cents;-32 cents;-31 cents;-30 cents;-29 cents;-28 cents;-27 cents;-26 cents;-25 cents;-24 cents;-23 cents;-22 cents;-21 cents;-20 cents;-19 cents;-18 cents;-17 cents;-16 cents;-15 cents;-14 cents;-13 cents;-12 cents;-11 cents;-10 cents;-9 cents;-8 cents;-7 cents;-6 cents;-5 cents;-4 cents;-3 cents;-2 cents;-1 cents;0 cents;+1 cents;+2 cents;+3 cents;+4 cents;+5 cents;+6 cents;+7 cents;+8 cents;+9 cents;+10 cents;+11 cents;+12 cents;+13 cents;+14 cents;+15 cents;+16 cents;+17 cents;+18 cents;+19 cents;+20 cents;+21 cents;+22 cents;+23 cents;+24 cents;+25 cents;+26 cents;+27 cents;+28 cents;+29 cents;+30 cents;+31 cents;+32 cents;+33 cents;+34 cents;+35 cents;+36 cents;+37 cents;+38 cents;+39 cents;+40 cents;+41 cents;+42 cents;+43 cents;+44 cents;+45 cents;+46 cents;+47 cents;+48 cents;+49 cents;+50 cents",
+
+      "VOICE" = "A;I;U;E;O",
+                                      ];
+
+
+
+
+
+
+
+
+
+
+   // Insert effect param names (up to 20 bytes)
+   static PointerArray ifx_param_names = [
+      // 0: "-"
+      [],
+
+      // 1: St.Compressor
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"-",
+       /* +2*/"Sensitivity",
+       /* +3*/"Attack:127:$(ATTACK_500MS)",
+       /* +4*/"Output Level"
+       ],
+
+      // 2: St.Limiter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"-",
+       /* +2*/"Ratio:69:$(COMP_RATIO)",
+       /* +3*/"Threshold:24,64:SIGNED",
+       /* +4*/"Attack:127:$(ATTACK_500MS)",
+       /* +5*/"Gain Adjust:23,88:SIGNED"//$(GAIN_ADJUST)
+       ],
+
+      // 3: St.Gate
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"-",
+       /* +2*/"Threshold",
+       /* +3*/"Attack:127:$(ATTACK_500MS)",
+       /* +4*/"Release:127:$(RELEASE_1500MS)",
+       /* +5*/"Gain Adjust:23,88:SIGNED" // $(GAIN_ADJUST)
+       ],
+
+      // 4: St.Filter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Filter Type:4:LPF24;LPF18;LPF12;HPF12;BPF12",     // 0~4=LPF24,LPF18,LPF12,HPF12,BPF12
+       /* +2*/"Cutoff",
+       /* +3*/"Resonance",
+       /* +4*/"Trim",
+       /* +5*/"Mod Source:1:LFO;Ctrl",      // 0,1=LFO,Ctrl
+       /* +6*/"Mod Intensity:1,127:SIGNED",
+       /* +7*/"Mod Response",
+       /* +8*/"LFO Tempo Sync:1:Off;On",  // 0,1=Off,On
+       /* +9*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+10*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64 *T07-5
+       /*+11*/"LFO Waveform:4:$(LFO_WAVEFORMS)",    // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+12*/"LFO Shape:1,127:SIGNED",
+       /*+13*/"LFO KeySync:1:Off;Timbre",     // 0,1=Off,Timbre
+       /*+14*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+15*/"Control Source:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       ],
+
+      // 5: St.Wah
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Wah Type:5:Y-CRY;RM-A;RM-B;J-CRY;VOX;M-VOX",     // 0~5=Y-CRY~M-VOX *T01-06
+       /* +2*/"Frequency",
+       /* +3*/"Resonance",
+       /* +4*/"Mod Source:2:Auto;LFO;Ctrl",   // 0~2=Auto,LFO,Ctrl
+       /* +5*/"Mod Intensity:1,127:SIGNED",
+       /* +6*/"Mod Response",
+       /* +7*/"Env.Sens",
+       /* +8*/"Env.Shape:1,127:SIGNED",
+       /* +9*/"LFO Tempo Sync:1:Off;On",  // 0,1=Off,On
+       /*+10*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+11*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+12*/"LFO Waveform:4:$(LFO_WAVEFORMS)",    // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+13*/"LFO Shape:1,127:SIGNED",
+       /*+14*/"LFO KeySync:1:Off;Timbre",
+       /*+15*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+16*/"Control Source:11:$(CTL_SOURCES)"
+       ],
+
+      // 6: St.Band EQ
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Trim",
+       /* +2*/"B1 Type:1:Peaking;Shelv Low",          // 0,1=Peaking,Shelv Low
+       /* +3*/"B2 Type:1:Peaking;Shelv Hi",          // 0,1=Peaking,Shelv Hi
+       /* +4*/"B1 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +5*/"B1 Q:95:$(BAND_Q)",
+       /* +6*/"B1 Gain:28,100:SIGNED",   // 64+/-36=-18,-17.5~0~17.5,18 dB
+       /* +7*/"B2 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +8*/"B2 Q:95:$(BAND_Q)",
+       /* +9*/"B2 Gain:28,100:SIGNED"
+       ],
+
+      // 7: Distortion
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Gain",
+       /* +2*/"Pre EQ Frequency:58:$(BAND_FREQUENCIES)",
+       /* +3*/"Pre EQ Q:95:$(BAND_Q)",
+       /* +4*/"Pre EQ Gain:28,100:SIGNED",
+       /* +5*/"B1 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +6*/"B1 Q:95:$(BAND_Q)",         // 0~95=0.5,0.6~9.9,10
+       /* +7*/"B1 Gain:28,100:SIGNED",  // 64+/-36=-18,-17.5~0~17.5,18 dB
+       /* +8*/"B2 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +9*/"B2 Q:95:$(BAND_Q)",
+       /*+10*/"B2 Gain:28,100:SIGNED",
+       /*+11*/"B3 Frequency:58:$(BAND_FREQUENCIES)",
+       /*+12*/"B3 Q:95:$(BAND_Q)",
+       /*+13*/"B3 Gain:28,100:SIGNED",
+       /*+14*/"Output Level"
+       ],
+
+      // 8: Cabinet Simulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Cabinet Type:10:Tweed1x8;Tweed1x12;Tweed4x10;Black2x10;Black2x12;AC15;AC30;AD412;UK_H30;UK_T75;US_V30",   // 0~10=Tweed1x8~US_V30 *T01-08
+       /* +2*/"Air",
+       /* +3*/"Trim"
+       ],
+
+      // 9: Tube Preamp Simulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Tube1 Low Cut",
+       /* +2*/"Tube1 High Cut",
+       /* +3*/"Tube1 Gain:23,88:SIGNED",
+       /* +4*/"Tube1 Bias",
+       /* +5*/"Tube1 Saturation",
+       /* +6*/"Phase:1:Normal;Inverted",                // 0,1=Normal,Inverted
+       /* +7*/"Tube2 Low Cut",
+       /* +8*/"Tube2 High Cut",
+       /* +9*/"Tube2 Gain:23,88:SIGNED",
+       /*+10*/"Tube2 Bias",
+       /*+11*/"Tube2 Saturation",
+       /*+12*/"Output Level"
+       ],
+
+      // 10: St.Decimator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"PreLPF:1:Off;On",   // 0,1=Off,On
+       /* +2*/"HighDamp:100",
+       /* +3*/"Fs:94:$(FS)",
+       /* +4*/"Bit:20:$(BIT)",
+       /* +5*/"Output Level",
+       /* +6*/"Fs Mod Intensity:1,127:SIGNED",
+       /* +7*/"LFO Tempo Sync:1:Off;On",
+       /* +8*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +9*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",
+       /*+10*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+11*/"LFO Shape:1,127:SIGNED",
+       /*+12*/"LFO KeySync:1:Off;Timbre",
+       /*+13*/"LFO Init Phase:18:$(LFO_INIT_PHASES)"
+       ],
+
+      // 11: Reverb
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:2:Hall;Plate;Room",  // 0~2=Hall,Plate,Room
+       /* +2*/"Reverb Time",
+       /* +3*/"High Damp:100",
+       ],
+
+      // 12: Early Reflections
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:3:Sharp;Loose;Mod;Reverse",   // 0~3=Sharp,Loose,Mod,Reverse
+       /* +2*/"ER Time:87:$(ER_800MS)",
+       /* +3*/"Pre Delay:127:$(PREDELAY_200MS)",
+       /* +4*/"Pre EQ Trim",
+       /* +5*/"-",
+       /* +6*/"-",
+       /* +7*/"High Damp:100",
+       /* +8*/"Low Damp:100"
+       ],
+
+      // 13: L/C/R Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1400MS)",
+       /* +4*/"C Delay Time:127:$(DELAY_1400MS)",
+       /* +5*/"R Delay Time:127:$(DELAY_1400MS)",
+       /* +6*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +7*/"C Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +8*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +9*/"L Delay Level",
+       /*+10*/"C Delay Level",
+       /*+11*/"R Delay Level",
+       /*+12*/"C Feedback",
+       /*+13*/"High Damp:100",
+       /*+14*/"Low Damp:100",
+       /*+15*/"Trim",
+       /*+16*/"Spread",
+       ],
+
+      // 14: St.Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:1:Stereo;Cross",   // 0,1=Stereo,Cross
+       /* +2*/"Delay TempoSync:1:Off;On",
+       /* +3*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +4*/"L Delay Time:127:$(DELAY_500MS)",
+       /* +5*/"R Delay Time:127:$(DELAY_500MS)",
+       /* +6*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +7*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +8*/"Feedback",
+       /* +9*/"High Damp:100",
+       /*+10*/"Low Damp:100",
+       /*+11*/"Trim",
+       /*+12*/"Spread"
+       ],
+
+      // 15: Auto Panning Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1400MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_1400MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Tempo Sync:1:Off;On",
+       /*+10*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+11*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+12*/"LFO Waveform:4:$(LFO_WAVEFORMS)",     // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+13*/"LFO Shape:1,127:SIGNED",
+       /*+14*/"LFO KeySync:1:Off;Timbre",
+       /*+15*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+16*/"High Damp:100",
+       /*+17*/"Low Damp:100",
+       /*+18*/"Trim",
+       ],
+
+      // 16: St.Auto Panning Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_500MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_500MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Tempo Sync:1:Off;On",
+       /*+10*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+11*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+12*/"LFO Waveform:4:$(LFO_WAVEFORMS)",     // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+13*/"LFO Shape:1,127:SIGNED",
+       /*+14*/"LFO KeySync:1:Off;Timbre",
+       /*+15*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+16*/"LFO Spread:46,82:SIGNED",
+       /*+17*/"High Damp:100",
+       /*+18*/"Low Damp:100",
+       /*+19*/"Trim",
+       ],
+
+      // 17: Modulation Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1380MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_1380MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+10*/"LFO Spread:46,82:SIGNED"
+       ],
+
+      // 18: St.Modulation Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1380MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_1380MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+10*/"LFO Spread:46,82:SIGNED"
+       ],
+
+      // 19: Tape Echo
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"Tap1 Delay Time:127:$(DELAY_1380MS)",
+       /* +4*/"Tap2 Delay Time:127:$(DELAY_1380MS)",
+       /* +5*/"Tap1 Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"Tap2 Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Tap1 Level",
+       /* +8*/"Tap2 Level",
+       /* +9*/"Feedback",
+       /*+10*/"High Damp:100",
+       /*+11*/"Low Damp:100",
+       /*+12*/"Trim",
+       /*+13*/"Saturation",
+       /*+14*/"Wah Flutter Freq:127:$(LFO_FREQUENCIES)",
+       /*+15*/"Wah Flutter Depth",
+       /*+16*/"Pre Tone",
+       /*+17*/"Spread"
+       ],
+
+      // 20: St.Chorus
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +3*/"LFO Spread:46,82:SIGNED",
+       /* +4*/"PreDelay L:119:$(DELAY_50MS)",
+       /* +5*/"PreDelay R:119:$(DELAY_50MS)",
+       /* +6*/"Trim",
+       /* +7*/"Low EQ Gain:34,94:SIGNED",
+       /* +8*/"High EQ Gain:34,94:SIGNED",
+       ],
+
+      // 21: Ensemble
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"Speed"
+       ],
+
+      // St.Flanger / Comb Filter    // 22
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:1:Flanger;Comb",    // 0,1=Flanger,Comb
+       /* +2*/"[Flanger]Delay:113:$(DELAY_30MS)",
+       /* +3*/"[Comb]Cutoff",
+       /* +4*/"Mod Depth",
+       /* +5*/"Feedback",
+       /* +6*/"[Flanger]Phase:1:+;-",
+       /* +7*/"LFO Tempo Sync:1:Off;On",
+       /* +8*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +9*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +0*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /* +1*/"LFO Shape:1,127:SIGNED",
+       /* +2*/"LFO KeySync:1:Off;Timbre",
+       /* +3*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /* +4*/"LFO Spread:46,82:SIGNED",
+       /* +5*/"High Damp:100"
+       ],
+
+      // 23: St.Phaser
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:1:Blue;U-VB",   // 0,1=Blue,U-VB
+       /* +2*/"Manual",
+       /* +3*/"Mod Depth",
+       /* +4*/"Resonance",
+       /* +5*/"Phase:1:+;-",  // 0,1=+,-
+       /* +6*/"LFO Tempo Sync:1:Off;On",
+       /* +7*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +8*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +9*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+10*/"LFO Shape:1,127:SIGNED",
+       /*+11*/"LFO KeySync:1:Off;Timbre",
+       /*+12*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+13*/"LFO Spread:46,82:SIGNED",
+       /*+14*/"High Damp:100",
+       ],
+
+      // 24: St.Tremolo
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"LFO Tempo Sync:1:Off;On",
+       /* +3*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +4*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +5*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /* +6*/"LFO Shape:1,127:SIGNED",
+       /* +7*/"LFO KeySync:1:Off;Timbre",
+       /* +8*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /* +9*/"LFO Spread:46,82:SIGNED",
+       ],
+
+      // 25: St.Ring Modulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"OSC Mode:1:Fixed;Note",   // 0,1=Fixed,Note
+       /* +2*/"Frequency:127:$(RINGMOD_FREQUENCIES)",
+       /* +3*/"Offset:16,112:SIGNED",
+       /* +4*/"Fine:14,114:$(FINE_CENTS)",
+       /* +5*/"OSC Waveform:2:Saw;Tri;Sine",  // 0~2=Saw,Tri,Sine
+       /* +6*/"LFO Intensity:1,127:SIGNED",
+       /* +7*/"LFO Tempo Sync:1:Off;On",
+       /* +8*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +9*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+10*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+11*/"LFO Shape:1,127:SIGNED",
+       /*+12*/"LFO KeySync:1:Off;Timbre",
+       /*+13*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+14*/"Pre LPF",
+       ],
+
+      // 26: Pitch Shifter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Pitch Shift:40,88:SIGNED",  // 64+/-24=-24~+24
+       /* +2*/"Fine:14,114:$(FINE_CENTS)",        // 64+/-50=-100,-98~0~98,100 cent
+       /* +3*/"-",
+       /* +4*/"-",
+       /* +5*/"-",
+       /* +6*/"-",
+       /* +7*/"-",
+       /* +8*/"-",
+       /* +9*/"Mode:2:Slow;Medium;Fast",   // 0~2=Slow,Medium,Fast
+       /*+10*/"High Damp:100",
+       /*+11*/"Trim"
+       ],
+
+      // 27: Grain Shifter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Duration TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"Duration:127:$(DELAY_500MS)",
+       /* +4*/"-",
+       /* +5*/"LFO Tempo Sync:1:Off;On",
+       /* +6*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +7*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +8*/"LFO KeySync:1:Off;Timbre",
+       /* +9*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+10*/"-"
+       ],
+
+      // 28: St.Vibrato
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"LFO Tempo Sync:1:Off;On",
+       /* +3*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +4*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +5*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /* +6*/"LFO Shape:1,127:SIGNED",
+       /* +7*/"LFO KeySync:1:Off;Timbre",
+       /* +8*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /* +9*/"LFO Spread:46,82:SIGNED",
+       ],
+
+      // 29: Rotary Speaker
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mode Switch:1:Rotate;Stop",   // 0,1=Rotate,Stop
+       /* +2*/"ModeSw. Ctrl Src:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       /* +3*/"ModeSw. Ctrl Mode:1:Toggle;Momentary",  // 0,1=Toggle,Moment
+       /* +4*/"ModeSw. Ctrl Type:1:Switch;Manual",  // 0,1=Switch,Manual
+       /* +5*/"[Sw]Speed Switch:1:Slow;Fast",   // 0,1=Slow,Fast
+       /* +6*/"[Sw]Sw. Ctrl Src:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       /* +7*/"[Sw]Sw. Ctrl Mode:1:Toggle;Momentary",  // 0,1=Toggle,Moment
+       /* +8*/"[Ml]Speed",
+       /* +9*/"[Ml]Speed Ctrl Src:11:$(CTL_SOURCES)",
+       /*+10*/"[Ml]Speed Ctrl Int:1,127:SIGNED",
+       /*+11*/"Horn/Rotor Balance:100:$(HORN_ROTOR_BALANCE)",
+       /*+12*/"Horn Acceleration",
+       /*+13*/"Horn Ratio:76:$(HORN_ROTOR_RATIO)",
+       /*+14*/"Rotor Acceleration",
+       /*+15*/"Rotor Ratio:76:$(HORN_ROTOR_RATIO)",
+       /*+16*/"Mic Distance",
+       /*+17*/"Spread",
+       /*+18*/"Trim"
+       ],
+
+      // 30: Talking Modulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Voice Control",   // 64+/-63=Bottom,-62~Center~+62,Top
+       /* +2*/"Voice Top:4:$(VOICE)",     // 0~4=A,I,U,E,O
+       /* +3*/"Voice Center:4:$(VOICE)",
+       /* +4*/"Voice Bottom:4:$(VOICE)",
+       /* +5*/"Resonance",
+       /* +6*/"Drive",
+       /* +7*/"Mod Source:2:Auto;LFO;Ctrl",    // 0~2=Auto,LFO,Ctrl
+       /* +8*/"Mod Intensity:1,127:SIGNED",   // 64+/-63=-63~+63
+       /* +9*/"Mod Response",
+       /*+10*/"[Auto] Env.Sens",
+       /*+11*/"[Auto] Env.Shape:1,127:SIGNED",  // 64+/-63=-63~+63
+       /*+12*/"LFO Tempo Sync:1:Off;On",
+       /*+13*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+14*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+15*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+16*/"LFO Shape:1,127:SIGNED",
+       /*+17*/"LFO KeySync:1:Off;Timbre",
+       /*+18*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",  // 0~18=0,10,20~180 [degree]
+       /*+19*/"[Ctrl] Ctrl.1 Src:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       ],
+                                   ];
+
+
+   // Master effect param names (up to 20 bytes)
+   static PointerArray mfx_param_names = [
+      // 0: "-"
+      [],
+
+      // 1: St.Compressor
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Envelope Select:1:LR Mix;LR Indv.",
+       /* +2*/"Sensitivity",
+       /* +3*/"Attack:127:$(ATTACK_500MS)",
+       /* +4*/"Output Level"
+       ],
+
+      // 2: St.Limiter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Envelope Select:1:LR Mix;LR Indv.",
+       /* +2*/"Ratio:69:$(COMP_RATIO)",
+       /* +3*/"Threshold:24,64:SIGNED",
+       /* +4*/"Attack:127:$(ATTACK_500MS)",
+       /* +5*/"Gain Adjust:23,88:SIGNED" // :$(GAIN_ADJUST)
+       ],
+
+      // 3: St.Gate
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Envelope Select:1:LR Mix;LR Indv.",
+       /* +2*/"Threshold",
+       /* +3*/"Attack:127:$(ATTACK_500MS)",
+       /* +4*/"Release:127:$(RELEASE_1500MS)",
+       /* +5*/"Gain Adjust:23,88:SIGNED" // $(GAIN_ADJUST)
+       ],
+
+      // 4: St.Filter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Filter Type:4:LPF24;LPF18;LPF12;HPF12;BPF12",     // 0~4=LPF24,LPF18,LPF12,HPF12,BPF12
+       /* +2*/"Cutoff",
+       /* +3*/"Resonance",
+       /* +4*/"Trim",
+       /* +5*/"Mod Source:1:LFO;Ctrl",      // 0,1=LFO,Ctrl
+       /* +6*/"Mod Intensity:1,127:SIGNED",
+       /* +7*/"Mod Response",
+       /* +8*/"LFO Tempo Sync:1:Off;On",  // 0,1=Off,On
+       /* +9*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+10*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64 *T07-5
+       /*+11*/"LFO Waveform:4:$(LFO_WAVEFORMS)",    // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+12*/"LFO Shape:1,127:SIGNED",
+       /*+13*/"LFO KeySync:1:Off;Timbre",     // 0,1=Off,Timbre
+       /*+14*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+15*/"Control Source:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       ],
+
+      // 5: St.Wah
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Wah Type:5:Y-CRY;RM-A;RM-B;J-CRY;VOX;M-VOX",     // 0~5=Y-CRY~M-VOX *T01-06
+       /* +2*/"Frequency",
+       /* +3*/"Resonance",
+       /* +4*/"Mod Source:2:Auto;LFO;Ctrl",   // 0~2=Auto,LFO,Ctrl
+       /* +5*/"Mod Intensity:1,127:SIGNED",
+       /* +6*/"Mod Response",
+       /* +7*/"Env.Sens",
+       /* +8*/"Env.Shape:1,127:SIGNED",
+       /* +9*/"LFO Tempo Sync:1:Off;On",  // 0,1=Off,On
+       /*+10*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+11*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+12*/"LFO Waveform:4:$(LFO_WAVEFORMS)",    // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+13*/"LFO Shape:1,127:SIGNED",
+       /*+14*/"LFO KeySync:1:Off;Timbre",
+       /*+15*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+16*/"Control Source:11:$(CTL_SOURCES)"
+       ],
+
+      // 6: 4Band EQ
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Trim",
+       /* +2*/"B1 Type:1:Peaking;Shelv Low",          // 0,1=Peaking,Shelv Low
+       /* +3*/"B4 Type:1:Peaking;Shelv Hi",          // 0,1=Peaking,Shelv Hi
+       /* +4*/"B1 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +5*/"B1 Q:95:$(BAND_Q)",
+       /* +6*/"B1 Gain:28,100:SIGNED",   // 64+/-36=-18,-17.5~0~17.5,18 dB
+       /* +7*/"B2 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +8*/"B2 Q:95:$(BAND_Q)",
+       /* +9*/"B2 Gain:28,100:SIGNED",
+       /*+10*/"B3 Frequency:58:$(BAND_FREQUENCIES)",
+       /*+11*/"B3 Q:95:$(BAND_Q)",
+       /*+12*/"B3 Gain:28,100:SIGNED",
+       /*+13*/"B4 Frequency:58:$(BAND_FREQUENCIES)",
+       /*+14*/"B4 Q:95:$(BAND_Q)",
+       /*+15*/"B4 Gain:28,100:SIGNED"
+       ],
+
+      // 7: Distortion
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Gain",
+       /* +2*/"Pre EQ Frequency:58:$(BAND_FREQUENCIES)",
+       /* +3*/"Pre EQ Q:95:$(BAND_Q)",
+       /* +4*/"Pre EQ Gain:28,100:SIGNED",
+       /* +5*/"B1 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +6*/"B1 Q:95:$(BAND_Q)",         // 0~95=0.5,0.6~9.9,10
+       /* +7*/"B1 Gain:28,100:SIGNED",  // 64+/-36=-18,-17.5~0~17.5,18 dB
+       /* +8*/"B2 Frequency:58:$(BAND_FREQUENCIES)",
+       /* +9*/"B2 Q:95:$(BAND_Q)",
+       /*+10*/"B2 Gain:28,100:SIGNED",
+       /*+11*/"B3 Frequency:58:$(BAND_FREQUENCIES)",
+       /*+12*/"B3 Q:95:$(BAND_Q)",
+       /*+13*/"B3 Gain:28,100:SIGNED",
+       /*+14*/"Output Level"
+       ],
+
+      // 8: Cabinet Simulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Cabinet Type:10:Tweed1x8;Tweed1x12;Tweed4x10;Black2x10;Black2x12;AC15;AC30;AD412;UK_H30;UK_T75;US_V30",   // 0~10=Tweed1x8~US_V30 *T01-08
+       /* +2*/"Air",
+       /* +3*/"Trim"
+       ],
+
+      // 9: St.Tube Preamp Simulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Tube1 Low Cut",
+       /* +2*/"Tube1 High Cut",
+       /* +3*/"Tube1 Gain:23,88:SIGNED",
+       /* +4*/"Tube1 Bias",
+       /* +5*/"Tube1 Saturation",
+       /* +6*/"Phase:1:Normal;Inverted",                // 0,1=Normal,Inverted
+       /* +7*/"Tube2 Low Cut",
+       /* +8*/"Tube2 High Cut",
+       /* +9*/"Tube2 Gain:23,88:SIGNED",
+       /*+10*/"Tube2 Bias",
+       /*+11*/"Tube2 Saturation",
+       /*+12*/"Output Level"
+       ],
+
+      // 10: St.Decimator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"PreLPF:1:Off;On",   // 0,1=Off,On
+       /* +2*/"HighDamp:100",
+       /* +3*/"Fs:94:$(FS)",
+       /* +4*/"Bit:20:$(BIT)",
+       /* +5*/"Output Level",
+       /* +6*/"Fs Mod Intensity:1,127:SIGNED",
+       /* +7*/"LFO Tempo Sync:1:Off;On",
+       /* +8*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +9*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",
+       /*+10*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+11*/"LFO Shape:1,127:SIGNED",
+       /*+12*/"LFO KeySync:1:Off;Timbre",
+       /*+13*/"LFO Init Phase:18:$(LFO_INIT_PHASES)"
+       ],
+
+      // 11: Reverb
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:5:Hall;SmoothHall;WetPlate;DryPlate;Room;BrightRoom",  // T05-03
+       /* +2*/"Reverb Time:127",
+       /* +3*/"High Damp:100",
+       /* +4*/"Pre Delay:127:$(PREDELAY_200MS)",
+       /* +5*/"Pre Delay Thru",
+       /* +6*/"Pre EQ Trim",
+       /* +7*/"Low EQ Gain:34,94:SIGNED",
+       /* +8*/"High EQ Gain:34,94:SIGNED",
+       /* +9*/"ER Level",
+       /*+10*/"Reverb Level"
+       ],
+
+      // 12: Early Reflections
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:3:Sharp;Loose;Mod;Reverse",   // 0~3=Sharp,Loose,Mod,Reverse
+       /* +2*/"ER Time:87:$(ER_800MS)",
+       /* +3*/"Pre Delay:127:$(PREDELAY_200MS)",
+       /* +4*/"Pre EQ Trim",
+       /* +5*/"Low EQ Gain:34,94:SIGNED",
+       /* +6*/"High EQ Gain:34,94:SIGNED",
+       /* +7*/"High Damp:100",
+       /* +8*/"Low Damp:100"
+       ],
+
+      // 13: L/C/R Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1400MS)",
+       /* +4*/"C Delay Time:127:$(DELAY_1400MS)",
+       /* +5*/"R Delay Time:127:$(DELAY_1400MS)",
+       /* +6*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +7*/"C Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +8*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +9*/"L Delay Level",
+       /*+10*/"C Delay Level",
+       /*+11*/"R Delay Level",
+       /*+12*/"C Feedback",
+       /*+13*/"High Damp:100",
+       /*+14*/"Low Damp:100",
+       /*+15*/"Trim",
+       /*+16*/"Spread",
+       ],
+
+      // 14: St.Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:1:Stereo;Cross",   // 0,1=Stereo,Cross
+       /* +2*/"Delay TempoSync:1:Off;On",
+       /* +3*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +4*/"L Delay Time:127:$(DELAY_700MS)",
+       /* +5*/"R Delay Time:127:$(DELAY_700MS)",
+       /* +6*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +7*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +8*/"Feedback",
+       /* +9*/"High Damp:100",
+       /*+10*/"Low Damp:100",
+       /*+11*/"Trim",
+       /*+12*/"Spread"
+       ],
+
+      // 15: Auto Panning Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1400MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_1400MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Tempo Sync:1:Off;On",
+       /*+10*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+11*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+12*/"LFO Waveform:4:$(LFO_WAVEFORMS)",     // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+13*/"LFO Shape:1,127:SIGNED",
+       /*+14*/"LFO KeySync:1:Off;Timbre",
+       /*+15*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+16*/"High Damp:100",
+       /*+17*/"Low Damp:100",
+       /*+18*/"Trim",
+       ],
+
+      // 16: St.Auto Panning Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_700MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_700MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Tempo Sync:1:Off;On",
+       /*+10*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+11*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+12*/"LFO Waveform:4:$(LFO_WAVEFORMS)",     // 0~4=Saw,Squ,Tri,Sin,S&H
+       /*+13*/"LFO Shape:1,127:SIGNED",
+       /*+14*/"LFO KeySync:1:Off;Timbre",
+       /*+15*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+16*/"LFO Spread:46,82:SIGNED",
+       /*+17*/"High Damp:100",
+       /*+18*/"Low Damp:100",
+       /*+19*/"Trim",
+       ],
+
+      // 17: Modulation Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1380MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_1380MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+10*/"LFO Spread:46,82:SIGNED"
+       ],
+
+      // 18: St.Modulation Delay
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"L Delay Time:127:$(DELAY_1380MS)",
+       /* +4*/"R Delay Time:127:$(DELAY_1380MS)",
+       /* +5*/"L Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"R Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Feedback",
+       /* +8*/"Mod Depth",
+       /* +9*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+10*/"LFO Spread:46,82:SIGNED"
+       ],
+
+      // 19: Tape Echo
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Delay TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"Tap1 Delay Time:127:$(DELAY_1380MS)",
+       /* +4*/"Tap2 Delay Time:127:$(DELAY_1380MS)",
+       /* +5*/"Tap1 Sync Delay Time:13:$(DELAY_SYNC)",  // 0~13=1/64~1/1 *T06-14
+       /* +6*/"Tap2 Sync Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"Tap1 Level",
+       /* +8*/"Tap2 Level",
+       /* +9*/"Feedback",
+       /*+10*/"High Damp:100",
+       /*+11*/"Low Damp:100",
+       /*+12*/"Trim",
+       /*+13*/"Saturation",
+       /*+14*/"Wah Flutter Freq:127:$(LFO_FREQUENCIES)",
+       /*+15*/"Wah Flutter Depth",
+       /*+16*/"Pre Tone",
+       /*+17*/"Spread"
+       ],
+
+      // 20: St.Chorus
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +3*/"LFO Spread:46,82:SIGNED",
+       /* +4*/"PreDelay L:119:$(DELAY_50MS)",
+       /* +5*/"PreDelay R:119:$(DELAY_50MS)",
+       /* +6*/"Trim",
+       /* +7*/"Low EQ Gain:34,94:SIGNED",
+       /* +8*/"High EQ Gain:34,94:SIGNED",
+       ],
+
+      // 21: Ensemble
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"Speed"
+       ],
+
+      // 22: St.Flanger / Comb Filter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:1:Flanger;Comb",    // 0,1=Flanger,Comb
+       /* +2*/"[Flanger]Delay:113:$(DELAY_30MS)",
+       /* +3*/"[Comb]Cutoff",
+       /* +4*/"Mod Depth",
+       /* +5*/"Feedback",
+       /* +6*/"[Flanger]Phase:1:+;-",
+       /* +7*/"LFO Tempo Sync:1:Off;On",
+       /* +8*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +9*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+10*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+11*/"LFO Shape:1,127:SIGNED",
+       /*+12*/"LFO KeySync:1:Off;Timbre",
+       /*+13*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+14*/"LFO Spread:46,82:SIGNED",
+       /*+15*/"High Damp:100"
+       ],
+
+      // 23: St.Phaser
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Type:1:Blue;U-VB",   // 0,1=Blue,U-VB
+       /* +2*/"Manual",
+       /* +3*/"Mod Depth",
+       /* +4*/"Resonance",
+       /* +5*/"Phase:1:+;-",  // 0,1=+,-
+       /* +6*/"LFO Tempo Sync:1:Off;On",
+       /* +7*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +8*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +9*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+10*/"LFO Shape:1,127:SIGNED",
+       /*+11*/"LFO KeySync:1:Off;Timbre",
+       /*+12*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+13*/"LFO Spread:46,82:SIGNED",
+       /*+14*/"High Damp:100",
+       ],
+
+      // 24: St.Tremolo
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"LFO Tempo Sync:1:Off;On",
+       /* +3*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +4*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +5*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /* +6*/"LFO Shape:1,127:SIGNED",
+       /* +7*/"LFO KeySync:1:Off;Timbre",
+       /* +8*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /* +9*/"LFO Spread:46,82:SIGNED",
+       ],
+
+      // 25: St.Ring Modulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"OSC Mode:1:Fixed;Note",   // 0,1=Fixed,Note
+       /* +2*/"Frequency:127:$(RINGMOD_FREQUENCIES)",
+       /* +3*/"Offset:16,112:SIGNED",
+       /* +4*/"Fine:14,114:$(FINE_CENTS)",
+       /* +5*/"OSC Waveform:2:Saw;Tri;Sine",  // 0~2=Saw,Tri,Sine
+       /* +6*/"LFO Intensity:1,127:SIGNED",
+       /* +7*/"LFO Tempo Sync:1:Off;On",
+       /* +8*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +9*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+10*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+11*/"LFO Shape:1,127:SIGNED",
+       /*+12*/"LFO KeySync:1:Off;Timbre",
+       /*+13*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+14*/"Pre LPF",
+       ],
+
+      // 26: St.Pitch Shifter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Pitch Shift:40,88:SIGNED",  // 64+/-24=-24~+24
+       /* +2*/"Fine:14,114:$(FINE_CENTS)",        // 64+/-50=-100,-98~0~98,100 cent
+       /* +3*/"Delay TempoSync:1:Off;On",
+       /* +4*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +5*/"Delay Time:127:$(DELAY_500MS)",  // T06-03
+       /* +6*/"Delay Time:13:$(DELAY_SYNC)",
+       /* +7*/"FB Position:1:Pre;Post",
+       /* +8*/"Feedback:127",
+       /* +9*/"Mode:2:Slow;Medium;Fast",   // 0~2=Slow,Medium,Fast
+       /*+10*/"High Damp:100",
+       /*+11*/"Trim"
+       ],
+
+      // 27: St.Grain Shifter
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Duration TempoSync:1:Off;On",
+       /* +2*/"Time Ratio:127:$(TIME_RATIO_SYNC_OFF)",
+       /* +3*/"Duration:127:$(DURATION_350MS)",
+       /* +4*/"Duration:13:$(DELAY_SYNC)",
+       /* +5*/"LFO Tempo Sync:1:Off;On",
+       /* +6*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +7*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +8*/"LFO KeySync:1:Off;Timbre",
+       /* +9*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /*+10*/"LFO Spread:46,82:SIGNED"
+       ],
+
+      // 28: St.Vibrato
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mod Depth",
+       /* +2*/"LFO Tempo Sync:1:Off;On",
+       /* +3*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /* +4*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /* +5*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /* +6*/"LFO Shape:1,127:SIGNED",
+       /* +7*/"LFO KeySync:1:Off;Timbre",
+       /* +8*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",
+       /* +9*/"LFO Spread:46,82:SIGNED",
+       ],
+
+      // 29: Rotary Speaker
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Mode Switch:1:Rotate;Stop",   // 0,1=Rotate,Stop
+       /* +2*/"ModeSw. Ctrl Src:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       /* +3*/"ModeSw. Ctrl Mode:1:Toggle;Momentary",  // 0,1=Toggle,Moment
+       /* +4*/"ModeSw. Ctrl Type:1:Switch;Manual",  // 0,1=Switch,Manual
+       /* +5*/"[Sw]Speed Switch:1:Slow;Fast",   // 0,1=Slow,Fast
+       /* +6*/"[Sw]Sw. Ctrl Src:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       /* +7*/"[Sw]Sw. Ctrl Mode:1:Toggle;Momentary",  // 0,1=Toggle,Moment
+       /* +8*/"[Ml]Speed",
+       /* +9*/"[Ml]Speed Ctrl Src:11:$(CTL_SOURCES)",
+       /*+10*/"[Ml]Speed Ctrl Int:1,127:SIGNED",
+       /*+11*/"Horn/Rotor Balance:100:$(HORN_ROTOR_BALANCE)",
+       /*+12*/"Horn Acceleration",
+       /*+13*/"Horn Ratio:76:$(HORN_ROTOR_RATIO)",
+       /*+14*/"Rotor Acceleration",
+       /*+15*/"Rotor Ratio:76:$(HORN_ROTOR_RATIO)",
+       /*+16*/"Mic Distance",
+       /*+17*/"Spread",
+       /*+18*/"Trim"
+       ],
+
+      // 30: Talking Modulator
+      ["Dry / Wet:100:$(DRY_WET)",
+       /* +1*/"Voice Control",   // 64+/-63=Bottom,-62~Center~+62,Top
+       /* +2*/"Voice Top:4:$(VOICE)",     // 0~4=A,I,U,E,O
+       /* +3*/"Voice Center:4:$(VOICE)",
+       /* +4*/"Voice Bottom:4:$(VOICE)",
+       /* +5*/"Resonance",
+       /* +6*/"Drive",
+       /* +7*/"Mod Source:2:Auto;LFO;Ctrl",    // 0~2=Auto,LFO,Ctrl
+       /* +8*/"Mod Intensity:1,127:SIGNED",   // 64+/-63=-63~+63
+       /* +9*/"Mod Response",
+       /*+10*/"[Auto] Env.Sens",
+       /*+11*/"[Auto] Env.Shape:1,127:SIGNED",  // 64+/-63=-63~+63
+       /*+12*/"LFO Tempo Sync:1:Off;On",
+       /*+13*/"LFO Frequency:127:$(LFO_FREQUENCIES)",
+       /*+14*/"LFO Sync Note:16:$(LFO_SYNC_NOTES)",   // 0~16=8/1~1/64
+       /*+15*/"LFO Waveform:4:$(LFO_WAVEFORMS)",
+       /*+16*/"LFO Shape:1,127:SIGNED",
+       /*+17*/"LFO KeySync:1:Off;Timbre",
+       /*+18*/"LFO Init Phase:18:$(LFO_INIT_PHASES)",  // 0~18=0,10,20~180 [degree]
+       /*+19*/"[Ctrl] Ctrl.1 Src:11:$(CTL_SOURCES)",  // 0~11=Off~MIDI3 *T04-01
+       ],
+                                   ];
+
+
+   // <method_init.png>
+   public virtual init(MIDISynthProfile _profile) : boolean {
+      boolean ret = EditMIDISynthFormGeneric::init(_profile);
+
+      if(ret)
+      {
+         synth_patch <= new GenericSynthEdit_Patch;
+         synth_patch.init(this, profile);
+
+         temp_lock_patch <= new GenericSynthEdit_Patch;
+         temp_lock_patch.init(this, profile);
+
+         tmp_syx_buf.size = 32000;
+         tmp_cc_buf.size = 8000;
+      }
+
+      return ret;
+   }
+
+   // <method_get.png>
+   protected getMIDISendTimerInterval() : int {
+      return 15;
+   }
+
+   // <method.png>
+   protected method getOrCreateTimbreClipboard() : Buffer {
+      if(null == timbre_clipboard)
+      {
+         timbre_clipboard <= new Buffer;
+         timbre_clipboard.size = RADIAS_TIMBREDATASIZE/*228*/;
+      }
+      return timbre_clipboard;
+   }
+
+   // <ui_timer.png>
+   protected =replay= virtual handleMIDISendTimer() {
+
+      if(b_queued_midi_send_patch)
+      {
+         b_queued_midi_send_patch = false;
+
+         boolean bSendAll = !data.b_send_diff || b_first_midi_send_patch;
+         b_first_midi_send_patch = false;
+
+         // (note) sending whole program sysex freezes synth when IFX1 switch is toggled
+         //         => send separate parameter change messages (patch diff)
+
+         b_force_send_all_diff |= bSendAll;
+
+         // Send diff to current replay patch
+         local MIDIPipeFrame frOut;
+         frOut.empty();
+         frOut.setRoot(current_pipe_root);
+
+         emitPatchDiff(frOut, patch, b_force_send_all_diff);
+         b_force_send_all_diff = false;
+
+         if(b_debug)
+            trace "xxx diff frame has "+frOut.numEvents+" event(s)";
+
+         out_dev.begin();
+         frOut.emit();
+         out_dev.send(milliSeconds());
+      }
+
+   }
+
+   // <method.png>
+   protected method buildTempLockPatchData(Buffer pdA/*synth_state*/, Buffer pdB/*dest_patch*/) {
+      Buffer pdLockB <= temp_lock_patch.patch_data;
+      pdLockB = pdB;
+
+      // Retain synth_patch bytes that belong to locked groups
+      local MIDISynthProfileCtlAlias *alias;
+      foreach alias in param_widget_aliases
+      {
+         if(-1 != alias.editgroup_idx)
+         {
+            // (note) locked when parent group or subgroup is locked
+            boolean bLock = data.difflock_group_states.get(alias.editgroup_idx);
+            if(!bLock)
+            {
+               if(-1 != alias.editsubgroup_idx)
+               {
+                  IntArray iaSub <= data.difflock_subgroup_states.get(alias.editgroup_idx);
+                  bLock = iaSub.get(alias.editsubgroup_idx);
+               }
+            }
+
+            if(bLock)
+            {
+               // param is locked, copy from currently playing patch (=> no change when diff is emitted)
+               //  (note) radias patches do not have multi-byte params
+               pdLockB.pokeI8(alias.syx_off, pdA.peekI8(alias.syx_off));
+            }
+         }
+      }
+   }
+
+   // <midi.png>
+   protected virtual emitPatchDiff(local MIDIPipeFrame _fr,
+                                   local GenericSynthEdit_Patch _destPatch,
+                                   local boolean _bForceSendAll
+                                   ) {
+
+      // trace "xxx send generic patch";  // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      //          Utils.Backtrace();
+      // trace "xxx KorgRadias::emitPatchDiff: bForceSendAll="+_bForceSendAll;
+
+      local Buffer pdA <= synth_patch.patch_data;
+      local Buffer pdB <= _destPatch.patch_data;
+
+      local int devIdx = out_dev.dev_idx;
+
+      tmp_syx_buf.offset = 0;
+      tmp_cc_buf.offset  = 0;
+
+      if(data.b_difflock)
+      {
+         buildTempLockPatchData(pdA, pdB);
+         pdB <= temp_lock_patch.patch_data;
+      }
+
+      // trace "xxx pdA.size="+pdA.size+" pdB.size="+pdB.size;
+
+      tkradiastools_update_program(pdA/*progState*/,
+                                   pdB/*progData*/,
+                                   true/*bSendMFX*/,
+                                   tmp_syx_buf,
+                                   tmp_cc_buf,
+                                   _bForceSendAll
+                                   );
+
+      for(int timbreIdx = 0; timbreIdx < 4; timbreIdx++)
+      {
+         tkradiastools_update_program_timbre(pdA/*progState*/,
+                                             pdB/*progData*/,
+                                             timbreIdx/*timbreNr*/,
+                                             true/*bSendIFX*/,
+                                             tmp_syx_buf,
+                                             tmp_cc_buf,
+                                             _bForceSendAll
+                                             );
+      }
+
+      _fr.sysex(true/*bSet*/, devIdx, tmp_syx_buf);
+      // // _fr.sysex(true/*bSet*/, devIdx, tmp_cc_buf);  // (note) [12Jul2021] always empty (removed CC optimization)
+
+      Global.Debug3("KorgRadias::emitPatchDiff: syxBuf.offset="+tmp_syx_buf.offset+" ccBuf.offset="+tmp_cc_buf.offset);
+
+      pdA = pdB;
+
+      if(@(_destPatch) != @(replay_patch))
+      {
+         ////replay_patch.copyFrom(_destPatch);
+         pdA <= replay_patch.patch_data;
+         pdA = pdB;
+      }
+   }
+
+   // <replay.png>
+   public virtual handleProxyEvents(byte          _midiCh,
+                                    MIDIPipeFrame _frameIn,
+                                    boolean       _bFrameRec,
+                                    int           _inDev,
+                                    byte          _inCh,
+                                    MIDIPipeFrame _frameOut
+                                    ) {
+      // Called from replay thread
+      if(null != out_dev)
+      {
+         MIDISynthProfileCtlAlias *alias;
+         MIDISynthProfileCtlAlias *aliasLo;
+         GenericSynthEdit_Patch p <= synth_patch;
+         Buffer pa <= p.patch_data;  // current synth state
+         p <= replay_patch;
+         Buffer pd <= p.patch_data;  // target state
+         int evIdx = 0;
+         MIDIPipeEvent pev;
+         MIDIPipeEvent pevLo;
+         short r;
+         int numEvents;
+
+         // Handle "pseudo" RPN events (received via Proxy node)
+         numEvents = _frameIn.getNumEventsRPNByFlt(_inDev, _inCh);
+         if(numEvents > 0)
+         {
+            // (note) FS1R editor uses virtual editor params (RPNs)
+
+            // trace "xxx gse: numEvents<RPN>="+numEvents;
+            boolean bSendDiff = false;
+            evIdx = 0;
+            loop(numEvents)
+            {
+               if(_frameIn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_RPN, _inDev, _inCh))
+               {
+                  short rpn = pev.rpn;
+                  // // alias <= profile.getAliasByRPN(rpn);
+                  alias <= profile.getRPNAliasByNr(rpn);
+                  // trace "xxx gse: alias="+#(alias);
+
+                  if(null != alias)
+                  {
+                     r = mathClampi(pev.rpnValue, alias.min, alias.max);
+                     // trace "xxx pev.rpnValue="+pev.rpnValue+" min="+alias.min+" max="+alias.max;
+
+                     if(alias.syx_bit_num > 0)
+                     {
+                        r =
+                           (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                           | (r << alias.syx_bit_off);
+                     }
+                     r = r & 255;
+
+                     if(r != pd.peekI8(alias.syx_off))
+                     {
+                        bSendDiff = true;
+                        pd.pokeI8(alias.syx_off, r & 255);
+
+                        // // sendParamUpdate(_frameOut, alias, r, false/*bSend*/);
+                        if(b_debug2)
+                           trace "[>>>] radias: proxy RPN: rpn="+rpn+" syx_off="+alias.syx_off+" r="+r;
+                     }
+
+                     // Delete source event
+                     //  (note) when proxy relay port is same as synth port => don't send pseudo-RPN to synth
+                     _frameIn.rpn(false/*bSet*/, pev.devIdx, pev.midiCh, pev.rpn, 0);
+                     evIdx--;
+                  }
+               }
+
+               // Next RPN event
+               evIdx++;
+            }
+
+            if(bSendDiff)
+            {
+               emitPatchDiff(_frameOut, replay_patch, false/*bForceSendAll*/);
+            }
+         } // if numEvents > 0
+
+      } // if out_dev
+   }
+
+   // <ui_update.png>
+   protected method updateFXParamNames(MIDISynthProfileCtlAlias _typeAlias, boolean _bMFX) {
+
+      int widgetIdx = param_widget_aliases.indexOfPointer(_typeAlias, 0);
+      // trace "xxx widgetIdx="+widgetIdx;
+      if(widgetIdx >= 0)
+      {
+         // IFX:
+         // +0: type
+         // +1: knob1 assign
+         // +2: knob2 assign
+         // +3: param 1
+         // +4: param 2..
+         //
+         // MFX:
+         // +0: type
+         // +1: knob assign
+         // +2: param 1
+         // +3: param 2..
+
+         Buffer pd <= patch.patch_data;
+         int type = pd.peekI8(_typeAlias.syx_off) & 0x3F;
+         Object paramNames <= _bMFX ? mfx_param_names.get(type) : ifx_param_names.get(type);
+         // trace "xxx paramNames="+#(paramNames);
+         if(null != paramNames)
+         {
+            int paramIdx = 0;
+            Label *lb;
+            FloatParam *fp;
+            loop(paramNames.yacArrayGetNumElements())
+            {
+               String caption = paramNames.yacArrayGet(paramIdx);
+               boolean bSigned = (-1 != caption.indexOf(":SIGNED", 0));
+               if(bSigned)
+               {
+                  caption.replace(":SIGNED", "");
+               }
+               String *varName;
+               foreach varName in ifx_param_vars
+               {
+                  caption.replace("$("+varName+")", ifx_param_vars[varName]);
+               }
+
+               int idxColon = caption.indexOfChar(':', 0);
+               int idxComma = (-1 != idxColon) ? caption.indexOfChar(',', idxColon+1) : -1;
+               int idxColon2 = (-1 != idxColon) ? caption.indexOfChar(':', idxColon+1) : -1;
+               fp <= param_widgets.get(widgetIdx + (_bMFX ? 2 : 3) + paramIdx);
+               fp.setDisplayType(FloatParam.DISPLAY_FLOAT);
+               fp.setUserTable(null);
+               if(-1 != idxColon)
+               {
+                  int idxEnd = 9999;
+                  if(-1 != idxColon2)
+                  {
+                     // paramname:maxval:option1;option2;option3;..
+                     // paramname:minval,maxval:option1;option2;option3;..
+                     String sOptions <= caption.substring(idxColon2+1, 9999);
+                     StringArray aOptions <= sOptions.splitChar(';');
+                     // trace "xxx sOptions=\""+sOptions+"\" aOptions="+aOptions;
+                     fp.setUserTable(deref aOptions);
+                     fp.setDisplayType(FloatParam.DISPLAY_USER);
+                     idxEnd = idxColon2;
+                  }
+
+                  if(-1 != idxComma)
+                  {
+                     // paramname:minval,maxval
+                     fp.setMinMaxValues(int(caption.substring(idxColon+1, idxComma-idxColon-1)),
+                                        int(caption.substring(idxComma+1, idxEnd - idxComma-1))
+                                        );
+                  }
+                  else
+                  {
+                     // paramname:maxval
+                     fp.setMinMaxValues(0,
+                                        int(caption.substring(idxColon+1, idxEnd - idxColon-1))
+                                        );
+                  }
+                  caption.substring(0, idxColon);
+               }
+               else
+               {
+                  fp.setMinMaxValues(0,
+                                     127
+                                     );
+               }
+               lb <= param_labels.get(widgetIdx + (_bMFX ? 2 : 3) + paramIdx);
+               lb.setCaption(caption);
+               if(bSigned)
+               {
+                  fp.setFloatDisplayBias(-64);
+                  fp.setCenterValue(64);
+                  fp.setResetValue(64);
+               }
+               else
+               {
+                  fp.setFloatDisplayBias(0);
+                  fp.setCenterValue(0);
+                  fp.setResetValue(0);
+               }
+               fp.setValue(fp.getFloatValue());
+               fp.setEditable("-" != caption);
+               paramIdx++;
+            }
+            while(paramIdx < 20)
+            {
+               fp <= param_widgets.get(widgetIdx + (_bMFX ? 2 : 3) + paramIdx);
+               lb <= param_labels.get(widgetIdx + (_bMFX ? 2 : 3) + paramIdx);
+               lb.setCaption("-");
+               fp.setEditable(false);
+               paramIdx++;
+            }
+         }
+
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateOSCParams(int _timbreIdx) {
+      // trace "xxx updateOSCParams("+_timbreIdx+")";
+      int timbreNr = (_timbreIdx + 1);
+      int timbreOff = (_timbreIdx * 228);
+
+      MIDISynthProfileCtlAlias aliasOscMod    <= profile.findAliasById("t"+timbreNr+"_osc1mod");
+      MIDISynthProfileCtlAlias aliasCtrl1     <= profile.getAliasByPatchByteOffset(timbreOff + 87); // t$x_o1wfctrl1
+      MIDISynthProfileCtlAlias aliasCtrl2     <= profile.getAliasByPatchByteOffset(timbreOff + 88); // t$x_o1wfctrl2
+      MIDISynthProfileCtlAlias aliasSynthWave <= profile.getAliasByPatchByteOffset(timbreOff + 89); // t$x_o1dmgswave
+      MIDISynthProfileCtlAlias aliasDrumWave  <= profile.getAliasByPatchByteOffset(timbreOff + 90); // t$x_o1pcmwave
+
+      int idx;
+
+      idx = param_widget_aliases.indexOfPointer(aliasOscMod, 0);
+      ComboBox cmOscMod <= param_widgets.get(idx);
+
+      idx = param_widget_aliases.indexOfPointer(aliasCtrl1, 0);
+      FloatParam fpCtrl1 <= param_widgets.get(idx);
+      Label lbCtrl1 <= param_labels.get(idx);
+
+      idx = param_widget_aliases.indexOfPointer(aliasCtrl2, 0);
+      FloatParam fpCtrl2 <= param_widgets.get(idx);
+      Label lbCtrl2 <= param_labels.get(idx);
+
+      idx = param_widget_aliases.indexOfPointer(aliasSynthWave, 0);
+      ComboBox cmSynthWave <= param_widgets.get(idx);
+
+      idx = param_widget_aliases.indexOfPointer(aliasDrumWave, 0);
+      ComboBox cmDrumWave <= param_widgets.get(idx);
+
+      Buffer pd <= patch.patch_data;
+      byte osc1Wave = pd.peekI8(timbreOff + 86) & 15;
+      byte osc1Mod  = (pd.peekI8(timbreOff + 86) >> 4) & 3;
+      byte ctrl1Val = pd.peekI8(timbreOff + 87);
+      byte ctrl2Val = pd.peekI8(timbreOff + 88);
+
+      // trace "xxx updateOSCParams: timbreIdx="+_timbreIdx+" osc1Wave="+osc1Wave;
+      // trace "xxx aliasCtrl1="+aliasCtrl1.id;
+      // trace "xxx aliasCtrl2="+aliasCtrl2.id;
+      // trace "xxx aliasSynthWave="+aliasSynthWave.id;
+      // trace "xxx aliasDrumWave="+aliasDrumWave.id;
+
+      cmOscMod.setSelectedOption(0); // "Waveform"
+      cmOscMod.setEditable(false);
+
+      switch(osc1Wave)
+      {
+         case 0: // saw
+         case 1: // pulse
+         case 2: // tri
+         case 3: // sin
+            fpCtrl1.setEditable(true);
+            fpCtrl1.setFloatDisplayBias(0);
+            fpCtrl1.setMinMaxValues(0, 127);
+            fpCtrl1.setCenterValue(0);
+            fpCtrl1.setResetValue(0);
+            fpCtrl2.setEditable(true);
+            fpCtrl2.setFloatDisplayBias(0);
+            fpCtrl2.setMinMaxValues(0, 127);
+            fpCtrl2.setCenterValue(0);
+            fpCtrl2.setResetValue(0);
+
+            switch(osc1Mod)
+            {
+               case 0: // "Waveform"
+                  lbCtrl1.setCaption("Waveform");
+                  lbCtrl2.setCaption("LFO1Mod");
+                  break;
+
+               case 1: // "Cross"
+                  lbCtrl1.setCaption("ModDepth");
+                  lbCtrl2.setCaption("LFO1Mod");
+                  break;
+
+               case 2: // "Unison"
+                  lbCtrl1.setCaption("Detune");
+                  lbCtrl2.setCaption("Phase");
+                  break;
+
+               case 3: // "VPM"
+                  lbCtrl1.setCaption("ModDepth");
+                  lbCtrl2.setCaption("Harmonics");
+                  fpCtrl2.setFloatDisplayBias(1);
+                  fpCtrl2.setMinMaxValues(0, 31);
+                  break;
+            }
+
+            fpCtrl1.setValue(ctrl1Val);
+            fpCtrl2.setValue(ctrl2Val);
+
+            cmSynthWave.setEditable(false);
+            cmSynthWave.setSelectedOption(-1);
+            cmDrumWave.setEditable(false);
+            cmDrumWave.setSelectedOption(-1);
+            cmOscMod.setSelectedOption(osc1Mod);
+            cmOscMod.setEditable(true);
+            break;
+
+         case 4: // Formant
+            lbCtrl1.setCaption("Formant");
+            lbCtrl2.setCaption("Offset");
+            fpCtrl1.setEditable(true);
+            fpCtrl1.setFloatDisplayBias(0);
+            fpCtrl1.setMinMaxValues(0, 127);
+            fpCtrl1.setCenterValue(0);
+            fpCtrl1.setResetValue(0);
+            fpCtrl1.setValue(ctrl1Val);
+            fpCtrl2.setEditable(true);
+            fpCtrl2.setFloatDisplayBias(-64.0);
+            fpCtrl2.setMinMaxValues(0, 127);
+            fpCtrl2.setCenterValue(64);
+            fpCtrl2.setResetValue(64);
+            fpCtrl2.setValue(ctrl2Val);
+            cmSynthWave.setEditable(false);
+            cmSynthWave.setSelectedOption(-1);
+            cmDrumWave.setEditable(false);
+            cmDrumWave.setSelectedOption(-1);
+            break;
+
+         case 5: // Noise
+            lbCtrl1.setCaption("Resonance");
+            lbCtrl2.setCaption("LPF / HPF");
+            fpCtrl1.setEditable(true);
+            fpCtrl1.setFloatDisplayBias(0);
+            fpCtrl1.setMinMaxValues(0, 127);
+            fpCtrl1.setCenterValue(0);
+            fpCtrl1.setResetValue(0);
+            fpCtrl1.setValue(ctrl1Val);
+            fpCtrl2.setEditable(true);
+            fpCtrl2.setFloatDisplayBias(-64);
+            fpCtrl2.setMinMaxValues(0, 127);
+            fpCtrl2.setCenterValue(64);
+            fpCtrl2.setResetValue(64);
+            fpCtrl2.setValue(ctrl2Val);
+            cmSynthWave.setEditable(false);
+            cmSynthWave.setSelectedOption(-1);
+            cmDrumWave.setEditable(false);
+            cmDrumWave.setSelectedOption(-1);
+            break;
+
+         case 6: // Synth DWGS
+            lbCtrl1.setCaption("-");
+            lbCtrl2.setCaption("-");
+            fpCtrl1.setEditable(false);
+            fpCtrl1.setFloatDisplayBias(0);
+            fpCtrl1.setCenterValue(0);
+            fpCtrl1.setResetValue(0);
+            fpCtrl1.setValue(0);
+            fpCtrl2.setEditable(false);
+            fpCtrl2.setFloatDisplayBias(0);
+            fpCtrl2.setCenterValue(0);
+            fpCtrl2.setResetValue(0);
+            fpCtrl2.setValue(0);
+            cmSynthWave.setEditable(true);
+            cmSynthWave.setSelectedOption(pd.peekI8(timbreOff + 89));
+            cmDrumWave.setEditable(false);
+            cmDrumWave.setSelectedOption(-1);
+            break;
+
+         case 7: // Drum PCM
+            lbCtrl1.setCaption("Pitch");
+            lbCtrl2.setCaption("-");
+            fpCtrl1.setEditable(true);
+            fpCtrl1.setFloatDisplayBias(-64);
+            fpCtrl1.setMinMaxValues(0, 127);
+            fpCtrl1.setCenterValue(64);
+            fpCtrl1.setResetValue(64);
+            fpCtrl1.setValue(ctrl1Val);
+            fpCtrl2.setEditable(false);
+            fpCtrl2.setFloatDisplayBias(0);
+            fpCtrl2.setMinMaxValues(0, 127);
+            fpCtrl2.setCenterValue(0);
+            fpCtrl2.setResetValue(0);
+            fpCtrl2.setValue(0);
+            cmSynthWave.setEditable(false);
+            cmSynthWave.setSelectedOption(-1);
+            cmDrumWave.setEditable(true);
+            cmDrumWave.setSelectedOption(pd.peekI8(timbreOff + 90));
+            break;
+
+         case 8: // Audio In
+            lbCtrl1.setCaption("Gain");
+            lbCtrl2.setCaption("Balance");
+            fpCtrl1.setEditable(true);
+            fpCtrl1.setFloatDisplayBias(-64);
+            fpCtrl1.setMinMaxValues(0, 127);
+            fpCtrl1.setCenterValue(64);
+            fpCtrl1.setResetValue(64);
+            fpCtrl1.setValue(ctrl1Val);
+            fpCtrl2.setEditable(true);
+            fpCtrl2.setFloatDisplayBias(-64);
+            fpCtrl2.setMinMaxValues(0, 127);
+            fpCtrl2.setCenterValue(64);
+            fpCtrl2.setResetValue(64);
+            fpCtrl2.setValue(ctrl2Val);
+            cmSynthWave.setEditable(false);
+            cmSynthWave.setSelectedOption(-1);
+            cmDrumWave.setEditable(false);
+            cmDrumWave.setSelectedOption(-1);
+            break;
+      }
+
+      redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateVocoderParams() {
+      Buffer pd <= patch.patch_data;
+      byte vocSource = (pd.peekI8(960+0) >> 6) & 1;
+
+      MIDISynthProfileCtlAlias aliasFormant   <= profile.findAliasById("voc_formant");
+      MIDISynthProfileCtlAlias aliasMode      <= profile.findAliasById("voc_formantdataplay");
+
+      int idx;
+
+      idx = param_widget_aliases.indexOfPointer(aliasFormant, 0);
+      ComboBox cmFormant <= param_widgets.get(idx);
+
+      idx = param_widget_aliases.indexOfPointer(aliasMode, 0);
+      ComboBox cmMode <= param_widgets.get(idx);
+
+      if(0 == vocSource)
+      {
+         // Audio
+         cmFormant.setEditable(false);
+         cmMode   .setEditable(false);
+      }
+      else
+      {
+         // Formant Play
+         cmFormant.setEditable(true);
+         cmMode   .setEditable(true);
+      }
+   }
+
+   // <midi.png>
+   public =replay= method sendParamUpdate(local MIDIPipeFrame _frOrNull,
+                                          local MIDISynthProfileCtlAlias _alias,
+                                          local int _value,
+                                          local boolean _bSend
+                                          ) {
+      // intentionally left blank: Radias params are always sent via patchDiff
+      if(null == _frOrNull)
+      {
+         // From UI
+         if(data.b_autosend)
+         {
+            scheduleMIDISendPatch();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected virtual handleParamAliasChanged(MIDISynthProfileCtlAlias _alias) {
+
+      // trace "xxx handleParamAliasChanged: alias="+#(_alias)+" alias.syx_off="+_alias.syx_off;
+
+      if(_alias.max > 1) // skip bypass switch (same syx_off as type)
+      {
+         switch(_alias.syx_off)
+         {
+            case 168:  // t1 ifx1 type
+            case 396:  // t2 ifx1 type
+            case 624:  // t3 ifx1 type
+            case 852:  // t4 ifx1 type
+            case 192:  // t1 ifx2 type
+            case 420:  // t2 ifx2 type
+            case 648:  // t3 ifx2 type
+            case 876:  // t4 ifx2 type
+               updateFXParamNames(_alias, false/*bMFX*/);
+               relayout();
+               redraw();
+               break;
+            case 1038: // MFX type (docs say 1030 but it's actually 1038)
+               updateFXParamNames(_alias, true/*bMFX*/);
+               relayout();
+               redraw();
+               break;
+
+            case (86+228*0):  // t1_osc1wave
+               updateOSCParams(0/*timbreIdx*/);
+               break;
+
+            case (86+228*1):  // t2_osc1wave
+               updateOSCParams(1/*timbreIdx*/);
+               break;
+
+            case (86+228*2):  // t3_osc1wave
+               updateOSCParams(2/*timbreIdx*/);
+               break;
+
+            case (86+228*3):  // t4_osc1wave
+               updateOSCParams(3/*timbreIdx*/);
+               break;
+         }
+      }
+      else if(1 == _alias.max && (960+0) == _alias.syx_off)
+      {
+         updateVocoderParams();
+      }
+   }
+
+   // <ui_update.png>
+   protected virtual updateUIFromPatch() {
+      EditMIDISynthFormGeneric::updateUIFromPatch();
+
+      MIDISynthProfileCtlAlias *alias;
+
+      // t1 ifx1 type
+      alias <= profile.findAliasById("t1_ifx1_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t2 ifx1 type
+      alias <= profile.findAliasById("t2_ifx1_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t3 ifx1 type
+      alias <= profile.findAliasById("t3_ifx1_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t4 ifx1 type
+      alias <= profile.findAliasById("t4_ifx1_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t1 ifx2 type
+      alias <= profile.findAliasById("t1_ifx2_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t2 ifx2 type
+      alias <= profile.findAliasById("t2_ifx2_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t3 ifx2 type
+      alias <= profile.findAliasById("t3_ifx2_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // t4 ifx2 type
+      alias <= profile.findAliasById("t4_ifx2_type");
+      updateFXParamNames(alias, false/*bMFX*/);
+
+      // mfx type
+      alias <= profile.findAliasById("mfx_type");
+      updateFXParamNames(alias, true/*bMFX*/);
+
+      updateOSCParams(0);
+      updateOSCParams(1);
+      updateOSCParams(2);
+      updateOSCParams(3);
+
+      updateVocoderParams();
+
+      relayout();
+      redraw();
+   }
+
+   // <method.png>
+   protected virtual handlePatchDataReceive(Buffer dataBuf) {
+      Utils.BufferDiff(patch.patch_data, dataBuf, true/*bVerbose*/);
+      patch.patch_data = dataBuf;
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyTimbre(int _idx) {
+      Buffer cb <= getOrCreateTimbreClipboard();
+      Buffer pd <= patch.patch_data;
+      cb.offset = 0;
+      cb.writeBuffer(pd, 48 + RADIAS_TIMBREDATASIZE*_idx, RADIAS_TIMBREDATASIZE);
+   }
+
+   // <ui_handle.png>
+   protected method handlePasteTimbre(int _idx) {
+      if(null != timbre_clipboard)
+      {
+         Buffer cb <= getOrCreateTimbreClipboard();
+         Buffer pd <= patch.patch_data;
+         pd.offset = 48 + RADIAS_TIMBREDATASIZE*_idx;
+         pd.writeBuffer(cb, 0, RADIAS_TIMBREDATASIZE);
+         pd.offset = RADIAS_PROGRAMDATASIZE_DEC/*1790*/;
+
+         if(data.b_autosend)
+         {
+            scheduleMIDISendPatch();
+         }
+         updateUIFromPatch();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyTimbreVoice(int _idx) {
+      Buffer cb <= getOrCreateTimbreClipboard();
+      Buffer pd <= patch.patch_data;
+      cb.offset = 16;
+      cb.writeBuffer(pd, 48 + RADIAS_TIMBREDATASIZE*_idx + 16, 120-16/*INSERT FX DATA start*/);
+   }
+
+   // <ui_handle.png>
+   protected method handlePasteTimbreVoice(int _idx) {
+      if(null != timbre_clipboard)
+      {
+         Buffer cb <= getOrCreateTimbreClipboard();
+         Buffer pd <= patch.patch_data;
+         pd.offset = 48 + RADIAS_TIMBREDATASIZE*_idx + 16;
+         pd.writeBuffer(cb, 16, 120-16/*INSERT FX DATA start*/);
+         pd.offset = RADIAS_PROGRAMDATASIZE_DEC/*1790*/;
+
+         if(data.b_autosend)
+         {
+            scheduleMIDISendPatch();
+         }
+         updateUIFromPatch();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyTimbreIFX(int _idx, int _ifxIdx) {
+      Buffer cb <= getOrCreateTimbreClipboard();
+      Buffer pd <= patch.patch_data;
+      cb.offset = 120 + 24*_ifxIdx;
+      cb.writeBuffer(pd, 48 + RADIAS_TIMBREDATASIZE*_idx + 120 + 24*_ifxIdx, 24);
+   }
+
+   // <ui_handle.png>
+   protected method handlePasteTimbreIFX(int _idx, int _ifxIdx) {
+      if(null != timbre_clipboard)
+      {
+         Buffer cb <= getOrCreateTimbreClipboard();
+         Buffer pd <= patch.patch_data;
+         pd.offset = 48 + RADIAS_TIMBREDATASIZE*_idx + 120 + 24*_ifxIdx;
+         pd.writeBuffer(cb, 120 + 24*_ifxIdx, 24);
+         pd.offset = RADIAS_PROGRAMDATASIZE_DEC/*1790*/;
+
+         if(data.b_autosend)
+         {
+            scheduleMIDISendPatch();
+         }
+         updateUIFromPatch();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyTimbreVPatch(int _idx) {
+      Buffer cb <= getOrCreateTimbreClipboard();
+      Buffer pd <= patch.patch_data;
+      cb.offset = 16 + 86;
+      cb.writeBuffer(pd, 48 + RADIAS_TIMBREDATASIZE*_idx + 16 + 86, 18);
+   }
+
+   // <ui_handle.png>
+   protected method handlePasteTimbreVPatch(int _idx) {
+      if(null != timbre_clipboard)
+      {
+         Buffer cb <= getOrCreateTimbreClipboard();
+         Buffer pd <= patch.patch_data;
+         pd.offset = 48 + RADIAS_TIMBREDATASIZE*_idx + 16 + 86;
+         pd.writeBuffer(cb, 16 + 86, 18);
+         pd.offset = RADIAS_PROGRAMDATASIZE_DEC/*1790*/;
+
+         if(data.b_autosend)
+         {
+            scheduleMIDISendPatch();
+         }
+         updateUIFromPatch();
+      }
+   }
+
+   // <method.png>
+   protected virtual handleToolsMenuAddItems(PopupMenu pm) {
+      PopupMenuButton *pmb;
+      PopupMenu *spm;
+      int timbreNr;
+
+      pm.addSeparator();
+      timbreNr = 1;
+      loop(4)
+      {
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Radias: Timbre 1 Copy", deref spm);
+         pmb <= spm.addDefaultButton("Radias: Copy Timbre "+timbreNr+" to Clipboard",         "radias_copy_t"+timbreNr);
+         pmb <= spm.addDefaultButton("Radias: Copy Timbre "+timbreNr+" Voice to Clipboard",   "radias_copy_t"+timbreNr+"_voice");
+         pmb <= spm.addDefaultButton("Radias: Copy Timbre "+timbreNr+" IFX1 to Clipboard",    "radias_copy_t"+timbreNr+"_ifx1");
+         pmb <= spm.addDefaultButton("Radias: Copy Timbre "+timbreNr+" IFX2 to Clipboard",    "radias_copy_t"+timbreNr+"_ifx2");
+         pmb <= spm.addDefaultButton("Radias: Copy Timbre "+timbreNr+" V.Patch to Clipboard", "radias_copy_t"+timbreNr+"_vpatch");
+         timbreNr++;
+      }
+
+      pm.addSeparator();
+      timbreNr = 1;
+      boolean bHaveCB = (null != timbre_clipboard);
+      loop(4)
+      {
+         spm <= PopupMenu.New(pm);
+         pmb <= pm.addMenu("Radias: Timbre "+timbreNr+" Paste", deref spm);
+         pmb <= spm.addDefaultButton("Radias: Paste Clipboard to Timbre "+timbreNr+" ",        "radias_paste_t"+timbreNr);
+         pmb.setActive(bHaveCB);
+         pmb <= spm.addDefaultButton("Radias: Paste Clipboard to Timbre "+timbreNr+" Voice",   "radias_paste_t"+timbreNr+"_voice");
+         pmb.setActive(bHaveCB);
+         pmb <= spm.addDefaultButton("Radias: Paste Clipboard to Timbre "+timbreNr+" IFX1",    "radias_paste_t"+timbreNr+"_ifx1");
+         pmb.setActive(bHaveCB);
+         pmb <= spm.addDefaultButton("Radias: Paste Clipboard to Timbre "+timbreNr+" IFX2",    "radias_paste_t"+timbreNr+"_ifx2");
+         pmb.setActive(bHaveCB);
+         pmb <= spm.addDefaultButton("Radias: Paste Clipboard to Timbre "+timbreNr+" V.Patch", "radias_paste_t"+timbreNr+"_vpatch");
+         pmb.setActive(bHaveCB);
+         timbreNr++;
+      }
+
+   }
+
+   // <method.png>
+   protected virtual handleToolsMenuAction(String _acName) : boolean {
+      switch(_acName)
+      {
+         // timbre
+         case "radias_copy_t1":
+            handleCopyTimbre(0);
+            return true;
+
+         case "radias_copy_t2":
+            handleCopyTimbre(1);
+            return true;
+
+         case "radias_copy_t3":
+            handleCopyTimbre(2);
+            return true;
+
+         case "radias_copy_t4":
+            handleCopyTimbre(3);
+            return true;
+
+         case "radias_paste_t1":
+            handlePasteTimbre(0);
+            return true;
+
+         case "radias_paste_t2":
+            handlePasteTimbre(1);
+            return true;
+
+         case "radias_paste_t3":
+            handlePasteTimbre(2);
+            return true;
+
+         case "radias_paste_t4":
+            handlePasteTimbre(3);
+            return true;
+
+          // voice (no IFX1/2)
+         case "radias_copy_t1_voice":
+            handleCopyTimbreVoice(0);
+            return true;
+
+         case "radias_copy_t2_voice":
+            handleCopyTimbreVoice(1);
+            return true;
+
+         case "radias_copy_t3_voice":
+            handleCopyTimbreVoice(2);
+            return true;
+
+         case "radias_copy_t4_voice":
+            handleCopyTimbreVoice(3);
+            return true;
+
+         case "radias_paste_t1_voice":
+            handlePasteTimbreVoice(0);
+            return true;
+
+         case "radias_paste_t2_voice":
+            handlePasteTimbreVoice(1);
+            return true;
+
+         case "radias_paste_t3_voice":
+            handlePasteTimbreVoice(2);
+            return true;
+
+         case "radias_paste_t4_voice":
+            handlePasteTimbreVoice(3);
+            return true;
+
+
+          // IFX1
+         case "radias_copy_t1_ifx1":
+            handleCopyTimbreIFX(0, 0);
+            return true;
+
+         case "radias_copy_t2_ifx1":
+            handleCopyTimbreIFX(1, 0);
+            return true;
+
+         case "radias_copy_t3_ifx1":
+            handleCopyTimbreIFX(2, 0);
+            return true;
+
+         case "radias_copy_t4_ifx1":
+            handleCopyTimbreIFX(3, 0);
+            return true;
+
+         case "radias_paste_t1_ifx1":
+            handlePasteTimbreIFX(0, 0);
+            return true;
+
+         case "radias_paste_t2_ifx1":
+            handlePasteTimbreIFX(1, 0);
+            return true;
+
+         case "radias_paste_t3_ifx1":
+            handlePasteTimbreIFX(2, 0);
+            return true;
+
+         case "radias_paste_t4_ifx1":
+            handlePasteTimbreIFX(3, 0);
+            return true;
+
+
+          // IFX2
+         case "radias_copy_t1_ifx2":
+            handleCopyTimbreIFX(0, 1);
+            return true;
+
+         case "radias_copy_t2_ifx2":
+            handleCopyTimbreIFX(1, 1);
+            return true;
+
+         case "radias_copy_t3_ifx2":
+            handleCopyTimbreIFX(2, 1);
+            return true;
+
+         case "radias_copy_t4_ifx2":
+            handleCopyTimbreIFX(3, 1);
+            return true;
+
+         case "radias_paste_t1_ifx2":
+            handlePasteTimbreIFX(0, 1);
+            return true;
+
+         case "radias_paste_t2_ifx2":
+            handlePasteTimbreIFX(1, 1);
+            return true;
+
+         case "radias_paste_t3_ifx2":
+            handlePasteTimbreIFX(2, 1);
+            return true;
+
+         case "radias_paste_t4_ifx2":
+            handlePasteTimbreIFX(3, 1);
+            return true;
+
+
+          // v.patch
+         case "radias_copy_t1_vpatch":
+            handleCopyTimbreVPatch(0);
+            return true;
+
+         case "radias_copy_t2_vpatch":
+            handleCopyTimbreVPatch(1);
+            return true;
+
+         case "radias_copy_t3_vpatch":
+            handleCopyTimbreVPatch(2);
+            return true;
+
+         case "radias_copy_t4_vpatch":
+            handleCopyTimbreVPatch(3);
+            return true;
+
+         case "radias_paste_t1_vpatch":
+            handlePasteTimbreVPatch(0);
+            return true;
+
+         case "radias_paste_t2_vpatch":
+            handlePasteTimbreVPatch(1);
+            return true;
+
+         case "radias_paste_t3_vpatch":
+            handlePasteTimbreVPatch(2);
+            return true;
+
+         case "radias_paste_t4_vpatch":
+            handlePasteTimbreVPatch(3);
+            return true;
+
+      }
+      return false;
+   }
+
+   // <replay.png>
+   public method handleProxyLayerPrgChg(byte          _midiCh,
+                                        IntArray      _layerPrgChg/*16 elements*/,
+                                        MIDIPipeFrame _frameOut
+                                        ) {
+
+      local Buffer pdA <= synth_patch.patch_data;
+      local Buffer pdD <= replay_patch.patch_data;
+      local Buffer pdB <= replay_patch.patch_data;
+
+      local int devIdx = out_dev.dev_idx;
+
+      tmp_syx_buf.offset = 0;
+      tmp_cc_buf.offset  = 0;
+
+      // trace "xxx pdA.size="+pdA.size+" pdB.size="+pdB.size;
+
+      for(int layerIdx = 0; layerIdx < 4; layerIdx++)
+      {
+         int layerPrgIdx = _layerPrgChg.get(layerIdx);
+         if(layerPrgIdx >= 0)
+         {
+            int patchIdx = proxy_bank * 128 + layerPrgIdx;
+            GenericSynthEdit_Patch p <= data.patches.get(patchIdx++);
+            Buffer pdC <= p.patch_data;
+            pdD.offset = 48 + RADIAS_TIMBREDATASIZE*layerIdx;
+            pdD.writeBuffer(pdC, 48 + RADIAS_TIMBREDATASIZE*layerIdx, RADIAS_TIMBREDATASIZE);
+            pdD.offset = RADIAS_PROGRAMDATASIZE_DEC/*1790*/;
+
+            if(data.b_difflock)
+            {
+               // (todo) perf.optimization: update only timbre 'layerIdx'
+               buildTempLockPatchData(pdA, pdD);
+               pdB <= temp_lock_patch.patch_data;
+            }
+
+            tkradiastools_update_program_timbre(pdA/*progState*/,
+                                                pdB/*progData*/,
+                                                layerIdx/*timbreNr*/,
+                                                true/*bSendFX*/,
+                                                tmp_syx_buf,
+                                                tmp_cc_buf,
+                                                false/*bForceSendAll*/
+                                                );
+         }
+      }
+
+      _frameOut.sysex(true/*bSet*/, devIdx, tmp_syx_buf);
+      // // _fr.sysex(true/*bSet*/, devIdx, tmp_cc_buf);
+
+      Global.Debug3("KorgRadias::handleProxyLayerPrgChg: syxBuf.offset="+tmp_syx_buf.offset+" ccBuf.offset="+tmp_cc_buf.offset);
+
+      pdA = pdB;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      if(_k.modNone())
+      {
+         switch(_k.pressed)
+         {
+            case 'a':
+               ts_groups.previousTab();
+               return true;
+
+            case 'd':
+               ts_groups.nextTab();
+               return true;
+         }
+      }
+      return EditMIDISynthFormGeneric::onKey(_k);
+   }
+
+}

@@ -1,0 +1,658 @@
+// ----
+// ---- file   : PageProject.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 12Aug2014
+// ---- changed: 15Aug2014, 18Aug2014, 04Sep2014, 05Sep2014, 16Sep2014, 19Sep2014, 29Sep2014
+// ----          01Feb2015, 04Mar2015, 20Apr2015, 21Nov2016, 09Feb2017, 12Mar2017, 13Mar2017
+// ----          16Jun2017, 22Dec2017, 04Jan2018, 09Feb2018, 28Apr2018, 28Aug2019, 15Sep2019
+// ----          01Nov2019, 28Apr2020, 12Sep2020, 27Nov2020, 07May2022, 18Mar2023, 02Oct2024
+// ----
+// ----
+// ----
+
+module MPageProject;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageProject : Page, MIDIMapContext {
+
+   define String MMT_BPM;
+   define String MMT_PPQ;
+   define String MMT_SIG_BEATS;
+   define String MMT_SIG_NOTELEN;
+
+   define String MMT_SAVE;
+
+   protected Button *bt_parent;
+
+   protected TextField  *tf_author;
+   protected TextField  *tf_songname;
+   protected Label      *lb_subsongidx;
+   protected FloatParam *fp_bpm;
+   protected FloatParam *fp_ppq;
+   protected FloatParam *fp_song_length;
+
+   protected FloatParam *fp_sig_beats;
+   protected FloatParam *fp_sig_notelen;
+
+   protected Button *bt_subsongs;
+   protected Button *bt_new;
+   protected Button *bt_load;
+   protected Button *bt_save;
+   protected Button *bt_saveas;
+
+   define int DLG_FILENAME_MODE_LOAD = 1;
+   define int DLG_FILENAME_MODE_SAVE = 2;
+   protected int dlg_filename_mode;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageProject.xfm"))
+      {
+         trace "[---] failed to parse PageProject.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      fp_bpm.setPresetOptions([60.0, 65.0, 70.0, 85.0, 90.0, 95.0, 100.0, 110.0, 120.0, 130.0, 140.0, 150.0, 160.0, 170.0, 180.0, 200.0],
+                              ["60\tReggae / Dub",                  // 60
+                               "65\tTango",                         // 65
+                               "70\tDowntempo / R&B",               // 70
+                               "85\tHip-Hop",                       // 85
+                               "90\tChill-Out",                     // 90
+                               "95\tSamba",                         // 95
+                               "100\tPop / Metal / Rumba",           // 100
+                               "110\tRock",                          // 110
+                               "120\tJazz / Funk / House / Techno",  // 120  (+Cha Cha Cha :-))
+                               "130\tGarage / Trance",               // 130
+                               "140\tDubstep / Trap / Grime",        // 140  (half time feel)
+                               "150\tHardstyle",                     // 150
+                               "160\tJungle / Drum & Bass",          // 160
+                               "170\tJive / Psy / Neurofunk",        // 170
+                               "180\tSalsa",                         // 180
+                               "200\tCharleston",                    // 200
+                               ]
+                              );
+
+      fp_ppq.setPresetOptions([12.0, 24.0, 48.0, 96.0, 192.0, 384.0, 480.0, 768.0, 960.0],
+                              ["12\tCR-78",
+                               "24\tSoundtracker / Drumulator",
+                               "48\tKorg DIN / Sync 48 / KPR-77 / Drumtraks",
+                               "96\tDMX / Linn / MPC / Elektron",
+                               "192\tNotator / OASYS / Cirklon / Synergy",
+                               "384\tE-Mu Command Station",
+                               "480\tQY-70/100",
+                               "768\tKurzweil K2000",
+                               "960\tCubase / Cakewalk / Logic"
+                               ]
+                              );
+
+      initMMC();
+
+      if(app_lnf.b_ascii_back_buttons)
+      {
+         Global.ASCIIBackButton(bt_parent);
+      }
+
+      return true;
+   }
+
+   // <midi.png>
+   protected method initMMC() {
+
+      mmcInit("Project");
+
+      mmcAddTargetExOValueLayer(fp_bpm,         "BPM",     "Beats Per Minute",        MMT_BPM, 4);
+      mmcAddTargetExOValueLayer(fp_ppq,         "PPQ",     "Precision Per Quarter",   MMT_PPQ, 4);
+      mmcAddTargetExOValueLayer(fp_sig_beats,   "#Beats",  "Number of beats per bar", MMT_SIG_BEATS, 4);
+      mmcAddTargetExOValueLayer(fp_sig_notelen, "NoteLen", "Beat note length",        MMT_SIG_NOTELEN, 4);
+
+      mmcAddTargetButton(bt_save, MMT_SAVE);
+   }
+
+   // <midi.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+
+      if(!mmcIsBindableEvent(_ev))
+         return false;
+
+      MIDIMapEvent boundEv <= mmcGetBindingByEvent(_ev);
+
+      if(null != boundEv)
+      {
+         if(mmcTryHandleExOValueLayer(MMT_BPM,         boundEv.bound_target, _ev)) return true;
+         if(mmcTryHandleExOValueLayer(MMT_PPQ,         boundEv.bound_target, _ev)) return true;
+         if(mmcTryHandleExOValueLayer(MMT_SIG_BEATS,   boundEv.bound_target, _ev)) return true;
+         if(mmcTryHandleExOValueLayer(MMT_SIG_NOTELEN, boundEv.bound_target, _ev)) return true;
+
+         if(mmcTryHandleButton(MMT_SAVE, boundEv.bound_target, _ev)) return true;
+
+         // switch(boundEv.bound_target.target_name)
+         // {
+         // }
+      }
+
+      return false;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      // return RootForm.PAGE_START;
+      return RootForm.PAGE_PIPEMAP;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      updateSongWidgets();
+
+      layoutHierarchy(true, false);
+      layoutHierarchy(true, false);
+   }
+
+   // <ui_page.png>
+   // public virtual pageLeave() {
+   // }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(bt_subsongs);
+   }
+
+   // <ui_midi.png>
+   public virtual mmtGetFocusLayers() : PointerArray {
+      return getTabCycleOverrides();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         tf_author, tf_songname, fp_bpm, fp_ppq,
+         fp_sig_beats, fp_sig_notelen,
+         bt_subsongs, bt_new, bt_load, bt_save, bt_saveas
+                              ];
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray ret;
+      ret.empty();
+      addTabCycleOverrides(ret);
+      return ret;
+   }
+
+   // <ui_update.png>
+   public method updateSongWidgets() {
+      lb_subsongidx.setCaption((Global.GetSubSongIdx()+1)+"/"+all_songs.numElements);
+
+      tf_songname       .setText(current_song.song_name);
+      tf_author         .setText(current_song.author_name);
+
+      fp_bpm            .setValue(current_song.bpm);
+      fp_ppq            .setValue(current_song.ppq);
+
+      fp_sig_beats      .setValue(current_song.sig_beats);
+      fp_sig_notelen    .setValue(current_song.sig_notelen);
+   }
+
+   // <ui_update.png>
+   public method updateBPMAndPPQ() {
+      // called by Events.HandleBPMChanged()
+      if(pageIsCurrent())
+      {
+         fp_bpm.setValue(current_song.bpm);
+         fp_ppq.setValue(current_song.ppq);
+
+         // Notify audio process (when connected)
+         SysEx.QueueSendSeqTempoSet(current_song.bpm, current_song.ppq);
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleSongNameChanged(boolean _bRefocusDefault) {
+      //  ui_songname_changed
+      String n = tf_songname.getText();
+      current_song.song_name = n;
+
+      Global.Print("Project name set to \""+n+"\".");
+
+      if(_bRefocusDefault)
+      {
+         // Notify audio process (when connected)
+         SysEx.QueueSendProjectNameSet(current_song.song_name);
+
+         pageFocusDefault();
+      }
+   }
+
+   // <ui_handle.png>
+   public method handleAuthorChanged(boolean _bRefocusDefault) {
+      // ui_author_changed
+      String s = tf_author.getText();
+      current_song.author_name = s;
+
+      Global.Print("Author set to \""+s+"\".");
+
+      if(_bRefocusDefault)
+         pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   public static GetBarDurationString() : String {
+      int songTicks = current_song.getSongOffset();
+      float numTicksPerNote = current_song.ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+      float numTicksPerBar = (numTicksPerBeat * current_song.sig_beats);
+
+      Float msBeat = 1000 * 60 * (numTicksPerBeat / current_song.ppq) / current_song.bpm;
+      Float msBar = 1000 * 60 * (numTicksPerBar / current_song.ppq) / current_song.bpm;
+
+      //return "One bar takes "+ms.printf("%.3f milliseconds.");
+      return "Beat ms="+msBeat.printf("%.3f, Bar ms=")+msBar.printf("%.3f.");
+   }
+
+   // <ui_handle.png>
+   public method handleBPMChanged(boolean _bRefocusDefault) {
+      // ui_bpm_changed
+      // (note) do not synchronize to =replay= or deadlocks will occur
+
+      float bpm = fp_bpm.getValue();
+      current_song.setBPM(bpm);
+
+      root_form.updateReplayTimeLabel(true/*bForceUpdate*/);
+
+      Global.Print("BPM is "+bpm+". "+GetBarDurationString());
+
+      MIDI.RestartMIDITimer();  // (note) UpdateMIDITimer() causes lags
+
+      if(_bRefocusDefault)
+         pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   public method handlePPQChanged(boolean _bRefocusDefault) {
+      // ui_ppq_changed
+      int ppq = fp_ppq.getValue();
+      current_song.setPPQ(ppq);
+
+      root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+
+      Global.Print("PPQ set to "+ppq+". "+GetBarDurationString());
+
+      MIDI.RestartMIDITimer();  // (note) UpdateMIDITimer() causes lags
+
+      if(_bRefocusDefault)
+         pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   public method handleSigBeatsChanged(boolean _bRefocusDefault) {
+
+      int sigBeats = fp_sig_beats.getFloatValue();
+      current_song.sig_beats = sigBeats;
+
+      if(!replay.b_playing)
+      {
+         root_form.transportNextBeat();
+         root_form.transportPrevBeat();
+      }
+      else
+      {
+         root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+      }
+
+      if(_bRefocusDefault)
+         pageFocusDefault();
+
+      Global.Print("Time signature #Beats set to "+sigBeats+".");
+   }
+
+   // <ui_handle.png>
+   public method handleSigNoteLenChanged(boolean _bRefocusDefault) {
+
+      int sigNoteLen = fp_sig_notelen.getFloatValue();
+
+      boolean bDec = (fp_sig_notelen.last_dir < 0);
+
+      switch(sigNoteLen)
+      {
+         case 3:
+            sigNoteLen = bDec ? 2 : 4;
+            break;
+
+         case 5:
+            sigNoteLen = bDec ? 4 : 6;
+            break;
+
+         case 7:
+            sigNoteLen = bDec ? 6 : 8;
+            break;
+
+         case 9:
+         case 10:
+         case 11:
+            sigNoteLen = bDec ? 8 : 12;
+            break;
+
+         case 13:
+         case 14:
+            sigNoteLen = bDec ? 12 : 16;
+            break;
+      }
+
+      fp_sig_notelen.setValue(sigNoteLen);
+
+      current_song.sig_notelen = sigNoteLen;
+
+      if(!replay.b_playing)
+      {
+         root_form.transportNextBeat();
+         root_form.transportPrevBeat();
+      }
+      else
+      {
+         root_form.updateReplayTimeLabel(false/*bForceUpdate*/);
+      }
+
+      if(_bRefocusDefault)
+         pageFocusDefault();
+
+      Global.Print("Time signature NoteLen set to "+sigNoteLen+".");
+   }
+
+   // <ui_handle.png>
+   public method handleSongLengthChanged(boolean _bRefocusDefault) {
+      // ui_songlen_changed
+
+      int l = fp_song_length.getValue();
+      if(l < 0)
+         l = 1;
+      current_song.song_length = l;
+
+      UI.RedrawAll();
+
+      Global.Print("Song length set to \""+l+"\" ticks.");
+
+      if(_bRefocusDefault)
+         pageFocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method handleLoad() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         Dialogs.ShowFileNameDialog(//RootForm.PAGE_FILEDIALOG_PROJECT_LOAD,
+                                    "Load Project",
+                                    Global.file_open_suggested_file,
+                                    false/*bDir*/,
+                                    this,
+                                    false/*bSave*/,
+                                    Global.PROJECT_FILE_SUFFIX,
+                                    STConfig.project_rootpath
+                                    );
+         dlg_filename_mode = DLG_FILENAME_MODE_LOAD;
+
+         Global.Print("Load project (enter filename)");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSave() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         Global.cmd_file_save();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSaveAs() {
+      if(0 == UI.GetNumModalFloatingLayers())
+      {
+         // Keep file name in sync with project/song name
+         current_song.song_name = Utils.ConvertToFileName(current_song.song_name);
+         String splitPath;
+         String splitFile;
+         Utils.SplitPathname(Global.file_save_suggested_file, splitPath, splitFile);
+         tf_songname.setText(current_song.song_name);
+         Global.file_save_suggested_file = splitPath + "/" + current_song.song_name;
+
+         Dialogs.ShowFileNameDialog("Save Project",
+                                    Global.file_save_suggested_file,
+                                    false/*bDir*/,
+                                    this,
+                                    true/*bSave*/,
+                                    Global.PROJECT_FILE_SUFFIX,
+                                    STConfig.project_rootpath
+                                    );
+         dlg_filename_mode = DLG_FILENAME_MODE_SAVE;
+
+         Global.Print("Save project (enter filename)");
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual onDropFiles(StringArray _fileNames) : boolean {
+      if(_fileNames.numElements > 0)
+      {
+         Global.cmd_file_load(_fileNames[0]);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case 'l':
+            if(_k.modCtrl())
+            {
+               handleLoad();
+            }
+            return true;
+
+         case 's':
+            if(_k.modCtrl())
+            {
+               if(_k.modShift())
+               {
+                  handleSaveAs();
+               }
+               else
+               {
+                  handleSave();
+               }
+            }
+            return true;
+      }
+
+      return Page::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      // trace "xxx PageProject::consumeAction: acName=\""+acName+"\".";
+
+      switch(@(ap))
+      {
+         case @(tf_songname):
+            switch(acName)
+            {
+               case TextField.ACTION_TEXTCHANGED: // tab
+               case TextField.ACTION_TEXTEDITED:  // <typing>
+                  handleSongNameChanged(false/*bRefocusDefault*/);
+                  break;
+
+               case TextField.ACTION_TEXTENTERED: // return
+                  handleSongNameChanged(true/*bRefocusDefault*/);
+                  break;
+            }
+            return true;
+
+         case @(tf_author):
+            switch(acName)
+            {
+               case TextField.ACTION_TEXTCHANGED: // tab
+               case TextField.ACTION_TEXTEDITED:  // <typing>
+                  handleAuthorChanged(false/*bRefocusDefault*/);
+                  break;
+
+               case TextField.ACTION_TEXTENTERED: // return
+                  handleAuthorChanged(true/*bRefocusDefault*/);
+                  break;
+            }
+            return true;
+
+         case @(fp_bpm):
+            switch(acName)
+            {
+               case FloatParam.ACTION_VALUECHANGING:
+                  handleBPMChanged(false/*bRefocusDefault*/);
+                  break;
+
+               case FloatParam.ACTION_VALUECHANGED:
+                  handleBPMChanged(true/*bRefocusDefault*/);
+                  break;
+
+               case FloatParam.ACTION_VALUEUNCHANGED:
+                  pageFocusDefault();
+                  break;
+            }
+            return true;
+
+         case @(fp_ppq):
+            switch(acName)
+            {
+               case FloatParam.ACTION_VALUECHANGING:
+                  handlePPQChanged(false/*bRefocusDefault*/);
+                  break;
+
+               case FloatParam.ACTION_VALUECHANGED:
+                  handlePPQChanged(true/*bRefocusDefault*/);
+                  break;
+
+               case FloatParam.ACTION_VALUEUNCHANGED:
+                  pageFocusDefault();
+                  break;
+            }
+            return true;
+
+         case @(fp_sig_beats):
+            handleSigBeatsChanged((FloatParam.ACTION_VALUECHANGED == acName)/*bRefocusDefault*/);
+            return true;
+
+         case @(fp_sig_notelen):
+            handleSigNoteLenChanged((FloatParam.ACTION_VALUECHANGED == acName)/*bRefocusDefault*/);
+            return true;
+
+         case @(bt_subsongs):
+            root_form.showPage(RootForm.PAGE_SUBSONGS, true);
+            return true;
+
+         case @(bt_new):
+            Global.cmd_file_new_dlg();
+            return true;
+
+         case @(bt_load):
+            handleLoad();
+            return true;
+
+         case @(bt_save):
+            handleSave();
+            return true;
+
+         case @(bt_saveas):
+            handleSaveAs();
+            return true;
+
+         case @(Dialogs.dialog_filename):
+            Global.Debug("PageProject: Dialogs.dialog_filename acName="+acName);
+            String fileName;
+
+            if(FileNameDialog.ACTION_RETURN == acName)
+            {
+               StringAction sa <= _ac;
+
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_SAVE:
+                     fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PROJECT_FILE_SUFFIX);
+                     UI.SetKeyboardFocus(bt_saveas);
+
+                     if(STConfig.b_autoload_filename_autoupdate)
+                     {
+                        STConfig.autoload_filename = PagePrefs.GetRelativeProjectPathname(fileName);
+                        Global.cmd_config_save();
+                     }
+
+                     // Keep project/song name in sync with file name
+                     String splitPath;
+                     String splitFile;
+                     Utils.SplitPathname(fileName, splitPath, splitFile);
+                     splitFile = Utils.LazyRemoveSuffix(splitFile, Global.PROJECT_FILE_SUFFIX);
+                     current_song.song_name = splitFile;
+                     tf_songname.setText(current_song.song_name);
+
+                     Global.cmd_file_save_nodlg(fileName);
+
+                     break;
+
+                  case DLG_FILENAME_MODE_LOAD:
+                     fileName = Utils.LazyAppendSuffix(sa.getStringValue(), Global.PROJECT_FILE_SUFFIX);
+
+                     if(STConfig.b_autoload_filename_autoupdate)
+                     {
+                        STConfig.autoload_filename = PagePrefs.GetRelativeProjectPathname(fileName);
+                        Global.cmd_config_save();
+                     }
+
+                     Global.cmd_file_load(fileName);
+                     UI.SetKeyboardFocus(bt_load);
+
+                     break;
+               }
+            }
+            else if(FileNameDialog.ACTION_CANCEL == acName)
+            {
+               Global.Debug("PageProject: file dialog was canceled");
+
+               switch(dlg_filename_mode)
+               {
+                  case DLG_FILENAME_MODE_SAVE:
+                     UI.SetKeyboardFocus(bt_saveas);
+                     break;
+
+                  case DLG_FILENAME_MODE_LOAD:
+                     UI.SetKeyboardFocus(bt_load);
+                     break;
+               }
+            }
+
+            return true;
+
+         case @(bt_parent):
+            root_form.showPageParent();
+            return true;
+      }
+
+      return Page::consumeAction(_ac);
+   }
+
+}

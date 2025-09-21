@@ -1,0 +1,285 @@
+// ----
+// ---- file   : MIDIMorphSceneTM.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 19Aug2014
+// ---- changed: 17Oct2014, 11Feb2015, 23May2017, 10Nov2020, 13Dec2021, 20Dec2021, 24Nov2022
+// ----          15Oct2023, 11Apr2024
+// ----
+// ----
+// ----
+
+module MMIDIMorphSceneTM;
+
+use namespace ui;
+use namespace st2;
+
+
+// see MIDIMorphScene.mmsBuildTMEntries()
+class MIDIMorphSceneTMEntry {
+   boolean b_enable;
+
+   String src_dev;
+   String src_ch;
+   String src_type;
+
+   String dst_dev;
+   String dst_ch;
+   String dst_type;
+
+   String label;
+
+   MIDIMapEvent *src_ev;
+   MIDIMapEvent *dst_ev;
+
+   byte morph_lane;
+}
+
+class MIDIMorphSceneTM : TableModel {
+
+   define int COL_ENABLE    = 0;
+   define int COL_SRC_DEV   = 1;
+   define int COL_SRC_CH    = 2;
+   define int COL_SRC_TYPE  = 3;
+   define int COL_DST_DEV   = 4;
+   define int COL_DST_CH    = 5;
+   define int COL_DST_TYPE  = 6;
+   define int COL_LABEL     = 7;
+   define int NUM_COLS      = 8;
+
+   MIDIMorphSceneTMEntry *[] entries;
+
+
+   public virtual getNumColumns() : int {
+      return NUM_COLS;
+   }
+
+   public virtual getColumnCaption(int _col) : String {
+      return ["Actv", "SrcDev", "SrcCh", "SrcType", "DstDev", "DstCh", "DstType", "Label"][_col];
+   }
+
+   public virtual getNumRows() : int {
+      return entries.numElements;
+   }
+
+   public virtual getCellCaption(int _col, _row) : String {
+      MIDIMorphSceneTMEntry entry <= entries.get(_row);
+
+      if(null != entry)
+      {
+         switch(_col)
+         {
+            case COL_ENABLE:
+               return "";
+
+            case COL_SRC_DEV:
+               return entry.src_dev;
+
+            case COL_SRC_CH:
+               return entry.src_ch;
+
+            case COL_SRC_TYPE:
+               return entry.src_type;
+
+            case COL_DST_DEV:
+               return entry.dst_dev;
+
+            case COL_DST_CH:
+               return entry.dst_ch;
+
+            case COL_DST_TYPE:
+               return entry.dst_type;
+
+            case COL_LABEL:
+               return entry.label;
+         }
+      }
+   }
+
+   public virtual getMinimumColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ENABLE:
+            return 24;
+
+         case COL_SRC_DEV:
+            return 100;
+
+         case COL_SRC_CH:
+            return 32;
+
+         case COL_SRC_TYPE:
+            return 160;
+
+         case COL_DST_DEV:
+            return 100;
+
+         case COL_DST_CH:
+            return 32;
+
+         case COL_DST_TYPE:
+            return 160;
+
+         case COL_LABEL:
+            return 104;
+      }
+   }
+
+   public virtual getPreferredColumnWidth(int _col) : int {
+      switch(_col)
+      {
+         case COL_ENABLE:
+            return 24;
+
+         case COL_SRC_DEV:
+            return 200;
+
+         case COL_SRC_CH:
+            return 32;
+
+         case COL_SRC_TYPE:
+            return 300;
+
+         case COL_DST_DEV:
+            return 200;
+
+         case COL_DST_CH:
+            return 32;
+
+         case COL_DST_TYPE:
+            return 300;
+
+         case COL_LABEL:
+            return 160;
+      }
+   }
+
+   public virtual getCellRenderer(int _col, int _row, int _visibleRow) : Layer {
+      Label lb <= TableModel::getCellRenderer(_col, _row, _visibleRow);
+      lb.setIcon(null);
+
+      if(COL_ENABLE == _col)
+      {
+         MIDIMorphSceneTMEntry entry <= entries.get(_row);
+         if(null != entry)
+         {
+            if(entry.b_enable)
+            {
+               lb.setIcon(UI.GetIcon("mgrctl_celvis_2x"));
+               lb.setCaption("");
+            }
+         }
+      }
+
+      return lb;
+   }
+
+   // <ui_handle.png>
+   public virtual handleCellEditing(TableCellEditor _tce) {
+      switch(_tce.table_col)
+      {
+         case COL_LABEL:
+            handleCellEdited(_tce);
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual handleCellEdited(TableCellEditor _tce) {
+
+      MIDIMorphSceneTMEntry entry <= entries.get(_tce.table_row);
+
+      if(null != entry)
+      {
+         MIDIMapEvent srcEv <= entry.src_ev;
+         if(null != srcEv)
+         {
+            TableCellEditorString *tcestr;
+
+            switch(_tce.table_col)
+            {
+               case COL_LABEL:
+                  tcestr <= _tce;
+                  local String newLb = tcestr.getText();
+                  srcEv.setMorphAutoLabel(null);
+                  srcEv.setMorphLabel(newLb.isBlank() ? null : newLb);
+                  entry.label = newLb;
+                  tableModelChanged();
+
+                  // Update FaderPort labels
+                  if(faderport.b_connected)
+                     faderport.handleSelectOrEditScene();
+
+                  break;
+            }
+         }
+      }
+   }
+
+   // <ui.png>
+   public virtual getCellEditor(int _col, int _row) : TableCellEditor {
+
+      MIDIMorphSceneTMEntry entry <= entries.get(_row);
+
+      if(null != entry)
+      {
+         MIDIMapEvent srcEv <= entry.src_ev;
+         if(null != srcEv)
+         {
+            TableCellEditorString *tcestr;
+
+            switch(_col)
+            {
+               case COL_LABEL:
+                  tcestr <= new TableCellEditorString;
+                  tcestr.initStringEditor( (null != srcEv.getMorphLabel()) ? srcEv.getMorphLabel() : "");
+                  tcestr.setMaxCols(MIDIMapEvent.MAX_MORPH_LABEL_LEN);
+                  return deref tcestr;
+            }
+         }
+      }
+   }
+
+   public virtual handleCellOnMouse(int _col, int _row, MouseEvent _ev) : boolean {
+
+      MIDIMorphSceneTMEntry entry <= entries.get(_row);
+
+      if(null != entry)
+      {
+         if(COL_ENABLE == _col)
+         {
+            if(_ev.leftButtonDown())
+            {
+               MIDIMapEvent srcEv <= entry.src_ev;
+               if(null != srcEv)
+               {
+                  boolean bEnable = !srcEv.b_morph_enable;
+                  srcEv.setMorphEnable(bEnable);
+                  entry.b_enable = bEnable;
+
+                  Global.Print("Entry is "+Utils.GetEnableString(entry.b_enable));
+
+                  local IntArray selRows <= getSelectedRows();
+                  int rowIdx;
+                  foreach rowIdx in selRows
+                  {
+                     entry <= entries.get(rowIdx);
+                     srcEv <= entry.src_ev;
+                     srcEv.b_morph_enable = bEnable;
+                     entry.b_enable = bEnable;
+                  }
+               }
+               return true;
+            }
+         }
+      }
+
+      return false;
+   }
+
+}

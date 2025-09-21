@@ -1,0 +1,495 @@
+// ----
+// ---- file   : NT_ImportSampleDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 31Jan2021
+// ---- changed: 17Jul2021, 04Oct2023, 06Oct2023, 14Oct2023, 30Oct2023, 12Jun2025
+// ----
+// ----
+// ----
+
+module MNT_ImportSampleDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NT_ImportSampleDialog extends Dialog, ActionProvider {
+
+   define String ACTION_IMPORT = "onImportSamples";
+   define String ACTION_CANCEL = "onImportSamplesCancel";
+
+   protected XMLForm *xfm;
+
+   protected TableView          *tv_samples;
+   public    NT_ImportSamplesTM *tm_samples;
+
+   protected TextField  *tf_filter;
+   protected Button     *bt_refresh;
+   protected CheckBox   *cb_instr;
+   protected CheckBox   *cb_audio;
+   protected CheckBox   *cb_pat;
+   protected FloatParam *fp_align16th;
+   protected Button     *bt_audiorecorddialog;
+
+   protected Button *bt_cancel;
+   protected Button *bt_import;
+
+   protected ActionConsumer *recipient;
+   protected NodeTracker *parent_node;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("NT_ImportSampleDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      tm_samples <= new NT_ImportSamplesTM;
+      tm_samples.initTableModel();
+      tv_samples.setTableModel(tm_samples);
+
+      initWindow(xfm,
+                 "Import Samples",
+                 100, 100,
+                 740*UI.font_scaling, 340*UI.font_scaling
+                 );
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual getProvidedActionNames() : StringArray {
+      return [ACTION_IMPORT, ACTION_CANCEL];
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <ui_show.png>
+   public method showImportSampleDialog(ActionConsumer _recipient, NodeTracker _node, boolean _bUIDOnly) {
+      recipient <= _recipient;
+      parent_node <= _node;
+
+      cb_instr.setSelected(!_bUIDOnly);
+      cb_audio.setSelected(!_bUIDOnly);
+      cb_pat  .setSelected(!_bUIDOnly);
+
+      tf_filter.setText(parent_node.smp_import_filter);
+      rebuildEntries();
+
+      showCentered();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      layers.add(tv_samples);
+      layers.add(tf_filter);
+      layers.add(cb_instr);
+      layers.add(cb_audio);
+      layers.add(cb_pat);
+      layers.add(fp_align16th);
+      // // layers.add(bt_import);
+      // // layers.add(bt_cancel);
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+      relayout();
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      UI.SetKeyboardFocus(tv_samples);
+      resizeAtLeastToMinimum();
+   }
+
+   // <method.png>
+   protected method rebuildEntries() {
+      Global.Debug("NT_ImportSampleDialog::rebuildEntries");
+
+      local String flt = tf_filter.getText();
+      if(-1 == flt.indexOfChar('*', 0))
+         flt = "*"+flt+"*";
+
+      SysEx.QueueSendQuerySamples(flt/*namePattern*/,
+                                  STConfig.node_tracker_audioclip_note/*def=C-5*/
+                                  );
+      int t = milliSeconds();
+      for(;;)
+      {
+         if(SysEx.b_queued_recv_samples)
+         {
+            PointerArray entries <= tm_samples.entries;
+            entries.free();
+            String *smpName;
+            int smpIdx = 0;
+            SysExSample *sysSmp;
+            foreach sysSmp in SysEx.queued_recv_samples
+            {
+               NT_ImportSamplesDO en <= new NT_ImportSamplesDO;
+               byte instrNr = -1;
+               byte patNr = -1;
+               NT_Instrument ins <= parent_node.findInstrumentByUniqueId(sysSmp.unique_id);
+               if(null != ins)
+                  instrNr = ins.instrument_nr;
+
+               en.init(sysSmp.name,
+                       sysSmp.unique_id,
+                       int(current_song.milliSecondsTo16th(sysSmp.millisecs) + 0.5f),
+                       instrNr,
+                       patNr
+                       );
+
+               entries.add(#(deref en));
+               smpIdx++;
+            }
+
+            break;
+         }
+
+         int dt = milliSeconds() - t;
+         if(dt >= 2000)
+         {
+            Global.Error("NT_ImportSampleDialog::rebuildEntries: SysEx timeout (2000ms)");
+            return false;
+         }
+      }
+
+      tv_samples.tableModelChanged();
+      tv_samples.moveCursorToFirstRow();
+      tm_samples.selectNone();
+   }
+
+   // <ui_handle.png>
+   protected method handleFilterChanged() {
+      local String flt <= tf_filter.getText();
+      parent_node.smp_import_filter = flt;
+      rebuildEntries();
+      // Global.Print("Filter is \""+flt+"\" ("+(tm_samples.entries.numElements)+" result"+Utils.GetPluralString(tm_samples.entries.numElements)+")");
+   }
+
+   // <method.png>
+   protected method getFirstSelectedEntry() : NT_ImportSamplesDO {
+      int rowIdx = tm_samples.getCursorIndex();
+      return tm_samples.entries.get(rowIdx);
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_CANCEL), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleImport() {
+      hide();
+
+      if(recipient instanceof ActionConsumer)
+      {
+         Action ac <= Action.New(getProvidedActionAlias(ACTION_IMPORT), this);
+         recipient.consumeAction(ac);
+         // Note: Do not add code below this line since the dialog instance may have been deleted by the recipient!
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSmpPreview(boolean _bStart) {
+      NT_ImportSamplesDO en <= getFirstSelectedEntry();
+      if(null != en)
+      {
+         Global.Debug2("NT_ImportSampleDialog::onKey: "+(_bStart?"start":"stop")+" preview");
+         SysEx.QueueSendSmpPreview(en.smp_uid,
+                                   STConfig.node_tracker_audioclip_note,
+                                   _bStart?127:0/*vel*/
+                                   );
+      }
+   }
+
+   // <method_get.png>
+   public method getAlign16th() : int {
+      return fp_align16th.getFloatValue();
+   }
+
+   // <method_get.png>
+   public method doCreateInstruments() : boolean {
+      return cb_instr.isSelected();
+   }
+
+   // <method_get.png>
+   public method doAudioInstruments() : boolean {
+      return cb_audio.isSelected();
+   }
+
+   // <method_get.png>
+   public method doCreatePatterns() : boolean {
+      return cb_pat.isSelected();
+   }
+
+   // <method_get.png>
+   public method getSelectedEntries() : PointerArray {
+      local PointerArray r;
+      local PointerArray ret;
+      local IntArray rows = tm_samples.getSelectedRows();
+      if(0 == rows.numElements)
+         rows.add(tm_samples.getCursorIndex());
+      int rowIdx;
+      foreach rowIdx in rows
+         r.add(tm_samples.entries.get(rowIdx++));
+      return deref r;
+   }
+
+   // <ui_show.png>
+   public method showAudioRecordDialog() {
+      SysEx.QueueAtrkPageSelect();
+      root_form.showAudioRecordDialog(true/*bForce*/, this/*recipient*/, tf_filter.getText()/*namePrefixOrNull*/);
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      if(VKEY_SPACE == _k.code)
+         return false;
+      return Dialog::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          c         :   Close dialog
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            case 'c':
+               hide();
+               r = true; break;
+
+            default:
+               r = maybe; break;
+         }
+
+         if(true == r)
+         {
+            return true;
+         }
+         else if(maybe == r)
+         {
+            Global.Print("");
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_RETURN:
+            handleImport();
+            return true;
+
+         case VKEY_SPACE:
+            handleSmpPreview(true/*bStart*/);
+            return true;
+
+         case 'a':
+            cb_audio.toggleSelectionAction();
+            return true;
+
+         case 'f':
+            UI.SetKeyboardFocus(tf_filter);
+            return true;
+
+         case 'i':
+            cb_instr.toggleSelectionAction();
+            return true;
+
+         case 'l':
+            UI.SetKeyboardFocus(fp_align16th);
+            return true;
+
+         case 'p':
+            cb_pat.toggleSelectionAction();
+            return true;
+
+         case 'q':
+            rebuildEntries();
+            UI.SetKeyboardFocus(tv_samples);
+            tv_samples.redraw();
+            return true;
+
+         case 'r':
+            showAudioRecordDialog();
+            return true;
+
+      }
+      switch(_k.released)
+      {
+         case VKEY_SPACE:
+            handleSmpPreview(false/*bStart*/);
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+
+      // trace "xxx NT_ImportSampleDialog: got action name="+name;
+
+      switch(acName)
+      {
+         case "ok":
+            handleImport();
+            return true;
+
+         case "cancel":
+            handleCancel();
+            return true;
+
+         case AudioRecordDialog.ACTION_CLOSE:
+            rebuildEntries();
+            UI.SetKeyboardFocus(tv_samples);
+            return true;
+
+         case AudioRecordDialog.ACTION_ADDSMP:
+            rebuildEntries();
+            return true;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(tv_samples):
+            if(TableView.ACTION_ROWCLICKED == acName)
+            {
+               handleImport();
+            }
+            else if(TableView.ACTION_ROWSELECTED == acName)
+            {
+               // // handleUpdateInfoText();
+            }
+            return true;
+
+         case @(tf_filter):
+            if(TextField.ACTION_CURSORUP == acName)
+            {
+               UI.SetKeyboardFocus(tv_samples);
+            }
+            else if(TextField.ACTION_CURSORDOWN == acName)
+            {
+               UI.SetKeyboardFocus(bt_import);
+            }
+            else if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               handleFilterChanged();
+               UI.SetKeyboardFocus(tv_samples);
+               tv_samples.redraw();
+            }
+            return true;
+
+         case @(bt_refresh):
+            rebuildEntries();
+            return true;
+
+         case @(cb_instr):
+            Global.Print("Create-instruments is "+Utils.GetEnableString(cb_instr.isSelected()));
+            return true;
+
+         case @(cb_audio):
+            Global.Print("Create-audio-instruments is "+Utils.GetEnableString(cb_audio.isSelected()));
+            return true;
+
+         case @(cb_pat):
+            Global.Print("Create-patterns is "+Utils.GetEnableString(cb_pat.isSelected()));
+            return true;
+
+         case @(fp_align16th):
+            int num16 = fp_align16th.getFloatValue();
+            Global.Print("Pattern length alignment is "+num16+" 16th"+Utils.GetPluralString(num16));
+            if((FloatParam.ACTION_VALUECHANGED == acName) ||
+               (FloatParam.ACTION_VALUEUNCHANGED == acName)
+               )
+            {
+               UI.SetKeyboardFocus(tv_samples);
+               tv_samples.redraw();
+            }
+            return true;
+
+         case @(bt_audiorecorddialog):
+            showAudioRecordDialog();
+            return true;
+
+         case @(bt_import):
+            handleImport();
+            return true;
+
+         case @(bt_cancel):
+            handleCancel();
+            return true;
+      }
+
+      return true;
+   }
+
+}

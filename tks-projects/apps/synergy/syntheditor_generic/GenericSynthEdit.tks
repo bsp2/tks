@@ -1,0 +1,4071 @@
+// ----
+// ---- file   : GenericSynthEdit.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2019-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 24Jan2019
+// ---- changed: 26Jan2019, 27Jan2019, 28Jan2019, 29Jan2019, 04Feb2019, 08Feb2019, 09Feb2019
+// ----          18Feb2019, 21Feb2019, 06Apr2019, 09Nov2019, 17Nov2019, 20Feb2020, 10May2020
+// ----          18May2020, 27Nov2020, 26Jan2021, 17Feb2021, 18Feb2021, 19Feb2021, 09Jul2021
+// ----          11Jul2021, 12Jul2021, 16Dec2021, 20Apr2022, 21Apr2022, 24Apr2022, 17Jun2022
+// ----          29Sep2022, 01Oct2022, 02Oct2022, 14Nov2022, 11Feb2023, 25Jun2023, 08Jul2023
+// ----          29Jul2023, 21Sep2023, 31Jan2025, 28Feb2025, 27May2025, 30May2025
+// ----
+// ----    info: tested with
+// ----            - Novation Peak
+// ----            - Korg Radias
+// ----            - Roland Alpha Juno / MKS-50
+// ----            - DSI Prophet 08 (incomplete)
+// ----            - Moog Sub 37
+// ----            - Black Corporation Deckard's Dream
+// ----            - Sequential Pro 3
+// ----            - Oberheim OB-X8
+// ----
+// ----
+// ----
+module MGenericSynthEdit;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug = 0;
+boolean b_debug2 = 0;  // proxy events
+
+boolean b_debug_hexdump_7to8 = 0;
+
+
+// <class.png>
+class GenericSynthEdit_Patch {
+   MIDISynthProfile *profile;
+
+   static StringArray category_names = [
+      "-",
+      "Bass",
+      "Lead",
+      "Keys",
+      "Pad",
+      "Stab",
+      "Bell",
+      "Organ",
+      "Drone",
+      "FX",
+      "Bassdrum",
+      "Tom",
+      "Snaredrum",
+      "Clap",
+      "Hihat",
+      "Percussion",
+      "Other"
+                                        ];
+
+   String patch_name;     //
+   int    patch_category; // see category_names
+   Buffer patch_data;     // raw patch data (w/o F0..F7 markers)
+
+
+   // <method_init.png>
+   public method init(EditMIDISynthFormGeneric _editor, MIDISynthProfile _profile) {
+      // parent_editor <= _editor;
+      profile <= _profile;
+
+      loadInitPatch();
+
+      // // if(MIDISynthProfile.ENC_SUB37 == profile.syx_patch_enc_type)
+      // //    patch_data.byteOrder = YAC_BIG_ENDIAN;
+   }
+
+   // <method_init.png>
+   public method loadInitPatch() {
+      patch_category  = 0;
+
+      // trace "xxx loadInitPatch";
+
+      if(null != profile.syx_patch_init)
+      {
+         // trace "xxx loadInitPatch: sz="+profile.syx_patch_init.size;
+         // Utils.HexDump(profile.syx_patch_init, 0, profile.syx_patch_init.size);
+         patch_data = profile.syx_patch_init;
+      }
+      else
+      {
+         patch_data.size = profile.syx_patch_size;
+         patch_data.fillZero();
+      }
+
+      setPatchName("<empty>");
+   }
+
+   // <method.png>
+   public method copyFrom(GenericSynthEdit_Patch _o) {
+      patch_data = _o.patch_data;
+      patch_name = _o.patch_name;
+      patch_category = _o.patch_category;
+   }
+
+   // <method_set.png>
+   protected method setPatchNameAlphaJuno(String _name) {
+      int i = 0;
+      loop(10)
+      {
+         char c = _name.getc(i);
+         char v = 62; // space
+
+         if('A' <= c <= 'Z')
+         {
+            v = c - 'A';
+         }
+         else if('a' <= c <= 'z')
+         {
+            v = c - 'a' + 26;
+         }
+         else if('0' <= c <= '9')
+         {
+            v = c - '0' + 52;
+         }
+         else if('-' == c)
+         {
+            v = 63;
+         }
+
+         // patch name
+         patch_data.pokeI8(13 + i, v);
+
+         // tone name
+         patch_data.pokeI8(23 + 36 + i, v);
+
+         i++;
+      }
+   }
+
+   // <method_set.png>
+   public method setPatchName(String _name) {
+      if(profile.isEncAlphaJuno())
+      {
+         setPatchNameAlphaJuno(_name);
+      }
+      else
+      {
+         if(profile.syx_patch_name_len > 0)
+         {
+            int i = 0;
+            loop(profile.syx_patch_name_len)
+            {
+               char c = _name.getc(i);
+               if(c <= 9)
+                  c = ' ';
+               patch_data.pokeI8(profile.syx_patch_name_off+i, c);
+               i++;
+            }
+         }
+      }
+
+      patch_name = _name;
+   }
+
+   // <method.png>
+   protected method extractPatchNameFromData_AlphaJuno() {
+      patch_name.alloc(10+1);
+      patch_name.empty();
+      int i = 0;
+      loop(10)
+      {
+         char c = ' ';
+         char v = patch_data.peekI8(59 + i);  // get tone name byte
+
+         if(0 <= v <= 25)
+         {
+            c = v + 'A';
+         }
+         else if(26 <= v <= 51)
+         {
+            c = v - 26 + 'a';
+         }
+         else if(52 <= v <= 61)
+         {
+            c = v - 52 + '0';
+         }
+         else if(63 == v)
+         {
+            c = '-';
+         }
+
+         patch_name[i++] = c;
+      }
+   }
+
+   // <method.png>
+   public method extractPatchNameFromData() {
+      if(profile.isEncAlphaJuno())
+      {
+         extractPatchNameFromData_AlphaJuno();
+      }
+      else
+      {
+         if(b_debug)
+            Global.Debug("GenericSynthEdit::extractPatchNameFromData: profile.syx_patch_name_len="+profile.syx_patch_name_len);
+         if(profile.syx_patch_name_len > 0)
+         {
+            patch_name.alloc(profile.syx_patch_name_len + 1);
+            patch_name.empty();
+            int i = 0;
+            loop(profile.syx_patch_name_len)
+            {
+               char c = patch_data.peekI8(profile.syx_patch_name_off+i);
+               if(c <= 9)
+                  c = ' ';
+               patch_name[i] = c;
+               if(b_debug)
+                  Global.Debug("GenericSynthEdit::extractPatchNameFromData: patch_name["+i+"]='"+tcchar(c)+"'");
+               i++;
+            }
+         }
+      }
+   }
+
+   // <save.png>
+   public method save(Stream _ofs) {
+      // Version
+      _ofs.i16 = 1;
+
+      // Patch name
+      Utils.WriteString(_ofs, patch_name);
+
+      // Patch category
+      _ofs.i8 = patch_category;
+
+      // Patch data
+      _ofs.writeBuffer(patch_data, 0, patch_data.size);
+   }
+
+   // <load.png>
+   public method load(Stream _ifs) : boolean {
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         Utils.ReadString(_ifs, patch_name);
+
+         patch_category = _ifs.u8;
+
+         patch_data.fillZero();
+         _ifs.readBuffer(patch_data, 0, patch_data.size, false/*bResize*/);
+
+         return true;
+      }
+
+      return false;
+   }
+
+}
+
+
+// <class.png>
+class MIDISynthProfileDataGeneric : MIDISynthProfileData {
+
+   // 0123456789012345
+   // abcdefghijklmnop
+
+   define int NUM_BANKS = 16;
+   define int PROJECT_BANK_IDX = 15; // 'P'
+   define int NUM_GLOBAL_PATCHES = 15*128;
+   define int NUM_PATCHES = (NUM_BANKS * 128);  // 2048 patches, the last bank (1920..2047 / P001..P128) is project-specific.
+
+   PointerArray patches;  // GenericSynthEdit_Patch instances
+
+   short current_patch_nr;
+   short first_patch_nr;
+   short last_patch_nr;
+   boolean b_autosend;
+   boolean b_send_diff;
+   boolean b_proxy_reset;
+
+   boolean b_recv_patch_names;
+   boolean b_recv_ctls;
+
+   boolean b_difflock;
+   IntArray difflock_group_states;  // true=enable group difflock, false=disable ([12Jul2021] moved from SynthForm clas)
+   PointerArray difflock_subgroup_states;  // IntArray instances (true=enable subgroup difflock, false=disable)
+
+
+   // <method_init.png>
+   public virtual init(MIDISynthProfile _profile) {
+      MIDISynthProfileData::init(_profile);
+
+      patches.alloc(NUM_PATCHES);
+
+      loop(NUM_PATCHES)
+      {
+         GenericSynthEdit_Patch patch <= new GenericSynthEdit_Patch;
+         patch.init(midi_profile.edit_form, _profile);
+         patches.add(#(deref patch));
+      }
+
+      current_patch_nr = 0;
+      first_patch_nr = 0;
+      first_patch_nr = 0;
+      b_autosend = maybe;
+
+      b_recv_patch_names = true;
+      b_recv_ctls = true;
+
+      // Init difflock states
+      difflock_group_states.allocAndFill(midi_profile.all_editgroup_captions.numElements, false);
+      String *editGroupName;
+      int editGroupIdx = 0;
+      foreach editGroupName in midi_profile.all_editgroup_captions
+      {
+         StringArray subGroupNames <= midi_profile.all_editgroup_subgroup_captions.get(editGroupIdx);
+         if(null != subGroupNames)
+         {
+            IntArray iaSub <= new IntArray;
+            difflock_subgroup_states.add(#(deref iaSub));
+            iaSub.allocAndFill(subGroupNames.numElements, false);
+         }
+         editGroupIdx++;
+      }
+   }
+
+   // <save.png>
+   public virtual saveMIDIProfileData(Stream _ofs) {
+      // Version
+      _ofs.i16 = 4;
+
+      _ofs.i16 = current_patch_nr;
+      _ofs.i16 = first_patch_nr;
+      _ofs.i16 = last_patch_nr;
+      _ofs.i8  = b_autosend;
+      _ofs.i8  = b_send_diff;
+      _ofs.i8  = b_proxy_reset;
+
+      _ofs.i8 = b_recv_patch_names;  // v2+
+      _ofs.i8 = b_recv_ctls;  // v2+
+
+      // MIDISynthProfile id
+      Utils.WriteString(_ofs, midi_profile.midi_profile_id);
+
+      // (note) save NUM_GLOBAL_PATCHES instead of NUM_PATCHES in v4+
+      int patchIdx = 0;
+      loop(NUM_GLOBAL_PATCHES)
+      {
+         GenericSynthEdit_Patch p <= patches.get(patchIdx);
+         p.save(_ofs);
+         patchIdx++;
+      }
+
+      // MTS (v3+)
+      saveMTSTables(_ofs);
+   }
+
+   // <load.png>
+   public virtual loadMIDIProfileData(Stream _ifs, boolean _bFromUI) : boolean {
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         if(!_bFromUI)
+         {
+            current_patch_nr = _ifs.u16;
+         }
+         else
+         {
+            int skip0 = _ifs.u16;
+         }
+
+         first_patch_nr = _ifs.u16;
+         last_patch_nr  = _ifs.u16;
+         b_autosend     = _ifs.s8;  // mixed
+         b_send_diff    = _ifs.b8;
+         b_proxy_reset  = _ifs.b8;
+
+         if(ver >= 2)
+         {
+            b_recv_patch_names = _ifs.b8;
+            b_recv_ctls = _ifs.b8;
+         }
+
+         // MIDISynthProfile id
+         local String profileId;
+         Utils.ReadString(_ifs, profileId);
+
+         midi_profile <= MIDI.GetMIDISynthProfileById(profileId);
+         if(null == midi_profile)
+         {
+            trace "[---] MIDISynthProfileDataGeneric::loadMIDIProfileData: unknown synth profile \""+profileId+"\"";
+            return false;
+         }
+
+         local GenericSynthEdit_Patch pDummy;
+         pDummy.init(midi_profile.edit_form, midi_profile);
+
+         int patchIdx = 0;
+         loop( (ver <= 3) ? NUM_PATCHES : NUM_GLOBAL_PATCHES )
+         {
+            GenericSynthEdit_Patch *p;
+
+            // workaround for bug in ver <= 3: skip project-specific patches
+            if( (ver <= 3) && (patchIdx >= NUM_GLOBAL_PATCHES) )
+               p <= pDummy;
+            else
+               p <= patches.get(patchIdx);
+
+            if(!p.load(_ifs))
+            {
+               trace "[---] failed to load GenericSynthEdit_Patch "+patchIdx+" (profile_id="+midi_profile.midi_profile_id+")";
+               p.loadInitPatch();
+               return false;
+            }
+            patchIdx++;
+         }
+
+         // MIDI tuning tables (v3+)
+         if(ver >= 3)
+         {
+            if(!loadMTSTables(_ifs))
+               return false;
+         }
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <save.png>
+   public virtual saveProjectMIDIProfileData(Stream _ofs) {
+      // Version
+      _ofs.i16 = 3;
+
+      _ofs.i16 = current_patch_nr;
+
+      _ofs.i8 = forced_redirect_midi_ch; // v2+
+
+      // MIDISynthProfile id
+      Utils.WriteString(_ofs, midi_profile.midi_profile_id);
+
+      int patchIdx = (PROJECT_BANK_IDX * 128);
+      loop(128)
+      {
+         GenericSynthEdit_Patch p <= patches.get(patchIdx);
+         p.save(_ofs);
+         patchIdx++;
+      }
+
+      // Difflock (v3+)
+      _ofs.i8 = b_difflock;
+      Global.Debug3("MIDISynthProfileDataGeneric::saveProjectMIDIProfileData<"+midi_profile.midi_profile_id+">: save "+difflock_group_states.numElements+" difflock_group_states");
+      _ofs << difflock_group_states;
+      Global.Debug3("MIDISynthProfileDataGeneric::saveProjectMIDIProfileData<"+midi_profile.midi_profile_id+">: save "+difflock_subgroup_states.numElements+" difflock_subgroup_states");///\n\t\t difflock_subgroup_states="+#(difflock_subgroup_states));
+      _ofs << difflock_subgroup_states;
+   }
+
+   // <load.png>
+   public virtual loadProjectMIDIProfileData(Stream _ifs) : boolean {
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         current_patch_nr = _ifs.u16;
+
+         if(ver >= 2)
+         {
+            forced_redirect_midi_ch = _ifs.s8; // v2+
+         }
+
+         // MIDISynthProfile id
+         local String profileId;
+         Utils.ReadString(_ifs, profileId);
+
+         GenericSynthEdit_Patch *p;
+         int patchIdx = (PROJECT_BANK_IDX * 128);
+
+         if(midi_profile.midi_profile_id == profileId)
+         {
+
+            // // midi_profile <= MIDI.GetMIDISynthProfileById(profileId);
+            // // if(null == midi_profile)
+            // // {
+            // //    trace "[---] MIDISynthProfileDataGeneric::loadProjectMIDIProfileData: unknown synth profile \""+profileId+"\"";
+            // //    return false;
+            // // }
+
+            loop(128)
+            {
+               p <= patches.get(patchIdx);
+               if(!p.load(_ifs))
+               {
+                  trace "[~~] failed to load project-specific GenericSynthEdit_Patch "+patchIdx+" (profile_id="+midi_profile.midi_profile_id+"), loading init() instead.";
+                  p.loadInitPatch();
+                  return false;
+               }
+               patchIdx++;
+            }
+
+            if(ver >= 3)
+            {
+               // Difflock (v3+)
+               b_difflock = _ifs.b8;
+
+               local IntArray dlgStatesNew;
+               dlgStatesNew << _ifs;
+               Global.Debug3("MIDISynthProfileDataGeneric::loadProjectMIDIProfileData<"+midi_profile.midi_profile_id+">: load "+dlgStatesNew.numElements+" difflock_group_states");
+               if(difflock_group_states.numElements == dlgStatesNew.numElements)
+               {
+                  difflock_group_states <= deref dlgStatesNew;
+                  Global.Debug2("MIDISynthProfileDataGeneric::loadProjectMIDIProfileData<"+midi_profile.midi_profile_id+">: use "+difflock_group_states.numElements+" difflock_group_states");
+               }
+               // else: profile changed (added/removed group)
+
+               local PointerArray dlgSubStatesNew;
+               dlgSubStatesNew << _ifs;  // load array of IntArrays
+               Global.Debug3("MIDISynthProfileDataGeneric::loadProjectMIDIProfileData<"+midi_profile.midi_profile_id+">: load "+dlgSubStatesNew.numElements+" difflock_subgroup_states");
+               if(difflock_subgroup_states.numElements == dlgSubStatesNew.numElements)
+               {
+                  IntArray *iaNew;
+                  IntArray *iaCur;
+                  int iaSubIdx = 0;
+                  boolean bSame = true;
+                  foreach iaCur in difflock_subgroup_states
+                  {
+                     iaNew <= dlgSubStatesNew.get(iaSubIdx++);
+                     if(null != iaNew)
+                     {
+                        bSame = bSame && (iaCur.numElements == iaNew.numElements);
+                     }
+                     else
+                        bSame = false;
+                  }
+                  if(bSame)
+                  {
+                     // same layout => use loaded state
+                     difflock_subgroup_states <= deref dlgSubStatesNew;
+                     Global.Debug2("MIDISynthProfileDataGeneric::loadProjectMIDIProfileData<"+midi_profile.midi_profile_id+">: use "+difflock_subgroup_states.numElements+" difflock_subgroup_states");////\n\t\t difflock_subgroup_states="+#(difflock_subgroup_states);
+                  }
+               }
+            }
+
+            return true;
+         }
+         else
+         {
+            trace "[---] GenericSynthEdit::loadProjectMIDIProfileData: midi_profile_id=\""+midi_profile.midi_profile_id+"\" mismatch, skipping..";
+            loop(128)
+            {
+               p <= patches.get(patchIdx);
+               p.loadInitPatch();
+               patchIdx++;
+            }
+         }
+      }
+
+      return false;
+   }
+}
+
+
+// <class.png>
+class EditMIDISynthFormGeneric : EditMIDISynthForm, ActionProvider, MIDIMapEventListener {
+
+   MIDISynthProfile *profile;
+
+   MIDISynthProfileDataGeneric *data;
+   GenericSynthEdit_Patch *patch;  // Reference to current patch in data.patches[]. never null.
+
+   STX_MIDIInDevice  *in_dev;
+   STX_MIDIOutDevice *out_dev;
+   byte midi_ch;
+
+   boolean b_have_sysex;
+   Buffer  sysex_buffer;  // Incoming sysex data
+
+   protected boolean b_patch_proxy_follow;
+   protected boolean b_patch_proxy_lock;
+
+   TabSwitch *ts_groups;
+
+   CheckBox  *cb_patch_diff;
+   CheckBox  *cb_patch_autosend;
+   CheckBox  *cb_patch_recvnames;
+   CheckBox  *cb_patch_recvctls;
+   CheckBox  *cb_patch_proxy_reset;
+   CheckBox  *cb_patch_proxy_lock;
+   CheckBox  *cb_patch_proxy_follow;
+   ComboBox  *cm_patch_nr;
+   Button    *bt_patch_project;
+   TextField *tf_patch_name;
+   Button    *bt_find_catnext;
+   Button    *bt_find_catbrowse;
+   protected ComboBoxPopup *cmp_find_catbrowse;
+   Button    *bt_find_catprev;
+   TextField *tf_find_name;
+   ComboBox  *cm_find_category;
+   ComboBox  *cm_patch_category;
+   Button    *bt_patch_tools;
+   protected PopupMenu *pm_tools;
+   Button    *bt_mts;
+   Button    *bt_patch_init;
+   Button    *bt_patch_paste;
+   Button    *bt_patch_copy;
+   Button    *bt_patch_receive_edit;
+   Button    *bt_patch_receive_edit_to_clipboard;
+   Button    *bt_patch_send;
+
+   Button *bt_difflock_toggle;
+   Button *bt_difflock_invert;
+   CheckBox *cb_difflock_enable;
+   Button *bt_difflock_rand;
+   CheckBox *cb_randlock_bit20;
+   CheckBox *cb_randlock_bit19;
+   CheckBox *cb_randlock_bit18;
+   CheckBox *cb_randlock_bit17;
+   CheckBox *cb_randlock_bit16;
+   CheckBox *cb_randlock_bit15;
+   CheckBox *cb_randlock_bit14;
+   CheckBox *cb_randlock_bit13;
+   CheckBox *cb_randlock_bit12;
+   CheckBox *cb_randlock_bit11;
+   CheckBox *cb_randlock_bit10;
+   CheckBox *cb_randlock_bit9;
+   CheckBox *cb_randlock_bit8;
+   CheckBox *cb_randlock_bit7;
+   CheckBox *cb_randlock_bit6;
+   CheckBox *cb_randlock_bit5;
+   CheckBox *cb_randlock_bit4;
+   CheckBox *cb_randlock_bit3;
+   CheckBox *cb_randlock_bit2;
+   CheckBox *cb_randlock_bit1;
+   CheckBox *cb_randlock_bit0;
+   PointerArray difflock_group_checkboxes;
+   PointerArray difflock_subgroup_checkboxes;  // PointerArray instances (CheckBox ref per subgroup idx)
+
+   define String TA_MIDISEND;
+   protected TimerAction *ta_midisend;
+   boolean b_queued_midi_send_patch;
+
+   GenericSynthEdit_Patch *patch_clipboard;
+
+   PointerArray param_widgets;     // ComboBox, FloatParam, or CheckBox refs (or null)
+   PointerArray param_labels;      // Label refs
+   IntArray     param_widget_alias_indices;  // used to look up aliases after parsing XFM
+   PointerArray param_widget_aliases;  // MIDISynthProfileCtlAlias refs (or null)
+   PointerArray *[] param_editgroup_widgets;  // indexed by editgroup (list of widgets per tab)
+
+   GenericSynthEdit_Patch *replay_patch;   // currently playing patch (modulated by proxy events)
+   boolean b_first_midi_send_patch;
+   boolean b_force_send_all_diff;
+
+   GenericSynthEdit_Patch *morph_patch;  // temporary storage for morph() result
+   GenericSynthEdit_Patch *orig_replay_patch;   // patch state when entering editor
+
+   protected boolean b_first_rebuild_patch_names;
+
+   static SysExMultiPatchDialog *dlg_multipatch;
+   MTSDialog *dlg_mts;
+
+   protected boolean b_first_proxy_prgchg;
+
+
+   // <method_init.png>
+   public virtual init(MIDISynthProfile _profile) : boolean {
+      // Called from MIDISynthProfile::parse()
+      EditMIDISynthForm::init(_profile);
+
+      profile <= _profile;
+
+      // Read by NodeProxy when generating multimorph bank select
+      proxy_multimorph_bank = MIDISynthProfileDataGeneric.PROJECT_BANK_IDX/*15*/ + 1;
+      num_programs_per_bank = 128;
+      num_banks             = MIDISynthProfileDataGeneric.NUM_BANKS;
+
+      local String xfmSrc;
+      if(xfmSrc.load("GenericSynthEdit.xfm", true/*bRemoveCR*/))
+      {
+         createParamWidgets(xfmSrc);
+         createDiffLockWidgets(xfmSrc);
+
+         // trace "xxx 3 xfmSrc.length="+xfmSrc.length+"  lastChar="+xfmSrc.getc(xfmSrc.length-1);
+         // xfmSrc.saveLocal("t.txt");
+
+         if(parseXMLForm(xfmSrc))
+         {
+            // trace "xxx parseXMLForm done";
+            if(autoResolveIds(this))
+            {
+               resolveParamWidgets();
+               resolveDiffLockWidgets();
+               updateRandLockWidgetToolTips(xfmSrc);
+
+               initMMC();
+               initTimers();
+
+               patch_clipboard <= new GenericSynthEdit_Patch;
+               patch_clipboard.init(this, profile);
+
+               replay_patch <= new GenericSynthEdit_Patch;
+               replay_patch.init(this, profile);
+
+               morph_patch <= new GenericSynthEdit_Patch;
+               morph_patch.init(this, profile);
+
+               orig_replay_patch <= new GenericSynthEdit_Patch;
+               orig_replay_patch.init(this, profile);
+
+               cm_patch_category.setOptions(GenericSynthEdit_Patch.category_names);
+               StringArray fltCat; fltCat.join(["*"], GenericSynthEdit_Patch.category_names);
+               cm_find_category.setOptions(fltCat);
+
+               b_first_midi_send_patch = true;
+               b_first_rebuild_patch_names = true;
+               b_force_send_all_diff = true;
+
+               dlg_multipatch <= new SysExMultiPatchDialog;
+               if(!dlg_multipatch.init())
+               {
+                  trace "[---] failed to init SysExMultiPatchDialog";
+                  return false;
+               }
+
+               if(profile.num_midi_tunings > 0)
+               {
+                  bt_mts.setEditable(true);
+
+                  dlg_mts <= new MTSDialog;
+                  if(!dlg_mts.init())
+                  {
+                     trace "[---] failed to init MTSDialog";
+                     return false;
+                  }
+               }
+
+               b_first_proxy_prgchg = true;
+
+               return true;
+            }
+         }
+      }
+      return false;
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_midisend   <= TimerAction.New(TA_MIDISEND, this, getMIDISendTimerInterval());
+   }
+
+   // <method_get.png>
+   protected getMIDISendTimerInterval() : int {
+      return 75;
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("EditMIDISynthFormGeneric");
+
+      ////addBaseMMCTargets(this);
+   }
+
+   // <ui_init.png>
+   protected method createParamWidgets(String _xfmSrc) {
+      int curEditGroupIdx = -1;
+      int curEditSubGroupIdx = -1;
+
+      local String sAllGroups;
+      local String sGroup;
+
+      FloatParam *fp;
+      CheckBox *cb;
+      ComboBox *cm;
+      boolean bTitledPanel = false;
+      int numTitledPanelsPerRow = 0;
+      int NUM_PANELS_PER_ROW = 4;
+
+      MIDISynthProfileCtlAlias *alias;
+      int aliasIdx = 0;
+      foreach alias in profile.all_aliases
+      {
+         if(-1 != alias.syx_off)
+         {
+            if( (0 || alias.b_ui) && (-1 == alias.syx_off_hi))
+            {
+               if(-1 != alias.editgroup_idx)
+               {
+                  if(alias.editgroup_idx != curEditGroupIdx)
+                  {
+                     // Close current group
+                     if(-1 != curEditGroupIdx)
+                     {
+                        if(bTitledPanel)
+                           sGroup.append("</TitledPanel></Panel>\n");
+                        sGroup.append(
+                           "            </Panel></Panel>\n"
+                           "          </ScrollPane>\n"
+                           "        </Panel></Panel>\n"
+                           "      </View>\n"
+                                      );
+                     }
+                     sAllGroups.append(sGroup);
+
+                     // Start new group
+                     curEditGroupIdx = alias.editgroup_idx;
+
+                     sGroup =
+                        "      <View caption=\""+profile.getEditGroupNameByIdx(curEditGroupIdx)+"\">\n"
+                        "        <Panel align=expand><Panel align=expand padLeft=5>\n"
+                        "          <ScrollPane id=sp_"+curEditGroupIdx+"\n"
+                        "                      style=flat\n"
+                        "                      dir=CENTER\n"
+                        "                      align=expand\n"
+                        "                      adaptiveViewSize=1\n"
+                        "                      autoresolve=0\n"
+                        "                      >\n"
+                        "            <Panel><Panel dir=TOP align=expandx padding=16;2;0;5>\n" //r=21
+                        ;
+                     int colIdx = 0;
+                     loop(NUM_PANELS_PER_ROW+1)
+                     {
+                        sGroup.append(
+                           "              <SizeGroupX id=sgx_lb_"+curEditGroupIdx+"_"+colIdx+"/>\n"
+                           "              <SizeGroupX id=sgx_ctl_"+curEditGroupIdx+"_"+colIdx+"/>\n"
+                                      );
+                        colIdx++;
+                     }
+
+                     // trace "xxx sGroup=\""+sGroup+"\"";
+
+                     curEditSubGroupIdx = -1;
+                     bTitledPanel = false;
+                     numTitledPanelsPerRow = 0;
+                  }
+
+                  if(alias.editsubgroup_idx != curEditSubGroupIdx)
+                  {
+                     if(bTitledPanel)
+                        sGroup.append("</TitledPanel>\n");
+
+                     curEditSubGroupIdx = alias.editsubgroup_idx;
+
+                     if(NUM_PANELS_PER_ROW == numTitledPanelsPerRow)
+                     {
+                        sGroup.append("</Panel>\n");
+                        numTitledPanelsPerRow = 0;
+                     }
+
+                     if(0 == numTitledPanelsPerRow)
+                        sGroup.append("<Panel dir=BOTTOM>\n");
+
+                     numTitledPanelsPerRow++;
+
+                     sGroup.append("<TitledPanel dir=RIGHT padLeft=10 caption=\""+profile.getEditSubGroupNameByIdx(curEditGroupIdx, curEditSubGroupIdx)+"\">\n");
+                     bTitledPanel = true;
+                  }
+
+
+                  sGroup.append("<!-- "+alias.caption+" -->\n");
+                  sGroup.append("<Panel dir=BOTTOM");
+                  if(alias.b_ui_sub_group)
+                     sGroup.append(" padTop=10");
+                  sGroup.append(" >\n");
+
+                  String aliasCaption = alias.caption;
+
+                  if(null != alias.edit_options_str)
+                  {
+                     if((null != alias.ui_class) && ("FloatParam" == alias.ui_class))
+                     {
+                        sGroup.append("<FloatParam id=param_"+aliasIdx+" autoresolve=0 dir=LEFT\n"
+                                      "            align=centerY\n"
+                                      "            min="+alias.min+" max="+alias.max+"\n"
+                                      "            reset=0\n"
+                                      "            display=user\n"
+                                      "            usertbl=\""+alias.edit_options_str+"\"\n"
+                                      "            sizeGroup=sgx_ctl_"+curEditGroupIdx+"_"+numTitledPanelsPerRow+"\n"
+                                      "            precision=0 stepFine=1 stepCoarse=1 cols=3\n"
+                                      "            textAlign=RIGHT\n"
+                                      "            provideUnchanged=0\n"
+                                      "            padding=0;0;0;2\n"
+                                      );
+                        if!(alias.info.isBlank())
+                        {
+                           sGroup.append("            toolTipCaption=\""+alias.info+"\"\n");
+                        }
+                        sGroup.append("            />\n");
+                     }
+                     else
+                     {
+                        // ComboBox
+                        sGroup.append("<ComboBox id=param_"+aliasIdx+" autoresolve=0 dir=LEFT\n"
+                                      "          align=centerY\n"
+                                      "          options=\""+alias.edit_options_str+"\"\n"
+                                      "          sizeGroup=sgx_ctl_"+curEditGroupIdx+"_"+numTitledPanelsPerRow+"\n"
+                                      "          padding=0;0;0;2\n"
+                                      );
+                        if!(alias.info.isBlank())
+                        {
+                           sGroup.append("          toolTipCaption=\""+alias.info+"\"\n");
+                        }
+                        sGroup.append("          />\n");
+                     }
+
+                  }
+                  else if((0 == alias.min) && (1 == alias.max))
+                  {
+                     // CheckBox
+                     sGroup.append("<CheckBox id=param_"+aliasIdx+" autoresolve=0 dir=LEFT\n"
+                                   "          caption=\"Enable\"\n"
+                                   "          padLeft=0\n"
+                                   "          align=centerY\n"
+                                   "          sizeGroup=sgx_ctl_"+curEditGroupIdx+"_"+numTitledPanelsPerRow+"\n"
+                                   );
+                     if!(alias.info.isBlank())
+                     {
+                        sGroup.append("          toolTipCaption=\""+alias.info+"\"\n");
+                     }
+                     sGroup.append("          />\n");
+                  }
+                  else
+                  {
+                     // FloatParam
+                     sGroup.append("<FloatParam id=param_"+aliasIdx+" autoresolve=0 dir=LEFT\n");
+
+                     if(aliasCaption >= " MSB")
+                        aliasCaption.replace(" MSB", "");
+
+                     switch(alias.cel_range)
+                     {
+                        default:
+                           sGroup.append("            min="+(alias.min-alias.ui_zero)+" max="+(alias.max-alias.ui_zero)+"\n");
+                           break;
+
+                        case NT_CEL.RANGE_M128_P127:
+                           sGroup.append("            min="+(alias.min-128+alias.ui_bias-alias.ui_zero)+" max="+(alias.max-128+alias.ui_bias-alias.ui_zero)+"\n");
+                           break;
+
+                        case NT_CEL.RANGE_M64_P63:
+                           sGroup.append("            min="+(alias.min-64+alias.ui_bias-alias.ui_zero)+" max="+(alias.max-64+alias.ui_bias-alias.ui_zero)+"\n");
+                           break;
+                     }
+
+                     // if("novation_peak" == profile.midi_profile_id)
+
+                     sGroup.append("            precision=0 stepFine=1 stepCoarse=1 cols=3\n"
+                                   "            reset=0\n"
+                                   "            textAlign=RIGHT\n"
+                                   "            provideUnchanged=0\n"
+                                   "            align=centerY\n"
+                                   "            sizeGroup=sgx_ctl_"+curEditGroupIdx+"_"+numTitledPanelsPerRow+"\n"
+                                   "            padding=0;0;0;2\n"
+                                   );
+                     if!(alias.info.isBlank())
+                     {
+                        sGroup.append("            toolTipCaption=\""+alias.info+"\"\n");
+                     }
+                     sGroup.append("            />\n");
+                  }
+
+                  sGroup.append("<Label dir=LEFT id=lb_param_"+aliasIdx+" autoresolve=0 sizeGroup=sgx_lb_"+curEditGroupIdx+"_"+numTitledPanelsPerRow+" caption=\""+aliasCaption+":\"\n");
+                  sGroup.append("       textPlacement=RIGHT\n");
+                                //"font=big8\n"
+                  sGroup.append("       align=centerY\n");
+                  sGroup.append("       fillBG=0\n");
+                  sGroup.append("       />\n");
+
+                  sGroup.append("</Panel>\n");
+
+                  param_widget_alias_indices.add(aliasIdx);
+                  param_widget_aliases.add(alias);
+
+               }  // if editgroup_idx
+            } // alias.b_ui
+         }  // if alias.syx_off
+
+         aliasIdx++;
+      } // foreach alias
+
+      // Close current group
+      if(-1 != curEditGroupIdx)
+      {
+         if(bTitledPanel)
+            sGroup.append("</TitledPanel></Panel>\n");
+
+         sGroup.append(
+            "            </Panel></Panel>\n"
+            "          </ScrollPane>\n"
+            "        </Panel></Panel>\n"
+            "      </View>\n"
+                       );
+      }
+      sAllGroups.append(sGroup);
+
+      // trace "xxx sAllGroups=\n"+sAllGroups;
+
+      _xfmSrc.replace("$(PARAM_WIDGETS)", sAllGroups);
+   }
+
+   // <ui_init.png>
+   protected method resolveParamWidgets() {
+      int widgetIdx = 0;
+      int aliasIdx;
+      int curEditGroupIdx = -1;
+      PointerArray *groupWidgets;
+      foreach aliasIdx in param_widget_alias_indices
+      {
+         Layer l <= findLayerById("param_"+aliasIdx);
+         param_widgets.add(l);
+
+         Label lb <= findLayerById("lb_param_"+aliasIdx);
+         param_labels.add(lb);
+
+         // Add to per-editgroup widget list (for kbd focus cycling)
+         int aliasArrayIdx = param_widget_alias_indices.indexOf(aliasIdx, 0);
+         if(-1 != aliasArrayIdx)  // (note) should not be -1
+         {
+            MIDISynthProfileCtlAlias alias <= param_widget_aliases.get(aliasArrayIdx);
+            if(alias.editgroup_idx != curEditGroupIdx)
+            {
+               curEditGroupIdx = alias.editgroup_idx;
+               groupWidgets <= new PointerArray;
+               param_editgroup_widgets.add(#(deref groupWidgets));
+            }
+            groupWidgets.add(l);
+         }
+
+         // Next widget
+         widgetIdx++;
+      }
+   }
+
+   // <ui_init.png>
+   protected method createDiffLockWidgets(String _xfmSrc) {
+      String *editGroupName;
+      int editGroupIdx = 0;
+      local String buf;
+      buf.append("<Panel dir=TOP align=expandx padTop=0>\n");
+      buf.append("<Panel dir=BOTTOM align=expandx padTop=4>\n");
+      int numPanelWidgets = 0;
+      int NUM_WIDGETS_PER_PANEL = 6;
+      foreach editGroupName in profile.all_editgroup_captions
+      {
+         if(NUM_WIDGETS_PER_PANEL == numPanelWidgets++)
+         {
+            buf.append("</Panel>\n");
+            buf.append("<Panel dir=BOTTOM align=expandx padTop=2>\n");
+            numPanelWidgets = 0;
+         }
+         buf.append(
+            "<CheckBox id=cb_difflock_"+editGroupIdx+"\n"
+            "          dir=RIGHT\n"
+            "          caption=\""+editGroupName+"\"\n"
+            "          font=\"bold\"\n"
+            "          padLeft=4\n"
+            "          align=centerY\n"
+            "          sizeGroup=sgx_grouplock\n"
+            "          autoresolve=0\n"
+            "          />\n"
+                    );
+
+         StringArray subGroupNames <= profile.all_editgroup_subgroup_captions.get(editGroupIdx);
+         if(null != subGroupNames)
+         {
+            int subGroupIdx = 0;
+            String *subGroupName;
+            foreach subGroupName in subGroupNames
+            {
+               if(NUM_WIDGETS_PER_PANEL == numPanelWidgets++)
+               {
+                  buf.append("</Panel>\n");
+                  buf.append("<Panel dir=BOTTOM align=expandx padTop=2>\n");
+                  numPanelWidgets = 0;
+               }
+               buf.append(
+                  "<CheckBox id=cb_difflock_"+editGroupIdx+"_"+subGroupIdx+"\n"
+                  "          dir=RIGHT\n"
+                  "          caption=\""+subGroupName+"\"\n"
+                  "          padLeft=4\n"
+                  "          align=centerY\n"
+                  "          sizeGroup=sgx_grouplock\n"
+                  "          autoresolve=0\n"
+                  "          />\n"
+                          );
+
+               subGroupIdx++;
+            }
+         }
+         editGroupIdx++;
+      }
+      buf.append("</Panel>\n");
+      buf.append("</Panel>\n");
+      _xfmSrc.replace("$(DIFF_GROUP_LOCKS)", buf);
+   }
+
+   // <ui_init.png>
+   protected method resolveDiffLockWidgets() {
+      String *editGroupName;
+      int editGroupIdx = 0;
+      // // IntArray dlgStates <= data.difflock_group_states;
+      // // dlgStates.allocAndFill(profile.all_editgroup_captions.numElements, false);
+      foreach editGroupName in profile.all_editgroup_captions
+      {
+         difflock_group_checkboxes.add(findLayerById("cb_difflock_"+editGroupIdx));
+         StringArray subGroupNames <= profile.all_editgroup_subgroup_captions.get(editGroupIdx);
+         if(null != subGroupNames)
+         {
+            PointerArray paSub <= new PointerArray;
+            difflock_subgroup_checkboxes.add(#(deref paSub));
+            // // IntArray iaSub <= new IntArray;
+            // // difflock_subgroup_states.add(#(deref iaSub));
+            // // iaSub.allocAndFill(subGroupNames.numElements, false);
+
+            int subGroupIdx = 0;
+            String *subGroupName;
+            foreach subGroupName in subGroupNames
+            {
+               paSub.add(findLayerById("cb_difflock_"+editGroupIdx+"_"+subGroupIdx));
+               subGroupIdx++;
+            }
+         }
+         editGroupIdx++;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDiffLockWidgetChanged(CheckBox _cb) : boolean {
+      int idx;
+      boolean bEnable;
+      PointerArray *paSub;
+      IntArray *iaSub;
+
+      idx = difflock_group_checkboxes.indexOfPointer(_cb, 0);
+      if(-1 != idx)
+      {
+         // Toggle edit group
+         bEnable = _cb.isSelected();
+         IntArray dlgStates <= data.difflock_group_states;
+         dlgStates[idx] = bEnable;
+         Global.Print("Group "+idx+" is "+Utils.GetEnableString(bEnable));
+
+         // Update subgroups
+         paSub <= difflock_subgroup_checkboxes.get(idx);
+         iaSub <= data.difflock_subgroup_states.get(idx);
+         CheckBox *cb;
+         iaSub.fill(bEnable);
+         foreach cb in paSub
+         {
+            cb.setSelected(bEnable);
+         }
+         return true;
+      }
+      else
+      {
+         int editGroupIdx = 0;
+         foreach paSub in difflock_subgroup_checkboxes
+         {
+            idx = paSub.indexOfPointer(_cb, 0);
+            if(-1 != idx)
+            {
+               iaSub <= data.difflock_subgroup_states.get(editGroupIdx);
+               bEnable = _cb.isSelected();
+               iaSub[idx] = bEnable;
+               Global.Print("Group "+editGroupIdx+" SubGroup "+idx+" is "+Utils.GetEnableString(bEnable));
+               return true;
+            }
+            editGroupIdx++;
+         }
+      }
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleDiffLockToggleAll() {
+      // trace "xxx toggleall: difflock_group_states="+#(difflock_group_states);
+      IntArray *iaSub;
+      IntArray dlgStates <= data.difflock_group_states;
+      boolean bAllEnabled = (-1 == dlgStates.indexOf(false, 0));
+      if(bAllEnabled)
+      {
+         foreach iaSub in data.difflock_subgroup_states
+         {
+            // trace "xxx toggleall: iaSub="+#(iaSub);
+            bAllEnabled = bAllEnabled && (-1 == iaSub.indexOf(false, 0));
+         }
+      }
+
+      boolean bEnable = !bAllEnabled;
+
+      CheckBox *cb;
+      foreach cb in difflock_group_checkboxes
+      {
+         cb.setSelected(bEnable);
+         dlgStates.fill(bEnable);
+      }
+      PointerArray *paSub;
+      int editGroupIdx = 0;
+      foreach paSub in difflock_subgroup_checkboxes
+      {
+         iaSub <= data.difflock_subgroup_states.get(editGroupIdx);
+         iaSub.fill(bEnable);
+         foreach cb in paSub
+         {
+            cb.setSelected(bEnable);
+         }
+         editGroupIdx++;
+      }
+
+      Global.Print((bEnable?"Enable":"Disable")+" all diff locks");
+   }
+
+   // <ui_handle.png>
+   protected method handleDiffLockInvert() {
+      int editGroupIdx = 0;
+      CheckBox *cb;
+      IntArray dlgStates <= data.difflock_group_states;
+      foreach cb in difflock_group_checkboxes
+      {
+         cb.toggleSelection();
+         dlgStates[editGroupIdx] = cb.isSelected();
+
+         CheckBox *cbs;
+         PointerArray paSub <= difflock_subgroup_checkboxes.get(editGroupIdx);
+         IntArray iaSub <= data.difflock_subgroup_states.get(editGroupIdx);
+         int subGroupIdx = 0;
+         foreach cbs in paSub
+         {
+            cbs.toggleSelection();
+            iaSub[subGroupIdx] = cbs.isSelected();
+            subGroupIdx++;
+         }
+
+         editGroupIdx++;
+      }
+
+      Global.Print("Invert diff locks");
+   }
+
+   // <ui_handle.png>
+   protected method handleDiffLockRand() {
+      int numRand = 0;
+      local MIDISynthProfileCtlAlias *alias;
+      local Buffer pd <= patch.patch_data;
+
+      int randMask = getRandLockMask();
+      IntArray dlgStates <= data.difflock_group_states;
+
+      foreach alias in param_widget_aliases
+      {
+         boolean bRand = false;
+
+         if(-1 != alias.editgroup_idx)
+         {
+            bRand |= dlgStates.get(alias.editgroup_idx);
+         }
+
+         if(-1 != alias.editsubgroup_idx)
+         {
+            IntArray iaSub <= data.difflock_subgroup_states.get(alias.editgroup_idx);
+            bRand |= iaSub.get(alias.editsubgroup_idx);
+         }
+
+         bRand = bRand && (0 || alias.b_ui) && ((0 == alias.randlock_flags) || (alias.randlock_flags & randMask));
+
+         if(bRand)
+         {
+            short r = alias.min + rand(1 + alias.max - alias.min);
+
+            if(alias.syx_off_lo > 0)
+            {
+               if("novation_peak" == profile.midi_profile_id)
+               {
+                  // 8bit, least signifcant bit is stored in bit 6 of LSB
+                  pd.pokeI8(alias.syx_off, ((r >> 1) & 127));  // MSB
+                  pd.pokeI8(alias.syx_off_lo, (r & 1) << 6);   // LSB
+               }
+               else if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+               {
+                  pd.pokeI8(alias.syx_off, ((r >> 8) & 255));  // MSB
+                  pd.pokeI8(alias.syx_off_lo, (r & 255));      // LSB
+               }
+               else
+               {
+                  pd.pokeI8(alias.syx_off, ((r >> 7) & 127));  // MSB
+                  pd.pokeI8(alias.syx_off_lo, (r & 127));      // LSB
+               }
+            }
+            else
+            {
+               if(alias.syx_bit_num > 0)
+               {
+                  r =
+                     (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                     | (r << alias.syx_bit_off);
+               }
+
+               pd.pokeI8(alias.syx_off, r & 255);
+            }
+
+            numRand++;
+         }
+      }
+
+      if(false != data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+
+      updateUIFromPatch();
+
+      Global.Print("Randomized "+numRand+" patch parameter"+Utils.GetPluralString(numRand));
+   }
+
+   // <ui_init.png>
+   protected method updateRandLockWidgetToolTips(String _xfmSrc) {
+
+      MIDISynthProfileCtlAlias *alias;
+
+      int bitIdx = 0;
+      int flags = 1;
+      loop(21)
+      {
+         CheckBox cb <= findLayerById("cb_randlock_bit"+bitIdx);
+         local String paramList = "";
+         int aliasIdx = 0;
+         foreach alias in profile.all_aliases
+         {
+            if( (0 || alias.b_ui) && (alias.randlock_flags & flags) )
+            {
+               paramList.append("   - "+alias.caption+"\n");
+            }
+         }
+
+         String toolTipCaption = cb.getToolTipCaption();
+         if(paramList.isBlank())
+         {
+            cb.setEditable(false);
+            toolTipCaption.replace("$(RANDLOCK_PARAMS)", "(no params)");
+         }
+         else
+         {
+            toolTipCaption.replace("$(RANDLOCK_PARAMS)", paramList);
+         }
+         cb.setToolTipCaption(toolTipCaption);
+
+         cb.setSelected(0 != (profile.def_randlock_mask & flags));
+
+         bitIdx++;
+         flags = flags << 1;
+      }
+   }
+
+   // <ui_init.png>
+   protected method getRandLockMask() : int {
+      int r = 0;
+      r |= cb_randlock_bit0.isSelected()  <<  0;
+      r |= cb_randlock_bit1.isSelected()  <<  1;
+      r |= cb_randlock_bit2.isSelected()  <<  2;
+      r |= cb_randlock_bit3.isSelected()  <<  3;
+      r |= cb_randlock_bit4.isSelected()  <<  4;
+      r |= cb_randlock_bit5.isSelected()  <<  5;
+      r |= cb_randlock_bit6.isSelected()  <<  6;
+      r |= cb_randlock_bit7.isSelected()  <<  7;
+      r |= cb_randlock_bit8.isSelected()  <<  8;
+      r |= cb_randlock_bit9.isSelected()  <<  9;
+      r |= cb_randlock_bit10.isSelected() << 10;
+      r |= cb_randlock_bit11.isSelected() << 11;
+      r |= cb_randlock_bit12.isSelected() << 12;
+      r |= cb_randlock_bit13.isSelected() << 13;
+      r |= cb_randlock_bit14.isSelected() << 14;
+      r |= cb_randlock_bit15.isSelected() << 15;
+      r |= cb_randlock_bit16.isSelected() << 16;
+      r |= cb_randlock_bit17.isSelected() << 17;
+      r |= cb_randlock_bit18.isSelected() << 18;
+      r |= cb_randlock_bit19.isSelected() << 19;
+      r |= cb_randlock_bit20.isSelected() << 20;
+      return r;
+   }
+
+   // <midi.png>
+   protected method sendParamUpdate_AlphaJuno(MIDIPipeFrame _frOrNull, MIDISynthProfileCtlAlias _alias, int _value) {
+
+      // trace "xxx sendParamUpdate_AlphaJuno: off="+_alias.syx_off+" value="+_value;
+
+      // (todo) collect up to 16 param updates and bulk-send after timeout
+      local Buffer sysex;
+
+      if(_alias.syx_off < 23)
+      {
+         // Patch data
+         if(0/*PATCH_TONE_NUMBER*/ != _alias.syx_off)
+         {
+            sysex.size = 10;
+            sysex.offset = 0;
+
+            sysex.i8 = 0xF0;  // exclusive status
+            sysex.i8 = 0x41;  // roland manufacturer id
+            sysex.i8 = 0x36;  // operation code (IPR)
+            sysex.i8 = 0;     // unit#
+            sysex.i8 = 0x23;  // format type (JU-1, JU-2, HS-10, HS-80, MKS-50)
+            sysex.i8 = 0x30;  // level=2 (patch param, mks-50 only)
+            sysex.i8 = 0x01;  // group# (???)
+
+            sysex.i8 = _alias.syx_off;
+            sysex.i8 = _value & 127;
+
+            sysex.i8 = 0xF7;  // end of system exclusive
+
+            if(null != _frOrNull)
+            {
+               _frOrNull.sysex(true/*bset*/, out_dev.dev_idx, sysex);
+            }
+            else
+            {
+               out_dev.addBuffer(sysex);
+               out_dev.send(milliSeconds());
+            }
+         }
+      }
+      else if(_alias.syx_off < 69)
+      {
+         // Tone data
+         sysex.size = 10;
+         sysex.offset = 0;
+
+         sysex.i8 = 0xF0;  // exclusive status
+         sysex.i8 = 0x41;  // roland manufacturer id
+         sysex.i8 = 0x36;  // operation code (IPR)
+         sysex.i8 = 0;     // unit#
+         sysex.i8 = 0x23;  // format type (JU-1, JU-2, HS-10, HS-80, MKS-50)
+         sysex.i8 = 0x20;  // level=1 (tone param)
+         sysex.i8 = 0x01;  // group# (???)
+
+         sysex.i8 = _alias.syx_off - 23;
+         sysex.i8 = _value & 127;
+
+         sysex.i8 = 0xF7;  // end of system exclusive
+
+         if(null != _frOrNull)
+         {
+            _frOrNull.sysex(true/*bset*/, out_dev.dev_idx, sysex);
+         }
+         else
+         {
+            out_dev.addBuffer(sysex);
+            out_dev.send(milliSeconds());
+         }
+      }
+
+      // TKS.sleep(10);
+   }
+
+   // <midi.png>
+   // // static int send_param_count = 0;
+   public =replay= method sendParamUpdate(local MIDIPipeFrame _frOrNull,
+                                          local MIDISynthProfileCtlAlias _alias,
+                                          local int _value,
+                                          local boolean _bSend
+                                          ) {
+
+      if(profile.isEncAlphaJuno())
+      {
+         sendParamUpdate_AlphaJuno(_frOrNull, _alias, _value);
+      }
+      else
+      {
+         // Called from UI thread after editing a parameter
+         switch(_alias.type)
+         {
+            default:
+            if(data.b_autosend)
+            {
+               scheduleMIDISendPatch();
+            }
+            break;
+
+            case MIDIMapDefs.TYPE_CC:
+               if(null != _frOrNull)
+               {
+                  _frOrNull.cc(true/*bSet*/, out_dev.dev_idx, midi_ch, _alias.nr, _value);
+               }
+               else
+               {
+                  out_dev.ctlChange(midi_ch, _alias.nr, _value);
+                  if(_bSend)
+                     out_dev.send(milliSeconds());
+               }
+               break;
+
+            case MIDIMapDefs.TYPE_NRPN:
+               if(null != _frOrNull)
+               {
+                  _frOrNull.nrpn(true/*bSet*/, out_dev.dev_idx, midi_ch, _alias.nr, _value);
+               }
+               else
+               {
+                  // trace "xxx sendParamUpdate: alias id="+_alias.id+" nr="+_alias.nr+" value="+_value;
+                  out_dev.nrpn(midi_ch, _alias.nr, _value);
+                  if(_bSend)
+                     out_dev.send(milliSeconds());
+                  // // if(0 == (++send_param_count & 7))
+                  // // TKS.sleep(1);  // avoid skipped/wrong params (e.g. Moog Sub 37) (todo) proper fix (if possible)
+               }
+               break;
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleParamAliasChanged(MIDISynthProfileCtlAlias _alias) {
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleParamWidgetChanged(Layer _l) : boolean {
+      int widgetIdx = param_widgets.indexOfPointer(_l, 0);
+      Buffer pd <= patch.patch_data;
+      Buffer pdReplay <= replay_patch.patch_data;
+      int ival;
+      if(-1 != widgetIdx)
+      {
+         MIDISynthProfileCtlAlias alias <= param_widget_aliases.get(widgetIdx);
+         // trace "xxx handleParamWidgetChanged: widgetIdx="+widgetIdx+" alias.caption=\""+alias.caption+"\" alias.syx_off="+alias.syx_off;
+         if(_l instanceof CheckBox)
+         {
+            CheckBox cb <= _l;
+            ival = cb.isSelected();
+            if(alias.syx_bit_num > 0)
+            {
+               ival =
+                  (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                  | (ival << alias.syx_bit_off);
+            }
+            pd.pokeI8(alias.syx_off, ival);
+            pdReplay.pokeI8(alias.syx_off, ival);
+            sendParamUpdate(null/*frOrNull*/, alias, ival, true/*bSend*/);
+         }
+         else if(_l instanceof ComboBox)
+         {
+            ComboBox cm <= _l;
+            ival = cm.getSelectedOption() + alias.min;
+            if(0 != alias.bias)
+               ival = (ival + alias.bias) & 127;
+            if(alias.syx_bit_num > 0)
+            {
+               ival =
+                  (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                  | (ival << alias.syx_bit_off);
+            }
+            pd.pokeI8(alias.syx_off, ival);
+            pdReplay.pokeI8(alias.syx_off, ival);
+            sendParamUpdate(null/*frOrNull*/, alias, ival, true/*bSend*/);
+         }
+         else if(_l instanceof FloatParam)
+         {
+            FloatParam fp <= _l;
+            ival = fp.getFloatValue();
+
+            ival += alias.ui_zero;
+
+            switch(alias.cel_range)
+            {
+               default:
+                  // sGroup.append("            min="+alias.min+" max="+alias.max+"\n");
+                  break;
+
+               case NT_CEL.RANGE_M128_P127:
+                  // sGroup.append("            min="+(alias.min-128)+" max="+(alias.max-128)+"\n");
+                  ival += 128;
+                  break;
+
+               case NT_CEL.RANGE_M64_P63:
+                  // sGroup.append("            min="+(alias.min-64)+" max="+(alias.max-64)+"\n");
+                  ival += 64;
+                  break;
+            }
+
+            int ivalMSB;
+            int ivalLSB;
+            if((alias.nr_lo > 0) || (alias.syx_off_lo >= 0))
+            {
+               if("novation_peak" == profile.midi_profile_id)
+               {
+                  // 8bit, least signifcant bit is stored in bit 6 of LSB
+                  ivalMSB = ival >> 1;
+                  ivalLSB = (ival & 1) << 6;  // 0 or $40
+               }
+               else if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+               {
+                  ivalMSB = (ival >> 8);
+                  ivalLSB = (ival & 255);
+                  if(alias.nr_lo == 52)
+                     trace "xxx ivalMSB="+ivalMSB+" ivalLSB="+ivalLSB+" => ival="+ival;
+               }
+               else
+               {
+                  // Full 14bit range
+                  ivalMSB = (ival >> 7);
+                  ivalLSB = (ival & 127);
+               }
+
+               pd.pokeI8(alias.syx_off, ivalMSB);
+               pd.pokeI8(alias.syx_off_lo, ivalLSB);
+
+               pdReplay.pokeI8(alias.syx_off, ivalMSB);
+               pdReplay.pokeI8(alias.syx_off_lo, ivalLSB);
+
+               if(null == alias.nr_lo_alias)
+               {
+                  if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+                  {
+                     sendParamUpdate(null/*frOrNull*/, alias, (ivalMSB << 8) | ivalLSB, true/*bSend*/);
+                  }
+                  else
+                  {
+                     sendParamUpdate(null/*frOrNull*/, alias, (ivalMSB << 7) | ivalLSB, true/*bSend*/);
+                  }
+               }
+               else
+               {
+                  sendParamUpdate(null/*frOrNull*/, alias, ivalMSB, false/*bSend*/);
+                  // trace "xxx alias nr="+alias.nr+" nr_lo="+alias.nr_lo+" alias.nr_lo_alias="+#(alias.nr_lo_alias);
+                  sendParamUpdate(null/*frOrNull*/, alias.nr_lo_alias, ivalLSB, true/*bSend*/);
+               }
+            }
+            else
+            {
+               ival -= alias.ui_bias;
+
+               if(0 != alias.bias)
+                  ival = (ival + alias.bias) & 127;
+
+               if(alias.syx_bit_num > 0)
+               {
+                  ival =
+                     (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                     | (ival << alias.syx_bit_off);
+               }
+               pd.pokeI8(alias.syx_off, ival & 255);
+               pdReplay.pokeI8(alias.syx_off, ival & 255);
+               sendParamUpdate(null/*frOrNull*/, alias, ival, true/*bSend*/);
+            }
+         }
+         handleParamAliasChanged(alias);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_show.png>
+   public =replay= virtual showDataStatic(MIDISynthProfileDataGeneric _data,
+                                          STX_MIDIInDevice  _inDev,
+                                          STX_MIDIOutDevice _outDev,
+                                          byte              _midiCh
+                                          ) {
+      // boolean bFirst = (@(data) == @(null));
+      // trace "xxx gse::showDataStatic: _data="+#(_data)+" _inDev="+#(_inDev)+" _outDev="+#(_outDev)+" _midiCh="+_midiCh;
+      // if(null != _outDev)
+      //    trace "xxx gse::showDataStatic: outDev.name="+_outDev.getAliasOrDeviceName();
+
+      data    <= _data;
+      in_dev  <= _inDev;
+      out_dev <= _outDev;
+      midi_ch  = _midiCh;
+
+      patch <= _data.patches.get(_data.current_patch_nr);
+
+      proxy_bank = data.current_patch_nr / 128;
+      proxy_program = data.current_patch_nr & 127;
+
+      proxy_bank_dst = proxy_bank;
+      proxy_program_dst = proxy_program;
+
+      // trace "xxx showDataStatic: patch="+#(patch);
+      // trace "xxx showDataStatic: patches="+#(_data.patches);
+
+      if(null == patch)
+      {
+         // when migrating to new AlphaJuno editor and old editor state could not be loaded
+         patch <= _data.patches.get(0);
+         _data.current_patch_nr = 0;
+      }
+   }
+
+   // <ui_show.png>
+   public =replay= virtual showData(MIDISynthProfileDataGeneric _data,
+                                    STX_MIDIInDevice  _inDev,
+                                    STX_MIDIOutDevice _outDev,
+                                    byte              _midiCh
+                                    ) {
+
+      orig_replay_patch.copyFrom(replay_patch);
+
+      showDataStatic(_data, _inDev, _outDev, _midiCh);
+
+      if(true == data.b_autosend)  // maybe=not when editor is entered
+      {
+         scheduleMIDISendPatch();
+      }
+
+      cb_difflock_enable.setSelected(data.b_difflock);
+
+      // Restore difflock checkbox states
+      int groupIdx = 0;
+      IntArray dlgStates <= data.difflock_group_states;
+      loop(dlgStates.numElements)
+      {
+         CheckBox cbDlg <= difflock_group_checkboxes.get(groupIdx);
+         cbDlg.setSelected(dlgStates.get(groupIdx));
+
+         IntArray iaSub <= data.difflock_subgroup_states.get(groupIdx);
+         // trace "xxx GenericSynthEdit::showData: group["+groupIdx+"] iaSub="+#(iaSub);
+         PointerArray paSub <= difflock_subgroup_checkboxes.get(groupIdx);
+         int subGroupIdx = 0;
+         foreach cbDlg in paSub
+         {
+            cbDlg.setSelected(iaSub.get(subGroupIdx));
+            // Next difflock subgroup
+            subGroupIdx++;
+         }
+
+         // Next difflock group
+         groupIdx++;
+      }
+
+      proxy_bank = data.current_patch_nr / 128;
+      proxy_program = data.current_patch_nr & 127;
+
+      proxy_bank_dst = proxy_bank;
+      proxy_program_dst = proxy_program;
+
+      updateUIFromPatch();
+
+      if(null == in_dev)
+      {
+         Global.Error("GenericSynthEdit: input device not configured or found");
+      }
+
+      if(null == out_dev)
+      {
+         Global.Error("GenericSynthEdit: output device not configured or found");
+      }
+      else
+      {
+         // // if(-1 == current_midi_patch_nr)
+         // // {
+         // //    if(b_patch_midi_follow)
+         // //    {
+         // //       midiSelectPatch(0);
+         // //    }
+         // // }
+      }
+
+      // // fp_prg_menu_multioff.setValue(data.multiedit_off + 1);
+      // // fp_prg_menu_multinum.setValue(data.multiedit_num);
+      // // cb_prg_menu_multiedit.setSelected(data.b_multiedit);
+      // // handleMultiEditEnableChanged(true/*bQuiet*/); // update bgtint
+
+   }
+
+   // <ui_show.png>
+   public virtual enter() {
+      // b_queued_midi_send_patch = false;
+      // ta_updatemidi.schedule();
+      MIDI.AddMIDIMapEventListener(this);
+   }
+
+   // <ui_show.png>
+   public virtual leave() {
+      b_queued_midi_send_patch = false;
+      MIDI.RemoveMIDIMapEventListener(this);
+
+      ta_midisend.cancel();
+   }
+
+   // <ui_focus.png>
+   public virtual refocusDefault() {
+      UI.SetKeyboardFocus(ts_groups);
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+
+      int tabIdx = ts_groups.getActiveTabIndex();
+      switch(tabIdx)
+      {
+         case 0: // Patch
+            _retLayers.joinRR(_retLayers,
+                              [
+                                 bt_patch_project,
+                                 cm_patch_nr,
+                                 tf_patch_name,
+                                 cm_patch_category,
+                                 cm_find_category,
+                                 tf_find_name,
+                                 bt_find_catprev,
+                                 bt_find_catbrowse,
+                                 bt_find_catnext,
+
+                                 cb_patch_autosend,
+                                 cb_patch_diff,
+
+                                 cb_patch_proxy_follow,
+                                 cb_patch_proxy_lock,
+                                 cb_patch_proxy_reset,
+
+                                 bt_patch_send,
+                                 bt_patch_receive_edit,
+                                 bt_patch_receive_edit_to_clipboard,
+
+                                 bt_patch_tools,
+                                 bt_mts,
+
+                                 bt_patch_copy,
+                                 bt_patch_paste,
+                                 bt_patch_init,
+
+                                 bt_difflock_toggle,
+                                 cb_difflock_enable
+                               ]
+                              );
+            // (todo) add difflock checkboxes
+            break;
+
+         default:
+            PointerArray editGroupWidgets <= param_editgroup_widgets.get(tabIdx - 1);
+            _retLayers.joinRR(_retLayers, editGroupWidgets);
+            break;
+      }
+
+   }
+
+   // <method.png>
+   protected method buildNameFiltersFromString(StringArray nameFilters, String _nameFilterOrNull) {
+      String *fltStr;
+
+      if(null != _nameFilterOrNull)
+      {
+         if(!_nameFilterOrNull.isBlank())
+         {
+            nameFilters = _nameFilterOrNull.splitChar(' ');
+
+            foreach fltStr in nameFilters
+            {
+               fltStr.trim();
+               fltStr.toLower();
+            }
+         }
+         else
+         {
+            nameFilters.empty();
+         }
+      }
+      else
+      {
+         nameFilters.empty();
+      }
+   }
+
+   // <method.png>
+   protected method matchNameFilters(GenericSynthEdit_Patch _patch, StringArray _nameFilters) {
+      String *fltStr;
+      boolean ret;
+
+      if(0 != _nameFilters.numElements)
+      {
+         ret = false;
+
+         // Try patch name
+         foreach fltStr in _nameFilters
+         {
+            if(((_patch.patch_name).toLower()) & fltStr)
+            {
+               ret = true;
+               break;
+            }
+         }
+      }
+      else
+      {
+         ret = true;
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected method buildFilteredPatchNames(StringArray midiPatchNames,
+                                            StringArray midiPatchNamesCat,
+                                            IntArray    fltPatchIndices,
+                                            int         _catFilter,
+                                            String      _nameFilterOrNull
+                                            ) {
+      local String bankName;
+      midiPatchNames.empty();
+      midiPatchNamesCat.empty();
+      if(null != fltPatchIndices)
+         fltPatchIndices.empty();
+      int bankIdx = 0;
+      int patchIdx = 0;
+      local String patchName;
+      GenericSynthEdit_Patch *p;
+
+      local StringArray nameFilters;
+      buildNameFiltersFromString(nameFilters, _nameFilterOrNull);
+
+      int fltCurPatchNr = -1;
+      int fltPatchIdx = 0;
+
+      loop(MIDISynthProfileDataGeneric.NUM_BANKS)
+      {
+         bankName = tcchar('A'+bankIdx);
+         Integer prgNr = 1;
+         loop(128)
+         {
+            p <= data.patches.get(patchIdx);
+
+            if( (-1 == _catFilter) || (_catFilter == p.patch_category) )
+            {
+               if(matchNameFilters(p, nameFilters))
+               {
+                  if(patchIdx == data.current_patch_nr)
+                  {
+                     fltCurPatchNr = fltPatchIdx;
+                  }
+
+                  if(null != fltPatchIndices)
+                     fltPatchIndices.add(patchIdx);
+
+                  patchName = bankName+prgNr.printf("%03d")+": "+p.patch_name;
+                  midiPatchNames.add(patchName);
+                  if(0 != p.patch_category)
+                  {
+                     patchName.append("\t["+(GenericSynthEdit_Patch.category_names.get(p.patch_category))+"]");  // \t = start right align
+                  }
+                  midiPatchNamesCat.add(patchName);
+
+                  fltPatchIdx++;
+               }
+            }
+
+            prgNr++;
+            patchIdx++;
+         }
+
+         bankIdx++;
+      }
+
+      return fltCurPatchNr;
+   }
+
+   // <method.png>
+   protected method rebuildPatchNames() {
+
+      b_first_rebuild_patch_names = false;
+
+      local StringArray midiPatchNames;
+      local StringArray midiPatchNamesCat;
+
+      buildFilteredPatchNames(midiPatchNames, midiPatchNamesCat, null/*fltPatchIndices*/, -1, null/*nameFilterOrNull*/);
+
+      cm_patch_nr.setOptions(midiPatchNames);
+      cm_patch_nr.setOptionsLong(midiPatchNamesCat);
+   }
+
+   // <ui_update.png>
+   protected method updateUIFromPatch() {
+      if(b_debug)
+         Global.Debug2("GenericSynthEdit::updateUIFromPatch: patch_nr="+data.current_patch_nr+" patch="+#(patch));
+
+      rebuildPatchNames();
+
+      cm_patch_nr       .setSelectedOption(data.current_patch_nr);
+      cb_patch_autosend .setSelected(      data.b_autosend);
+      cb_patch_diff     .setSelected(      data.b_send_diff);
+      cm_patch_category .setSelectedOption(patch.patch_category);
+      cb_patch_proxy_follow .setSelected (b_patch_proxy_follow);
+      cb_patch_proxy_lock   .setSelected (b_patch_proxy_lock);
+      cb_patch_proxy_reset  .setSelected (data.b_proxy_reset);
+
+      cb_patch_recvnames.setSelected(data.b_recv_patch_names);
+      cb_patch_recvctls.setSelected(data.b_recv_ctls);
+
+      tf_patch_name.setText(patch.patch_name.trim());
+
+      // Update params from patch data
+      Buffer pd <= patch.patch_data;
+      MIDISynthProfileCtlAlias *alias;
+      int widgetIdx = 0;
+      foreach alias in param_widget_aliases
+      {
+         Layer l <= param_widgets.get(widgetIdx);
+         updateParamWidgetFromPatchData(pd, l, alias);
+
+         // Next param / widget
+         widgetIdx++;
+      }
+
+      redraw();
+   }
+
+   // <ui_update.png>
+   protected method updateParamWidgetFromPatchData(Buffer pd, Layer l, MIDISynthProfileCtlAlias alias) {
+      int ival;
+
+      if(l instanceof ComboBox)
+      {
+         ComboBox cm <= l;
+
+         ival = pd.peekI8(alias.syx_off);
+
+         if(alias.syx_bit_num > 0)
+         {
+            ival = (ival >> alias.syx_bit_off) & ((1 << alias.syx_bit_num)-1);
+         }
+
+         ival -= alias.min;
+
+         if(alias.syx_off_lo <= 0)
+            if(0 != alias.bias)
+               ival = (ival - alias.bias) & 127;
+
+         cm.setSelectedOption(ival);
+      }
+      else if(l instanceof FloatParam)
+      {
+         FloatParam fp <= l;
+         int ivalMSB;
+         int ivalLSB;
+
+         if(alias.syx_off_lo > 0)
+         {
+            ivalMSB = pd.peekI8(alias.syx_off);
+            if(null != alias.nr_lo_alias)
+               ivalLSB = pd.peekI8(alias.nr_lo_alias.syx_off);
+            else
+               ivalLSB = pd.peekI8(alias.syx_off_lo);
+
+            if("novation_peak" == profile.midi_profile_id)
+            {
+               // 8bit, least signifcant bit is stored in bit 6 of LSB
+               ival = (ivalMSB << 1) | (ivalLSB >> 6);
+            }
+            else if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+            {
+               ival = (ivalMSB << 8) | ivalLSB;
+               // if(alias.syx_off_lo == 3)
+               //    trace "xxx syx_off_lo==3:  ivalMSB="+ivalMSB+" ivalLSB="+ivalLSB+" => ival="+ival;
+               // expect +425 = 700+425 = 1125  msb=8
+            }
+            else
+            {
+               // Full 14bit range
+               ival = (ivalMSB << 7) | ivalLSB;
+            }
+         }
+         else
+         {
+            ival = pd.peekI8(alias.syx_off);
+
+            if(alias.syx_bit_num > 0)
+            {
+               ival = (ival >> alias.syx_bit_off) & ((1 << alias.syx_bit_num)-1);
+            }
+         }
+
+         if(alias.syx_off_lo <= 0)
+            if(0 != alias.bias)
+               ival = (ival - alias.bias) & 127;
+
+         switch(alias.cel_range)
+         {
+            default:
+               break;
+
+            case NT_CEL.RANGE_M128_P127:
+               ival -= 128;
+               break;
+
+            case NT_CEL.RANGE_M64_P63:
+               ival -= 64;
+               break;
+         }
+
+         ival += alias.ui_bias;
+         ival -= alias.ui_zero;
+
+         fp.setValue(ival);
+      }
+      else if(l instanceof CheckBox)
+      {
+         CheckBox cb <= l;
+
+         ival = pd.peekI8(alias.syx_off);
+
+         if(alias.syx_bit_num > 0)
+         {
+            ival = (ival >> alias.syx_bit_off) & ((1 << alias.syx_bit_num)-1);
+         }
+
+         cb.setSelected(ival > 0);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateUIAndPatchDataFromMIDIEvent(MIDIMapEvent ev) : boolean {
+      MIDISynthProfileCtlAlias *alias;
+      int widgetIdx = 0;
+      int ival = ev.arg1;  // 7bit CC value or 14bit NRPN value
+      Buffer pd <= patch.patch_data;
+      foreach alias in param_widget_aliases
+      {
+         boolean bMatch = false;
+         if(alias.type == ev.type)
+         {
+            if(MIDIMapEventType.TYPE_CC == ev.type)
+            {
+               if(alias.nr_lo > 0)
+               {
+                  if(alias.nr_lo == ev.ext_type)
+                  {
+                     // LSB changed
+                     bMatch = true;
+                     pd.pokeI8(alias.syx_off_lo, ival);
+                  }
+                  else if(alias.nr == ev.ext_type)
+                  {
+                     // MSB or single byte param changed
+                     bMatch = true;
+                     pd.pokeI8(alias.syx_off, ival);
+                  }
+               }
+               else if(alias.nr == ev.ext_type)
+               {
+                  // Single byte param changed
+                  bMatch = true;
+                  pd.pokeI8(alias.syx_off, ival);
+               }
+            }
+            else if(MIDIMapEventType.TYPE_NRPN == ev.type)
+            {
+               if(alias.nr == ev.ext_type)
+               {
+                  if(alias.syx_off_lo > 0)
+                  {
+                     // Multi byte param changed (MSB+LSB)
+                     bMatch = true;
+                     if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+                     {
+                        pd.pokeI8(alias.syx_off, ival >> 8);
+                        pd.pokeI8(alias.syx_off_lo, ival & 255);
+                     }
+                     else
+                     {
+                        pd.pokeI8(alias.syx_off, ival >> 7);
+                        pd.pokeI8(alias.syx_off_lo, ival & 127);
+                     }
+                  }
+                  else
+                  {
+                     // Single byte param changed
+                     pd.pokeI8(alias.syx_off, ival);
+                     bMatch = true;
+                  }
+               }
+            }
+         }
+
+         if(bMatch)
+         {
+            Layer l <= param_widgets.get(widgetIdx);
+            // trace "xxx bMatch, widgetIdx="+widgetIdx+" l="+#(l);
+            updateParamWidgetFromPatchData(pd, l, alias);
+            l.redraw();
+            return true;
+         }
+
+         widgetIdx++;
+
+      } // foreach alias
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchAutosendChanged() {
+      data.b_autosend = cb_patch_autosend.isSelected();
+      Global.Print("Autosend is "+((maybe == data.b_autosend) ? " enabled (when patch is selected)" : Utils.GetEnableString(data.b_autosend)));
+
+      clearMIDICache();
+
+      if(true == data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchDiffChanged() {
+      data.b_send_diff = cb_patch_diff.isSelected();
+      Global.Print("Send "+(data.b_send_diff ? "patch differences" : "entire patch"));
+
+      clearMIDICache();
+
+      if(false == data.b_send_diff)
+      {
+         scheduleMIDISendPatch();
+      }
+      else
+      {
+         b_force_send_all_diff = true;
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleGoToNextBank() {
+      cm_patch_nr.setSelectedOption(  (((data.current_patch_nr/128)+1)%MIDISynthProfileDataGeneric.NUM_BANKS)*128 );
+      handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+   }
+
+   // <ui_handle.png>
+   protected method handleGoToFirstProjectPatch() {
+      cm_patch_nr.setSelectedOption(MIDISynthProfileDataGeneric.PROJECT_BANK_IDX*128);
+      handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+      Global.Print("Select first project-specific patch (P001)");
+   }
+
+   // <ui_handle.png>
+   public method selectNextPatch() {
+      cm_patch_nr.setSelectedOption(mathWrapi(data.current_patch_nr+1, 0, MIDISynthProfileDataGeneric.NUM_PATCHES));
+      handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+   }
+
+   // <ui_handle.png>
+   public method selectPreviousPatch() {
+      cm_patch_nr.setSelectedOption(mathWrapi(data.current_patch_nr-1, 0, MIDISynthProfileDataGeneric.NUM_PATCHES));
+      handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+   }
+
+   // <ui_handle.png>
+   module =replay= method handlePatchNrChanged(boolean _bMIDIFollow, boolean _bAllowAutosend) {
+
+      // trace "xxx EditMIDISynthFormGeneric::handlePatchNrChanged(bMIDIFollow="+_bMIDIFollow+" bAllowAutosend="+_bAllowAutosend+")";
+
+      data.current_patch_nr = cm_patch_nr.getSelectedOption();
+      patch <= data.patches.get(data.current_patch_nr);
+
+      proxy_bank    = data.current_patch_nr / 128;
+      proxy_program = data.current_patch_nr & 127;
+
+      // int t = milliSeconds();
+      updateUIFromPatch();
+      // t = milliSeconds() - t;
+      // trace "xxx GenericSynthEdit::handlePatchNrChanged: updateUIFromPatch took "+t+"ms";
+
+      if(_bAllowAutosend)
+      {
+         if(false != data.b_autosend)
+         {
+            // // queued_midi_patch_nr = 0;
+            scheduleMIDISendPatch();
+         }
+      }
+
+      printCurrentPatchNrInfo(data.current_patch_nr, patch.patch_name);
+   }
+
+   // <method.png>
+   public virtual handlePostReload() {
+
+      clearMIDICache();
+
+      if(data.b_autosend)
+      {
+         // trace "xxx reload: call handlePatchNrChanged()";
+         b_force_send_all_diff = true;
+         handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchNameChanged() {
+      patch.setPatchName(tf_patch_name.getText().trim());
+
+      rebuildPatchNames();
+
+      // updatePatchNameLabel();
+
+      Global.Print("Patch name is \""+patch.patch_name+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchCategoryChanged() {
+      patch.patch_category = cm_patch_category.getSelectedOption();
+
+      cm_find_category.setSelectedOption(patch.patch_category + 1);
+      cm_find_category.redraw();
+
+      Global.Print("Patch category is \""+cm_patch_category.getSelectedOptionName()+"\"");
+
+      rebuildPatchNames();
+   }
+
+
+   // <ui_handle.png>
+   protected method handleFindCategoryChanged() {
+
+      int catIdx = cm_find_category.getSelectedOption() - 1;
+
+      int patchIdx = 0;
+      int res = 0;
+
+      loop(MIDISynthProfileDataGeneric.NUM_PATCHES)
+      {
+         GenericSynthEdit_Patch p <= data.patches.get(patchIdx++);
+
+         if( (-1 == catIdx) || (p.patch_category == catIdx) )
+         {
+            res++;
+         }
+      }
+
+      Global.Print("Find category is \""+cm_find_category.getSelectedOptionName()+"\" ("+res+" patch(es))");
+   }
+
+   // <ui_handle.png>
+   protected method handleFindCategoryPrev() {
+
+      if(data.current_patch_nr > 0)
+      {
+         int patchIdx = data.current_patch_nr - 1;
+
+         int catIdx = cm_find_category.getSelectedOption() - 1;
+
+         local StringArray nameFilters;
+         buildNameFiltersFromString(nameFilters, tf_find_name.getText());
+
+         while(patchIdx >= 0)
+         {
+            GenericSynthEdit_Patch p <= data.patches.get(patchIdx);
+
+            if( (-1 == catIdx) || (p.patch_category == catIdx) )
+            {
+               if(matchNameFilters(p, nameFilters))
+               {
+                  cm_patch_nr.setSelectedOption(patchIdx);
+                  handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+                  return;
+               }
+            }
+
+            patchIdx--;
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleFindCategoryBrowse() {
+
+      local StringArray midiPatchNames;
+      StringArray midiPatchNamesCat;  // ref'd by ComboBoxPopup
+
+      int fltCurPatchNr = buildFilteredPatchNames(midiPatchNames,
+                                                  midiPatchNamesCat,
+                                                  null/*fltPatchIndices*/,
+                                                  cm_find_category.getSelectedOption() - 1,
+                                                  tf_find_name.getText()
+                                                  );
+
+      if(midiPatchNamesCat.numElements > 0)
+      {
+         Global.Print("Found "+(midiPatchNamesCat.numElements)+" matching patches");
+
+         cmp_find_catbrowse <= ComboBoxPopup.NewComboBoxPopup(this,
+                                                              null/*fontOrNull*/,
+                                                              midiPatchNamesCat,
+                                                              null/*optionsLongOrNull*/,
+                                                              fltCurPatchNr,
+                                                              280/*prefSx*/,
+                                                              null/*toolTipCaptions*/,
+                                                              null/*optionBGColors*/,
+                                                              null/*option_fgtints*/
+                                                              );
+
+         cmp_find_catbrowse.showAboveLayer(bt_find_catbrowse);
+         cmp_find_catbrowse.centerRow();
+         cmp_find_catbrowse.focusFirstTabCycleMember();
+      }
+      else
+      {
+         Global.Print("No matching patches found");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleFindCategoryBrowseOptionSelected(IntAction _ac) {
+      int selOpt = _ac.getIntValue();
+
+      if(-1 != selOpt)
+      {
+         local StringArray midiPatchNames;
+         local StringArray midiPatchNamesCat;
+         local IntArray fltPatchIndices;
+
+         buildFilteredPatchNames(midiPatchNames,
+                                 midiPatchNamesCat,
+                                 fltPatchIndices,
+                                 cm_find_category.getSelectedOption() - 1,
+                                 tf_find_name.getText()
+                                 );
+
+         cm_patch_nr.setSelectedOption(fltPatchIndices.get(selOpt));
+         cm_patch_nr.redraw();
+         handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+      }
+
+      refocusDefault();
+   }
+
+   // <ui_handle.png>
+   protected method handleFindCategoryNext() {
+
+      if(data.current_patch_nr < MIDISynthProfileDataGeneric.NUM_PATCHES)
+      {
+         int patchIdx = data.current_patch_nr + 1;
+
+         int catIdx = cm_find_category.getSelectedOption() - 1;
+
+         local StringArray nameFilters;
+         buildNameFiltersFromString(nameFilters, tf_find_name.getText());
+
+         while(patchIdx < MIDISynthProfileDataGeneric.NUM_PATCHES)
+         {
+            GenericSynthEdit_Patch p <= data.patches.get(patchIdx);
+
+            if( (-1 == catIdx) || (p.patch_category == catIdx) )
+            {
+               if(matchNameFilters(p, nameFilters))
+               {
+                  cm_patch_nr.setSelectedOption(patchIdx);
+                  handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+                  return;
+               }
+            }
+
+            patchIdx++;
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleCopyFromReplayPatch() {
+      patch.copyFrom(orig_replay_patch);
+
+      if(data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+
+      updateUIFromPatch();
+
+      Global.Print("Copy from replay patch");
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiCopyPatchesToProjectBank1() {
+      dlg_multipatch.showPatches(this, data.current_patch_nr);
+      Global.Print("Show MultiPatch dialog");
+   }
+
+   // <ui_handle.png>
+   protected method handleMultiCopyPatchesToProjectBank2() {
+      local IntArray patchIndices <= dlg_multipatch.getSelectedPatchIndices();
+      int numPatches = patchIndices.numElements;
+      int dstPrgIdx = dlg_multipatch.getDestinationProgramIndex();
+      trace "xxx dstPrgIdx="+dstPrgIdx+" patchIndices="+#(patchIndices);
+      if((numPatches + dstPrgIdx) <= 128)
+      {
+         int patchIdx = 0;
+         int dstPatchIdx = dstPrgIdx + (num_programs_per_bank * MIDISynthProfileDataGeneric.PROJECT_BANK_IDX);
+
+         loop(numPatches)
+         {
+            GenericSynthEdit_Patch pSrc <= data.patches.get(patchIndices[patchIdx]);
+            GenericSynthEdit_Patch pDst <= data.patches.get(dstPatchIdx);
+
+            pDst.copyFrom(pSrc);
+
+            patchIdx++;
+            dstPatchIdx++;
+         }
+
+         updateUIFromPatch();
+         Global.Print(numPatches+" "+Utils.GetPluralStringEx(numPatches, "patch", "pathches")+" copied to project bank");
+      }
+      else
+      {
+         Global.Error("Selected patches won't fit into project bank");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEditMTS1() {
+      if((data.mts.tables.numElements) > 0)
+      {
+         dlg_mts.showMTS(this, data.mts, in_dev, out_dev, midi_ch, profile);
+         Global.Print("Show MTS dialog");
+      }
+      else
+      {
+         Global.Warning("Synth does not support the MIDI Tuning Standard");
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method p08CopyAB() {
+      local Buffer pd <= patch.patch_data;
+
+      int i = 0;
+      loop(118)
+      {
+         pd.pokeI8(200+i, pd.peekI8(i));
+         i++;
+      }
+
+      i = 120;
+      loop(184-120)
+      {
+         pd.pokeI8(200+i, pd.peekI8(i));
+         i++;
+      }
+
+      if(false != data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+
+      updateUIFromPatch();
+
+      Global.Print("Copy Layer A => B");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method p08CopyBA() {
+      local Buffer pd <= patch.patch_data;
+
+      int i = 0;
+      loop(118)
+      {
+         pd.pokeI8(i, pd.peekI8(200+i));
+         i++;
+      }
+
+      i = 120;
+      loop(184-120)
+      {
+         pd.pokeI8(i, pd.peekI8(200+i));
+         i++;
+      }
+
+      if(false != data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+
+      updateUIFromPatch();
+
+      Global.Print("Copy Layer B => A");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method p08SwapAB() {
+      local Buffer pd <= patch.patch_data;
+
+      int i = 0;
+      byte t;
+      loop(118)
+      {
+         t = pd.peekI8(i);
+         pd.pokeI8(i, pd.peekI8(200+i));
+         pd.pokeI8(200+i, t);
+         i++;
+      }
+
+      i = 120;
+      loop(184-120)
+      {
+         t = pd.peekI8(i);
+         pd.pokeI8(i, pd.peekI8(200+i));
+         pd.pokeI8(200+i, t);
+         i++;
+      }
+
+      if(false != data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+
+      updateUIFromPatch();
+
+      Global.Print("Swap Layers A <=> B");
+   }
+
+   // <ui_show.png>
+   protected method showToolsMenu() {
+
+      pm_tools <= PopupMenu.New(this);
+      PopupMenuButton *pmb;
+      PopupMenu pm <= pm_tools;
+
+      pmb <= pm.addDefaultButton("Dump Patch-Data to Console", "dump_patch_to_con");
+      pmb.setFontByName("big8");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Multi-Copy Patches to Project Bank..", "multicopy");
+      pmb.setFontByName("big8");
+
+      pm.addSeparator();
+
+      pmb <= pm.addDefaultButton("Copy From Replay Patch", "copy_from_replay_patch");
+      pmb.setFontByName("big8");
+
+      if("dsi_prophet_08" == profile.midi_profile_id)
+      {
+         pm.addSeparator();
+
+         pmb <= pm.addDefaultButton("Prophet 08: Copy Layer A => B", "p08_copy_a_to_b");
+         pmb.setFontByName("big8");
+
+         pmb <= pm.addDefaultButton("Prophet 08: Copy Layer B => A", "p08_copy_b_to_a");
+         pmb.setFontByName("big8");
+
+         pmb <= pm.addDefaultButton("Prophet 08: Swap Layers A <=> B", "p08_swap_a_b");
+         pmb.setFontByName("big8");
+      }
+
+      handleToolsMenuAddItems(pm);
+
+      pm.resizeToMinimum();
+
+      pm.showNearMouse(-30, 0);
+
+      Global.Print("Show Tools menu.");
+   }
+
+   // <method.png>
+   protected method handleToolsMenuAddItems(PopupMenu pm) {
+   }
+
+   // <method.png>
+   protected method handleToolsMenuAction(String _acName) : boolean {
+      return false;
+   }
+
+   // <ui_timer.png>
+   public method scheduleMIDISendPatch() {
+      // trace "xxx GenericSynthEdit::scheduleMIDISendPatch:";
+      b_queued_midi_send_patch = true;
+      ta_midisend.cancel();
+      ta_midisend.schedule();
+   }
+
+   // <method.png>
+   protected method sendPatchAsParamUpdates(GenericSynthEdit_Patch _patch) {
+      MIDISynthProfileCtlAlias *alias;
+      local Buffer pd <= _patch.patch_data;
+      foreach alias in profile.all_aliases
+      {
+         if( (-1 != alias.syx_off ) && (0 || alias.b_ui) )// && (-1 == alias.syx_off_hi))
+         {
+            // // boolean b14Bit = (alias.enc_off >= 0) && (alias.syx_off_lo >= 0);
+            boolean b14Bit = (alias.syx_off_lo >= 0) && (null == alias.nr_lo_alias);
+            if(b14Bit)
+            {
+               if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+               {
+                  sendParamUpdate(null/*frOrNull*/, alias,
+                                  (pd.peekI8(alias.syx_off) << 8) | pd.peekI8(alias.syx_off_lo),
+                                  false/*bSend*/
+                                  );
+               }
+               else
+               {
+                  // Moog Sub37 14bit
+                  sendParamUpdate(null/*frOrNull*/, alias,
+                                  (pd.peekI8(alias.syx_off) << 7) | pd.peekI8(alias.syx_off_lo),
+                                  false/*bSend*/
+                                  );
+               }
+            }
+            else
+            {
+               // 7 bit
+               sendParamUpdate(null/*frOrNull*/, alias, pd.peekI8(alias.syx_off),
+                               false/*bSend*/
+                               );
+            }
+         }
+      }
+      out_dev.send(milliSeconds());
+   }
+
+   // <ui_timer.png>
+   protected =replay= method handleMIDISendTimer() {
+
+      if(b_queued_midi_send_patch)
+      {
+         b_queued_midi_send_patch = false;
+
+         boolean bSendAll = !data.b_send_diff || b_first_midi_send_patch;
+         b_first_midi_send_patch = false;
+
+         if(bSendAll)
+         {
+            Buffer dataBuf <= null;
+            local Buffer encBuf;
+
+            switch(profile.syx_patch_enc_type)
+            {
+               default:
+                  break;
+
+               case MIDISynthProfile.ENC_NONE:
+                  dataBuf <= patch.patch_data;
+                  break;
+
+               case MIDISynthProfile.ENC_8TO7:
+                  encBuf.size = profile.syx_patch_enc_size;
+                  encBuf.offset = 0;
+                  if(Encode8To7(encBuf, patch.patch_data, profile.syx_patch_enc_hdr))
+                  {
+                     // Utils.HexDump(encBuf, 0, encBuf.size);
+                     dataBuf <= encBuf;
+                  }
+                  else
+                  {
+                     dataBuf <= null;
+                  }
+                  break;
+
+               case MIDISynthProfile.ENC_ALPHAJUNO:
+               case MIDISynthProfile.ENC_SUB37:
+               case MIDISynthProfile.ENC_PARAMS:
+                  // Utils.HexDump(patch.patch_data, 0, patch.patch_data.size);
+                  sendPatchAsParamUpdates(patch);
+                  replay_patch.copyFrom(patch);
+                  return;
+            }
+
+            if(null != dataBuf)
+            {
+               out_dev.begin();
+               out_dev.sysEx(encBuf);
+               out_dev.send(milliSeconds());
+               replay_patch.copyFrom(patch);
+
+               return;
+            }
+            else
+            {
+               Global.Error("Failed to encode patch data");
+            }
+         }
+         else
+         {
+            // Send diff to current replay patch
+            local MIDIPipeFrame frOut;
+            frOut.empty();
+            frOut.setRoot(current_pipe_root);
+
+            emitPatchDiff(frOut, patch, b_force_send_all_diff);
+            b_force_send_all_diff = false;
+
+            if(b_debug)
+               trace "xxx diff frame has "+frOut.numEvents+" event(s)";
+
+            out_dev.begin();
+            // (todo) limit number of param updates (macOS)
+            //         - add overflowing events to overflow_frame
+            //         - reschedule MIDI send timer
+            //         - check overflow_frame at top of function
+            frOut.emit();
+            out_dev.send(milliSeconds());
+
+            // // replay_patch.copyFrom(patch);
+         }
+      }
+   }
+
+   // <midi.png>
+   protected emitPatchDiff(local MIDIPipeFrame _fr,
+                           local GenericSynthEdit_Patch _destPatch,
+                           local boolean _bForceSendAll
+                           ) {
+
+      // trace "xxx send generic patch";  // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      //          Utils.Backtrace();
+
+      local Buffer pdA <= replay_patch.patch_data;
+      local Buffer pdB <= _destPatch.patch_data;
+
+      local int devIdx = out_dev.dev_idx;
+
+      local MIDISynthProfileCtlAlias *alias;
+      local IntArray dlgStates <= data.difflock_group_states;
+      foreach alias in param_widget_aliases
+      {
+         // // boolean b14Bit = (alias.enc_off >= 0) && (alias.syx_off_lo >= 0);
+         local boolean b14Bit = (alias.syx_off_lo >= 0) && (null == alias.nr_lo_alias);
+         local int ivalA;
+         local int ivalB;
+
+         if(b14Bit)
+         {
+            if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+            {
+               ivalA = (pdA.peekI8(alias.syx_off) << 8) | pdA.peekI8(alias.syx_off_lo);
+               ivalB = (pdB.peekI8(alias.syx_off) << 8) | pdB.peekI8(alias.syx_off_lo);
+            }
+            else
+            {
+               ivalA = (pdA.peekI8(alias.syx_off) << 7) | pdA.peekI8(alias.syx_off_lo);
+               ivalB = (pdB.peekI8(alias.syx_off) << 7) | pdB.peekI8(alias.syx_off_lo);
+            }
+         }
+         else
+         {
+            ivalA = pdA.peekI8(alias.syx_off);
+            ivalB = pdB.peekI8(alias.syx_off);
+         }
+
+         local boolean bSend = _bForceSendAll || (ivalA != ivalB);
+
+         if(bSend)
+         {
+            // trace "xxx emitPatchDiff: alias="+alias.id+" ivalA="+ivalA+" ivalB="+ivalB;
+
+            if(data.b_difflock)
+            {
+               if(-1 != alias.editgroup_idx)
+               {
+                  bSend = !dlgStates.get(alias.editgroup_idx);
+               }
+               if(bSend)
+               {
+                  if(-1 != alias.editsubgroup_idx)
+                  {
+                     local IntArray iaSub <= data.difflock_subgroup_states.get(alias.editgroup_idx);
+                     bSend = !iaSub.get(alias.editsubgroup_idx);
+                  }
+               }
+            }
+         }
+
+         if(bSend)
+         {
+            sendParamUpdate(_fr, alias, ivalB, false/*bSend*/);
+
+            if(b14Bit)
+            {
+               if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+               {
+                  pdA.pokeI8(alias.syx_off,    ivalB >> 8);
+                  pdA.pokeI8(alias.syx_off_lo, ivalB & 255);
+               }
+               else
+               {
+                  pdA.pokeI8(alias.syx_off,    ivalB >> 7);
+                  pdA.pokeI8(alias.syx_off_lo, ivalB & 127);
+               }
+            }
+            else
+            {
+               pdA.pokeI8(alias.syx_off, ivalB);
+            }
+
+            // // switch(alias.type)
+            // // {
+            // //    case MIDIMapEventType.TYPE_CC:
+            // //       // MSB
+            // //       _fr.cc(true/*bSet*/, devIdx, midi_ch, alias.nr, ivalB);
+            // //       pdA.pokeI8(alias.syx_off, ivalB);
+
+            // //       if(alias.syx_off_lo > 0)
+            // //       {
+            // //          // LSB
+            // //          ivalA = pdA.peekI8(alias.syx_off_lo);
+            // //          ivalB = pdB.peekI8(alias.syx_off_lo);
+            // //          if(_bForceSendAll || (ivalA != ivalB))
+            // //          {
+            // //             _fr.cc(true/*bSet*/, devIdx, midi_ch, alias.nr_lo, ivalB);
+            // //             pdA.pokeI8(alias.syx_off_lo, ivalB);
+            // //          }
+            // //       }
+            // //       break;
+
+            // //    case MIDIMapEventType.TYPE_NRPN:
+            // //       _fr.nrpn(true/*bSet*/, devIdx, midi_ch, alias.nr, ivalB);
+            // //       pdA.pokeI8(alias.syx_off, ivalB);
+            // //       break;
+            // // }
+         }
+      }
+
+      // //    out_dev.send(milliSeconds());
+   }
+
+   // <midi.png>
+   protected morph(local GenericSynthEdit_Patch _dest,
+                   local GenericSynthEdit_Patch _srcA,
+                   local GenericSynthEdit_Patch _srcB,
+                   float _amtB
+                   ) {
+
+      local Buffer pdD <= _dest.patch_data;
+      local Buffer pdA <= _srcA.patch_data;
+      local Buffer pdB <= _srcB.patch_data;
+
+      local MIDISynthProfileCtlAlias *alias;
+      int ival;
+      foreach alias in param_widget_aliases
+      {
+         int ivalA = pdA.peekI8(alias.syx_off);
+         int ivalB = pdB.peekI8(alias.syx_off);
+
+         if(alias.syx_off_lo > 0) // (todo) >= 0 ???
+         {
+            if(profile.b_14bit_as_8bit_data)  // e.g. Sequential Pro 3
+            {
+               ivalA = ivalA << 8;
+               ivalB = ivalB << 8;
+               ivalA |= pdA.peekI8(alias.syx_off_lo);
+               ivalB |= pdB.peekI8(alias.syx_off_lo);
+
+               ival = 0.5 + ivalA + (ivalB - ivalA) * _amtB;
+
+               pdD.pokeI8(alias.syx_off, ival >> 8);
+               pdD.pokeI8(alias.syx_off_lo, ival & 255);
+            }
+            else
+            {
+               ivalA = ivalA << 7;
+               ivalB = ivalB << 7;
+               ivalA |= pdA.peekI8(alias.syx_off_lo);
+               ivalB |= pdB.peekI8(alias.syx_off_lo);
+
+               ival = 0.5 + ivalA + (ivalB - ivalA) * _amtB;
+
+               pdD.pokeI8(alias.syx_off, ival >> 7);
+               pdD.pokeI8(alias.syx_off_lo, ival & 127);
+            }
+         }
+         else
+         {
+            ival = 0.5 + ivalA + (ivalB - ivalA) * _amtB;
+            // trace "xxx syx_off="+alias.syx_off+" ivalA="+ivalA+" ivalB="+ivalB+" amtB="+_amtB+" => ival="+ival;
+            pdD.pokeI8(alias.syx_off, ival);
+         }
+      }
+   }
+
+   // <replay.png>
+   public virtual handleProxyReset(byte _midiCh, MIDIPipeFrame _frame) {
+      // Called from replay thread
+      if(b_debug2)
+         trace "[trc] GenericSynthEdit::handleProxyReset: midiCh="+_midiCh;
+      if(null != out_dev)
+      {
+         if(data.b_proxy_reset)
+         {
+            // Reset to original patch state
+            proxy_bank    = data.current_patch_nr / 128;
+            proxy_program = data.current_patch_nr & 127;
+
+            Global.Debug2("GenericSynthEdit::handleProxyReset: current_patch_nr="+data.current_patch_nr+" => proxy_bank="+proxy_bank+" proxy_program="+proxy_program);
+
+            if(true != b_patch_proxy_lock)
+            {
+               GenericSynthEdit_Patch proxyPatch <= data.patches.get(data.current_patch_nr);
+               emitPatchDiff(_frame, proxyPatch, false/*bForceSendAll*/);
+            }
+         }
+      }
+   }
+
+   // <replay.png>
+   public virtual handleProxyBankSelect(byte _midiCh, short _bankNr) {
+      // Called from replay thread
+      if(b_debug2)
+         trace "xxx GenericSynthEdit: handleProxyBankSelect("+_bankNr+")";
+      proxy_bank = mathClampi(_bankNr, 1, MIDISynthProfileDataGeneric.NUM_BANKS) - 1;
+   }
+
+   // <replay.png>
+   public virtual handleProxyProgramChange(byte          _midiCh,
+                                           short         _programNr,
+                                           MIDIPipeFrame _frameOut,
+                                           boolean       _bMorphFollows
+                                           ) {
+      // Called from replay thread
+      proxy_program = mathClampi(_programNr, 1, 128) - 1;
+      if(b_debug2)
+         trace "GenericSynthEdit::handleProxyProgramChange: proxy_program="+proxy_program+" (bank "+proxy_bank+", current_patch_nr="+data.current_patch_nr+") bMorphFollows="+_bMorphFollows+" b_patch_proxy_lock="+b_patch_proxy_lock+" data.b_difflock="+data.b_difflock+" proxy_bank="+proxy_bank;
+
+      if(null != data)
+      {
+         if(!_bMorphFollows)
+         {
+            if(true != b_patch_proxy_lock)
+            {
+               GenericSynthEdit_Patch *proxyPatch <= data.patches.get((proxy_bank * 128) + proxy_program);
+
+               emitPatchDiff(_frameOut, proxyPatch, b_first_proxy_prgchg/*bForceSendAll*/);
+               b_first_proxy_prgchg = false;
+            }
+         }
+
+         if(b_patch_proxy_follow)
+         {
+            data.current_patch_nr = proxy_bank * 128 + proxy_program;
+         }
+      }
+   }
+
+   // <replay.png>
+   public virtual handleProxyBankSelectDst(byte _midiCh, short _bankNr) {
+      // Called from replay thread
+      proxy_bank_dst = mathClampi(_bankNr, 1, MIDISynthProfileDataGeneric.NUM_BANKS) - 1;
+   }
+
+   // <replay.png>
+   public virtual handleProxyProgramChangeDst(byte _midiCh, short _programNr) {
+      // Called from replay thread
+      proxy_program_dst = mathClampi(_programNr, 1, 128) - 1;
+   }
+
+   // <replay.png>
+   public virtual handleProxyAmountDst(byte _midiCh, float _amount) {
+      // Called from replay thread
+      proxy_amount_dst = _amount;
+   }
+
+   // <replay.png>
+   public virtual handleProxyMorph(byte _midiCh, MIDIPipeFrame _frameOut) {
+      GenericSynthEdit_Patch patchA <= data.patches.get(proxy_bank * 128 + proxy_program);
+      GenericSynthEdit_Patch patchB <= data.patches.get(proxy_bank_dst * 128 + proxy_program_dst);
+
+      morph(morph_patch, patchA, patchB, proxy_amount_dst);
+
+      if(true != b_patch_proxy_lock)
+      {
+         emitPatchDiff(_frameOut, morph_patch, b_first_proxy_prgchg/*bForceSendAll*/);
+         b_first_proxy_prgchg = false;
+      }
+   }
+
+   // <replay.png>
+   public virtual handleProxyEvents(byte          _midiCh,
+                                    MIDIPipeFrame _frameIn,
+                                    boolean       _bFrameRec,
+                                    int           _inDev,
+                                    byte          _inCh,
+                                    MIDIPipeFrame _frameOut
+                                    ) {
+      // Called from replay thread
+      if(null != out_dev)
+      {
+         MIDISynthProfileCtlAlias *alias;
+         MIDISynthProfileCtlAlias *aliasLo;
+         GenericSynthEdit_Patch p <= replay_patch;
+         Buffer pd <= p.patch_data;
+         int evIdx = 0;
+         MIDIPipeEvent pev;
+         MIDIPipeEvent pevLo;
+         short r;
+         int numEvents;
+
+         // Handle "pseudo" RPN events (received via Proxy node)
+         numEvents = _frameIn.getNumEventsRPNByFlt(_inDev, _inCh);
+         if(numEvents > 0)
+         {
+            // (note) FS1R editor uses virtual editor params (RPNs)
+
+            // trace "xxx gse: numEvents<RPN>="+numEvents;
+            boolean bSendDiff = false;
+            evIdx = 0;
+            loop(numEvents)
+            {
+               if(_frameIn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_RPN, _inDev, _inCh))
+               {
+                  short rpn = pev.rpn;
+                  // // alias <= profile.getAliasByRPN(rpn);
+                  alias <= profile.getRPNAliasByNr(rpn);
+                  // trace "xxx gse: alias="+#(alias);
+
+                  if(null != alias)
+                  {
+                     r = mathClampi(pev.rpnValue, alias.min, alias.max);
+                     // trace "xxx pev.rpnValue="+pev.rpnValue+" min="+alias.min+" max="+alias.max;
+
+                     if(alias.syx_bit_num > 0)
+                     {
+                        r =
+                           (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                           | (r << alias.syx_bit_off);
+                     }
+                     r = r & 255;
+
+                     if(r != pd.peekI8(alias.syx_off))
+                     {
+                        pd.pokeI8(alias.syx_off, r & 255);
+
+                        sendParamUpdate(_frameOut, alias, r, false/*bSend*/);
+                        if(b_debug2)
+                           trace "[>>>] gse: proxy RPN: rpn="+rpn+" syx_off="+alias.syx_off+" r="+r;
+                     }
+
+                     // Delete source event
+                     //  (note) when proxy relay port is same as synth port => don't send pseudo-RPN to synth
+                     _frameIn.rpn(false/*bSet*/, pev.devIdx, pev.midiCh, pev.rpn, 0);
+                     evIdx--;
+                  }
+               }
+
+               // Next RPN event
+               evIdx++;
+            }
+         }
+
+         // Handle "pseudo" NRPN events (received via Proxy node)
+         numEvents = _frameIn.getNumEventsNRPNByFlt(_inDev, _inCh);
+         if(numEvents > 0)
+         {
+            // trace "xxx gse: numEvents<RPN>="+numEvents;
+            evIdx = 0;
+            loop(numEvents)
+            {
+               if(_frameIn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_NRPN, _inDev, _inCh))
+               {
+                  short nrpn = pev.nrpn;
+                  alias <= profile.getNRPNAliasByNr(nrpn);
+                  if(null != alias)
+                  {
+                     r = mathClampi(pev.nrpnValue, alias.min, alias.max);
+
+                     if(alias.syx_bit_num > 0)
+                     {
+                        r =
+                           (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                           | (r << alias.syx_bit_off);
+                     }
+                     r = r & 255;
+
+                     if(r != pd.peekI8(alias.syx_off))
+                     {
+                        pd.pokeI8(alias.syx_off, r & 255);
+
+                        sendParamUpdate(_frameOut, alias, r, false/*bSend*/);
+                        if(b_debug2)
+                           trace "[>>>] gse: proxy NRPN: nrpn="+nrpn+" syx_off="+alias.syx_off+" r="+r;
+                     }
+
+                     // Delete source event
+                     //  (note) when proxy relay port is same as synth port => don't send pseudo-NRPN to synth
+                     _frameIn.nrpn(false/*bSet*/, pev.devIdx, pev.midiCh, pev.nrpn, 0);
+                     evIdx--;
+                  }
+               }
+
+               // Next NRPN event
+               evIdx++;
+            }
+         }
+
+         // Handle "pseudo" CC events (received via Proxy node)
+         numEvents = _frameIn.getNumEventsCCByFlt(_inDev, _inCh);
+         if(numEvents > 0)
+         {
+            // trace "xxx gse: numEvents<RPN>="+numEvents;
+            evIdx = 0;
+            loop(numEvents)
+            {
+               if(_frameIn.getEventByIdxAndFlt(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC, _inDev, _inCh))
+               {
+                  byte cc = pev.ccId;
+                  alias <= profile.getCCAliasByCtl(cc);
+                  if(null != alias)
+                  {
+                     if(alias.nr_lo > 0)
+                     {
+                        int ivalMSB;
+                        int ivalLSB;
+                        byte ccValLSB = 0;
+                        aliasLo <= profile.getCCAliasByCtl(alias.nr_lo);
+                        if(_frameIn.getCCEventByIdxAndFlt(0, pevLo, alias.nr_lo, _inDev, _inCh))
+                           ccValLSB = pevLo.ccValue;
+
+                        byte ccValMSB = pev.ccValue;
+                        short ccVal14 = (ccValMSB << 7) | ccValLSB;
+                        // trace "xxx ccValLSB="+ccValLSB+" ccVal14="+ccVal14+" alias.nr="+alias.nr;
+                        r = mathClampi(ccVal14, alias.min, alias.max);
+
+                        if("novation_peak" == profile.midi_profile_id)
+                        {
+                           // 8bit, least signifcant bit is stored in bit 6 of LSB
+                           ccVal14 = ccVal14 >> 6;
+                           ivalMSB = ccVal14 >> 1;
+                           ivalLSB = (ccVal14 & 1) << 6;  // 0 or $40
+                        }
+                        else
+                        {
+                           // Full 14bit range
+                           //   (todo) store 16bit range ??!
+                           ivalMSB = (ccVal14 >> 7);
+                           ivalLSB = (ccVal14 & 127);
+                        }
+
+                        // trace "xxx ccValMSB="+ccValMSB+" ccValLSB="+ccValLSB+" ccVal14="+ccVal14+" alias.nr="+alias.nr+" ivalMSB="+ivalMSB+" ivalLSB="+ivalLSB;
+
+                        pd.pokeI8(alias.syx_off, ivalMSB);
+                        pd.pokeI8(alias.syx_off_lo, ivalLSB);
+
+                        sendParamUpdate(_frameOut, alias, ivalMSB, false/*bSend*/);
+                        if(null != aliasLo)
+                           sendParamUpdate(_frameOut, aliasLo, ivalLSB, false/*bSend*/);
+                     }
+                     else
+                     {
+                        // Regular 7bit value
+                        r = mathClampi(pev.ccValue, alias.min, alias.max);
+
+                        if(alias.syx_bit_num > 0)
+                        {
+                           r =
+                              (pd.peekI8(alias.syx_off) & ~(((1 << alias.syx_bit_num)-1) << alias.syx_bit_off))
+                              | (r << alias.syx_bit_off);
+                        }
+                        r = r & 255;
+
+                        if(r != pd.peekI8(alias.syx_off))
+                        {
+                           pd.pokeI8(alias.syx_off, r & 255);
+
+                           sendParamUpdate(_frameOut, alias, r, false/*bSend*/);
+                           if(b_debug2)
+                              trace "[>>>] gse: proxy CC: cc="+cc+" syx_off="+alias.syx_off+" r="+r;
+                        }
+                     }
+
+                     // Delete source event
+                     //  (note) when proxy relay port is same as synth port => don't send pseudo-NRPN to synth
+                     _frameIn.cc(false/*bSet*/, pev.devIdx, pev.midiCh, pev.ccId, 0);
+                     evIdx--;
+                  }
+               }
+
+               // Next CC event
+               evIdx++;
+            }
+         }
+
+      } // if out_dev
+   }
+
+   // <replay.png>
+   public virtual handleProxyNotes(int _autoDevFlt, int _autoChFlt, MIDIPipeFrame _frame, boolean _bMuted) {
+      // Forward events (on proxy node automation port) to actual synth device
+      //  (note) all types except for RPN
+      if(_frame.numEvents > 0)
+      {
+         if(null != out_dev)
+         {
+            MIDIPipeFrame frOut; frOut.empty();
+            frOut.mergeFrameFltDst(_frame,
+                                   _autoDevFlt/*fltDev*/,
+                                   _autoChFlt/*fltCh*/,
+                                   out_dev.dev_idx/*dstDev*/,
+                                   midi_ch/*dstCh*/,
+                                   true/*bMergeNotes*/,
+                                   false/*bMergeRPN*/
+                                   );
+            // trace "xxx mirror layerCh="+layerCh+" to partCh="+partCh+" => frOut.numEvents="+frOut.numEvents;
+            if(_bMuted)
+               frOut.deleteNoteOnsByFlt(-1, -1);
+
+            // trace "xxx bMuted="+_bMuted+" frOut.numEvents="+frOut.numEvents;
+            _frame.mergeFrame(frOut);
+         }
+      }
+   }
+
+   // <midi.png>
+   protected =replay= method sendPatchEditBufRequest() {
+      if(null != profile.syx_patch_req_msg)
+      {
+         out_dev.addBuffer(profile.syx_patch_req_msg);
+         out_dev.send(milliSeconds());
+      }
+      else
+      {
+         trace "[~~~] EditMIDISynthFormGeneric<"+profile.midi_profile_id+">::sendPatchEditBufRequest: syx_patch_req_msg is null";
+      }
+   }
+
+   // <ui_midi.png>
+   protected method waitForSysEx() : boolean {
+      b_have_sysex = false;
+
+      if(b_debug)
+         Global.Debug("EditMIDISynthFormGeneric<"+profile.midi_profile_id+">::waitForSysEx: in_dev="+#(in_dev));
+
+      if(null != in_dev)
+      {
+         if(b_debug)
+            Global.Debug("EditMIDISynthFormGeneric<"+profile.midi_profile_id+">::waitForSysEx: in_dev.aliasOrDevName=\""+in_dev.getAliasOrDeviceName()+"\"");
+
+         // 1 second timeout
+         loop(10)
+         {
+            replay.processMidiMapUIEventQueue();
+
+            if(b_have_sysex)
+            {
+               break;
+            }
+
+            TKS.sleep(100);
+         }
+
+         if(!b_have_sysex)
+            Global.Error("EditMIDISynthFormGeneric<"+profile.midi_profile_id+">: waitForSysEx: Timeout");
+      }
+
+      return b_have_sysex;
+   }
+
+   // <method.png>
+   static method Decode7To8(Buffer _dst, Buffer _src, Buffer _hdr) : boolean {
+      int i = 0;
+      _src.offset = 0;
+      _hdr.offset = 0;
+
+      // trace "xxx Decode7To8 header:";
+      // Utils.HexDump(_src, 0, 10);
+
+      // Compare header
+      loop(_hdr.size)
+      {
+         Byte a = _src.u8;
+         Byte b = _hdr.u8;
+         if(a != b)
+         {
+            trace "[---] GenericSynthEdit::Decode7To8: header mismatch (have="+a.printf("%08x")+", expected "+b.printf("%08x")+", i="+i+", hdr.size="+_hdr.size+")";
+            return false;
+         }
+         i++;
+      }
+
+      // Decode data
+      int j = 0;
+      int msbs = 0;
+      int numWritten = 0;
+
+      loop(_src.size - _src.offset)
+      {
+         if(0 == (j++ & 7))
+         {
+            msbs = _src.u8;
+         }
+         else
+         {
+            _dst.i8 = _src.u8 | ((msbs & 1) << 7);
+            msbs = msbs >> 1;
+            numWritten++;
+         }
+      }
+
+      Global.Debug("GenericSynthEdit::Decode7To8: decoded dst.offset="+_dst.offset+" numWritten="+numWritten);
+      return true;
+   }
+
+   // <method.png>
+   static method Encode8To7(Buffer _dst, Buffer _src, Buffer _hdr) : boolean {
+      // trace "xxx Encode8To7: dst.size="+_dst.size+" src.size="+_src.size+" hdr.size="+_hdr.size;
+
+      // Write header
+      _hdr.offset = 0;
+      loop(_hdr.size)
+      {
+         _dst.i8 = _hdr.u8;
+      }
+
+      // Encode data
+      int j = 0;
+      int lastMSBOff = -1;
+      int msbs;
+      _src.offset = 0;
+      int debugNumBytes = 0;
+      loop(_src.size)
+      {
+         if(0 == j)
+         {
+            lastMSBOff = _dst.offset;
+            msbs = 0;
+            _dst.i8 = 0;  // fixed later
+            debugNumBytes++;
+         }
+
+         byte c = _src.u8;
+         _dst.i8 = (c & 127);
+         msbs |= ((c >> 7) & 1) << j;
+         debugNumBytes++;
+
+         if(6 == j)
+         {
+            _dst.pokeI8(lastMSBOff, msbs);
+         }
+
+         j = (j + 1) % 7;
+      }
+
+      if(b_debug)
+         Global.Debug("GenericSynthEdit::Encode8To7: encoded dst.offset<w/hdr>="+_dst.offset+" #data="+debugNumBytes);
+
+      return true;
+   }
+
+   // <method.png>
+   static ReadSub37PatchNameChar7(Buffer buf, int msbByteOffset, int msbBitOffset, int msbBits) {
+      int r = (buf[msbByteOffset] >> msbBitOffset) & ((1 << msbBits)-1);
+      r = r << (7 - msbBits);
+      int s = (buf[msbByteOffset + 1] >> (msbBits - 1)) & ((1 << (7-msbBits))-1);
+      return r | s;
+   }
+
+   // <method.png>
+   method decodeSub37(Buffer _dst, Buffer _src) : boolean {
+      _dst.fillZero();
+      _dst.offset = profile.syx_patch_size; // 256 bytes
+      // // _dst.byteOrder = YAC_BIG_ENDIAN;  // 14bit: high byte before low byte
+
+      // trace "xxx GenericSynthEdit::decodeSub37";
+
+      // Patch name
+      int charIdx = 0;
+      int off = 22;
+      Integer io;
+      loop(24)
+      {
+         io = ReadSub37PatchNameChar7(_src, off, 0, 3);
+         // trace "GenericSynthEdit::decodeSub37: read patchbyte=$"+io.printf("%02x");
+         _dst.pokeI8(charIdx++, int(io));
+
+         io = ReadSub37PatchNameChar7(_src, off+1, 0, 1);
+         // trace "GenericSynthEdit::decodeSub37: read patchbyte=$"+io.printf("%02x");
+         _dst.pokeI8(charIdx++, int(io));
+
+         off += 3;
+      }
+
+      MIDISynthProfileCtlAlias *alias;
+      foreach alias in profile.nrpn_aliases
+      {
+         if(alias.enc_off >= 0)
+         {
+            // trace "xxx parse alias id=\""+alias.id+"\" encOff="+alias.enc_off;
+            if(16383 == alias.max)
+            {
+               // First byte contains upper 2 bits of 14 bit value
+               // 2nd and 3rd byte contain 6 lower bits each
+               short i14 = (_src.peekI8(alias.enc_off) & 3) << 12;
+               // trace "xxx i14_1="+i14;
+               i14 |= (_src.peekI8(alias.enc_off + 1) & 63) << 6;
+               i14 |= (_src.peekI8(alias.enc_off + 2) & 63);
+               // trace "xxx i14="+i14;
+               _dst.pokeI8(alias.syx_off, i14 >> 7);
+               _dst.pokeI8(alias.syx_off + 1, i14 & 127);
+
+               // if(alias.id == "mod2pitchamt")
+               // {
+               //    trace "xxx "+alias.id+" i14="+i14+" enc_off="+alias.enc_off+" enc_bit_off="+alias.enc_bit_off+" enc_bit_num="+alias.enc_bit_num+" raw1="+_src.peekI8(alias.enc_off)+" raw2="+_src.peekI8(alias.enc_off+1)+" raw3="+_src.peekI8(alias.enc_off+2);
+               // }
+            }
+            else
+            {
+               byte i8 = (_src.peekI8(alias.enc_off) >> alias.enc_bit_off) & ((1 << alias.enc_bit_num)-1);
+
+               if(alias.enc_bit_num_ext > 0)
+               {
+                  i8 = i8 << alias.enc_bit_num_ext;
+                  i8 |= (_src.peekI8(alias.enc_off+1) >> (6 - alias.enc_bit_num_ext)) & ((1 << alias.enc_bit_num_ext)-1);
+
+                  // if(alias.id == "fltegclkdiv")
+                  // {
+                  //    trace "xxx "+alias.id+" i8="+i8+" enc_off="+alias.enc_off+" enc_bit_off="+alias.enc_bit_off+" enc_bit_num="+alias.enc_bit_num+" raw1="+_src.peekI8(alias.enc_off);
+                  // }
+               }
+
+               _dst.pokeI8(alias.syx_off, i8);
+            }
+         }
+      }
+
+      return true;
+   }
+
+   // <method.png>
+   protected method handlePatchDataReceive(Buffer dataBuf) {
+      patch.patch_data = dataBuf;
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchReceive(boolean _bEdit, boolean _bClipboard) {
+
+      sendPatchEditBufRequest();
+
+      if(waitForSysEx())
+      {
+         Global.Debug2("GenericSynthEdit: recv'd sysex buffer ("+sysex_buffer.size+" bytes):");
+
+         if(b_debug)
+         {
+            Utils.HexDump(sysex_buffer, 0, sysex_buffer.size);
+         }
+
+         if(sysex_buffer.size == profile.syx_patch_enc_size)
+         {
+            Buffer *dataBuf;
+            Buffer decBuf;
+
+            switch(profile.syx_patch_enc_type)
+            {
+               default:
+               case MIDISynthProfile.ENC_NONE:
+                  dataBuf <= sysex_buffer;
+                  break;
+
+               case MIDISynthProfile.ENC_8TO7:
+                  decBuf.size = profile.syx_patch_size;
+                  decBuf.offset = 0;
+                  if(Decode7To8(decBuf, sysex_buffer, profile.syx_patch_enc_hdr))
+                  {
+                     if(b_debug_hexdump_7to8)
+                     {
+                        trace "xxx Decode7To8: patch_data:";
+                        Utils.HexDump(decBuf, 0, decBuf.offset);
+                     }
+                     dataBuf <= decBuf;
+                  }
+                  else
+                  {
+                     dataBuf <= null;
+                  }
+                  break;
+
+               case MIDISynthProfile.ENC_SUB37:
+                  decBuf.size = profile.syx_patch_size;
+                  decBuf.offset = 0;
+                  if(decodeSub37(decBuf, sysex_buffer))
+                  {
+                     dataBuf <= decBuf;
+                  }
+                  else
+                  {
+                     dataBuf <= null;
+                  }
+                  break;
+            }
+
+            if(null != dataBuf)
+            {
+               // trace "xxx got matching sysex buffer";
+               if(_bClipboard)
+               {
+                  patch_clipboard.patch_data = dataBuf;
+               }
+               else
+               {
+                  // trace "xxx patch="+#(patch)+" dataBuf.offset="+dataBuf.offset;
+
+                  // Utils.BufferDiff(patch.patch_data, dataBuf, true/*bVerbose*/);
+
+                  // // patch.patch_data = dataBuf;
+                  handlePatchDataReceive(dataBuf);
+
+                  if(data.b_recv_patch_names)
+                     patch.extractPatchNameFromData();
+
+                  // trace "xxx handlePatchReceive: patch.patch_name="+patch.patch_name;
+
+                  updateUIFromPatch();
+
+                  // trace "xxx handlePatchReceive: patch.patch_name="+patch.patch_name;
+
+                  b_force_send_all_diff = true;
+               }
+
+               relayout();
+            }
+            else
+            {
+               Global.Error("Failed to decode sysex data ("+sysex_buffer.size+" bytes");
+            }
+         }
+         else
+         {
+            Global.Error("EditMIDISynthFormGeneric<"+profile.midi_profile_id+">::handlePatchReceive: SysEx size mismatch (expected "+profile.syx_patch_enc_size+", have "+sysex_buffer.size);
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchSend() {
+      scheduleMIDISendPatch();
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchCopy() {
+
+      // trace "xxx handlePatchCopy patch="+#(patch);
+      patch_clipboard.copyFrom(patch);
+
+      Global.Print("Copy patch to clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatchPaste() {
+
+      patch.copyFrom(patch_clipboard);
+
+      updateUIFromPatch();
+
+      if(data.b_autosend)
+      {
+         scheduleMIDISendPatch();
+      }
+
+      Global.Print("Paste patch clipboard");
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatchInit() {
+
+      patch.loadInitPatch();
+
+      updateUIFromPatch();
+
+      clearMIDICache();
+
+      TKS.sleep(30);
+
+      if(data.b_autosend)
+      {
+         // // queued_midi_patch_nr = 0;
+         scheduleMIDISendPatch();
+      }
+
+      Global.Print("Initialize patch");
+   }
+
+   // <method.png>
+   public virtual initBank(int _idx) {
+      // called via PageSysEx::handlePageCmdInitBank()
+      if(0 <= _idx <= num_banks)
+      {
+         int patchIdx = _idx * num_programs_per_bank;
+         loop(num_programs_per_bank)
+         {
+            GenericSynthEdit_Patch p <= data.patches.get(patchIdx);
+            p.loadInitPatch();
+            patchIdx++;
+         }
+         updateUIFromPatch();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchProxyFollowChanged() {
+      b_patch_proxy_follow = cb_patch_proxy_follow.isSelected();
+      Global.Print("Proxy follow is "+Utils.GetEnableString(b_patch_proxy_follow));
+
+      if(b_patch_proxy_follow)
+      {
+         // // queued_midi_patch_nr = proxy_bank * 128 + proxy_program;
+         // scheduleMIDISend();
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatchProxyLockChanged() {
+      b_patch_proxy_lock = cb_patch_proxy_lock.isSelected();
+      Global.Print("Proxy lock is "+Utils.GetEnableString(false != b_patch_proxy_lock)+((maybe == b_patch_proxy_lock) ? " (edit proxy patch only)":""));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handlePatchProxyResetChanged() {
+      data.b_proxy_reset = cb_patch_proxy_reset.isSelected();
+      Global.Print("Proxy reset is "+Utils.GetEnableString(data.b_proxy_reset));
+   }
+
+   // <midi.png>
+   public =replay= method clearMIDICache() {
+      if(null != out_dev)
+      {
+         current_pipe_root.clearMIDICacheForDev(out_dev.dev_idx);
+         Global.Debug2("GenericSynthEdit::clearMIDICache");
+      }
+   }
+
+   // <method_get.png>
+   public virtual getBankNames() : StringArray {
+      // overwrites EditMIDISynthForm::getBankNames()
+      local StringArray ret;
+      int bankNr = 1;
+      loop(num_banks - 1)
+      {
+         ret.add("Bank "+(bankNr++));
+      }
+      ret.add("Project Bank 16");
+      return deref ret;
+   }
+
+   // <method_get.png>
+   public virtual getProgramNames(int _bankIdx) : StringArray {
+      // trace "xxx gse::getProgramNames: bankIdx="+_bankIdx+" b_first_rebuild_patch_names="+b_first_rebuild_patch_names;
+      if(b_first_rebuild_patch_names)
+         rebuildPatchNames();
+      // overwrites EditMIDISynthForm::getProgramNames()
+      StringArray allPatchNames <= cm_patch_nr.getOptions();
+      local StringArray ret;
+      int patchIdx = _bankIdx * 128;
+      loop(128)
+      {
+         ret.add(allPatchNames.get(patchIdx++));
+      }
+      return deref ret;
+   }
+
+   // <ui_midi.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+      // trace "[trc] GenericSynthEdit::mmlHandleEventUI";
+      if(_ev.isReservedEvent())
+         return false;
+
+      if(@(_ev.dev) == @(in_dev))
+      {
+         if(MIDIMapDefs.TYPE_SYSEX == _ev.type)
+         {
+            sysex_buffer = _ev.sysex_buffer;
+            b_have_sysex = true;
+            return true;
+         }
+      }
+
+      // Transform event so other MIDI controllers can be used to edit the synth
+      MIDIMapEvent evXForm = _ev;
+      MIDIMorphScene.TransformEvent(evXForm);
+      evXForm.echoTransformForced();
+
+      if(@(evXForm.dev) == @(out_dev))
+      {
+         // trace "[trc] GenericSynthEdit::mmlHandleEventUI: is out_dev";
+
+         if(MIDIMapDefs.TYPE_NRPN == evXForm.type)
+         {
+            if(data.b_recv_ctls)
+            {
+               updateUIAndPatchDataFromMIDIEvent(evXForm);
+            }
+         }
+         else if(MIDIMapDefs.TYPE_CC == evXForm.type)
+         {
+            // trace "xxx GenericSynthEdit: CC "+evXForm.ext_type+" value="+evXForm.arg1;
+            if(data.b_recv_ctls)
+            {
+               updateUIAndPatchDataFromMIDIEvent(evXForm);
+            }
+         }
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "[>>>] GenericSynthEdit::onKey: code="+_k.code+" pressed="+_k.pressed+" mod="+_k.mod;
+
+      if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case 's':
+               Global.Debug("Send patch manually");
+               // // queued_midi_patch_nr = 0;
+               scheduleMIDISendPatch();
+               return true;
+
+            case 'e':
+               if(_k.modShift())
+               {
+                  handlePatchReceive(true/*bEdit*/, true/*bClipboard*/);
+               }
+               else
+               {
+                  handlePatchReceive(true/*bEdit*/, false/*bClipboard*/);
+               }
+               return true;
+
+            case 'c':
+               handlePatchCopy();
+               return true;
+
+            case 'v':
+               handlePatchPaste();
+               return true;
+
+            case 'n':
+               handlePatchInit();
+               return true;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case VKEY_HOME:
+            if(STConfig.b_key_swap_pattern_home_end)
+               selectPreviousPatch();
+            else
+               selectNextPatch();
+            return true;
+
+         case VKEY_END:
+            if(STConfig.b_key_swap_pattern_home_end)
+               selectNextPatch();
+            else
+               selectPreviousPatch();
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      // trace "[>>>] Prophet12::consumeAction: acName="+acName+" ap="+#(ap);
+
+      switch(acName)
+      {
+         case TA_MIDISEND:
+            handleMIDISendTimer();
+            return true;
+
+         case ComboBoxPopup.ACTION_OPTIONSELECTED:
+            if(@(ap) == @(cmp_find_catbrowse))
+            {
+               handleFindCategoryBrowseOptionSelected(_action);
+            }
+            return true;
+      }
+
+      switch(@(ap))
+      {
+         default:
+            if(ap instanceof CheckBox)
+               if(handleDiffLockWidgetChanged(ap))
+                  return true;
+            return handleParamWidgetChanged(ap);
+
+         case @(dlg_multipatch):
+            if(SysExMultiPatchDialog.ACTION_COPY == acName)
+            {
+               handleMultiCopyPatchesToProjectBank2();
+            }
+            refocusDefault();
+            return true;
+
+         // Patch:
+         case @(cb_patch_autosend):
+            handlePatchAutosendChanged();
+            return true;
+
+         case @(cb_patch_diff):
+            handlePatchDiffChanged();
+            return true;
+
+         case @(bt_patch_project):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               handleGoToFirstProjectPatch();
+            }
+            else
+            {
+               handleGoToNextBank();
+            }
+            return true;
+
+         case @(cm_patch_nr):
+            handlePatchNrChanged(true/*bMIDIFollow*/, true/*bAllowAutosend*/);
+            return true;
+
+         case @(tf_patch_name):
+            handlePatchNameChanged();
+            if(TextField.ACTION_TEXTENTERED == acName)
+            {
+               refocusDefault();
+            }
+            return true;
+
+         case @(cb_patch_recvnames):
+            data.b_recv_patch_names = cb_patch_recvnames.isSelected();
+            Global.Print("Recv Patch Names is "+Utils.GetEnableString(data.b_recv_patch_names));
+            return true;
+
+         case @(cb_patch_recvctls):
+            data.b_recv_ctls = cb_patch_recvctls.isSelected();
+            Global.Print("Recv Controllers is "+Utils.GetEnableString(data.b_recv_ctls));
+            return true;
+
+         case @(cm_patch_category):
+            handlePatchCategoryChanged();
+            return true;
+
+         case @(cm_find_category):
+            handleFindCategoryChanged();
+            return true;
+
+         case @(bt_find_catprev):
+            handleFindCategoryPrev();
+            return true;
+
+         case @(bt_find_catbrowse):
+            handleFindCategoryBrowse();
+            return true;
+
+         case @(bt_find_catnext):
+            handleFindCategoryNext();
+            return true;
+
+         case @(bt_patch_receive_edit):
+            handlePatchReceive(true/*bEdit*/, false/*bClipboard*/);
+            return true;
+
+         case @(bt_patch_receive_edit_to_clipboard):
+            handlePatchReceive(true/*bEdit*/, true/*bClipboard*/);
+            return true;
+
+         // // case @(cb_bug_workarounds):
+         // //    b_workaround_firmware_bugs = cb_bug_workarounds.isSelected();
+         // //    Global.Print("Workarounds are "+Utils.GetEnableString(b_workaround_firmware_bugs));
+         // //    return true;
+
+         case @(bt_patch_send):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               clearMIDICache();
+               b_force_send_all_diff = true;
+            }
+            handlePatchSend();
+            return true;
+
+         case @(bt_patch_copy):
+            handlePatchCopy();
+            return true;
+
+         case @(bt_patch_paste):
+            handlePatchPaste();
+            return true;
+
+         case @(bt_patch_init):
+            handlePatchInit();
+            return true;
+
+         case @(cb_patch_proxy_follow):
+            handlePatchProxyFollowChanged();
+            return true;
+
+         case @(cb_patch_proxy_lock):
+            handlePatchProxyLockChanged();
+            return true;
+
+         case @(cb_patch_proxy_reset):
+            handlePatchProxyResetChanged();
+            return true;
+
+         case @(bt_patch_tools):
+            showToolsMenu();
+            return true;
+
+         case @(bt_mts):
+            handleEditMTS1();
+            return true;
+
+         case @(pm_tools):
+            Global.Debug2("GenericSynthEdit: pm_tools acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close tools menu.");
+                  return true;
+
+               default:
+                  if(!handleToolsMenuAction(acName))
+                  {
+                     Global.Print("Select: "+acName);
+                  }
+                  return true;
+
+               case "dump_patch_to_con":
+                  Global.Debug("dump_patch_to_con:");
+                  Utils.HexDump(patch.patch_data, 0, patch.patch_data.size);
+                  return true;
+
+               case "copy_from_replay_patch":
+                  handleCopyFromReplayPatch();
+                  return true;
+
+               case "multicopy":
+                  handleMultiCopyPatchesToProjectBank1();
+                  return true;
+
+               case "p08_copy_a_to_b":
+                  p08CopyAB();
+                  return true;
+
+               case "p08_copy_b_to_a":
+                  p08CopyBA();
+                  return true;
+
+               case "p08_swap_a_b":
+                  p08SwapAB();
+                  return true;
+            }
+            return true;
+
+         case @(bt_difflock_toggle):
+            handleDiffLockToggleAll();
+            return true;
+
+         case @(bt_difflock_invert):
+            handleDiffLockInvert();
+            return true;
+
+         case @(cb_difflock_enable):
+            data.b_difflock = cb_difflock_enable.isSelected();
+            Global.Print("DiffLock is "+Utils.GetEnableString(data.b_difflock));
+            return true;
+
+         case @(bt_difflock_rand):
+            handleDiffLockRand();
+            return true;
+      }
+   }
+
+}

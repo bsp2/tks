@@ -1,0 +1,646 @@
+// ----
+// ---- file   : PageEditMidiMap.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 14Aug2014, 15Aug2014, 05Sep2014, 14Sep2014, 16Sep2014, 19Sep2014, 29Sep2014
+// ----          16Nov2014, 23Feb2015, 06Mar2015, 17May2015, 17Jun2015, 26Jul2015, 12Nov2015
+// ----          09Feb2017, 17Jun2017, 18Jun2017, 04Jan2018, 02Mar2019, 29Aug2019, 10May2020
+// ----          03Oct2023
+// ----
+// ----
+// ----
+
+module MPageEditMidiMap;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageEditMidiMap extends Page, ActionProvider, MIDIMapEventListener {
+
+   define String ACTION_EVENTCLICKED;
+
+   define String TA_REDRAW;
+
+   protected Button *bt_parent;
+   protected Button *bt_bind;
+   protected Button *bt_unbind;
+   protected Button *bt_unbindnext;
+
+   protected CheckBox *cb_movecsr;
+   protected ComboBox *cm_morphscene;
+
+   public TableView   *tv_map;
+   protected MIDIMapContextTM tm_map;
+
+   protected TextField *tf_last_dev;
+   protected TextField *tf_last_ch;
+   protected TextField *tf_last_type;
+   protected TextField *tf_last_ext;
+
+   protected TextField *tf_filter;
+
+   protected TimerAction *ta_redraw;
+
+   public MIDIMapContext *mmc;
+
+   // // int parent_page;
+
+   protected MIDIMapEvent last_ev;
+
+   protected boolean b_movecsr;
+   protected boolean b_firstevent;
+
+   protected boolean b_initial_automovecsr;
+
+   protected boolean b_global;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageEditMidiMap.xfm"))
+      {
+         trace "[---] failed to parse PageEditMidiMap.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tm_map.initTableModel();
+      tv_map.setTableModel(tm_map);
+
+      ta_redraw   <= TimerAction.New(TA_REDRAW,   this, 250);
+
+      recursiveBuildTabCycleLists();
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(app_lnf.b_ascii_back_buttons)
+      {
+         Global.ASCIIBackButton(bt_parent);
+      }
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return b_global ? RootForm.PAGE_PIPEMAP : -1;
+   }
+
+   // <ui_page.png>
+   public virtual pageIsSub() : boolean {
+      return !b_global;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      MIDI.AddMIDIMapEventListener(this);
+
+      tv_map.moveCursorToFirstRow();
+
+      tm_map.setCursorIndex(-1);
+      bt_unbind.setEditable(false);
+      bt_unbindnext.setEditable(false);
+
+      if(!b_initial_automovecsr)
+      {
+         b_firstevent = true;
+         cb_movecsr.setEnableMixedState(true);
+         cb_movecsr.setSelected(maybe);
+      }
+      else
+      {
+         b_firstevent = false;
+         cb_movecsr.setEnableMixedState(false);
+         cb_movecsr.setSelected(b_initial_automovecsr);
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      MIDI.RemoveMIDIMapEventListener(this);
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_map);
+      // UI.SetKeyboardFocus(bt_bind);
+   }
+
+   // <midi.png>
+   public virtual mmtHandleGlobalValue(float _val) {
+      tv_map.moveCursorToRow(mmtSelectTableRow(tm_map, _val));
+      tv_map.centerRow();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_parent, bt_bind, cb_movecsr, bt_unbind, bt_unbindnext,
+         tv_map
+                              ];
+   }
+
+   // <midi.png>
+   public virtual mmlOverrideForceGlobal() : boolean {
+      return true;
+   }
+
+   // <midi.png>
+   public method showMMC(MIDIMapContext _mmc, int _parentPage, boolean _bAutoMoveCsr, boolean _bGlobal) {
+
+      mmc <= _mmc;
+
+      b_global = _bGlobal;
+
+      Global.Debug("PageEditMidiMap::showMMC: mmc="+#(mmc));
+
+      updateTable();
+
+      b_initial_automovecsr = _bAutoMoveCsr;
+
+      updateMorphSceneOptions();
+      if((-1 != mmc.midimorph_group_idx) && (-1 != mmc.midimorph_scene_idx))
+      {
+         cm_morphscene.setSelectedOption(1 + (mmc.midimorph_group_idx * MIDIMorphScene.NUM_SCENES_PER_GROUP + mmc.midimorph_scene_idx));
+      }
+      else
+      {
+         cm_morphscene.setSelectedOption(0);
+      }
+   }
+
+   // <ui_update.png>
+   public method updateTable() {
+      mmc.mmcBuildTMEntries(tm_map.entries);
+      tv_map.tableModelChanged();
+      tv_map.moveCursorToLastRow();
+   }
+
+   // <ui_update.png>
+   protected method updateMorphSceneOptions() {
+      local StringArray morphSceneOptions;
+      local StringArray morphSceneOptionsLong;
+      morphSceneOptions.add("-");
+      morphSceneOptionsLong.add("-");
+      int morphGroupIdx = 0;
+      loop(MIDIMorphScene.NUM_GROUPS)
+      {
+         int morphSceneIdx = 0;
+         loop(MIDIMorphScene.NUM_SCENES_PER_GROUP)
+         {
+            MIDIMorphScene morphScene <= MIDIMorphScene.GetSceneByIdx(morphGroupIdx, morphSceneIdx);
+            morphSceneIdx++;
+            morphSceneOptions.add(tcchar('A' + morphGroupIdx)+morphSceneIdx);
+            morphSceneOptionsLong.add(tcchar('A' + morphGroupIdx)+morphSceneIdx+": "+morphScene.mms_name);
+         }
+         morphGroupIdx++;
+      }
+      cm_morphscene.setOptions(morphSceneOptions);
+      cm_morphscene.setOptionsLong(morphSceneOptionsLong);
+   }
+
+   // <midi.png>
+   public virtual mmlHandleEventUI(MIDIMapEvent _ev) : boolean {
+
+      //  (note) called from UI thread (processing UI event queue in Replay.tks)
+
+      updateLastEventInfo(_ev);
+
+      // Find best matching map entry and select it
+      if(selectEntryByEvent(_ev,
+                            (-1 != tm_map.getCursorIndex()) && !cb_movecsr.isSelected()/*bLeadOnly*/
+                            ))
+      {
+         endAutoMoveCsrMode();
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method endAutoMoveCsrMode() {
+      if(b_firstevent)
+      {
+         b_firstevent = false;
+         cb_movecsr.setSelected(b_movecsr);
+         cb_movecsr.setEnableMixedState(false);
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateLastEventInfo(MIDIMapEvent _ev) {
+
+      // trace "xxx updateLastEventInfo: ev="+#(_ev);
+
+      if(null != _ev)
+      {
+         if(null != _ev.dev)
+         {
+            last_ev = _ev;
+
+            // Set last event info
+            tf_last_dev.setText(_ev.dev.getAliasOrDeviceName());
+
+            Integer io = _ev.dev_ch + 1;
+            tf_last_ch.setText(io.printf("#%02d"));
+
+            String className <= _ev.getClassTypeName();
+
+            if(null == className)
+            {
+               className <= MIDIMapEventType.type_names_short[_ev.type];
+            }
+
+            tf_last_type.setText(className);
+
+            tf_last_ext.setText(_ev.getExtTypeName());
+         }
+      }
+      else
+      {
+         tf_last_dev .setText(" ");
+         tf_last_ch  .setText(" ");
+         tf_last_type.setText(" ");
+         tf_last_ext .setText(" ");
+      }
+
+      ta_redraw.schedule();
+   }
+
+   // <ui_handle.png>
+   protected method handleToggleAutoMoveCsr() {
+      b_firstevent = false;
+      cb_movecsr.setEnableMixedState(false);
+      cb_movecsr.setSelected(!cb_movecsr.isSelected());
+   }
+
+   // <ui_handle.png>
+   protected method handleBind() {
+      MIDIMapContextTMEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         MIDIMapTarget target <= mmc.mmcGetTargetByName("MMT_" + en.target);
+
+         // trace "xxx target="+#(target);
+
+         if(target.canBind(last_ev))
+         {
+            // Check whether the event type is already bound to a target
+            MIDIMapEvent boundEv <= mmc.mmcGetBindingByEvent(last_ev);
+
+            if(null == boundEv)
+            {
+               // Bind event to target
+               boundEv <= mmc.mmcBindEvent(target, last_ev);
+
+               updateTable();
+
+               selectEntryByEvent(boundEv, false/*bLeadOnly*/);
+
+               Global.Success("Event is now bound to target \""+target.target_name+"\".");
+            }
+            else
+            {
+               Global.Error("Event is already bound to target \""+(boundEv.bound_target.target_name)+"\".");
+            }
+         }
+         else
+         {
+            Global.Error("Event cannot be bound to selected target \""+en.target+"\".");
+         }
+      }
+      else
+      {
+         Global.Error("No map target selected!");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleUnbind(boolean _bSelNext) {
+      MIDIMapContextTMEntry en <= getSelectedEntry();
+
+      if(null != en)
+      {
+         if(null != en.mm_event)
+         {
+            mmc.mmcUnbindByEvent(en.mm_target, en.mm_event);
+
+            int curRow = tm_map.getCursorIndex();
+
+            updateTable();
+
+            tv_map.moveCursorToRow(curRow + _bSelNext);
+            tv_map.centerRow();
+         }
+         else
+         {
+            Global.Error("Cannot unbind: Selected target is not bound to any event.");
+         }
+      }
+   }
+
+   // <method.png>
+   public method getSelectedEntry() : MIDIMapContextTMEntry {
+      int idx = tm_map.getCursorIndex();
+
+      if(-1 != idx)
+      {
+         MIDIMapContextTMEntry en <= tm_map.entries.get(idx);
+         return en;
+      }
+
+      return null;
+   }
+
+   // <method.png>
+   public method selectEntryByEvent(MIDIMapEvent _ev, boolean _bLeadOnly) : boolean {
+
+      MIDIMapContextTMEntry *en;
+
+      int rowIdx = 0;
+
+      foreach en in tm_map.entries
+      {
+         if(null != en.mm_event)
+         {
+            if(en.mm_event.matchBindTypeOf(_ev))
+               ////if(en.mm_event.matchTypeOf(_ev))
+            {
+               if(!_bLeadOnly)
+               {
+                  tv_map.moveCursorToRow(rowIdx);
+                  tv_map.centerRow();
+               }
+               tv_map.setLeadSelection(rowIdx);
+               Global.Print("Target: "+en.target+ " type="+en.target_type);
+               return true;
+            }
+         }
+
+         rowIdx++;
+      }
+
+      // Not found
+      tv_map.setLeadSelection(-1);
+
+      return false;
+   }
+
+   // <ui_handle.png>
+   protected method handleMorphSceneChanged() {
+      int idx = cm_morphscene.getSelectedOption() - 1;
+
+      if(-1 != idx)
+      {
+         mmc.midimorph_group_idx = idx / MIDIMorphScene.NUM_SCENES_PER_GROUP;
+         mmc.midimorph_scene_idx = idx % MIDIMorphScene.NUM_SCENES_PER_GROUP;
+      }
+      else
+      {
+         mmc.midimorph_group_idx = -1;
+         mmc.midimorph_scene_idx = -1;
+      }
+
+      Global.Print("Auto-Select MIDI scene \""+cm_morphscene.getSelectedOptionNameLong()+"\"");
+   }
+
+   // <method.png>
+   protected method selectTargetByFilter(boolean _bNext) {
+      int idx = tm_map.getCursorIndex();
+      _bNext = _bNext && (-1 != idx);
+
+      if(-1 == idx)
+         idx = 0;
+
+      String sFlt <= tf_filter.getText().toLower().trim();
+
+      MIDIMapContextTMEntry *en;
+      int enIdx = 0;
+      int idxFirst = -1;
+      foreach en in tm_map.entries
+      {
+         if((en.target.toLower()) & sFlt)
+         {
+            if(-1 == idxFirst)
+               idxFirst = enIdx;
+            if(!_bNext || (enIdx > idx))
+            {
+               tv_map.moveCursorToRow(enIdx);
+               tv_map.centerRow();
+               return;
+            }
+         }
+         enIdx++;
+      }
+
+      if(-1 != idxFirst)
+      {
+         // Wrap-around
+         tv_map.moveCursorToRow(idxFirst);
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageHandleAutoFocusKey(Key _k) : boolean {
+      if(0 != _k.unicode)
+      {
+         if(_k.modNone())
+         {
+            if(@(UI.GetKeyboardFocus()) != @(tf_filter))
+            {
+               if(UI.IsAutoFocusKey(_k))
+               {
+                  UI.SetKeyboardFocus(tf_filter);
+                  tf_filter.selectAll();
+               }
+               else
+               {
+                  return false;
+               }
+            }
+            tf_filter.onKey(_k);
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual wantKeyRepeat(Key _k) : boolean {
+      switch(_k.code)
+      {
+         case 'r':
+         case 'a':
+         case 'u':
+         case 'i':
+         case 'm':
+            return false;
+      }
+      return Page::wantKeyRepeat(_k);
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            if(tf_filter.hasKeyboardFocus())
+            {
+               pageFocusDefault();
+               return true;
+            }
+            break;
+
+         case VKEY_PAGEUP:
+            if(tf_filter.hasKeyboardFocus())
+            {
+               UI.SetKeyboardFocus(tv_map);
+               tv_map.moveCursorToPreviousPage(tv_map.page_size);
+            }
+            return true;
+
+         case VKEY_PAGEDOWN:
+            if(tf_filter.hasKeyboardFocus())
+            {
+               UI.SetKeyboardFocus(tv_map);
+               tv_map.moveCursorToNextPage(tv_map.page_size);
+            }
+            return true;
+
+         case 'r':
+            handleToggleAutoMoveCsr();
+            return true;
+
+         case 'a':
+            handleBind();
+            return true;
+
+         case 'b':
+            // don't pass on to RootForm
+            pageHandleAutoFocusKey(_k);
+            return true;
+
+         case 'u':
+            handleUnbind(false/*bSelNext*/);
+            return true;
+
+         case 'i':
+            handleUnbind(true/*bSelNext*/);
+            return true;
+
+         case 'm':
+            ////root_form.showPageParent();
+            root_form.showPageSubPrev();
+            return true;
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            if(TA_REDRAW == acName)
+            {
+               redraw();
+
+               return true;
+            }
+            break;
+
+         case @(tv_map):
+
+            bt_unbind.setEditable(true);
+            bt_unbindnext.setEditable(true);
+
+            if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               endAutoMoveCsrMode();
+            }
+
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               // (note) don't update when ROWSELECTED since adding new events while cause
+               //         the last added row to be selected after adding.
+               //         When Synthetic events are filtered, the last update "LastEventInfo"
+               //         will be e.g. ButtonUp instead of e.g. Hold End, otherwise.
+               ///updateLastEventInfo(tm_log.events.get(tm_log.getCursorIndex()));
+
+               provideAction(Action.New(ACTION_EVENTCLICKED, this));
+            }
+            return true;
+
+         case @(bt_parent):
+            if(b_global)
+            {
+               root_form.showPageParent();
+            }
+            else
+            {
+               root_form.showPageSubPrev();
+            }
+            return true;
+
+         case @(bt_bind):
+            handleBind();
+            return true;
+
+         case @(bt_unbind):
+            handleUnbind(false/*bSelNext*/);
+            return true;
+
+         case @(bt_unbindnext):
+            handleUnbind(true/*bSelNext*/);
+            return true;
+
+         case @(cb_movecsr):
+            b_movecsr = cb_movecsr.isSelected();
+            return true;
+
+         case @(cm_morphscene):
+            handleMorphSceneChanged();
+            return true;
+
+         case @(tf_filter):
+            if(TextField.ACTION_TEXTENTERED == acName)  // return
+            {
+               selectTargetByFilter(true/*bNext*/);
+               UI.SetKeyboardFocus(tf_filter);
+            }
+            else if(TextField.ACTION_CURSORUP == acName)
+            {
+               UI.SetKeyboardFocus(tv_map);
+               tv_map.moveCursorToPreviousRow();
+            }
+            else if(TextField.ACTION_CURSORDOWN == acName)
+            {
+               UI.SetKeyboardFocus(tv_map);
+               tv_map.moveCursorToNextRow();
+            }
+            else
+            {
+               selectTargetByFilter(false/*bNext*/);
+            }
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

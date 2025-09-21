@@ -1,0 +1,144 @@
+// ----
+// ---- file   : MIDIInputMonitorForm.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2013 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 13Nov2012, 04Jan2013, 06Jan2013, 25Mar2013, 19Apr2013
+// ----
+// ----
+// ----
+
+module MMIDIInputMonitorForm;
+
+use namespace ui;
+use namespace st2;
+
+
+class MIDIInputMonitorForm extends XMLForm, ActionProvider {
+
+   define String ACTION_EVENTCLICKED;
+
+   define String TA_ADDEVENT;
+
+   define int MAX_LOG_ENTRIES = 256;
+
+
+   protected CheckBox *cb_capture;
+   protected CheckBox *cb_hex;
+   public TableView   *tv_log;
+   protected MIDIInputMonitorTM tm_log;
+   protected Button *bt_clear;
+   protected Button *bt_close;
+
+   protected TimerAction *ta_addevent;
+
+
+   public method initForm() : boolean {
+
+      if(!initPakFile("MIDIInputMonitorForm.xfm"))
+      {
+         trace "[---] failed to parse MIDIInputMonitorForm.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tm_log.cb_hex <= cb_hex;
+
+      tm_log.initTableModel();
+      tv_log.setTableModel(tm_log);
+
+      ta_addevent <= TimerAction.New(TA_ADDEVENT, this, 20);
+
+      recursiveBuildTabCycleLists();
+
+      return true;
+   }
+
+   public method updateForm() {
+      tv_log.tableModelChanged();
+      tv_log.moveCursorToLastRow();
+   }
+
+   public method addEvent(MIDIMapEvent ev) {
+      // Add copy of 'ev to events array
+      //  (note) called from replay thread
+      if(cb_capture.isSelected())
+      {
+         if(tm_log.events.numElements >= MAX_LOG_ENTRIES)
+         {
+            tm_log.events.delete(0);
+         }
+         tm_log.events.add(#(Object(ev)));
+
+         ta_addevent.schedule(); // schedule TableView update
+      }
+   }
+
+   protected method handleClear() {
+      tm_log.events.free();
+      tv_log.tableModelChanged();
+      tv_log.moveCursorToLastRow();
+   }
+
+   protected method handleToggleCapture() {
+   }
+
+   protected method handleToggleHex() {
+      tv_log.tableModelChanged();
+      tv_log.moveCursorToLastRow();
+   }
+
+   public method getSelectedMIDIMapEvent() : MIDIMapEvent {
+      int idx = tm_log.getCursorIndex();
+      if(-1 != idx)
+      {
+         MIDIMapEvent ev <= tm_log.events.get(idx);
+         return ev;
+      }
+      return null;
+   }
+
+   public virtual consumeAction(Action _action) returns boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            if(TA_ADDEVENT == acName)
+            {
+               updateForm();
+
+               return true;
+            }
+            break;
+
+         case @(tv_log):
+            if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               provideAction(Action.New(ACTION_EVENTCLICKED, this));
+            }
+            return true;
+
+         case @(cb_capture):
+            handleToggleCapture();
+            return true;
+
+         case @(cb_hex):
+            handleToggleHex();
+            return true;
+
+         case @(bt_clear):
+            handleClear();
+            return true;
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

@@ -1,0 +1,637 @@
+// ----
+// ---- file   : console1.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : Console-1 bidirectional controller support (see "docs_synths/softube_console1/midi_sysex.txt")
+// ----           - uses hardcoded device alias "console1" (Console1.DEVICE_ALIAS)
+// ----           - rotaries are mapped to NRPNs 0..519 (20 banks * 26 encoders)
+// ----              - see "midi_synth_profiles/softube_console1.msp"
+// ----           - fine/shift button enables detail-edit
+// ----           - track buttons 1..20 select bank
+// ----
+// ---- created: 11Jan2025
+// ---- changed: 14Mar2025
+// ----
+// ----
+// ----
+
+module MConsole1;
+
+use namespace st2;
+use namespace ui;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class Console1Rotary {
+
+   Console1 *parent_console1;
+   int rotary_idx;
+
+   short value;       // current value (14bit)
+   short dev_value;   // last value sent to device (14 bit, will be reduced to 7bit)
+   short out_value;   // current send value (14 bit, will be reduced to 7bit)
+
+
+   // <method_init.png>
+   public method init() {
+      dev_value = -1;
+   }
+
+   // <method.png>
+   public method forceUpdate() {
+      dev_value = -1;
+      out_value = value;
+   }
+
+   static Map7To14(float _f7) : float {
+      if(_f7 >= 64.0)
+         return 8192.0 + (_f7-64.0) * (8191.0 / 63.0);
+      else
+         return 8192.0 - (64.0 - _f7) * (8192.0 / 64.0);
+   }
+
+   static Map14To7(float _f14) : float {
+      if(_f14 >= 8192.0)
+         return 64.0 + (_f14-8192.0) * (63.0 / 8191.0);
+      else
+         return 64.0 - (8192.0 - _f14) * (64.0 / 8192.0);
+   }
+
+   // <save.png>
+   public method saveState(Stream ofs) {
+
+      // Value
+      ofs.i16 = value;
+   }
+
+   // <load.png>
+   public method loadState(Stream ifs, short ver) : boolean {
+      // Value
+      value = ifs.u16;
+      return true;
+   }
+
+}
+
+
+// <class.png>
+class Console1 : BidiCtl {
+   define String DEVICE_ALIAS = "console1";
+
+   define int NUM_BANKS             = 20;
+   define int NUM_ROTARIES_PER_BANK = 26;
+
+   define int NUM_UPDATE_PARTITIONS = 4;
+
+   boolean b_connected;
+   int num_rotaries;
+
+   boolean b_fine;  // true= shift/fine pressed
+
+   Console1Rotary *[] rotaries;
+
+   static IntArray rotary_idx_to_cc = [
+      107,  //  0: input gain
+      105,  //  1: high cut
+      103,  //  2: low cut
+      54,   //  3: shape.gate
+      56,   //  4: shape.gate_release
+      55,   //  5: shape.gate_sustain
+      57,   //  6: shape.gate_punch
+      92,   //  7: eq.low_freq
+      91,   //  8: eq.low_gain
+      90,   //  9: eq.lowmid_q
+      89,   // 10: eq.lowmid_freq
+      88,   // 11: eq.lowmid_gain
+      87,   // 12: eq.highmid_q
+      86,   // 13: eq.highmid_freq
+      85,   // 14: eq.highmid_gain
+      83,   // 15: eq.high_freq
+      82,   // 16: eq.high_gain
+      49,   // 17: comp.ratio
+      50,   // 18: comp.parallel
+      51,   // 19: comp.attack
+      48,   // 20: comp.release
+      47,   // 21: comp.threshold
+      15,   // 22: drive
+      18,   // 23: character
+      10,   // 24: pan
+      7,    // 25: volume
+                                           ];
+
+   static IntArray syx_id_to_idx = [
+      $1B,  //  0: input gain
+      $1C,  //  1: high cut
+      $1D,  //  2: low cut
+      $22,  //  3: shape.gate
+      $24,  //  4: shape.gate_release
+      $25,  //  5: shape.gate_sustain
+      $26,  //  6: shape.gate_punch
+      $29,  //  7: eq.low_freq
+      $2A,  //  8: eq.low_gain
+      $2C,  //  9: eq.lowmid_q
+      $2B,  // 10: eq.lowmid_freq
+      $2D,  // 11: eq.lowmid_gain
+      $2F,  // 12: eq.highmid_q
+      $2E,  // 13: eq.highmid_freq
+      $30,  // 14: eq.highmid_gain
+      $32,  // 15: eq.high_freq
+      $33,  // 16: eq.high_gain
+      $35,  // 17: comp.ratio
+      $36,  // 18: comp.parallel
+      $37,  // 19: comp.attack
+      $38,  // 20: comp.release
+      $39,  // 21: comp.threshold
+      $3C,  // 22: drive
+      $3D,  // 23: character
+      $3E,  // 24: pan
+      $41,  // 25: volume
+                                    ];
+
+   Buffer buf;
+
+   byte bank_idx;  // 0..19 => 'A'..'T'
+   byte dev_bank_idx;  // as seen by device (track select LEDs)
+   IntArray track_led_state;  // 20 LEDs
+   IntArray dev_track_led_state;  // 20 LEDs
+
+   int tick_nr;
+
+
+   // <method_init.png>
+   public virtual init() : boolean {
+      // BidiCtl::init();
+
+      if(b_debug)
+         trace "[trc] Console1: STConfig.b_console1="+STConfig.b_console1;
+
+      rotaries.alloc(NUM_BANKS * NUM_ROTARIES_PER_BANK);
+      int rotaryIdx = 0;
+      loop(rotaries.maxElements)
+      {
+         Console1Rotary rotary <= new Console1Rotary;
+         rotary.rotary_idx = rotaryIdx++;
+         rotary.parent_console1 <= this;
+         rotary.init();
+         rotaries.add(#(deref rotary));
+      }
+
+      if(STConfig.b_console1)
+      {
+         num_rotaries = NUM_ROTARIES_PER_BANK;
+
+         in_dev  <= MIDI.GetMIDIInDeviceByAliasOrName(DEVICE_ALIAS);
+         out_dev <= MIDI.GetMIDIOutDeviceByAliasOrName(DEVICE_ALIAS);
+
+         if(b_debug)
+            trace "[trc] Consolel1: in_dev="+#(in_dev)+" out_dev="+#(out_dev);
+
+         b_connected = ((null != in_dev) && (null != out_dev));
+
+         if(b_connected)
+            b_connected = in_dev.isOpen() && out_dev.isOpen();
+
+         if(b_connected)
+         {
+            buf.size = 4096;
+
+            dev_bank_idx = -1;
+            track_led_state.allocAndFill(20, 0);
+            dev_track_led_state.allocAndFill(20, -1);
+            selectBank(0);
+         }
+      }
+
+      return b_connected;
+   }
+
+   protected method selectBank(int _bankIdx) {
+      // Allow bank select only when no rotary is touched and detail-edit mode is inactive
+
+      if(b_debug)
+         trace "[trc] Console1::selectBank: bankIdx="+_bankIdx;
+
+      bank_idx = _bankIdx;
+
+      // Force rotary update
+      int rotaryIdx = bank_idx * NUM_ROTARIES_PER_BANK;
+      loop(num_rotaries)
+      {
+         Console1Rotary rotary <= rotaries[rotaryIdx++];
+         rotary.forceUpdate();
+      }
+
+      if(!Global.b_initializing)
+         root_form.queueUpdateBidirectionalControls();
+   }
+
+   public virtual handleMIDIEvent(RecordedMIDIEvent _recEv, ClassArray _midiMapRTEventQueue) : boolean {
+      // called from replay thread
+      MIDIMapEvent ev;
+      ev.initFromRecordedMIDIEvent(in_dev, _recEv);
+
+      Console1Rotary *rotary;
+      int rotaryIdx;
+      Integer io;
+      short t;
+
+      switch(ev.type)
+      {
+         case TYPE_PITCHBEND:
+            break;
+
+         case TYPE_NOTE_ON:
+            if(b_debug)
+               trace "[trc] Console1: note on "+ev.arg1;
+            break;
+
+         case TYPE_NOTE_OFF:
+            if(b_debug)
+               trace "[trc] Console1: note off "+ev.arg1;
+            break;
+
+         case TYPE_CC:
+            if(b_debug)
+               trace "[trc] Console1: CC ext_type="+ev.ext_type+" arg1="+ev.arg1;
+            // // rotaryIdx = ev.ext_type + (bank_idx * NUM_ROTARIES_PER_BANK);
+            // // rotary <= rotaries.get(rotaryIdx);
+            // // if(null != rotary)
+            // // {
+            // //    rotary.value     = (ev.arg1 << 3);  // 7 to 10 bit
+            // //    rotary.dev_value = rotary.value;
+            // //    rotary.out_value = rotary.value;
+            // //    if(b_debug)
+            // //       trace "[>>>] Console1: rotary["+rotaryIdx+"] value="+rotary.value;
+            // //    io = rotary.value;
+            // //    handleRotaryEdited(rotary, _midiMapRTEventQueue);
+            // //    return true;
+            // // }
+            break;
+
+         case TYPE_SYSEX:
+            Buffer b <= ev.sysex_buffer;
+            if(0x02 == b.peekI8(5))
+            {
+               if(0x00 == b.peekI8(6))
+               {
+                  int dir = (0x7F == b.peekI8(8)) ? 1 : -1;
+                  byte hwId = b.peekI8(7);
+                  if(0x02 == hwId)  // shift/fine
+                  {
+                     b_fine = (dir > 0);
+                     return true;
+                  }
+                  else if(0x05 <= hwId <= 0x18)
+                  {
+                     // Track / Bank select
+                     selectBank(hwId - 0x05);
+                     return true;
+                  }
+                  else
+                  {
+                     rotaryIdx = syx_id_to_idx.indexOf(hwId, 0);
+                     if(rotaryIdx >= 0)
+                     {
+                        rotaryIdx += (bank_idx * NUM_ROTARIES_PER_BANK);
+                        rotary <= rotaries.get(rotaryIdx);
+                        if(null != rotary)
+                        {
+                           dir *= b_fine ? STConfig.console1_fine_delta : STConfig.console1_coarse_delta;
+                           rotary.value = mathClampi(rotary.value + dir, 0, 16383);
+                           if(b_debug) trace "[trc] console1: hwId="+hwId+" rotaryIdx="+rotaryIdx+" value="+rotary.value;
+                           rotary.out_value = rotary.value;
+
+                           MIDIMapEvent midiMapEvent <= _midiMapRTEventQueue.nextFree;
+                           if(null != midiMapEvent)
+                           {
+                              midiMapEvent.initUntransformedFromNRPN(in_dev, 0/*dev_ch*/, rotaryIdx/*nrpn*/, rotary.value);
+                              replay.sendUIEvent(midiMapEvent);
+                           }
+                           return true;
+                        }
+                     }
+                  }
+               }
+            }
+            break;
+      }
+
+      return false;
+   }
+
+   public method tick() {
+      // called from replay thread
+
+      // (note) spread updates over multiple ticks
+      int partition = (tick_nr++ & (NUM_UPDATE_PARTITIONS - 1));
+
+      buf.offset = 0;
+
+      Console1Rotary *rotary;
+      int rotaryIdx = (bank_idx * NUM_ROTARIES_PER_BANK);
+      int numRotaries = (3 == partition) ? 2 : 8;
+      rotaryIdx += partition * 8;
+      // // trace "xxx partition="+partition+" rotaryIdx="+rotaryIdx+" numRotaries="+numRotaries;
+
+      loop(numRotaries)
+      {
+         rotary <= rotaries[rotaryIdx];
+         int rawRotaryIdx = rotaryIdx % NUM_ROTARIES_PER_BANK;
+
+         // Rotary (indicator) automation
+         if(rotary.dev_value != rotary.out_value)
+         {
+            if(b_debug)
+               trace "[trc] Console1: send rotary["+rotaryIdx+"] out_value="+rotary.out_value+" (was "+rotary.dev_value+")";
+            rotary.dev_value = rotary.out_value;
+            buf.i8 = 0xB0; // CC
+            buf.i8 = rotary_idx_to_cc.get(rawRotaryIdx);
+            buf.i8 = int(Console1Rotary.Map14To7(rotary.dev_value));  // value
+         }
+
+         // Next rotary
+         rotaryIdx++;
+      }
+
+      if(dev_bank_idx != bank_idx)
+      {
+         if(0 <= dev_bank_idx < 20)
+            track_led_state[dev_bank_idx] = 0;
+         track_led_state[bank_idx] = 127;
+         dev_bank_idx = bank_idx;
+         int trackLedIdx = 0;
+         loop(20)
+         {
+            if(dev_track_led_state.get(trackLedIdx) != track_led_state.get(trackLedIdx))
+            {
+               buf.i8 = 0xB0; // CC
+               buf.i8 = 21 + trackLedIdx;
+               buf.i8 = track_led_state[trackLedIdx];
+               dev_track_led_state[trackLedIdx] = track_led_state[trackLedIdx];
+            }
+            trackLedIdx++;
+         }
+      }
+
+      if(buf.offset > 0)
+      {
+         if(b_debug)
+            Utils.HexDump(buf, 0, buf.offset);
+
+         out_dev.sysExRaw(buf);
+      }
+
+   }
+
+   // <method.png>
+   protected method handleRotaryEdited(MFTwisterRotary _rotary, ClassArray _midiMapRTEventQueue) {
+      // called from handleMIDIEvent()
+      if(b_debug)
+         trace "[trc] Console1::handleRotaryEdited: rotary["+_rotary.rotary_idx+"] = "+_rotary.value+" (7bit: "+(_rotary.value>>3)+")";
+
+      MIDIMapEvent midiMapEvent <= _midiMapRTEventQueue.nextFree;
+      if(null != midiMapEvent)
+      {
+         midiMapEvent.initUntransformedFromNRPN(in_dev, 0/*dev_ch*/, _rotary.rotary_idx/*nrpn*/, _rotary.value);
+         replay.sendUIEvent(midiMapEvent);
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= virtual handleSelectOrEditScene() {
+      // called from UI thread
+      //  - update rotary indicators from last seen morph scene src ctl value
+
+      if(b_debug) trace "xxx Console1::rotary -----------------";
+
+      Console1Rotary *rotary;
+      int groupIdx = MIDIMorphScene.NUM_GROUPS - 1;  // iterate backwards (first group has priority over last)
+      loop(MIDIMorphScene.NUM_GROUPS)  // A..H
+      {
+         // trace "rotary rotaryster::handleSelectOrEditScene:  groupIdx="+rotary+" sceneIdx="+MIDIMorphScene.GetCurrentSceneIdx(rotary);
+         MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+         MIDIMapEvent *mev;
+         foreach mev in mms.mms_entries
+         {
+            if(@(mev.dev) == @(in_dev))
+            {
+               if(0 == mev.dev_ch)
+               {
+                  if(TYPE_NRPN == mev.type)
+                  {
+                     if(0 <= mev.ext_type < (NUM_ROTARIES_PER_BANK * NUM_BANKS))
+                     {
+                        rotary <= rotaries[mev.ext_type];
+
+                        if(b_debug) trace "xxx Console1::handleOrSelectEditScene: OLD rotary.value="+rotary.value;
+                        rotary.value = mev.last_morph_src_arg1;
+                        if(b_debug) trace "xxx Console1::handleOrSelectEditScene:   NEW rotary.value="+rotary.value;
+
+                        rotary.out_value = rotary.value;
+                     }
+                  }
+               }
+            }
+         }
+
+         // Next group
+         groupIdx--;
+      }
+   }
+
+   // <save.png>
+   public virtual saveState(Stream ofs) {
+      // ver
+      ofs.i16 = 1;
+
+      // num rotaries
+      ofs.i16 = rotaries.numElements;
+
+      Console1Rotary *rotary;
+      foreach rotary in rotaries
+         rotary.saveState(ofs);
+
+      // Current Bank
+      ofs.i8 = bank_idx;
+   }
+
+   // <load.png>
+   public virtual loadState(Stream ifs) : boolean {
+      // ver
+      short ver = ifs.u16;
+
+      if(ver >= 1)
+      {
+         // num rotaries
+         int numRotaries = ifs.u16;
+
+         if(numRotaries != rotaries.numElements)
+            trace "[!!!] Console1::loadState: numRotaries="+numRotaries+" != rotaries.numElements="+rotaries.numElements;
+
+         Console1Rotary *rotary;
+         foreach rotary in rotaries
+         {
+            if(!rotary.loadState(ifs, ver))
+            {
+               return false;
+            }
+         }
+
+         // Current Bank
+         byte bankIdx = ifs.u8;
+
+         selectBank(bankIdx);
+
+         return true;
+      }
+      else
+      {
+         trace "[---] Console1: invalid ver="+ver;
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   public virtual handleReplayTimer() {
+      // called from UI thread
+      // if(checkResetQueuedQueryLabel())
+      // {
+      //    queryLabels1();
+      // }
+   }
+
+   // <method.png>
+   protected method updateRotariesFromOutputState() {
+      // (note) currently unused / never called
+      Global.Debug("Console1::updateRotariesFromOutputState");
+
+      int rotaryIdx = bank_idx * NUM_ROTARIES_PER_BANK;
+      loop(num_rotaries)
+      {
+         Console1Rotary rotary <= rotaries[rotaryIdx];
+
+         int groupIdx = 0;
+         loop(MIDIMorphScene.NUM_GROUPS)
+         {
+            MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+
+            MIDIMapEvent *srcEv;
+            foreach srcEv in mms.mms_entries
+            {
+               if(@(srcEv.dev) == @(in_dev))
+               {
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                  {
+                     if(rotaryIdx == srcEv.ext_type)
+                     {
+                        MIDIMapEvent dstEv <= srcEv.morph_target;
+                        short outVal = dstEv.getOutputState();
+
+                        if(outVal >= 0)
+                        {
+                           short val = srcEv.unmapMorphedValue(outVal, true/*b14bit*/);
+                           if(val >= 0)
+                           {
+                              trace "[>>>] Console1::updateRotariesFromOutputState: rotaryIdx="+rotaryIdx+" outVal="+outVal+" => inVal="+val;
+                              srcEv.last_morph_src_arg1 = val;
+                              rotary.value = val;
+                              rotary.out_value = val;
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next group
+            groupIdx++;
+         }
+
+         // Next rotary
+         rotaryIdx++;
+      }
+   }
+
+   // <method.png>
+   public =replay= virtual queueBidirectionalRPNUpdate(int _devIdx, byte _ch,
+                                                       STX_MIDIOutDevice _autoDev,
+                                                       short _rpn, short _rpnVal,
+                                                       String _labelOrNull // "-" == unused
+                                                       ) {
+      // (note) ctl_1..ctl_100 RPNs
+      int rotaryIdx = bank_idx * NUM_ROTARIES_PER_BANK;
+      if(b_debug) trace "[>>>] Console1::queueBidirectionalRPNUpdate: rpn="+_rpn+" rpnVal="+_rpnVal;
+
+      if("-" == _labelOrNull)
+         _rpnVal = 0;
+
+      loop(num_rotaries)
+      {
+         Console1Rotary rotary <= rotaries[rotaryIdx];
+
+         int groupIdx = 0;
+         loop(MIDIMorphScene.NUM_GROUPS)
+         {
+            MIDIMorphScene mms <= MIDIMorphScene.GetCurrentScene(groupIdx);
+
+            MIDIMapEvent *srcEv;
+            foreach srcEv in mms.mms_entries
+            {
+               if(@(srcEv.dev) == @(in_dev))
+               {
+                  if(MIDIMapDefs.TYPE_NRPN == srcEv.type)
+                  {
+                     if(rotaryIdx == srcEv.ext_type)
+                     {
+                        // trace "xxx try rotaryIdx="+rotaryIdx+" val="+_rpnVal;
+                        MIDIMapEvent dstEv <= srcEv.morph_target;
+                        if(MIDIMapDefs.TYPE_RPN == dstEv.type)
+                        {
+                           if(dstEv.ext_type == _rpn)
+                           {
+                              STX_MIDIOutDevice dstDev <= dstEv.dev;
+                              if(null != dstDev)
+                              {
+                                 boolean bMatch = @(dstDev) == @(_autoDev);
+
+                                 if(!bMatch)
+                                 {
+                                    bMatch =
+                                       (dstDev.dev_idx == _devIdx) &&
+                                       (dstEv.dev_ch == _ch);
+                                 }
+
+                                 if(bMatch)
+                                 {
+                                    if(b_debug) trace "[trc] Console1::queueBidirectionalRPNUpdate: match rotaryIdx="+rotaryIdx+" value="+_rpnVal;
+
+                                    rotary.value     = _rpnVal;
+                                    rotary.out_value = _rpnVal;
+
+                                    srcEv.last_morph_src_arg1 = _rpnVal;
+                                    srcEv.setMorphAutoLabelKeepFlags(_labelOrNull);
+                                 }
+                              }
+                           }
+                        }
+                     }
+                  }
+               }
+            }
+
+            // Next group
+            groupIdx++;
+         }
+
+         // Next rotary
+         rotaryIdx++;
+      }
+   }
+
+}

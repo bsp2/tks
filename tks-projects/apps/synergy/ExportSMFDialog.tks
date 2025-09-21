@@ -1,0 +1,307 @@
+// ----
+// ---- file   : ExportSMFDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2017-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   :
+// ----
+// ---- created: 17Jan2017
+// ---- changed: 04Jan2018, 18May2019, 30Oct2019, 14Apr2023, 22Apr2023, 04Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module MExportSMFDialog;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class ExportSMFDialog extends Dialog {
+
+   protected XMLForm   *xfm;
+
+   protected FloatParam *fp_bars;
+   protected FloatParam *fp_beats;
+   protected Label      *lb_ticks;
+   protected CheckBox   *cb_multi;
+   protected CheckBox   *cb_sysex;
+
+   protected TextField *tf_pathname;
+   protected Button *bt_browse;
+
+   protected Button *bt_export;
+   protected Button *bt_cancel;
+
+   static StringArray file_filter_names = [ "Standard MIDI File (*.mid)" ];
+   static StringArray file_filter_strings = [ "*.mid" ];
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= XMLForm.New_PakFile("ExportSMFDialog.xfm");
+      if(null == xfm)
+         return false;
+
+      xfm.autoResolveIds(this);
+
+      initWindow(xfm,
+                 "Export Standard MIDI File",
+                 100, 100,
+                 640, 240
+                 );
+
+      return true;
+   }
+
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   public virtual isResizable() : boolean {
+      return false;
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+
+      tf_pathname.setText(current_song.smf_export_pathname);
+
+      if(!b_layer_postinit_done)
+      {
+         resizeToMinimum();
+      }
+
+      Dialog::preShow();
+   }
+
+   // <method.png>
+   protected method refocusDefault() {
+      UI.SetKeyboardFocus(bt_export);
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      refocusDefault();
+
+      replay.stopReplay(false, true/*bAllowPanic*/);
+
+      lb_ticks.setCaption(String(getTotalNumTicks()));
+      lb_ticks.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleBarsChanged() {
+      Global.Print("Num bars is "+fp_bars.getFloatValue());
+
+      lb_ticks.setCaption(String(getTotalNumTicks()));
+      lb_ticks.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handleBeatsChanged() {
+      Global.Print("Num beats is "+fp_bars.getFloatValue());
+
+      lb_ticks.setCaption(String(getTotalNumTicks()));
+      lb_ticks.redraw();
+   }
+
+   // <ui_handle.png>
+   protected method handlePathNameChanged() {
+      current_song.smf_export_pathname = tf_pathname.getText();
+      Global.Print("Pathname is \""+current_song.smf_export_pathname+"\"");
+   }
+
+   // <ui_handle.png>
+   protected method handleBrowse() {
+      String suggestedPath, suggestedFile;
+      Utils.SplitPathname(tf_pathname.getText(), suggestedPath, suggestedFile);
+
+      String fileName <= UI.SaveFileDialog(suggestedPath,
+                                           suggestedFile,
+                                           "Export SMF",
+                                           file_filter_names, file_filter_strings,
+                                           false
+                                           );
+
+      if(null != fileName)
+      {
+         tf_pathname.setText(fileName);
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleCancel() {
+      hide();
+   }
+
+   // <method.png>
+   protected method getTotalNumTicks() : int {
+      int numTicksPerNote = current_song.ppq * 4;
+      float numTicksPerBeat = (numTicksPerNote / float(current_song.sig_notelen));
+      float numTicksPerBar = numTicksPerBeat * current_song.sig_beats;
+
+      return (int(fp_bars.getFloatValue()) * numTicksPerBar) + (int(fp_beats.getFloatValue()) * numTicksPerBeat);
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleExport() {
+      hide();
+
+      int numBars = fp_bars.getFloatValue();
+      int numBeats = fp_beats.getFloatValue();
+
+      if( (numBars > 0) || (numBeats > 0) )
+      {
+         replay.stopReplay(false, true/*bAllowPanic*/);
+
+         replay.smf_pathname = Utils.ToNativePathName(tf_pathname.getText());
+         replay.b_smf_allow_sysex = cb_sysex.isSelected();
+
+         local File f;
+         if(f.openLocal(replay.smf_pathname, IOS_OUT))
+         {
+            f.close();
+            replay.smf_export_num_ticks = getTotalNumTicks();
+            replay.b_smf_export = true;
+            replay.smf_export_fmt = cb_multi.isSelected() ? 1 : 0;
+            Global.Debug("ExportSMFDialog::handleExport: totalNumTicks="+replay.smf_export_num_ticks+" fmt="+replay.smf_export_fmt);
+            replay.toggleReplay(false/*bAllowPanic*/);
+         }
+         else
+         {
+            Global.Error("Failed to open \""+replay.smf_pathname+"\" for writing");
+         }
+      }
+      else
+      {
+         Global.Warning("SMF export length is 0, aborting..");
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+         case VKEY_ESCAPE:
+            handleCancel();
+            return true;
+
+         case VKEY_F10:
+            if(_k.modShiftOnly())
+            {
+               handleCancel();
+               return true;
+            }
+            break;
+
+         case VKEY_RETURN:
+         case VKEY_SPACE:
+            handleExport();
+            return true;
+
+         case 'd':
+            UI.SetKeyboardFocus(fp_bars);
+            fp_bars.selectAll();
+            return true;
+
+         case 'm':
+            cb_multi.toggleSelectionAction();
+            return true;
+
+         case 'p':
+            if(_k.modCtrl())
+            {
+               current_song.smf_export_pathname = current_song.song_name+".mid";
+               tf_pathname.setText(current_song.smf_export_pathname);
+               Global.Print("Set pathname to song name");
+            }
+            else
+            {
+               UI.SetKeyboardFocus(tf_pathname);
+               tf_pathname.onTabFocus();
+               Global.Print("Focus pathname");
+            }
+            return true;
+
+         case 's':
+            cb_sysex.toggleSelectionAction();
+            return true;
+
+         default:
+            break;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName = _ac.getActionName();
+
+      switch(acName)
+      {
+         case "ok":
+            handleExport();
+            break;
+
+         case "cancel":
+            handleCancel();
+            break;
+      }
+
+      switch(@(_ac.getActionProvider()))
+      {
+         case @(fp_bars):
+            handleBarsChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(fp_beats):
+            handleBeatsChanged();
+            if(FloatParam.ACTION_VALUECHANGED == acName)
+               refocusDefault();
+            return true;
+
+         case @(cb_multi):
+            Global.Print("Multi-track (SMF fmt 1) mode is "+Utils.GetEnableString(cb_multi.isSelected()));
+            return true;
+
+         case @(cb_sysex):
+            Global.Print("SysEx events are "+Utils.GetEnableString(cb_sysex.isSelected()));
+            return true;
+
+         case @(tf_pathname):
+            handlePathNameChanged();
+            if(TextField.ACTION_TEXTEDITED != acName)
+               refocusDefault();
+            return true;
+
+         case @(bt_browse):
+            handleBrowse();
+            return true;
+
+         case @(bt_export):
+             handleExport();
+             return true;
+
+         case @(bt_cancel):
+             handleCancel();
+             return true;
+      }
+
+      return true;
+   }
+
+}

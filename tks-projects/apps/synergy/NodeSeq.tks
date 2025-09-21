@@ -1,0 +1,2232 @@
+// ----
+// ---- file   : NodeSeq.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 06Apr2020
+// ---- changed: 07Apr2020, 08Apr2020, 09Apr2020, 11Apr2020, 12Apr2020, 13Apr2020, 14Apr2020
+// ----          15Apr2020, 16Apr2020, 17Apr2020, 18Apr2020, 20Apr2020, 24Apr2020, 25Apr2020
+// ----          26Apr2020, 06May2020, 09May2020, 13May2020, 30Oct2020, 06Nov2020, 07Nov2020
+// ----          08Nov2020, 09Nov2020, 10Nov2020, 14Nov2020, 15Nov2020, 27Jan2021, 23May2021
+// ----          02Jun2021, 14Jun2021, 20Jun2021, 21Jun2021, 18Jul2021, 01Jan2022, 24Feb2022
+// ----          24Jun2022, 03Nov2022, 07Mar2023, 22Jun2023, 02Sep2023, 03Sep2023, 20Sep2023
+// ----          13Oct2023, 14Oct2023, 15Oct2023, 06Oct2024, 07Oct2024, 17Jan2025, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNodeSeq;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class NodeSeq : Node {
+
+   define int NUM_TRACKS = 12;
+
+   // define int RPN_SEQ_  = RPN_SEQ_BASE +  0;
+
+   static NodeSeqEditor *editor;
+
+   NSQ_Pattern *[] patterns;  // NSQ_Pattern instances
+
+   int tick_nr;
+   int tick_nr_rel;  // relative to node reset / replay start (t=0), does not reset at loop end
+   int tick_nr_mono;  // like tick_nr but does not reset at loop end
+   public float tick_frac;  // for rpn_com_speed_scl
+   public int synced_tick_nr;  // ideal tick_nr (not affected by speed/tempo scaling)
+   // // protected int last_synced_pat_len;  // fallback used after switching to non-existing pattern (continue sync)
+
+   DeviceIOPort *[] out_ports;  // DeviceIOPort instances
+
+   int input_focus_idx;  // -1 or trackIdx (redirect incoming MIDI events, -1=filter by input dev/ch)
+
+   int force_mute_temp_track_mask;  // during Tracker temp edit
+   boolean b_ignore_play_state;     // true during Tracker temp edit Monitor pattern export
+
+   boolean b_rec;
+   boolean b_rec_bg;    // true=record events even when node editor is not visible
+   boolean b_rec_prev;  // true=record framePlay, false=record frameRec only
+
+   boolean ui_b_auto_rec_focus;  // true=auto-enable rec/focus  when track is armed or focused. maybe=focus when it's selected
+
+   boolean b_step_rec;  // true while lctrl is pressed in editor
+
+   boolean b_rec_replace;     // true=clear loop region (all armed tracks) when first recordable event is received
+
+   // true=allow clear loop region when first recordable event is received
+   //  (note) becomes false after clear, auto-resets to true when 'lap' ends
+   boolean b_allow_autoclear;
+
+   int cursor_x;
+   int cursor_y;
+   int view_x;
+   boolean b_autoscroll;  // true=paging, maybe(-1)=smooth scrolling
+
+   float scroll_x;  // 1.0 = 1 bar (used by mouse drag and smoothscroll in frame+note views)
+
+   boolean b_master;  // true = follow song-position / bar 0 always starts at song offset 0. maybe = only send tempo changes
+   boolean b_pre;     // true = pre-count before actual recording starts
+
+   boolean ui_b_fast_clear;  // true=clear track loop region with single keypress
+
+   MIDIPipeFrame *[] active_note_frames;  // MIDIPipeFrame refs (num_tracks * num_channels * num_notes = 12 * 16 * 128 elements)
+   IntArray          active_note_ticks;
+
+   boolean b_ui_redraw;
+   boolean b_ui_reshow;  // after undo() when new Track objects have been created
+   boolean b_ui_activity;  // activity on any MIDI port => redraw activity LEDs
+
+   int queued_loop_start_ticks;  // -1 = none
+   int queued_loop_len_ticks;
+
+   int cur_loop_start_ticks;
+   int cur_loop_len_ticks;
+
+   int ui_num_visible_bars;
+   int ui_bar_highlight_modulo;
+
+   int queued_seek;
+
+   int sel_start_x;
+   int sel_start_y;
+
+   int sel_end_x;
+   int sel_end_y;
+
+   int sorted_sel_start_x;
+   int sorted_sel_start_y;
+
+   int sorted_sel_end_x;
+   int sorted_sel_end_y;
+
+   int tempo_sel_start_x;  // ticks (exlusive)
+   int tempo_sel_start_y;  // trackIdx
+   int tempo_sel_end_x;    // ticks (exlusive)
+   int tempo_sel_end_y;    // trackIdx (inclusive)
+
+   int sorted_tempo_sel_start_x;  // ticks (exlusive)
+   int sorted_tempo_sel_start_y;  // trackIdx
+   int sorted_tempo_sel_end_x;    // ticks (exlusive)
+   int sorted_tempo_sel_end_y;    // trackIdx (inclusive)
+
+   int drag_tempo_sel_start_x;  // ticks (exlusive)
+   int drag_tempo_sel_start_y;  // trackIdx
+   int drag_tempo_sel_end_x;    // ticks (exlusive)
+   int drag_tempo_sel_end_y;    // trackIdx (inclusive)
+
+   int evt_sel_start_x;  // ticks (exlusive)
+   int evt_sel_start_y;  // noteIdx (0..127)
+   int evt_sel_end_x;    // ticks (exlusive)
+   int evt_sel_end_y;    // noteIdx (0..127, inclusive)
+
+   int sorted_evt_sel_start_x;  // ticks (exlusive)
+   int sorted_evt_sel_start_y;  // noteIdx (0..127)
+   int sorted_evt_sel_end_x;    // ticks (exlusive)
+   int sorted_evt_sel_end_y;    // noteIdx (0..127, inclusive)
+
+   define int UNDO_MINIEDIT_TIMEOUT_MS = 1000;
+   define int UNDO_EDIT_TIMEOUT_MS = 20;
+   protected Buffer *[] undo_history;  // Buffer instances (node state snapshots)
+   protected Buffer *[] redo_history;  //
+   protected int undo_start_ms;
+
+   protected static PointerArray clipboard;  // array of PointerArray (frame) instances (one array per track)
+   protected static FloatArray   clipboard_tempo;
+
+   define int Q_OFF  = 0;
+   define int Q_BEAT = 1;
+   define int Q_BAR  = 2;
+   define int Q_LOOP = 3;
+   int q_mode;
+
+   boolean b_queued_rec_restart;
+   MIDIPipeFrame fr_queued_rec_restart_rec;
+   MIDIPipeFrame fr_queued_rec_restart_play;
+   int rec_start_song_offset;
+   int replay_start_cursor_x;
+
+   boolean ui_b_tempo_snap_to_frame;  // true=snap to frames when dragging bar handle in tempo editor
+
+   boolean b_export;  // temporary during Monitor pattern export
+
+   int ui_track_all_none_cursor_x;
+   int ui_track_all_none_cursor_y;
+
+   int ui_wheel_tick_move_count;
+
+   MIDIPipeFrame ui_queued_frame;
+
+   NSQ_TrackerState tracker_state;
+
+
+
+   // <init.png>
+   public virtual nodeInit(MIDIPipe _pipe, MIDIPipeNode _node) : boolean {
+
+      Node::nodeInit(_pipe, _node);
+
+      patterns.alloc(Node.NUM_PATTERNS);
+      patterns.useAll();
+
+      play_pattern_nr = 0;
+      edit_pattern_nr = 0;
+
+      out_ports.free();
+      loop(NUM_TRACKS)
+      {
+         DeviceIOPort op <= new DeviceIOPort;
+         out_ports.add(#(deref op));
+      }
+
+      input_focus_idx = -1;
+      ui_b_auto_rec_focus = maybe;///false;
+
+      b_autoscroll = false;////maybe;
+
+      b_master = false;
+      b_pre = true;
+
+      ui_num_visible_bars = 3;
+      ui_bar_highlight_modulo = 4;
+
+      sel_start_x = -1;
+      sorted_sel_start_x = -1;
+
+      tempo_sel_start_x = -1;
+      sorted_tempo_sel_start_x = -1;
+
+      evt_sel_start_x = -1;
+      sorted_evt_sel_start_x = -1;
+
+      undo_start_ms = -1;
+
+      q_mode = Q_LOOP;
+
+      ui_b_tempo_snap_to_frame = true;
+
+      ui_track_all_none_cursor_x = -1;
+      ui_track_all_none_cursor_y = -1;
+
+      force_mute_temp_track_mask = 0;
+
+      tracker_state.init();
+
+      return true;
+   }
+
+   // <ui_init.png>
+   public virtual nodeUIInit() {
+      local NSQ_Pattern pat;
+
+      Node::nodeUIInit();
+
+      // Allocate first pattern
+      pat.patInit(this, 0);
+
+      loadDefaultPortNames();
+      nodeSetPattern(0, deref pat);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTypeNameOverride() : String {
+      return "Freeform";
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTypeNameShort() : String {
+      // return "FFm";
+      return "Seq";
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditor() : NodeEditor {
+      if(null == editor)
+      {
+         editor <= new NodeSeqEditor;
+
+         if(!editor.init())
+         {
+            editor <= null;
+            return false;
+         }
+      }
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetEditorIfExists() : NodeEditor {
+      return editor;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetIcon() : Icon {
+      if(LookAndFeel.IDX_MONO == STConfig.lnf_idx)
+         return UI.GetIcon("node_seq_mono");
+      else
+         return UI.GetIcon("node_seq");
+   }
+
+   // <method.png>
+   public virtual nodeGetPatternClassName() : String {
+      return "NSQ_Pattern";
+   }
+
+   // <method.png>
+   public method setSelection(int _sx, int _sy, int _ex, int _ey) {
+      sel_start_x = _sx;
+      sel_start_y = _sy;
+      sel_end_x = _ex;
+      sel_end_y = _ey;
+      sortSelection();
+   }
+
+   // <method.png>
+   public method haveSelection() : boolean {
+      return (-1 != sel_start_x);
+   }
+
+   // <replay.png>
+   public virtual nodeRestart() {
+      // trace "xxx NodeSeq::nodeRestart: call nodeSetLastPatternStartSongOffset("+current_song.song_offset+")";
+      nodeSetLastPatternStartSongOffset(current_song.song_offset);
+
+      tick_nr_rel = 0;
+      synced_tick_nr = 0;
+
+      if(true == b_master)
+         nodeSeek(current_song.song_offset);
+      else
+         nodeSeek(nodeGetLastPatternStartSongOffset() + 0);
+
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.lazyResetPlayedBarFrames(true/*bForce*/);
+         pat.resetLapEndTickNrMono();
+      }
+   }
+
+   // <method.png>
+   public method resetActiveNotes() {
+      active_note_frames.alloc(NUM_TRACKS * 16/*ch*/ * 128/*notes*/);
+      active_note_frames.useAll();
+      active_note_ticks.allocAndFill(NUM_TRACKS * 16/*ch*/ * 128/*notes*/, 0);
+   }
+
+   // <replay.png>
+   public virtual nodeReset(boolean _bSoft) {
+
+      Node::nodeReset(_bSoft);
+
+      // trace "xxx seq: nodeReset: nodeGetLastPatternStartSongOffset()="+nodeGetLastPatternStartSongOffset();
+
+      tick_frac = 0.0;
+
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+
+      int relOff = 0;
+      if(null != pat)
+      {
+         relOff = cursor_x * pat.getNumTicksPerBar();
+      }
+
+      tick_nr_rel = 0;
+
+      // trace "xxx NodeSeq::nodeReset: current_song.song_offset="+current_song.song_offset;
+      if(true == b_master)
+         nodeSeek(current_song.song_offset);
+      else
+         nodeSeek(nodeGetLastPatternStartSongOffset() + relOff);
+
+      resetActiveNotes();
+
+      queued_loop_start_ticks = -1;
+
+      queued_seek = -1;
+
+      if(null != pat)
+      {
+         pat.lazyResetPlayedBarFrames(true/*bForce*/);
+         pat.resetLapEndTickNrMono();
+
+         cur_loop_start_ticks = pat.loop_start_ticks;
+         cur_loop_len_ticks   = pat.loop_len_ticks;
+      }
+   }
+
+   // <method.png>
+   public =replay= method resetCurrentLoopAfterUndoRedo() {
+      // called after undo/redo
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.lazyResetPlayedBarFrames(true/*bForce*/);
+         cur_loop_start_ticks = pat.loop_start_ticks;
+         cur_loop_len_ticks   = pat.loop_len_ticks;
+         pat.resetLapEndTickNrMono();
+      }
+   }
+
+   // <replay.png>
+   public virtual nodeGetLastPatternStartSongOffset() : int {
+      if(true == b_master)
+         return 0;
+      else
+         return Node::nodeGetLastPatternStartSongOffset();
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetRelativeEditOffset(int _off) {
+      // Called by arranger to position cursor on offset start position
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         int ticksPerBar = pat.getNumTicksPerBar();
+         cursor_x = _off / ticksPerBar;
+      }
+   }
+
+   // <replay.png>
+   public =replay= virtual nodeSeek(int _ticks) {
+      tick_nr = _ticks - nodeGetLastPatternStartSongOffset();
+      // trace "xxx NodeSeq::nodeSeek: ticks="+_ticks+" nodeGetLastPatternStartSongOffset()="+nodeGetLastPatternStartSongOffset()+" => tick_nr="+tick_nr;
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.seek(tick_nr);
+         pat.lazyResetPlayedBarFrames(true/*bForce*/);
+
+         // Loop modulo + immediately switch to pattern loop
+         if(tick_nr >= pat.loop_start_ticks)
+         {
+            queued_loop_start_ticks = -1;
+            tick_nr = pat.loop_start_ticks + ((tick_nr - pat.loop_start_ticks) % pat.loop_len_ticks);
+            cur_loop_start_ticks = pat.loop_start_ticks;
+            cur_loop_len_ticks   = pat.loop_len_ticks;
+         }
+      }
+
+      if(!replay.b_playing)
+      {
+         // e.g. when replay is about to start (b_playing is still false during song.seek())
+         synced_tick_nr = tick_nr;
+         // trace "xxx NodeSeq::seek: synced_tick_nr="+synced_tick_nr;
+         tick_nr_mono = tick_nr;
+      }
+      // // else
+      // // {
+      // //    trace "xxx !!!! NodeSeq::seek: during replay (keep synced_tick_nr="+synced_tick_nr+")";
+      // //    Utils.Backtrace();
+      // // }
+
+      if(true == b_master)
+      {
+         if(!isNodeOrPipeMuted())
+         {
+            // (note) this may appear to disable transport keys (numpad/MMT) when position is outside of pattern loop
+            //          ==> either increase loop len or disable master mode
+            if(nodeIsEditorVisible()) // [02Sep2023] want node seek when songpos changes but not modulo-wrapping around seq (loop) len -- unless editor is visible
+            {
+               current_song.setSongOffset(tick_nr);
+            }
+         }
+      }
+
+   }
+
+   // <replay.png>
+   public =replay= method queueLoop(int _start, int _len) {
+      if(replay.b_playing)
+      {
+         queued_loop_start_ticks = _start;
+         queued_loop_len_ticks   = _len;
+      }
+      else
+      {
+         queued_loop_start_ticks = -1;
+         cur_loop_start_ticks = _start;
+         cur_loop_len_ticks   = _len;
+      }
+   }
+
+   // <replay.png>
+   public =replay= method forceQueuedLoop() {
+      if(replay.b_playing)
+      {
+         // trace "xxx forceQueuedLoop: queued_loop_start_ticks="+queued_loop_start_ticks;
+         if(-1 != queued_loop_start_ticks)
+         {
+            cur_loop_start_ticks = queued_loop_start_ticks;
+            cur_loop_len_ticks   = queued_loop_len_ticks;
+            queued_loop_start_ticks = -1;
+         }
+      }
+   }
+
+   // <method.png>
+   public method selectNone() {
+      // trace "xxx NodeSeq::selectNone()";
+      sel_start_x = -1;
+      sorted_sel_start_x = -1;
+   }
+
+   // <method.png>
+   public method sortSelection() {
+      if(-1 == sel_start_x)
+      {
+         sorted_sel_start_x = -1;
+         return;
+      }
+
+      if(sel_start_x > sel_end_x)
+      {
+         sorted_sel_start_x = sel_end_x;
+         sorted_sel_end_x   = sel_start_x;
+      }
+      else
+      {
+         sorted_sel_start_x = sel_start_x;
+         sorted_sel_end_x   = sel_end_x;
+      }
+      if(sel_start_y > sel_end_y)
+      {
+         sorted_sel_start_y = sel_end_y;
+         sorted_sel_end_y   = sel_start_y;
+      }
+      else
+      {
+         sorted_sel_start_y = sel_start_y;
+         sorted_sel_end_y   = sel_end_y;
+      }
+   }
+
+   // <method.png>
+   public method tempoSelectNone(boolean _bFromTempo) {
+      // trace "xxx NodeSeq::selectNone()";
+      setTempoSelection(-1, -1, -1, -1, _bFromTempo);
+   }
+
+   // <method.png>
+   public =replay= method setTempoSelection(int _startX, int _startY, int _endX, int _endY, boolean _bFromTempo) {
+      tempo_sel_start_x = _startX;
+      tempo_sel_start_y = _startY;
+      tempo_sel_end_x   = _endX;
+      tempo_sel_end_y   = _endY;
+      sortTempoSelection();
+
+      if(_bFromTempo)
+      {
+         setEvtSelection(_startX, 0, _endX, 127, false/*bFromEvent*/);
+      }
+   }
+
+   // <method.png>
+   public method toggleTempoSelection(int _startX, int _startY, int _endX, int _endY, boolean _bFromTempo) {
+      int oldStartX = sorted_tempo_sel_start_x;
+      int oldStartY = sorted_tempo_sel_start_y;
+      int oldEndX = sorted_tempo_sel_end_x;
+      int oldEndY = sorted_tempo_sel_end_y;
+
+      setTempoSelection(_startX, _startY, _endX, _endY, _bFromTempo);
+
+      // trace "xxx old start=("+oldStartX+";"+oldStartY+") end=("+oldEndX+";"+oldEndY+")";
+      // trace "xxx new start=("+sorted_tempo_sel_start_x+";"+sorted_tempo_sel_start_y+") end=("+sorted_tempo_sel_end_x+";"+sorted_tempo_sel_end_y+")";
+
+      if((-1 != oldStartX) &&
+         (sorted_tempo_sel_start_x == oldStartX) &&
+         (sorted_tempo_sel_start_y == oldStartY) &&
+         (sorted_tempo_sel_end_x == oldEndX) &&
+         (sorted_tempo_sel_end_y == oldEndY)
+         )
+         tempoSelectNone(_bFromTempo);
+   }
+
+   // <method.png>
+   public method sortTempoSelection() {
+      if(-1 == tempo_sel_start_x)
+      {
+         sorted_tempo_sel_start_x = -1;
+         return;
+      }
+
+      if(tempo_sel_start_x > tempo_sel_end_x)
+      {
+         sorted_tempo_sel_start_x = tempo_sel_end_x;
+         sorted_tempo_sel_end_x   = tempo_sel_start_x;
+      }
+      else
+      {
+         sorted_tempo_sel_start_x = tempo_sel_start_x;
+         sorted_tempo_sel_end_x   = tempo_sel_end_x;
+      }
+      if(tempo_sel_start_y > tempo_sel_end_y)
+      {
+         sorted_tempo_sel_start_y = tempo_sel_end_y;
+         sorted_tempo_sel_end_y   = tempo_sel_start_y;
+      }
+      else
+      {
+         sorted_tempo_sel_start_y = tempo_sel_start_y;
+         sorted_tempo_sel_end_y   = tempo_sel_end_y;
+      }
+   }
+
+   // <method.png>
+   public method dragSaveTempoSelection() {
+      drag_tempo_sel_start_x = tempo_sel_start_x;
+      drag_tempo_sel_end_x   = tempo_sel_end_x;
+      drag_tempo_sel_start_y = tempo_sel_start_y;
+      drag_tempo_sel_end_y   = tempo_sel_end_y;
+   }
+
+   // <method.png>
+   public method dragRestoreTempoSelection() {
+      tempo_sel_start_x = drag_tempo_sel_start_x;
+      tempo_sel_end_x   = drag_tempo_sel_end_x;
+      tempo_sel_start_y = drag_tempo_sel_start_y;
+      tempo_sel_end_y   = drag_tempo_sel_end_y;
+      sortTempoSelection();
+   }
+
+   // <method.png>
+   public method evtSelectNone(boolean _bFromEvent) {
+      // trace "xxx NodeSeq::evSelectNone()";
+      setEvtSelection(-1, -1, -1, -1, _bFromEvent);
+   }
+
+   // <method.png>
+   public method setEvtSelection(int _startX, int _startY, int _endX, int _endY, boolean _bFromEvent) {
+      evt_sel_start_x = _startX;
+      evt_sel_start_y = _startY;
+      evt_sel_end_x   = _endX;
+      evt_sel_end_y   = _endY;
+      sortEvtSelection();
+
+      if(_bFromEvent)
+      {
+         NSQ_Pattern pat <= nodeGetCurrentEditPattern();
+         if(null != pat)
+         {
+            NSQ_Track track <= pat.getCursorTrack();
+            int tMinTrack = track.findFirstEvtSelectionAbsTime();
+            if(-1 != tMinTrack)
+            {
+               _startX = tMinTrack;
+            }
+         }
+
+         // trace "xxx setEvtSelection: call setTempoSelection("+_startX+";"+cursor_y+";"+_endX+";"+cursor_y+")";
+         setTempoSelection(_startX, cursor_y, _endX, cursor_y, false/*bFromTempo*/);
+      }
+   }
+
+   // <method.png>
+   public method toggleEvtSelection(int _startX, int _startY, int _endX, int _endY, boolean _bFromEvent) {
+      int oldStartX = sorted_evt_sel_start_x;
+      int oldStartY = sorted_evt_sel_start_y;
+      int oldEndX = sorted_evt_sel_end_x;
+      int oldEndY = sorted_evt_sel_end_y;
+
+      setEvtSelection(_startX, _startY, _endX, _endY, _bFromEvent);
+
+      if((-1 != oldStartX) &&
+         (sorted_evt_sel_start_x == oldStartX) &&
+         (sorted_evt_sel_start_y == oldStartY) &&
+         (sorted_evt_sel_end_x == oldEndX) &&
+         (sorted_evt_sel_end_y == oldEndY)
+         )
+         evtSelectNone(_bFromEvent);
+   }
+
+   // <method.png>
+   public method moveEvtSelectionX(int _deltaX, boolean _bFromEvent) {
+      setEvtSelection(evt_sel_start_x + _deltaX,
+                      evt_sel_start_y,
+                      evt_sel_end_x + _deltaX,
+                      evt_sel_end_y,
+                      _bFromEvent
+                      );
+   }
+
+   // <method.png>
+   public method sortEvtSelection() {
+      if(-1 == evt_sel_start_x)
+      {
+         sorted_evt_sel_start_x = -1;
+         return;
+      }
+
+      if(evt_sel_start_x > evt_sel_end_x)
+      {
+         sorted_evt_sel_start_x = evt_sel_end_x;
+         sorted_evt_sel_end_x   = evt_sel_start_x;
+      }
+      else
+      {
+         sorted_evt_sel_start_x = evt_sel_start_x;
+         sorted_evt_sel_end_x   = evt_sel_end_x;
+      }
+      if(evt_sel_start_y > evt_sel_end_y)
+      {
+         sorted_evt_sel_start_y = evt_sel_end_y;
+         sorted_evt_sel_end_y   = evt_sel_start_y;
+      }
+      else
+      {
+         sorted_evt_sel_start_y = evt_sel_start_y;
+         sorted_evt_sel_end_y   = evt_sel_end_y;
+      }
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternsGeneric() : PointerArray {
+      return patterns;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetCurrentPlayPatternNr(int _patNr) {
+
+      Node::nodeSetCurrentPlayPatternNr(_patNr);
+
+      if(replay.b_playing)
+      {
+         NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+         if(null != pat)
+         {
+            // // nodeSeek(nodeGetLastPatternStartSongOffset()+tick_nr);
+            int tickOff = (tick_nr_rel % pat.loop_len_ticks) + pat.loop_start_ticks;
+            nodeSeek(nodeGetLastPatternStartSongOffset()+tickOff);
+         }
+      }
+   }
+
+   // <method.png>
+   public virtual nodeGetCurrentPlayPatternTickOffset() : int {
+      return tick_nr_rel;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetCurrentPlayPatternNumTicks() : int {
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+         return pat.loop_len_ticks;
+      return 0;
+   }
+
+   // <method_get.png>
+   public virtual nodeIsPatternEmpty(int _patNr) : boolean {
+      return (null == patterns.get(_patNr));
+   }
+
+   // <method_get.png>
+   public virtual nodeGetTotalNumPatternEvents(int _patNr) : int {
+      int r = 0;
+      NSQ_Pattern pat <= patterns.get(_patNr);
+      if(null != pat)
+      {
+         NSQ_Track *track;
+         foreach track in pat.tracks
+         {
+            MIDIPipeFrame *fr;
+            foreach fr in track.frames
+            {
+               r += fr.numEvents;
+            }
+         }
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   public method findFirstUnusedPattern(int _startOff) : int {
+      int patIdx = patterns.indexOfPointer(null, _startOff);
+
+      return patIdx;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeSetPattern(int _idx, NSQ_Pattern _pat) {
+      patterns[_idx & 127] = deref _pat;
+   }
+
+   // <method_get.png>
+   public =replay= method getOrCreateCurrentEditPattern() : NSQ_Pattern {
+      NSQ_Pattern pat <= patterns.get(edit_pattern_nr);
+
+      if(null == pat)
+      {
+         pat <= new NSQ_Pattern;
+         pat.patInit(this, edit_pattern_nr);
+         patterns[edit_pattern_nr] = deref pat;
+      }
+
+      return pat;
+   }
+
+   // <method.png>
+   public =replay= method insertEmptyPatternSlotAt(int _idx) {
+      patterns.insert(_idx, null); // may inc patcnt > 128 (so deleting the slot gets back the last pat)
+   }
+
+   // <method.png>
+   public =replay= method deletePatternSlotAt(int _idx) {
+      patterns.delete(_idx);
+      patterns.insert(Node.NUM_PATTERNS-1, null);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetPatternByIdx(int _idx) : NSQ_Pattern {
+      return patterns.get(_idx);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentPlayPattern() : NSQ_Pattern {
+      return patterns.get(play_pattern_nr);
+   }
+
+   // <method_get.png>
+   public =replay= virtual nodeGetCurrentEditPattern() : NSQ_Pattern {
+      return patterns.get(edit_pattern_nr);
+   }
+
+   // <method_set.png>
+   public =replay= method setInputFocusIdx(int _trackIdx) {
+      input_focus_idx = _trackIdx;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRec(boolean _bEnable) {
+      b_rec = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRecBG(boolean _bEnable) {
+      b_rec_bg = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRecPrev(boolean _bEnable) {
+      b_rec_prev = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableStepRec(boolean _bEnable) {
+      b_step_rec = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRecReplace(boolean _bEnable) {
+      b_rec_replace = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMaster(boolean _bEnable) {
+      b_master = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnablePre(boolean _bEnable) {
+      b_pre = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setQMode(int _mode) {
+      q_mode = _mode;
+   }
+
+   // <method_init.png>
+   public method loadDefaultPortNames() {
+      DeviceIOPort *p;
+      p <= out_ports[ 0]; p.info = "BD/SD/CP";
+      p <= out_ports[ 1]; p.info = "Toms";
+      p <= out_ports[ 2]; p.info = "HH/CY";
+      p <= out_ports[ 3]; p.info = "Drums 4";
+      p <= out_ports[ 4]; p.info = "Keys 1";
+      p <= out_ports[ 5]; p.info = "Keys 2";
+      p <= out_ports[ 6]; p.info = "Bass 1";
+      p <= out_ports[ 7]; p.info = "Bass 2";
+      p <= out_ports[ 8]; p.info = "Pads 1";
+      p <= out_ports[ 9]; p.info = "Pads 2";
+      p <= out_ports[10]; p.info = "Lead 1";
+      p <= out_ports[11]; p.info = "Lead 2";
+   }
+
+   // <method_init.png>
+   public method loadNrPortNames() {
+      DeviceIOPort *p;
+      p <= out_ports[ 0]; p.info = "1";
+      p <= out_ports[ 1]; p.info = "2";
+      p <= out_ports[ 2]; p.info = "3";
+      p <= out_ports[ 3]; p.info = "4";
+      p <= out_ports[ 4]; p.info = "5";
+      p <= out_ports[ 5]; p.info = "6";
+      p <= out_ports[ 6]; p.info = "7";
+      p <= out_ports[ 7]; p.info = "8";
+      p <= out_ports[ 8]; p.info = "9";
+      p <= out_ports[ 9]; p.info = "10";
+      p <= out_ports[10]; p.info = "11";
+      p <= out_ports[11]; p.info = "12";
+   }
+
+   // <method_init.png>
+   public method clearPortNames() {
+      DeviceIOPort *p;
+      foreach p in out_ports
+      {
+         p.info = "";
+      }
+   }
+
+   // <ui_undo.png>
+   protected method undoReset() {
+      undo_history.free();
+      redo_history.free();
+      undo_start_ms = -1;
+   }
+
+   // <ui_undo.png>
+   protected method undoEntryInit(Buffer _en) {
+
+      DummyStream ds;
+      ds.offset = 0;
+      ds.size = 0;
+      nodeSaveState(ds);
+
+      _en.size = ds.offset;
+      _en.offset = 0;
+      nodeSaveState(_en);
+   }
+
+   // <ui_undo.png>
+   protected =replay= method undoEntryRestore(Buffer _en) {
+      _en.offset = 0;
+      local IntArray outDevIdxMap;
+      local IntArray outDevUseCount;
+      outDevIdxMap.identity(MIDI.out_devices.numElements);
+      outDevUseCount.allocAndFill(MIDI.out_devices.numElements, 0);
+      nodeLoadState(_en, outDevIdxMap, outDevUseCount);
+   }
+
+   // <ui_undo.png>
+   protected method undoAddInt() {
+      local Buffer en;
+      undoEntryInit(en);
+      undo_history.add(#(deref en));
+
+      if(undo_history.numElements > STConfig.node_seq_undo_history_size)
+      {
+         undo_history.delete(0);
+      }
+
+      undo_start_ms = -1;
+   }
+
+   // <ui_undo.png>
+   public =replay= method undoAdd() {
+      int tNow = milliSeconds();
+
+      if((-1 == undo_start_ms) ||
+         ((tNow - undo_start_ms) > UNDO_EDIT_TIMEOUT_MS)
+         )
+      {
+         undoAddInt();
+         undo_start_ms = tNow;
+      }
+
+   }
+
+   // <ui_undo.png>
+   public =replay= method undoEnd() : boolean {
+      // Check if last undo entry really differs from current state and remove it otherwise (and return false)
+      Buffer enLast <= undo_history.last;
+
+      if(null != enLast)
+      {
+         Buffer ten;
+         undoEntryInit(ten);
+
+         if(!Utils.BufferDiff(ten, enLast, false/*bVerbose*/))
+         {
+            // State did not change, remove undo entry
+            Global.Debug2("NodeSeq: state did not change, removing undo entry");
+            undo_history.delete(undo_history.numElements - 1);
+         }
+         else
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_undo.png>
+   public =replay= method undoAddMini() {
+      int tNow = milliSeconds();
+
+      if((-1 == undo_start_ms) ||
+         ((tNow - undo_start_ms) > UNDO_MINIEDIT_TIMEOUT_MS)
+         )
+      {
+         undoAddInt();
+         undo_start_ms = tNow;
+      }
+   }
+
+   // <ui_undo.png>
+   public =replay= method undo() {
+      Buffer en <= undo_history.last;
+
+      if(null != en)
+      {
+         local Buffer ren;
+         undoEntryInit(ren);
+         undoEntryRestore(en);
+
+         redo_history.add(#(deref ren));
+
+         if(redo_history.numElements > STConfig.node_seq_undo_history_size)
+            redo_history.delete(0);
+
+         undo_history.delete(undo_history.numElements - 1);
+      }
+   }
+
+   // <ui_undo.png>
+   public =replay= method redo() {
+      Buffer ren <= redo_history.last;
+
+      if(null != ren)
+      {
+         undoAddInt();
+         undoEntryRestore(ren);
+
+         redo_history.delete(redo_history.numElements - 1);
+      }
+   }
+
+   // <ui_undo.png>
+   public method hasUndoHistory() : boolean {
+      return (undo_history.numElements > 0);
+   }
+
+   // <ui_undo.png>
+   public method hasRedoHistory() : boolean {
+      return (redo_history.numElements > 0);
+   }
+
+   // <ui_undo.png>
+   public =replay= method clearUndoRedo() {
+      undo_history.free();
+      redo_history.free();
+   }
+
+   // <method.png>
+   public =replay= method copyToClipboard() : int {
+
+      NSQ_Pattern pat <= nodeGetCurrentEditPattern();
+      if(null == pat)
+         return 0;
+
+      int numEventsCopied = 0;
+      clipboard.free();
+      clipboard_tempo.free();
+      int trackIdx;
+      int firstBarIdx;
+      int numTracks;
+      int numBars;
+
+      if(-1 == sorted_sel_start_x)
+      {
+         firstBarIdx = cursor_x;
+         trackIdx    = cursor_y;
+         numTracks   = 1;
+         numBars     = 1;
+      }
+      else
+      {
+         firstBarIdx = sorted_sel_start_x;
+         trackIdx    = sorted_sel_start_y;
+         numTracks   = sorted_sel_end_y - sorted_sel_start_y + 1;
+         numBars     = sorted_sel_end_x - sorted_sel_start_x + 1;
+      }
+
+      boolean bTempo = (0 == trackIdx) && (NodeSeq.NUM_TRACKS == numTracks);
+
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int barStartTicks;
+      int startTicks = firstBarIdx * ticksPerBar;
+      int barIdx;
+
+      loop(numTracks)
+      {
+         PointerArray frames <= new PointerArray;
+         clipboard.add(#(deref frames));
+
+         NSQ_Track track <= pat.tracks.get(trackIdx);
+         barIdx = firstBarIdx;
+         loop(numBars)
+         {
+            barStartTicks = barIdx * ticksPerBar;
+            int frameIdx = track.bar_lut[barIdx];
+            if(-1 != frameIdx)
+            {
+               PointerArray framesSrc <= track.frames;
+               for(;;)
+               {
+                  MIDIPipeFrame frSrc <= framesSrc.get(frameIdx);
+                  if(null == frSrc)
+                     break;
+                  int tAbs = frSrc.timeStamp;
+                  if(tAbs >= (barStartTicks + ticksPerBar))
+                     break;
+                  MIDIPipeFrame fr <= new MIDIPipeFrame;
+                  fr = frSrc;
+                  fr.timeStamp = tAbs - startTicks;
+                  frames.add(#(deref fr));
+                  numEventsCopied += fr.numEvents;
+                  frameIdx++;
+               }
+            }
+
+            // Next bar
+            barIdx++;
+         }
+
+         // Next track
+         trackIdx++;
+      }
+
+      if(bTempo)
+      {
+         barIdx = firstBarIdx;
+         loop(numBars)
+         {
+            clipboard_tempo.add(pat.bar_tempo.get(barIdx++));
+         }
+      }
+
+      return numEventsCopied;
+   }
+
+   // <method_get.png>
+   public method getNumClipboardEvents() : int {
+      int r = 0;
+      PointerArray *frames;
+      foreach frames in clipboard
+      {
+         MIDIPipeFrame *fr;
+         foreach fr in frames
+         {
+            r += fr.numEvents;
+         }
+      }
+      return r;
+   }
+
+   // <method_get.png>
+   public method haveClipboard() : boolean {
+      return !clipboard.isEmpty();
+   }
+
+   // <method_find.png>
+   public method findClipboardNumBars(int _ticksPerBar) : int {
+      PointerArray *frames;
+      MIDIPipeFrame *fr;
+      int tAbs;
+      int tMax = 0;
+
+      // Find num bars
+      foreach frames in clipboard
+      {
+         if(b_debug) trace "xxx frames="+#(frames);
+         fr <= frames.last;
+         if(null != fr)
+         {
+            if(b_debug) trace "xxx frames.last="+#(fr);
+            tAbs = fr.timeStamp;
+            if(tAbs > tMax)
+               tMax = tAbs;
+         }
+      }
+      int numBars = (tMax / _ticksPerBar)+1;
+      // trace "xxx findClipboardNumBars: tMax="+tMax+" numBars="+numBars;
+      return numBars;
+   }
+
+   // <method_get.png>
+   public method getClipboardNumTracks() : int {
+      return clipboard.numElements;
+   }
+
+   // <method.png>
+   public =replay= method pasteClipboard(boolean _bInsert, boolean _bMix) {
+
+      NSQ_Pattern pat <= nodeGetCurrentEditPattern();
+      if(null == pat)
+         return 0;
+
+      int trackIdx;
+      int firstTrackIdx = cursor_y;
+      int firstBarIdx = cursor_x;
+      int ticksPerBar = pat.getNumTicksPerBar();
+      int numBars;
+      MIDIPipeFrame *fr;
+      MIDIPipeFrame *frDst;
+      trackIdx = 0;
+      PointerArray *frames;
+      NSQ_Track *track;
+      int barIdx;
+      int frameIdxSrc;
+      int frameIdxDst;
+
+      numBars = findClipboardNumBars(ticksPerBar);
+
+      boolean bTempo = false;
+
+      if(NUM_TRACKS == clipboard.numElements)
+      {
+         bTempo = true;
+         firstTrackIdx = 0;
+      }
+
+      if(numBars > 0)
+      {
+         if(_bInsert)
+         {
+            // Shift
+            trackIdx = firstTrackIdx;
+            loop(clipboard.numElements)
+            {
+               track <= pat.tracks.get(trackIdx);
+               if(null != track)
+               {
+                  // trace "xxx shift trackIdx="+trackIdx+" time by "+(numBars * ticksPerBar)+" ticks at cursor_x="+cursor_x;
+                  track.shiftTime(cursor_x/*barIdx*/, numBars * ticksPerBar);
+                  track.rebuildBarLUT();
+                  trackIdx++;
+               }
+               else
+                  break;
+            }
+         }
+         else if(!_bMix)
+         {
+            // Clear target bars
+            trackIdx = firstTrackIdx;
+            loop(clipboard.numElements)
+            {
+               track <= pat.tracks.get(trackIdx);
+               if(null != track)
+               {
+                  barIdx = cursor_x;
+                  loop(numBars)
+                  {
+                     track.clearBar(barIdx++);
+                  }
+               }
+            }
+         }
+
+         // Merge frames
+         trackIdx = firstTrackIdx;
+         // trace "xxx paste: clipboard="+#(clipboard);
+         foreach frames in clipboard
+         {
+            int numFrames = frames.numElements;
+            // trace "xxx paste: track["+trackIdx+"] #frames="+numFrames;
+            track <= pat.tracks.get(trackIdx);
+            if(null != track)
+            {
+               if(numFrames > 0)
+               {
+                  int firstShiftedIdx = track.shiftBarLUT(barIdx, numFrames);
+                  PointerArray framesDst <= track.frames;
+                  if(-1 != firstShiftedIdx)
+                  {
+                     // Insert
+                     firstShiftedIdx -= numFrames;
+                     frameIdxDst = firstShiftedIdx;
+                  }
+                  else
+                  {
+                     // Append
+                     frameIdxDst = framesDst.numElements;
+                  }
+                  frameIdxSrc = 0;
+                  DeviceIOPort p <= out_ports.get(trackIdx);
+                  IntArray barLUT <= track.bar_lut;
+                  IntArray barFlags <= track.bar_flags;
+                  loop(numFrames)
+                  {
+                     fr <= frames.get(frameIdxSrc);
+                     frDst <= new MIDIPipeFrame;
+                     // Copy events and transform to destination port
+                     frDst.mergeFrameFltDst(fr,
+                                            -1/*fltDev*/, -1/*fltCh*/,
+                                            p.dev_idx, p.dev_ch,
+                                            true/*bMergeNotes*/, true/*bMergeRPN*/
+                                            );
+                     frDst.timeStamp = firstBarIdx * ticksPerBar + fr.timeStamp;
+                     barIdx = frDst.timeStamp / ticksPerBar;
+                     if(-1 == barLUT[barIdx])
+                     {
+                        barLUT[barIdx] = frameIdxDst;
+                        // trace "xxx paste: bar "+barIdx+" first frameIdx="+frameIdxDst;
+                     }
+                     barFlags[barIdx] = barFlags[barIdx] | NSQ_Track.CalcBarFlags(frDst);
+                     // trace "xxx paste: frameIdxDst="+frameIdxDst+" barFlags="+barFlags[barIdx];
+                     framesDst.insert(frameIdxDst, #(deref frDst));
+                     frameIdxSrc++;
+                     frameIdxDst++;
+                  } // loop numFrames
+                  // trace "xxx new framesDst="+#(framesDst);
+                  // trace "xxx new barLUT="+#(barLUT);
+                  // trace "xxx new barFlags="+#(barFlags);
+               } // if numFrames
+               trackIdx++;
+            }
+            else
+               break;
+         } // loop clipboard tracks
+
+         if(bTempo)
+         {
+            pat.insertTempoBars(firstBarIdx, numBars);
+            barIdx = firstBarIdx;
+            int barIdxSrc = 0;
+            // trace "xxx paste clipboard_tempo="+#(clipboard_tempo)+" numBars="+numBars+" barIdx="+barIdx;
+            loop(mathMini(clipboard_tempo.numElements, numBars))
+            {
+               pat.updateBarTempo(barIdx++, clipboard_tempo.get(barIdxSrc++));
+            }
+         }
+
+      } // if numBars
+   }
+
+   // <method_get.png>
+   public method getOutPortByTrackIdx(int _trackIdx) : DeviceIOPort {
+      return out_ports.get(_trackIdx);
+   }
+
+   // <save.png>
+   public virtual nodeSaveState(Stream ofs) {
+      ofs.i16 = 17; // Version
+
+      Node::nodeSaveState(ofs);
+
+      // Output ports
+      ofs.i8 = NUM_TRACKS;
+      int trackIdx = 0;
+      loop(NUM_TRACKS)
+      {
+         DeviceIOPort op <= out_ports.get(trackIdx);
+         op.saveState(ofs);
+         trackIdx++;
+      }
+
+      // Cursor position and view offset
+      ofs.i16 = cursor_x;
+      ofs.i16 = cursor_y;
+      ofs.i16 = view_x;
+
+      // Patterns
+      NSQ_Pattern *pat;
+      int patIdx = 0;
+      loop(Node.NUM_PATTERNS)
+      {
+         pat <= patterns.get(patIdx);
+
+         if(null != pat)
+         {
+            ofs.i8 = 1;
+            pat.patSaveState(ofs);
+         }
+         else
+         {
+            ofs.i8 = 0; // ver (0 == unused pat slot)
+         }
+
+         // Next pattern
+         patIdx++;
+      }
+
+      // (note) [21Jun2021] moved to Node base class
+      ofs.i8 = edit_pattern_nr;
+      ofs.i8 = play_pattern_nr;
+
+      ofs.i8 = input_focus_idx;
+
+      // Auto-Rec/Focus (v9+)
+      ofs.i8 = ui_b_auto_rec_focus;
+
+      ofs.i8 = b_rec;
+      ofs.i8 = b_rec_bg;  // v16+
+      ofs.i8 = b_rec_prev;
+      ofs.i8 = b_rec_replace;  // v15+
+
+      ofs.i8 = b_autoscroll;
+
+      ofs.i8 = b_master;
+      ofs.i8 = b_pre;
+
+      // Num visible bars (v13+)
+      ofs.i8 = ui_num_visible_bars;
+
+      ofs.i8 = ui_bar_highlight_modulo;
+
+      ofs.i32 = sel_start_x;
+      ofs.i32 = sel_end_x;
+      ofs.i32 = sel_start_y;
+      ofs.i32 = sel_end_y;
+
+      // Tempo Selection (v5+)
+      ofs.i32 = tempo_sel_start_x;
+      ofs.i32 = tempo_sel_end_x;
+      ofs.i32 = tempo_sel_start_y;
+      ofs.i32 = tempo_sel_end_y;
+
+      // Event/Note Selection (v7+)
+      ofs.i32 = evt_sel_start_x;
+      ofs.i32 = evt_sel_end_x;
+      ofs.i32 = evt_sel_start_y;
+      ofs.i32 = evt_sel_end_y;
+
+      ofs.i8  = q_mode;
+
+      // Snap bar-handle to frame (tempo) (v4+)
+      ofs.i8 = ui_b_tempo_snap_to_frame;
+
+      // Fast-clear (v14+)
+      ofs.i8 = ui_b_fast_clear;
+
+      // Tracker state (v17+)
+      tracker_state.saveState(ofs);
+   }
+
+   // <load.png>
+   public virtual nodeLoadState(Stream ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      short ver = ifs.i16;
+
+      if(ver >= 1)
+      {
+         if(!Node::nodeLoadState(ifs, _outDevIdxMap, _outDevUseCount))
+         {
+            return false;
+         }
+
+         // Output ports
+         int numTracks = ifs.u8;
+         int trackIdx = 0;
+         loop(numTracks)
+         {
+            DeviceIOPort op <= out_ports.get(trackIdx);
+            if(!op.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+               return false;
+            trackIdx++;
+         }
+
+         // Cursor position and view offset
+         cursor_x = ifs.u16;
+         cursor_y = ifs.u16;
+         view_x   = ifs.u16;
+
+         // Patterns
+         int patIdx;
+         NSQ_Pattern *pat;
+         boolean bPatUsed;
+
+         patIdx = 0;
+         loop(Node.NUM_PATTERNS)
+         {
+            bPatUsed = ifs.i8;
+            if(bPatUsed)
+            {
+               pat <= new NSQ_Pattern;
+               pat.patInit(this, patIdx);
+               patterns[patIdx] = deref pat;
+
+               if(!pat.patLoadState(ifs, 1, _outDevIdxMap, _outDevUseCount))
+               {
+                  trace "[---] NodeSeq::loadState: patLoadState failed (patIdx="+patIdx+")";
+                  return false;
+               }
+            }
+
+            // Next pattern
+            patIdx++;
+         }
+
+         // (note) [21Jun2021] moved to Node base class
+         edit_pattern_nr = ifs.u8;
+         play_pattern_nr = ifs.u8;
+
+         input_focus_idx = ifs.s8;
+
+         if(ver >= 9)
+         {
+            // Auto-Rec/Focus (v9+)
+            ui_b_auto_rec_focus = ifs.s8;
+         }
+
+         b_rec      = ifs.b8;
+         if(ver >= 16)
+            b_rec_bg = ifs.b8;  // v16+
+         b_rec_prev = ifs.b8;
+
+         if(ver >= 15)
+            b_rec_replace = ifs.b8;  // v15+
+
+         b_autoscroll = ifs.s8;
+
+         b_master = ifs.s8;
+         b_pre = ifs.b8;
+
+         if(ver < 6)
+         {
+            // (note) removed in v6 (moved to NSQ_Pattern class)
+            // // loop_start_ticks = ifs.i32;
+            // // loop_len_ticks = ifs.i32;
+            ifs.getI32();
+            ifs.getI32();
+         }
+
+         if(3 <= ver < 6)
+         {
+            // (note) removed in v6 (moved to NSQ_Pattern class)
+            // // // Punch In+Out (v3+)
+            // // punch_start_ticks = ifs.i32;
+            // // punch_len_ticks   = ifs.i32;
+            ifs.getI32();
+            ifs.getI32();
+         }
+
+         if(ver >= 13)
+         {
+            // Num visible bars (v13+)
+            ui_num_visible_bars = ifs.u8;
+         }
+
+         ui_bar_highlight_modulo = ifs.u8;
+
+         sel_start_x = ifs.i32;
+         sel_end_x   = ifs.i32;
+         sel_start_y = ifs.i32;
+         sel_end_y   = ifs.i32;
+         sortSelection();
+
+         if(ver >= 5)
+         {
+            // Tempo Selection (v5+)
+            tempo_sel_start_x = ifs.i32;
+            tempo_sel_end_x   = ifs.i32;
+            tempo_sel_start_y = ifs.i32;
+            tempo_sel_end_y   = ifs.i32;
+            sortTempoSelection();
+            // trace "xxx nodeLoadState: restore sorted_tempo_sel_start_x="+sorted_tempo_sel_start_x;
+         }
+
+         if(ver >= 7)
+         {
+            // Event/Note Selection (v7+)
+            evt_sel_start_x = ifs.i32;
+            evt_sel_end_x   = ifs.i32;
+            evt_sel_start_y = ifs.i32;
+            evt_sel_end_y   = ifs.i32;
+            sortEvtSelection();
+         }
+
+         q_mode = ifs.u8;
+
+         if(2 <= ver < 10)
+         {
+            // (note) moved to NSQ_Pattern class in v10+
+            // // // Time signature (v2+)
+            // // sig_beats   = ifs.u8;
+            // // sig_notelen = ifs.u8;
+            ifs.getU8();
+            ifs.getU8();
+         }
+
+         if(ver >= 4)
+         {
+            // Snap bar-handle to frame (tempo) (v3+)
+            ui_b_tempo_snap_to_frame = ifs.b8;
+         }
+
+         if(8 <= ver < 12)
+         {
+            // (note) moved to NSQ_Track in v12+
+            // // // Event note offset (v8+)
+            // // ui_evt_note_off = ifs.u8;
+            ifs.getU8();
+         }
+
+         if(11 <= ver < 12)
+         {
+            // (note) moved to NSQ_Track in v12+
+            // // // Event number of visible notes (v11+)
+            // // ui_evt_num_visible_notes = ifs.u8;
+            ifs.getU8();
+         }
+
+         if(ver >= 14)
+         {
+            // Fast-clear (v14+)
+            ui_b_fast_clear = ifs.b8;
+         }
+
+         if(ver >= 17)
+         {
+            // Tracker state (v17+)
+            if(!tracker_state.loadState(ifs))
+            {
+               trace "[---] NodeSeq::loadState: failed to load tracker_state";
+               return false;
+            }
+         }
+
+         // trace "xxx NodeSeq::loadState: leave OK";
+         return true;
+
+      } // if ver >= 1
+
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual nodeIsArmedForRecording() : boolean {
+      return b_rec;
+   }
+
+   // <method.png>
+   public virtual nodeHandleSongSpeedChanged(boolean _bPPQ, boolean _bBPM) {
+      Node::nodeHandleSongSpeedChanged(_bPPQ, _bBPM);
+      b_ui_redraw = true;
+   }
+
+   // <method_set.png>
+   public =replay= virtual nodeArmForRecording(boolean _bEnable) : boolean {
+      // // if(b_rec)
+      // //    stopRec();
+      // // else
+      // //    startRec();
+      b_rec = _bEnable;
+   }
+
+   // <method_get.png>
+   public method nodeIsRTRecordActive() : boolean {
+      return b_rec;
+   }
+
+   // <method_handle.png>
+   public virtual nodeHandleStartPlaying() {
+      Node::nodeHandleStartPlaying();
+
+      b_queued_rec_restart = false;
+      fr_queued_rec_restart_rec.empty();
+      fr_queued_rec_restart_play.empty();
+
+      NSQ_Pattern pat <= nodeGetCurrentPlayPattern();
+      if(null != pat)
+      {
+         pat.lazyResetPlayedBarFrames(true/*bForce*/);
+      }
+
+      if(b_rec_bg || nodeIsEditorVisible())
+      {
+         if(b_rec)
+         {
+            nodeHandleStartRecording();
+         }
+      }
+
+      replay_start_cursor_x = cursor_x;
+   }
+
+   // <method_handle.png>
+   public virtual nodeHandleStopPlaying() {
+      // Called from UI thread while =replay= is locked
+      Node::nodeHandleStopPlaying();
+      b_queued_rec_restart = false;
+      fr_queued_rec_restart_rec.empty();
+      fr_queued_rec_restart_play.empty();
+   }
+
+   // <method_handle.png>
+   public virtual nodeHandleStartRecording() {
+      // Called from replay thread
+      if(b_debug) trace "xxx NodeSeq::nodeHandleStartRecording";
+      rec_start_song_offset = current_song.song_offset;
+      undoAdd();
+   }
+
+   // <method.png>
+   public =replay= method queueRecordRestart() {
+      b_queued_rec_restart = true;
+      fr_queued_rec_restart_rec.empty();
+      fr_queued_rec_restart_play.empty();
+   }
+
+   // <method_handle.png>
+   public virtual nodeHandleStopRecording() {
+      // Called from UI thread while =replay= mutex is locked
+      undoEnd();
+
+      if(b_debug)
+      {
+         trace "xxx NodeSeq: nodeHandleStopRecording";
+         debugPrintPatternFrames(4);
+      }
+   }
+
+   // <method.png>
+   public method debugPrintPatternFrames(int _trackIdx) {
+      NSQ_Pattern pat <= nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         NSQ_Track track <= pat.tracks.get(_trackIdx);
+         track.debugPrintFrames();
+      }
+   }
+
+   // <ui.png>
+   public =replay= method uiCheckResetRedraw() : boolean {
+      return = b_ui_redraw;
+      b_ui_redraw = false;
+   }
+
+   // <ui.png>
+   public =replay= method uiCheckResetActivity() : boolean {
+      return = b_ui_activity;
+      b_ui_activity = false;
+   }
+
+   // <ui.png>
+   public =replay= method uiCheckResetReshow() : boolean {
+      return = b_ui_reshow;
+      b_ui_reshow = false;
+   }
+
+   // <method_handle.png>
+   protected method handlePrgChg(MIDIPipeFrame _frame, boolean _bAllowSeekPrgChgAndMute) {
+      int numPC = _frame.getNumEventsPrgChg();
+
+      if(numPC > 0)
+      {
+         int pcIdx = 0;
+
+         if(_bAllowSeekPrgChgAndMute)
+         {
+            loop(numPC)
+            {
+               MIDIPipeEvent ev;
+               _frame.getEventByIdx(pcIdx, ev, MIDIPIPE_EVENT_TYPE_PRGCHG);
+
+               if(b_auto_filter_a && b_auto_recv_prgchg_a)
+               {
+                  if( (-1 == auto_dev_filter_a) || (auto_dev_filter_a == ev.devIdx) )
+                  {
+                     if( (-1 == auto_ch_filter_a) || (auto_ch_filter_a == ev.midiCh) )
+                     {
+                        nodeSetCurrentPlayPatternNr(ev.arg1);
+                        Events.SendPlayPat();
+
+                        Global.Debug3("NodeSeq: queued pattern "+play_pattern_nr+" via PrgChg A");
+                     }
+                  }
+               }
+
+               if(b_auto_filter_b && b_auto_recv_prgchg_b)
+               {
+                  if( (-1 == auto_dev_filter_b) || (auto_dev_filter_b == ev.devIdx) )
+                  {
+                     if( (-1 == auto_ch_filter_b) || (auto_ch_filter_b == ev.midiCh) )
+                     {
+                        nodeSetCurrentPlayPatternNr(ev.arg1);
+                        Events.SendPlayPat();
+
+                        Global.Debug3("NodeSeq: queued pattern "+play_pattern_nr+" via PrgChg B");
+                     }
+                  }
+               }
+
+               pcIdx++;
+            }
+         } // if _bAllowSeekPrgChgAndMute
+      }
+
+      // Handle timeline recordable program change
+      short t = getFrameRPN(_frame, RPN_COMMON_UI_PRGCHG);
+      if(t >= 0)
+      {
+         nodeSetCurrentPlayPatternNr(t);
+         Events.SendPlayPat();
+         replay.addUIPrgChgEntry(getNodeGID(), t);
+      }
+   }
+
+   // <replay.png>
+   public =replay= uiQueueFrame(MIDIPipeFrame _fr) {
+      ui_queued_frame.mergeFrame(_fr);
+   }
+
+   // <method_get.png>
+   public virtual nodeGetCursorTrack() : int {
+      return cursor_y;
+   }
+
+   // <method_get.png>
+   public virtual nodeGetSupportedRPNs() : IntArray {
+      return [
+         // RPN_CTL_0,  RPN_CTL_1, RPN_CTL_2,  RPN_CTL_3,  RPN_CTL_4,  RPN_CTL_5,  RPN_CTL_6,  RPN_CTL_7,
+         // RPN_CTL_8,  RPN_CTL_9, RPN_CTL_10, RPN_CTL_11, RPN_CTL_12, RPN_CTL_13, RPN_CTL_14, RPN_CTL_15,
+
+         RPN_COMMON_UI_PRGCHG,
+         RPN_COMMON_MUTE_TEMP, // nodeParseRPN_Mute
+         RPN_COMMON_MUTE_TEMP_TOGGLE,
+         RPN_COMMON_MUTE_TEMP_1_8,
+         RPN_COMMON_MUTE_TEMP_9_16,
+         RPN_COMMON_SOLO_TEMP_1_8,
+         RPN_COMMON_SOLO_TEMP_9_16,
+         RPN_COMMON_UI_NODE_MUTE,
+         RPN_COMMON_UI_NODE_SOLO,
+         RPN_COMMON_UI_PIPE_MUTE,
+         RPN_COMMON_UI_PIPE_SOLO,
+
+         RPN_COMMON_TRANSPOSE,  // nodeParseRPN_Transpose
+
+         RPN_COMMON_VELOCITY_OFF,  // nodeParseRPN_Vel_Dur_Speed
+         RPN_COMMON_VELOCITY_SCL,
+         RPN_COMMON_DURATION_OFF,
+         RPN_COMMON_DURATION_SCL,
+         RPN_COMMON_SPEED,
+         RPN_COMMON_POSITION,
+         RPN_COMMON_SPEEDSYNCRATE,
+
+         // RPN_COMMON_PROB_ALL_REL,  // nodeParseRPN_Probability
+         // RPN_COMMON_PROB_TRACK_1,
+         // RPN_COMMON_PROB_TRACK_2,
+         // RPN_COMMON_PROB_TRACK_3,
+         // RPN_COMMON_PROB_TRACK_4,
+         // RPN_COMMON_PROB_TRACK_5,
+         // RPN_COMMON_PROB_TRACK_6,
+         // RPN_COMMON_PROB_TRACK_7,
+         // RPN_COMMON_PROB_TRACK_8,
+         // RPN_COMMON_PROB_TRACK_9,
+         // RPN_COMMON_PROB_TRACK_10,
+         // RPN_COMMON_PROB_TRACK_11,
+         // RPN_COMMON_PROB_TRACK_12,
+         // RPN_COMMON_PROB_TRACK_13,
+         // RPN_COMMON_PROB_TRACK_14,
+         // RPN_COMMON_PROB_TRACK_15,
+         // RPN_COMMON_PROB_TRACK_16,
+
+         // RPN_COMMON_RESET,
+         // RPN_COMMON_RUN,
+         // RPN_COMMON_LENGTH,
+         // RPN_COMMON_OFFSET,
+         // RPN_COMMON_RESTART,
+         // RPN_COMMON_OFFSET_ADD,
+         RPN_COMMON_SEEK_OFFSET,
+         // RPN_COMMON_SEEK_REL_PRE,
+         // RPN_COMMON_GATE,
+         // RPN_COMMON_SEEK_REL_POST,
+              ];
+   }
+
+   // <replay.png>
+   static int xxx_debug = 0;
+   public virtual nodeProcessFrame(MIDIPipeFrame _framePlay,
+                                   MIDIPipeFrame _frameRec,
+                                   boolean       _bMuted,
+                                   boolean       _bPlaySeq
+                                   ) {
+      boolean bEditFocus = nodeIsEditorVisible();
+      boolean bEditable = b_rec_bg || bEditFocus;
+      if(!bEditFocus)
+      {
+         if(node_gid == current_song.locked_keyjazz_node_gid)
+         {
+            bEditFocus = true;
+
+            // don't allow step-edit from any MIDI input when node is armed for recording but replay is not running
+            //  (note) "arm-for-recording" enables b_rec
+            bEditable = b_rec && replay.b_playing;
+         }
+      }
+      if(-1 != current_song.locked_keyjazz_node_gid &&
+         node_gid != current_song.locked_keyjazz_node_gid
+         )
+      {
+         // Editor is visible but keyjazz is locked to other node
+         bEditFocus = false;
+         bEditable  = false;
+      }
+
+      if(bEditFocus)
+         nodeHandleContextSensitiveAutoDevEvents(_frameRec, _framePlay);
+
+      NSQ_Pattern *pat;
+      boolean bSeek = false;
+
+      boolean bHaveRPN = ((_framePlay.numEventsRPN > 0) || (_frameRec.numEventsRPN > 0));
+      short t;
+
+      // Ignore arranger prgchg+mute+seek if replay was started from node editor
+      boolean bAllowSeekPrgChgAndMute = !b_export;
+      if(STConfig.b_node_seq_ignore_seek_prgchg_mute_during_pattern_replay)
+         bAllowSeekPrgChgAndMute = !replay.isPatternNode(this);
+      bAllowSeekPrgChgAndMute = bAllowSeekPrgChgAndMute && !b_node_ignore_seek_prgchg_mute;
+
+      if(bHaveRPN)
+      {
+         if(bAllowSeekPrgChgAndMute)
+         {
+            // (note) sent by Arranger
+            t = getRPN(_framePlay, _frameRec, RPN_COMMON_SEEK_OFFSET);
+            if(-1 == t)
+            {
+               t = node_queued_com_seek_off;
+            }
+            node_queued_com_seek_off = -1;
+            if(t >= 0)
+            {
+               queued_seek = t * (current_song.ppq / 4);  // seek 16th
+            }
+         }
+      }
+
+      handlePrgChg(_framePlay, bAllowSeekPrgChgAndMute);
+      handlePrgChg(_frameRec,  bAllowSeekPrgChgAndMute);
+
+      if(!b_export)
+         nodeSendQueuedPrgChgOut(_framePlay);
+
+      // trace "xxx tick_nr="+tick_nr+" rec_tick_nr="+rec_tick_nr;
+      if(!b_export && (-1 != queued_seek))
+      {
+         // trace "xxx tick_nr="+tick_nr+" queued_seek="+queued_seek;
+
+         nodeSeek(queued_seek + nodeGetLastPatternStartSongOffset());
+         queued_seek = -1;
+         b_ui_redraw = true;
+         pat <= nodeGetCurrentPlayPattern();
+         if(null != pat)
+         {
+            pat.lazyResetPlayedBarFrames(true/*bForce*/);
+         }
+         bSeek = true;
+      }
+
+      if(bHaveRPN)
+      {
+         // Handle MUTE_TEMP_*, MUTE_TEMP_TOGGLE, MUTE_SOLO_*
+         nodeParseRPN_Mute(_framePlay, _frameRec);
+         nodeParseRPN_Vel_Dur_Speed(_framePlay, _frameRec);
+      }
+
+      if(!bAllowSeekPrgChgAndMute)
+         node_queued_b_mute_temp = -1;
+      else
+      {
+         if(-1 != queued_node_mute_temp_track_mask_1_8)
+         {
+            node_mute_temp_track_mask = (node_mute_temp_track_mask &~255) | queued_node_mute_temp_track_mask_1_8;
+            queued_node_mute_temp_track_mask_1_8 = -1;
+         }
+
+         if(-1 != queued_node_mute_temp_track_mask_9_16)
+         {
+            node_mute_temp_track_mask = (node_mute_temp_track_mask &255) | (queued_node_mute_temp_track_mask_9_16 << 8);
+            queued_node_mute_temp_track_mask_9_16 = -1;
+         }
+      }
+
+      _bMuted |= nodeHandleQueuedMuteTemp();
+
+      pat <= nodeGetCurrentPlayPattern();
+
+      if(bSeek)
+      {
+         if(null != pat)
+            pat.lazyResetPlayedBarFrames(true/*bForce*/);
+      }
+
+      MIDIPipeFrame frOut;
+      frOut.empty();
+
+      if(!_bMuted && (null != pat))
+      {
+         if(_bPlaySeq && b_queued_rec_restart)
+         {
+            fr_queued_rec_restart_rec.mergeFrame(_frameRec);
+            fr_queued_rec_restart_play.mergeFrame(_framePlay);
+         }
+
+         if(_bPlaySeq && (false != b_master))
+         {
+            int ticksPerBar = pat.getNumTicksPerBar();
+            if(0 == (tick_nr % ticksPerBar))
+               pat.processTempo();
+         }
+
+         // // if(tick_frac >= 0.0)
+         // // {
+         // //    pat.processFrame(_bPlaySeq,
+         // //                     frOut,
+         // //                     _frameRec,
+         // //                     false/*bFramePlay*/,
+         // //                     !b_queued_rec_restart/*bEditable*/,
+         // //                     bEditFocus/*bAllowRedirect*/,
+         // //                     false/*bForceRec*/,
+         // //                     0/*startTrackIdx*/,
+         // //                     pat.tracks.numElements
+         // //                     );
+         // // }
+         // // else
+         // // {
+         // //    // record to same tick (and/or record note-offs when node is swung)
+         pat.processFrame(_bPlaySeq,
+                          frOut,
+                          _frameRec,
+                          false/*bFramePlay*/,
+                          bEditable && !b_queued_rec_restart/*bAllowRec*/,
+                          bEditFocus/*bAllowRedirect*/,
+                          false/*bForceRec*/,
+                          0/*startTrackIdx*/,
+                          pat.tracks.numElements,
+                          (tick_frac >= 0.0)/*bAllowReplay*/,
+                          false/*bIgnoreRecDev*/
+                          );
+         // // }
+
+         if(!b_queued_rec_restart && fr_queued_rec_restart_rec.hasEvents())
+         {
+            pat.processFrame(_bPlaySeq,
+                             frOut,
+                             fr_queued_rec_restart_rec,
+                             false/*bFramePlay*/,
+                             bEditable/*bAllowRec*/,
+                             bEditFocus/*bAllowRedirect*/,
+                             false/*bForceRec*/,
+                             0/*startTrackIdx*/,
+                             pat.tracks.numElements,
+                             (tick_frac >= 0.0)/*bAllowReplay*/,
+                             false/*bIgnoreRecDev*/
+                             );
+         }
+
+         if(b_rec_prev)
+         {
+            pat.processFrame(_bPlaySeq,
+                             frOut,
+                             _framePlay,
+                             true/*bFramePlay*/,
+                             bEditable && !b_queued_rec_restart/*bAllowRec*/,
+                             bEditFocus/*bAllowRedirect*/,
+                             false/*bForceRec*/,
+                             0/*startTrackIdx*/,
+                             pat.tracks.numElements,
+                             (tick_frac >= 0.0)/*bAllowReplay*/,
+                             false/*bIgnoreRecDev*/
+                             );
+
+            if(!b_queued_rec_restart && fr_queued_rec_restart_play.hasEvents())
+            {
+               pat.processFrame(_bPlaySeq,
+                                frOut,
+                                fr_queued_rec_restart_play,
+                                false/*bFramePlay*/,
+                                bEditable/*bAllowRec*/,
+                                bEditFocus/*bAllowRedirect*/,
+                                false/*bForceRec*/,
+                                0/*startTrackIdx*/,
+                                pat.tracks.numElements,
+                                (tick_frac >= 0.0)/*bAllowReplay*/,
+                                false/*bIgnoreRecDev*/
+                                );
+            }
+         }
+
+      } // if !bMuted && pat
+
+      if(_bPlaySeq)
+      {
+         if(!b_queued_rec_restart)
+         {
+            fr_queued_rec_restart_rec.empty();
+            fr_queued_rec_restart_play.empty();
+         }
+
+         for(;;)
+         {
+            if(tick_frac >= 0.0)
+            {
+               tick_frac -= 1.0;
+               tick_nr++;
+               tick_nr_mono++;
+               tick_nr_rel++;
+            }
+
+            if(!b_export && b_queued_rec_restart)
+            {
+               fr_queued_rec_restart_rec.mergeFrame(_frameRec);
+               if(b_rec_prev)
+                  fr_queued_rec_restart_play.mergeFrame(_framePlay);
+
+               if(null != pat)
+               {
+                  // // if(0 == (tick_nr % pat.getNumTicksPerBeat()))
+                  if(0 == (tick_nr % pat.getNumTicksPerBar()))
+                  {
+                     b_queued_rec_restart = false;
+                     if(undoEnd())
+                     {
+                        undo();
+                        b_ui_reshow = true;
+                     }
+                     undoAdd();
+                     if((true == b_master) && !replay.b_freerun_loop)  // [21Jun2021] only seek all nodes when freerun_loop is disabled
+                     {
+                        replay.queueSeek(rec_start_song_offset);  // takes effect at start of next global replay tick
+                     }
+                     else
+                     {
+                        queued_seek = cur_loop_start_ticks;  // takes effect at start of next node replay tick (see above)
+                     }
+                     b_ui_redraw = true;
+                  }
+               }
+            }
+
+            // Loop
+            if(!b_export)
+            {
+               if(tick_nr == (cur_loop_start_ticks + cur_loop_len_ticks))
+               {
+                  if(-1 != queued_loop_start_ticks)
+                  {
+                     cur_loop_start_ticks = queued_loop_start_ticks;
+                     cur_loop_len_ticks   = queued_loop_len_ticks;
+                     queued_loop_start_ticks = -1;
+                  }
+                  else
+                  {
+                     if(null != pat)
+                     {
+                        cur_loop_start_ticks = pat.loop_start_ticks;
+                        cur_loop_len_ticks   = pat.loop_len_ticks;
+                     }
+                  }
+
+                  b_ui_redraw = true;
+
+                  // trace "xxx NodeSeq loop to "+cur_loop_start_ticks+" at tick_nr="+tick_nr+" (synced_tick_nr="+synced_tick_nr+")";
+
+                  if((true == b_master) && !_bMuted && !replay.b_freerun_loop)
+                     replay.queueSeek(cur_loop_start_ticks);  // takes effect at start of next global replay tick
+                  else
+                     queued_seek = cur_loop_start_ticks;  // takes effect at start of next node replay tick (see above)
+               }
+            }
+
+            if(tick_frac >= 0.0)
+            {
+               if(!_bMuted && (null != pat))
+               {
+                  pat.processFrame(_bPlaySeq,
+                                   frOut,
+                                   _frameRec,
+                                   false/*bFramePlay*/,
+                                   bEditable && !b_queued_rec_restart/*bAllowRec*/,
+                                   bEditFocus/*bAllowRedirect*/,
+                                   false/*bForceRec*/,
+                                   0/*startTrackIdx*/,
+                                   pat.tracks.numElements,
+                                   true/*bAllowReplay*/,
+                                   false/*bIgnoreRecDev*/
+                                );
+               }
+            }
+            else
+               break;
+         } // for(;;) (tick_frac)
+
+
+         // Handle speed sync (e.g. swing)
+         float syncSpeedFactor = 1.0;
+         // bool bSyncDebug = ((0 == (++xxx_debug & 31)) && replay.b_playing && ("freeform#1" == nodeGetName()));
+         bool bSyncDebug = false;
+         // bool bSyncDebug = true;
+         if(bSyncDebug)
+            trace "xxx tick_frac="+tick_frac+" rpn_com_speed_scl="+rpn_com_speed_scl+" tick_nr="+tick_nr+" synced="+synced_tick_nr;
+         if(rpn_com_speed_sync_rate > 0.0f)
+         {
+            float unsyncedPatOff = tick_nr;
+            float syncedPatOff = synced_tick_nr + 1;
+            float syncedPatLen = cur_loop_len_ticks;
+            // // if(0 == syncedPatLen)
+            // // {
+            // //    // non-existing pattern selected, continue with last seen pattern length
+            // //    //  (at least better than skipping sync entirely)
+            // //    syncedPatLen = last_synced_pat_len;
+            // // }
+            // // else
+            // //    last_synced_pat_len = syncedPatLen;
+            unsyncedPatOff = unsyncedPatOff % syncedPatLen;
+            syncedPatOff = syncedPatOff % syncedPatLen;
+            if( ((synced_tick_nr+1) > tick_nr) && (unsyncedPatOff > syncedPatOff) )
+            {
+               syncedPatOff += syncedPatLen;
+            }
+
+            if(bSyncDebug)
+               trace "xxx len="+syncedPatLen+" off unsynced="+unsyncedPatOff+" synced="+syncedPatOff+" delta="+(syncedPatOff - unsyncedPatOff);
+
+            if(syncedPatOff > unsyncedPatOff)
+            {
+               // Speed up
+               syncSpeedFactor = 1.0 + rpn_com_speed_sync_rate;
+            }
+            else if(syncedPatOff < unsyncedPatOff)
+            {
+               // Slow down
+               syncSpeedFactor = (1.0 / (1.0 + rpn_com_speed_sync_rate));
+            }
+
+            if(bSyncDebug)
+               trace "xxx syncSpeedFactor="+syncSpeedFactor;
+         }
+
+         tick_frac += rpn_com_speed_scl * syncSpeedFactor;
+         synced_tick_nr++;
+
+      } // if _bPlaySeq
+
+      if(ui_queued_frame.hasEvents())
+      {
+         frOut.mergeFrame(ui_queued_frame);
+         ui_queued_frame.empty();
+      }
+
+      if(b_debug && frOut.hasEvents())
+         trace "xxx frOut.numEvents="+frOut.numEvents;
+
+      _framePlay.mergeFrame(frOut);
+
+      if(b_capture && replay.b_playing)
+      {
+         mon_capture.captureAdd(frOut, true/*bAdvance*/);
+      }
+
+   }
+
+}

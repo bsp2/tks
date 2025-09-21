@@ -1,0 +1,255 @@
+// ----
+// ---- file   : STX_MIDIInDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2008-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 07Jan2008, 13Jan2008, 31Aug2008, 06Jan2013, 23Mar2013, 05Jun2013, 13Aug2014
+// ----          31Aug2014, 14Feb2015, 17Feb2015, 21Feb2015, 23Feb2015, 09Jan2016, 26Jan2016
+// ----          13Jan2017, 12Jun2017, 22Jul2023, 05Oct2024
+// ----
+// ----
+// ----
+
+module MSTX_MIDIInDevice;
+
+
+// <class.png>
+class STX_MIDIInDevice : STX_MIDIDevice {
+   public MIDIIn *midiin;
+
+   public boolean b_echo;
+
+   public STX_MIDIOutDevice *cached_out_dev;
+
+   public boolean b_disconnected;
+
+
+   // <init.png>
+   public method init(MIDIIn _midiin) {
+      midiin <= deref _midiin;
+   }
+
+   // <method_get.png>
+   public virtual isOpen() : boolean {
+      return (null != midiin);
+   }
+
+   // <method_get.png>
+   public virtual getDeviceName() : String {
+      return (null != midiin) ? midiin.deviceName : unavail_name;
+   }
+
+   // <method_get.png>
+   public virtual getAlias() : String {
+      if(null != midiin)
+      {
+         return b_project ? project_alias : getGlobalAlias();
+      }
+      return getGlobalAlias();
+   }
+
+   // <method_get.png>
+   public virtual getGlobalAlias() : String {
+      if(null != midiin)
+      {
+         return MIDI.GetGlobalInDeviceAlias(midiin.deviceName);
+      }
+      else
+      {
+         String r <= MIDI.GetGlobalInDeviceAlias(unavail_name);
+         return (null != r) ? r : unavail_alias;
+      }
+   }
+
+
+   // <method_get.png>
+   public virtual getName() : String {
+      if(null != midiin)
+         return MIDI.GetFullMIDIInDeviceName(midiin.deviceName);
+      return null;
+   }
+
+   // <method_update.png>
+   public virtual updateDeviceAlias(String _alias) {
+      if(b_project)
+      {
+         if(null != _alias && !_alias.isBlank())
+            project_alias <= Object(_alias);
+         else
+            project_alias <= null;
+
+         MIDI.UpdateInDeviceNames();
+      }
+      else
+      {
+         MIDI.UpdateMIDIInDeviceAlias(getDeviceName(), _alias);
+      }
+   }
+
+   // <method_find.png>
+   public =replay= method findOutDeviceAndCache() : STX_MIDIOutDevice {
+      // (note) this is called after all out devices have been opened
+      // (note) cached_out_dev is read-accessed by replay thread
+
+      String aliasOrDevName = getAliasOrDeviceName();
+
+      cached_out_dev <= MIDI.FindOutDeviceForInDevice(aliasOrDevName);
+
+      // // if("prophet12" == aliasOrDevName)
+      // // {
+      // //    trace "xxx aliasOrDevName="+aliasOrDevName+" cached_out_dev="+#(cached_out_dev);
+      // //    exit(10);
+      // // }
+
+      if(null == cached_out_dev)
+      {
+         cached_out_dev <= findOutDeviceByNativeIdx();
+
+         if(null != cached_out_dev)
+         {
+            trace "[...] auto-map indev \""+aliasOrDevName+"\" to outdev \""+cached_out_dev.getAliasOrDeviceName()+"\"";
+         }
+      }
+
+      return cached_out_dev;
+   }
+
+   // <method_find.png>
+   public method findOutDeviceByNativeIdx() : STX_MIDIOutDevice {
+      if(null != midiin)
+      {
+         int inNativeIdx = midiin.deviceIdx;
+
+         // Find output device with same native device index
+         STX_MIDIOutDevice *out;
+         foreach out in MIDI.out_devices
+         {
+            if(null != out.midiout)
+            {
+               if((out.midiout.deviceIdx) == inNativeIdx)
+               {
+                  // Found
+                  return out;
+               }
+            }
+         }
+      }
+      // Not found
+      return null;
+   }
+
+   // <method.png>
+   public method start() {
+      midiin.start();
+   }
+
+   // <method.png>
+   public method close() {
+      midiin.close();
+   }
+
+   // <method.png>
+   public method keepAlive() : boolean {
+
+      if(b_closed_temporarily)
+         return true;
+
+      // Returns true if a device was disconnected or reconnected
+      return = false;
+
+      if(null != midiin)
+      {
+         if(!midiin.isAlive())
+         {
+            if(!b_disconnected)
+            {
+               b_disconnected = true;
+               trace "[~~~] MIDIIn device \""+midiin.deviceName+"\" was disconnected.";
+               return = true;
+            }
+         }
+         else
+         {
+            if(b_disconnected)
+            {
+               midiin.close();
+
+               if(midiin.openByName(midiin.deviceName))
+               {
+                  midiin.start();
+                  b_disconnected = false;
+                  trace "[...] MIDIIn device \""+midiin.deviceName+"\" has been reconnected";
+                  return = true;
+               }
+               // else
+               //    trace "xxx keepalive: failed to open MIDIIn device";
+            }
+         }
+      }
+
+      return;
+   }
+
+   // <method.png>
+   public method clearEvents() {
+      midiin.clearEvents();
+   }
+
+   // <method_get.png>
+   public method getNextLongMessageBySize(int _size, Buffer _ret) : boolean {
+      explain "Return next long message that matches the given size. Return true if such a message was found, false otherwise.";
+
+      int i = 0;
+      while(midiin.numEvents > 0)
+      {
+         RecordedMIDIEvent ev <= midiin.nextEvent;
+         // // trace "xxx getNextLongMessageBySize: ev#"+i+" size="+ev.size;
+         i++;
+         if(ev.size == _size)
+         {
+            _ret.offset = 0;
+            ev.copyToStream(_ret);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   public method getNextLongMessage(Buffer _ret) : boolean {
+      explain "Return next long message. Return true if such a message was found, false otherwise.";
+
+      int i = 0;
+      while(midiin.numEvents > 0)
+      {
+         RecordedMIDIEvent ev <= midiin.nextEvent;
+         // // trace "xxx getNextLongMessageBySize: ev#"+i+" size="+ev.size;
+         i++;
+         if(ev.isLongMessage())
+         {
+            _ret.offset = 0;
+            ev.copyToStream(_ret);
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_set.png>
+   public method setEnableParam(byte _ch, boolean _bEnabled) {
+      if(null != midiin)
+         midiin.setEnableParam(_ch, _bEnabled);
+   }
+
+   // <method.png>
+   public method readLocalMIDIEvents() {
+      // implemented by STX_LocalMIDIInDevice
+   }
+
+}

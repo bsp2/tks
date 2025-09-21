@@ -1,0 +1,560 @@
+// Novation 61SL mkIII LED + soft button utility script ("incontrol" mode)
+//
+//   created: 11Jun2023
+//   changed: 12Jun2023, 13Jun2023, 14Jun2023, 10Jul2023
+//
+//   (note) synthetic rotary encoder RPNs 100..107 are sent to sl_mk3 (input) dev, midi ch#15
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ configuration
+
+boolean b_enc_text   = 1;  // show $3FFF / 127 text above / below rotary encoder knob display
+boolean b_enc_bars_t = 0;  // show color bar above rotary encoder knob display
+boolean b_enc_bars_b = 1;  // show color bar below rotary encoder knob display
+
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ /configuration
+
+Buffer b;
+b.size = 256;
+
+int init_key_led_state = 0;
+boolean b_init_leds = true;
+
+// Rotary Encoder 1..8 => ch 15 RPN 100..107
+IntArray rpn_enable;
+rpn_enable.allocAndFill(8, true);
+rpn_enable[4] = false;
+rpn_enable[5] = false;
+rpn_enable[6] = false;
+rpn_enable[7] = false;
+
+IntArray rpn_values;
+rpn_values.allocAndFill(8, 0);
+
+// last sent RPN values (display)
+IntArray sent_rpn_values;
+sent_rpn_values.allocAndFill(8, -1);
+
+IntArray rpn_speed;
+rpn_speed.allocAndFill(8, 16/*speed 1..512*/);
+
+StringArray rpn_labels;
+rpn_labels.add("MW");
+rpn_labels.add("BC");
+rpn_labels.add("FC");
+rpn_labels.add("EX");
+loop(4)
+   rpn_labels.add("");
+
+ui::XMLForm *xfm;
+boolean b_ui_update = true;
+boolean b_ui_update_force = true;
+
+function SendLED(MIDIPipeFrame _fr,
+                 byte _ledIdx,
+                 byte _ledMode,
+                 int _rgb24
+                 ) {
+
+   b.offset = 0;
+   // header
+   b.i8 = $F0;
+   b.i8 = $00;
+   b.i8 = $20;
+   b.i8 = $29;
+   b.i8 = $02;
+   b.i8 = $0A;
+   b.i8 = $01;
+   // command
+   b.i8 = 3;        // led command (3=led, 5=random key leds light up?!)
+   b.i8 = _ledIdx;  // led index
+   b.i8 = _ledMode; // led behaviour (1=solid, 2=flashing (with prev set solid color), 3=pulsing (dim/bright state)
+   b.i8 = (_rgb24>>(16+1))&127;   // r (0..127)
+   b.i8 = (_rgb24>>( 8+1))&127;   // g
+   b.i8 = (_rgb24>>(   1))&127;   // b
+   b.i8 = $F7;  // end of sysex
+   _fr.sysex(true/*bSet*/, out_dev, b);
+}
+
+function SendLayout(MIDIPipeFrame _fr, byte _layout) {
+   trace "[dbg] script<sl_mk3>: SendLayout("+_layout+")";
+   b.offset = 0;
+   b.i8 = $F0;
+   b.i8 = $00;
+   b.i8 = $20;
+   b.i8 = $29;
+   b.i8 = $02;
+   b.i8 = $0A;
+   b.i8 = $01;
+   b.i8 = $01;  // set screen layout command
+   b.i8 = _layout;
+   b.i8 = $F7;  // end of sysex
+   _fr.sysex(true/*bSet*/, out_dev, b);
+}
+
+function SendText(local MIDIPipeFrame _fr, local byte _colIdx, local byte _objectIdx, local String _s) {
+   // up to 9 chars
+   b.offset = 0;
+   b.i8 = $F0;
+   b.i8 = $00;
+   b.i8 = $20;
+   b.i8 = $29;
+   b.i8 = $02;
+   b.i8 = $0A;
+   b.i8 = $01;
+   b.i8 = $02;  // set screen properties command
+   b.i8 = _colIdx;
+   b.i8 = 1;  // property type = text
+   b.i8 = _objectIdx;  // object index = row#
+   local int i = 0;
+   loop(_s.numChars)
+      b.i8 = (_s[i++] & 127);
+   b.i8 = 0;  // ASCIIZ
+   b.i8 = $F7;  // end of sysex
+   _fr.sysex(true/*bSet*/, out_dev, b);
+}
+
+function SendObjectColor24(local MIDIPipeFrame _fr, local byte _colIdx, local byte _colorObjectIndex, local int _rgb24) {
+   // up to 9 chars
+   b.offset = 0;
+   b.i8 = $F0;
+   b.i8 = $00;
+   b.i8 = $20;
+   b.i8 = $29;
+   b.i8 = $02;
+   b.i8 = $0A;
+   b.i8 = $01;
+   b.i8 = $02;  // set screen properties command
+   b.i8 = _colIdx;
+   b.i8 = 4;  // property type = RGB color
+   b.i8 = _colorObjectIndex;
+   b.i8 = (_rgb24>>(16+1))&127;   // r (0..127)
+   b.i8 = (_rgb24>>( 8+1))&127;   // g
+   b.i8 = (_rgb24>>(   1))&127;   // b
+   b.i8 = $F7;  // end of sysex
+   _fr.sysex(true/*bSet*/, out_dev, b);
+}
+
+function SendValue(local MIDIPipeFrame _fr, local byte _colIdx, local byte _v) {
+   // set knob position
+   b.offset = 0;
+   b.i8 = $F0;
+   b.i8 = $00;
+   b.i8 = $20;
+   b.i8 = $29;
+   b.i8 = $02;
+   b.i8 = $0A;
+   b.i8 = $01;
+   b.i8 = $02;  // set screen properties command
+   b.i8 = _colIdx;
+   b.i8 = 3;  // property type = value
+   b.i8 = 0;  // object index = knob value
+   b.i8 = _v & 127;
+   b.i8 = $F7;  // end of sysex
+   _fr.sysex(true/*bSet*/, out_dev, b);
+}
+
+function UpdateKnobPosition(local MIDIPipeFrame _fr, local int _idx, local boolean bForceTextAndBars) {
+   local float ccVal = rpn_enable[_idx] ? ((rpn_values[_idx] * 127.0) / 16383.0) : 0;
+   // _fr.cc(true/*bSet*/, out_dev, 15/*ch#16*/, 21+idx, ccVal);
+   local Integer io = rpn_values[_idx];
+   sent_rpn_values[_idx] = rpn_values[_idx];
+   if(b_enc_text || bForceTextAndBars)
+   {
+      // SendText(_fr, _idx/*colIdx*/, 0/*objectIndex=row 1*/, (0 == rpn_values[_idx]) ? "" : io.printf("$%04x"));
+      SendText(_fr, _idx/*colIdx*/, 3/*objectIndex=row 4*/, (0 == rpn_values[_idx]) ? "" : ( ((io >> 7).printf("%3d")) + " . " + ((io & 127).printf("%3d")) ) );
+   }
+   SendValue(_fr, _idx/*colIdx*/, ccVal);
+   local byte c = 16 + int(mathPowerf(ccVal/127.0, 1.7)*111);
+   local int c24 = (c << 17) | (c << 9) | (c << 1);
+   if(b_enc_bars_t)
+      SendObjectColor24(_fr, _idx, 0/*colorObjectIndex=top bar color*/, c24);
+   if(b_enc_bars_b)
+      SendObjectColor24(_fr, _idx, 2/*colorObjectIndex=bottom bar color*/, c24);
+   else if(bForceTextAndBars)
+   {
+      SendObjectColor24(_fr, _idx, 0/*colorObjectIndex=top bar color*/, 0);
+      SendObjectColor24(_fr, _idx, 2/*colorObjectIndex=bottom bar color*/, 0);
+   }
+   SendObjectColor24(_fr, _idx, 1/*colorObjectIndex=knob icon line color*/, rpn_enable[_idx] ? c24 : 0);
+}
+
+function UpdateKnobLabel(local MIDIPipeFrame _fr, int _idx) {
+   SendText(_fr, _idx/*colIdx*/, 0/*objectIndex=row 1*/, rpn_labels[_idx]);
+}
+
+function UpdateKnobPositions(local MIDIPipeFrame fr, boolean bForceTextAndBars) {
+   local int idx = 0;
+   loop(8)
+   {
+      if(rpn_enable[idx])
+      {
+         UpdateKnobPosition(fr, idx, bForceTextAndBars);
+         UpdateKnobLabel(fr, idx);
+      }
+      else
+      {
+         if(b_enc_bars_t || bForceTextAndBars)
+            SendObjectColor24(fr, idx, 0/*colorObjectIndex=top bar color*/, #000000);
+         if(b_enc_bars_b || bForceTextAndBars)
+            SendObjectColor24(fr, idx, 2/*colorObjectIndex=bottom bar color*/, #000000);
+         SendObjectColor24(fr, idx, 1/*colorObjectIndex=knob icon line color*/, #000000);
+         if(b_enc_text || bForceTextAndBars)
+         {
+            SendText (fr, idx/*colIdx*/, 0/*objectIndex=row 1*/, rpn_labels[idx]);
+            SendText (fr, idx/*colIdx*/, 3/*objectIndex=row 4*/, "");
+         }
+      }
+      idx++;
+   }
+}
+
+function OnUIInit(ui::XMLForm _xfm) {
+   xfm <= _xfm;
+   b_ui_update = true;
+}
+
+function OnUIUpdate(ui::XMLForm _xfm, boolean _bForce, MIDIPipeFrame _frOut) {
+   xfm <= _xfm;
+   // called periodically
+   if(null != xfm)
+   {
+      if(b_ui_update || _bForce)
+      {
+         b_ui_update = false;
+         b_ui_update_force |= _bForce;
+
+         ui::CheckBox *cb;
+         ui::FloatParam *fp;
+         ui::TextField *tf;
+
+         int idx = 0;
+         loop(8)
+         {
+            cb <= xfm.findLayerById("cb_rpn_"+idx);
+            if(null != cb)
+               cb.setSelected(rpn_enable[idx]);
+
+            fp <= xfm.findLayerById("fp_rpn_"+idx);
+            if(null != fp)
+            {
+               fp.setValue(rpn_values[idx]);
+
+               // Update knob position on controller display
+               if(b_ui_update_force || rpn_values[idx] != sent_rpn_values[idx])
+               {
+                  UpdateKnobPosition(_frOut, idx, b_ui_update_force/*bForceTextAndBars*/);
+
+                  if(b_ui_update_force)
+                  {
+                     tf <= xfm.findLayerById("tf_rpn_"+idx);
+                     if(null != tf)
+                     {
+                        tf.setText(rpn_labels[idx]);
+                     }
+                  }
+               }
+            }
+
+            fp <= xfm.findLayerById("fp_rpn_spd_"+idx);
+            if(null != fp)
+               fp.setValue(rpn_speed[idx]);
+
+            idx++;
+         }
+
+         b_ui_update_force = false;
+      }
+   }
+}
+
+function OnSaveState(Stream ofs) {
+   trace "[dbg] script<sl_mk3>: OnSaveState";
+   ofs.i16 = 3;  // ver
+   int idx = 0;
+   loop(8)
+   {
+      ofs.i8  = rpn_enable[idx];
+      ofs.i8  = rpn_speed [idx];  // v2+
+      ofs.i16 = rpn_values[idx];
+      Utils.WriteString(ofs, rpn_labels[idx]); // v3+
+      idx++;
+   }
+}
+
+function OnLoadState(Stream ifs) {
+   trace "[dbg] script<sl_mk3>: OnLoadState";
+   short ver = ifs.i16;
+   if(ver >= 1)
+   {
+      int idx = 0;
+      loop(8)
+      {
+         rpn_enable[idx] = ifs.b8;
+         if(ver >= 2)
+            rpn_speed[idx] = mathClampi(ifs.u8, 1, 512);
+         rpn_values[idx] = ifs.u16 & 16383;
+         if(ver >= 3)
+            Utils.ReadString(ifs, rpn_labels[idx]); // v3+
+         idx++;
+      }
+      b_ui_update = true;
+      b_ui_update_force = true;
+   }
+}
+
+function InjectKnobRPNIntoMIDIMapTransformQueue(local short _rpn, local short _value) {
+   // Add to Replay::midi_map_rt_event_queue (will be transformed in next replay tick)
+   local MIDIPipeFrame frInject;
+   frInject.empty();
+   frInject.rpn(true/*bSet*/, out_dev, 14/*ch#15*/, _rpn, _value);
+   st2::replay.injectFrameTransform(frInject, true/*bMapOutToIn*/);
+}
+
+function HandleRPNValueChangedFromUI(MIDIPipeFrame _frameOut, int _idx) {
+
+   InjectKnobRPNIntoMIDIMapTransformQueue(100/*CTL_USR*/+_idx/*rpn*/, rpn_values[_idx]);
+
+   // Update controller display
+   UpdateKnobPositions(_frameOut, 0);
+}
+
+function OnAction(ui::Layer layer, String id, String acName, MIDIPipeFrame frameOut) {
+   // trace "xxx sl_mk3::OnAction: layer="+#(layer)+" id=\""+id+"\" acName=\""+acName+"\" frameOut="+#(frameOut)+" xfm="+#(xfm);
+   if(null == xfm)
+      return false;
+
+   ui::CheckBox *cb;
+   ui::FloatParam *fp;
+   ui::TextField *tf;
+
+   cb <= xfm.findLayerById(id);
+   fp <= cb;
+   tf <= cb;
+
+   switch(id)
+   {
+     case "bt_init_leds":
+       b_init_leds = true;
+       return true;
+
+      case "cb_rpn_0":  rpn_enable[0] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_1":  rpn_enable[1] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_2":  rpn_enable[2] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_3":  rpn_enable[3] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_4":  rpn_enable[4] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_5":  rpn_enable[5] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_6":  rpn_enable[6] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+      case "cb_rpn_7":  rpn_enable[7] = cb.isSelected();  UpdateKnobPositions(frameOut, 0); return true;
+
+      case "fp_rpn_0":  rpn_values[0] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 0); return true;
+      case "fp_rpn_1":  rpn_values[1] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 1); return true;
+      case "fp_rpn_2":  rpn_values[2] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 2); return true;
+      case "fp_rpn_3":  rpn_values[3] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 3); return true;
+      case "fp_rpn_4":  rpn_values[4] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 4); return true;
+      case "fp_rpn_5":  rpn_values[5] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 5); return true;
+      case "fp_rpn_6":  rpn_values[6] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 6); return true;
+      case "fp_rpn_7":  rpn_values[7] = fp.getFloatValue();  HandleRPNValueChangedFromUI(frameOut, 7); return true;
+
+      case "fp_rpn_spd_0":  rpn_speed[0] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_1":  rpn_speed[1] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_2":  rpn_speed[2] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_3":  rpn_speed[3] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_4":  rpn_speed[4] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_5":  rpn_speed[5] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_6":  rpn_speed[6] = fp.getFloatValue();  return true;
+      case "fp_rpn_spd_7":  rpn_speed[7] = fp.getFloatValue();  return true;
+
+      case "tf_rpn_0":  rpn_labels[0] = tf.getText(); UpdateKnobLabel(frameOut, 0); return true;
+      case "tf_rpn_1":  rpn_labels[1] = tf.getText(); UpdateKnobLabel(frameOut, 1); return true;
+      case "tf_rpn_2":  rpn_labels[2] = tf.getText(); UpdateKnobLabel(frameOut, 2); return true;
+      case "tf_rpn_3":  rpn_labels[3] = tf.getText(); UpdateKnobLabel(frameOut, 3); return true;
+      case "tf_rpn_4":  rpn_labels[4] = tf.getText(); UpdateKnobLabel(frameOut, 4); return true;
+      case "tf_rpn_5":  rpn_labels[5] = tf.getText(); UpdateKnobLabel(frameOut, 5); return true;
+      case "tf_rpn_6":  rpn_labels[6] = tf.getText(); UpdateKnobLabel(frameOut, 6); return true;
+      case "tf_rpn_7":  rpn_labels[7] = tf.getText(); UpdateKnobLabel(frameOut, 7); return true;
+
+   }
+}
+
+function KeyLEDInit(MIDIPipeFrame _fr) {
+   // found by trial'n'error
+   b.offset = 0;
+   // header
+   b.i8 = $F0;
+   b.i8 = $00;
+   b.i8 = $20;
+   b.i8 = $29;
+   b.i8 = $02;
+   b.i8 = $0A;
+   b.i8 = $01;
+   // command
+   b.i8 = 5;        // led command (3=led, 5=random key leds light up?!)
+   b.i8 = 1;  // led index
+   b.i8 = 1; // led behaviour (1=solid, 2=flashing (with prev set solid color), 3=pulsing (dim/bright state)
+   b.i8 = 127;   // r (0..127)
+   b.i8 = 127;   // g
+   b.i8 = 0;    // b
+   b.i8 = $F7;  // end of sysex
+   _fr.sysex(true/*bSet*/, out_dev, b);
+}
+
+function ProcessRotaryEncoders(MIDIPipeFrame fr) {
+   MIDIPipeEvent pev;
+   int evIdx = 0;
+   int numEv = fr.getNumEventsCC();
+   loop(numEv)
+   {
+      fr.getEventByIdx(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC);
+      if(pev.devIdx == out_dev && pev.midiCh == 15)
+      {
+         if(21 <= pev.ccId <= 28)
+         {
+            int idx = pev.ccId - 21;
+            if(rpn_enable[idx])
+            {
+               byte dt = pev.ccValue;
+               if(dt > 64)
+                  dt = dt-128;
+               rpn_values[idx] = mathClampi(rpn_values[idx] + (dt * rpn_speed[idx]), 0, 16383);
+               // trace "xxx idx="+idx+" dt="+dt+" speed="+rpn_speed[idx]+" rpn_values["+idx+"]="+rpn_values[idx];
+               InjectKnobRPNIntoMIDIMapTransformQueue(100+idx/*rpn*/, rpn_values[idx]);
+               UpdateKnobPosition(fr, idx, false/*bForceTextAndBars*/);
+               b_ui_update = true;
+            }
+            fr.deleteEventByIdx(evIdx, MIDIPIPE_EVENT_TYPE_CC);
+            evIdx--;
+         }
+      }
+      evIdx++;
+   }
+}
+
+function DiscardButtonCCs(MIDIPipeFrame fr) {
+   // Discard button CCs to prevent them from being recorded
+   MIDIPipeEvent pev;
+   int numEv = fr.getNumEventsCC();
+   int evIdx = 0;
+   loop(numEv)
+   {
+      fr.getEventByIdx(evIdx, pev, MIDIPIPE_EVENT_TYPE_CC);
+      if(pev.devIdx == out_dev && pev.midiCh == 15)
+      {
+         if(!( (41 <= pev.ccId <= 48)/*fader*/ || (21 <= pev.ccId <= 28)/*rotary*/ ))
+         {
+            fr.deleteEventByIdx(evIdx, MIDIPIPE_EVENT_TYPE_CC);
+            evIdx--;
+         }
+      }
+      evIdx++;
+   }
+}
+
+function OnProcess(MIDIPipeFrame framePlay,
+                   MIDIPipeFrame frameRec,
+                   boolean       bMuted,
+                   boolean       bPlaySeq
+                   ) {
+   if(bMuted)
+      return;
+
+   if(0 == init_key_led_state)
+   {
+      KeyLEDInit(framePlay);
+      //  (note) sending cmd=3, index=5, behaviour=1  makes keyled note-ons work (undocumented behaviour)
+      //  (note)  (you probably have to send _any_ softkey LED sysex first)
+      SendLED(framePlay, 5/*ledIndex*/, 1/*ledBehaviour*/, #ffff00);
+   }
+
+   int idx;
+   int c24;
+
+   if(-1 == init_key_led_state && b_init_leds)
+   {
+      trace "[...] script<sl_mk3>: init leds";
+      b_init_leds = false;
+
+      // Soft keys
+      idx = 12;
+      loop(8)
+      {
+         c24 = (idx & 1) ? 0 : #2f1f07;
+         SendLED(framePlay, idx,    1/*solid*/, c24);
+         SendLED(framePlay, idx+8,  1/*solid*/, c24);
+         idx++;
+      }
+      // Soft key up/down
+      SendLED(framePlay, 28,    1/*solid*/, 0);
+      SendLED(framePlay, 29,    1/*solid*/, 0);
+
+      // Transport
+      SendLED(framePlay, 33,    1/*solid*/, #000000);  // rwd
+      SendLED(framePlay, 34,    1/*solid*/, #000000);  // fwd
+      SendLED(framePlay, 35,    1/*solid*/, #000000);  // stop
+      SendLED(framePlay, 36,    1/*solid*/, #002f03);  // play
+      SendLED(framePlay, 37,    1/*solid*/, #000000);  // cycle
+      SendLED(framePlay, 32,    1/*solid*/, #200000);  // rec
+
+      // Zones
+      idx = 4;
+      loop(8)
+      {
+         c24 = (idx & 1) ? #000000 : #2f2f00;
+         SendLED(framePlay, idx,    1/*solid*/, c24);
+         idx++;
+      }
+
+      // Pads
+      idx = 38;
+      loop(8)
+      {
+         // c24 = (idx & 1) ? #020030 : #090a05;
+         // c24 = (c24 >> 1) & #3f3f3f;
+         c24 = (idx & 1) ? #020100 : #0e0b0a;
+         c24 = (c24 >> 1) & #3f3f3f;
+         SendLED(framePlay, idx,    1/*solid*/, c24);
+         SendLED(framePlay, idx+8,  1/*solid*/, c24);
+         idx++;
+      }
+
+      // Display page up/down = yes(green) / no(red)
+      SendLED(framePlay, 62,    1/*solid*/, #011001);
+      SendLED(framePlay, 63,    1/*solid*/, #100303);
+   }
+
+   if(1 == init_key_led_state)
+   {
+      // Key LEDs (turn off (flash state))
+      idx = 0;
+      loop(61)
+      {
+         framePlay.noteOn(true/*bSet*/, out_dev, 15/*ch*/, idx/*note*/, 0/*vel=color*/, 0/*dur*/);
+         idx++;
+      }
+      init_key_led_state = 2;
+   }
+   else if(2 == init_key_led_state)
+   {
+      // Key LEDs (turn off (current state))
+      idx = 0;
+      loop(61)
+      {
+         framePlay.noteOn(true/*bSet*/, out_dev, 15/*ch*/, idx/*note*/, 0/*vel=color*/, 0/*dur*/);
+         idx++;
+      }
+
+      // Display
+      SendLayout(framePlay, 1/*knob layout*/);
+      UpdateKnobPositions(framePlay, true/*bForceTextAndBars*/);
+
+      init_key_led_state = -1; // done
+   }
+
+   if(0 == init_key_led_state)
+      init_key_led_state = 1;
+
+   // Rotary encoders
+   ProcessRotaryEncoders(frameRec);
+
+   // Discard button CCs
+   DiscardButtonCCs(frameRec);
+}

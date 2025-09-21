@@ -1,0 +1,1200 @@
+// ----
+// ---- file   : PatternManager.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 02Sep2017
+// ---- changed: 03Sep2017, 04Jan2018, 17Jun2018, 27Nov2018, 03Aug2019, 07Nov2019, 27Jan2021
+// ----          22Mar2024, 24Mar2024
+// ----
+// ----
+// ----
+
+module MPatternManager;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PatternManagerButton : Button {
+   int pat_idx;
+   String ev_label;
+
+   // <ui_mouse.png>
+   public virtual blockMouseDrag(MouseEvent _ev) : boolean {
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+
+      if(_ev.isLeftButtonDown())
+      {
+         UI.ShowCursor(UIConstants.CURSOR_MOVE);
+
+         Global.Print("Swap pattern "+(Node.patnr_options.get(pat_idx))+" with ..");
+
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      PatternManagerButton btDst <= root_form.layerAt2f(_currentEv.mouse_abs_x, _currentEv.mouse_abs_y);
+
+      if(btDst instanceof PatternManagerButton)
+      {
+         // Update highlight
+      }
+
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+
+      UI.RevertCursor();
+
+      PatternManagerButton btDst <= root_form.layerAt2f(_ev.mouse_abs_x, _ev.mouse_abs_y);
+      //trace "xxx btDst="+#(btDst);
+      if(btDst instanceof PatternManagerButton)
+      {
+         if(@(btDst) != @(this))
+         {
+            // Swap this andr btDst
+            PageNode pgNode <= root_form.pg_node;
+            pgNode.pattern_mgr.swapPatterns(pat_idx, btDst.pat_idx);
+            // (note) 'this' is not valid anymore
+         }
+         else
+         {
+            Global.Print("Swap patterns canceled");
+         }
+      }
+      else
+      {
+         Global.Print("Swap patterns canceled");
+      }
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeGetCurrentPlayPatternNr() == pat_idx)
+         {
+            int origC32 = bg32_tint;
+            bg32_tint = UI.TintColor32(origC32, #30ffffff);
+            Button::onDraw();
+            bg32_tint = origC32;
+         }
+         else
+         {
+            Button::onDraw();
+         }
+
+         float sx = getSizeX();
+         float sy = getSizeY();
+
+         float evLabelW = font.stringWidth(ev_label);
+         float evLabelH = font.stringHeight(ev_label);
+         int fg32 = UI.TintColor32(c32_fg, fg32_tint);
+         fg32 = UI.Color32Alpha(fg32, #50);
+         int ul32 = lnf_colors.get(LookAndFeel.COLOR_ACCEL_UL_FG);
+         UIRenderer.DrawText(ev_label, font,
+                             fg32,
+                             ul32,
+                             (size_x - evLabelW) * 0.5,
+                             size_y - evLabelH - 8.0*UI.font_scaling,
+                             0/*availW*/, 0/*align*/
+                             );
+
+
+         if(node.nodeGetCurrentEditPatternNr() == pat_idx)
+         {
+            UIRenderer.EnableBlending();
+            UIRenderer.DrawRectangle(3, 4, (sx-7), (sy-8), 1, #c0ff0000);
+            UIRenderer.DisableBlending();
+         }
+      }
+   }
+}
+
+
+// <class.png>
+class PatternManager : XMLForm {
+
+   define int NUM_PATTERNS_PER_ROW = 8;
+
+   define int MIDI_MODE_ALL        = 0;
+   define int MIDI_MODE_ALL_WHITE  = 1;  // all patterns, white keys only
+   define int MIDI_MODE_USED       = 2;  // used patterns
+   define int MIDI_MODE_USED_WHITE = 3;  // used patterns, white keys only
+
+   static StringArray midi_mode_names = [
+      "All",
+      "All (white keys)",
+      "Used",
+      "Used (white keys)"
+                                         ];
+
+   protected CheckBox *cb_hide_empty;
+
+   protected Button *bt_insert;
+   protected Button *bt_delete;
+
+   protected CheckBox  *cb_midi_enable;
+   protected ComboBox  *cm_midi_basenote;
+   protected ComboBox  *cm_midi_mode;
+
+   protected TextField *tf_pat_name;
+
+   protected ScrollPane *sp_patterns;
+
+   protected PointerArray all_buttons;
+
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      if(initPakFile("PatternManager.xfm"))
+      {
+         if(!autoResolveIds(this))
+         {
+            return false;
+         }
+
+         cm_midi_basenote.setOptions(MIDI.midi_notes);
+         cm_midi_basenote.setSelectedOption(STConfig.patternmgr_midi_base_note);
+
+         cm_midi_mode.setOptions(midi_mode_names);
+         cm_midi_mode.setSelectedOption(STConfig.patternmgr_midi_mode);
+
+         // initTimers();
+
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_show.png>
+   public method show() {
+      replay.b_pagenode_midi_to_pattern = cb_midi_enable.isSelected();
+
+      updatePatterns();
+
+      sp_patterns.makeWidgetVisible(UI.GetKeyboardFocus());
+
+      // Enable/disable insert/delete buttons
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+      boolean bCanShift;
+      if(null != node)
+         bCanShift = node.nodeCanShiftPatterns();
+      else
+         bCanShift = false;
+      bt_insert.setEditable(bCanShift);
+      bt_delete.setEditable(bCanShift);
+   }
+
+   // <ui_hide.png>
+   public method hide() {
+      replay.b_pagenode_midi_to_pattern = false;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers.joinRR(_retLayers,
+                        [
+                           cb_hide_empty,
+                           bt_insert,
+                           bt_delete,
+                           cb_midi_enable,
+                           cm_midi_basenote,
+                           cm_midi_mode,
+                           tf_pat_name
+                         ]
+                        );
+      _retLayers.joinRR(_retLayers,
+                        all_buttons
+                        );
+   }
+
+   // <ui_focus.png>
+   public method refocusDefault() {
+      UI.SetKeyboardFocus(cb_midi_enable);
+
+      focusButtonByEditPattern();
+
+      updatePatName();
+   }
+
+   // <ui_focus.png>
+   protected method focusButtonByEditPattern() {
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         int patIdx = node.nodeGetCurrentEditPatternNr();
+
+         PatternManagerButton *bt;
+         foreach bt in all_buttons
+         {
+            if(bt.pat_idx == patIdx)
+            {
+               UI.SetKeyboardFocus(bt);
+               sp_patterns.makeWidgetVisible(bt);
+               break;
+            }
+         }
+      }
+   }
+
+   // <ui_update.png>
+   protected method updatePatName() {
+      int patIdx = getSelectedPatternIndex();
+
+      // trace "xxx updatePatName: patIdx="+patIdx;
+
+      if(-1 != patIdx)
+      {
+         PageNode pgNode <= root_form.pg_node;
+         Node node <= pgNode.script_node;
+
+         if(null != node)
+         {
+            NodePattern pat <= node.nodeGetPatternByIdx(patIdx);
+
+            if(null != pat)
+            {
+               if(!pat.patIsEmpty())
+               {
+                  tf_pat_name.setText(pat.pat_name);
+                  tf_pat_name.redraw();
+                  return;
+               }
+            }
+         }
+      }
+      tf_pat_name.setText("-");
+      tf_pat_name.redraw();
+   }
+
+   // <ui_update.png>
+   protected method updatePatterns() {
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      UI.SetKeyboardFocus(null);
+
+      sp_patterns.removeChildHierarchy();
+      sp_patterns.setEnableAdaptiveViewSize(true);
+
+      all_buttons.alloc(Node.NUM_PATTERNS);
+
+      Panel pnAllOuter <= new Panel;
+      pnAllOuter.initPanel();
+      pnAllOuter.setLayout(SuperBorderLayout);
+      pnAllOuter.setAlignment(Layout.EXPANDX | Layout.TOP);
+      pnAllOuter.setPadding4f(0,0,0,0);
+
+      Panel pnAll <= new Panel;
+      pnAll.initPanel();
+      pnAll.setLayout(SuperBorderLayout);
+      pnAll.setPadding4f(0,0,0,0);
+
+      pnAllOuter.addLayer(deref pnAll, Layout.TOP);
+
+      float availW = UI.viewport_width - 16 - 1;
+
+      float btW = (availW / NUM_PATTERNS_PER_ROW);
+      float btH = btW;
+
+      boolean bHideEmpty = cb_hide_empty.isSelected();
+
+      if(null != node)
+      {
+         int buttonIdx = 0;
+         int patIdx = 0;
+         int patUsedIdx = -1;
+
+         float cx = 0;
+         float cy = 0;
+
+         Panel *pnRow;
+
+         loop(Node.NUM_PATTERNS)
+         {
+            NodePattern pat <= node.nodeGetPatternByIdx(patIdx);
+
+            boolean bEmpty = (null == pat) || pat.patIsEmpty();
+            boolean bAdd = !(bHideEmpty && bEmpty);
+
+            if(bAdd)
+            {
+               if(0 == (buttonIdx % NUM_PATTERNS_PER_ROW))
+               {
+                  pnRow <= new Panel;
+                  pnRow.initPanel();
+                  pnRow.setLayout(SuperBorderLayout);
+                  pnRow.setPadding4f(0,0,0,0);
+                  pnAll.addLayer(deref pnRow, Layout.BOTTOM);
+               }
+
+               PatternManagerButton bt <= new PatternManagerButton;
+               bt.initButton();
+               bt.setEnableCursorKeyTabCycling(false);
+               bt.pat_idx = patIdx;
+               Integer io = patIdx;
+               String caption = "";
+
+               bt.setRequiredSize2f(int(btW-1), int(btH-1));
+               bt.setPadding4f(0,0,1,1);
+
+               int c32;
+
+               caption.append("\n");
+
+               if(!bEmpty)
+               {
+                  patUsedIdx++;
+
+                  if(replay.b_pagenode_midi_to_pattern)
+                  {
+                     int noteIdx = -1;
+
+                     switch(STConfig.patternmgr_midi_mode)
+                     {
+                        case MIDI_MODE_ALL:
+                           noteIdx = patIdx;
+                           break;
+
+                        case MIDI_MODE_ALL_WHITE:
+                           noteIdx = Scale.IndexToWhite(patIdx, STConfig.patternmgr_midi_base_note);
+                           break;
+
+                        case MIDI_MODE_USED:
+                           noteIdx = patUsedIdx;
+                           break;
+
+                        case MIDI_MODE_USED_WHITE:
+                           noteIdx = Scale.IndexToWhite(patUsedIdx, STConfig.patternmgr_midi_base_note);
+                           break;
+                     }
+
+                     if(-1 != noteIdx)
+                     {
+                        caption.append(MIDI.midi_notes.get(noteIdx));
+                     }
+                  }
+               }
+
+               caption.append("\n");
+
+               c32 = bEmpty ? #20000000 : #14107f10;
+
+               caption.append((Node.patnr_options_short.get(patIdx))+"\n"+io.printf("0x%02x"));
+
+               if(!bEmpty)
+                  if(!pat.pat_name.isBlank())
+                     caption.append("\n\""+pat.pat_name+"\"");
+
+               int numEv = node.nodeGetTotalNumPatternEvents(patIdx);
+               bt.ev_label <= numEv+" event"+Utils.GetPluralString(numEv);
+
+               bt.setCaption(caption);
+               bt.setBackgroundTint(c32);
+
+               pnRow.addLayer(deref bt, Layout.RIGHT);
+
+               all_buttons.add(bt);
+
+               buttonIdx++;
+
+               if(0 == (buttonIdx % NUM_PATTERNS_PER_ROW))
+               {
+                  cx = 0;
+                  cy += btH;
+               }
+
+            } // if bAdd
+
+            patIdx++;
+         }
+
+      }
+      else
+      {
+         all_buttons.useAll();
+      }
+
+      sp_patterns.setInnerLayer(deref pnAllOuter);
+      sp_patterns.updateLayout();
+      relayout();
+      redraw();
+
+      refocusDefault();
+   }
+
+   // <ui.png>
+   public virtual onResize() {
+      updatePatterns();
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMIDIEnableChanged() {
+      PageNode pgNode <= root_form.pg_node;
+
+      replay.b_pagenode_midi_to_pattern = cb_midi_enable.isSelected();
+
+      updatePatterns();
+
+      Global.Print("MIDI-to-pattern is "+Utils.GetEnableString(replay.b_pagenode_midi_to_pattern));
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMIDIBaseNoteChanged() {
+      STConfig.patternmgr_midi_base_note = cm_midi_basenote.getSelectedOption();
+
+      updatePatterns();
+
+      Global.Print("MIDI base note is "+cm_midi_basenote.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleMIDIModeChanged() {
+      STConfig.patternmgr_midi_mode = cm_midi_mode.getSelectedOption();
+
+      updatePatterns();
+
+      Global.Print("MIDI mode is "+cm_midi_mode.getSelectedOptionName());
+   }
+
+   // <method_get.png>
+   protected method getSelectedPatternIndex() : int {
+      if(all_buttons.containsPointer(UI.GetKeyboardFocus()))
+      {
+         PatternManagerButton bt <= UI.GetKeyboardFocus();
+         return bt.pat_idx;
+      }
+      return -1;
+   }
+
+   // <method.png>
+   protected method getOrSetFocusButtonIdx() : int {
+      int idx = all_buttons.indexOfPointer(UI.GetKeyboardFocus(), 0);
+
+      if(-1 == idx)
+      {
+         // Find by play pattern
+         PageNode pgNode <= root_form.pg_node;
+         Node node <= pgNode.script_node;
+
+         int patIdx;
+         if(null != node)
+         {
+            patIdx = node.nodeGetCurrentPlayPatternNr();
+         }
+         else
+         {
+            patIdx = 0;
+         }
+
+         idx = 0;
+         PatternManagerButton *bt;
+         foreach bt in all_buttons
+         {
+            if(bt.pat_idx == patIdx)
+               break;
+            idx++;
+         }
+      }
+
+      return idx;
+   }
+
+   // <ui_handle.png>
+   protected method moveFocusLeft() {
+
+      int idx = getOrSetFocusButtonIdx();
+
+      int cx = idx % NUM_PATTERNS_PER_ROW;
+
+      if(cx > 0)
+      {
+         PatternManagerButton bt <= all_buttons.get(idx-1);
+         UI.SetKeyboardFocus(bt);
+         sp_patterns.makeWidgetVisible(bt);
+         updatePatName();
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method moveFocusRight() {
+
+      int idx = getOrSetFocusButtonIdx();
+
+      int cx = idx % NUM_PATTERNS_PER_ROW;
+
+      if(cx < (NUM_PATTERNS_PER_ROW-1))
+      {
+         idx = idx + 1;
+
+         if(idx < all_buttons.numElements)
+         {
+            PatternManagerButton bt <= all_buttons.get(idx);
+            UI.SetKeyboardFocus(bt);
+            sp_patterns.makeWidgetVisible(bt);
+            updatePatName();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method moveFocusUp() {
+
+      int idx = getOrSetFocusButtonIdx();
+
+      int cy = idx / NUM_PATTERNS_PER_ROW;
+
+      if(cy > 0)
+      {
+         idx -= NUM_PATTERNS_PER_ROW;
+         if(idx >= 0)
+         {
+            PatternManagerButton bt <= all_buttons.get(idx);
+            UI.SetKeyboardFocus(bt);
+            sp_patterns.makeWidgetVisible(bt);
+            updatePatName();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method moveFocusDown() {
+
+      int idx = getOrSetFocusButtonIdx();
+      int cy = idx / NUM_PATTERNS_PER_ROW;
+      idx = idx + NUM_PATTERNS_PER_ROW;
+
+      if(idx < all_buttons.numElements)
+      {
+         PatternManagerButton bt <= all_buttons.get(idx);
+         UI.SetKeyboardFocus(bt);
+         sp_patterns.makeWidgetVisible(bt);
+         updatePatName();
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method handleSelectPattern(int _patIdx) {
+
+      Global.Debug("PatternManager::handleSelectPattern: patIdx="+_patIdx);
+
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         node.nodeSetCurrentEditPatternNr(_patIdx);
+         node.nodeSetCurrentPlayPatternNr(_patIdx);
+
+         node.nodeQueuePattern(_patIdx, -1/*seekOff*/, false/*bMuteTemp*/);
+
+         // handle timeline recording
+         node.nodeQueuePrgChgOut(_patIdx);
+         // // replay.handleNodeStateChangedUI(node, -1/*active*/, _patIdx/*pat*/);
+
+         pgNode.handleEditPatternChanged();
+
+         updatePatName();
+
+         Global.Print("Select pattern "+(Node.patnr_options.get(_patIdx)));
+      }
+   }
+
+   // <ui_handle.png>
+   public =replay= method swapPatterns(int _patIdxA, int _patIdxB) {
+
+      if(_patIdxA != _patIdxB)
+      {
+         PageNode pgNode <= root_form.pg_node;
+         Node node <= pgNode.script_node;
+
+         if(null != node)
+         {
+            node.nodeSwapPatterns(_patIdxA, _patIdxB);
+
+            updatePatterns();
+
+            handleSelectPattern(_patIdxB);
+
+            Global.Print("Swap patterns "+(Node.patnr_options.get(_patIdxA))+" and "+(Node.patnr_options.get(_patIdxB)));
+
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method copyPatternToClipboard() {
+
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeCanCopyPatterns())
+         {
+            int patIdx = getSelectedPatternIndex();
+
+            if(-1 != patIdx)
+            {
+               NodePattern pat <= node.nodeGetPatternByIdx(patIdx);
+
+               if(null != pat)
+               {
+                  if(!pat.patIsEmpty())
+                  {
+                     NodePattern patCB <= pat.patGetOrCreateClipboard();
+                     patCB.patCopyFrom(pat, false/*bClear*/);
+
+                     Global.Print("Copy pattern "+(Node.patnr_options.get(patIdx))+" to clipboard");
+                     return;
+                  }
+               }
+            }
+
+            node.nodeFreePatternClipboard();
+            Global.Print("Copy empty pattern to clipboard");
+         }
+         else
+         {
+            Global.Warning("node class does not support pattern copies");
+         }
+      }
+   }
+
+   // <method.png>
+   protected =replay= pasteClipboardToPattern() {
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeCanCopyPatterns())
+         {
+            int patIdx = getSelectedPatternIndex();
+
+            if(-1 != patIdx)
+            {
+               NodePattern patCB <= NodePattern.PatGetClipboardForClass(node.nodeGetPatternClassName());
+
+               if(null != patCB)
+               {
+                  NodePattern pat <= node.nodeGetPatternByIdx(patIdx);
+
+                  if(null == pat)
+                  {
+                     pat <= patCB.yacNew();
+                     pat.patInit(node, patIdx);
+                     node.nodeSetPattern(patIdx, deref pat);
+                  }
+
+                  pat.patCopyFrom(patCB, false/*bClear*/);
+
+                  pat.patReset(true/*bSoft*/);
+                  pat.patHandleSongSpeedChanged(true/*bPPQ*/, true/*bBPM*/);
+
+                  handleSelectPattern(patIdx);
+                  updatePatterns();
+
+                  Global.Print("Copy clipboard to pattern "+(Node.patnr_options.get(patIdx)));
+               }
+               else
+               {
+                  Global.Warning("Clipboard is empty");
+               }
+            }
+         }
+         else
+         {
+            Global.Warning("node class does not support pattern copies");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method exchangePatternWithClipboard() {
+
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeCanCopyPatterns())
+         {
+            if!(cb_hide_empty.isSelected() && node.nodeIsPatternClipboardEmpty())
+            {
+               int patIdx = getSelectedPatternIndex();
+
+               if(-1 != patIdx)
+               {
+                  if(node.nodeExchangePatternWithClipboard(patIdx))
+                  {
+                     handleSelectPattern(patIdx);
+                     updatePatterns();
+
+                     Global.Print("Exchange pattern "+(Node.patnr_options.get(patIdx))+" with clipboard");
+                  }
+                  else
+                  {
+                     Global.Warning("node class has no patterns");
+                  }
+               }
+            }
+            else
+            {
+               Global.Warning("exchange: pattern clipboard is empty");
+            }
+         }
+         else
+         {
+            Global.Warning("node class does not support pattern copies");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected =replay= method cutPatternToClipboard() {
+
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeCanCopyPatterns())
+         {
+            int patIdx = -1;
+            PatternManagerButton *bt;
+            int btIdx = all_buttons.indexOfPointer(UI.GetKeyboardFocus(), 0);
+            if(-1 != btIdx)
+            {
+               bt <= UI.GetKeyboardFocus();
+               patIdx = bt.pat_idx;
+            }
+
+            if(-1 != patIdx)
+            {
+               NodePattern pat <= node.nodeGetPatternByIdx(patIdx);
+
+               if(null != pat)
+               {
+                  if(!pat.patIsEmpty())
+                  {
+                     NodePattern patCB <= pat.patGetOrCreateClipboard();
+                     patCB.patCopyFrom(pat, false/*bClear*/);
+
+                     node.nodeFreePatternTrackData(patIdx);
+                     node.nodeDeletePatternByIdx(patIdx);
+
+                     handleSelectPattern(patIdx);
+                     updatePatterns();
+
+                     if(cb_hide_empty.isSelected())
+                     {
+                        if(btIdx < all_buttons.numElements)
+                        {
+                           bt <= all_buttons[btIdx];
+                           handleSelectPattern(bt.pat_idx);
+                           UI.SetKeyboardFocus(bt);
+                        }
+                        else if(all_buttons.numElements > 0)
+                        {
+                           bt <= all_buttons[all_buttons.numElements - 1];
+                           handleSelectPattern(bt.pat_idx);
+                           UI.SetKeyboardFocus(bt);
+                        }
+                     }
+
+                     Global.Print("Cut pattern "+(Node.patnr_options.get(patIdx))+" to clipboard");
+                     return;
+                  }
+               }
+            }
+
+            node.nodeFreePatternClipboard();
+            Global.Print("Cut empty pattern to clipboard");
+         }
+         else
+         {
+            Global.Warning("node class does not support pattern copies");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handlePatNameChanged(boolean _bReturn) {
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         int idx = node.nodeGetCurrentEditPatternNr();
+
+         NodePattern pat <= node.nodeGetPatternByIdx(idx);
+
+         if(null != pat)
+         {
+            pat.pat_name = tf_pat_name.getText();
+
+            Global.Print("Pattern name is \""+pat.pat_name+"\"");
+         }
+      }
+
+      if(_bReturn)
+      {
+         updatePatterns();
+         refocusDefault();
+      }
+   }
+
+   // <method.png>
+   public =replay= method handleInsertPattern() {
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeCanShiftPatterns())
+         {
+            int patIdx = getSelectedPatternIndex();
+            if(-1 != patIdx)
+            {
+               int btIdx = all_buttons.indexOfPointer(UI.GetKeyboardFocus(), 0);
+               node.nodeShiftInsertPatternSlotAtIdx(patIdx);
+
+               updatePatterns();
+
+               PatternManagerButton bt <= all_buttons.get(btIdx);
+               UI.SetKeyboardFocus(bt);
+               if(null != bt)
+               {
+                  handleSelectPattern(bt.pat_idx);
+               }
+               Global.Print("Shift-Insert pattern "+(Node.patnr_options.get(patIdx)));
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method handleDeletePattern() {
+      PageNode pgNode <= root_form.pg_node;
+      Node node <= pgNode.script_node;
+
+      if(null != node)
+      {
+         if(node.nodeCanShiftPatterns())
+         {
+            int patIdx = getSelectedPatternIndex();
+            if(-1 != patIdx)
+            {
+               if(cb_hide_empty.isSelected())
+               {
+                  patIdx--;
+                  if(patIdx < 0)
+                     patIdx = 0;
+               }
+
+               int btIdx = all_buttons.indexOfPointer(UI.GetKeyboardFocus(), 0);
+               node.nodeShiftDeletePatternSlotAtIdx(patIdx);
+
+               updatePatterns();
+
+               PatternManagerButton bt <= all_buttons.get(btIdx);
+               UI.SetKeyboardFocus(bt);
+               if(null != bt)
+               {
+                  handleSelectPattern(bt.pat_idx);
+               }
+               else
+               {
+                  bt <= all_buttons.get(btIdx - 1);
+                  UI.SetKeyboardFocus(bt);
+                  if(null != bt)
+                  {
+                     handleSelectPattern(bt.pat_idx);
+                  }
+               }
+               Global.Print("Shift-Delete pattern "+(Node.patnr_options.get(patIdx)));
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   public method handlePlayPatChanged() {
+      redraw();
+   }
+
+   // <replay.png>
+   public method handleMIDIEvent(MIDIMapEvent _ev) : boolean {
+      // Called from replay thread
+
+      if(MIDIMapDefs.TYPE_NOTE_ON == _ev.type)
+      {
+         PageNode pgNode <= root_form.pg_node;
+         Node node <= pgNode.script_node;
+
+         if(null != node)
+         {
+            int patSelIdx = -1;
+
+            if(_ev.arg1 >= STConfig.patternmgr_midi_base_note)
+            {
+               patSelIdx = _ev.arg1 - STConfig.patternmgr_midi_base_note;
+
+               switch(STConfig.patternmgr_midi_mode)
+               {
+                  case MIDI_MODE_ALL:
+                     break;
+
+                  case MIDI_MODE_ALL_WHITE:
+                     patSelIdx = Scale.WhiteToIndex(_ev.arg1, STConfig.patternmgr_midi_base_note);
+                     if(-1 == patSelIdx)
+                        patSelIdx = 127;
+                     break;
+
+                  case MIDI_MODE_USED:
+                     patSelIdx = node.nodeGetPatternNrByUsedIdx(patSelIdx);
+                     if(-1 == patSelIdx)
+                        patSelIdx = 127;
+                     break;
+
+                  case MIDI_MODE_USED_WHITE:
+                     patSelIdx = Scale.WhiteToIndex(_ev.arg1, STConfig.patternmgr_midi_base_note);
+                     if(-1 != patSelIdx)
+                     {
+                        patSelIdx = node.nodeGetPatternNrByUsedIdx(patSelIdx);
+                     }
+
+                     if(-1 == patSelIdx)
+                        patSelIdx = 127;
+                     break;
+               }
+
+               if(patSelIdx > 127)
+                  patSelIdx = 127;
+            }
+            else
+            {
+               // Select empty pattern
+               patSelIdx = 127;
+            }
+
+            if(-1 != patSelIdx)
+            {
+               node.nodeSetCurrentEditPatternNr(patSelIdx);
+               node.nodeQueuePattern(patSelIdx, -1/*seekOff*/, false/*bMuteTemp*/);
+               // // node.nodeSetCurrentPlayPatternNr(patSelIdx);
+
+               replay.addUIPrgChgEntry(node.getNodeGID(), patSelIdx);
+
+               Events.SendEditPat();  // will call pgNode.handleEditPatternChanged() from UI thread
+               Events.SendPlayPat();  // will redraw pattern buttons
+            }
+         }
+         return true;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      switch(_k.pressed)
+      {
+         case VKEY_HOME:
+            loop(NUM_PATTERNS_PER_ROW)
+               moveFocusLeft();
+            loop(20)
+               moveFocusUp();
+            return true;
+
+         case VKEY_END:
+            loop(NUM_PATTERNS_PER_ROW)
+               moveFocusLeft();
+            loop(20)
+               moveFocusDown();
+            loop(NUM_PATTERNS_PER_ROW)
+               moveFocusRight();
+            return true;
+
+         case VKEY_ESCAPE:
+            root_form.pg_node.togglePatternManager();
+            return true;
+
+         case VKEY_LEFT:
+            moveFocusLeft();
+            return true;
+
+         case VKEY_RIGHT:
+            moveFocusRight();
+            return true;
+
+         case VKEY_UP:
+            moveFocusUp();
+            return true;
+
+         case VKEY_PAGEUP:
+            loop(4)
+              moveFocusUp();
+            return true;
+
+         case VKEY_DOWN:
+            moveFocusDown();
+            return true;
+
+         case VKEY_PAGEDOWN:
+            loop(4)
+              moveFocusDown();
+            return true;
+
+         case 'a':
+            if(_k.modCtrlOnly())
+            {
+               cb_hide_empty.toggleSelectionAction();
+               return true;
+            }
+            break;
+
+         case 'c':
+            copyPatternToClipboard();
+            return true;
+
+         case 'v':
+            pasteClipboardToPattern();
+            return true;
+
+         case 'x':
+            exchangePatternWithClipboard();
+            return true;
+
+         case 'n':
+            if(_k.modShiftOnly())
+            {
+               UI.SetKeyboardFocus(tf_pat_name);
+               return true;
+            }
+            break;
+
+         case VKEY_INSERT:
+            if(_k.modShiftOnly())
+            {
+               handleInsertPattern();
+               return true;
+            }
+            break;
+
+         case VKEY_DELETE:
+            if(_k.modShiftOnly())
+            {
+               handleDeletePattern();
+               return true;
+            }
+            else
+            {
+               cutPatternToClipboard();
+               return true;
+            }
+            break;
+      }
+
+      PageNode pgNode <= root_form.pg_node;
+      NodeEditor nodeEditor <= pgNode.editor;
+
+      if(null != nodeEditor)
+      {
+         if(nodeEditor.trySelectPatternByUsedIdx(_k))
+         {
+            focusButtonByEditPattern();
+            redraw();
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         case @(bt_insert):
+            handleInsertPattern();
+            return true;
+
+         case @(bt_delete):
+            handleDeletePattern();
+            return true;
+
+         case @(cb_midi_enable):
+            handleMIDIEnableChanged();
+            return true;
+
+         case @(cm_midi_basenote):
+            handleMIDIBaseNoteChanged();
+            return true;
+
+         case @(cm_midi_mode):
+            handleMIDIModeChanged();
+            return true;
+
+         case @(cb_hide_empty):
+            updatePatterns();
+            return true;
+
+         case @(tf_pat_name):
+            handlePatNameChanged(TextField.ACTION_TEXTENTERED == acName);
+            return true;
+      }
+
+      PatternManagerButton *bt;
+
+      foreach bt in all_buttons
+      {
+         if(null != bt)
+         {
+            if(@(ap) == @(bt))
+            {
+               handleSelectPattern(bt.pat_idx);
+               redraw();
+               return true;
+            }
+         }
+      }
+
+      return XMLForm::consumeAction(_action);
+   }
+
+}

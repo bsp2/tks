@@ -1,0 +1,819 @@
+// ----
+// ---- file   : PageAudioTool.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2017-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi/audio sequencer.
+// ----
+// ---- created: 09Jun2017
+// ---- changed: 12Jun2017, 13Jun2017, 18Jun2017, 23Jun2017, 24Nov2017, 18May2019, 20Sep2019
+// ----          05Nov2019, 18Aug2023, 05Jul2024
+// ----
+// ----
+// ----
+
+module MPageAudioTool;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageAudioTool : Page {
+
+   define int SDS_MODE_SEPARATE    = 0;
+   define int SDS_MODE_SAMPLECHAIN = 1;
+   define int SDS_MODE_VARICHAIN   = 2;
+
+   protected Button *bt_parent;
+
+   protected TextField *tf_input_dir;
+   protected TextField *tf_input_file;
+
+   protected TextField *tf_output_dir;
+   protected TextField *tf_output_prefix;
+
+   protected ComboBox   *cm_sxt_mode;
+
+   protected CheckBox *cb_uvi_stretch;
+   protected CheckBox *cb_uvi_layerperkeygroup;
+   protected ComboBox *cm_uvi_cc;
+   protected CheckBox *cb_uvi_loopworkaround;
+
+   protected TextField  *tf_sample_name;
+   protected ComboBox   *cm_sds_mode;
+   protected CheckBox   *cb_sds_ar_kit;
+   protected FloatParam *fp_sds_ar_smpnr;
+   protected FloatParam *fp_sds_ar_chainsz;
+
+   protected ComboBox *cm_upload_dev;
+   protected CheckBox *cb_upload_sds;
+   protected CheckBox *cb_upload_kit;
+
+   protected Button *bt_run_sxt;
+   protected Button *bt_run_sds;
+   protected Button *bt_run_sxt_sds;
+   protected CheckBox *cb_dryrun;
+
+   protected StringArray sxt_mode_args;
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageAudioTool.xfm"))
+      {
+         trace "[---] failed to parse PageAudioTool.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      tf_output_dir.setText(STConfig.audiotool_default_output_dir);
+      tf_output_prefix.setText(STConfig.audiotool_default_output_prefix);
+
+      recursiveSetEnableCursorKeyTabCycling(false);
+
+      if(app_lnf.b_ascii_back_buttons)
+      {
+         Global.ASCIIBackButton(bt_parent);
+      }
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      // return RootForm.PAGE_AUDIO;
+      return RootForm.PAGE_PIPEMAP;
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(bt_parent);
+   }
+
+   // <ui_page.png>
+   public virtual pageForceKbdFocusSelMode() {
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         bt_parent,
+
+         tf_input_dir,
+         tf_input_file,
+
+         tf_output_dir,
+         tf_output_prefix,
+
+         cm_sxt_mode,
+         tf_sample_name,
+         cm_sds_mode,
+         cb_sds_ar_kit,
+         fp_sds_ar_smpnr,
+
+         cm_upload_dev,
+         cb_upload_sds,
+         cb_upload_kit,
+
+         bt_run_sxt,
+         bt_run_sds,
+         bt_run_sxt_sds
+                               ];
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+      Page::pageEnter();
+
+      cm_upload_dev.setOptions(MIDI.out_device_names_sorted);
+      cm_upload_dev.setOptionBGColors(MIDI.out_device_bgcolors_sorted);
+
+      if(-1 == cm_upload_dev.getSelectedOption())
+      {
+         lazyFindOutputDev();
+      }
+
+      parseSXTIni();
+
+      relayout();
+   }
+
+   // <method.png>
+   protected method parseSXTIni() : boolean {
+      String iniPathname = Utils.ToNativePathName("$(PROGRAM_DIR)/etc/sxt_scripts.ini");
+      String buf;
+
+      if(buf.loadLocal(iniPathname, true/*bRemoveCR*/))
+      {
+         StringArray lines <= buf.splitChar('\n');
+         String *line;
+
+         StringArray sxtModeNames; sxtModeNames.free();
+         String curInfo = "";
+         StringArray sxtModeToolTips; sxtModeToolTips.free();
+         sxt_mode_args.free();
+         int state = 0;  // 0=expect name, 1=expect args
+
+         foreach line in lines
+         {
+            line.trim();
+
+            if(!line.isBlank())
+            {
+               if!(line <= "#")
+               {
+                  if(0 == state)
+                  {
+                     sxtModeNames.add(line);
+                     curInfo = "";
+                     state = 1;
+                  }
+                  else if(1 == state)
+                  {
+                     if(line <= ".")
+                     {
+                        // Tooltip text (line)
+                        String infoLine;
+                        line.substring(1, 80) => infoLine;
+                        if(!curInfo.isBlank())
+                           curInfo.append("\n");
+                        curInfo.append(infoLine);
+                     }
+                     else
+                     {
+                        sxtModeToolTips.add(curInfo);
+                        sxt_mode_args.add(line);
+                        state = 0;
+                     }
+                  }
+               }
+               // else: is comment
+            }
+            // else: is blank
+
+            // Next line
+         }
+
+         if(0 == state)
+         {
+            // Succeeded
+            Global.Debug("sxt_scripts.ini: found "+sxt_mode_args.numElements+" mode(s)");
+
+            cm_sxt_mode.setOptions(sxtModeNames);
+            cm_sxt_mode.setToolTipCaptions(sxtModeToolTips);
+
+            return true;
+         }
+         else
+         {
+            Global.Warning("sxt_scripts.ini: #names != #args (parse error)");
+            sxt_mode_args.add("-s chromatic -s amp_drum");
+            return true;
+         }
+      }
+      else
+      {
+         Global.Error("Failed to open \""+iniPathname+"\" !!");
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method lazyFindOutputDev() {
+
+      // Try to find Analog Rytm device
+      STX_MIDIOutDevice *outDev;
+      boolean bDone = false;
+
+      foreach outDev in MIDI.out_devices
+      {
+         if(null != outDev)
+         {
+            byte midiCh = 0;
+
+            loop(16)
+            {
+               String profileId <= outDev.getProfileId(midiCh);
+
+               if(null != profileId)
+               {
+                  if(profileId <= "analogrytm_")
+                  {
+                     // Found it
+                     cm_upload_dev.setSelectedOption(MIDI.UnsortedToSortedDevIdx(outDev.dev_idx));
+                     bDone = true;
+                     break;
+                  }
+               }
+
+               midiCh++;
+            }
+         }
+
+         if(bDone)
+            break;
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+
+      Page::pageLeave();
+   }
+
+   // <method.png>
+   protected method isInputFileValid() : boolean {
+      local String inDir = tf_input_dir.getText().trim();
+      local String inFile = tf_input_file.getText();
+
+      local String pathName = Utils.ToNativePathName(inDir+"/"+inFile);
+
+      if(Utils.CanFileBeRead(pathName))
+      {
+         return true;
+      }
+      else
+      {
+         Global.Error("Failed to open input file.");
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method isOutputDirAndPrefixValid() : boolean {
+      local String outDir = tf_output_dir.getText().trim();
+      local String outFile = tf_output_prefix.getText();
+
+      if(!outDir.isBlank())
+      {
+         if(!outFile.isBlank())
+         {
+            if(-1 == outFile.charsetIndexOf(":/|\\^<>§&%$?!={}#~*`\"", 0))
+            {
+               local File f;
+               local String tmpName = Utils.ToNativePathName(outDir+"/"+outFile+".tmp");
+               tmpName <= Utils.ToNativePathName(tmpName);
+               trace "xxx PageAudioTool::isOutputDirAndPrefixValid: tmpName=\""+tmpName+"\"";
+
+               if(f.openLocal(tmpName, IOS_OUT))
+               {
+                  f.close();
+
+                  String log; log.alloc(1024);
+
+                  if(Utils.IsWindows())
+                  {
+                     // Windows
+                     tmpName.replace("/", "\\");
+                     psystem("del \""+tmpName+"\"", 'r', log);
+                  }
+                  else
+                  {
+                     // Linux / MacOSX
+                     psystem("rm -f \""+tmpName+"\"", 'r', log);
+                  }
+
+                  // psystem("dir", 'r', log);
+
+                  trace "xxx log=\""+log+"\"";
+
+                  return true;
+               }
+               else
+               {
+                  Global.Error("Output directory is not writable !");
+               }
+            }
+            else
+            {
+               Global.Error("Output prefix contains invalid character(s) !");
+            }
+         }
+         else
+         {
+            Global.Error("Output prefix is blank !");
+         }
+      }
+      else
+      {
+         Global.Error("Output directory name is blank !");
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method isUploadDevValid() : boolean {
+      STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(MIDI.SortedToUnsortedDevIdx(cm_upload_dev.getSelectedOption()));
+
+      if(null != outDev)
+      {
+         MIDIOut midiout <= outDev.midiout;
+
+         if(null != midiout)
+         {
+            return true;
+         }
+         else
+         {
+            Global.Error("Upload device has not been opened !");
+         }
+      }
+      else
+      {
+         Global.Error("Invalid upload device !");
+      }
+
+      return false;
+   }
+
+   // <method.png>
+   protected method execScript(String cmdLine, String outPrefix, String _type, boolean _bDryRun) : boolean {
+
+      boolean ret = false;
+
+      String exeDir;
+      String exeSuffix = Utils.IsWindows() ? ".exe" : "";
+
+      if(Utils.CanFileBeRead(program_directory+"/synergy"+exeSuffix))
+      {
+         exeDir = program_directory+"/synergy"+exeSuffix;
+      }
+      else
+      {
+         exeDir = TKS.getTksExeDir()+"/tks"+exeSuffix;
+      }
+
+      exeDir = Utils.FixPathname_psystem_exe(exeDir);
+
+      cmdLine = exeDir+" "+cmdLine;
+
+      Global.Debug("exec "+_type+": cmdLine=>>"+cmdLine+"<<");
+
+      if(Utils.IsWindows())
+      {
+         // (note) popen() cannot handle arguments with spaces (oh. my.)
+         // (note) the workaround is to write the cmdline to a .bat file, then exec that
+         cmdLine.insert(0, "@echo off\n");
+         cmdLine.saveLocal(outPrefix+"_"+_type+"_tmp.bat");
+         cmdLine = outPrefix+"_"+_type+"_tmp.bat";
+         cmdLine = Utils.FixPathname_psystem_exe(cmdLine);
+      }
+
+      if(!_bDryRun)
+      {
+         String log; log.alloc(65535);
+         psystem(cmdLine, 'r', log);
+         Global.Debug("exec "+_type+": log=\n"+log+"\n");
+         log.free();
+      }
+
+      ret = true;
+
+      // // if(Utils.IsWindows())
+      // // {
+      //    // psystem("del \""+cmdLine+"\"", 'r', log);
+      // // }
+      return ret;
+   }
+
+   // <method.png>
+   protected execBinary(String exe, String outPrefix, String args) : boolean {
+
+      boolean ret = false;
+
+      // // String cmdLine = Utils.FixPathname_psystem_exe(exe)+" "+args;
+      String cmdLine = "\""+exe+"\" "+args;
+
+      if(Utils.IsWindows())
+      {
+         // (note) popen() cannot handle arguments with spaces (oh. my.)
+         // (note) the workaround is to write the cmdline to a .bat file, then exec that
+         cmdLine.insert(0, "@echo off\n");
+         cmdLine.saveLocal(outPrefix+"_sox_tmp.bat");
+         cmdLine = outPrefix+"_sox_tmp.bat";
+         cmdLine = Utils.FixPathname_psystem_exe(cmdLine);
+      }
+
+      Global.Debug("execBinary: cmdLine=>>"+cmdLine+"<<");
+
+      if(false == cb_dryrun.isSelected())
+      {
+         String log; log.alloc(65535);
+         psystem(cmdLine, 'r', log);
+         Global.Debug("exec SOX: cmdLine=>>"+cmdLine+"<< log=\n"+log+"\n");
+         log.free();
+
+         ret = true;
+      }
+
+      return ret;
+   }
+
+   // <ui_handle.png>
+   public method runSXT() : boolean {
+      boolean ret = false;
+
+      if(isInputFileValid())
+      {
+         if(isOutputDirAndPrefixValid())
+         {
+            String inDir = tf_input_dir.getText().trim();
+            String inFile = tf_input_file.getText();
+            String inName = Utils.ToNativePathName(inDir+"/"+inFile);
+
+            // // String outPrefix = tf_output_prefix.getText();
+            // // outPrefix = Utils.ToNativePathName(tf_output_dir.getText()+"/"+outPrefix);
+            // // // // outPrefix = Utils.FixPathname_psystem_arg(outPrefix);
+            // // // if(sampleName.isBlank())
+            // // //    sampleName = outPrefix;
+            String outPrefix;
+            buildOutputPathnamePrefix(outPrefix);
+
+            String sxtName = Utils.ToNativePathName(STConfig.audiotool_sxt_pathname + "/sxt.tkx");
+            // // sxtName = Utils.FixPathname_psystem_arg(sxtName+"/sxt.tkx");
+
+            String cmdLine = "\""+sxtName+"\" -o \""+outPrefix+"\" ";
+
+            String modeArgs = sxt_mode_args.get(cm_sxt_mode.getSelectedOption());
+            cmdLine.append(modeArgs);
+            cmdLine.replace("$INPUT", inName);
+
+            cmdLine.append(" --srclist");
+
+            if(cb_uvi_stretch.isSelected())
+            {
+               cmdLine.append(" --uvifalconstretch");
+            }
+
+            if(cb_uvi_layerperkeygroup.isSelected())
+            {
+               cmdLine.append(" --uvifalconlayerperkeygroup");
+            }
+
+            switch(cm_uvi_cc.getSelectedOption())
+            {
+               default:
+               case 0:
+                  break;
+
+               case 1: // ModWheel
+                  cmdLine.append(" --uvifalconlayercc 1");
+                  break;
+
+               case 2: // BreathControl
+                  cmdLine.append(" --uvifalconlayercc 2");
+                  break;
+
+               case 3: // Expression
+                  cmdLine.append(" --uvifalconlayercc 11");
+                  break;
+            }
+
+            if(!cb_uvi_loopworkaround.isSelected())
+            {
+               cmdLine.append("  --uvifalconloopworkaround");  // toggle (disable)
+            }
+
+            if(true == cb_dryrun.isSelected())
+            {
+               cmdLine.append(" -dr");
+            }
+
+            ret = execScript(cmdLine, outPrefix, "sxt", (maybe == cb_dryrun.isSelected()));
+
+            if(ret)
+               Global.Success("SXT tool run finished.");
+            else
+               Global.Print("SXT tool dry-run finished.");
+         }
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   protected =replay= method closeUploadDevs(MIDIIn _midiin, MIDIOut _midiout) {
+      _midiin.close();
+      _midiout.close();
+   }
+
+   // <method.png>
+   protected =replay= method reopenUploadDevs(MIDIIn _midiin, int _midiinDevIdx,
+                                              MIDIOut _midiout, int _midioutDevIdx
+                                              ) {
+      _midiin.openByIdx(_midiinDevIdx);
+      _midiout.openByIdx(_midioutDevIdx);
+   }
+
+   // <method.png>
+   protected method buildOutputPathnamePrefix(String retOutPrefix) {
+      retOutPrefix = tf_output_prefix.getText();
+      retOutPrefix = Utils.ToNativePathName(tf_output_dir.getText()+"/"+retOutPrefix);
+   }
+
+   // <method.png>
+   protected method convertTo48k(String outPrefix) : boolean {
+
+      String soxExe = Utils.ToNativePathName(STConfig.audiotool_sox_pathname);
+
+      String srcList;
+      if(srcList.loadLocal(outPrefix+"_srclist.txt", true/*bRemoveCR*/))
+      {
+         String lines <= srcList.splitChar('\n');
+         String *srcFile;
+
+         String sds_filelist = "";
+
+         foreach srcFile in lines
+         {
+            if(srcFile.toLower().endsWith(".wav"))
+            {
+               // sox "${d}" -r 48000 -b 16 -c 1 "`basename "$d"`"
+               String outFile = srcFile+"_48k.wav";
+               sds_filelist.append(outFile);
+               sds_filelist.append("\n");
+               String args = "\""+srcFile+"\" "+STConfig.audiotool_sox_args+" \""+outFile+"\"";
+               Global.Debug("convertTo48k: srcFile=\""+srcFile+"\"");
+               execBinary(soxExe, outPrefix, args);
+            }
+         }
+
+         sds_filelist.saveLocal(outPrefix+"_filelist.txt");
+
+         return true;
+      }
+      else
+      {
+         Global.Error("Failed to open \""+outPrefix+"_srclist.txt\" !!");
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method runSDS_Int(STX_MIDIInDevice inDev, STX_MIDIOutDevice outDev,
+                               boolean _bSingle,
+                               boolean _bVariChain
+                               ) : boolean {
+      // - convert wavs to 48k
+      // - call sds to create sample or varichain and upload it to AR
+
+      boolean ret = false;
+
+      String outPrefix;
+      buildOutputPathnamePrefix(outPrefix);
+
+      if(convertTo48k(outPrefix))
+      {
+         String sdsName = Utils.ToNativePathName(STConfig.audiotool_sds_pathname + "/sds.tkx");
+
+         String cmdLine = "\""+sdsName+"\"";
+
+         String sampleName = tf_sample_name.getText().trim();
+         if(sampleName.isBlank())
+            sampleName = tf_output_prefix.getText();
+
+         // // cmdLine.append(" -autodir");
+         cmdLine.append(" \""+outPrefix+"_filelist.txt\"");
+
+         if(!_bSingle)
+            cmdLine.append(" -name \""+sampleName+"\"");
+
+         if(_bVariChain)
+         {
+            cmdLine.append(" -varichain");
+            cmdLine.append(" -pad 4096");
+            cmdLine.append(" -minpad 1024");
+         }
+         else if(!_bSingle)
+            cmdLine.append(" -chain "+fp_sds_ar_chainsz.getFloatValue());
+
+         if(!_bSingle)
+         {
+            if(_bVariChain)
+               cmdLine.append(" -chainout \""+outPrefix+"_varichain.wav"+"\"");
+            else
+               cmdLine.append(" -chainout \""+outPrefix+"_samplechain.wav"+"\"");
+         }
+
+         if(!_bSingle)
+         {
+            if(cb_sds_ar_kit.isSelected())
+            {
+               cmdLine.append(" -kitsyxout \""+outPrefix+"_arkit.syx\"");
+               cmdLine.append(" -kitsmpnr "+fp_sds_ar_smpnr.getFloatValue());
+            }
+         }
+
+         if(cb_upload_sds.isSelected() || cb_upload_kit.isSelected())
+         {
+            cmdLine.append(" -indev \""+inDev.getDeviceName()+"\"");
+            cmdLine.append(" -outdev \""+outDev.getDeviceName()+"\"");
+         }
+
+         if(!cb_upload_sds.isSelected())
+            cmdLine.append(" -nouploadsmp");
+
+         if(!cb_upload_kit.isSelected() || _bSingle)
+            cmdLine.append(" -nouploadkit");
+
+         ret = execScript(cmdLine, outPrefix, "sds", (false != cb_dryrun.isSelected()));
+
+         if(ret)
+            Global.Success("SDS tool run finished.");
+      }
+
+      return ret;
+   }
+
+   // <ui_handle.png>
+   public method runSDS() {
+      if(isInputFileValid())
+      {
+         if(isOutputDirAndPrefixValid())
+         {
+            if(isUploadDevValid())
+            {
+               STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByIndex(MIDI.SortedToUnsortedDevIdx(cm_upload_dev.getSelectedOption()));
+               STX_MIDIInDevice inDev <= MIDI.FindInDeviceForOutDeviceName(outDev.getAliasOrDeviceName());
+
+               if(null != inDev)
+               {
+                  MIDIOut midiout <= outDev.midiout;
+                  int midioutDevIdx = midiout.deviceIdx;
+
+                  MIDIIn midiin <= inDev.midiin;
+                  int midiinDevIdx = midiin.deviceIdx;
+
+                  inDev.setEnableClosedTemporarily(true);
+                  outDev.setEnableClosedTemporarily(true);
+                  TKS.sleep(500/*ms*/);
+                  closeUploadDevs(midiin, midiout);
+                  TKS.sleep(500/*ms*/);
+
+                  // trace "xxx cm_sds_mode.getSelectedOption()="+cm_sds_mode.getSelectedOption();
+
+                  switch(cm_sds_mode.getSelectedOption())
+                  {
+                     case SDS_MODE_SEPARATE:
+                        runSDS_Int(inDev, outDev, true/*bSingle*/, false/*bVariChain*/);
+                        break;
+
+                     case SDS_MODE_SAMPLECHAIN:
+                        runSDS_Int(inDev, outDev, false/*bSingle*/, false/*bVariChain*/);
+                        break;
+
+                     case SDS_MODE_VARICHAIN:
+                        runSDS_Int(inDev, outDev, false/*bSingle*/, true/*bVariChain*/);
+                        break;
+                  }
+
+                  TKS.sleep(500/*ms*/);
+                  reopenUploadDevs(midiin, midiinDevIdx, midiout, midioutDevIdx);
+                  outDev.setEnableClosedTemporarily(false);
+                  inDev.setEnableClosedTemporarily(false);
+
+               }
+               else
+               {
+                  Global.Error("Failed to get inDev for outDev (check input device configuration!)");
+               }
+            }
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSDSModeChanged() {
+      switch(cm_sds_mode.getSelectedOption())
+      {
+         case SDS_MODE_SEPARATE:
+            cb_sds_ar_kit.setEditable(false);
+            fp_sds_ar_smpnr.setEditable(false);
+            fp_sds_ar_chainsz.setEditable(false);
+            cb_upload_kit.setEditable(false);
+            tf_sample_name.setEditable(false);
+            break;
+
+         case SDS_MODE_SAMPLECHAIN:
+            cb_sds_ar_kit.setEditable(true);
+            fp_sds_ar_smpnr.setEditable(true);
+            fp_sds_ar_chainsz.setEditable(true);
+            cb_upload_kit.setEditable(true);
+            tf_sample_name.setEditable(true);
+            break;
+
+         case SDS_MODE_VARICHAIN:
+            cb_sds_ar_kit.setEditable(true);
+            fp_sds_ar_smpnr.setEditable(true);
+            fp_sds_ar_chainsz.setEditable(false);
+            cb_upload_kit.setEditable(true);
+            tf_sample_name.setEditable(true);
+            break;
+      }
+   }
+
+   // <ui_handle.png>
+   public virtual onDropFiles(StringArray _fileNames) : boolean {
+      if(_fileNames.numElements > 0)
+      {
+         String pathName = _fileNames.get(0);
+         String dirName = "";
+         String fileName = "";
+         Utils.SplitPathname(pathName, dirName, fileName);
+
+         tf_input_dir.setText(dirName);
+         tf_input_file.setText(fileName);
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      return Page::onKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      //trace "xxx PageAudioTool::consumeAction: acName=\""+acName+"\".";
+
+      switch(@(ap))
+      {
+         case @(bt_parent):
+            root_form.showPageParent();
+            return true;
+
+         case @(cm_sds_mode):
+            handleSDSModeChanged();
+            return true;
+
+         case @(bt_run_sxt):
+            runSXT();
+            return true;
+
+         case @(bt_run_sds):
+            runSDS();
+            return true;
+
+         case @(bt_run_sxt_sds):
+            if(runSXT())
+            {
+               runSDS();
+            }
+            return true;
+      }
+
+      return XMLForm::consumeAction(_ac);
+   }
+
+}

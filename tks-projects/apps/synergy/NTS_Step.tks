@@ -1,0 +1,523 @@
+// ----
+// ---- file   : NTS_Step.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 09Jul2016, 10Jul2016, 11Jul2016, 12Jul2016, 13Jul2016, 17Jul2016, 08Oct2016
+// ----          09Oct2016, 16Oct2016, 11Dec2016, 12Dec2016, 19Dec2016, 30Jan2017, 31Jan2017
+// ----          02Feb2017, 03Feb2017, 04Feb2017, 10Feb2017, 12Feb2017, 26Feb2017, 18Mar2017
+// ----          01Jun2017, 05Jun2017, 12Aug2017, 18Aug2017, 03Sep2017, 09Oct2017, 14Oct2017
+// ----          10Nov2017, 11Nov2017, 25Nov2017, 29Nov2017, 30Nov2017, 04Jan2018, 07Mar2018
+// ----          12May2018, 21May2018, 27May2018, 28May2018, 01Jun2018, 17Jun2018, 24Jun2018
+// ----          20Jul2019, 02Oct2019, 03Oct2019, 04Oct2019, 05Oct2019, 06Oct2019, 07Oct2019
+// ----          08Oct2019, 09Oct2019, 14Oct2019, 16Oct2019, 17Oct2019, 18Oct2019, 19Oct2019
+// ----          25Oct2019, 31Oct2019, 01Nov2019, 02Nov2019, 07Nov2019, 06Mar2020, 18Mar2020
+// ----          05May2020, 26Oct2020, 27Oct2020, 30Oct2020, 02Nov2020, 03Nov2020, 10Nov2020
+// ----          12Nov2020, 13Nov2020, 23Nov2020, 27Jan2021, 20Jun2021, 01Jan2022, 04Jan2022
+// ----          21Feb2022, 07May2022, 21Jun2023, 14Oct2023, 27Nov2023, 01Dec2023, 02Dec2023
+// ----          06Oct2024
+// ----
+// ----
+// ----
+module MNTS_Step;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class NTS_Step {
+
+   NTS_Track *parent_track;
+
+   int grid_x;  // for replay and ui
+   int grid_y;  // for ui
+
+   boolean b_trig;
+   boolean b_repeat;
+   boolean b_mod;  // when b_trig is not set, send mod1/mod2 update only
+
+   float arg1;  // e.g. velocity. 4 steps (0, 1, 2, 3) ([08Oct2019]: now a float, 0..3)
+   float arg2;
+
+   float microtime;  // -1..1 => -100%..+100%
+
+   float mod1;
+   float mod2;
+
+   int slide_next_trig_dist_cache;  // 1..play_length, see NTS_Track.updateTrigCache()
+
+
+   // <method_init.png>
+   public method init(int _x, NTS_Track _track) {
+
+      parent_track <= _track;
+
+      grid_x = _x;
+      grid_y = parent_track.track_nr;
+
+      clearStep();
+   }
+
+
+   // <method.png>
+   public =replay= method clearStep() {
+      b_trig   = false;
+      b_repeat = false;
+      b_mod    = false;
+
+      arg1 = 0.0f;
+      arg2 = NodeTrigSeq.INVALID_VALUE;
+
+      microtime = 0.0f;
+
+      mod1 = NodeTrigSeq.INVALID_VALUE;
+      mod2 = NodeTrigSeq.INVALID_VALUE;
+
+      slide_next_trig_dist_cache = 1;
+
+      if(null != parent_track)
+         parent_track.updateTrigCache();
+   }
+
+   // <method.png>
+   public method copyFrom(NTS_Step _o) {
+      b_trig     = _o.b_trig;
+      b_repeat   = _o.b_repeat;
+      b_mod      = _o.b_mod;
+      arg1       = _o.arg1;
+      arg2       = _o.arg2;
+      microtime  = _o.microtime;
+      mod1       = _o.mod1;
+      mod2       = _o.mod2;
+      // (note) don't copy grid_x/grid_y or parent_track!
+
+      if(null != parent_track)
+         parent_track.updateTrigCache();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableTrig(boolean _bEnable) {
+      b_trig = _bEnable;
+      if(_bEnable)
+         b_mod = false;
+
+      if(null != parent_track)
+         parent_track.updateTrigCache();
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableRepeat(boolean _bEnable) {
+      b_repeat = _bEnable;
+   }
+
+   // <method_set.png>
+   public =replay= method setEnableMod(boolean _bEnable) {
+      b_mod = _bEnable;
+
+      if(null != parent_track)
+         parent_track.updateTrigCache();
+   }
+
+   // <method_set.png>
+   public =replay= method setArg1(float _arg1) {
+      arg1 = mathClampf(_arg1, 0.0f, 3.0f);
+   }
+
+   // <method_set.png>
+   public =replay= method setArg2(float _arg2) {
+      arg2 = _arg2;
+   }
+
+   // <method_set.png>
+   public =replay= method setMicroTime(float _microtime) {
+      microtime = mathClampf(_microtime, -1.0, 1.0);
+   }
+
+   // <method_set.png>
+   public =replay= method setMod1(float _mod1) {
+      mod1 = _mod1;
+   }
+
+   // <method_set.png>
+   public =replay= method setMod2(float _mod2) {
+      mod2 = _mod2;
+   }
+
+   // <method_get.png>
+   public method getMicroTimeTicks() : int {
+      return microtime * parent_track.current_step_num_ticks;
+   }
+
+   // <method_get.png>
+   public method getMicroTimeString() : String {
+      return getMicroTimeTicks()+" ticks ("+int(microtime*100)+"%)";
+   }
+
+   // <method_set.png>
+   public =replay= method microTimeTickIncDec(int _dir) {
+      setMicroTime(microtime + _dir*(1.0 / parent_track.current_step_num_ticks));
+   }
+
+   // <method_set.png>
+   public =replay= method incDecArg2(int _dir) {
+      if(arg2 < 0)
+      {
+         if(_dir > 0)
+         {
+            arg2 = 0;
+         }
+      }
+      else
+      {
+         arg2 = mathClampf(arg2 + _dir, -1.0f, 65535.0f);
+      }
+   }
+
+   // <method.png>
+   public method getArg1Label() : String {
+      // // NodeTrigSeq seq <= parent_track.parent_node;
+      byte outputMode = parent_track.getActualOutputMode();
+
+      switch(outputMode)
+      {
+         default:
+         case NodeTrigSeq.OUT_SINGLECH_NOTE:
+            return "Velocity";
+
+         case NodeTrigSeq.OUT_SINGLECH_NOTE_PROBABILITY:
+            return "Velocity";
+
+         case NodeTrigSeq.OUT_MULTICH_NOTE:
+            return "Velocity";
+
+         case NodeTrigSeq.OUT_SINGLECH_MUTE_TEMP:
+            return "Mute Mode";
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_CHG_OFF_RUN:
+            return "Run Mode";
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_OFF_RUN:
+            return "Run Mode";
+
+         case NodeTrigSeq.OUT_PAT_CHG_OFF:
+            return "Enable Send Off";
+
+         case NodeTrigSeq.OUT_SINGLETRACK_POLYSTEP:
+            return "PolyStep Off";
+
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP4:
+            return "PolyStep Off";
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE:
+            return "CG Trig Type";
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE_PAT_CHG_OFF:
+            return "Send Offset";
+
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL:
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL_RESET:
+            return "Velocity";
+
+         case NodeTrigSeq.OUT_MULTICH_DRUMPADSELECT:
+            return "Velocity";
+
+         case NodeTrigSeq.OUT_CHROMATIC:
+            return "Velocity";
+
+         case NodeTrigSeq.OUT_CHROMATIC_MONO:
+            return "Accent/Slide";
+      }
+
+      return "?";
+   }
+
+   // <method.png>
+   public method getArg1Options() : StringArray {
+      NodeTrigSeq seq <= parent_track.parent_node;
+
+      byte outputMode = (-1 != parent_track.forced_output_mode) ? parent_track.forced_output_mode : seq.output_mode;
+
+      switch(outputMode)
+      {
+         default:
+         case NodeTrigSeq.OUT_SINGLECH_NOTE:
+         case NodeTrigSeq.OUT_SINGLECH_NOTE_PROBABILITY:
+         case NodeTrigSeq.OUT_MULTICH_NOTE:
+            return ["0: Max", "1: High", "2: Medium", "3: Low"];  // Velocity
+
+         case NodeTrigSeq.OUT_SINGLECH_MUTE_TEMP:
+            return ["0: Mute", "1: Unmute", "2: Toggle", "3: -"]; // Mute Mode
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_CHG_OFF_RUN:
+         case NodeTrigSeq.OUT_SINGLECH_PAT_OFF_RUN:
+            return ["0: Keep", "1: Run", "2: Stop", "3: -"];  // Run Mode
+
+         case NodeTrigSeq.OUT_PAT_CHG_OFF:
+            return ["0: Don\'t send", "1: Send Offset", "2: -", "3: -"];  // Enable Send Offset
+
+         case NodeTrigSeq.OUT_SINGLETRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP4:
+            return ["0: Offset +0", "1: Offset +1", "2: Offset +2", "3: Offset +3" ]; // PolyStep Nr.Offset
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE:
+            return ["0: Clock+Gate", "1: Clock", "2: Gate", "3: -"/*retrig?*/];// CG Trig Type
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE_PAT_CHG_OFF:
+            return ["0: Offset 0", "1: Offset 1", "2: Offset 2", "3: Don\'t Send"];  // Send Offset Mode
+
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL:
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL_RESET:
+         case NodeTrigSeq.OUT_MULTICH_DRUMPADSELECT:
+         case NodeTrigSeq.OUT_CHROMATIC:
+            return ["0: Max", "1: High", "2: Medium", "3: Low"];  // Velocity
+
+         case NodeTrigSeq.OUT_CHROMATIC_MONO:
+            return ["0: Normal", "1: Slide", "2: Accent", "3: Acc+Slide"];
+      }
+
+      return ["0: ?", "1: ?", "2: ?", "3: ?"];
+   }
+
+   // <method.png>
+   public method getArg1String() : String {
+      StringArray opt <= getArg1Options();
+      return opt.get(arg1);
+   }
+
+   // <method.png>
+   public method getArg2Label() : String {
+      NodeTrigSeq seq <= parent_track.parent_node;
+
+      byte outputMode = (-1 != parent_track.forced_output_mode) ? parent_track.forced_output_mode : seq.output_mode;
+
+      switch(outputMode)
+      {
+         default:
+         case NodeTrigSeq.OUT_SINGLECH_NOTE:
+            return "Duration";
+
+         case NodeTrigSeq.OUT_SINGLECH_NOTE_PROBABILITY:
+            return "Probability";
+
+         case NodeTrigSeq.OUT_MULTICH_NOTE:
+            return "Duration";
+
+         case NodeTrigSeq.OUT_SINGLECH_MUTE_TEMP:
+            return "-";  // unused
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_CHG_OFF_RUN:
+            return "Pat.Off";
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_OFF_RUN:
+            return "Pat.Off";
+
+         case NodeTrigSeq.OUT_PAT_CHG_OFF:
+            return "Offset";
+
+         case NodeTrigSeq.OUT_SINGLETRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP4:
+            return "PolyStep Off";
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE:
+            return "Gatetime Mult.";
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE_PAT_CHG_OFF:
+            return "Pat.Nr";
+
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL:
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL_RESET:
+            return "Seek #Steps";
+
+         case NodeTrigSeq.OUT_MULTICH_DRUMPADSELECT:
+            return "Duration";
+
+         case NodeTrigSeq.OUT_CHROMATIC:
+            return "Note";
+
+         case NodeTrigSeq.OUT_CHROMATIC_MONO:
+            return "Note";
+      }
+
+      return "?";
+   }
+
+   // <method.png>
+   public method getArg2String(boolean _bShort) : String {
+      NodeTrigSeq seq <= parent_track.parent_node;
+      NTS_Pattern *pat;
+
+      byte outputMode = (-1 != parent_track.forced_output_mode) ? parent_track.forced_output_mode : seq.output_mode;
+
+      float fArg2 = _bShort ? int(arg2) : arg2;
+
+      switch(outputMode)
+      {
+         default:
+         case NodeTrigSeq.OUT_SINGLECH_NOTE:
+            if(_bShort)
+               return (arg2 >= 1) ? fArg2 : "-"; // duration
+            else
+               return (arg2 >= 1) ? (fArg2+" ticks") : "-"; // duration
+
+         case NodeTrigSeq.OUT_SINGLECH_NOTE_PROBABILITY:
+            // // return (0 <= arg2 <= 100) ? (fArg2+"%") : "-"; // probability
+            return (arg2 >= 0) ? (mathClampf(fArg2, 0, 100)+"%") : "-"; // probability
+
+         case NodeTrigSeq.OUT_MULTICH_NOTE:
+            return (arg2 >= 1) ? fArg2 : "-"; // duration
+
+         case NodeTrigSeq.OUT_SINGLECH_MUTE_TEMP:
+            return "-";  // unused
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_CHG_OFF_RUN:
+            return (arg2 >= 0) ? int(fArg2) : "-"; // pattern offset
+
+         case NodeTrigSeq.OUT_SINGLECH_PAT_OFF_RUN:
+            return (arg2 >= 0) ? int(fArg2) : "-"; // pattern offset
+
+         case NodeTrigSeq.OUT_PAT_CHG_OFF:
+            return (arg2 >= 1) ? fArg2 : "-";  // offset
+
+         case NodeTrigSeq.OUT_SINGLETRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP:
+         case NodeTrigSeq.OUT_MULTITRACK_POLYSTEP4:
+            return (arg2 >= 0) ? fArg2 : "-";  // polystep nr offset
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE:
+            return (arg2 >= 0) ? fArg2 : "-";  // gate time multiplier
+
+         case NodeTrigSeq.OUT_MULTICH_CLOCKGATE_PAT_CHG_OFF:
+            if(_bShort)
+               return (arg2 >= 0) ? Node.patnr_options_short.get(int(fArg2)&127) : "-";
+            else
+               return (arg2 >= 0) ? Node.patnr_options.get(int(fArg2)&127) : "-";
+            // // return (arg2 >= 0) ? arg2 : "-";  // pattern nr
+
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL:
+         case NodeTrigSeq.OUT_MULTICH_GATE_SEEK_REL_RESET:
+            return (arg2 >= 0) ? fArg2 : "-";  // num steps
+
+         case NodeTrigSeq.OUT_MULTICH_DRUMPADSELECT:
+            if(_bShort)
+               return (arg2 >= 0) ? fArg2 : "-"; // duration
+            else
+               return (arg2 >= 0) ? (fArg2+" ticks") : "-"; // duration
+
+         case NodeTrigSeq.OUT_CHROMATIC:
+            pat <= seq.nodeGetCurrentPlayPattern();
+            if(null != pat)
+            {
+               return MIDI.midi_notes.get(mathClampf(parent_track.arg3 + pat.arg3_offset + arg2, 0, 127));
+            }
+            return "?";
+
+         case NodeTrigSeq.OUT_CHROMATIC_MONO:
+            pat <= seq.nodeGetCurrentPlayPattern();
+            if(null != pat)
+            {
+               return MIDI.midi_notes.get(mathClampf(parent_track.arg3 + pat.arg3_offset + arg2, 0, 127));
+            }
+            return "?";
+      }
+
+      return "?";
+   }
+
+   // <save.png>
+   public method saveState(Stream _ofs) {
+
+      // Version
+      _ofs.i16 = 5;
+
+      // Write b_trig
+      _ofs.i8 = b_trig;
+
+      // Write arg1
+      //  (note) (was byte before v5)
+      _ofs.f32 = arg1;
+
+      // Write arg2
+      _ofs.f32 = arg2;
+
+      // Write microtime
+      _ofs.f32 = microtime;
+
+      // Write b_repeat (v2+)
+      _ofs.i8 = b_repeat;
+
+      // Write mod1 (v3+)
+      _ofs.f32 = mod1;
+
+      // Write mod2 (v3+)
+      _ofs.f32 = mod2;
+
+      // Write b_mod (v4+)
+      _ofs.i8 = b_mod;
+   }
+
+   // <load.png>
+   public method loadState(Stream _ifs, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+
+      short ver = _ifs.u16;
+
+      if(ver >= 1)
+      {
+         // Read b_trig
+         b_trig = _ifs.b8;
+
+         // Read arg1
+         if(ver >= 5)
+         {
+            arg1 = mathClampf(_ifs.f32, 0.0f, 3.0f);
+         }
+         else
+         {
+            arg1 = _ifs.u8 & 3;
+         }
+
+         // Read arg2
+         arg2 = _ifs.f32;
+
+         // Read microtime
+         microtime = _ifs.f32;
+
+         if(ver >= 2)
+         {
+            // Read b_repeat
+            b_repeat = _ifs.b8;
+         }
+
+         if(ver >= 3)
+         {
+            // Read mod1 (v3+)
+            mod1 = _ifs.f32;
+
+            // Read mod2 (v3+)
+            mod2 = _ifs.f32;
+
+            if(ver >= 4)
+            {
+               // Read b_mod (v4+)
+               b_mod = _ifs.b8;
+            }
+         }
+
+         // Succeeded
+         return true;
+      }
+      else
+      {
+         trace "[---] NTS_Step::loadState: bad ver="+ver;
+      }
+
+      return false;
+   }
+}

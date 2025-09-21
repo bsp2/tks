@@ -1,0 +1,934 @@
+// ----
+// ---- file   : NSQ_Pattern.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2020-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- created: 06Apr2020
+// ---- changed: 07Apr2020, 08Apr2020, 09Apr2020, 11Apr2020, 12Apr2020, 13Apr2020, 14Apr2020
+// ----          15Apr2020, 16Apr2020, 17Apr2020, 18Apr2020, 20Apr2020, 24Apr2020, 25Apr2020
+// ----          26Apr2020, 06May2020, 09May2020, 13May2020, 30Oct2020, 06Nov2020, 07Nov2020
+// ----          08Nov2020, 09Nov2020, 10Nov2020, 14Nov2020, 15Nov2020, 27Jan2021, 23May2021
+// ----          02Jun2021, 14Jun2021, 20Jun2021, 21Jun2021, 18Jul2021, 01Jan2022, 24Feb2022
+// ----          24Jun2022, 03Nov2022, 07Mar2023, 22Jun2023, 02Sep2023, 03Sep2023, 20Sep2023
+// ----          13Oct2023, 14Oct2023, 15Oct2023, 06Oct2024, 07Oct2024, 28Feb2025
+// ----
+// ----
+// ----
+
+module MNSQ_Pattern;
+
+use namespace ui;
+use namespace st2;
+
+boolean b_debug = 0;
+
+
+// <class.png>
+class NSQ_Pattern : NodePattern {
+
+   NodeSeq *seq;
+
+   NSQ_Track *[] tracks;
+
+   FloatArray bar_tempo;  // multipliers, 1.0=default bpm
+
+   int sig_beats;
+   int sig_notelen;
+
+   int loop_start_ticks;
+   int loop_len_ticks;
+
+   int punch_start_ticks;  // -1 = none
+   int punch_len_ticks;    // -1 = none
+
+
+   // <method_init.png>
+   public virtual patInit(Node _parent, int _patNr) {
+      NodePattern::patInit(_parent, _patNr);
+
+      seq <= _parent;
+
+      sig_beats   = current_song.sig_beats;
+      sig_notelen = current_song.sig_notelen;
+
+      int trackIdx = 0;
+      loop(NodeSeq.NUM_TRACKS)
+      {
+         NSQ_Track track <= new NSQ_Track;
+         track.init(seq, this);
+         track.track_idx = trackIdx++;
+         tracks.add(#(deref track));
+      }
+
+      loop_start_ticks = 0;
+      loop_len_ticks = getNumTicksPerBar() * 8;
+
+      punch_start_ticks = -1;
+      punch_len_ticks   = -1;
+
+      bar_tempo.allocAndFill(NSQ_Track.MAX_BARS, 1.0);
+   }
+
+   // <method.png>
+   public virtual patCopyFrom(NSQ_Pattern _o, boolean _bClear) {
+      NodePattern::patCopyFrom(_o, _bClear);
+
+      patCopyFromGeneric(_o);
+   }
+
+   // <method_set.png>
+   public =replay= method setSigBeats(int _num) {
+      int ticksPerBar = getNumTicksPerBar();
+      int oldCursorTicks = seq.cursor_x * ticksPerBar;
+      int oldViewTicks   = seq.view_x * ticksPerBar;
+      sig_beats = _num;
+      ticksPerBar = getNumTicksPerBar();
+      seq.cursor_x = oldCursorTicks / ticksPerBar;
+      seq.view_x = oldViewTicks / ticksPerBar;
+      rebuildBarLUTs();
+   }
+
+   // <method_set.png>
+   public =replay= method setSigNoteLen(int _len) {
+      int ticksPerBar = getNumTicksPerBar();
+      int oldCursorTicks = seq.cursor_x * ticksPerBar;
+      int oldViewTicks   = seq.view_x * ticksPerBar;
+      sig_notelen = _len;
+      ticksPerBar = getNumTicksPerBar();
+      seq.cursor_x = oldCursorTicks / ticksPerBar;
+      seq.view_x = oldViewTicks / ticksPerBar;
+      rebuildBarLUTs();
+   }
+
+   // <method.png>
+   public method getNumTicksPerBar() : int {
+      return sig_beats * ((current_song.ppq * 4)/*numTicksPerNote*/ / float(sig_notelen));
+   }
+
+   // <method.png>
+   public method getNumTicksPerBeat() : int {
+      return ((current_song.ppq * 4)/*numTicksPerNote*/ / float(sig_notelen));
+   }
+
+   // <method_get.png>
+   public method getTrackByIdx(int _trackIdx) : NSQ_Track {
+      return tracks.get(_trackIdx);
+   }
+
+   // <method_get.png>
+   public method getCursorTrack() : NSQ_Track {
+      return tracks.get(seq.cursor_y);
+   }
+
+   // <method.png>
+   public method lazyExplodeAutoSelect(boolean _bForce) {
+      NSQ_Track *track;
+      foreach track in tracks
+      {
+         track.lazyExplodeAutoSelect(_bForce);
+      }
+   }
+
+   // <method.png>
+   public method rebuildBarLUTs() {
+      NSQ_Track *track;
+      foreach track in tracks
+         track.rebuildBarLUT();
+   }
+
+   // <method.png>
+   public =replay= clearPattern() {
+      NSQ_Track *track;
+      foreach track in tracks
+         track.clearTrack();
+   }
+
+   // <replay.png>
+   public =replay= method setLoop(int _start, int _len) {
+      loop_start_ticks = _start;
+      loop_len_ticks   = _len;
+
+      if(!replay.b_playing)
+      {
+         seq.queued_loop_start_ticks = -1;
+         seq.cur_loop_start_ticks = loop_start_ticks;
+         seq.cur_loop_len_ticks   = loop_len_ticks;
+      }
+   }
+
+   // <method_set.png>
+   public =replay= method setPunchInOut(int _start, int _len) {
+      punch_start_ticks = _start;
+      punch_len_ticks   = _len;
+   }
+
+   // <replay.png>
+   public method seek(int _ticks) {
+      NSQ_Track *track;
+      foreach track in tracks
+      {
+         track.seek(_ticks);
+      }
+   }
+
+   // <method.png>
+   public =replay= method lazyMergeAndRemoveEmptyFrames() : int {
+      // lazy-automerge / purge empty frames
+      int numMerged = 0;
+      NSQ_Track *track;
+      foreach track in tracks
+      {
+         int trackNumMerged = track.autoMergeFrames();
+         if(trackNumMerged > 0)
+         {
+            numMerged += trackNumMerged;
+            track.rebuildBarLUT();
+            track.played_bar_frames.empty();
+         }
+      }
+      return numMerged;
+   }
+
+   // <method_find.png>
+   public method findFirstUsedTrackBarIdx(int _trackIdx) : int {
+      NSQ_Track track <= tracks.get(_trackIdx);
+      return track.findFirstUsedTrackBarIdx();
+   }
+
+   // <method_find.png>
+   public method findLastUsedTrackBarIdx(int _trackIdx) : int {
+      NSQ_Track track <= tracks.get(_trackIdx);
+      return track.findLastUsedTrackBarIdx();
+   }
+
+   // <method.png>
+   public =replay= method toggleSoloState(int _trackIdx) {
+
+      NSQ_Track *t;
+      NSQ_Track track <= tracks.get(_trackIdx);
+
+      if(null != track)
+      {
+         int newState = (NSQ_Track.STATE_SOLO == track.play_state) ? NSQ_Track.STATE_PLAY : NSQ_Track.STATE_SOLO;
+
+         boolean bOtherSolo = false;
+         foreach t in tracks
+         {
+            if(@(t) != @(track))
+            {
+               if(NSQ_Track.STATE_SOLO == t.play_state)
+               {
+                  bOtherSolo = true;
+                  break;
+               }
+            }
+         }
+
+         if(NSQ_Track.STATE_SOLO == track.play_state)
+         {
+            // Solo => Play (or mute)
+
+            if(!bOtherSolo)
+            {
+               // Restore pre-solo state
+               foreach t in tracks
+               {
+                  if(NSQ_Track.STATE_PLAY != t.play_state)
+                  {
+                     t.play_state = t.play_state_presolo;
+
+                     if(@(t) == @(track))
+                     {
+                        newState = t.play_state;
+                     }
+                  }
+               }
+            }
+            else
+            {
+               newState = NSQ_Track.STATE_MUTE;
+            }
+         }
+
+         if(NSQ_Track.STATE_SOLO == newState)
+         {
+            if(!bOtherSolo)
+            {
+               // Save pre-solo states
+               foreach t in tracks
+               {
+                  t.play_state_presolo = t.play_state;
+                  t.play_state = NSQ_Track.STATE_MUTE;
+               }
+            }
+         }
+
+         track.play_state = newState;
+      }
+   }
+
+   // <method.png>
+   public =replay= method toggleMuteState(int _trackIdx) {
+      NSQ_Track track <= tracks.get(_trackIdx);
+
+      if(null != track)
+      {
+         if(NSQ_Track.STATE_SOLO == track.play_state)
+         {
+            toggleSoloState(_trackIdx);
+         }
+
+         int newState = (NSQ_Track.STATE_MUTE == track.play_state) ? NSQ_Track.STATE_PLAY : NSQ_Track.STATE_MUTE;
+
+         track.play_state = newState;
+      }
+   }
+
+   // <replay.png>
+   public method lazyResetPlayedBarFrames(boolean _bForce) {
+      NSQ_Track *track;
+      foreach track in tracks
+      {
+         track.lazyResetPlayedBarFrames(_bForce);
+      }
+   }
+
+   // <replay.png>
+   public method resetLapEndTickNrMono() {
+      NSQ_Track *track;
+      foreach track in tracks
+      {
+         track.lap_end_tick_nr_mono = -1;
+      }
+   }
+
+   // <method.png>
+   public =replay= method multiplyBarFrameTimes(int     _barIdx,
+                                                float   _ratio,
+                                                boolean _bCurrentTrackOnly,
+                                                boolean _bBPMOnly
+                                                ) : int {
+
+      int numUpdated = 0;
+
+      if(!_bCurrentTrackOnly)
+         bar_tempo[_barIdx] = bar_tempo[_barIdx] * _ratio;
+
+      if(!_bBPMOnly)
+      {
+         NSQ_Track *track;
+         int trackIdx = 0;
+         foreach track in tracks
+         {
+            if(!_bCurrentTrackOnly || (trackIdx == seq.cursor_y))
+               numUpdated += track.multiplyBarFrameTimes(_barIdx, _ratio);
+            trackIdx++;
+         }
+      }
+      return numUpdated;
+   }
+
+   // <method_set.png>
+   public =replay= method updateBarTempo(int _barIdx, float _bpmMul) {
+      bar_tempo[_barIdx] = _bpmMul;
+   }
+
+   // <method.png>
+   public method insertTempoBars(int _barIdx, int _numBars) {
+      if((_barIdx + _numBars) > NSQ_Track.MAX_BARS)
+      {
+         _numBars = NSQ_Track.MAX_BARS - 1 - _barIdx;
+      }
+      if(_numBars >= 1)
+      {
+         loop(_numBars)
+         {
+            bar_tempo.delete(bar_tempo.numElements-1);
+         }
+
+         loop(_numBars)
+         {
+            bar_tempo.insert(_barIdx, 1.0f);
+         }
+      }
+   }
+
+   // <method.png>
+   public method deleteTempoBars(int _barIdx, int _numBars) {
+      if((_barIdx + _numBars) > NSQ_Track.MAX_BARS)
+      {
+         _numBars = NSQ_Track.MAX_BARS - 1 - _barIdx;
+      }
+      if(_numBars >= 1)
+      {
+         loop(_numBars)
+         {
+            bar_tempo.delete(_barIdx);
+         }
+
+         loop(_numBars)
+         {
+            bar_tempo.insert(bar_tempo.numElements, 1.0f);
+         }
+      }
+   }
+
+   // <method.png>
+   public =replay= method getNumTempoSelectedFrames() : int {
+
+      int num = 0;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int trackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+         loop(numTracks)
+         {
+            NSQ_Track track <= tracks.get(trackIdx);
+            num += track.getNumTempoSelectedFrames();
+            trackIdx++;
+         }
+      }
+
+      return num;
+   }
+
+   // <method.png>
+   public method reduceTempoSelectionToFirstFrame() : int {
+      // returns first frame idx (or -1)
+      // (note) caller must lock =replay=
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int trackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+         boolean bHaveFrame = false;
+
+         loop(numTracks)
+         {
+            NSQ_Track track <= tracks.get(trackIdx);
+            if(track.getNumTempoSelectedFrames() > 0)
+            {
+               // trace "xxx reduce tempo selection to trackIdx="+trackIdx;
+               seq.sorted_tempo_sel_start_y = trackIdx;
+               seq.sorted_tempo_sel_end_y   = trackIdx;
+               seq.tempo_sel_start_y = seq.sorted_tempo_sel_start_y;
+               seq.tempo_sel_end_y   = seq.sorted_tempo_sel_end_y;
+               return track.reduceTempoSelectionToFirstFrame();
+            }
+            trackIdx++;
+         }
+      }
+
+      return -1;
+   }
+
+   // <method.png>
+   public =replay= method getUniqueTempoSelectedTrackIdx() : int {
+      int ret = -1;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int trackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+         loop(numTracks)
+         {
+            NSQ_Track track <= tracks.get(trackIdx);
+            int trackNum = track.getNumTempoSelectedFrames();
+            if(trackNum > 0)
+            {
+               if(-1 == ret)
+                  ret = trackIdx;
+               else
+                  return -1;
+            }
+            trackIdx++;
+         }
+      }
+
+      return ret;
+   }
+
+   // <method.png>
+   public =replay= method deleteTempoSelectedFrames() : int {
+
+      int numDeleted = 0;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int trackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+         loop(numTracks)
+         {
+            NSQ_Track track <= tracks.get(trackIdx);
+            numDeleted += track.deleteTempoSelectedFrames();
+            trackIdx++;
+         }
+      }
+
+      return numDeleted;
+   }
+
+   // <method.png>
+   public =replay= method mergeTempoSelectedFrames() : int {
+
+      int numMerged = 0;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int trackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+         loop(numTracks)
+         {
+            NSQ_Track track <= tracks.get(trackIdx);
+            numMerged += track.mergeTempoSelectedFrames();
+            trackIdx++;
+         }
+      }
+
+      return numMerged;
+   }
+
+   // <method.png>
+   protected method moveTempoSelectedFramesFindMinDelta(int _tickDelta) : int {
+
+      int minDelta = _tickDelta;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int trackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+         loop(numTracks)
+         {
+            NSQ_Track track <= tracks.get(trackIdx);
+            int trackMinDelta = track.moveTempoSelectedFramesFindMinDelta(_tickDelta);
+            if(abs(trackMinDelta) < abs(minDelta))
+               minDelta = trackMinDelta;
+            trackIdx++;
+         }
+      }
+
+      return minDelta;
+   }
+
+   // <method.png>
+   public =replay= method moveTempoSelectedFrames(int _tickDelta, Integer _retTickDelta) : int {
+
+      int numMoved = 0;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         _tickDelta = moveTempoSelectedFramesFindMinDelta(_tickDelta);
+         _retTickDelta = _tickDelta;
+
+         if(0 != _tickDelta)
+         {
+            int trackIdx  = seq.sorted_tempo_sel_start_y;
+            int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+
+            loop(numTracks)
+            {
+               NSQ_Track track <= tracks.get(trackIdx);
+               numMoved += track.moveTempoSelectedFrames(_tickDelta);
+               trackIdx++;
+            }
+         }
+      }
+      else
+         _retTickDelta = 0;
+
+      return numMoved;
+   }
+
+   // <method.png>
+   public =replay= method moveTempoSelectedFramesSnap(int _dir, Integer _retTickDelta) : int {
+
+      int numMoved = 0;
+
+      if(-1 != seq.sorted_tempo_sel_start_x)
+      {
+         int firstTrackIdx  = seq.sorted_tempo_sel_start_y;
+         int numTracks = (seq.sorted_tempo_sel_end_y - seq.sorted_tempo_sel_start_y) + 1;
+         NSQ_Track *track;
+         int trackIdx;
+         int minTickDelta = 999999;
+
+         // Find move delta
+         trackIdx = firstTrackIdx;
+         loop(numTracks)
+         {
+            track <= tracks.get(trackIdx);
+            int trackTickDelta = track.moveTempoSelectedFramesSnapFindMinDelta(_dir);
+            if(abs(trackTickDelta) < abs(minTickDelta))
+               minTickDelta = trackTickDelta;
+            trackIdx++;
+         }
+
+         _retTickDelta = minTickDelta;
+
+         if(0 != minTickDelta)
+         {
+            trackIdx = firstTrackIdx;
+            loop(numTracks)
+            {
+               track <= tracks.get(trackIdx);
+               numMoved += track.moveTempoSelectedFrames(minTickDelta);
+               trackIdx++;
+            }
+         }
+      }
+      else
+         _retTickDelta = 0;
+
+      return numMoved;
+   }
+
+   // <method.png>
+   public method isSelectionEmpty() : boolean {
+      int startX;
+      int startY;
+      int numBars;
+      int numTracks;
+
+      if(seq.haveSelection())
+      {
+         startX    = seq.sorted_sel_start_x;
+         numBars   = seq.sorted_sel_end_x - seq.sorted_sel_start_x + 1;
+         startY    = seq.sorted_sel_start_y;
+         numTracks = seq.sorted_sel_end_y - seq.sorted_sel_start_y + 1;
+      }
+      else
+      {
+         startX = seq.cursor_x;
+         startY = seq.cursor_y;
+         numBars = 1;
+         numTracks = 1;
+      }
+
+      int cy = startY;
+      loop(numTracks)
+      {
+         NSQ_Track track <= tracks.get(cy);
+         int cx = startX;
+         loop(numBars)
+         {
+            if(0 != (track.bar_flags.get(cx)))
+               return false;
+            cx++;
+         }
+         cy++;
+      }
+      return true;
+   }
+
+   // <save.png>
+   public virtual patSaveState(Stream ofs) {
+
+      NodePattern::patSaveState(ofs);
+
+      ofs.i16 = 4; // Version
+
+      // Time signature (v4+)
+      ofs.i8 = sig_beats;
+      ofs.i8 = sig_notelen;
+
+      // Tracks
+      ofs.i8 = tracks.numElements;
+      NSQ_Track *track;
+      foreach track in tracks
+      {
+         track.saveState(ofs);
+      }
+
+      // Tempo-map (v2+)
+      ofs.i32 = bar_tempo.numElements;
+      int barIdx = 0;
+      loop(bar_tempo.numElements)
+         ofs.f32 = bar_tempo[barIdx++];
+
+      // Loop (v3+)
+      ofs.i32 = loop_start_ticks;
+      ofs.i32 = loop_len_ticks;
+
+      // Punch In+Out (v3+)
+      ofs.i32 = punch_start_ticks;
+      ofs.i32 = punch_len_ticks;
+   }
+
+   // <load.png>
+   public virtual patLoadState(Stream ifs, short _ver, IntArray _outDevIdxMap, IntArray _outDevUseCount) : boolean {
+      if(NodePattern::patLoadState(ifs, _ver, _outDevIdxMap, _outDevUseCount))
+      {
+         short ver = ifs.u16;
+
+         if(ver >= 1)
+         {
+            if(ver >= 4)
+            {
+               // Time signature (v4+)
+               sig_beats   = ifs.u8;
+               sig_notelen = ifs.u8;
+            }
+
+            // Tracks
+            int numTracks = ifs.u8;
+            NSQ_Track *track;
+            int trackIdx = 0;
+            loop(numTracks)
+            {
+               track <= tracks.get(trackIdx);
+               if(null != track)
+               {
+                  if(!track.loadState(ifs, _outDevIdxMap, _outDevUseCount))
+                  {
+                     trace "[---] NSQ_Pattern: failed to load track "+(trackIdx+1)+"/"+numTracks;
+                     return false;
+                  }
+               }
+               else
+               {
+                  // Should not be reachable unless numTracks exceeds NodeSeq.NUM_TRACKS
+                  trace "[~~~] NSQ_Pattern: warning: loading to dummy track (numTracks="+numTracks+" NUM_TRACKS="+NodeSeq.NUM_TRACKS+")";
+                  local NSQ_Track trackDummy;
+                  trackDummy.loadState(ifs, _outDevIdxMap, _outDevUseCount);
+               }
+
+               // Next track
+               trackIdx++;
+            }
+
+            // Tempo-map (v2+)
+            if(ver >= 2)
+            {
+               int numTempoBars = ifs.i32;
+               int barIdx = 0;
+               while(barIdx < bar_tempo.numElements)
+                  bar_tempo[barIdx++] = ifs.f32;
+               while(barIdx++ < numTempoBars)
+                  ifs.getF32();  // dummy read, usually not reached
+            }
+
+            if(ver >= 3)
+            {
+               // Loop (v3+)
+               loop_start_ticks = ifs.i32;
+               loop_len_ticks   = ifs.i32;
+
+               // Punch In+Out (v3+)
+               punch_start_ticks = ifs.i32;
+               punch_len_ticks   = ifs.i32;
+            }
+
+            // Succeeded
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <replay.png>
+   public method processTempo() {
+      // Called when new bar starts to play
+      int barIdx = seq.tick_nr / getNumTicksPerBar();
+      float bpmMul = bar_tempo.get(barIdx);
+      if(bpmMul >= 0.5)
+      {
+         current_song.setBPMMulAndUpdateMIDITimer(bpmMul);
+         // trace "[>>>] NSQ_Pattern: update bpm_mul to "+bpmMul;
+      }
+   }
+
+   // <replay.png>
+   public method processFrame(boolean       _bPlaySeq,
+                              MIDIPipeFrame _frameOut,
+                              MIDIPipeFrame _frameIn,
+                              boolean       _bFramePlay,
+                              boolean       _bAllowRec,
+                              boolean       _bAllowRedirect,
+                              boolean       _bForceRec/*import*/,
+                              int           _startTrackIdx,
+                              int           _numTracks,
+                              boolean       _bAllowReplay, // can be false when node is swung (may only record to current tick)
+                              boolean       _bIgnoreRecDev
+                              ) {
+      NSQ_Track *track;
+      int trackIdx = _startTrackIdx;
+      int fltDev;
+      int fltCh;
+      DeviceIOPort *port;
+
+      // if(_frameIn.numEventsRPN > 0)
+      //    trace "xxx NSQ_Pattern: _frameIn.numEventsRPN="+_frameIn.numEventsRPN;
+
+      loop(_numTracks)
+      {
+         track <= tracks.get(trackIdx);
+         port <= seq.out_ports.get(trackIdx);
+
+         // Filter by track output port
+         fltDev = port.dev_idx;
+         fltCh  = port.dev_ch;
+
+         // trace "xxx seq.input_focus_idx="+seq.input_focus_idx+" trackIdx="+trackIdx;
+
+         if(!_bFramePlay && _bAllowRedirect)
+         {
+            // // if(_bAllowRedirect && (seq.input_focus_idx == trackIdx))
+            if(seq.input_focus_idx == trackIdx)
+            {
+               // Route all incoming (frameRec) events to track output port
+               fltDev = -1;
+               fltCh  = -1;
+               // trace "xxx route to track "+trackIdx;
+            }
+            else if(!_bForceRec && (-1 != seq.input_focus_idx))
+            {
+               // input is redirected to 'other' track => discard
+               fltDev = 9999;
+               fltCh  = 9999;
+            }
+         }
+
+         if(_bIgnoreRecDev)
+            fltDev = -1;  // filter events only by MIDI channel (SMF import)
+
+         if(replay.b_playing && seq.b_rec && seq.b_rec_replace && !_bForceRec)
+         {
+            if(-1 != track.lap_end_tick_nr_mono)
+            {
+               // trace "xxx trackIdx="+trackIdx+" tick_nr="+seq.tick_nr+" tick_nr_mono="+seq.tick_nr_mono+" lap_end_tick_nr_mono="+track.lap_end_tick_nr_mono;
+
+               if(track.lap_end_tick_nr_mono == seq.tick_nr_mono)
+               {
+                  // trace "xxx   LAP END trackIdx="+trackIdx;
+                  track.lap_end_tick_nr_mono = -1;
+               }
+            }
+         }
+
+         // (note) clears "quantized future frame"
+         // // if(seq.b_rec && seq.b_rec_replace && _bAllowRec && track.b_rec && !seq.b_step_rec)
+         // // {
+         // //    if( (-1 != seq.lap_end_tick_nr_mono) )
+         // //       track.clearFrame(seq.tick_nr);
+         // // }
+
+         // if(_frameIn.hasEvents())
+         //    trace "xxx frameIn.numEvents="+_frameIn.numEvents+" fltDev="+fltDev+" fltCh="+fltCh;
+
+         MIDIPipeFrame frFlt;
+         frFlt.empty();
+         frFlt.mergeFrameFltDst(_frameIn,
+                                fltDev, fltCh,
+                                port.dev_idx, port.dev_ch,
+                                true/*bMergeNotes*/, true/*bMergeRPN*/
+                                );
+
+         // if(frFlt.numEvents > 0)
+         //    trace "xxx frFlt tickNr="+seq.tick_nr+" trackIdx="+trackIdx+" numEventsNoteOn="+frFlt.numEventsNoteOn+" numEventsNoteOff="+frFlt.numEventsNoteOff+" bAllowRedirect="+_bAllowRedirect;
+
+         boolean bQFuture = false;
+
+         if(frFlt.hasEvents())
+         {
+            if(b_debug)
+               trace "xxx rec frFlt.numEvents="+frFlt.numEvents+" seq.b_rec="+seq.b_rec+" bStepRec="+seq.b_step_rec+" bPlaySeq="+_bPlaySeq+" track.b_rec="+track.b_rec;
+
+            track.ui_midi_in_activity_countdown =
+               mathClampi(track.ui_midi_in_activity_countdown + NSQ_Track.UI_MIDI_ACTIVITY_INC,
+                          0,
+                          NSQ_Track.UI_MIDI_ACTIVITY_MAX
+                          );
+            track.ui_midi_out_activity_countdown =
+               mathClampi(track.ui_midi_out_activity_countdown + NSQ_Track.UI_MIDI_ACTIVITY_INC,
+                          0,
+                          NSQ_Track.UI_MIDI_ACTIVITY_MAX
+                          );
+            seq.b_ui_activity = true;
+
+            if(_bForceRec || (track.b_rec && _bAllowRec && ((_bPlaySeq && seq.b_rec) || seq.b_step_rec) ))
+            {
+               // trace "xxx punch in="+punch_start_ticks+" len="+punch_len_ticks;
+               boolean bNoteOffOnly = false;
+               if(!_bForceRec)
+               {
+                  if((-1 != punch_start_ticks) && (-1 != punch_len_ticks))
+                     bNoteOffOnly = !(punch_start_ticks <= seq.tick_nr < (punch_start_ticks + punch_len_ticks));
+               }
+
+               // (note) empties frFlt when events are recorded to future frame (due to quantization)
+               bQFuture = track.recordFrame(seq.tick_nr,
+                                            frFlt,
+                                            true/*bTrackActiveNotes*/,
+                                            !seq.b_step_rec/*bMarkPlayed*/,
+                                            bNoteOffOnly,
+                                            !_bForceRec/*bQuantize*/,
+                                            true/*bAllowQLoop*/,
+                                            !_bForceRec && !_bFramePlay/*bRecLatency*/
+                                            );
+               seq.b_ui_redraw = true;
+
+               // Avoid double-trigger => play event when quantized frame is reached
+               if(bQFuture)
+                  frFlt.empty();
+            }
+         }
+
+         // [03Sep2023] always delete matching events when they are mirrored to _frameOut (see below)
+         //              (the same event may not occur in both frame in+out which could result in hanging notes)
+         boolean bConsumeInputEvents = _bAllowRedirect && ( (-1 == seq.input_focus_idx) || (seq.input_focus_idx == trackIdx) );
+         boolean bMergeFrFlt = bConsumeInputEvents;
+         if(bConsumeInputEvents)
+            _frameIn.deleteEventsByFlt(fltDev, fltCh);
+
+         if(_bPlaySeq && _bAllowReplay)
+         {
+            // Reset played_bar_frames on first tick of new bar
+            track.lazyResetPlayedBarFrames(false/*bForce*/);
+
+            if((seq.b_ignore_play_state || (NSQ_Track.STATE_MUTE != track.play_state)) &&
+               (0 == (seq.node_mute_temp_track_mask & (1 << track.track_idx))) &&
+               (0 == (seq.force_mute_temp_track_mask & (1 << track.track_idx)))
+               )
+            {
+               if(0.0 == track.quant_amount)
+                  track.playFrame(frFlt, seq.tick_nr, true/*bUIActivity*/);
+               else
+                  track.playQuantizedFrames(frFlt, seq.tick_nr, true/*bUIActivity*/);
+               bMergeFrFlt = true;
+            }
+         }
+
+         // Scale duration + velocity
+         // trace "xxx NSQ_Pattern: rpn_com_vel scl="+seq.rpn_com_vel_scl+" off="+seq.rpn_com_vel_off;
+         if( (1.0 != seq.rpn_com_dur_scl) || (0.0 != seq.rpn_com_dur_off) )
+         {
+            frFlt.scaleNoteDurations(-1, -1, seq.rpn_com_dur_scl, seq.rpn_com_dur_off);
+         }
+         if( (1.0 != seq.rpn_com_vel_scl) || (0.0 != seq.rpn_com_vel_off) )
+         {
+            frFlt.scaleNoteVelocities(-1, -1, seq.rpn_com_vel_scl, seq.rpn_com_vel_off);
+         }
+
+         if(bMergeFrFlt)
+            _frameOut.mergeFrame(frFlt);
+
+         // Next track
+         trackIdx++;
+      } // loop tracks
+
+      // // if(_frameOut.numEventsNoteOn > 0)
+      // //    trace "xxx tickNr="+seq.tick_nr+" #noteon="+_frameOut.numEventsNoteOn;
+   }
+
+}

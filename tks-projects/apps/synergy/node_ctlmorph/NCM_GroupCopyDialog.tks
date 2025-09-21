@@ -1,0 +1,296 @@
+// ----
+// ---- file   : NCM_GroupCopyDialog.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- license: (c) 2019-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : NodeCtlMorph group copy dialog
+// ----
+// ---- created: 18Jun2021
+// ---- changed: 05Oct2023, 30Oct2023
+// ----
+// ----
+// ----
+
+module NCM_GroupCopyDialog;
+
+use namespace ui;
+
+
+// <class.png>
+class NCM_GroupCopyDialog extends Dialog {
+
+   NodeCtlMorph *morph;
+   NodeCtlMorphEditor *parent_editor;
+   NCM_Pattern *edit_pattern;
+
+   protected XMLForm *xfm;
+
+   protected Panel *pn_groups;
+   protected ComboField *[] group_cfs;
+   protected ComboBox *[] group_cms;
+
+   protected StringArray*[] all_preset_names;         // indexed by group
+   protected IntArray*[]    all_preset_pat_nrs;       // indexed by group
+   protected IntArray*[]    all_preset_grp_indices;   // indexed by group
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      initDialog();
+
+      xfm <= new XMLForm;
+
+      local String xfmSrc;
+      if(xfmSrc.load("NCM_GroupCopyDialog.xfm", true/*bRemoveCR*/))
+      {
+         local String grpSrc;
+         createGroupWidgets(grpSrc);
+         xfmSrc.replace("$(GROUPS)", grpSrc);
+
+         if(xfm.parseXMLForm(xfmSrc))
+         {
+            xfm.autoResolveIds(this);
+            resolveGroupWidgets();
+
+            initWindow(xfm,
+                       "Group Copy",
+                       100, 100,
+                       440, 240
+                       );
+
+            return true;
+         }
+      }
+
+      return false;
+   }
+
+   // <method_get.png>
+   public virtual isPopup() : boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isModal():boolean {
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual isResizable() : boolean {
+      return true;
+   }
+
+   // <method.png>
+   protected method createGroupWidgets(String buf) {
+      local String templ; templ.load("NCM_GroupCopyDialog_template.xfm", true/*bRemoveCR*/);
+      int groupIdx = 0;
+      loop(NCM_Pattern.NUM_GROUPS)
+      {
+         // (todo) support different layouts
+         if(0 == (groupIdx % 3))
+         {
+            if(groupIdx > 0)
+            {
+               buf.append("</Panel>\n");
+               buf.append("<Panel dir=BOTTOM padTop=20>\n");
+            }
+            else
+            {
+               buf.append("<Panel dir=BOTTOM>\n");
+            }
+         }
+
+         local String g = templ;
+         g.replace("$(group)", String(groupIdx));
+
+         if(2 != (groupIdx % 3))
+            g.replace("$(padright)", "padRight=10");
+         else
+            g.replace("$(padright)", "");
+
+         buf.append(g);
+
+         // Next group
+         groupIdx++;
+      }
+
+      buf.append("</Panel>\n");
+   }
+
+   // <method.png>
+   protected method resolveGroupWidgets() {
+
+      group_cfs.empty();
+      group_cms.empty();
+
+      int groupIdx = 0;
+
+      loop(NCM_Pattern.NUM_GROUPS)
+      {
+         ComboField cf <= xfm.findLayerById("cf_"+groupIdx);
+         ComboBox   cm <= xfm.findLayerById("cm_"+groupIdx);
+
+         group_cfs.add(cf);
+         group_cms.add(cm);
+
+         groupIdx++;
+      }
+   }
+
+   // <method_update.png>
+   protected method updateGroupPresets(int _groupIdx, String _categoryName) {
+
+      StringArray presetNames      <= new StringArray;
+      IntArray    presetPatNrs     <= new IntArray;
+      IntArray    presetGrpIndices <= new IntArray;
+
+      morph.findPresetsByCategory(_categoryName, presetNames, presetPatNrs, presetGrpIndices);
+
+      ComboBox cm <= group_cms.get(_groupIdx);
+      cm.setOptions(presetNames);
+      cm.setSelectedOption(-1);  // (todo) find preset by entry values
+
+      all_preset_names      [_groupIdx] = deref presetNames;
+      all_preset_pat_nrs    [_groupIdx] = deref presetPatNrs;
+      all_preset_grp_indices[_groupIdx] = deref presetGrpIndices;
+   }
+
+   // <method_update.png>
+   protected method updateGroupWidgets() {
+
+      local StringArray grpNames;
+      morph.findUniqueGroupNames(grpNames);
+      grpNames.insert(0, "*");
+
+      int groupIdx = 0;
+      NCM_Group *grp;
+
+      foreach grp in edit_pattern.groups
+      {
+         ComboField cf <= group_cfs.get(groupIdx);
+         ComboBox   cm <= group_cms.get(groupIdx);
+
+         cf.setOptions(grpNames);
+         cf.setSelectedOptionByName(grp.name);
+
+         updateGroupPresets(groupIdx, grp.name/*categoryName*/);
+
+         groupIdx++;
+      }
+   }
+
+   // <ui_show.png>
+   public method showGroupCopyDialog(NodeCtlMorph _morph, NodeCtlMorphEditor _parentEditor, NCM_Pattern _pattern) {
+      morph         <= _morph;
+      parent_editor <= _parentEditor;
+      edit_pattern  <= _pattern;
+
+      updateGroupWidgets();
+
+      resizeToMinimum();
+      showCentered();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray layers) {
+      int groupIdx = 0;
+      loop(NCM_Pattern.NUM_GROUPS)
+      {
+         ComboField cf <= group_cfs.get(groupIdx);
+         ComboBox   cm <= group_cms.get(groupIdx);
+         layers.add(cf);
+         layers.add(cm);
+         groupIdx++;
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual getTabCycleOverrides() : PointerArray {
+      PointerArray layers; layers.empty();
+      addTabCycleOverrides(layers);
+      return layers;
+   }
+
+   // <ui_handle.png>
+   protected method handleCategoryChanged(int _groupIdx, ComboField _cf) {
+      updateGroupPresets(_groupIdx, _cf.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handlePresetChanged(int _groupIdx, ComboBox _cm) {
+      int presetIdx = _cm.getSelectedOption();
+      if(presetIdx >= 0)
+      {
+         IntArray patNrs <= all_preset_pat_nrs.get(_groupIdx);
+         int patNrSrc = patNrs.get(presetIdx);
+         NCM_Pattern patSrc <= morph.patterns.get(patNrSrc);
+
+         IntArray grpIndices <= all_preset_grp_indices.get(_groupIdx);
+         int groupIdxSrc = grpIndices.get(presetIdx);
+         NCM_Group grpSrc <= patSrc.groups.get(groupIdxSrc);
+
+         NCM_Group grpDst <= edit_pattern.groups.get(_groupIdx);
+         parent_editor.groupMerge(grpDst, grpSrc, true/*bReplace*/, true/*bIgnoreCh*/);
+
+         grpDst.queueT(0.5);
+
+         Global.Print("Merge presetIdx="+presetIdx+" from patNr="+patNrSrc+" groupSrc="+(groupIdxSrc+1)+" to groupDst="+(_groupIdx+1));
+      }
+   }
+
+   // <ui_show.png>
+   protected virtual preShow() {
+      relayout();
+      Dialog::preShow();
+   }
+
+   // <ui_show.png>
+   protected virtual postShow() {
+      Dialog::postShow();
+      resizeToMinimum();
+      UI.SetKeyboardFocus(group_cfs.get(0));
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _key) : boolean {
+      switch(_key.pressed)
+      {
+         case VKEY_ESCAPE:
+            hide();
+            return true;
+      }
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+
+      Layer ap <= _ac.getActionProvider();
+      int groupIdx;
+
+      if(ap instanceof ComboField)
+      {
+         groupIdx = group_cfs.indexOfPointer(ap, 0);
+         handleCategoryChanged(groupIdx, ap);
+         return true;
+      }
+
+      if(ap instanceof ComboBox)
+      {
+         groupIdx = group_cms.indexOfPointer(ap, 0);
+         handlePresetChanged(groupIdx, ap);
+         return true;
+      }
+
+      switch(@(ap))
+      {
+      }
+
+      return true;
+   }
+
+}

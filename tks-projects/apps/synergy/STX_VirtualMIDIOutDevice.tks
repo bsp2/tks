@@ -1,0 +1,232 @@
+// ----
+// ---- file   : STX_VirtualMIDIOutDevice.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2014-2023 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" sequencer.
+// ----
+// ---- changed: 13Sep2014, 16Sep2014, 14Feb2015, 17Feb2015, 21Feb2015, 23Feb2015, 02Mar2015
+// ----          08Nov2015, 09Apr2016, 16Feb2017, 07Dec2021, 27Jul2023
+// ----
+// ----
+// ----
+
+module MSTX_VirtualMIDIOutDevice;
+
+use tkmidi;
+
+
+// <class.png>
+class STX_VirtualMIDIOutDevice : STX_MIDIOutDevice {
+
+   define String SCRATCH_NAME   = "<Scratch>";   // don't change or e.g. modmatrix presets will not load
+   define String AUDIO2RPN_NAME = "<Audio2RPN>"; // don't change or e.g. modmatrix presets will not load
+
+   protected String virt_device_name;
+
+   public boolean b_unavail;  // true=unavailable output device, false=internal device
+   public int unavail_use_count; // valid directly after loading a song
+
+
+   // <init.png>
+   public method initVirtual(int _nr) {
+      virt_device_name = "<internal_"+_nr+">";
+
+      init(null);
+      b_unavail = false;
+   }
+
+   // <init.png>
+   public method initVirtualByName(String _name) {
+      virt_device_name = _name;
+
+      init(null);
+      b_unavail = false;
+   }
+
+   // <init.png>
+   public method initVirtualAudio2RPN() {
+      virt_device_name = AUDIO2RPN_NAME;
+
+      init(null);
+      b_unavail = false;
+   }
+
+   // <init.png>
+   public virtual initUnavail(String _devNameOrGlobalAlias, String _aliasOrNull) {
+
+      if(STConfig.b_debug_mididev_unavail)
+         Global.Debug("STX_VirtualMIDIOutDevice::initUnavail: name=\""+#(_devNameOrGlobalAlias)+"\" alias=\""+#(_aliasOrNull)+"\".");
+
+      b_unavail = true;
+
+      unavail_name <= Object(_devNameOrGlobalAlias);
+      if(null != _aliasOrNull)
+      {
+         unavail_alias <= Object(_aliasOrNull);
+      }
+
+      // Try to map global alias to device name
+      String devName <= MIDI.GetOutDeviceNameByGlobalAlias(_devNameOrGlobalAlias);
+      if(null != devName)
+      {
+         if(STConfig.b_debug_mididev_unavail)
+            Global.Debug("initUnavail: mapped global alias \""+_devNameOrGlobalAlias+"\" to devName \""+devName+"\".");
+         virt_device_name = devName;
+      }
+      else
+      {
+         // That's bad.
+         virt_device_name = _devNameOrGlobalAlias;
+      }
+      // // trace "xxx initUnavail::";
+      // // trace #(getAlias());
+      // // _Debug();
+      // // trace "  getAlias()="+getAlias();
+      // // trace #(getGlobalAlias());
+
+      if(STConfig.b_debug_mididev_unavail)
+         Global.Debug("initUnavail:\n\t\t getDeviceName()=\""+getDeviceName()+"\"\n\t\t getAlias()=\""+getAlias()+"\"\n\t\t getGlobalAlias()=\""+getGlobalAlias()+"\".");
+   }
+
+   // <method.png>
+   public virtual reset() {
+      // Called when song is initialized or device is added
+      b_project = !b_unavail; // automatically true for internal devices
+      project_alias <= null;
+      project_profile_ids.free();
+      unavail_use_count = 0;
+   }
+
+   // <method_get.png>
+   public virtual isOpen() : boolean {
+      return !b_unavail;
+   }
+
+   // <method_get.png>
+   public virtual isProjectSpecific() : boolean {
+      return b_project;
+   }
+
+   // <method_get.png>
+   public virtual isInternal() : boolean {
+      return !b_unavail;
+   }
+
+   // <method_set.png>
+   public virtual setProjectSpecific(boolean _bProject) {
+      if(b_unavail)
+      {
+         b_project = _bProject;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getDeviceName() : String {
+      return virt_device_name;
+   }
+
+   // <method_get.png>
+   public virtual getAlias() : String {
+      // // trace "xxx virt: getAlias: b_project="+b_project+" project_alias="+#(project_alias);
+      if(b_project)
+      {
+         return project_alias;
+      }
+      else if(b_unavail)
+      {
+         // // trace "xxx virt getAlias / getGlobalAlias = "+#(getGlobalAlias());
+         return getGlobalAlias();
+      }
+      else
+      {
+         return null;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getGlobalAlias() : String {
+      if(b_unavail)
+      {
+         // // trace "xxx b_unavail: virt_device_name="+#(virt_device_name);
+         // // trace "xxx b_unavail: GetGlobalOutDeviceAlias="+#(MIDI.GetGlobalOutDeviceAlias(virt_device_name));
+         return MIDI.GetGlobalOutDeviceAlias(virt_device_name);
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   public virtual getName() : String {
+      return virt_device_name;
+   }
+
+   // <method_update.png>
+   public virtual updateDeviceAlias(String _alias) {
+      // // trace "xxx STX_VirtualMIDIOutDevice::updateDeviceAlias: alias="+#(_alias)+" (current="+#(project_alias)+")";
+      if(null != _alias)
+      {
+         project_alias <= null;
+
+         if(!_alias.isBlank())
+         {
+            project_alias <= Object(_alias);
+
+            if(!project_alias.isBlank())
+            {
+               if(!b_unavail)
+               {
+                  project_alias.replace("<", "");
+                  project_alias.replace(">", "");
+
+                  if(!project_alias.isBlank())
+                  {
+                     project_alias = "<" + project_alias + ">";
+                  }
+                  else
+                  {
+                     project_alias <= null;
+                  }
+               }
+            }
+         }
+      }
+      else
+      {
+         project_alias <= null;
+      }
+
+      // // trace "xxx virt updateDeviceAlias: project_alias="+#(project_alias)+" (_alias="+#(_alias)+")";
+
+      MIDI.UpdateOutDeviceNames();
+   }
+
+   // <method_set.png>
+   public virtual setProfileId(byte _midiCh, String _profileId) {
+      // // trace "xxx STX_VirtualMIDIOutDevice::setProfileId: midiCh="+_midiCh+" profileId="+_profileId;
+      if(b_unavail)
+      {
+         STX_MIDIOutDevice::setProfileId(_midiCh, deref _profileId);
+      }
+      else
+      {
+         if(project_profile_ids.numElements <= _midiCh)
+         {
+            project_profile_ids.realloc(_midiCh + 1);
+         }
+         project_profile_ids[_midiCh] = _profileId;
+      }
+   }
+
+   // <method_get.png>
+   public virtual getProfileId(local byte _midiCh) : String {
+      if(b_unavail)
+      {
+         return STX_MIDIOutDevice::getProfileId(_midiCh);
+      }
+      // // trace "xxx virtdev: ch="+_midiCh+" profile_ids="+#(project_profile_ids);
+      return project_profile_ids.get(_midiCh);
+   }
+
+}

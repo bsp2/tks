@@ -1,0 +1,969 @@
+// ----
+// ---- file   : PageSysEx.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2016-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 05Feb2016, 07Feb2016, 09Feb2017, 13Feb2017, 01Sep2017, 10Sep2017, 04Jan2018
+// ----          15Jul2019, 29Aug2019, 21Nov2020, 09Jul2021, 10Oct2022, 07Nov2022, 09Jul2023
+// ----          02Dec2023, 29Mar2025
+// ----
+// ----
+// ----
+
+module MPageSysEx;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageSysEx extends Page, MIDIMapContext {
+
+   define String MMT_SYNTH_PREV;
+   define String MMT_SYNTH_NEXT;
+
+   protected Button *bt_previous_page;
+
+   protected Panel    *pn_header;
+   protected ComboBox *cm_synth;
+   protected Label    *lb_midich;
+   protected Label    *lb_profile;
+   protected ComboBox *cm_midich;
+
+   protected Button *bt_prev;
+   protected Button *bt_next;
+   protected Button *bt_reload;
+   protected Button *bt_save;
+
+   protected Panel *pn_editor;
+
+   protected MIDISynthProfileData *data;
+   protected STX_MIDIOutDevice *out_dev;
+   protected STX_MIDIInDevice *in_dev;
+   protected byte midi_ch;
+
+   protected EditMIDISynthForm *editor;
+
+   protected ActionConsumer *listener;
+
+   protected XMLForm *pipe_form;
+
+   protected boolean b_cont_edit;
+
+   protected StringArray synth_names; // Output device names or aliases
+   protected IntArray synth_midi_chs;
+
+   protected boolean b_first_edit;  // true=select preferred editor
+
+   static boolean b_debug;
+
+
+
+   // <ui_init.png>
+   public method init() : boolean {
+
+      if(!initPakFile("PageSysEx.xfm"))
+      {
+         trace "[---] failed to parse PageSysEx.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      recursiveBuildTabCycleLists();
+
+      initMMC();
+
+      b_first_edit = true;
+
+      if(app_lnf.b_ascii_back_buttons)
+      {
+         Global.ASCIIBackButton(bt_previous_page);
+      }
+
+      return true;
+   }
+
+   // <ui_page.png>
+   public virtual pageGetParent() : int {
+      return RootForm.PAGE_PIPE;
+   }
+
+   // <midi_mmc.png>
+   protected method initMMC() {
+
+      mmcInit("PageSysEx");
+
+      addBaseMMCTargets(this);
+   }
+
+   // <midi_mmc.png>
+   protected method addBaseMMCTargets(MIDIMapContext _mmc) {
+
+      _mmc.mmcAddTarget(MMT_SYNTH_PREV,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+      _mmc.mmcAddTarget(MMT_SYNTH_NEXT,  CLASS_BUTTON, SYN_BUTTON_CLICK);
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcProxyGet() : MIDIMapContext {
+      if(editor instanceof MIDIMapContext)
+      {
+         return editor;
+      }
+      return null;
+   }
+
+   // <midi_mmc.png>
+   public virtual mmcHandleEvent(MIDIMapEvent _ev) : boolean {
+      MIDIMapContext mmcEditor <= mmcProxyGet();
+
+      boolean bHandled = false;
+
+      // trace "xxx mmcHandleEvent: mmcEditor="+#(mmcEditor)+" editor="+#(editor);
+
+      if(null != mmcEditor)
+      {
+         bHandled = mmcEditor.mmcHandleEvent(_ev);
+
+         // trace "xxx mmcEditor bHandled="+bHandled;
+      }
+
+      if(!bHandled)
+      {
+         return false;
+      }
+      else
+      {
+         // Handled by editor MMC
+         return true;
+      }
+   }
+
+   // <midi_mmc.png>
+   public method mmcHandleNodeTarget(String _targetName) : boolean {
+
+      switch(_targetName)
+      {
+         case MMT_SYNTH_PREV:
+            if(0 == UI.GetNumModalFloatingLayers())
+            {
+               handleSelectPrev();
+            }
+            return true;
+
+         case MMT_SYNTH_NEXT:
+            if(0 == UI.GetNumModalFloatingLayers())
+            {
+               handleSelectNext();
+            }
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_show.png>
+   public method showSynth(MIDISynthProfileData _data,
+                           STX_MIDIOutDevice    _inDev,
+                           STX_MIDIOutDevice    _outDev,
+                           byte                 _midiCh,
+                           ActionConsumer       _listener
+                           ) {
+
+      listener <= _listener;
+
+      showSynthInt(_data, _inDev, _outDev, _midiCh);
+
+      root_form.showPageSub(RootForm.PAGE_SYSEX, true/*bQuiet*/);
+   }
+
+   // <ui_show.png>
+   public method showSynthInt(MIDISynthProfileData _data,
+                              STX_MIDIOutDevice    _inDev,
+                              STX_MIDIOutDevice    _outDev,
+                              byte                 _midiCh
+                              ) {
+
+      data    <= _data;
+      in_dev  <= _inDev;
+      out_dev <= _outDev;
+      midi_ch  = _midiCh;
+
+      String synthName = "";
+
+      if(null != _data)
+      {
+         synthName = _data.midi_profile.profile_caption;
+
+         lb_profile.setCaption(synthName);
+         lb_profile.redraw();
+
+         lb_midich.setCaption("(Ch "+(midi_ch+1)+")");
+
+         cm_midich.setOptionsLong(null);
+
+         if(_data.isMultiTimbral())
+         {
+            cm_midich.setEditable(true);
+            cm_midich.setSelectedOption(_data.forced_redirect_midi_ch + 1);
+         }
+         else
+         {
+            cm_midich.setEditable(false);
+            cm_midich.setSelectedOption(0); // "-"
+         }
+
+         bt_prev.setEditable(cm_synth.getSelectedOption() > 0);
+         bt_next.setEditable( (cm_synth.getSelectedOption() < (cm_synth.getNumOptions()-1)) );
+      }
+      else
+      {
+         lb_profile.setCaption("<n/a>");
+
+         bt_prev.setEditable(false);
+         bt_next.setEditable(false);
+      }
+
+      UI.LoseKeyboardFocusIfWithin(pn_editor, true/*bQuiet*/);
+      pn_editor.removeChildren();
+
+      if(null != editor)
+      {
+         // if(null != prevScriptNode)
+         // {
+         //    prevScriptNode.nodeStopEditing();
+         // }
+         editor.leave();
+      }
+
+      editor <= null;
+
+      if(null != data)
+      {
+         boolean bLayoutDone = false;
+
+         editor <= data.midi_profile.edit_form;
+
+         Global.Debug("PageSysEx::showSynthInt: editor="+#(editor));
+
+         if(editor instanceof EditMIDISynthForm)
+         {
+            pn_editor.addChildLayer(editor);
+
+            // Show synth editor
+            editor.enter();
+            editor.showData(data, in_dev, out_dev, midi_ch);
+
+            bLayoutDone = editor.b_layout_done;
+
+            Global.Debug2("PageSysEx: editor.b_layout_done="+bLayoutDone);
+         }
+         else
+         {
+            trace "[---] synth editor is not an instance of EditMIDISynthForm (editor="+#(editor)+").";
+            editor <= null;
+         }
+
+         if(!bLayoutDone)
+         {
+            pn_editor.layoutHierarchy(true, false);
+            // // pn_editor.relayout();
+            // // pn_editor.relayout();
+            // // trace "xxx relayout editor";
+
+            if(editor instanceof EditMIDISynthForm)
+            {
+               // Also see NodeEditor::layoutHierarchy()
+               editor.b_layout_done = UI.b_allow_layout_cache;
+            }
+         }
+      }
+      else
+      {
+         bt_prev.setEditable(false);
+         bt_next.setEditable(false);
+      }
+
+      // // if(null != editor)
+      // // {
+      // //    editor.showNodePost();
+      // // }
+
+      if(null != editor)
+      {
+         Global.PrintHead("Edit \""+synthName+"\".");
+      }
+      else
+      {
+         Global.PrintHead("Empty");
+      }
+
+      pn_header.relayout();
+
+      redraw();
+   }
+
+   // <ui_page.png>
+   public virtual isPageLocked() : boolean {
+      if(null != data)
+      {
+         if(null != editor)
+         {
+            return editor.isEditorLocked();
+         }
+      }
+      return false;
+   }
+
+   // <ui_page.png>
+   public virtual pageEnter() {
+
+      Page::pageEnter();
+
+      if(b_cont_edit)
+      {
+         // Re-enter page after e.g. MMC was edited
+         b_cont_edit = false;
+
+         Global.Debug2("PageNode::pageEnter: b_cont_edit=true");
+
+         showSynthInt(data, in_dev, out_dev, midi_ch);
+      }
+      else
+      {
+         // Build synth name array
+         STX_MIDIOutDevice *outDev;
+
+         synth_names.empty();
+
+         StringArray synthNameToolTips;
+         synthNameToolTips.empty();
+
+         int prefIdx = -1;
+         int curIdx = 0;
+
+         foreach outDev in MIDI.out_devices_sorted
+         {
+            if(null != outDev)
+            {
+               if(outDev.isOpen())
+               {
+                  String outDevName = outDev.getAliasOrDeviceName();
+
+                  if(!outDevName.isBlank())
+                  {
+                     byte midiCh = 0;
+
+                     loop(16)
+                     {
+                        String profileId <= MIDI.GetMIDIDeviceProfileId(outDevName, midiCh);
+
+                        // trace "xxx outDevName="+outDevName+" midiCh="+midiCh+" profileId="+profileId;
+
+                        if(null != profileId)
+                        {
+                           MIDISynthProfile msp <= MIDI.GetMIDISynthProfileById(profileId);
+
+                           if(null != msp)
+                           {
+                              // // if(null != msp.edit_form)
+                              if(msp.hasDataClass())
+                              {
+                                 synth_names.add(outDevName);
+                                 synth_midi_chs.add(midiCh);
+
+                                 if(profileId == STConfig.sysex_preferred_editor_profile_id)
+                                 {
+                                    if(-1 == prefIdx)
+                                    {
+                                       prefIdx = curIdx;
+                                    }
+                                 }
+
+                                 synthNameToolTips.add("Dev: "+outDevName+" Ch: "+(midiCh+1)+" Profile: "+profileId);
+
+                                 curIdx++;
+                                 break; // only one editor per device
+                              }
+                           }
+                        }
+
+                        midiCh++;
+                     }
+                  }
+               }
+            }
+         }
+
+         cm_synth.setOptions(synth_names);
+         cm_synth.setToolTipCaptions(synthNameToolTips);
+
+         if(0 == synth_names.numElements)
+         {
+            cm_synth.setSelectedOption(-1);
+         }
+         else
+         {
+            if(b_first_edit)
+            {
+               b_first_edit = false;
+
+               Global.Debug("PageSysEx: select preferred editor idx="+prefIdx+" id="+STConfig.sysex_preferred_editor_profile_id);
+
+               if(-1 != prefIdx)
+               {
+                  cm_synth.setSelectedOption(prefIdx);
+               }
+            }
+         }
+
+      }
+
+      pn_header.relayout();
+
+      if(null == data)
+      {
+         handleSelectSynth();
+      }
+   }
+
+   // <method.png>
+   public method selectSynthByOutDevNameAndCh(String _outDevName, byte _midiCh) : boolean {
+      // page must be visible
+      // called via tryEditSound()
+      int i = 0;
+      loop(synth_names.numElements)
+      {
+         if(synth_names[i] == _outDevName)
+         {
+            if(synth_midi_chs[i] == _midiCh)
+            {
+               cm_synth.setSelectedOption(i);
+               handleSelectSynth();
+               pageFocusDefault();
+               return true;
+            }
+         }
+         i++;
+      }
+      return false;
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      if(null != editor)
+      {
+         // // if(null != data)
+         // // {
+         // //    data.stopEditing();
+         // // }
+
+         editor.leave();
+
+         editor  <= null;
+         data    <= null;
+         in_dev  <= null;
+         out_dev <= null;
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageLeaveSub() {
+      b_cont_edit = true;
+
+      if(null != editor)
+      {
+         // if(null != script_node)
+         // {
+         //    script_node.nodeStopEditing();
+         // }
+
+         editor.leave();
+
+         // Don't reset node ptrs so editing can continue, e.g. after editing a MMC
+      }
+   }
+
+   // <ui_page.png>
+   public virtual pageFocusDefault() {
+      //UI.SetKeyboardFocus(tf_name);
+      UI.SetKeyboardFocus(bt_previous_page);
+
+      if(null != editor)
+      {
+         editor.refocusDefault();
+      }
+   }
+
+   // <ui_timer.png>
+   public virtual pageHandleReplayTimer() {
+      if(null != editor)
+      {
+         editor.handleReplayTimer();
+      }
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         cm_synth,
+         bt_prev,
+         bt_next,
+         bt_reload,
+         bt_save
+                              ];
+
+      if(null != editor)
+      {
+         editor.addTabCycleOverrides(_retLayers);
+      }
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValue(float _val) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(null != editor)
+      {
+         if(editor.mmtHandleGlobalValue(_val))
+         {
+            return true;
+         }
+      }
+
+      // if(kbdLayer instanceof Layer)
+      // {
+      // }
+
+      return MMTListener::mmtHandleGlobalValue(_val);
+   }
+
+   // <midi_mmt.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(null != editor)
+      {
+         if(editor.mmtHandleGlobalValueDelta(_delta))
+         {
+            return true;
+         }
+      }
+
+      // if(kbdLayer instanceof Layer)
+      // {
+      // }
+
+      return MMTListener::mmtHandleGlobalValueDelta(_delta);
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectSynth() {
+      if(-1 != cm_synth.getSelectedOption())
+      {
+         String outDevName = cm_synth.getSelectedOptionName();
+         String synthIdx = cm_synth.getSelectedOption();
+
+         STX_MIDIOutDevice outDev <= MIDI.GetMIDIOutDeviceByAliasOrName(outDevName);
+
+         boolean bOK = false;
+
+         if(null != outDev)
+         {
+            STX_MIDIInDevice inDev <= MIDI.FindInDeviceForOutDeviceName(outDevName);
+
+            Global.Debug("PageSysEx::handleSelectSynth: inDev="+#(inDev)+" outDevName="+outDevName);
+
+            byte midiCh = synth_midi_chs.get(synthIdx);
+
+            String profileId <= MIDI.GetMIDIDeviceProfileId(outDevName, midiCh);
+
+            if(null != profileId)
+            {
+               // trace "xxx profileId="+#(profileId);
+               MIDI.LazyAccessSynthEditor(profileId);
+
+               MIDISynthProfileData profData <= MIDI.GetMIDISynthProfileData(profileId);
+               if(null != profData)
+               {
+                  showSynthInt(profData, inDev, outDev, midiCh);
+                  bOK = true;
+               }
+               else
+               {
+                  Global.Warning("Synth profile data \""+profileId+"\" is null !!");
+               }
+            }
+         }
+
+         bt_prev.setEditable(cm_synth.getSelectedOption() > 0);
+         bt_next.setEditable( (cm_synth.getSelectedOption() < (cm_synth.getNumOptions()-1)) );
+
+         if(!bOK)
+         {
+            Global.Error("Failed to show synth editor");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectPrev() {
+      if(null != out_dev)
+      {
+         cm_synth.selectPreviousOptionAction();
+      }
+      else
+      {
+         Global.Warning("handleSelectPrev: out_dev is null");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleSelectNext() {
+      if(null != out_dev)
+      {
+         cm_synth.selectNextOptionAction();
+      }
+      else
+      {
+         Global.Warning("handleSelectNext: out_dev is null");
+      }
+   }
+
+   // <method_get.png>
+   public method getMIDIChComboBox() : ComboBox {
+      return cm_midich;
+   }
+
+   // <ui_handle.png>
+   protected method handleForcedMIDIChChanged() {
+      if(null != editor)
+      {
+         if(editor.handlePageSysExMIDIChChanged(cm_midich))
+         {
+            return true;
+         }
+      }
+      data.forced_redirect_midi_ch = cm_midich.getSelectedOption() - 1;
+      Global.Print("Forced redirect MIDI channel is "+cm_midich.getSelectedOptionName());
+   }
+
+   // <ui_handle.png>
+   protected method handleReload() {
+
+      if(null != data)
+      {
+         data.reload(true/*bFromUI*/);
+
+         showSynthInt(data, in_dev, out_dev, midi_ch);
+
+         if(null != editor)
+         {
+            editor.handlePostReload();
+         }
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleSave() {
+      if(null != data)
+      {
+         data.save();
+      }
+   }
+
+  // <replay.png>
+   public method transformSysExEditorKeyboardEvents(MIDIPipeFrame _frameRec) {
+      // called from replay
+      if((null != pagesysex_autodev) && (null != out_dev) && STConfig.b_pagesysex_redirect_ev)
+      {
+         data.transformSysExEditorKeyboardEvents(_frameRec);
+
+         byte midiCh = midi_ch;
+         MIDIPipeFrame frOut; frOut.empty();
+         boolean bDone = false;
+         if(data.isMultiTimbral() && (-1 != data.forced_redirect_midi_ch))
+         {
+            midiCh = data.forced_redirect_midi_ch;
+
+            // used by Yamaha Montage editor:
+            IntArray mch <= data.multi_midi_ch;
+            if(!mch.isEmpty())
+            {
+               int partCh = 0;
+               // trace "xxx mch="+mch;
+               loop(mch.numElements)
+               {
+                  byte layerCh = mch.get(partCh);
+                  if(layerCh == midiCh)
+                  {
+                     // trace "xxx mirror layerCh="+layerCh+" to partCh="+partCh;
+                     frOut.mergeFrameFltDst(_frameRec,
+                                            pagesysex_autodev.dev_idx/*fltDev*/,
+                                            -1/*fltCh*/,
+                                            out_dev.dev_idx/*dstDev*/,
+                                            partCh/*dstCh*/,
+                                            true/*bMergeNotes*/,
+                                            false/*bMergeRPN*/
+                                            );
+                  }
+                  partCh++;
+               }
+               bDone = true;
+            }
+         }
+
+         if(!bDone)
+         {
+            frOut.mergeFrameFltDst(_frameRec,
+                                   pagesysex_autodev.dev_idx/*fltDev*/,
+                                   -1/*fltCh*/,
+                                   out_dev.dev_idx/*dstDev*/,
+                                   midiCh/*dstCh*/,
+                                   true/*bMergeNotes*/,
+                                   false/*bMergeRPN*/
+                                   );
+         }
+
+         _frameRec.deleteEventsByFlt(pagesysex_autodev.dev_idx, -1/*fltCh*/);
+         _frameRec.mergeFrame(frOut);
+         // trace "xxx transformSysExEditorKeyboardEvents: merge "+frOut.numEvents+" event(s) (#frameRecEv="+_frameRec.numEvents+")";
+      }
+   }
+
+   // <ui_cmd.png>
+   protected method handlePageCmdInitBank(StringArray _argv) {
+      if(null != editor)
+      {
+         if(2 == _argv.numElements)
+         {
+            int bankIdx = (_argv.get(1).toLower().getc(0)) - 'a';
+            editor.initBank(bankIdx);
+         }
+      }
+   }
+
+   // <ui_cmd.png>
+   protected method handlePageCmdDebug(StringArray _argv) {
+      if(2 == _argv.numElements)
+      {
+         b_debug = (0 != int(_argv.get(1)));
+      }
+      else
+      {
+         b_debug = !b_debug;
+      }
+      Global.Print("debug mode is "+Utils.GetEnableString(b_debug));
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return ["init_bank\t<bank>"
+              "debug\t<1|0>"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetDefaultActions() : StringArray {
+      return ["debug",
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      switch(_cmd)
+      {
+         case "init_bank":
+            return ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p"];
+
+         case "debug":
+            return ["1", "0"];
+      }
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      Global.Debug("PageStart::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "init_bank":
+            return handlePageCmdInitBank(_argv);
+
+         case "debug":
+            return handlePageCmdDebug(_argv);
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method jumpToBookmarkedNode() {
+      PageNode pgNode <= root_form.pg_node;
+      pgNode.tryPipeNodeABSwap();
+   }
+
+   // <ui_kbd.png>
+   public virtual onBeginTriadKeyMode() : boolean {
+      Global.Print("lctrl-x - ");
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKeyTimeout() {
+      Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+"
+          z         :   Jump to pipenode A/B
+"
+                                    ,
+                                    this);
+      return true;
+   }
+
+   // <ui_kbd.png>
+   public virtual onTriadKey(Key _k) : boolean {
+      // trace "xxx PageNode::onTriadKey k.code="+_k.code;
+
+      // No unicode events generated if lctrl- is still pressed
+      int key = _k.pressed;
+      boolean r = false;
+      loop(2) // first pass for raw keycode, second pass for unicode
+      {
+         // US (reference) keyboard layout (raw keycodes)
+         switch(key)
+         {
+            default:
+               r = maybe; break;
+
+            case 'z':
+               jumpToBookmarkedNode();
+               r = true; break;
+         }
+
+         if(true == r)
+         {
+            return true;
+         }
+         else if(maybe == r)
+         {
+            Global.Print("");
+         }
+
+         // see above
+         key = _k.unicode;
+      }
+
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+
+      // trace "xxx PageNode::onKey: _k.pressed="+_k.pressed+" _k.mod="+_k.mod+" (==mod:"+(VMOD_LCTRL | VMOD_LSHIFT)+")";
+
+      if((VMOD_LCTRL | VMOD_LSHIFT) == (_k.mod & (VMOD_LCTRL | VMOD_LSHIFT)))
+      {
+         switch(_k.pressed)
+         {
+            case VKEY_LEFT:
+               handleSelectPrev();
+               return true;
+
+            case VKEY_RIGHT:
+               handleSelectNext();
+               return true;
+         }
+      }
+
+      if(VKEY_ESCAPE == _k.pressed)
+      {
+         root_form.showPagePrev();
+         return true;
+      }
+
+      if(_k.modCtrl())
+      {
+         switch(_k.pressed)
+         {
+            case 'w':
+               handleSave();
+               return true;
+
+            case 'r':
+               handleReload();
+               return true;
+         }
+      }
+
+      switch(_k.pressed)
+      {
+         case 'k':
+            // when patch was edited via nt/trigseq/seq 'k' (tryEditSound())
+            jumpToBookmarkedNode();
+            return true;
+      }
+
+      return false;
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      String acName <= _action.getActionName();
+
+      StringAction *sac;
+
+      switch(@(ap))
+      {
+         default:
+            break;
+
+         case @(bt_previous_page):
+            if(Button.ACTION_HOLD_CLICK == acName)
+            {
+               root_form.showPageParent();
+            }
+            else
+            {
+               root_form.showPagePrev();
+            }
+            return true;
+
+         case @(cm_synth):
+            handleSelectSynth();
+            return true;
+
+         case @(cm_midich):
+            handleForcedMIDIChChanged();
+            return true;
+
+         case @(bt_prev):
+            handleSelectPrev();
+            return true;
+
+         case @(bt_next):
+            handleSelectNext();
+            return true;
+
+         case @(bt_save):
+            handleSave();
+            return true;
+
+         case @(bt_reload):
+            handleReload();
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}

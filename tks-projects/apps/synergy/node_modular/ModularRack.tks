@@ -1,0 +1,789 @@
+// ----
+// ---- file   : ModularRack.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2021-2025 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- created: 27Mar2021
+// ---- changed: 30Mar2021, 31Mar2021, 02Apr2021, 03Apr2021, 14Apr2021, 20Apr2021, 07May2021
+// ----          13May2021, 21Feb2022, 07May2022, 28Jul2023, 21Sep2023, 18Sep2024, 23Oct2024
+// ----          16Nov2024, 11Sep2025, 16Sep2025, 17Sep2025
+// ----
+// ----
+// ----
+
+module MModularRack;
+
+use namespace ui;
+use namespace st2;
+use namespace modularcv;
+
+
+// <class.png>
+class OrigModulePos {
+   Module *mod;
+   int module_x;
+}
+
+// <class.png>
+class ModularRack extends Composite, ModularCV, ActionProvider {
+   define int RAIL_SY = 10;
+
+   define String TA_REDRAW;
+   protected TimerAction *ta_redraw;
+
+   NodeModularEditor *parent_editor;
+   NodeModular *modular;
+   Patch *patch;
+
+   PopupMenu *pm_context;
+
+   float create_pref_px;
+   float create_pref_py;
+
+   int drag_source_x;
+   int drag_source_y;
+
+   int drag_sink_x;
+   int drag_sink_y;
+
+   PortWidget *drag_pw_candidate;
+
+   define int DRAG_NONE  = 0;
+   define int DRAG_SPACE = 0;
+   int drag_mode;
+   float drag_start_x;
+   int drag_start_module_x;
+   int drag_start_module_y;
+   OrigModulePos *[] drag_start_module_positions;
+
+
+   // <ui_init.png>
+   public method init(NodeModularEditor _editor) {
+
+      setLookAndFeelLight();
+
+      initComposite();
+      setLayout(null);
+      parent_editor <= _editor;
+
+      drag_source_x = -1;
+      drag_sink_x = -1;
+
+      initTimers();
+   }
+
+   // <ui_timer.png>
+   protected method initTimers() {
+      ta_redraw <= TimerAction.New(TA_REDRAW, this, 1000.0 / 60);
+   }
+
+   // <ui_show.png>
+   public method showNode(NodeModular _node) {
+      // (note) also called when pattern is selected
+      modular <= _node;
+
+      removeChildren();
+
+      NodeModularPattern pat <= modular.nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         patch <= pat.patch;
+
+         Module *mod;
+         foreach mod in patch.all_modules
+         {
+            addChildLayer(mod);
+            mod.handleShowModule();  // e.g. update ModCV_Buttons states after leaving node while pressing momentary button
+         }
+
+         // Update PortSelectWidget combobox options
+         handlePortSelectionChanged();
+      }
+      else
+      {
+         patch <= null;
+      }
+
+      relayout();
+      redraw();
+
+      ta_redraw.reschedule();
+   }
+
+   public method leaveNode() {
+      ta_redraw.cancel();
+   }
+
+   public method getRackWidth() : int {
+      return int(getSizeX() / GetRackUnitWidth());
+   }
+
+   public method handleCloneModule(Module _mod) {
+      create_pref_px = _mod.getPositionX();
+      create_pref_py = _mod.getPositionY();
+      handleCreateModule(_mod.yacMetaClassName(), _mod);
+   }
+
+   public =replay= method handleDeleteModule(Module _mod) {
+
+      UI.LoseMouseFocusIfWithin(_mod);
+      UI.LoseKeyboardFocusIfWithin(_mod, true/*bQuiet*/);
+      removeChildLayer(_mod);
+
+      patch.removeModule(_mod);
+
+      redraw();
+      UI.CompositeAll();
+   }
+
+   public =replay= method handleCreateModule(String _className, Module _cloneSrcOrNull) : Module {
+      Module mod <= TKS.newObjectByName("modularcv"/*nsp*/, _className);
+      Global.Debug("ModularRack::handleCreateModule: mod="+#(mod)+" className=\""+_className+"\" create_pref_p=("+create_pref_px+";"+create_pref_py+")");
+      if(null != mod)
+      {
+         mod.init();
+         patch.addModule(deref mod);
+
+         if(_cloneSrcOrNull)
+            mod.copyFrom(_cloneSrcOrNull);
+
+         mod.initUI();
+         mod.setToolTipCaption(mod.module_tooltip);
+
+         int modX = int((create_pref_px + GetRackUnitWidth()*0.5) / GetRackUnitWidth());
+         int modY = int(create_pref_py / GetRackModuleHeight()) * 3;
+         mod.setModulePosition(modX, modY);
+
+         // trace "xxx initial modPos=("+modX+";"+modY+")";
+
+         boolean bOk = patch.tryMoveModuleToNonOverlappingPosition(this, mod, true/*bMoveY*/);
+
+         // trace "xxx new modPos=("+modX+";"+modY+")";
+
+         if(bOk)
+         {
+            addChildLayer(mod);
+            redraw();
+            UI.CompositeAll();
+            Global.Print("Create module type=\""+_className+"\"");
+            UI.SetKeyboardFocus(mod);
+         }
+         else
+         {
+            patch.removeModule(mod);
+            Global.Error("Module does not fit into rack !!");
+         }
+
+      }
+      else
+         trace "[---] failed to create module (className=\""+_className+"\") (namespace=\"modularcv\")";
+      return mod;
+   }
+
+   // <method.png>
+   public method toggleShowConnectionLines() {
+      if(null != patch)
+      {
+         patch.b_show_connection_lines = !patch.b_show_connection_lines;
+         Global.Print("Show connection lines is "+Utils.GetEnableString(patch.b_show_connection_lines));
+         compositeAll();
+      }
+   }
+
+   // <ui_show.png>
+   public method showContextMenu(boolean _bFocusFirst) {
+      if(null != patch)
+      {
+         pm_context <= PopupMenu.New(this);
+         PopupMenuButton *pmb;
+         PopupMenu pm <= pm_context;
+         pm.setNumItemsPerColumn(STConfig.modular_num_modules_per_menu_col);
+
+         local PointerArray classes <= TKS.findClassesByPrefix("modularcv", "ModCV_");
+         Object *cl;
+         foreach cl in classes
+         {
+            local String clName <= cl.yacMetaClassName().replace("ModCV_", "");
+            if("Unavail" != clName)
+            {
+               String *iconName;
+               if(cl instanceof ModCV_Output)
+                  iconName <= "arr_l";
+               else if(cl instanceof ModCV_Input)
+                  iconName <= "arr_r";
+               else
+                  iconName <= null;
+               pmb <= pm.addIconButton(clName, iconName, "new_"+clName);
+            }
+         }
+
+         pmb <= pm.addCheckButton("Show Connections", patch.b_show_connection_lines, "show_connection_lines");
+         pmb.setToolTipCaption("When enabled, show connection lines\n\n (note) 'h' or BACKSPACE");
+
+         // pm.addSeparator();
+
+         pm.resizeToMinimum();
+
+         pm.showNearMouse(-pm.getSizeX()*0.5, -pm.getSizeY()*0.5);
+
+         if(_bFocusFirst)
+            pm.focusNextMenuItem();
+
+         Global.Print("Show rack context menu.");
+      }
+   }
+
+   // <ui_handle.png>
+   protected method setKeyboardFocusToPreviousEditFocus() {
+      if(null != patch)
+      {
+         int editFocusIdx = patch.getIndexByModule(modular.last_editfocus);
+         local IntArray ia;
+         patch.sortModulesByPosition(ia);
+         editFocusIdx = ia.indexOf(editFocusIdx, 0);
+         if(editFocusIdx >= 1)
+            editFocusIdx--;
+         else
+            editFocusIdx = ia.numElements - 1;
+         if(editFocusIdx >= 0)
+         {
+            UI.SetKeyboardFocus(patch.getModuleByIndex(ia[editFocusIdx]));
+            redraw();
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method setKeyboardFocusToNextEditFocus() {
+      // trace "xxx setKeyboardFocusToNextEditFocus";
+      if(null != patch)
+      {
+         int editFocusIdx = patch.getIndexByModule(modular.last_editfocus);
+         local IntArray ia;
+         patch.sortModulesByPosition(ia);
+         editFocusIdx = ia.indexOf(editFocusIdx, 0);
+
+         if(editFocusIdx < (ia.numElements - 1))
+            editFocusIdx++;
+         else
+            editFocusIdx = 0;
+         if(editFocusIdx >= 0)
+         {
+            UI.SetKeyboardFocus(patch.getModuleByIndex(ia[editFocusIdx]));
+            redraw();
+         }
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseClick(MouseEvent _ev) : boolean {
+
+      if(_ev.isRightButton())
+      {
+         create_pref_px = _ev.mouse_rel_x;
+         create_pref_py = _ev.mouse_rel_y;
+         showContextMenu(false/*bFocusFirst*/);
+         return true;
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouse(MouseEvent _ev) : boolean {
+
+      if(0 == UI.GetKeyMod())
+      {
+         if(_ev.wheelUp())
+         {
+            setKeyboardFocusToPreviousEditFocus();
+            return true;
+         }
+         else if(_ev.wheelDown())
+         {
+            setKeyboardFocusToNextEditFocus();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method dragSpaceSaveModulePositions() {
+      if(null != patch)
+      {
+         drag_start_module_positions.free();
+         Module *mod;
+         local IntArray iaPos;
+         foreach mod in patch.all_modules
+         {
+            if(mod.module_y == drag_start_module_y)
+            {
+               OrigModulePos pos <= new OrigModulePos;
+               pos.mod <= mod;
+               pos.module_x = mod.module_x;
+               iaPos.add(pos.module_x);
+               drag_start_module_positions.add(#(deref pos));
+            }
+         }
+         local IntArray iaReorder;
+         iaPos.sortByValue(iaReorder);
+         drag_start_module_positions.rearrange(iaReorder);
+      }
+   }
+
+   // <method.png>
+   protected method dragSpaceCalcSpaceLeft(int _posIdx) : int {
+      int left = 0;
+      int lastX = -1;
+      int posIdx = 0;
+      loop(_posIdx + 1)
+      {
+         // trace "xxx posIdx="+posIdx+" (num="+_posIdx+") 1 left="+left;
+         OrigModulePos pos <= drag_start_module_positions[posIdx];
+         Module mod <= pos.mod;
+         if(-1 == lastX)
+         {
+            // trace "xxx first left x="+mod.module_x;
+            left = mod.module_x;
+         }
+         else
+         {
+            left += mod.module_x - lastX;
+         }
+         lastX = mod.module_x + mod.module_w;
+         // trace "xxx 2 left="+left;
+         posIdx++;
+      }
+      return left;
+   }
+
+   // <method.png>
+   protected method dragSpaceCalcSpaceRight(int _posIdx) : int {
+      int rackWidth = getRackWidth();
+      int left = rackWidth;
+      int lastX = -1;
+      loop(drag_start_module_positions.numElements - _posIdx)
+      {
+         // // trace "xxx 1 left="+left;
+         OrigModulePos pos <= drag_start_module_positions[_posIdx];
+         Module mod <= pos.mod;
+         if(-1 == lastX)
+         {
+            // // trace "xxx first left x="+mod.module_x;
+            left -= mod.module_x;
+            left -= mod.module_w;
+         }
+         else
+         {
+            left += mod.module_x - lastX;
+            left -= mod.module_w;
+         }
+         lastX = mod.module_x + mod.module_w;
+         // // trace "xxx 2 left="+left;
+         if(left <= 0)
+            return 0;
+         _posIdx++;
+      }
+      return left;
+   }
+
+   // <method.png>
+   protected method dragSpaceShiftModulePositionsBy1(local int _posIdx, local int _delta) {
+      local Module *mod;
+      mod <= drag_start_module_positions[_posIdx].mod;
+
+      if(_delta > 0)
+      {
+         mod.setModulePosition(mod.module_x + 1, mod.module_y);
+         if((_posIdx+1) < drag_start_module_positions.numElements)
+         {
+            local Module modNext <= drag_start_module_positions[_posIdx + 1].mod;
+            if( (mod.module_x + mod.module_w) > modNext.module_x)
+            {
+               dragSpaceShiftModulePositionsBy1(_posIdx+1, 1);
+            }
+         }
+      }
+      else
+      {
+         mod.setModulePosition(mod.module_x - 1, mod.module_y);
+         if(_posIdx > 0)
+         {
+            local Module modPrev <= drag_start_module_positions[_posIdx - 1].mod;
+            if( (modPrev.module_x + modPrev.module_w) > mod.module_x)
+            {
+               dragSpaceShiftModulePositionsBy1(_posIdx-1, -1);
+            }
+         }
+      }
+   }
+
+   // <method.png>
+   protected method dragSpaceShiftModulePositions(int _deltaX) {
+      if(null != patch)
+      {
+         dragSpaceRestoreModulePositions();
+
+         OrigModulePos *pos;
+         int posIdx;
+         Module *mod;
+         int ctrX = drag_start_module_x;
+         int spaceLeft;
+
+         if(_deltaX > 0)
+         {
+            mod <= patch.findModuleAtXY(ctrX, drag_start_module_y);
+            if(null != mod)
+               ctrX = mod.module_x;//+ mod.module_w;
+
+            posIdx = 0;
+            loop(drag_start_module_positions.numElements)
+            {
+               pos <= drag_start_module_positions[posIdx];
+               mod <= pos.mod;
+               if(mod.module_x >= ctrX)
+               {
+                  loop(_deltaX)
+                  {
+                     spaceLeft = dragSpaceCalcSpaceRight(posIdx);
+                     // // trace "xxx spaceLeft="+spaceLeft+" deltaX="+_deltaX;
+                     if(spaceLeft > 0)
+                     {
+                        dragSpaceShiftModulePositionsBy1(posIdx, 1);
+                     }
+                     else
+                        break;
+                  }
+                  return;
+               }
+               posIdx++;
+            }
+         }
+         else if(_deltaX < 0)
+         {
+            mod <= patch.findModuleAtXY(ctrX, drag_start_module_y);
+            if(null != mod)
+               ctrX = mod.module_x+mod.module_w;
+
+            posIdx = 0;
+            loop(drag_start_module_positions.numElements)
+            {
+               pos <= drag_start_module_positions[posIdx];
+               mod <= pos.mod;
+               if(mod.module_x >= ctrX)
+               {
+                  break;
+               }
+               posIdx++;
+            }
+            // // trace "xxx posIdx="+posIdx+" num="+drag_start_module_positions.numElements;
+            if(posIdx > 0)
+            {
+               posIdx--;
+               if(posIdx < drag_start_module_positions.numElements)
+               {
+                  loop(-_deltaX)
+                  {
+                     spaceLeft = dragSpaceCalcSpaceLeft(posIdx);
+                     // // trace "xxx spaceLeft="+spaceLeft+" deltaX="+_deltaX;
+                     if(spaceLeft > 0)
+                     {
+                        dragSpaceShiftModulePositionsBy1(posIdx, -1);
+                     }
+                     else
+                        break;
+                  }
+               }
+               return;
+            }
+         }
+      } // if patch
+   }
+
+   // <method.png>
+   protected method dragSpaceRestoreModulePositions() {
+      if(null != patch)
+      {
+         OrigModulePos *pos;
+         foreach pos in drag_start_module_positions
+         {
+            pos.mod.setModulePosition(pos.module_x, pos.mod.module_y);
+         }
+      }
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseBeginDrag(MouseEvent _dragStart, MouseEvent _ev) : boolean {
+      if(null != patch)
+      {
+         if(_ev.isLeftButtonDown())
+         {
+            drag_mode = DRAG_SPACE;
+            drag_start_x = _dragStart.mouse_rel_x;
+            drag_start_module_x = _dragStart.mouse_rel_x / GetRackUnitWidth();
+            drag_start_module_y = int(_dragStart.mouse_rel_y / GetRackModuleHeight()) * 3;
+            dragSpaceSaveModulePositions();
+            // // trace "xxx rack: begin drag. start=("+drag_start_module_x+";"+drag_start_module_y+")";
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseDrag(MouseEvent _lastEv, MouseEvent _currentEv) : boolean {
+      if(DRAG_SPACE == drag_mode)
+      {
+         int dragX = (_currentEv.mouse_rel_x - drag_start_x) / GetRackUnitWidth();
+         // // trace "xxx dragX="+dragX;
+         dragSpaceShiftModulePositions(dragX);
+         redraw();
+      }
+      return true;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseEndDrag(MouseEvent _ev) {
+      drag_mode = DRAG_NONE;
+   }
+
+   // <ui_mouse.png>
+   public virtual onMouseCancelDrag(MouseEvent _ev) {
+      if(DRAG_SPACE == drag_mode)
+      {
+         dragSpaceRestoreModulePositions();
+         redraw();
+      }
+      drag_mode = DRAG_NONE;
+   }
+
+   // <ui_render.png>
+   public virtual onDraw() {
+
+      UIRenderer.DrawFilledRectangle(0, 0, getSizeX(), getSizeY(),
+                                     app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_BG)
+                                     );
+
+      if(null != patch)
+      {
+         float py = 0;
+         loop(2)
+         {
+            UIRenderer.DrawDefaultBackgroundTint(0, py, getSizeX(), RAIL_SY, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_RAIL1_BG_TINT));
+            UIRenderer.DrawDefaultBackgroundTint(0, py, getSizeX(), 1, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_RAIL2_BG_TINT));
+            UIRenderer.DrawDefaultBackgroundTint(0, py + RAIL_SY-1, getSizeX(), 1, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_RAIL3_BG_TINT));
+
+            py += ModularCV.GetRackModuleHeight() - RAIL_SY;
+            UIRenderer.DrawDefaultBackgroundTint(0, py, getSizeX(), RAIL_SY, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_RAIL1_BG_TINT));
+            UIRenderer.DrawDefaultBackgroundTint(0, py, getSizeX(), 1, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_RAIL3_BG_TINT));
+            UIRenderer.DrawDefaultBackgroundTint(0, py + RAIL_SY-1, getSizeX(), 1, app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_RACK_RAIL2_BG_TINT));
+            py += RAIL_SY;
+         }
+      }
+   }
+
+   // <ui_render.png>
+   public virtual onDrawOverlays() {
+      // Draw connections
+
+      Point2f abspos;
+      calcAbsolutePositionFBO(abspos);
+
+      // // glPushAttrib(GL_ALL_ATTRIB_BITS);
+
+      sdvg_PushScissor(abspos.x+0.5, abspos.y+0.5, size_x+0.5, size_y+0.5);
+      sdvg_EnableScissor();
+
+      UIRenderer.EnableBlending();
+
+      NodeModularPattern pat <= modular.nodeGetCurrentEditPattern();
+      if(null != pat)
+      {
+         patch <= pat.patch;
+
+         Module *mod;
+         foreach mod in patch.all_modules
+         {
+            // Draw LEDs
+            LED *led;
+            foreach led in mod.led_widgets
+            {
+               led.drawLED(mod.position_x, mod.position_y);
+            }
+
+            // Draw ValueDisplays
+            ValueDisplay *vd;
+            foreach vd in mod.dpy_widgets
+            {
+               vd.drawValueDisplay(mod.position_x, mod.position_y);
+            }
+         }
+
+         IntArray cableColors <= STConfig.modular_cable_colors.get(UI.GetLookAndFeelIdx());
+         UIRenderer.EnableBlending();
+         UIRenderer.SetLineWidth(3.0 * UI.font_scaling);
+
+         int c32;
+         Module *modDst;
+         foreach modDst in patch.all_modules
+         {
+            Input *input;
+            foreach input in modDst.inputs
+            {
+               if(input.isConnected())
+               {
+                  Module modSrc <= input.source;
+                  Output output <= input.getOutput();
+                  if(null != output)
+                  {
+                     // trace "xxx draw conn input="+#(input)+" output="+#(output);
+                     PortWidget pwIn <= input.port_widget;
+                     if(null != pwIn)
+                     {
+                        PortWidget pwOut <= output.port_widget;
+                        if(null != pwOut)
+                        {
+                           float inCX = pwIn.position_x + modDst.position_x + pwIn.size_x*0.5;
+                           float inCY = pwIn.position_y + modDst.position_y + pwIn.size_y*0.5;
+                           float outCX = pwOut.position_x + modSrc.position_x + pwOut.size_x*0.5;
+                           float outCY = pwOut.position_y + modSrc.position_y + pwOut.size_y*0.5;
+                           c32 = cableColors.get(input.palette_idx*2 + (input.b_mouseover_highlight ? 1 : 0));
+                           c32 = UI.Color32Alpha(c32, input.b_mouseover_highlight ? STConfig.modular_cable_opacity_hl : STConfig.modular_cable_opacity);
+                           if(patch.b_show_connection_lines || input.b_mouseover_highlight)
+                           {
+                              UIRenderer.DrawLine(inCX, inCY,
+                                                  outCX, outCY,
+                                                  c32
+                                                  );
+                           }
+                           UIRenderer.DrawFilledEllipse(inCX, inCY, 4.0, 4.0, 32/*numSeg*/, c32);
+                           UIRenderer.DrawFilledEllipse(outCX, outCY, 3.0, 3.0, 32/*numSeg*/, c32);
+                        }
+                     }
+                  }
+               }
+            }
+         }
+
+         // While connecting
+         if(-1 != drag_source_x)
+         {
+            c32 = app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_CONNECT);
+
+            if(drag_pw_candidate instanceof PortWidget)
+            {
+               float pwX = drag_pw_candidate.position_x + drag_pw_candidate.mod.position_x + drag_pw_candidate.size_x*0.5;
+               float pwY = drag_pw_candidate.position_y + drag_pw_candidate.mod.position_y + drag_pw_candidate.size_y*0.5;
+
+               // Snap to port
+               if(drag_pw_candidate.b_output)
+               {
+                  UIRenderer.DrawLine(pwX,
+                                      pwY,
+                                      drag_sink_x,
+                                      drag_sink_y,
+                                      c32
+                                      );
+               }
+               else
+               {
+                  UIRenderer.DrawLine(drag_source_x,
+                                      drag_source_y,
+                                      pwX,
+                                      pwY,
+                                      c32
+                                      );
+               }
+
+               c32 = app_lnf.getColor(AppLookAndFeel.COLOR_MODULAR_CONNECT_CANDIDATE);
+               UIRenderer.DrawFilledEllipse(pwX, pwY, 3.0, 3.0, 32/*numSeg*/, c32);
+            }
+            else
+            {
+               UIRenderer.DrawLine(drag_source_x,
+                                   drag_source_y,
+                                   drag_sink_x,
+                                   drag_sink_y,
+                                   c32
+                                   );
+            }
+         }
+
+      } // if pat
+
+      UIRenderer.DisableBlending();
+
+      sdvg_PopScissor();
+      sdvg_DisableScissor();
+
+      // // glPopAttrib();
+   }
+
+   // <method.png>
+   public method handlePortSelectionChanged() {
+      // Update PortSelectWidget options
+      Module *mod;
+      foreach mod in patch.all_modules
+      {
+         mod.onPortSelectionChanged();
+      }
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _ac) : boolean {
+      String acName <= _ac.getActionName();
+      ActionProvider ap <= _ac.getActionProvider();
+
+      if(TA_REDRAW == acName)
+      {
+         if(null != patch)
+         {
+            if(patch.checkResetComposite())
+            {
+               // trace "xxx rack composite all";
+               UI.CompositeAll();
+            }
+         }
+
+         ta_redraw.reschedule();
+         return true;
+      }
+
+      switch(@(ap))
+      {
+         case @(pm_context):
+            Global.Debug2("seq: pm_context acName="+acName);
+            switch(acName)
+            {
+               case PopupMenu.ACTION_CANCEL:
+               case "":
+                  Global.Print("Close module context menu.");
+                  return true;
+
+               default:
+                  if(acName <= "new_")
+                  {
+                     local String className <= acName.replace("new_", "ModCV_");
+                     handleCreateModule(className, null/*cloneSrcOrNull*/);
+                  }
+                  else
+                     Global.Print("Select: "+acName);
+
+                  return true;
+
+               case "show_connection_lines":
+                  toggleShowConnectionLines();
+                  return true;
+            }
+            return true;
+
+      }
+
+      return Composite::consumeAction(_ac);
+   }
+
+}

@@ -1,0 +1,1155 @@
+// ----
+// ---- file   : PageMidiDevs.tks
+// ---- author : Bastian Spiegel <bs@tkscript.de>
+// ---- legal  : (c) 2012-2024 by Bastian Spiegel.
+// ----          Distributed under terms of the GNU LESSER GENERAL PUBLIC LICENSE (LGPL). See
+// ----          http://www.gnu.org/licenses/licenses.html#LGPL or COPYING for further information.
+// ----
+// ---- info   : This is part of the "syntracker" midi sequencer.
+// ----
+// ---- changed: 13May2012, 09Nov2012, 21Nov2012, 07May2013, 05Jun2013, 27Aug2013, 04Feb2014
+// ----          15Jun2014, 11Aug2014, 12Aug2014, 13Aug2014, 18Aug2014, 19Aug2014, 31Aug2014
+// ----          04Sep2014, 05Sep2014, 16Sep2014, 19Sep2014, 14Feb2015, 17Feb2015, 21Feb2015
+// ----          23Feb2015, 10Oct2015, 19Jan2016, 09Feb2017, 04Jan2018, 03Jun2018, 26May2019
+// ----          15May2020, 01Nov2020, 10Nov2020, 07Jul2024
+// ----
+// ----
+// ----
+
+module MPageMidiDevs;
+
+use namespace ui;
+use namespace st2;
+
+
+// <class.png>
+class PageMidiDevs extends Page {
+
+   public    ManageMIDIDevicesTM tm_indevs;
+   protected TableView          *tv_indevs;
+
+   public    ManageMIDIDevicesTM tm_outdevs;
+   protected TableView          *tv_outdevs;
+
+   protected TextField *tf_mastername;
+   protected Button *bt_setmaster;  // obsolete [09Feb2017]
+   protected Button *bt_filter;
+   protected Label  *lb_filter;
+   protected Panel *pn_filters;
+   protected Label *lb_filter_note_off;          // 0x8x
+   protected Label *lb_filter_note_on;           // 0x9x
+   protected Label *lb_filter_poly_pressure;     // 0xAx
+   protected Label *lb_filter_control_change;    // 0xBx
+   protected Label *lb_filter_program_change;    // 0xCx
+   protected Label *lb_filter_channel_pressure;  // 0xDx
+   protected Label *lb_filter_pitch_bend;        // 0xEx
+   protected Label *lb_filter_sysex;             // 0xF0
+   protected Label *lb_filter_cm_time_code;      // 0xF1
+   protected Label *lb_filter_cm_song_position;  // 0xF2
+   protected Label *lb_filter_cm_song_select;    // 0xF3
+   protected Label *lb_filter_cm_tune_request;   // 0xF6
+   protected Label *lb_filter_rt_timing_clock;   // 0xF8
+   protected Label *lb_filter_rt_start;          // 0xFA
+   protected Label *lb_filter_rt_continue;       // 0xFB;
+   protected Label *lb_filter_rt_stop;           // 0xFC
+   protected Label *lb_filter_rt_active_sensing; // 0xFE;
+   protected Label *lb_filter_rt_system_reset;   // 0xFF;
+   protected Label *lb_filter_rpn_select;        // CC#101(MSB) + CC#100(LSB)
+   protected Label *lb_filter_nrpn_select;       // CC#099(MSB) + CC#098(LSB)
+   protected Label *lb_filter_rpn;               // CC#006(MSB) + CC#038(LSB) (if -1 != rpn)
+   protected Label *lb_filter_nrpn;              // CC#006(MSB) + CC#038(LSB) (if -1 != nrpn)
+
+   protected CheckBox *cb_midiclk;
+
+   protected TextInputDialog *dlg_alias; // edit device alias
+   protected String          *dlg_alias_devname;
+
+   protected STX_MIDIDevice *edit_dev;  // reference to device that's currently being edited
+
+   protected boolean b_skip_select_dev;
+
+   protected int indevs_row_restore_hint;
+   protected int outdevs_row_restore_hint;
+
+
+   // <init.png>
+   public method init() : boolean {
+
+      // initDialog();
+
+      if(!initPakFile("PageMidiDevs.xfm"))
+      {
+         trace "[---] failed to parse PageMidiDevs.xfm";
+         return false;
+      }
+
+      autoResolveIds(this);
+
+      indevs_row_restore_hint = -1;
+      outdevs_row_restore_hint = -1;
+
+      tm_indevs .initTableModel();
+      updateInDevsTM();
+
+      tm_outdevs.initTableModel();
+      updateOutDevsTM();
+
+      tv_indevs .setTableModel(tm_indevs);
+      tv_outdevs.setTableModel(tm_outdevs);
+
+      return true;
+   }
+
+   // <method_get.png>
+   public virtual pageGetParent() : int {
+      // return RootForm.PAGE_CONFIG;
+      return RootForm.PAGE_PIPEMAP;
+   }
+
+   // <ui_update.png>
+   public method updateInDevsTM() {
+      PointerArray devs <= tm_indevs.devs;
+
+      devs.empty();
+
+      ManageMIDIDevicesEntry *e;
+      int devIdx = 0;
+      loop(MIDIIn.GetNumDevices())
+      {
+         e <= new ManageMIDIDevicesEntry;
+
+         String name <= MIDIIn.GetDeviceNameByIdx(devIdx);
+         e.name = name;
+         e.alias <= MIDI.GetGlobalInDeviceAlias(name);
+         e.b_present = true;
+         e.b_out     = false;
+         e.b_echo    = MIDI.IsMIDIEchoEnabled(e.getAliasOrDeviceName());
+         e.b_mmcrec  = MIDI.IsMIDIMMCRecEnabled(e.getAliasOrDeviceName());   // not supported (for now)
+         e.b_mmcplay = MIDI.IsMIDIMMCPlayEnabled(e.getAliasOrDeviceName());  // not supported (for now)
+         e.b_mtc     = MIDI.IsMIDIMTCEnabled(e.getAliasOrDeviceName());      // not supported (for now)
+
+         ////trace "xxx updateInDevsTM: devIdx="+devIdx+" e.name=\""+name+"\".";
+
+         // Check if the device shall be opened
+         e.b_open = STConfig.midi_in_devicenames.containsObject(name);
+
+         // Check if the device is present / has been opened
+         STX_MIDIInDevice *inDev;
+         MIDIIn *midiin;
+         foreach inDev in MIDI.in_devices
+         {
+            //trace "xxx updateInDevsTM: devIdx="+devIdx+" e.name=\""+name+"\" deviceName=\""+(inDev.midiin.deviceName)+"\".";
+            // trace "xxx inDev="+#(inDev);
+            if(null != inDev.midiin)
+            {
+               // // String dn = inDev.midiin.deviceName;
+               // // trace "xxx name=\""+name+"\" dn=\""+dn+"\"";
+               // // if(!name.compare(dn))
+               // // {
+               // //    trace "xxx => unequal  dn.debug="+dn.debugString+" name.debug="+name.debugString;
+               // // }
+
+               if(name == inDev.getDeviceName())
+               {
+                  e.b_opened = true;
+
+                  e.alias <= inDev.getAlias();
+
+                  break;
+               }
+            }
+
+         }
+
+         // Fix-up (project-specific) alias for unavailable device
+         inDev <= MIDI.GetMIDIInDeviceByDeviceName(e.name, true/*bQuiet*/);
+         if(null != inDev)
+         {
+            e.alias <= inDev.getAlias();
+         }
+
+         devs.add(#(deref e));
+
+         // Next enumerated input device
+         devIdx++;
+      }
+
+      // Add joystick devices
+      STX_JoystickMIDIInDevice *inDevJS;
+      foreach inDevJS in MIDI.joystick_in_devices
+      {
+         e <= new ManageMIDIDevicesEntry;
+
+         e.name = inDevJS.getDeviceName();
+         e.alias <= inDevJS.getAlias();
+         e.b_present  = true;
+         e.b_out      = false;
+         e.b_echo     = false;
+         e.b_mmcrec   = false;
+         e.b_mmcplay  = false;
+         e.b_mtc      = false;
+         e.b_virtual  = true;
+         e.b_joystick = true;
+         e.b_open     = true;
+         devs.add(#(deref e));
+      }
+
+      // Add devices that are currently not present / available
+      String *cfgName;
+      foreach cfgName in STConfig.midi_in_devicenames
+      {
+         if(!cfgName.isBlank())
+         {
+            // Check if device was enumerated
+            boolean bFound = false;
+            devIdx = 0;
+            loop(MIDIIn.GetNumDevices())
+            {
+               name <= MIDIIn.GetDeviceNameByIdx(devIdx);
+               if(name == cfgName)
+               {
+                  bFound = true;
+                  break;
+               }
+
+               // Next enumerated output device
+               devIdx++;
+            }
+
+            if(!bFound)
+            {
+               e <= new ManageMIDIDevicesEntry;
+               e.name = cfgName;
+               e.alias <= MIDI.GetGlobalInDeviceAlias(cfgName);
+               e.b_open    = true;
+               e.b_echo    = MIDI.IsMIDIEchoEnabled(e.getAliasOrDeviceName());
+               e.b_mmcrec  = MIDI.IsMIDIMMCRecEnabled(e.getAliasOrDeviceName());
+               e.b_mmcplay = MIDI.IsMIDIMMCPlayEnabled(e.getAliasOrDeviceName());
+               e.b_mtc     = MIDI.IsMIDIMTCEnabled(e.getAliasOrDeviceName());
+
+               devs.add(#(deref e));
+            }
+         }
+         // Next configuration device name
+      }
+
+   }
+
+   // <ui_update.png>
+   protected method updateUsageStatusOfInDevsTM() {
+      // (todo) remove
+      PointerArray devs <= tm_outdevs.devs;
+      ManageMIDIDevicesEntry *e;
+      foreach e in devs
+      {
+         // (todo) check if the device is used in the MIDI input mapper
+         e.b_used = false;
+      }
+   }
+
+   // <ui_update.png>
+   protected method updateCurrentFilterStatusLabels() {
+      int idx = tm_indevs.getCursorIndex();
+      if(-1 != idx)
+      {
+         ManageMIDIDevicesEntry e <= tm_indevs.devs.get(idx);
+
+         STX_MIDIInDevice *inDev;
+         int devIdx = 0;
+         foreach inDev in MIDI.in_devices
+         {
+            if(null != inDev.midiin)
+            {
+               if(e.name == inDev.getDeviceName())
+               {
+                  MIDIIn midiin <= inDev.midiin;
+
+                  lb_filter_note_off         .setCaption(!midiin.fltNoteOff ? "NOF" : "---");            // 0x8x
+                  lb_filter_note_on          .setCaption(!midiin.fltNoteOn ? "NON" : "---");             // 0x9x
+                  lb_filter_poly_pressure    .setCaption(!midiin.fltPolyPressure ? "PPS" : "---");       // 0xAx
+                  lb_filter_control_change   .setCaption(!midiin.fltCC ? "CCS" : "---");                 // 0xBx
+                  lb_filter_program_change   .setCaption(!midiin.fltProgramChange ? "PRG" : "---");      // 0xCx
+                  lb_filter_channel_pressure .setCaption(!midiin.fltChannelPressure ? "CPS" : "---");    // 0xDx
+                  lb_filter_pitch_bend       .setCaption(!midiin.fltPitchbend ? "PBD" : "---");          // 0xEx
+                  lb_filter_sysex            .setCaption(!midiin.fltSysEx ? "SYX" : "---");              // 0xF0
+                  lb_filter_cm_time_code     .setCaption(!midiin.fltSysComTimeCode ? "TCO" : "---");     // 0xF1
+                  lb_filter_cm_song_position .setCaption(!midiin.fltSysComSongPosition ? "POS" : "---"); // 0xF2
+                  lb_filter_cm_song_select   .setCaption(!midiin.fltSysComSongSelect ? "SEL" : "---");   // 0xF3
+                  lb_filter_cm_tune_request  .setCaption(!midiin.fltSysComTuneRequest ? "TUN" : "---");  // 0xF6
+                  lb_filter_rt_timing_clock  .setCaption(!midiin.fltSysRTTimingClock ? "RTC" : "---");   // 0xF8
+                  lb_filter_rt_start         .setCaption(!midiin.fltSysRTStart ? "STA" : "---");         // 0xFA
+                  lb_filter_rt_continue      .setCaption(!midiin.fltSysRTContinue ? "CON" : "---");      // 0xFB;
+                  lb_filter_rt_stop          .setCaption(!midiin.fltSysRTStop ? "STP" : "---");          // 0xFC
+                  lb_filter_rt_active_sensing.setCaption(!midiin.fltSysRTActiveSensing ? "SEN" : "---"); // 0xFE;
+                  lb_filter_rt_system_reset  .setCaption(!midiin.fltSysRTSystemReset ? "RST" : "---");   // 0xFF;
+                  lb_filter_rpn_select       .setCaption(!midiin.fltRpnSelect ? "RSL" : "---");          // CC#101(MSB) + CC#100(LSB)
+                  lb_filter_nrpn_select      .setCaption(!midiin.fltNrpnSelect ? "NSL" : "---");         // CC#099(MSB) + CC#098(LSB)
+                  lb_filter_rpn              .setCaption(!midiin.fltRpn ? "RPN" : "---");                // CC#006(MSB) + CC#038(LSB) (if -1 != rpn)
+                  lb_filter_nrpn             .setCaption(!midiin.fltNrpn ? "NPN" : "---");               // CC#006(MSB) + CC#038(LSB) (if -1 != nrpn)
+
+                  pn_filters.redraw();
+
+                  return;
+               }
+            } // null != indev.midiin
+         }
+      }
+
+      lb_filter_note_off         .setCaption("---");
+      lb_filter_note_on          .setCaption("---");
+      lb_filter_poly_pressure    .setCaption("---");
+      lb_filter_control_change   .setCaption("---");
+      lb_filter_program_change   .setCaption("---");
+      lb_filter_channel_pressure .setCaption("---");
+      lb_filter_pitch_bend       .setCaption("---");
+      lb_filter_sysex            .setCaption("---");
+      lb_filter_cm_time_code     .setCaption("---");
+      lb_filter_cm_song_position .setCaption("---");
+      lb_filter_cm_song_select   .setCaption("---");
+      lb_filter_cm_tune_request  .setCaption("---");
+      lb_filter_rt_timing_clock  .setCaption("---");
+      lb_filter_rt_start         .setCaption("---");
+      lb_filter_rt_continue      .setCaption("---");
+      lb_filter_rt_stop          .setCaption("---");
+      lb_filter_rt_active_sensing.setCaption("---");
+      lb_filter_rt_system_reset  .setCaption("---");
+      lb_filter_rpn_select       .setCaption("---");
+      lb_filter_nrpn_select      .setCaption("---");
+      lb_filter_rpn              .setCaption("---");
+      lb_filter_nrpn             .setCaption("---");
+      pn_filters.redraw();
+   }
+
+   // <ui_update.png>
+   public method updateOutDevsTM() {
+      PointerArray devs <= tm_outdevs.devs;
+
+      devs.empty();
+
+      ManageMIDIDevicesEntry *e;
+      String *name;
+      String *alias;
+      STX_VirtualMIDIOutDevice *outDevVirt;
+
+      int devIdx = 0;
+      loop(MIDIOut.GetNumDevices())
+      {
+         e <= new ManageMIDIDevicesEntry;
+
+         name <= MIDIOut.GetDeviceNameByIdx(devIdx);
+         e.name = name;
+         e.alias <= MIDI.GetGlobalOutDeviceAlias(name);
+         e.b_present = true;
+         e.b_out = true;
+
+         // Check if the device shall be opened
+         e.b_open    =
+            (STConfig.midi_out_devicenames.containsObject(name))
+            || (STConfig.b_enable_localmidi && (-1 != MIDI.GetVSTOutDeviceIdxByName(name)))
+            ;
+         e.b_clk     = MIDI.IsMIDIClockEnabled(e.getAliasOrDeviceName());
+         e.b_mmcrec  = MIDI.IsMIDIMMCRecEnabled(e.getAliasOrDeviceName());
+         e.b_mmcplay = MIDI.IsMIDIMMCPlayEnabled(e.getAliasOrDeviceName());
+         e.b_mtc     = MIDI.IsMIDIMTCEnabled(e.getAliasOrDeviceName());
+         e.b_spp     = MIDI.IsMIDISPPEnabled(e.getAliasOrDeviceName());
+
+         // Check if the device is present / has been opened
+         STX_MIDIOutDevice *outDev;
+         MIDIOut *midiout;
+         foreach outDev in MIDI.out_devices
+         {
+            // if(null != outDev.midiout)
+            // trace "xxx outDev="+#(outDev)+" isLocalOutDev="+(outDev instanceof STX_LocalMIDIOutDevice);
+            // trace "xxx name=\""+name+"\" outDev.midiout="+#(outDev.midiout);
+            if(name == (outDev.getDeviceName()))
+            {
+               e.alias <= outDev.getAlias();
+
+               if(outDev.isOpen())
+               {
+                  e.b_opened = true;
+                  break;
+               }
+            }
+
+         } // foreach outDev
+
+         // Fix-up (project-specific) alias for unavailable device
+         outDev <= MIDI.GetMIDIOutDeviceByDeviceName(e.name);
+         if(null != outDev)
+         {
+            e.alias <= outDev.getAlias();
+         }
+
+         devs.add(#(deref e));
+
+         // Next enumerated output device
+         devIdx++;
+      }
+
+      // Add virtual (internal) devices
+      foreach outDevVirt in MIDI.out_devices
+      {
+         if(outDevVirt instanceof STX_VirtualMIDIOutDevice)
+         {
+            if(outDevVirt.isOpen()) // filter unavail devices
+            {
+               e <= new ManageMIDIDevicesEntry;
+
+               e.name = outDevVirt.getDeviceName();
+               e.alias <= outDevVirt.getAlias();
+               if(null != e.alias)
+               {
+                  if(e.alias.isBlank())
+                  {
+                     e.alias <= null;
+                  }
+               }
+               e.b_present = true;
+               e.b_out     = true;
+               e.b_open    = true;
+               e.b_opened  = true;
+               e.b_clk     = false;
+               e.b_mmcrec  = false;
+               e.b_mmcplay = false;
+               e.b_mtc     = false;
+               e.b_virtual = true;
+               e.b_unavail = outDevVirt.isUnavail();
+
+               devs.add(#(deref e));
+            }
+         }
+      }
+
+      // Add devices that are currently not present / available
+      String *cfgName;
+
+      foreach cfgName in STConfig.midi_out_devicenames
+      {
+         if(!cfgName.isBlank())
+         {
+            // Check if device was enumerated
+            boolean bFound = false;
+            devIdx = 0;
+            loop(MIDIOut.GetNumDevices())
+            {
+               name <= MIDIOut.GetDeviceNameByIdx(devIdx);
+               if(name == cfgName)
+               {
+                  bFound = true;
+                  break;
+               }
+
+               // Next enumerated output device
+               devIdx++;
+            }
+
+            if(!bFound)
+            {
+               e <= new ManageMIDIDevicesEntry;
+
+               e.name = cfgName;
+               e.alias <= MIDI.GetGlobalOutDeviceAlias(cfgName);
+               e.b_out     = true;
+               e.b_open    = true;
+               e.b_clk     = MIDI.IsMIDIClockEnabled(e.getAliasOrDeviceName());
+               e.b_mmcrec  = MIDI.IsMIDIMMCRecEnabled(e.getAliasOrDeviceName());
+               e.b_mmcplay = MIDI.IsMIDIMMCPlayEnabled(e.getAliasOrDeviceName());
+               e.b_mtc     = MIDI.IsMIDIMTCEnabled(e.getAliasOrDeviceName());
+               e.b_spp     = MIDI.IsMIDISPPEnabled(e.getAliasOrDeviceName());
+
+               // Try to find "unavail" device (so alias can be displayed correctly)
+               //  (note) the unavail device was added if a project-specific dev.configuration was loaded
+
+               outDevVirt <= null;
+
+               if(null != e.alias)
+               {
+                  outDevVirt <= MIDI.GetMIDIOutDeviceByAliasOrName(e.alias);
+               }
+               if(null == outDevVirt)
+               {
+                  outDevVirt <= MIDI.GetMIDIOutDeviceByDeviceName(cfgName);
+               }
+
+               // trace "xxx !bFound: cfgName=\""+cfgName+"\" e.alias="+#(e.alias)+" outDevVirt="+#(outDevVirt);
+
+               if(outDevVirt instanceof STX_VirtualMIDIOutDevice)
+               {
+                  if(!outDevVirt.isOpen())
+                  {
+                     // Found unavail device, update project-specific alias, if it exists
+                     // trace "xxx  --> outDevVirt.getDeviceName()=\""+outDevVirt.getDeviceName()+"\", outDevVirt.getAlias()=\""+outDevVirt.getAlias()+"\", outDevVirt.getGlobalAlias()=\""+outDevVirt.getGlobalAlias()+"\".";
+
+                     alias <= outDevVirt.getAlias();
+                     if(null != alias)
+                     {
+                        e.alias <= alias;
+                     }
+                  }
+               }
+
+               devs.add(#(deref e));
+            }
+         }
+         // Next configuration device name
+      }
+   }
+
+   // <method.png>
+   protected method updateUsageStatusOfOutDevsTM() {
+      // (todo) remove
+      PointerArray devs <= tm_outdevs.devs;
+
+      ManageMIDIDevicesEntry *e;
+      foreach e in devs
+      {
+         e.b_used = false;
+         if(e.b_opened)
+         {
+            // Check if the device is used by any generator, in any song
+            ST_Song *song;
+            foreach song in all_songs
+            {
+               // STX_MIDIGenerator *midiGen;
+               // foreach midiGen in song.generators
+               // {
+               //    if(midiGen instanceof STX_MIDIGenerator)
+               //    {
+               //       if(null != midiGen.out_device)
+               //       {
+               //          if(null != (midiGen.out_device.midiout))
+               //          {
+               //             if(e.name == (midiGen.out_device.getDeviceName()))
+               //             {
+               //                e.b_used = true;
+               //                break;
+               //             }
+               //          }
+               //       }
+               //    }
+               // }
+               // if(e.b_used)
+               // {
+               //    break;
+               // }
+
+               // Next sub-song
+            }
+         } // if open
+      } // foreach entry
+   }
+
+   // <ui_show.png>
+   public virtual pageEnter() {
+
+      Global.Debug("PageMidiDevs: MIDI.out_device_names#="+(MIDI.out_device_names.numElements));
+      Global.Debug("PageMidiDevs: MIDI.out_device_bgcolors#="+(MIDI.out_device_bgcolors.numElements));
+
+      Page::pageEnter();
+
+      // // if(!b_layer_postinit_done)
+      // // {
+      // //    resizeToMinimum();
+      // // }
+
+      // Dialog::preShow();
+
+      // Virtual device aliases may have changed after loading
+      updateOutDevsTM();
+
+      updateUsageStatusOfInDevsTM();
+      updateUsageStatusOfOutDevsTM();
+
+      tv_indevs.tableModelChanged();
+      tv_outdevs.tableModelChanged();
+
+      tf_mastername.setText(STConfig.midi_in_master_name);
+
+      updateCurrentFilterStatusLabels();
+
+      if(!b_skip_select_dev)
+      {
+         if(-1 == indevs_row_restore_hint)
+         {
+            moveCursorToFirstOpenInDevice();
+         }
+         else
+         {
+            tv_indevs.moveCursorToRow(indevs_row_restore_hint);
+            tv_indevs.centerRow();
+         }
+
+         if(-1 == outdevs_row_restore_hint)
+         {
+            moveCursorToFirstOpenOutDevice();
+         }
+         else
+         {
+            tv_outdevs.moveCursorToRow(outdevs_row_restore_hint);
+            tv_outdevs.centerRow();
+         }
+
+      }
+      else
+      {
+         // Skip device selection after device was edited and page is re-entered
+         b_skip_select_dev = false;
+      }
+
+      if(-1 == tm_indevs.getCursorIndex())
+         tv_indevs.moveCursorToFirstRow();
+
+      if(-1 == tm_outdevs.getCursorIndex())
+         tv_outdevs.moveCursorToFirstRow();
+
+      relayout();
+   }
+
+   // <ui_page.png>
+   public virtual pageLeave() {
+      Page::pageLeave();
+
+      indevs_row_restore_hint  = tm_indevs.getCursorIndex();
+      outdevs_row_restore_hint = tm_outdevs.getCursorIndex();
+   }
+
+   // <ui_kbd.png>
+   public virtual addTabCycleOverrides(PointerArray _retLayers) {
+      _retLayers = [
+         tv_indevs,
+         bt_filter,
+         tv_outdevs
+                              ];
+   }
+
+   // <midi.png>
+   public virtual mmtHandleGlobalValue(float _val) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(kbdLayer instanceof Layer)
+      {
+         if(kbdLayer.hasParentOrIs(tv_indevs))
+         {
+            tv_indevs.moveCursorToRow(mmtSelectTableRow(tm_indevs, _val));
+            tv_indevs.centerRow();
+            return true;
+         }
+         else if(kbdLayer.hasParentOrIs(tv_outdevs))
+         {
+            tv_outdevs.moveCursorToRow(mmtSelectTableRow(tm_outdevs, _val));
+            tv_outdevs.centerRow();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <midi.png>
+   public virtual mmtHandleGlobalValueDelta(int _delta) {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(kbdLayer instanceof Layer)
+      {
+         if(kbdLayer.hasParentOrIs(tv_indevs))
+         {
+            mmtSelectTableRowDelta(tv_indevs, _delta);
+            tv_indevs.centerRow();
+            return true;
+         }
+         else if(kbdLayer.hasParentOrIs(tv_outdevs))
+         {
+            mmtSelectTableRowDelta(tv_outdevs, _delta);
+            tv_outdevs.centerRow();
+            return true;
+         }
+      }
+      return false;
+   }
+
+   // <ui_focus.png>
+   public virtual pageFocusDefault() {
+      UI.SetKeyboardFocus(tv_indevs);
+   }
+
+   // <method.png>
+   protected method moveCursorToFirstOpenOutDevice() : boolean {
+      int idx = 0;
+      ManageMIDIDevicesEntry *e;
+      foreach e in tm_outdevs.devs
+      {
+         if(e.b_opened)
+         {
+            tv_outdevs.moveCursorToRow(idx);
+            tv_outdevs.centerRow();
+            return true;
+         }
+         idx++;
+      }
+      return false;
+   }
+
+   // <method.png>
+   protected method moveCursorToFirstOpenInDevice() : boolean {
+      int idx = 0;
+      ManageMIDIDevicesEntry *e;
+      foreach e in tm_indevs.devs
+      {
+         if(e.b_opened)
+         {
+            tv_indevs.moveCursorToRow(idx);
+            tv_indevs.centerRow();
+            return true;
+         }
+         idx++;
+      }
+      return false;
+   }
+
+   // <method_get.png>
+   protected method getSelectedMIDIInDevice() : STX_MIDIInDevice {
+      int idx = tm_indevs.getCursorIndex();
+      if(-1 != idx)
+      {
+         ManageMIDIDevicesEntry e <= tm_indevs.devs.get(idx);
+         // if(e.b_open)
+         // {
+            // STConfig.midi_in_master_name = e.name;
+            // tf_mastername.setText(e.name);
+
+            STX_MIDIInDevice *inDev;
+            int devIdx = 0;
+            foreach inDev in MIDI.in_devices
+            {
+               if(e.name == inDev.getDeviceName())
+               {
+                  return inDev;
+               }
+            }
+         // }
+      }
+      return null;
+   }
+
+   // <method_get.png>
+   protected method getSelectedMIDIOutDevice() : STX_MIDIOutDevice {
+      int idx = tm_outdevs.getCursorIndex();
+      if(-1 != idx)
+      {
+         ManageMIDIDevicesEntry e <= tm_outdevs.devs.get(idx);
+
+         STX_MIDIOutDevice *outDev;
+         int devIdx = 0;
+         foreach outDev in MIDI.out_devices
+         {
+            // trace "xxx getSelectedMIDIOutDevice: e.name=\""+e.name+"\" outDev.deviceName=\""+outDev.getDeviceName()+"\".";
+            if(e.name == outDev.getDeviceName())
+               return outDev;
+         }
+      }
+      return null;
+   }
+
+   // <ui_handle.png>
+   protected method handleSetMIDIInMaster() {
+      int idx = tm_indevs.getCursorIndex();
+      if(-1 != idx)
+      {
+         ManageMIDIDevicesEntry e <= tm_indevs.devs.get(idx);
+         if(e.b_open)
+         {
+            STConfig.midi_in_master_name = e.name;
+            tf_mastername.setText(e.name);
+
+            // Update midi_in_master_idx
+            STX_MIDIInDevice *inDev;
+            int devIdx = 0;
+            foreach inDev in MIDI.in_devices
+            {
+               if(null != inDev.midiin)
+               {
+                  if(e.name == inDev.getDeviceName())
+                  {
+                     MIDI.midi_in_master_idx = devIdx;
+                     Global.Success("MIDI master input device set to \""+e.name+"\".");
+                     break;
+                  }
+               }
+
+               // Next MIDI input device
+               devIdx++;
+            }
+         }
+         else
+         {
+            Global.Error("Cannot change master input device: Selected MIDI input has not been opened.");
+         }
+      }
+   }
+
+   // <ui_show.png>
+   protected method editDevice(boolean _bIn) {
+
+      if(_bIn)
+         edit_dev <= getSelectedMIDIInDevice();
+      else
+         edit_dev <= getSelectedMIDIOutDevice();
+
+      Global.Debug("PageMidiDevs::editDevice: bIn="+_bIn+" dev="+#(edit_dev));
+
+      if(null != edit_dev)
+      {
+         b_skip_select_dev = true;
+         root_form.pg_editmididevice.showDevice(edit_dev, this);
+      }
+
+   }
+
+   // <ui_handle.png>
+   protected method handleEditDevice() {
+      Layer kbdLayer <= UI.GetKeyboardFocus();
+
+      if(kbdLayer instanceof Layer)
+      {
+         if(kbdLayer.hasParent(tv_indevs) || (@(kbdLayer) == @(tv_indevs)))
+         {
+            editDevice(true/*in*/);
+         }
+         else if(kbdLayer.hasParent(tv_outdevs) || (@(kbdLayer) == @(tv_outdevs)))
+         {
+            editDevice(false/*out*/);
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleEditMIDIDeviceFilter() {
+      STX_MIDIInDevice inDev <= getSelectedMIDIInDevice();
+
+      if(null != inDev)
+      {
+         if(null != inDev.midiin)
+         {
+            dlg_edit_midi_device_filter.showDevice(inDev, this);
+         }
+         else
+         {
+            Global.Error("Cannot edit input device filter: Device is not present.");
+         }
+      }
+   }
+
+   // <ui_handle.png>
+   protected method handleDeviceAliasChanged(StringAction _sac) {
+      String alias <= deref _sac.getStringValue();
+      dlg_alias <= null;
+      updateInDevsTM();
+      updateOutDevsTM();
+      tv_indevs.tableModelChanged();
+      tv_outdevs.tableModelChanged();
+   }
+
+   // <ui_handle.png>
+   protected method handleDeviceEdited() {
+      // String alias <= deref _sac.getStringValue();
+      // // MIDI.UpdateMIDIDeviceAlias(dlg_alias_devname, alias);
+      // // dlg_alias <= null;
+      updateInDevsTM();
+      updateOutDevsTM();
+      tv_indevs.tableModelChanged();
+      tv_outdevs.tableModelChanged();
+   }
+
+// //    public virtual onTriadKey(Key _k) : boolean {
+// //       switch(_k.pressed)
+// //       {
+// //          case 'c':
+// //             hide();
+// //             return true;
+// //       }
+
+// //       return false;
+// //    }
+
+// //    public virtual onTriadKeyTimeout() {
+// //       Dialogs.ShowTriadKeyHelpDialog("lctrl-x ..",
+// // "
+// //           c         :   Close dialog
+
+// // "
+// //                                     ,
+// //                                     this);
+// //       return true;
+// //    }
+
+   // <ui_cmd.png>
+   protected =replay= method handlePageCmdRemoveUnavailableInDevs(StringArray _argv) : boolean {
+      // Removes all input devices which are currently not present from the configuration
+      //  these devices.
+      int numRemoved = 0;
+      int devIdx = 0;
+      String *devName;
+      StringArray cfgNames <= STConfig.midi_in_devicenames;
+      while(devIdx < cfgNames.numElements)
+      {
+         devName <= cfgNames.get(devIdx);
+         // trace "xxx devName=\""+devName+"\"";
+         if(devName != "Push")
+         {
+            STX_MIDIInDevice inDev <= MIDI.GetMIDIInDeviceByDeviceName(devName, true/*bQuiet*/);
+            // trace "xxx  => inDev="+#(inDev);
+            if(null != inDev)
+            {
+               if(!inDev.isOpen())
+               {
+                  cfgNames.delete(devIdx);
+                  numRemoved++;
+                  devIdx--;
+               }
+            }
+         }
+         devIdx++;
+      }
+      MIDI.UpdateInDeviceNames();
+      updateInDevsTM();
+      tv_indevs.tableModelChanged();
+      Global.Print("Remove "+numRemoved+" unavailable input device"+Utils.GetPluralString(numRemoved));
+   }
+
+   // <ui_cmd.png>
+   protected =replay= method handlePageCmdRemoveUnavailableOutDevs(StringArray _argv) : boolean {
+      // Careful here. Don't use this function unless you are sure that there are no more references to
+      //  these devices.
+      // Update the configuration (but does not auto-save it)
+      int numRemoved = 0;
+      int devIdx = 0;
+      STX_VirtualMIDIOutDevice *outDev;
+      PointerArray allDevs <= MIDI.out_devices;
+      while(devIdx < allDevs.numElements)
+      {
+         outDev <= allDevs.get(devIdx);
+         if(outDev instanceof STX_VirtualMIDIOutDevice)
+         {
+            if(outDev.b_unavail)
+            {
+               if(outDev.getAliasOrDeviceName() != "Push")
+               {
+                  int cfgIdx = STConfig.midi_out_devicenames.indexOfObject(outDev.getDeviceName(), 0);
+                  if(-1 != cfgIdx)
+                  {
+                     STConfig.midi_out_devicenames.delete(cfgIdx);
+                  }
+                  allDevs.delete(devIdx);
+                  numRemoved++;
+                  devIdx--;
+               }
+            }
+         }
+         devIdx++;
+      }
+      MIDI.UpdateOutDeviceNames();
+      updateOutDevsTM();
+      tv_outdevs.tableModelChanged();
+      Global.Print("Remove "+numRemoved+" unavailable output device"+Utils.GetPluralString(numRemoved));
+   }
+
+   // <ui_cmd.png>
+   protected method handlePageCmdFindDev(String _flt) : boolean {
+      int rowIdx;
+      ManageMIDIDevicesEntry *en;
+      local String flt; _flt.toLower() => flt;
+
+      // Find input device
+      rowIdx = 0;
+      foreach en in tm_indevs.devs
+      {
+         if(null != en.alias)
+         {
+            if( (en.alias.toLower()) & flt )
+            {
+               tv_indevs.moveCursorToRow(rowIdx);
+               tv_indevs.centerRow();
+               break;
+            }
+         }
+         if( (en.name.toLower()) & flt)
+         {
+            tv_indevs.moveCursorToRow(rowIdx);
+            tv_indevs.centerRow();
+            break;
+         }
+         rowIdx++;
+      }
+
+      // Find output device
+      rowIdx = 0;
+      foreach en in tm_outdevs.devs
+      {
+         if(null != en.alias)
+         {
+            if( (en.alias.toLower()) & flt )
+            {
+               tv_outdevs.moveCursorToRow(rowIdx);
+               tv_outdevs.centerRow();
+               break;
+            }
+         }
+         if( (en.name.toLower()) & flt)
+         {
+            tv_outdevs.moveCursorToRow(rowIdx);
+            tv_outdevs.centerRow();
+            break;
+         }
+         rowIdx++;
+      }
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableCommands() : StringArray {
+      return [
+         "remove_unavailable_in_devs",
+         "remove_unavailable_out_devs",
+         "find\t<devname>",
+         "f\t<devname>"
+              ];
+   }
+
+   // <ui_cmd.png>
+   public method cmdGetDefaultActions() : StringArray {
+      return ["remove_unavailable_in_devs",
+              "remove_unavailable_out_devs",
+              "find internal_1",
+              "find internal_8",
+              ];
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdFindArgAutoCompletions(String _cmd, int _argIdx, String _prefix) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdGetAvailableArgs(String _cmd, int _argIdx) : StringArray {
+      return null;
+   }
+
+   // <ui_cmd.png>
+   public virtual cmdExec(StringArray _argv) : boolean {
+      Global.Debug("PageMidiDevs::cmdExec: argv="+#(_argv));
+      switch(_argv.get(0))
+      {
+         case "remove_unavailable_in_devs":
+            return handlePageCmdRemoveUnavailableInDevs(_argv);
+
+         case "remove_unavailable_out_devs":
+            return handlePageCmdRemoveUnavailableOutDevs(_argv);
+
+         case "find":
+         case "f":
+            if(_argv.numElements >= 2)
+               return handlePageCmdFindDev(_argv.get(1));
+      }
+      return false;
+   }
+
+   // <ui_kbd.png>
+   public virtual onKey(Key _k) : boolean {
+      switch(_k.pressed)
+      {
+        case VKEY_ESCAPE:
+           root_form.showPage(RootForm.PAGE_PREFS, false/*bHistory*/);
+           return true;
+      }
+   }
+
+   // <ui_page.png>
+   public method pageHandleAutoFocusKey(Key _k) : boolean {
+      return root_form.defaultHandleAutoFocusKey(_k);
+   }
+
+   // <ui_consume.png>
+   public virtual consumeAction(Action _action) : boolean {
+      ActionProvider ap <= _action.getActionProvider();
+      StringAction *sac;
+      String acName <= _action.getActionName();
+
+      switch(@(ap))
+      {
+         default:
+            if(EditMIDIDeviceFilterDialog.ACTION_FILTER_EDITED == acName)
+            {
+               updateCurrentFilterStatusLabels();
+               return true;
+            }
+            else if(PageEditMidiDevice.ACTION_DEVICE_EDITED == acName)
+            {
+               handleDeviceEdited();
+               return true;
+            }
+            break;
+
+         // case @(bt_close):
+         //    hide();
+         //    return true;
+
+         case @(bt_filter):
+            handleEditMIDIDeviceFilter();
+            return true;
+
+         // // case @(bt_setmaster):
+         // //    handleSetMIDIInMaster();
+         // //    return true;
+
+         // case @(bt_edit):
+         //    handleEditDevice();
+         //    return true;
+
+         case @(tv_indevs):
+            if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               updateCurrentFilterStatusLabels();
+               STX_MIDIInDevice inDev <= getSelectedMIDIInDevice();
+               bt_filter.setEditable(false);
+               bt_setmaster.setEditable(false);
+               if(null != inDev)
+               {
+                  Global.Debug2("PageMidiDevs: select inDev idx="+inDev.dev_idx);
+                  if(inDev.isOpen())
+                  {
+                     bt_filter.setEditable(true);
+                     bt_setmaster.setEditable(true);
+                  }
+               }
+               // bt_edit.setEditable(true);
+            }
+            else if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               editDevice(true/*in*/);
+            }
+            return true;
+
+         case @(tv_outdevs):
+            if(acName == TableView.ACTION_ROWSELECTED)
+            {
+               STX_MIDIOutDevice outDev <= getSelectedMIDIOutDevice();
+               if(null != outDev)
+               {
+                  Global.Debug2("PageMidiDevs: select outDev idx="+outDev.dev_idx);
+               }
+            }
+            else if(acName == TableView.ACTION_ROWCLICKED)
+            {
+               editDevice(false/*out*/);
+            }
+            return true;
+
+         case @(dlg_alias):
+            // Device alias changed
+            handleDeviceAliasChanged(_action);
+            return true;
+      }
+
+      return Page::consumeAction(_action);
+   }
+
+}
